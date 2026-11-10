@@ -125,14 +125,14 @@ performs no action. Remote lock, wipe and restart are not implemented.
 
 An enrolment controls how devices join a tenant:
 
-| Setting           | Meaning                                                       |
-| ----------------- | ------------------------------------------------------------- |
-| `code`            | Optional password required before platform options are shown. |
-| `enabledApple`    | Enables Apple enrolment. Requires a configured APNs topic.    |
-| `enabledWindows`  | Enables the Windows tab. Preview only; no mounted routes.     |
-| `enabledAndroid`  | Enables the Android tab. No working backend.                  |
-| `enabledAssetTag` | Returns an asset-tag flag in the enrollment response.         |
-| `maxDevices`      | Device cap. Use a high value for a large fleet.               |
+| Setting           | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `code`            | Optional password required before platform options are shown.        |
+| `enabledApple`    | Enables Apple enrolment. Requires a configured APNs topic.           |
+| `enabledWindows`  | Enables the Windows tab. Preview only; no mounted routes.            |
+| `enabledAndroid`  | Enables the Android tab. No working backend.                         |
+| `enabledAssetTag` | Legacy flag. Asset tags are edited per device or imported by serial. |
+| `maxDevices`      | Device cap. Use a high value for a large fleet.                      |
 
 The public data endpoint is:
 
@@ -144,7 +144,42 @@ The dashboard enrollment page is `/enroll/:id`. The response returns per-platfor
 a profile, `"available"`, or an error explaining why the platform is disabled or missing
 APNs.
 
+Apple profiles are installed from the public, cache-busted download endpoint rather than
+a `data:` URI:
+
+```text
+GET /api/v1/enrollment/:id/apple.mobileconfig?code=<optional-password>
+```
+
+It returns `application/x-apple-aspen-config` with an attachment filename and performs
+the same password, platform, APNs-topic, device-cap and SCEP checks as the data
+endpoint. The endpoint is rate-limited per IP. The dashboard renders the enrollment URL
+as a QR code; the QR code never contains the enrollment password.
+
 Resetting the enrolment id invalidates the old link. Existing devices remain enrolled.
+
+## Device pre-registration
+
+Administrators can import devices before they enroll from **Devices → Import CSV**. The
+CSV columns are `serial,name,asset_tag,group,notes`; `serial` is required, headers are
+case-insensitive, and at most 1000 rows can be imported at once. Rows are validated in a
+preview before anything is sent.
+
+| Endpoint                                                         | Access      |
+| ---------------------------------------------------------------- | ----------- |
+| `GET /api/v1/tenants/:tenantId/device-pre-registrations`         | Read        |
+| `POST /api/v1/tenants/:tenantId/device-pre-registrations/import` | Owner/admin |
+| `DELETE /api/v1/tenants/:tenantId/device-pre-registrations/:id`  | Owner/admin |
+| `DELETE /api/v1/tenants/:tenantId/device-pre-registrations`      | Owner/admin |
+
+Imports upsert by `(tenant, serial)` and resolve groups only within the tenant. When an
+Apple device sends its Authenticate check-in, Mattrax looks up the registration by
+serial, applies the name, asset tag, notes and group, and records the resulting device
+on the registration. Registrations also apply to an already-enrolled device row with the
+same serial. A row can never apply across tenants.
+
+Windows enrollment cannot consume pre-registrations yet: the Windows enrollment request
+carries no hardware serial, so there is no reliable key to match against.
 
 ## Groups and policies
 

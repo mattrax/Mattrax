@@ -9,6 +9,7 @@ import {
   createWindowsEnrollmentToken,
   makeWindowsBackend,
   verifyWindowsEnrollmentToken,
+  verifyWindowsEnrollmentTokenDetailed,
 } from "../windows.js";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 import { schema } from "@mattrax/enterprise-core";
@@ -152,7 +153,7 @@ describe("Windows enterprise backend", () => {
     expect(verification!.subject).toBeTruthy();
   });
 
-  it("rejects forged or expired Mattrax policy tokens but allows opaque first-enrollment credentials", async () => {
+  it("rejects forged Mattrax policy tokens but allows opaque or expired-but-verifiable tokens", async () => {
     const { backend } = await setup();
     // The WSTEP policy request carries an opaque client credential before any
     // Mattrax token exists; that first-enrollment path must keep working.
@@ -160,18 +161,22 @@ describe("Windows enterprise backend", () => {
       run(backend.getWindowsEnrollmentPolicy("opaque-wstep-client-credential")),
     ).resolves.toMatchObject({ authToken: expect.any(String) });
 
-    // A token in our format that fails verification is not a first enrollment.
+    // A token in our format that fails signature verification is not a first
+    // enrollment.
     const forged = await createWindowsEnrollmentToken("subject", "wrong-secret");
     await expect(run(backend.getWindowsEnrollmentPolicy(forged))).rejects.toMatchObject({
       _tag: "UnknownDevice",
     });
 
+    // An authentic token whose lifetime elapsed may start a fresh enrollment
+    // subject, so a device that was offline for a while is not wedged.
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
       now: Date.now() - 2 * 60 * 60 * 1000,
     });
-    await expect(run(backend.getWindowsEnrollmentPolicy(expired))).rejects.toMatchObject({
-      _tag: "UnknownDevice",
-    });
+    const renewed = await run(backend.getWindowsEnrollmentPolicy(expired));
+    const verification = await verifyWindowsEnrollmentToken(renewed.authToken, authSecret);
+    expect(verification).not.toBeNull();
+    expect(verification!.subject).not.toBe("subject");
   });
 
   it("enrolls a CSR, issues a client-auth certificate and creates a device", async () => {
@@ -273,6 +278,15 @@ describe("Windows enterprise backend", () => {
         ttlSeconds: 60,
       }),
     ).resolves.toBeNull();
+    await expect(
+      verifyWindowsEnrollmentTokenDetailed(token, authSecret, {
+        now: now + 61_000,
+        ttlSeconds: 60,
+      }),
+    ).resolves.toEqual({ verification: null, expired: true });
+    await expect(
+      verifyWindowsEnrollmentTokenDetailed(`${token}tampered`, authSecret, { now }),
+    ).resolves.toEqual({ verification: null, expired: false });
     await expect(
       verifyWindowsEnrollmentToken(`${token}tampered`, authSecret, { now }),
     ).resolves.toBeNull();

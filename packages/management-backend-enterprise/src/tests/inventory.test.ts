@@ -99,6 +99,28 @@ describe("parseDeviceInventory", () => {
       ),
     ).toBe("NESTED");
   });
+
+  it("updates neither disk field when available exceeds total", () => {
+    expect(
+      parseDeviceInventory({
+        diskmanagement: { storage: { total: 100, available: 200 } },
+      }),
+    ).toEqual({});
+  });
+
+  it("clears reported fields that are no longer present", () => {
+    expect(
+      parseDeviceInventory({
+        diskmanagement: { filevault: { enabled: "" } },
+        device: { power: { "battery-health": "   " } },
+        management: { "client-capabilities": [] },
+      }),
+    ).toEqual({
+      fileVaultEnabled: null,
+      batteryHealth: null,
+      capabilities: [],
+    });
+  });
 });
 
 describe("normalizeBoolean", () => {

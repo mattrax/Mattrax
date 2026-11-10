@@ -68,6 +68,9 @@ export default function DeviceDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.deviceHealthSummary(params.tenantId),
     });
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
+    });
   };
   const save = useMutation(() => ({
     mutationFn: () =>
@@ -85,6 +88,10 @@ export default function DeviceDetailPage() {
   const commands = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "commands"],
     queryFn: () => enterprise.listDeviceCommands(params.tenantId, params.deviceId),
+  }));
+  const activity = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId, 50),
+    queryFn: () => enterprise.getDeviceActivity(params.tenantId, params.deviceId, 50),
   }));
   const health = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
@@ -175,9 +182,59 @@ export default function DeviceDetailPage() {
   const certificateDaysLabel = (notAfter: string) => {
     const expires = new Date(notAfter);
     if (Number.isNaN(expires.getTime())) return "expiry unknown";
-    const days = Math.ceil((expires.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-    if (expires.getTime() <= Date.now()) return `expired ${Math.abs(days)}d ago`;
+    const remaining = expires.getTime() - Date.now();
+    if (remaining <= 0) {
+      const elapsed = Math.abs(remaining);
+      if (elapsed < 60 * 60 * 1000) return "expired";
+      if (elapsed < 24 * 60 * 60 * 1000)
+        return `expired ${Math.ceil(elapsed / (60 * 60 * 1000))}h ago`;
+      return `expired ${Math.ceil(elapsed / (24 * 60 * 60 * 1000))}d ago`;
+    }
+    const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
     return `${days}d left`;
+  };
+  const relativeTime = (value?: string | null) => {
+    if (!value) return "Unknown";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+    const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+      ["year", 365 * 24 * 60 * 60],
+      ["month", 30 * 24 * 60 * 60],
+      ["day", 24 * 60 * 60],
+      ["hour", 60 * 60],
+      ["minute", 60],
+    ];
+    for (const [unit, size] of units) {
+      if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+    }
+    return format.format(seconds, "second");
+  };
+  const activityBadgeClass = (kind: string) => {
+    switch (kind) {
+      case "audit":
+        return "border-violet-200 bg-violet-50 text-violet-700";
+      case "command":
+        return "border-sky-200 bg-sky-50 text-sky-700";
+      case "declaration":
+        return "border-amber-200 bg-amber-50 text-amber-800";
+      case "certificate":
+        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      default:
+        return "border-stone-200 bg-stone-50 text-stone-600";
+    }
+  };
+  const pushBadge = () => {
+    const push = health.data?.push;
+    if (!push) return { label: "Unknown", class: "border-stone-200 bg-stone-50 text-stone-600" };
+    if (push.invalidToken)
+      return { label: "Re-enroll required", class: "border-red-200 bg-red-50 text-red-700" };
+    if (push.consecutiveFailures > 0)
+      return { label: "Failing", class: "border-amber-200 bg-amber-50 text-amber-800" };
+    if (push.lastSuccessAt)
+      return { label: "Delivering", class: "border-green-200 bg-green-50 text-green-700" };
+    return { label: "Not attempted", class: "border-stone-200 bg-stone-50 text-stone-600" };
   };
   const declarationIssues = () =>
     (health.data?.declarations ?? []).filter((declaration) => {
@@ -434,6 +491,47 @@ export default function DeviceDetailPage() {
                   </ul>
                 </Show>
               </div>
+              <Show when={row()?.proto === "apple" && health.data?.push}>
+                <div class="space-y-2 border-t pt-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      APNs push delivery
+                    </p>
+                    <span class={`rounded-full border px-2 py-0.5 text-xs ${pushBadge().class}`}>
+                      {pushBadge().label}
+                    </span>
+                  </div>
+                  <dl class="grid gap-2 text-sm sm:grid-cols-2">
+                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
+                      <dt class="text-muted-foreground">Last attempt</dt>
+                      <dd>{relativeTime(health.data!.push.lastAttemptAt)}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
+                      <dt class="text-muted-foreground">Last success</dt>
+                      <dd>{relativeTime(health.data!.push.lastSuccessAt)}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
+                      <dt class="text-muted-foreground">Consecutive failures</dt>
+                      <dd>{health.data!.push.consecutiveFailures}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
+                      <dt class="text-muted-foreground">Push credentials</dt>
+                      <dd>{health.data!.push.configured ? "Present" : "Missing"}</dd>
+                    </div>
+                  </dl>
+                  <Show when={health.data!.push.lastError}>
+                    <p class="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                      {health.data!.push.lastError}
+                    </p>
+                  </Show>
+                  <Show when={health.data!.push.invalidToken}>
+                    <p class="text-xs text-red-700">
+                      Apple rejected this device token. The device must re-enroll before it can
+                      receive pushes again.
+                    </p>
+                  </Show>
+                </div>
+              </Show>
             </Show>
           </CardContent>
         </Card>
@@ -643,6 +741,66 @@ export default function DeviceDetailPage() {
               </CardContent>
             </Card>
           </Show>
+          <Card>
+            <CardHeader>
+              <div class="flex items-center justify-between gap-2">
+                <CardTitle>Activity</CardTitle>
+                <span class="text-xs text-muted-foreground">Newest first</span>
+              </div>
+            </CardHeader>
+            <CardContent class="space-y-2">
+              <Show
+                when={activity.data}
+                fallback={
+                  <Show
+                    when={activity.isError}
+                    fallback={<p class="text-sm text-muted-foreground">Loading activity…</p>}
+                  >
+                    <QueryError error={activity.error} onRetry={() => void activity.refetch()} />
+                  </Show>
+                }
+              >
+                <Show
+                  when={(activity.data?.events.length ?? 0) > 0}
+                  fallback={
+                    <p class="text-sm text-muted-foreground">
+                      No activity has been recorded for this device yet.
+                    </p>
+                  }
+                >
+                  <ul class="space-y-2">
+                    <For each={activity.data?.events ?? []}>
+                      {(event) => (
+                        <li class="rounded-lg border p-2 text-xs">
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="flex min-w-0 items-center gap-1.5">
+                              <span
+                                class={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${activityBadgeClass(event.kind)}`}
+                              >
+                                {event.kind}
+                              </span>
+                              <strong class="truncate">{event.title}</strong>
+                            </span>
+                            <span
+                              class="shrink-0 text-muted-foreground"
+                              title={formatDate(event.at)}
+                            >
+                              {relativeTime(event.at)}
+                            </span>
+                          </div>
+                          <Show when={event.detail || event.status}>
+                            <p class="mt-1 text-muted-foreground">
+                              {[event.status, event.detail].filter(Boolean).join(" · ")}
+                            </p>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle>Edit details</CardTitle>

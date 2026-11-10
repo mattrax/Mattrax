@@ -152,14 +152,37 @@ const unprefix = (row: Row) =>
   );
 
 class InsertBuilder {
+  private inserted: Row[] = [];
+
   constructor(
     private readonly rows: () => Row[],
     private readonly table: string,
   ) {}
 
-  values(value: Row) {
-    this.rows().push({ ...value, __table: this.table });
-    return Effect.succeed([value]);
+  values(value: Row | Row[]) {
+    this.inserted = Array.isArray(value) ? value : [value];
+    for (const row of this.inserted) this.rows().push({ ...row, __table: this.table });
+    return this;
+  }
+
+  ignore() {
+    return this;
+  }
+
+  onConflictDoNothing() {
+    return this;
+  }
+
+  onDuplicateKeyUpdate() {
+    return this;
+  }
+
+  then(resolve: (value: Row[]) => void) {
+    resolve(this.inserted);
+  }
+
+  [Symbol.iterator]() {
+    return Effect.succeed(this.inserted)[Symbol.iterator]();
   }
 }
 

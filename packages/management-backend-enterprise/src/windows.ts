@@ -107,26 +107,48 @@ export const verifyWindowsEnrollmentToken = (
   authSecret: string,
   options: WindowsEnrollmentTokenOptions = {},
 ): Promise<WindowsEnrollmentTokenVerification | null> =>
-  (async () => {
-    if (!token || !authSecret) return null;
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const [subject, issuedAtRaw, signature] = parts;
-    if (!subject || !issuedAtRaw || !signature) return null;
-    const issuedAt = Number(issuedAtRaw);
-    if (!Number.isFinite(issuedAt)) return null;
+  verifyWindowsEnrollmentTokenDetailed(token, authSecret, options).then(
+    (result) => result.verification,
+  );
 
-    const expected = await hmac(authSecret, `${subject}.${issuedAtRaw}`);
-    if (!timingSafeEqual(expected, signature)) return null;
+export type WindowsEnrollmentTokenEvaluation = {
+  /** Non-null only when the signature is valid and the token has not expired. */
+  readonly verification: WindowsEnrollmentTokenVerification | null;
+  /** True when the signature is valid but the token's lifetime has elapsed. */
+  readonly expired: boolean;
+};
 
-    const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
-    const ttlSeconds = options.ttlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
-    if (nowSeconds > issuedAt + ttlSeconds) return null;
-    // Allow a little clock skew for freshly issued tokens.
-    if (issuedAt > nowSeconds + 60) return null;
+/**
+ * Verify a token while distinguishing an expired (but otherwise authentic)
+ * token from a forged or malformed one. A device that was offline past the
+ * policy token's lifetime must be able to start a fresh enrollment rather than
+ * being treated as an attacker, while a garbage signature still fails closed.
+ */
+export const verifyWindowsEnrollmentTokenDetailed = async (
+  token: string | undefined,
+  authSecret: string,
+  options: WindowsEnrollmentTokenOptions = {},
+): Promise<WindowsEnrollmentTokenEvaluation> => {
+  const invalid = { verification: null, expired: false } as const;
+  if (!token || !authSecret) return invalid;
+  const parts = token.split(".");
+  if (parts.length !== 3) return invalid;
+  const [subject, issuedAtRaw, signature] = parts;
+  if (!subject || !issuedAtRaw || !signature) return invalid;
+  const issuedAt = Number(issuedAtRaw);
+  if (!Number.isFinite(issuedAt)) return invalid;
 
-    return { subject, issuedAt };
-  })();
+  const expected = await hmac(authSecret, `${subject}.${issuedAtRaw}`);
+  if (!timingSafeEqual(expected, signature)) return invalid;
+
+  const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
+  const ttlSeconds = options.ttlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
+  if (nowSeconds > issuedAt + ttlSeconds) return { verification: null, expired: true };
+  // Allow a little clock skew for freshly issued tokens.
+  if (issuedAt > nowSeconds + 60) return invalid;
+
+  return { verification: { subject, issuedAt }, expired: false };
+};
 
 /**
  * Identity values a SCEP certificate row may carry for a device.
@@ -248,19 +270,25 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // A device may retry the policy call; keep the subject stable when it
         // presents one of our own still-valid tokens.
         const presentedToken = authToken.trim();
-        const existing = presentedToken
+        const evaluated = presentedToken
           ? yield* Effect.promise(() =>
-              verifyWindowsEnrollmentToken(presentedToken, secret, { ttlSeconds }),
+              verifyWindowsEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
             )
-          : null;
+          : { verification: null, expired: false };
         // First enrollment legitimately arrives without a token (or with an
         // opaque WSTEP client credential we cannot verify). A token in *our*
-        // format that does not verify, however, is a forged or expired
-        // Mattrax token: fail closed rather than silently downgrading it to a
-        // fresh enrollment credential.
-        if (isWindowsEnrollmentTokenShaped(presentedToken) && !existing)
+        // format whose signature fails, however, is forgery: fail closed rather
+        // than silently downgrading it to a fresh enrollment credential. A
+        // token that verifies but has merely expired may start a fresh
+        // enrollment subject, otherwise an offline device would be wedged
+        // forever.
+        if (
+          isWindowsEnrollmentTokenShaped(presentedToken) &&
+          !evaluated.verification &&
+          !evaluated.expired
+        )
           return yield* Effect.fail(new UnknownDevice());
-        const subject = existing?.subject ?? crypto.randomUUID();
+        const subject = evaluated.verification?.subject ?? crypto.randomUUID();
         const issued = yield* Effect.promise(() =>
           createWindowsEnrollmentToken(subject, secret, { ttlSeconds }),
         );

@@ -59,6 +59,80 @@ test.describe("device fleet management", () => {
     expect((await download).suggestedFilename()).toMatch(/^devices-\d{4}-\d{2}-\d{2}\.csv$/);
   });
 
+  test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Search Tenant");
+    const search = page.getByPlaceholder(/search name/i);
+
+    const request = page.waitForResponse((response) => {
+      if (!response.url().includes(`/api/v1/tenants/${tenant.id}/devices/search`)) return false;
+      return new URL(response.url()).searchParams.get("q") === "abc";
+    });
+    await search.fill("abc");
+    await expect(search).toHaveValue("abc");
+    expect((await request).ok()).toBe(true);
+    // The URL mirror only writes after the debounce, but the input must still
+    // hold the typed value before and after that write.
+    await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("abc");
+    await expect(search).toHaveValue("abc");
+
+    // Additional keystrokes are not reverted to the last URL value.
+    const extended = page.waitForResponse((response) => {
+      if (!response.url().includes(`/api/v1/tenants/${tenant.id}/devices/search`)) return false;
+      return new URL(response.url()).searchParams.get("q") === "abcd";
+    });
+    await search.fill("abcd");
+    await expect(search).toHaveValue("abcd");
+    expect((await extended).ok()).toBe(true);
+    await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("abcd");
+
+    // Other controls still round-trip through the URL.
+    await page.getByLabel("Filter by status").selectOption("enrolled");
+    await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBe("enrolled");
+    await page.getByLabel("Filter by platform").selectOption("apple");
+    await expect.poll(() => new URL(page.url()).searchParams.get("proto")).toBe("apple");
+    await page.getByLabel("Sort devices").selectOption("lastSeenAt");
+    await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("lastSeenAt");
+
+    // A group created after mount only appears in the select after a reload.
+    const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Field Ops" }),
+    });
+    await gotoHydrated(page, page.url());
+    await page.getByLabel("Filter by group").selectOption(group.id);
+    await expect.poll(() => new URL(page.url()).searchParams.get("groupId")).toBe(group.id);
+    await page.getByLabel("Filter by health").selectOption("critical");
+    await expect.poll(() => new URL(page.url()).searchParams.get("health")).toBe("critical");
+    await page.getByLabel("Filter by push delivery").selectOption("failing");
+    await expect.poll(() => new URL(page.url()).searchParams.get("push")).toBe("failing");
+    await page.getByLabel("Filter by last seen").selectOption("7");
+    await expect.poll(() => new URL(page.url()).searchParams.get("staleDays")).toBe("7");
+
+    // The URL is the source of truth after a reload.
+    await gotoHydrated(page, page.url());
+    await expect(search).toHaveValue("abcd");
+    await expect(page.getByLabel("Filter by status")).toHaveValue("enrolled");
+    await expect(page.getByLabel("Filter by platform")).toHaveValue("apple");
+    await expect(page.getByLabel("Filter by group")).toHaveValue(group.id);
+    await expect(page.getByLabel("Filter by health")).toHaveValue("critical");
+    await expect(page.getByLabel("Filter by push delivery")).toHaveValue("failing");
+    await expect(page.getByLabel("Filter by last seen")).toHaveValue("7");
+    await expect(page.getByLabel("Sort devices")).toHaveValue("lastSeenAt");
+
+    // Clearing filters clears both the controls and the URL.
+    await page
+      .getByRole("button", { name: /clear filters/i })
+      .first()
+      .click();
+    await expect(search).toHaveValue("");
+    await expect(page.getByLabel("Filter by status")).toHaveValue("");
+    await expect(page.getByLabel("Filter by group")).toHaveValue("");
+    await expect(page.getByLabel("Filter by health")).toHaveValue("");
+    await expect(page.getByLabel("Filter by push delivery")).toHaveValue("");
+    await expect(page.getByLabel("Filter by last seen")).toHaveValue("");
+    await expect.poll(() => new URL(page.url()).searchParams.toString()).toBe("");
+  });
+
   test("shows the tenant health rollup and exposes device health", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Health Tenant");
 
@@ -95,6 +169,39 @@ test.describe("device fleet management", () => {
     expect(credentials.apns).toMatchObject({ configured: false, level: "missing" });
     expect(credentials.scepCa.level).toMatch(/missing|ok/);
     expect(credentials.deviceCertificates.total).toBe(0);
+
+    // APNs delivery health is summarized on the dashboard.
+    const pushHealth = await api<{
+      counts: {
+        configured: number;
+        attempted: number;
+        succeeded: number;
+        failing: number;
+        invalidToken: number;
+      };
+      recentFailures: unknown[];
+    }>(page, `/api/v1/tenants/${tenant.id}/push-health`);
+    expect(pushHealth.counts).toEqual({
+      configured: 0,
+      attempted: 0,
+      succeeded: 0,
+      failing: 0,
+      invalidToken: 0,
+    });
+    expect(pushHealth.recentFailures).toEqual([]);
+    await expect(
+      page.getByRole("heading", { name: "Apple push delivery", exact: true }),
+    ).toBeVisible();
+
+    // Device activity is tenant-scoped and missing devices are a 404.
+    const missingActivity = await page.request.get(
+      `/api/v1/tenants/${tenant.id}/devices/not-a-device/activity`,
+    );
+    expect(missingActivity.status()).toBe(404);
+    const missingPushHealth = await page.request.get(
+      "/api/v1/tenants/not-a-real-tenant/push-health",
+    );
+    expect(missingPushHealth.status()).toBe(404);
     await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
     const missingCredentials = await page.request.get(
       "/api/v1/tenants/not-a-real-tenant/credential-health",
@@ -115,5 +222,53 @@ test.describe("device fleet management", () => {
       { headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" } },
     );
     expect(unknownRevoke.status()).toBe(404);
+  });
+
+  test("imports pre-registered devices from a CSV with preview validation", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Import Tenant");
+    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Staff" }),
+    });
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+
+    await page.getByRole("button", { name: /import csv/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Import pre-registered devices")).toBeVisible();
+    const input = page.locator('input[type="file"]');
+
+    // A row without a serial is surfaced before anything is sent.
+    await input.setInputFiles({
+      name: "invalid.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("serial,name\n,Missing serial\n"),
+    });
+    await expect(dialog.getByText(/serial is required/i)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^import 0 devices$/i })).toBeDisabled();
+
+    await input.setInputFiles({
+      name: "devices.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(
+        "serial,name,asset_tag,group,notes\r\nC02IMPORT,Campus Mac,AT-900,Staff,Imported by e2e\r\n",
+      ),
+    });
+    await expect(dialog.getByText(/1\s+row ready/i)).toBeVisible();
+    await expect(dialog.getByText("C02IMPORT")).toBeVisible();
+    await dialog.getByRole("button", { name: /^import 1 device$/i }).click();
+    await expect(dialog.getByText("Created")).toBeVisible();
+    await dialog.getByRole("button", { name: /^done$/i }).click();
+
+    const registrations = await api<{
+      rows: Array<{ serial: string; name: string; assetTag: string; groupName: string }>;
+    }>(page, `/api/v1/tenants/${tenant.id}/device-pre-registrations`);
+    expect(registrations.rows).toEqual([
+      expect.objectContaining({
+        serial: "C02IMPORT",
+        name: "Campus Mac",
+        assetTag: "AT-900",
+        groupName: "Staff",
+      }),
+    ]);
   });
 });

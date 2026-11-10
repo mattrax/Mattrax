@@ -2,6 +2,7 @@ import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, QueryError } from "~/components/mdm/common";
+import { QrCode } from "~/components/mdm/qr-code";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -23,6 +24,10 @@ export default function EnrollmentSettingsPage() {
     queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
     queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
   }));
+  const preRegistrations = useQuery(() => ({
+    queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
+    queryFn: () => enterprise.listDevicePreRegistrations(params.tenantId),
+  }));
 
   const [edit, setEdit] = createSignal(false);
   const [code, setCode] = createSignal("");
@@ -30,7 +35,6 @@ export default function EnrollmentSettingsPage() {
   const [apple, setApple] = createSignal(false);
   const [windows, setWindows] = createSignal(false);
   const [android, setAndroid] = createSignal(false);
-  const [assetTag, setAssetTag] = createSignal(false);
 
   createEffect(
     () => ({ data: enrollment.data, edit: edit() }),
@@ -41,7 +45,6 @@ export default function EnrollmentSettingsPage() {
       setApple(data.enabledApple);
       setWindows(data.enabledWindows);
       setAndroid(data.enabledAndroid);
-      setAssetTag(data.enabledAssetTag);
     },
   );
 
@@ -60,7 +63,6 @@ export default function EnrollmentSettingsPage() {
         enabledApple: apple(),
         enabledWindows: windows(),
         enabledAndroid: android(),
-        enabledAssetTag: assetTag(),
       }),
     onSuccess: async () => {
       setEdit(false);
@@ -76,10 +78,11 @@ export default function EnrollmentSettingsPage() {
     <div class="grid gap-6 xl:grid-cols-2">
       <QueryError
         class="xl:col-span-2"
-        error={enrollment.error ?? apns.error}
+        error={enrollment.error ?? apns.error ?? preRegistrations.error}
         onRetry={() => {
           void enrollment.refetch();
           void apns.refetch();
+          void preRegistrations.refetch();
         }}
       />
       <Card class="xl:col-span-2">
@@ -103,6 +106,15 @@ export default function EnrollmentSettingsPage() {
             <Button as="a" href={url()} target="_blank" variant="outline">
               Open
             </Button>
+          </div>
+          <div class="flex flex-wrap items-center gap-4 rounded-lg border bg-stone-50 p-3">
+            <Show when={enrollment.data}>
+              <QrCode value={url()} label="QR code for the enrollment link" size={132} />
+            </Show>
+            <p class="max-w-sm text-sm text-muted-foreground">
+              Scan this code with a phone or tablet to open the enrollment page. It contains the
+              link only; share the enrollment password separately.
+            </p>
           </div>
           <Show when={!enabled()}>
             <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -141,12 +153,10 @@ export default function EnrollmentSettingsPage() {
               title="Android"
               description="Android enrollment isn't available yet."
             />
-            <ToggleRow
-              checked={assetTag()}
-              onChange={setAssetTag}
-              title="Ask for an asset tag"
-              description="Prompt for an asset tag during enrollment."
-            />
+            <p class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+              Asset tags are set from a device's detail page, or supplied ahead of time with a CSV
+              pre-registration import on the Devices page.
+            </p>
             <div class="grid gap-4 md:grid-cols-2">
               <Field label="Enrollment password" hint="Leave blank to allow open enrollment.">
                 <Input
@@ -211,6 +221,66 @@ export default function EnrollmentSettingsPage() {
               Apple devices need an APNs certificate before they can be managed. Set it up from
               Management.
             </p>
+          </Show>
+        </CardContent>
+      </Card>
+
+      <Card class="xl:col-span-2">
+        <CardHeader>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Pre-registered devices</CardTitle>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Devices imported by serial before enrollment. Name, asset tag, notes and group are
+                applied automatically when the device checks in.
+              </p>
+            </div>
+            <Button
+              as="a"
+              href={`/t/${params.tenantId}/devices?import=1`}
+              variant="outline"
+              size="sm"
+            >
+              Import CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Show
+            when={(preRegistrations.data?.rows.length ?? 0) > 0}
+            fallback={
+              <p class="text-sm text-muted-foreground">
+                {preRegistrations.isPending
+                  ? "Loading pre-registrations…"
+                  : "No devices are pre-registered yet."}
+              </p>
+            }
+          >
+            <ul class="divide-y rounded-lg border">
+              <For each={preRegistrations.data?.rows.slice(0, 5) ?? []}>
+                {(row) => (
+                  <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                    <span class="font-medium text-stone-800">{row.serial}</span>
+                    <span class="text-muted-foreground">{row.name ?? "Unnamed"}</span>
+                    <Show when={row.assetTag}>
+                      <span class="text-xs text-muted-foreground">Asset: {row.assetTag}</span>
+                    </Show>
+                    <Show when={row.groupName}>
+                      <span class="text-xs text-muted-foreground">Group: {row.groupName}</span>
+                    </Show>
+                    <Badge variant={row.consumedDeviceId ? "secondary" : "default"} class="ml-auto">
+                      {row.consumedDeviceId ? "Applied" : "Pending"}
+                    </Badge>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <Show when={(preRegistrations.data?.rows.length ?? 0) > 5}>
+              <p class="mt-2 text-xs text-muted-foreground">
+                Showing 5 of {preRegistrations.data?.rows.length} pre-registrations. Import more or
+                manage devices from the Devices page.
+              </p>
+            </Show>
           </Show>
         </CardContent>
       </Card>

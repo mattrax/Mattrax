@@ -7,6 +7,7 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
+  type DevicePreRegistrationImportRequest,
   type DeviceRow,
   type DeviceSearchQuery,
   type DeviceSearchRow,
@@ -29,6 +30,8 @@ export type {
   CredentialHealthResponse,
   CredentialInfo,
   CredentialLevel,
+  DeviceActivityEntry,
+  DeviceActivityKind,
   DeviceCertificateCounts,
   DeviceCertificateInfo,
   DeviceHealth,
@@ -36,6 +39,16 @@ export type {
   DeviceHealthFilter,
   DeviceHealthReason,
   DeviceHealthResponse,
+  DevicePreRegistrationImportRequest,
+  DevicePreRegistrationImportResponse,
+  DevicePreRegistrationImportResult,
+  DevicePreRegistrationListResponse,
+  DevicePreRegistrationRow,
+  DevicePushErrorCode,
+  DevicePushFailure,
+  DevicePushHealthCounts,
+  DevicePushHealthResponse,
+  DevicePushInfo,
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
@@ -84,6 +97,10 @@ export const enterpriseKeys = {
     ["enterprise", "device-health", tenantId ?? "", id ?? ""] as const,
   deviceHealthSummary: (tenantId: RouteParam) =>
     ["enterprise", "device-health-summary", tenantId ?? ""] as const,
+  devicePushHealth: (tenantId: RouteParam) =>
+    ["enterprise", "device-push-health", tenantId ?? ""] as const,
+  deviceActivity: (tenantId: RouteParam, id: RouteParam, limit = 50) =>
+    ["enterprise", "device-activity", tenantId ?? "", id ?? "", limit] as const,
   credentialHealth: (tenantId: RouteParam) =>
     ["enterprise", "credential-health", tenantId ?? ""] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
@@ -96,6 +113,8 @@ export const enterpriseKeys = {
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
     ["enterprise", "enrollment-attempts", tenantId ?? "", limit] as const,
+  devicePreRegistrations: (tenantId: RouteParam) =>
+    ["enterprise", "device-pre-registrations", tenantId ?? ""] as const,
   search: (tenantId: RouteParam, term: string, limit = 30) =>
     ["enterprise", "search", tenantId ?? "", term, limit] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
@@ -267,6 +286,33 @@ export const enterprise = {
     endpoint((api) =>
       api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
+  listDevicePreRegistrations: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listDevicePreRegistrations({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  importDevicePreRegistrations: (
+    tenantId: RouteParam,
+    rows: DevicePreRegistrationImportRequest["rows"],
+  ) =>
+    endpoint((api) =>
+      api.importDevicePreRegistrations({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { rows },
+      }),
+    ),
+  deleteDevicePreRegistration: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.deleteDevicePreRegistration({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  deleteDevicePreRegistrations: (tenantId: RouteParam, ids: string[]) =>
+    endpoint((api) =>
+      api.deleteDevicePreRegistrations({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: ids,
+      }),
+    ),
   listDeviceCommands: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
       api.listDeviceCommands({
@@ -309,6 +355,17 @@ export const enterprise = {
   getDeviceHealthSummary: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getDeviceHealthSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getDevicePushHealth: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getDevicePushHealth({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getDeviceActivity: (tenantId: RouteParam, id: RouteParam, limit = 50) =>
+    endpoint((api) =>
+      api.getDeviceActivity({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        query: { limit },
+      }),
     ),
   getCredentialHealth: (tenantId: RouteParam) =>
     endpoint((api) =>

@@ -63,6 +63,58 @@ test.describe("device enrollment", () => {
     await expect(page.getByText(/Android enrollment isn't available yet/i)).toBeVisible();
   });
 
+  test("deletes a tenant after its enrollment link has been visited", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Deletable Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    // Visiting the public link writes an enrollment_attempt row. Tenant
+    // deletion relies on ON DELETE CASCADE for that table.
+    await gotoHydrated(page, `/enroll/${enrollment.id}`);
+    await expect(page.getByText(/enroll in mattrax/i).first()).toBeVisible();
+
+    await expect(
+      api<{ status: string }>(page, `/api/v1/tenants/${tenant.id}`, { method: "DELETE" }),
+    ).resolves.toEqual({ status: "ok" });
+    const removed = await page.request.get(`/api/v1/tenants/${tenant.id}/devices/search`);
+    expect(removed.status()).toBe(404);
+  });
+
+  test("shows a QR code for the public enrollment link", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "QR Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    await gotoHydrated(page, `/enroll/${enrollment.id}`);
+    await expect(page.getByText(/scan to open this page/i)).toBeVisible();
+    const qr = page.getByRole("img", { name: /qr code for this enrollment link/i });
+    await expect(qr).toBeVisible();
+    await expect(qr.locator("path")).toHaveAttribute("d", /^M\d+ \d+h1v1h-1z/);
+  });
+
+  test("returns a friendly error when the installed profile cannot be built", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Profile Error Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    const response = await page.request.get(
+      `/api/v1/enrollment/${enrollment.id}/apple.mobileconfig`,
+    );
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toMatchObject({
+      message: "Apple management is not configured! Contact your administrator.",
+    });
+
+    const settings = await page.request.get(
+      `/api/v1/enrollment/not-a-real-enrollment/apple.mobileconfig`,
+    );
+    expect(settings.status()).toBe(404);
+  });
+
+  test("shows the enrollment QR code in settings", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Settings QR Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/enrollment`);
+    await expect(page.getByRole("img", { name: /qr code for the enrollment link/i })).toBeVisible();
+    await expect(page.getByText("Pre-registered devices")).toBeVisible();
+  });
+
   test("shows recent enrollment activity with outcome badges", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Activity Tenant");
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);

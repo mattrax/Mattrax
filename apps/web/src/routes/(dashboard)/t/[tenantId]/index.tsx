@@ -32,6 +32,10 @@ export default function TenantOverviewPage() {
     queryKey: enterpriseKeys.deviceHealthSummary(tenantId()),
     queryFn: () => enterprise.getDeviceHealthSummary(tenantId()),
   }));
+  const pushHealth = useQuery(() => ({
+    queryKey: enterpriseKeys.devicePushHealth(tenantId()),
+    queryFn: () => enterprise.getDevicePushHealth(tenantId()),
+  }));
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(tenantId(), "group"),
     queryFn: () => enterprise.list(tenantId(), "group"),
@@ -105,6 +109,47 @@ export default function TenantOverviewPage() {
       icon: ShieldCheck,
     },
   ];
+
+  const pushCards = () => {
+    const counts = pushHealth.data?.counts;
+    return [
+      {
+        label: "Configured",
+        value: counts?.configured ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-stone-200 bg-stone-50 text-stone-700",
+        hint: "Apple devices with a push token",
+      },
+      {
+        label: "Attempted",
+        value: counts?.attempted ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-stone-200 bg-stone-50 text-stone-700",
+        hint: "Devices with a recorded push",
+      },
+      {
+        label: "Succeeding",
+        value: counts?.succeeded ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-green-200 bg-green-50/60 text-green-800",
+        hint: "Last push succeeded",
+      },
+      {
+        label: "Failing",
+        value: counts?.failing ?? 0,
+        href: `/t/${tenantId()}/devices?push=failing`,
+        class: "border-amber-200 bg-amber-50/60 text-amber-900",
+        hint: "Last push failed",
+      },
+      {
+        label: "Invalid token",
+        value: counts?.invalidToken ?? 0,
+        href: `/t/${tenantId()}/devices?push=invalid`,
+        class: "border-red-200 bg-red-50/60 text-red-800",
+        hint: "Device must re-enroll",
+      },
+    ];
+  };
 
   const healthCards = () => {
     const counts = health.data?.counts;
@@ -214,6 +259,62 @@ export default function TenantOverviewPage() {
         </div>
         <Show when={health.isError}>
           <QueryError error={health.error} class="mt-3" onRetry={() => void health.refetch()} />
+        </Show>
+      </section>
+
+      <section class="rounded-xl border bg-card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-semibold text-stone-900">Apple push delivery</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Whether APNs wake-ups reach enrolled Apple devices. An invalid token means the device
+              must enroll again.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigate(`/t/${tenantId()}/devices?push=failing`)}
+          >
+            View failing
+          </Button>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <For each={pushCards()}>
+            {(card) => (
+              <button
+                type="button"
+                title={card.hint}
+                onClick={() => navigate(card.href)}
+                class={`rounded-lg border p-3 text-left transition-colors hover:brightness-[0.98] ${card.class}`}
+              >
+                <p class="text-xs font-medium uppercase tracking-wide opacity-80">{card.label}</p>
+                <p class="mt-1 text-2xl font-semibold tracking-tight">{card.value}</p>
+              </button>
+            )}
+          </For>
+        </div>
+        <Show when={(pushHealth.data?.recentFailures.length ?? 0) > 0}>
+          <ul class="mt-4 divide-y rounded-lg border">
+            <For each={pushHealth.data?.recentFailures ?? []}>
+              {(failure) => (
+                <li class="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                  <span class="font-medium text-stone-900">{failure.deviceName}</span>
+                  <span class="text-xs text-muted-foreground">
+                    {failure.errorCode === "invalid_token" ? "Invalid token" : "Delivery failed"} ·{" "}
+                    {failure.consecutiveFailures} consecutive
+                  </span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <Show when={pushHealth.isError}>
+          <QueryError
+            error={pushHealth.error}
+            class="mt-3"
+            onRetry={() => void pushHealth.refetch()}
+          />
         </Show>
       </section>
 

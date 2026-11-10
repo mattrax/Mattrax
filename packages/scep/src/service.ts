@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { ScepError } from "./schema.js";
-import { ScepRepository } from "./repository.js";
+import { ScepRepository, type ScepIssuedCertificate } from "./repository.js";
 import {
   generateCaKeyPair,
   exportPrivateKeyJwk,
@@ -102,6 +102,7 @@ export const ScepService = Layer.effect(
         // CA instead of the original enrollment challenge.
         let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
           undefined;
+        let issued: ScepIssuedCertificate | null = null;
         if (req.renewal) {
           const signer = req.signerCerts[0];
           if (!signer)
@@ -115,9 +116,7 @@ export const ScepService = Layer.effect(
               new ScepError({ message: "SCEP renewal signer is not issued by this CA" }),
             );
           const serial = certificateSerialHex(signer);
-          const issued = repo.findIssuedCertificate
-            ? yield* repo.findIssuedCertificate(serial)
-            : null;
+          issued = repo.findIssuedCertificate ? yield* repo.findIssuedCertificate(serial) : null;
           if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date())) {
             return yield* Effect.fail(
               new ScepError({ message: "SCEP renewal certificate is unknown or expired" }),
@@ -197,6 +196,9 @@ export const ScepService = Layer.effect(
             serial: certificateSerialHex(deviceCert),
             organizationId: authentication.organizationalUnit,
             enrollmentId: authentication.enrollmentId,
+            // Renewals must stay linked to the device so revocation, health and
+            // the next renewal keep working instead of orphaning the identity.
+            deviceId: issued?.deviceId,
             notAfter,
           });
         }

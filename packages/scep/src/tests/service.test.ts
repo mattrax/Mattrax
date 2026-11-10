@@ -4,7 +4,7 @@ import * as pkijs from "pkijs";
 import { ScepService, ScepServiceTag } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
-import { certToPem } from "../pkcs7.js";
+import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import {
   generateKeyPair,
   createTestCaCert,
@@ -262,6 +262,123 @@ describe("ScepService", () => {
 
       const cnAttr = deviceCert.subject.typesAndValues.find((a) => a.type === "2.5.4.3");
       expect((cnAttr?.value as any).valueBlock.value).toBe("MyTestDevice");
+    });
+
+    const renewalFixture = async () => {
+      const caKeyPair = await generateKeyPair();
+      const caCert = await createTestCaCert(caKeyPair, "Test CA");
+      const caCertPem = certToPem(caCert);
+      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
+        "jwk",
+        caKeyPair.privateKey,
+      )) as JsonWebKey;
+
+      const deviceKeyPair = await generateKeyPair();
+      const now = new Date();
+      const identity = await createDeviceCertificate(
+        1,
+        [{ type: "2.5.4.3", value: "Device" }],
+        deviceKeyPair.publicKey,
+        caCert,
+        caKeyPair.privateKey,
+        {
+          notBefore: new Date(now.getTime() - 60_000),
+          notAfter: new Date(now.getTime() + 86_400_000),
+        },
+      );
+      const identitySerial = certificateSerialHex(identity);
+      const csr = await buildTestCsr(deviceKeyPair, "Device");
+      const senderNonce = crypto.getRandomValues(new Uint8Array(16));
+      const renewal = await buildPkcsReq(
+        csr,
+        caCert,
+        identity,
+        deviceKeyPair.privateKey,
+        "txn-renewal",
+        senderNonce,
+        false,
+        "17",
+      );
+      return {
+        caCertPem,
+        caPrivateKeyJwk,
+        identitySerial,
+        renewal,
+      };
+    };
+
+    it("keeps deviceId on renewed certificates so they remain revocable", async () => {
+      const fixture = await renewalFixture();
+      const recorded: Array<Record<string, unknown>> = [];
+      const repo = mockScepRepository({
+        getCa: () =>
+          Effect.succeed({
+            certPem: fixture.caCertPem,
+            privateKeyJwk: fixture.caPrivateKeyJwk,
+          }),
+        saveCa: () => Effect.void,
+        findIssuedCertificate: (serial) =>
+          Effect.succeed(
+            serial === fixture.identitySerial
+              ? {
+                  serial,
+                  organizationId: "tenant-1",
+                  enrollmentId: "enrollment-1",
+                  deviceId: "device-1",
+                  notAfter: new Date(Date.now() + 86_400_000),
+                }
+              : null,
+          ),
+        recordIssuedCertificate: (certificate) =>
+          Effect.sync(() => {
+            recorded.push(certificate as unknown as Record<string, unknown>);
+          }),
+      });
+
+      const response = await runWithService(
+        repo,
+        Effect.gen(function* () {
+          const scep = yield* ScepServiceTag;
+          return yield* scep.pkiOperation(fixture.renewal);
+        }),
+      );
+
+      expect(response.byteLength).toBeGreaterThan(0);
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]).toMatchObject({
+        organizationId: "tenant-1",
+        enrollmentId: "enrollment-1",
+        deviceId: "device-1",
+      });
+    });
+
+    it("cannot renew once the issued identity is gone or the device is unenrolled", async () => {
+      const fixture = await renewalFixture();
+      const repo = mockScepRepository({
+        getCa: () =>
+          Effect.succeed({
+            certPem: fixture.caCertPem,
+            privateKeyJwk: fixture.caPrivateKeyJwk,
+          }),
+        saveCa: () => Effect.void,
+        // The repository rejects deleted/unenrolled devices, which reaches the
+        // service as a failed lookup rather than a renewable identity.
+        findIssuedCertificate: () => Effect.succeed(null),
+        recordIssuedCertificate: () => Effect.void,
+      });
+
+      await expect(
+        runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
+            return yield* scep.pkiOperation(fixture.renewal);
+          }),
+        ),
+      ).rejects.toMatchObject({
+        _tag: "ScepError",
+        message: expect.stringContaining("unknown or expired"),
+      });
     });
   });
 });

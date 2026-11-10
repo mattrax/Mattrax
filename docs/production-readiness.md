@@ -25,12 +25,17 @@ architecture notes in the porting plan.
 - Daily maintenance runs via a Worker Cron Trigger: expired invitations, stale
   devices, expired auth proofs/sessions and audit retention.
 - Device lists have server-side search, filters, sort, pagination and CSV export.
-  Group detail loads only its own devices.
+  Group detail loads only its own devices. The `health` filter is derived from
+  declarations/inventory rather than a stored column, so it evaluates the
+  tenant's devices in application code (bounded by the tenant, not the whole
+  fleet); it is not indexed.
 - `maxDevices = 0` means unlimited, and the enrollment page shows the Windows
   discovery URL and an accurate Android availability state.
 - Device health rolls up enrollment state, last-seen age, declaration failures,
-  FileVault and battery condition, reported disk pressure, and identity state,
-  with a tenant dashboard summary and device detail card.
+  FileVault and battery condition, and reported disk pressure, with a tenant
+  dashboard summary and device detail card. Identity certificate state is
+  summarized separately under credential health (it is not part of the device
+  health level).
 - DDM status items are persisted as device inventory (FileVault, battery health,
   model number, client capabilities, disk usage) with a tolerant parser for
   nested and flattened keys, exposed through the API, device detail and CSV
@@ -41,6 +46,17 @@ architecture notes in the porting plan.
   threshold (30/7/expired) per day; there is no email delivery yet.
 - SCEP identities can be revoked per device; unenrollment/deletion revokes
   device-scoped certificates and renewal rejects revoked identities.
+- APNs delivery outcomes are recorded per device (`last_push_at`,
+  `last_push_ok_at`, `last_push_error`, consecutive failures). Invalid tokens
+  (`BadDeviceToken`, `Unregistered`, HTTP 410) are surfaced as "device must
+  re-enroll", the tenant dashboard summarizes delivery health via
+  `GET /v1/tenants/:tenantId/push-health`, and device search accepts
+  `push=failing|invalid`.
+- Device detail has an aggregated activity timeline
+  (`GET /v1/tenants/:tenantId/devices/:id/activity`) merging audit events,
+  commands, declaration changes, certificate issue/revocation and lifecycle
+  timestamps. It is computed from existing tables; a dedicated event table is a
+  later optimisation.
 
 ## Remaining production work
 

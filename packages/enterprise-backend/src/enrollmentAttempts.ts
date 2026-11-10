@@ -20,6 +20,21 @@ export const ENROLLMENT_ATTEMPT_OUTCOMES = [
 ] as const;
 export type EnrollmentAttemptOutcome = (typeof ENROLLMENT_ATTEMPT_OUTCOMES)[number];
 
+/**
+ * Repeated public enrollment-link GETs are deduped per
+ * `(enrollmentId, ipHash, outcome)` inside this window. Diagnostics are meant
+ * to describe a visit, not every reload/poll, and an unbounded append would
+ * grow one row per request.
+ */
+export const ENROLLMENT_ATTEMPT_DEDUPE_MS = 5 * 60 * 1000;
+
+/**
+ * Hard cap on distinct diagnostics for one `(enrollment, client)` pair inside
+ * the dedupe window, so a client that alternates outcomes cannot append
+ * without bound.
+ */
+export const ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT = 5;
+
 export type EnrollmentAttemptEvaluation = {
   readonly outcome: EnrollmentAttemptOutcome;
   readonly detail: string;

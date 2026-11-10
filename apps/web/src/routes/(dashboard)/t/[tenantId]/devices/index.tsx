@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { keepPreviousData, useQuery } from "@tanstack/solid-query";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import {
   DeviceStatusBadge,
   EmptyState,
@@ -14,13 +14,42 @@ import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import {
   enterprise,
   enterpriseKeys,
   type DeviceHealthFilter,
   type DeviceRow,
 } from "~/lib/enterprise";
+import {
+  DEVICE_IMPORT_MAX_ROWS,
+  parseDeviceImportCsv,
+  toDeviceImportPayload,
+  type DeviceImportParseResult,
+} from "~/lib/device-import";
 
 const PAGE_SIZE = 50;
+
+const FILTER_PARAM_KEYS = [
+  "q",
+  "status",
+  "proto",
+  "groupId",
+  "staleDays",
+  "health",
+  "push",
+  "sort",
+  "direction",
+] as const;
+/** `setSearchParams` merges, so every known key must be sent (empty deletes). */
+const emptyFilterParams = () =>
+  Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""])) as Record<string, string>;
 
 const selectClass = "h-9 rounded-lg border bg-white px-3 text-sm text-stone-800";
 
@@ -61,6 +90,18 @@ export default function DevicesPage() {
       ? value
       : "";
   };
+  const initialPush = (): "failing" | "invalid" | "" => {
+    const value = param(searchParams.push);
+    return value === "failing" || value === "invalid" ? value : "";
+  };
+  const initialSort = (): MdmSortState => {
+    const value = param(searchParams.sort);
+    const dir = param(searchParams.direction) === "desc" ? "desc" : "asc";
+    return {
+      id: value === "lastSeenAt" || value === "enrolledAt" || value === "status" ? value : "name",
+      dir,
+    };
+  };
 
   const [q, setQ] = createSignal(param(searchParams.q) ?? "");
   const [debouncedQ, setDebouncedQ] = createSignal(param(searchParams.q) ?? "");
@@ -69,10 +110,88 @@ export default function DevicesPage() {
   const [groupId, setGroupId] = createSignal(param(searchParams.groupId) ?? "");
   const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
-  const [sort, setSort] = createSignal<MdmSortState>({ id: "name", dir: "asc" });
+  const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
+  const [sort, setSort] = createSignal<MdmSortState>(initialSort());
   const [page, setPage] = createSignal(0);
   const [exporting, setExporting] = createSignal(false);
   const [exportError, setExportError] = createSignal<unknown>();
+  const [exportTruncated, setExportTruncated] = createSignal(false);
+
+  const queryClient = useQueryClient();
+  const [importOpen, setImportOpen] = createSignal(param(searchParams.import) === "1");
+  const [importFileName, setImportFileName] = createSignal("");
+  const [importParsed, setImportParsed] = createSignal<DeviceImportParseResult | null>(null);
+  const [importResult, setImportResult] = createSignal<{
+    created: number;
+    updated: number;
+    failed: number;
+    results: ReadonlyArray<{ serial: string; status: string; error?: string | null }>;
+  } | null>(null);
+  const [importing, setImporting] = createSignal(false);
+  const [importError, setImportError] = createSignal<unknown>();
+  let importFileInput: HTMLInputElement | undefined;
+
+  const resetImport = () => {
+    setImportFileName("");
+    setImportParsed(null);
+    setImportResult(null);
+    setImportError(undefined);
+    if (importFileInput) importFileInput.value = "";
+  };
+  const openImport = () => {
+    resetImport();
+    setImportOpen(true);
+  };
+  const closeImport = () => {
+    setImportOpen(false);
+    if (param(searchParams.import) === "1") setSearchParams({ import: "" }, { replace: true });
+  };
+  const chooseImportFile = () => importFileInput?.click();
+  const readImportFile = async (file: File | undefined) => {
+    resetImport();
+    if (!file) return;
+    setImportFileName(file.name);
+    try {
+      setImportParsed(parseDeviceImportCsv(await file.text()));
+    } catch (error) {
+      setImportError(error);
+    }
+  };
+  const runImport = async () => {
+    const parsed = importParsed();
+    if (!parsed || parsed.issues.length > 0 || parsed.rows.length === 0) return;
+    setImporting(true);
+    setImportError(undefined);
+    try {
+      const result = await enterprise.importDevicePreRegistrations(
+        params.tenantId,
+        toDeviceImportPayload(parsed.rows),
+      );
+      setImportResult(result);
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceSearch(params.tenantId),
+      });
+    } catch (error) {
+      setImportError(error);
+    } finally {
+      setImporting(false);
+    }
+  };
+  const downloadImportTemplate = () => {
+    const csv =
+      "serial,name,asset_tag,group,notes\r\nC02EXAMPLE001,Alice's MacBook,AT-1001,Staff,Assigned at intake\r\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "device-pre-registrations.csv";
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   // Debounce typing so the search endpoint is not hit on every keystroke.
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -101,58 +220,77 @@ export default function DevicesPage() {
       groupId: groupId(),
       staleDays: staleDays(),
       health: health(),
+      push: push(),
+      sort: sort()?.id ?? "name",
+      direction: sort()?.dir ?? "asc",
     }),
     (state) => {
       if (!urlInitialised) {
         urlInitialised = true;
         return;
       }
-      const next: Record<string, string> = {};
+      const next = emptyFilterParams();
       if (state.q) next.q = state.q;
       if (state.status) next.status = state.status;
       if (state.proto) next.proto = state.proto;
       if (state.groupId) next.groupId = state.groupId;
       if (state.staleDays) next.staleDays = state.staleDays;
       if (state.health) next.health = state.health;
+      if (state.push) next.push = state.push;
+      if (state.sort && state.sort !== "name") next.sort = state.sort;
+      if (state.direction === "desc") next.direction = state.direction;
       setSearchParams(next, { replace: true });
     },
   );
+
   // Keep the controls in sync when the URL changes from back/forward or a link.
-  // Comparisons happen in the tracking scope; the effect only writes signals.
+  // Only the parsed URL is tracked here: local control signals must never be
+  // read in the same reactive scope, or every keystroke would be mistaken for a
+  // URL change and reverted to the last debounced value.
+  const urlFilters = createMemo(() => ({
+    q: param(searchParams.q) ?? "",
+    status: initialStatus(),
+    proto: initialProto(),
+    groupId: param(searchParams.groupId) ?? "",
+    staleDays: initialStale(),
+    health: initialHealth(),
+    push: initialPush(),
+    sort: initialSort(),
+  }));
   createEffect(
-    () => {
-      const urlQ = param(searchParams.q) ?? "";
-      const urlStatus = initialStatus();
-      const urlProto = initialProto();
-      const urlGroup = param(searchParams.groupId) ?? "";
-      const urlStale = initialStale();
-      const urlHealth = initialHealth();
-      return {
-        q: urlQ,
-        qChanged: urlQ !== q(),
-        status: urlStatus,
-        statusChanged: urlStatus !== status(),
-        proto: urlProto,
-        protoChanged: urlProto !== proto(),
-        groupId: urlGroup,
-        groupChanged: urlGroup !== groupId(),
-        staleDays: urlStale,
-        staleChanged: urlStale !== staleDays(),
-        health: urlHealth,
-        healthChanged: urlHealth !== health(),
-      };
-    },
-    (state) => {
-      if (state.qChanged) {
-        setQ(state.q);
-        setDebouncedQ(state.q);
+    urlFilters,
+    (filters) => {
+      // Reads of the controls are deliberately untracked: this effect must run
+      // only when the URL changes, not on every keystroke. Reading them inside
+      // the compute function would recreate the original feedback loop.
+      const local = untrack(() => ({
+        q: q(),
+        status: status(),
+        proto: proto(),
+        groupId: groupId(),
+        staleDays: staleDays(),
+        health: health(),
+        push: push(),
+        sort: sort(),
+      }));
+      if (filters.q !== local.q) {
+        setQ(filters.q);
+        setDebouncedQ(filters.q);
+        setPage(0);
       }
-      if (state.statusChanged) setStatus(state.status);
-      if (state.protoChanged) setProto(state.proto);
-      if (state.groupChanged) setGroupId(state.groupId);
-      if (state.staleChanged) setStaleDays(state.staleDays);
-      if (state.healthChanged) setHealth(state.health);
+      if (filters.status !== local.status) setStatus(filters.status);
+      if (filters.proto !== local.proto) setProto(filters.proto);
+      if (filters.groupId !== local.groupId) setGroupId(filters.groupId);
+      if (filters.staleDays !== local.staleDays) setStaleDays(filters.staleDays);
+      if (filters.health !== local.health) setHealth(filters.health);
+      if (filters.push !== local.push) setPush(filters.push);
+      if (
+        local.sort?.id !== filters.sort?.id ||
+        (local.sort?.dir ?? "asc") !== (filters.sort?.dir ?? "asc")
+      )
+        setSort(filters.sort ?? { id: "name", dir: "asc" });
     },
+    { defer: true },
   );
 
   const filters = () => ({
@@ -162,6 +300,7 @@ export default function DevicesPage() {
     groupId: groupId() || undefined,
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
+    push: push() || undefined,
     sort: (sort()?.id ?? "name") as "name" | "lastSeenAt" | "enrolledAt" | "status",
     direction: sort()?.dir ?? ("asc" as const),
   });
@@ -197,7 +336,7 @@ export default function DevicesPage() {
     },
   );
   const hasFilters = () =>
-    Boolean(debouncedQ() || status() || proto() || groupId() || staleDays() || health());
+    Boolean(debouncedQ() || status() || proto() || groupId() || staleDays() || health() || push());
   const clearFilters = () => {
     setQ("");
     setDebouncedQ("");
@@ -206,17 +345,34 @@ export default function DevicesPage() {
     setGroupId("");
     setStaleDays("");
     setHealth("");
+    setPush("");
+    setSort({ id: "name", dir: "asc" });
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
-    setSearchParams({}, { replace: true });
+    setSearchParams(emptyFilterParams(), { replace: true });
   };
 
   const exportCsv = async () => {
     setExporting(true);
     setExportError(undefined);
+    setExportTruncated(false);
     try {
-      const csv = await enterprise.exportDevices(params.tenantId, filters());
+      // Use the raw response rather than the typed client so the
+      // `X-Export-Truncated` header can drive an in-page notice.
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters()))
+        if (value !== undefined) query.set(key, String(value));
+      const search = query.toString();
+      const suffix = search ? `?${search}` : "";
+      const response = await fetch(
+        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/devices/export${suffix}`,
+        { credentials: "include" },
+      );
+      if (!response.ok)
+        throw new Error((await response.text()) || `Export failed (${response.status})`);
+      const csv = await response.text();
+      setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -239,6 +395,9 @@ export default function DevicesPage() {
         description="Inventory, sync, and retire enrolled Apple, Windows, and Android devices."
         actions={
           <>
+            <Button variant="outline" onClick={openImport}>
+              Import CSV
+            </Button>
             <Button variant="outline" onClick={exportCsv} disabled={exporting()}>
               {exporting() ? "Exporting…" : "Export CSV"}
             </Button>
@@ -250,6 +409,20 @@ export default function DevicesPage() {
       />
       <Show when={exportError()}>
         <ErrorText error={exportError()} />
+      </Show>
+      <Show when={exportTruncated()}>
+        <div
+          role="status"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          <span>
+            The export reached the {10_000}-row limit and was truncated. Narrow the filters to
+            export the rest.
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setExportTruncated(false)}>
+            Dismiss
+          </Button>
+        </div>
       </Show>
       <MdmTable<DeviceRow>
         mode="server"
@@ -307,9 +480,13 @@ export default function DevicesPage() {
                 setPage(0);
               }}
             >
-              <option value="">Any group</option>
+              <option value="" selected={!groupId()}>
+                Any group
+              </option>
               {groups.data?.rows.map((group) => (
-                <option value={group.id}>{group.name}</option>
+                <option value={group.id} selected={group.id === groupId()}>
+                  {group.name}
+                </option>
               ))}
             </select>
             <select
@@ -327,6 +504,19 @@ export default function DevicesPage() {
               <option value="critical">Critical</option>
               <option value="stale">Stale (7d)</option>
               <option value="unknown">Unknown</option>
+            </select>
+            <select
+              class={selectClass}
+              aria-label="Filter by push delivery"
+              value={push()}
+              onChange={(event) => {
+                setPush(event.currentTarget.value as "failing" | "invalid" | "");
+                setPage(0);
+              }}
+            >
+              <option value="">Any push state</option>
+              <option value="failing">Push failing</option>
+              <option value="invalid">Invalid token</option>
             </select>
             <select
               class={selectClass}
@@ -481,6 +671,178 @@ export default function DevicesPage() {
           },
         ]}
       />
+
+      <input
+        ref={importFileInput}
+        type="file"
+        accept=".csv,text/csv"
+        class="hidden"
+        onChange={(event) => void readImportFile(event.currentTarget.files?.[0])}
+      />
+
+      <Dialog open={importOpen()} onOpenChange={(open) => !open && closeImport()}>
+        <DialogContent class="max-h-[85vh] max-w-2xl overflow-y-auto rounded-xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>Import pre-registered devices</DialogTitle>
+            <DialogDescription>
+              Columns: <span class="font-mono">serial,name,asset_tag,group,notes</span>. A device is
+              matched by serial when it enrolls, then these details are applied automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Show when={!importResult()}>
+            <div class="space-y-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={chooseImportFile}>
+                  {importFileName() ? "Choose another CSV" : "Choose CSV"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={downloadImportTemplate}>
+                  Download template
+                </Button>
+                <Show when={importFileName()}>
+                  <span class="text-xs text-muted-foreground">{importFileName()}</span>
+                </Show>
+              </div>
+
+              <Show when={importParsed()}>
+                {(parsed) => (
+                  <div class="space-y-4">
+                    <div class="flex flex-wrap items-center gap-2 text-sm">
+                      <strong>{parsed().rows.length}</strong>{" "}
+                      <span class="text-muted-foreground">
+                        row{parsed().rows.length === 1 ? "" : "s"} ready
+                      </span>
+                      <Show when={parsed().issues.length > 0}>
+                        <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                          {parsed().issues.length} issue
+                          {parsed().issues.length === 1 ? "" : "s"}
+                        </span>
+                      </Show>
+                      <span class="ml-auto text-xs text-muted-foreground">
+                        Limit {DEVICE_IMPORT_MAX_ROWS.toLocaleString()} rows
+                      </span>
+                    </div>
+
+                    <Show when={parsed().issues.length > 0}>
+                      <ul class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <For each={parsed().issues.slice(0, 100)}>
+                          {(issue) => (
+                            <li>
+                              Row {issue.row}: {issue.message}
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+
+                    <Show when={parsed().rows.length > 0}>
+                      <div class="max-h-64 overflow-auto rounded-lg border">
+                        <table class="w-full text-left text-sm">
+                          <thead class="sticky top-0 bg-stone-50 text-xs uppercase text-stone-500">
+                            <tr>
+                              <th class="px-3 py-2">Serial</th>
+                              <th class="px-3 py-2">Name</th>
+                              <th class="px-3 py-2">Asset tag</th>
+                              <th class="px-3 py-2">Group</th>
+                              <th class="px-3 py-2">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y">
+                            <For each={parsed().rows.slice(0, 20)}>
+                              {(row) => (
+                                <tr>
+                                  <td class="px-3 py-2 font-mono text-xs">{row.serial}</td>
+                                  <td class="px-3 py-2">{row.name ?? "—"}</td>
+                                  <td class="px-3 py-2">{row.assetTag ?? "—"}</td>
+                                  <td class="px-3 py-2">{row.groupName ?? "—"}</td>
+                                  <td class="px-3 py-2 text-muted-foreground">
+                                    {row.notes ?? "—"}
+                                  </td>
+                                </tr>
+                              )}
+                            </For>
+                          </tbody>
+                        </table>
+                      </div>
+                      <Show when={parsed().rows.length > 20}>
+                        <p class="text-xs text-muted-foreground">
+                          Showing the first 20 rows. All {parsed().rows.length} rows will be
+                          imported.
+                        </p>
+                      </Show>
+                    </Show>
+                  </div>
+                )}
+              </Show>
+
+              <ErrorText error={importError()} />
+              <DialogFooter>
+                <Button variant="outline" onClick={closeImport}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={
+                    importing() ||
+                    !importParsed() ||
+                    (importParsed()?.issues.length ?? 1) > 0 ||
+                    (importParsed()?.rows.length ?? 0) === 0
+                  }
+                  onClick={() => void runImport()}
+                >
+                  {importing()
+                    ? "Importing…"
+                    : `Import ${importParsed()?.rows.length ?? 0} device${
+                        (importParsed()?.rows.length ?? 0) === 1 ? "" : "s"
+                      }`}
+                </Button>
+              </DialogFooter>
+            </div>
+          </Show>
+
+          <Show when={importResult()}>
+            {(result) => (
+              <div class="space-y-4">
+                <div class="grid grid-cols-3 gap-2 text-center">
+                  <div class="rounded-lg border bg-green-50 p-3">
+                    <div class="text-2xl font-semibold text-green-700">{result().created}</div>
+                    <div class="text-xs text-green-700">Created</div>
+                  </div>
+                  <div class="rounded-lg border bg-stone-50 p-3">
+                    <div class="text-2xl font-semibold text-stone-700">{result().updated}</div>
+                    <div class="text-xs text-stone-700">Updated</div>
+                  </div>
+                  <div class="rounded-lg border bg-red-50 p-3">
+                    <div class="text-2xl font-semibold text-red-700">{result().failed}</div>
+                    <div class="text-xs text-red-700">Failed</div>
+                  </div>
+                </div>
+                <Show when={result().failed > 0}>
+                  <ul class="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    <For each={result().results.filter((row) => row.status === "error")}>
+                      {(row) => (
+                        <li>
+                          <span class="font-mono text-xs">{row.serial}</span>:{" "}
+                          {row.error ?? "Failed"}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <p class="text-sm text-muted-foreground">
+                  Pre-registrations are applied when the matching device enrolls. You can review
+                  them in Enrollment settings.
+                </p>
+                <DialogFooter>
+                  <Button variant="outline" onClick={resetImport}>
+                    Import another
+                  </Button>
+                  <Button onClick={closeImport}>Done</Button>
+                </DialogFooter>
+              </div>
+            )}
+          </Show>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

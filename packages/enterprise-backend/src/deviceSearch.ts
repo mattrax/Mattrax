@@ -19,6 +19,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type DeviceHealthFilter = "healthy" | "attention" | "critical" | "unknown" | "stale";
 
+/** APNs delivery state filters for the device list. */
+export type DevicePushFilter = "failing" | "invalid";
+
 export type DeviceSearchFilters = {
   readonly q?: string;
   readonly status?: DeviceStatusValue;
@@ -28,6 +31,8 @@ export type DeviceSearchFilters = {
   readonly notSeenBefore?: Date;
   /** Only devices whose derived health rollup matches this level. */
   readonly health?: DeviceHealthFilter;
+  /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
+  readonly push?: DevicePushFilter;
   readonly limit: number;
   readonly offset: number;
   readonly sort: DeviceSearchSort;
@@ -87,6 +92,7 @@ export const normalizeDeviceSearchQuery = (
     groupId: optionalText(query.groupId),
     notSeenBefore,
     health: query.health,
+    push: query.push,
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),
     sort: query.sort ?? "name",

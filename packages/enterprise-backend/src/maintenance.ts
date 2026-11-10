@@ -42,6 +42,13 @@ export const CREDENTIAL_ALERT_ACTION = "credentials.expiry_warning";
 
 export type CredentialAlertThreshold = "expired" | "7d" | "30d";
 
+/** UTC-date bucket used to dedupe credential alerts, e.g. `2026-11-10`. */
+export const credentialAlertDay = (now: Date): string => now.toISOString().slice(0, 10);
+
+/** Start of the UTC day, so date-bucket alerts do not drift across midnight. */
+export const startOfUtcDay = (now: Date): Date =>
+  new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
 const alertThreshold = (health: CredentialHealth): CredentialAlertThreshold | null => {
   const credentials = [health.apns, health.scepCa];
   if (credentials.some((credential) => credential.level === "expired")) return "expired";
@@ -180,37 +187,41 @@ export const runMaintenance = (
 
     // 6. Credential expiry warnings. APNs and SCEP CA expiries are otherwise
     //    only visible on one settings page, so write one audit event per
-    //    organisation per threshold per day. The audit trail itself is the
-    //    dedupe store, which avoids a dedicated alert table.
+    //    organisation per threshold per UTC day. The audit trail itself is the
+    //    dedupe store, which avoids a dedicated alert table. The lookup is
+    //    scoped to one organisation and the current day so it can use the
+    //    `(organization_id, action)` / `(organization_id, created_at)` indexes
+    //    instead of scanning every tenant's alert history.
     if (options.credentialAlerts !== false) {
-      const alertCutoff = new Date(now.getTime() - day);
-      const existingAlerts = (yield* db
-        .select()
-        .from(s.auditLog)
-        .where(
-          and(
-            eq(s.auditLog.action, CREDENTIAL_ALERT_ACTION),
-            gte(s.auditLog.createdAt, alertCutoff),
-          ),
-        )) as Array<{
-        organizationId: string;
-        metadata: unknown;
-        createdAt: Date;
-      }>;
-      const alerted = new Set<string>();
-      for (const entry of existingAlerts) {
-        const createdAt =
-          entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt);
-        if (Number.isNaN(createdAt.getTime()) || createdAt < alertCutoff) continue;
-        const threshold = thresholdFromMetadata(entry.metadata);
-        if (threshold) alerted.add(`${entry.organizationId}:${threshold}`);
-      }
-
+      const alertDay = credentialAlertDay(now);
+      const alertCutoff = startOfUtcDay(now);
       const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
       for (const organization of organizations) {
+        const existingAlerts = (yield* db
+          .select()
+          .from(s.auditLog)
+          .where(
+            and(
+              eq(s.auditLog.organizationId, organization.id),
+              eq(s.auditLog.action, CREDENTIAL_ALERT_ACTION),
+              gte(s.auditLog.createdAt, alertCutoff),
+            ),
+          )) as Array<{
+          metadata: unknown;
+          createdAt: Date;
+        }>;
+        const alerted = new Set<string>();
+        for (const entry of existingAlerts) {
+          const createdAt =
+            entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt);
+          if (Number.isNaN(createdAt.getTime()) || createdAt < alertCutoff) continue;
+          const threshold = thresholdFromMetadata(entry.metadata);
+          if (threshold) alerted.add(threshold);
+        }
+
         const health = yield* loadCredentialHealth(db, organization.id, now);
         const threshold = alertThreshold(health);
-        if (!threshold || alerted.has(`${organization.id}:${threshold}`)) continue;
+        if (!threshold || alerted.has(threshold)) continue;
         yield* db.insert(s.auditLog).values({
           id: id(),
           organizationId: organization.id,
@@ -221,6 +232,7 @@ export const runMaintenance = (
           targetId: organization.id,
           metadata: {
             threshold,
+            day: alertDay,
             apns: health.apns,
             scepCa: health.scepCa,
             deviceCertificates: health.deviceCertificates,

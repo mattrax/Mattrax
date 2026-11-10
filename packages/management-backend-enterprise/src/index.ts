@@ -39,11 +39,10 @@ import {
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
 const DEVICE_INFORMATION_ACTIVATION_SERVER_TOKEN = "660CF896-1647-4FAD-B8A8-7A2190B5B554";
 const DEVICE_INFORMATION_CONFIGURATION_ID = "13DE3EE0-D5A8-46E9-B967-27E56A4D918F";
-const DEVICE_INFORMATION_CONFIGURATION_SERVER_TOKEN = "6C4178EE-B3BF-496D-A110-12EE4BC2A781";
 const MANAGEMENT_DECLARATION_ID = "F8C4C3A1-2B6E-4D7F-A9E5-3C8B7D9E2F4A";
 const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A67";
 
-const DEVICE_INFORMATION_STATUS_ITEMS = [
+export const DEVICE_INFORMATION_STATUS_ITEMS = [
   "device.identifier.serial-number",
   "device.identifier.udid",
   "device.model.family",
@@ -107,6 +106,15 @@ const hashToken = async (parts: Iterable<string>) => {
 };
 
 const jsonHash = async (value: unknown) => hashToken([JSON.stringify(value)]);
+
+/**
+ * The status-subscription declaration's server token must change whenever the
+ * subscribed item list changes, otherwise devices keep their cached declaration
+ * and never report newly added inventory items.
+ */
+export const deviceInformationConfigurationToken = (
+  items: ReadonlyArray<string> = DEVICE_INFORMATION_STATUS_ITEMS,
+) => hashToken(items);
 
 type DeviceRow = typeof s.device.$inferSelect;
 
@@ -230,10 +238,14 @@ const declarationItemsForDevice = (
     for (const row of rows)
       uniqueConfigurations.set(configurationDeclarationIdentifier(row.policyId, row.kind), row);
 
+    const deviceInformationServerToken = yield* Effect.promise(() =>
+      deviceInformationConfigurationToken(),
+    );
+
     const configurations = [
       {
         identifier: DEVICE_INFORMATION_CONFIGURATION_ID,
-        serverToken: DEVICE_INFORMATION_CONFIGURATION_SERVER_TOKEN,
+        serverToken: deviceInformationServerToken,
       },
       ...(yield* Effect.promise(() =>
         Promise.all(
@@ -290,7 +302,8 @@ const updateInventoryFromStatus = (
     if (inventory.osBuild) update.osBuild = inventory.osBuild;
     if (inventory.fileVaultEnabled !== undefined)
       update.fileVaultEnabled = inventory.fileVaultEnabled;
-    if (inventory.batteryHealth) update.batteryHealth = inventory.batteryHealth;
+    if (inventory.batteryHealth !== undefined)
+      update.batteryHealth = inventory.batteryHealth ?? null;
     if (inventory.capabilities !== undefined) update.capabilities = inventory.capabilities;
     if (inventory.diskTotal) update.diskTotal = inventory.diskTotal;
     if (inventory.diskUsed) update.diskUsed = inventory.diskUsed;
@@ -448,7 +461,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .limit(1);
                 if (!organization) return yield* Effect.fail(new UnknownDevice());
 
-                const [existing] = yield* db
+                const [existingByUdid] = yield* db
                   .select()
                   .from(s.device)
                   .where(
@@ -458,40 +471,113 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     ),
                   )
                   .limit(1);
+                const serialNumber = event.serialNumber?.trim() || null;
+                const [preRegistration] = serialNumber
+                  ? yield* db
+                      .select()
+                      .from(s.devicePreRegistration)
+                      .where(
+                        and(
+                          eq(s.devicePreRegistration.organizationId, organizationId),
+                          eq(s.devicePreRegistration.serial, serialNumber),
+                        ),
+                      )
+                      .limit(1)
+                  : [];
+                // A pre-registered serial may already belong to a device row
+                // enrolled under an older UDID. Reuse that row instead of
+                // hitting the tenant's `(organization, serial)` unique index.
+                const [existingBySerial] =
+                  !existingByUdid && preRegistration && serialNumber
+                    ? yield* db
+                        .select()
+                        .from(s.device)
+                        .where(
+                          and(
+                            eq(s.device.organizationId, organizationId),
+                            eq(s.device.serial, serialNumber),
+                          ),
+                        )
+                        .limit(1)
+                    : [];
+                const existing = existingByUdid ?? existingBySerial;
                 const identityFingerprint = scope.identityCertificateFingerprintSha256;
                 // Only an unenrolled slot may be reclaimed by a new identity.
                 // Overwriting an enrolled device from a different certificate
                 // would let one enrolled device hijack another device's UDID.
                 if (
-                  existing &&
+                  existingByUdid &&
                   identityFingerprint &&
-                  existing.dmIdentityFingerprint &&
-                  existing.dmIdentityFingerprint !== identityFingerprint &&
-                  existing.status === "enrolled"
+                  existingByUdid.dmIdentityFingerprint &&
+                  existingByUdid.dmIdentityFingerprint !== identityFingerprint &&
+                  existingByUdid.status === "enrolled"
                 )
                   return yield* Effect.fail(new UnknownDevice());
                 const deviceId = existing?.id ?? id();
+                const preRegistrationMetadata = preRegistration
+                  ? {
+                      ...(preRegistration.name?.trim()
+                        ? { name: preRegistration.name.trim() }
+                        : {}),
+                      ...(preRegistration.assetTag != null
+                        ? { assetTag: preRegistration.assetTag }
+                        : {}),
+                      ...(preRegistration.notes != null ? { notes: preRegistration.notes } : {}),
+                    }
+                  : {};
                 const common = {
                   organizationId,
                   proto: "apple" as const,
                   status: "enrolling" as const,
-                  name: event.serialNumber ?? event.model ?? scope.udid,
+                  name: serialNumber ?? event.model ?? scope.udid,
                   model: event.model ?? null,
-                  serial: event.serialNumber ?? null,
+                  serial: serialNumber,
                   osVersion: event.osVersion ?? null,
                   vendor: "Apple",
-                  physicalName: event.serialNumber ?? event.model ?? scope.udid,
+                  physicalName: serialNumber ?? event.model ?? scope.udid,
                   dmIdentifier: scope.udid,
                   dmCertHash: yield* Effect.promise(() => certHash(scope.identityCertificate)),
                   dmIdentityFingerprint:
                     identityFingerprint ?? existing?.dmIdentityFingerprint ?? null,
                   ddmDeclarationsToken: null,
                   lastSeenAt: now(),
+                  ...preRegistrationMetadata,
                 };
                 if (existing) {
                   yield* db.update(s.device).set(common).where(eq(s.device.id, deviceId));
                 } else {
                   yield* db.insert(s.device).values({ id: deviceId, enrolledAt: now(), ...common });
+                }
+                if (preRegistration) {
+                  // The group is tenant-scoped at import time; re-check
+                  // ownership here so a stale or forged row cannot cross
+                  // tenants if the group was reassigned.
+                  const [group] = preRegistration.groupId
+                    ? yield* db
+                        .select()
+                        .from(s.enterpriseGroup)
+                        .where(
+                          and(
+                            eq(s.enterpriseGroup.id, preRegistration.groupId),
+                            eq(s.enterpriseGroup.organizationId, organizationId),
+                          ),
+                        )
+                        .limit(1)
+                    : [];
+                  if (group)
+                    yield* db
+                      .insert(s.groupDevice)
+                      .values({ groupId: group.id, deviceId })
+                      .onDuplicateKeyUpdate({ set: { groupId: group.id } });
+                  yield* db
+                    .update(s.devicePreRegistration)
+                    .set({ consumedDeviceId: deviceId, updatedAt: now() })
+                    .where(
+                      and(
+                        eq(s.devicePreRegistration.id, preRegistration.id),
+                        eq(s.devicePreRegistration.organizationId, organizationId),
+                      ),
+                    );
                 }
                 yield* db
                   .insert(s.deviceApple)
@@ -889,7 +975,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               return {
                 Type: "com.apple.configuration.management.status-subscriptions",
                 Identifier: DEVICE_INFORMATION_CONFIGURATION_ID,
-                ServerToken: DEVICE_INFORMATION_CONFIGURATION_SERVER_TOKEN,
+                ServerToken: yield* Effect.promise(() => deviceInformationConfigurationToken()),
                 Payload: { StatusItems: DEVICE_INFORMATION_STATUS_ITEMS.map((Name) => ({ Name })) },
               };
             }

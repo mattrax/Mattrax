@@ -121,6 +121,12 @@ describe("csv", () => {
     ).toBe("critical");
   });
 
+  it("passes the push delivery filter through", () => {
+    expect(normalizeDeviceSearchQuery({ push: "failing" }, new Date()).push).toBe("failing");
+    expect(normalizeDeviceSearchQuery({ push: "invalid" }, new Date()).push).toBe("invalid");
+    expect(normalizeDeviceSearchQuery({}, new Date()).push).toBeUndefined();
+  });
+
   it("writes CRLF rows with a trailing newline", () => {
     expect(
       toCsv(

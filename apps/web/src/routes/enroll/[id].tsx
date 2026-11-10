@@ -1,7 +1,8 @@
 import { Meta, Title } from "@solidjs/meta";
 import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createSignal, For, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -27,6 +28,9 @@ export default function EnrollPage() {
     event.preventDefault();
     setSearch({ code: code() });
   };
+  const enrollmentUrl = createMemo(
+    () => `${globalThis.location?.origin ?? ""}/enroll/${params.id}`,
+  );
 
   return (
     <main class="min-h-svh bg-stone-950 px-4 py-10 text-stone-950">
@@ -80,7 +84,16 @@ export default function EnrollPage() {
               <EnrollmentOptions
                 enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>}
                 id={params.id}
+                code={searchCode() ?? ""}
               />
+              <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
+                <p class="text-sm font-medium text-stone-800">Scan to open this page</p>
+                <QrCode value={enrollmentUrl()} label="QR code for this enrollment link" />
+                <p class="max-w-xs text-center text-xs text-muted-foreground">
+                  This QR code contains the enrollment link only.
+                  <Show when={searchCode()}> It does not include the enrollment password.</Show>
+                </p>
+              </div>
             </Show>
           </CardContent>
         </Card>
@@ -97,6 +110,7 @@ const isAvailable = (value: PlatformEnrollment | WindowsEnrollment) =>
 
 function EnrollmentOptions(props: {
   id: string | undefined;
+  code: string;
   enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
 }) {
   // Always show every platform tab so an administrator can explain why a
@@ -125,7 +139,7 @@ function EnrollmentOptions(props: {
       </div>
       <Switch>
         <Match when={active() === "apple"}>
-          <ApplePane apple={props.enrollment.apple} />
+          <ApplePane apple={props.enrollment.apple} id={props.id} code={props.code} />
         </Match>
         <Match when={active() === "windows"}>
           <WindowsPane windows={props.enrollment.windows} />
@@ -154,32 +168,34 @@ function TabButton(props: { active: boolean; onClick: () => void; children: stri
   );
 }
 
-function ApplePane(props: { apple: PlatformEnrollment }) {
+function ApplePane(props: { apple: PlatformEnrollment; id: string | undefined; code: string }) {
   if (typeof props.apple === "object" && "error" in props.apple)
     return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
   if (typeof props.apple !== "object" || !("profile" in props.apple))
     return (
       <p class="text-center text-sm text-muted-foreground">Apple enrollment is unavailable.</p>
     );
-  const profile = props.apple.profile;
-  const download = () => {
-    const link = document.createElement("a");
-    link.href = `data:application/x-apple-aspen-config;base64,${profile}`;
-    link.download = "enroll.mobileconfig";
-    link.click();
-  };
+  const downloadUrl = createMemo(() => {
+    const base = `/api/v1/enrollment/${encodeURIComponent(props.id ?? "")}/apple.mobileconfig`;
+    return props.code ? `${base}?code=${encodeURIComponent(props.code)}` : base;
+  });
   return (
     <div class="space-y-4">
-      <Button class="w-full" onClick={download}>
-        Download mobileconfig
+      <Button as="a" href={downloadUrl()} class="w-full">
+        Install Apple profile
       </Button>
+      <p class="text-center text-xs text-muted-foreground">
+        Opens the signed `.mobileconfig`. On iPhone or iPad, tap the download, then install it from
+        Settings &gt; General &gt; VPN &amp; Device Management.
+      </p>
       <ol class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-        <li>Download the enrollment profile.</li>
-        <li>Open Settings and install the profile.</li>
-        <li>Return here after the device checks in.</li>
+        <li>Install the enrollment profile.</li>
+        <li>Wait for the device to check in with Mattrax.</li>
+        <li>Return here and follow the setup steps for your platform.</li>
       </ol>
       <p class="text-center text-xs text-muted-foreground">
-        On macOS, open the file from Downloads. On iOS, allow the profile download in Settings.
+        On macOS, open the file from Downloads. If your browser blocks the download, copy this link
+        into Safari: <span class="break-all font-mono">{downloadUrl()}</span>
       </p>
     </div>
   );

@@ -2,7 +2,12 @@ import { Layer, Effect } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { publicEncrypt, constants } from "node:crypto";
-import { ScepRepository, type ScepAuthentication, type ScepPkcsReq } from "../repository.js";
+import {
+  ScepRepository,
+  type ScepAuthentication,
+  type ScepIssuedCertificate,
+  type ScepPkcsReq,
+} from "../repository.js";
 import { ScepError } from "../schema.js";
 import { pemEncode } from "../crypto.js";
 
@@ -215,6 +220,7 @@ export async function buildPkcsReq(
   transactionId: string,
   senderNonce: Uint8Array,
   encryptCsr: boolean,
+  messageType = "19",
 ): Promise<ArrayBuffer> {
   const csrDer = csr.toSchema().toBER(false);
   const innerContent = encryptCsr ? await encryptEnvelopedData(csrDer, caCert) : csrDer;
@@ -265,7 +271,7 @@ export async function buildPkcsReq(
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.2",
-          values: [new asn1js.PrintableString({ value: "19" })],
+          values: [new asn1js.PrintableString({ value: messageType })],
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5",
@@ -296,6 +302,10 @@ export function mockScepRepository(
     getCa: () => Effect.Effect<{ certPem: string; privateKeyJwk: JsonWebKey } | null, ScepError>;
     saveCa: (certPem: string, privateKeyJwk: JsonWebKey) => Effect.Effect<void, ScepError>;
     authenticatePkcsReq: (req: ScepPkcsReq) => Effect.Effect<ScepAuthentication | void, ScepError>;
+    recordIssuedCertificate: (certificate: ScepIssuedCertificate) => Effect.Effect<void, ScepError>;
+    findIssuedCertificate: (
+      serial: string,
+    ) => Effect.Effect<ScepIssuedCertificate | null, ScepError>;
   }>,
 ) {
   return Layer.succeed(
@@ -304,6 +314,12 @@ export function mockScepRepository(
       getCa: overrides?.getCa ?? (() => Effect.succeed(null)),
       saveCa: overrides?.saveCa ?? (() => Effect.void),
       authenticatePkcsReq: overrides?.authenticatePkcsReq ?? (() => Effect.void),
+      ...(overrides?.recordIssuedCertificate
+        ? { recordIssuedCertificate: overrides.recordIssuedCertificate }
+        : {}),
+      ...(overrides?.findIssuedCertificate
+        ? { findIssuedCertificate: overrides.findIssuedCertificate }
+        : {}),
     }),
   );
 }

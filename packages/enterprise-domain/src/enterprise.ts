@@ -6,6 +6,7 @@ const TenantParam = { tenantId: Schema.String };
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
+const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
@@ -132,6 +133,11 @@ const EnterprisePublicEmailErrors = [
 const EnterprisePublicNotFoundErrors = [
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+] as const;
+const EnterprisePublicEnrollmentProfileErrors = [
+  ...EnterprisePublicNotFoundErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
 
 export const UserInfo = Schema.Struct({
@@ -404,10 +410,84 @@ export const DeviceCertificateInfo = Schema.Struct({
 });
 export type DeviceCertificateInfo = typeof DeviceCertificateInfo.Type;
 
+/** APNs delivery state for a single Apple device. */
+export const DevicePushErrorCode = Schema.Literals(["invalid_token", "delivery_failed"]);
+export type DevicePushErrorCode = typeof DevicePushErrorCode.Type;
+
+export const DevicePushInfo = Schema.Struct({
+  /** The device has a token and push magic, so a push could be attempted. */
+  configured: Schema.Boolean,
+  lastAttemptAt: Schema.optional(NullableString),
+  lastSuccessAt: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  lastErrorCode: Schema.optional(Schema.NullOr(DevicePushErrorCode)),
+  consecutiveFailures: Schema.Number,
+  /** Apple rejected the token; the device has to enroll again. */
+  invalidToken: Schema.Boolean,
+});
+export type DevicePushInfo = typeof DevicePushInfo.Type;
+
+/** Tenant-wide APNs delivery rollup. */
+export const DevicePushHealthCounts = Schema.Struct({
+  /** Apple devices that currently have a push token and magic. */
+  configured: Schema.Number,
+  /** Devices with at least one recorded delivery attempt. */
+  attempted: Schema.Number,
+  /** Last delivery succeeded and no failure is outstanding. */
+  succeeded: Schema.Number,
+  /** Devices whose most recent delivery has not been followed by a success. */
+  failing: Schema.Number,
+  /** Devices Apple has told us can no longer receive pushes. */
+  invalidToken: Schema.Number,
+});
+export type DevicePushHealthCounts = typeof DevicePushHealthCounts.Type;
+
+export const DevicePushFailure = Schema.Struct({
+  deviceId: Schema.String,
+  deviceName: Schema.String,
+  at: Schema.String,
+  error: Schema.optional(NullableString),
+  errorCode: Schema.optional(Schema.NullOr(DevicePushErrorCode)),
+  consecutiveFailures: Schema.Number,
+});
+export type DevicePushFailure = typeof DevicePushFailure.Type;
+
+export const DevicePushHealthResponse = Schema.Struct({
+  counts: DevicePushHealthCounts,
+  recentFailures: Schema.Array(DevicePushFailure),
+});
+export type DevicePushHealthResponse = typeof DevicePushHealthResponse.Type;
+
+/** Chronological per-device feed assembled from existing records. */
+export const DeviceActivityKind = Schema.Literals([
+  "audit",
+  "command",
+  "declaration",
+  "lifecycle",
+  "certificate",
+]);
+export type DeviceActivityKind = typeof DeviceActivityKind.Type;
+
+export const DeviceActivityEntry = Schema.Struct({
+  id: Schema.String,
+  kind: DeviceActivityKind,
+  title: Schema.String,
+  detail: Schema.optional(NullableString),
+  status: Schema.optional(NullableString),
+  at: Schema.String,
+});
+export type DeviceActivityEntry = typeof DeviceActivityEntry.Type;
+
+export const DeviceActivityResponse = Schema.Struct({
+  events: Schema.Array(DeviceActivityEntry),
+});
+export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
+
 export const DeviceHealthResponse = Schema.Struct({
   health: DeviceHealth,
   declarations: Schema.Array(DeviceDeclarationInfo),
   certificates: Schema.Array(DeviceCertificateInfo),
+  push: DevicePushInfo,
 });
 export type DeviceHealthResponse = typeof DeviceHealthResponse.Type;
 
@@ -745,6 +825,58 @@ export const SearchResult = Schema.Struct({
 });
 
 export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) });
+
+export const DevicePreRegistrationRow = Schema.Struct({
+  id: Schema.String,
+  serial: Schema.String,
+  name: Schema.optional(NullableString),
+  assetTag: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+  groupId: Schema.optional(NullableString),
+  groupName: Schema.optional(NullableString),
+  consumedDeviceId: Schema.optional(NullableString),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type DevicePreRegistrationRow = typeof DevicePreRegistrationRow.Type;
+
+export const DevicePreRegistrationListResponse = Schema.Struct({
+  rows: Schema.Array(DevicePreRegistrationRow),
+});
+export type DevicePreRegistrationListResponse = typeof DevicePreRegistrationListResponse.Type;
+
+export const DevicePreRegistrationImportRow = Schema.Struct({
+  serial: Schema.String,
+  name: Schema.optional(NullableString),
+  assetTag: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+  /** Tenant-scoped group id. Mutually exclusive with `groupName` when both resolve. */
+  groupId: Schema.optional(NullableString),
+  /** Tenant-scoped group name; resolved case-insensitively. */
+  groupName: Schema.optional(NullableString),
+});
+export type DevicePreRegistrationImportRow = typeof DevicePreRegistrationImportRow.Type;
+
+export const DevicePreRegistrationImportRequest = Schema.Struct({
+  rows: Schema.Array(DevicePreRegistrationImportRow),
+});
+export type DevicePreRegistrationImportRequest = typeof DevicePreRegistrationImportRequest.Type;
+
+export const DevicePreRegistrationImportResult = Schema.Struct({
+  serial: Schema.String,
+  status: Schema.Literals(["created", "updated", "error"]),
+  id: Schema.optional(NullableString),
+  error: Schema.optional(NullableString),
+});
+export type DevicePreRegistrationImportResult = typeof DevicePreRegistrationImportResult.Type;
+
+export const DevicePreRegistrationImportResponse = Schema.Struct({
+  results: Schema.Array(DevicePreRegistrationImportResult),
+  created: Schema.Number,
+  updated: Schema.Number,
+  failed: Schema.Number,
+});
+export type DevicePreRegistrationImportResponse = typeof DevicePreRegistrationImportResponse.Type;
 export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
@@ -779,6 +911,8 @@ export const DeviceSearchQuery = Schema.Struct({
   staleDays: Schema.optional(Schema.Number),
   /** Only devices whose derived health rollup matches this level. */
   health: Schema.optional(DeviceHealthFilter),
+  /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
+  push: Schema.optional(Schema.Literals(["failing", "invalid"])),
   limit: Schema.optional(Schema.Number),
   offset: Schema.optional(Schema.Number),
   sort: Schema.optional(DeviceSearchSort),
@@ -848,6 +982,11 @@ export const EnrollmentQuery = {
    */
   platform: Schema.optional(Schema.Literals(["apple", "win", "android"])),
 };
+
+/** Public mobileconfig download. The body is a signed Apple property list. */
+export const AppleEnrollmentProfileResponse = Schema.String.pipe(
+  HttpApiSchema.asText({ contentType: "application/x-apple-aspen-config" }),
+);
 
 export const EnrollmentAttemptPlatform = Schema.Literals(["apple", "win", "android", "unknown"]);
 export type EnrollmentAttemptPlatform = typeof EnrollmentAttemptPlatform.Type;
@@ -1215,6 +1354,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getAppleEnrollmentProfile", "/v1/enrollment/:id/apple.mobileconfig", {
+      error: EnterprisePublicEnrollmentProfileErrors,
+      params: IdParam,
+      query: EnrollmentQuery,
+      success: AppleEnrollmentProfileResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("getTenantEnrollment", "/v1/tenants/:tenantId/enrollment", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -1316,6 +1463,52 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get(
+      "listDevicePreRegistrations",
+      "/v1/tenants/:tenantId/device-pre-registrations",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantParam,
+        success: DevicePreRegistrationListResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "importDevicePreRegistrations",
+      "/v1/tenants/:tenantId/device-pre-registrations/import",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: DevicePreRegistrationImportRequest,
+        success: DevicePreRegistrationImportResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteDevicePreRegistration",
+      "/v1/tenants/:tenantId/device-pre-registrations/:id",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantPreRegistrationParam,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteDevicePreRegistrations",
+      "/v1/tenants/:tenantId/device-pre-registrations",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: IdsRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.patch("patchDevice", "/v1/tenants/:tenantId/devices/:id", {
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
@@ -1364,6 +1557,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getDeviceActivity", "/v1/tenants/:tenantId/devices/:id/activity", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      query: Schema.Struct({ limit: Schema.optional(Schema.Number) }),
+      success: DeviceActivityResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.post(
       "revokeDeviceIdentity",
       "/v1/tenants/:tenantId/devices/:id/revoke-identity",
@@ -1379,6 +1580,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: DeviceHealthSummaryResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getDevicePushHealth", "/v1/tenants/:tenantId/push-health", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: DevicePushHealthResponse,
     }),
   )
   .add(

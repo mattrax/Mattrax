@@ -16,8 +16,9 @@ export type DeviceInventory = {
   readonly osEdition?: string;
   readonly osVersion?: string;
   readonly osBuild?: string;
-  readonly fileVaultEnabled?: boolean;
-  readonly batteryHealth?: string;
+  /** `null` means the report explicitly says the value is unavailable. */
+  readonly fileVaultEnabled?: boolean | null;
+  readonly batteryHealth?: string | null;
   readonly capabilities?: unknown;
   readonly diskTotal?: string;
   readonly diskUsed?: string;
@@ -183,21 +184,25 @@ export const parseDeviceInventory = (statusItems: unknown): DeviceInventory => {
   if (osVersion) inventory.osVersion = osVersion;
   if (osBuild) inventory.osBuild = osBuild;
 
-  const fileVault = normalizeBoolean(at("diskmanagement.filevault.enabled"));
-  if (fileVault !== undefined) inventory.fileVaultEnabled = fileVault;
+  const fileVault = at("diskmanagement.filevault.enabled");
+  if (fileVault !== undefined) inventory.fileVaultEnabled = normalizeBoolean(fileVault) ?? null;
 
-  const battery = normalizeBatteryHealth(at("device.power.battery-health"));
-  if (battery !== undefined) inventory.batteryHealth = battery;
+  const battery = at("device.power.battery-health");
+  if (battery !== undefined) inventory.batteryHealth = normalizeBatteryHealth(battery) ?? null;
 
-  const capabilities = normalizeCapabilities(at("management.client-capabilities"));
-  if (capabilities !== undefined) inventory.capabilities = capabilities;
+  const capabilities = at("management.client-capabilities");
+  if (capabilities !== undefined)
+    inventory.capabilities = normalizeCapabilities(capabilities) ?? null;
 
   // Apple reports both storage figures in bytes. `diskTotal`/`diskUsed` are
-  // stored as decimal strings for portability across MySQL int widths.
+  // stored as decimal strings for portability across MySQL int widths. When the
+  // figures disagree (available > total) the report is internally inconsistent:
+  // update neither field so a stale `diskUsed` is not paired with a new total.
   const total = byteCount(at("diskmanagement.storage.total"));
   const available = byteCount(at("diskmanagement.storage.available"));
+  if (total !== undefined && available !== undefined && available > total) return inventory;
   if (total !== undefined) inventory.diskTotal = String(total);
-  if (total !== undefined && available !== undefined && available <= total)
+  if (total !== undefined && available !== undefined)
     inventory.diskUsed = String(total - available);
 
   return inventory;

@@ -406,7 +406,7 @@ export const enrollmentAttempt = mysqlTable(
     }).notNull(),
     /** Short, secret-free explanation suitable for the activity list. */
     detail: shortText("detail"),
-    /** Truncated SHA-256 of the client IP, salted with the deployment secret. */
+    /** Truncated SHA-256 of the client IP, salted with the deployment secret. Null when no secret is configured. */
     ipHash: varchar("ip_hash", { length: 64 }),
     userAgent: shortText("user_agent"),
     createdAt: timestamp("created_at").notNull(),
@@ -529,6 +529,22 @@ export const deviceApple = mysqlTable("device_apple", {
   configured: boolean("configured").notNull().default(false),
   deviceToken: shortText("device_token"),
   tokenUpdatedAt: timestamp("token_updated_at"),
+  /** When the last APNs delivery was attempted (success or failure). */
+  lastPushAt: timestamp("last_push_at"),
+  /** When an APNs delivery last succeeded. */
+  lastPushOkAt: timestamp("last_push_ok_at"),
+  /** Short, secret-free description of the last delivery failure. */
+  lastPushError: shortText("last_push_error"),
+  /**
+   * Machine-readable failure class. `invalid_token` means Apple rejected the
+   * device token and the device must re-enroll; null after a success.
+   */
+  lastPushErrorCode: varchar("last_push_error_code", {
+    length: 32,
+    enum: ["invalid_token", "delivery_failed"],
+  }),
+  /** Failures since the last successful delivery; reset to zero on success. */
+  consecutivePushFailures: int("consecutive_push_failures").notNull().default(0),
 });
 
 export const applePushCertificate = mysqlTable("apple_push_certificate", {
@@ -619,6 +635,38 @@ export const policyDeployment = mysqlTable(
   (table) => [
     uniqueIndex("policy_deployment_version_unique").on(table.policyId, table.version),
     index("policy_deployment_policy_idx").on(table.policyId, table.version),
+  ],
+);
+
+/**
+ * Devices an administrator expects to enroll, keyed by hardware serial. A
+ * matching Apple Authenticate consumes the row: its name, asset tag, notes and
+ * group are applied to the device and `consumedDeviceId` records the result.
+ */
+export const devicePreRegistration = mysqlTable(
+  "device_pre_registration",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    serial: shortText("serial").notNull(),
+    name: shortText("name"),
+    assetTag: shortText("asset_tag"),
+    notes: text("notes"),
+    groupId: id("group_id").references(() => enterpriseGroup.id, { onDelete: "set null" }),
+    consumedDeviceId: id("consumed_device_id").references(() => device.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_pre_registration_organization_serial_unique").on(
+      table.organizationId,
+      table.serial,
+    ),
+    index("device_pre_registration_organization_idx").on(table.organizationId, table.createdAt),
   ],
 );
 
@@ -810,6 +858,7 @@ export const relations = defineRelations(
     userGroupMember,
     enterpriseEnrollment,
     device,
+    devicePreRegistration,
     deviceCommand,
     deviceDeclaration,
     deviceApple,
@@ -845,6 +894,10 @@ export const relations = defineRelations(
         to: r.enterpriseEnrollment.organizationId,
       }),
       devices: r.many.device({ from: r.organization.id, to: r.device.organizationId }),
+      devicePreRegistrations: r.many.devicePreRegistration({
+        from: r.organization.id,
+        to: r.devicePreRegistration.organizationId,
+      }),
       applePushCertificate: r.one.applePushCertificate({
         from: r.organization.id,
         to: r.applePushCertificate.organizationId,
@@ -911,6 +964,20 @@ export const relations = defineRelations(
       organization: r.one.organization({ from: r.device.organizationId, to: r.organization.id }),
       apple: r.one.deviceApple({ from: r.device.id, to: r.deviceApple.deviceId }),
       groups: r.many.groupDevice({ from: r.device.id, to: r.groupDevice.deviceId }),
+    },
+    devicePreRegistration: {
+      organization: r.one.organization({
+        from: r.devicePreRegistration.organizationId,
+        to: r.organization.id,
+      }),
+      group: r.one.enterpriseGroup({
+        from: r.devicePreRegistration.groupId,
+        to: r.enterpriseGroup.id,
+      }),
+      consumedDevice: r.one.device({
+        from: r.devicePreRegistration.consumedDeviceId,
+        to: r.device.id,
+      }),
     },
     deviceApple: {
       device: r.one.device({ from: r.deviceApple.deviceId, to: r.device.id }),

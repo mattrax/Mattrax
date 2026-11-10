@@ -103,6 +103,52 @@ describe("summarizeDeviceCertificates", () => {
       ),
     ).toEqual({ total: 4, expiringSoon: 1, expired: 1, revoked: 1 });
   });
+
+  it("counts only the latest identity per device", () => {
+    const history = [
+      // Old renewal history would otherwise show as dozens of expired rows.
+      { deviceId: "device-a", notAfter: daysFromNow(-300), createdAt: daysFromNow(-330) },
+      { deviceId: "device-a", notAfter: daysFromNow(-200), createdAt: daysFromNow(-230) },
+      { deviceId: "device-a", notAfter: daysFromNow(90), createdAt: daysFromNow(-1) },
+      { deviceId: "device-b", notAfter: daysFromNow(-5), createdAt: daysFromNow(-6) },
+    ];
+    expect(summarizeDeviceCertificates(history, now)).toEqual({
+      total: 2,
+      expiringSoon: 0,
+      expired: 1,
+      revoked: 0,
+    });
+  });
+
+  it("keeps a revoked latest identity visible as revoked", () => {
+    expect(
+      summarizeDeviceCertificates(
+        [
+          { deviceId: "device-a", notAfter: daysFromNow(90), createdAt: daysFromNow(-10) },
+          {
+            deviceId: "device-a",
+            notAfter: daysFromNow(90),
+            revokedAt: daysFromNow(-1),
+            createdAt: daysFromNow(-1),
+          },
+        ],
+        now,
+      ),
+    ).toEqual({ total: 1, expiringSoon: 0, expired: 0, revoked: 1 });
+  });
+
+  it("drops legacy device-unscoped certificates that expired long ago", () => {
+    expect(
+      summarizeDeviceCertificates(
+        [
+          { notAfter: daysFromNow(-365) },
+          { notAfter: daysFromNow(-1) },
+          { notAfter: daysFromNow(90) },
+        ],
+        now,
+      ),
+    ).toEqual({ total: 2, expiringSoon: 0, expired: 1, revoked: 0 });
+  });
 });
 
 describe("loadCredentialHealth", () => {
@@ -207,5 +253,30 @@ describe("loadCredentialHealth", () => {
     // Next day: the 7d threshold is reported again once.
     const third = await run(new Date(now.getTime() + DAY + 60 * 60 * 1000));
     expect(third.credentialAlerts).toBe(2);
+  });
+
+  it("reports again just after UTC midnight instead of skipping a day", async () => {
+    const db = await build();
+    const run = (at: Date) =>
+      runEffect(
+        runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(
+          Effect.provideService(Db, db as unknown as Db["Service"]),
+        ),
+      );
+
+    // 23:30 UTC: alerts are written for the 30d and 7d thresholds.
+    const lateNight = new Date("2026-11-10T23:30:00.000Z");
+    expect((await run(lateNight)).credentialAlerts).toBe(2);
+
+    // 00:30 UTC the next day is only an hour later, but it is a new date
+    // bucket. A rolling 24h window would (incorrectly) suppress both alerts.
+    const justAfterMidnight = new Date("2026-11-11T00:30:00.000Z");
+    const alerts = await run(justAfterMidnight);
+    expect(alerts.credentialAlerts).toBe(2);
+    expect(
+      db.store.audit_log
+        .filter((row) => row.action === "credentials.expiry_warning")
+        .map((row) => row.metadata.day),
+    ).toEqual(["2026-11-10", "2026-11-10", "2026-11-11", "2026-11-11"]);
   });
 });

@@ -72,3 +72,47 @@ describe("device inventory migration", () => {
         expect(readMigration(name)).not.toContain(`\`${column}\``);
   });
 });
+
+describe("APNs push telemetry migration", () => {
+  const names = migrationNames();
+  const pushMigrations = names.filter((name) => readMigration(name).includes("`last_push_at`"));
+
+  it("is added by exactly one migration", () => {
+    expect(pushMigrations).toHaveLength(1);
+  });
+
+  it("adds every telemetry column with a failure counter default", () => {
+    const sql = readMigration(pushMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `device_apple`");
+    for (const column of [
+      "last_push_at",
+      "last_push_ok_at",
+      "last_push_error",
+      "last_push_error_code",
+      "consecutive_push_failures",
+    ])
+      expect(sql).toContain(`\`${column}\``);
+    expect(sql).toContain("`consecutive_push_failures` int DEFAULT 0 NOT NULL");
+  });
+
+  it("ships a snapshot with nullable telemetry and a non-null counter", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "device_apple")
+        .map((entry) => [entry.name, entry]),
+    );
+    for (const column of [
+      "last_push_at",
+      "last_push_ok_at",
+      "last_push_error",
+      "last_push_error_code",
+    ]) {
+      const entry = columns.get(column);
+      expect(entry, `missing snapshot column ${column}`).toBeDefined();
+      expect(entry!.notNull).toBe(false);
+    }
+    const counter = columns.get("consecutive_push_failures");
+    expect(counter).toMatchObject({ type: "int", notNull: true, default: "0" });
+  });
+});

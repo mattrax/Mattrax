@@ -23,6 +23,8 @@ export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const CREDENTIAL_WARNING_DAYS = 30;
 /** A credential inside this window is shown as critical. */
 export const CREDENTIAL_CRITICAL_DAYS = 7;
+/** Legacy, device-unscoped certificates this far past expiry are history. */
+export const CERTIFICATE_HISTORY_GRACE_DAYS = 30;
 
 export type CredentialHealth = {
   readonly apns: CredentialInfo;
@@ -82,16 +84,60 @@ export const credentialInfo = (
   level: credentialLevel(configured, expiresAt, now),
 });
 
+export type DeviceCertificateRecord = {
+  readonly notAfter: Date;
+  readonly revokedAt?: Date | null;
+  /** Internal device id; absent on legacy or non-device-scoped rows. */
+  readonly deviceId?: string | null;
+  readonly createdAt?: Date | null;
+};
+
+/**
+ * Only the most recent identity per device describes the device's current
+ * credential health. Older rows are renewal history and must not inflate the
+ * expired/expiring counts on the dashboard.
+ */
+const certificateTime = (certificate: DeviceCertificateRecord): number => {
+  const createdAt = certificate.createdAt?.getTime();
+  if (createdAt !== undefined && Number.isFinite(createdAt)) return createdAt;
+  return certificate.notAfter.getTime();
+};
+
+export const latestDeviceCertificates = (
+  certificates: ReadonlyArray<DeviceCertificateRecord>,
+): DeviceCertificateRecord[] => {
+  const latest = new Map<string, DeviceCertificateRecord>();
+  const unscoped: DeviceCertificateRecord[] = [];
+  for (const certificate of certificates) {
+    if (!certificate.deviceId) {
+      unscoped.push(certificate);
+      continue;
+    }
+    const existing = latest.get(certificate.deviceId);
+    if (!existing || certificateTime(certificate) >= certificateTime(existing))
+      latest.set(certificate.deviceId, certificate);
+  }
+  return [...unscoped, ...latest.values()];
+};
+
 /** Count device identity certificates by expiry/revocation state. */
 export const summarizeDeviceCertificates = (
-  certificates: ReadonlyArray<{ notAfter: Date; revokedAt?: Date | null }>,
+  certificates: ReadonlyArray<DeviceCertificateRecord>,
   now: Date,
 ): DeviceCertificateCounts => {
+  const current = latestDeviceCertificates(certificates).filter(
+    (certificate) =>
+      // Device-scoped rows are already one-per-device; legacy rows have no
+      // device id, so drop only those that expired long enough ago to be
+      // renewal history rather than a current identity.
+      Boolean(certificate.deviceId) ||
+      certificate.notAfter.getTime() >= now.getTime() - CERTIFICATE_HISTORY_GRACE_DAYS * MS_PER_DAY,
+  );
   const cutoff = new Date(now.getTime() + CREDENTIAL_WARNING_DAYS * MS_PER_DAY);
   let expiringSoon = 0;
   let expired = 0;
   let revoked = 0;
-  for (const certificate of certificates) {
+  for (const certificate of current) {
     if (certificate.revokedAt) {
       revoked += 1;
       continue;
@@ -99,7 +145,7 @@ export const summarizeDeviceCertificates = (
     if (certificate.notAfter.getTime() <= now.getTime()) expired += 1;
     else if (certificate.notAfter.getTime() <= cutoff.getTime()) expiringSoon += 1;
   }
-  return { total: certificates.length, expiringSoon, expired, revoked };
+  return { total: current.length, expiringSoon, expired, revoked };
 };
 
 /**
@@ -129,6 +175,8 @@ export const loadCredentialHealth = (
       .where(eq(schema.scepIssuedCertificate.organizationId, organizationId))) as Array<{
       notAfter: Date;
       revokedAt: Date | null;
+      deviceId: string | null;
+      createdAt: Date;
     }>;
 
     return {

@@ -11,12 +11,14 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseService,
   enterpriseApi,
+  type DevicePreRegistrationImportRow,
+  type DevicePreRegistrationImportResponse,
   type EnterpriseAuth,
   policyApplicationKey,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
-import { and, asc, count, desc, eq, inArray, isNull, like, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, like, lt, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
@@ -38,6 +40,8 @@ import {
 } from "@mattrax/apns";
 import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
+import { summarizeApplePushHealth } from "./push.ts";
+import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
 import { syncEntraDirectory } from "./entraSync.ts";
 import {
   DEVICE_EXPORT_MAX_ROWS,
@@ -49,6 +53,8 @@ import {
 import { canEnrollDevice } from "./enrollmentLimit.ts";
 import {
   detectEnrollmentPlatform,
+  ENROLLMENT_ATTEMPT_DEDUPE_MS,
+  ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT,
   evaluateEnrollmentAttempt,
   type EnrollmentAttemptOutcome,
   type EnrollmentAttemptPlatform,
@@ -124,6 +130,57 @@ const isEffectStripeClient = (
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const ok = { status: "ok" as const };
+
+const APPLE_PROFILE_WINDOW_MS = 60_000;
+const APPLE_PROFILE_PER_IP_LIMIT = 60;
+const appleProfileWindows = new Map<string, { count: number; resetAt: number }>();
+
+/**
+ * Best-effort per-isolate limiter for the public mobileconfig endpoint. It is
+ * deliberately cheap: the goal is to stop accidental QR-refresh loops and
+ * trivial download floods, not to be a global quota (that belongs at the edge).
+ */
+const allowAppleProfileRequest = (ip: string | null | undefined) => {
+  const key = ip?.trim() || "local";
+  const timestamp = Date.now();
+  const entry = appleProfileWindows.get(key);
+  if (!entry || entry.resetAt <= timestamp) {
+    appleProfileWindows.set(key, { count: 1, resetAt: timestamp + APPLE_PROFILE_WINDOW_MS });
+    // Bound the map so rotating addresses cannot grow it without limit.
+    if (appleProfileWindows.size > 10_000) {
+      for (const [candidate, value] of appleProfileWindows)
+        if (value.resetAt <= timestamp) appleProfileWindows.delete(candidate);
+    }
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= APPLE_PROFILE_PER_IP_LIMIT;
+};
+
+/** Filesystem-safe tenant name for the mobileconfig `Content-Disposition`. */
+const safeFilename = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "tenant";
+
+/**
+ * Build the download response for an Apple enrollment profile. Exported so the
+ * content type, attachment filename and cache policy can be asserted without
+ * standing up the whole HTTP API.
+ */
+export const appleEnrollmentProfileResponse = (result: {
+  readonly plist: string;
+  readonly filename: string;
+}) =>
+  HttpServerResponse.text(result.plist, {
+    contentType: "application/x-apple-aspen-config",
+    headers: {
+      "Content-Disposition": `attachment; filename="${result.filename}"`,
+      "Cache-Control": "no-store",
+    },
+  });
 
 /** Render the stored capability JSON for CSV export without losing entries. */
 const capabilityText = (value: unknown): string => {
@@ -497,6 +554,17 @@ export const createEnterpriseService = ({
       .from(schema.deviceDeclaration)
       .where(eq(schema.deviceDeclaration.deviceId, deviceId));
 
+  /** Public view of `device_apple` delivery telemetry (never the token). */
+  const rowPushInfo = (apple: any) => ({
+    configured: Boolean(apple?.token && apple?.pushMagic),
+    lastAttemptAt: apple?.lastPushAt ? iso(apple.lastPushAt) : null,
+    lastSuccessAt: apple?.lastPushOkAt ? iso(apple.lastPushOkAt) : null,
+    lastError: apple?.lastPushError ?? null,
+    lastErrorCode: apple?.lastPushErrorCode ?? null,
+    consecutiveFailures: apple?.consecutivePushFailures ?? 0,
+    invalidToken: apple?.lastPushErrorCode === "invalid_token",
+  });
+
   type CertificateDevice = Pick<EnterpriseDevice, "id" | "dmIdentifier">;
 
   const certificateIdsForDevices = (devices: ReadonlyArray<CertificateDevice>) => [
@@ -669,6 +737,22 @@ export const createEnterpriseService = ({
     updatedAt: iso(row.updatedAt),
   });
 
+  const rowPreRegistration = (
+    row: typeof schema.devicePreRegistration.$inferSelect,
+    groupName: string | null,
+  ) => ({
+    id: row.id,
+    serial: row.serial,
+    name: row.name,
+    assetTag: row.assetTag,
+    notes: row.notes,
+    groupId: row.groupId,
+    groupName,
+    consumedDeviceId: row.consumedDeviceId,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
   const getOrCreateEnrollment = (organizationId: string) =>
     Effect.gen(function* () {
       const existing = yield* db.query.enterpriseEnrollment.findFirst({
@@ -710,10 +794,11 @@ export const createEnterpriseService = ({
     Effect.catchCause(
       Effect.gen(function* () {
         let ipHash: string | null = null;
-        if (input.ip) {
-          // Salted so the truncated digest cannot be reversed across
-          // deployments that share an address space.
-          const bytes = new TextEncoder().encode(`${authSecret ?? "enrollment"}:${input.ip}`);
+        // Without a deployment secret a salted digest would be trivially
+        // reversible (or identical across deployments), so do not persist an
+        // address-derived value at all.
+        if (input.ip && authSecret) {
+          const bytes = new TextEncoder().encode(`${authSecret}:${input.ip}`);
           ipHash = (yield* sha256Hex(
             bytes.buffer.slice(
               bytes.byteOffset,
@@ -721,6 +806,29 @@ export const createEnterpriseService = ({
             ) as ArrayBuffer,
           )).slice(0, 32);
         }
+        const timestamp = now();
+        const cutoff = new Date(timestamp.getTime() - ENROLLMENT_ATTEMPT_DEDUPE_MS);
+        const recent = (yield* db
+          .select()
+          .from(schema.enrollmentAttempt)
+          .where(
+            and(
+              eq(schema.enrollmentAttempt.organizationId, input.organizationId),
+              eq(schema.enrollmentAttempt.enrollmentId, input.enrollmentId),
+              gte(schema.enrollmentAttempt.createdAt, cutoff),
+            ),
+          )) as Array<{ ipHash: string | null; outcome: string; createdAt: Date }>;
+        const duplicate = recent.some((row) => {
+          const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+          return (
+            !Number.isNaN(createdAt.getTime()) &&
+            createdAt >= cutoff &&
+            (row.ipHash ?? null) === ipHash &&
+            row.outcome === input.outcome
+          );
+        });
+        const sameClient = recent.filter((row) => (row.ipHash ?? null) === ipHash).length;
+        if (duplicate || sameClient >= ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT) return;
         yield* db.insert(schema.enrollmentAttempt).values({
           id: id(),
           organizationId: input.organizationId,
@@ -730,7 +838,7 @@ export const createEnterpriseService = ({
           detail: input.detail?.slice(0, 255) ?? null,
           ipHash,
           userAgent: input.userAgent?.slice(0, 255) ?? null,
-          createdAt: now(),
+          createdAt: timestamp,
         });
       }),
       () => Effect.void,
@@ -795,11 +903,13 @@ export const createEnterpriseService = ({
       if (filters.health) {
         // Health is derived from declarations and inventory fields, not a
         // stored column. Resolving the matching ids in application code keeps
-        // the filter exactly consistent with the dashboard counts.
+        // the filter exactly consistent with the dashboard counts. The scan is
+        // bounded to one tenant (and the preceding SQL filters); a stored
+        // health column would need a schema redesign and backfill.
         const devices = yield* db
           .select()
           .from(schema.device)
-          .where(eq(schema.device.organizationId, organizationId));
+          .where(and(...conditions));
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
         const declarations = deviceIds.length
           ? yield* db
@@ -824,6 +934,25 @@ export const createEnterpriseService = ({
             ? inArray(schema.device.id, matching)
             : // A sentinel id keeps the generated SQL valid when nothing matches.
               eq(schema.device.id, "__no_matching_health__"),
+        );
+      }
+      if (filters.push) {
+        // Resolve matching devices from `device_apple` up front, like the
+        // health filter. The final device condition remains tenant-scoped, so
+        // ids from other tenants can never leak rows.
+        const appleRows = yield* db
+          .select()
+          .from(schema.deviceApple)
+          .where(
+            filters.push === "invalid"
+              ? eq(schema.deviceApple.lastPushErrorCode, "invalid_token")
+              : gt(schema.deviceApple.consecutivePushFailures, 0),
+          );
+        const deviceIds = appleRows.map((row: { deviceId: string }) => row.deviceId);
+        conditions.push(
+          deviceIds.length > 0
+            ? inArray(schema.device.id, deviceIds)
+            : eq(schema.device.id, "__no_matching_push__"),
         );
       }
       return and(...conditions);
@@ -1879,6 +2008,60 @@ export const createEnterpriseService = ({
           assetTag: enabled && enrollment.enabledAssetTag,
         };
       }),
+    getAppleEnrollmentProfile: (
+      enrollmentId,
+      code,
+      options?: {
+        readonly platform?: string | null;
+        readonly ip?: string | null;
+        readonly userAgent?: string | null;
+      },
+    ) =>
+      Effect.gen(function* () {
+        if (!allowAppleProfileRequest(options?.ip))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Too many profile downloads. Wait a minute and scan the QR code again.",
+            }),
+          );
+
+        const result = (yield* service.getEnrollment(enrollmentId, code, {
+          platform: options?.platform ?? "apple",
+          ip: options?.ip ?? null,
+          userAgent: options?.userAgent ?? null,
+        })) as
+          | { name: string; authenticated: false }
+          | {
+              name: string;
+              authenticated: true;
+              apple: { error: string } | { profile: string };
+            };
+
+        if (!result.authenticated)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "The enrollment password is invalid." }),
+          );
+        if ("error" in result.apple)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.apple.error }));
+        if (!("profile" in result.apple))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Apple enrollment is temporarily unavailable! Contact your administrator.",
+            }),
+          );
+
+        // The profile endpoint is public, so resolve the tenant's display name
+        // from the enrollment row rather than trusting a caller-supplied value.
+        const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
+          where: { id: enrollmentId },
+        });
+        const organization = enrollment
+          ? yield* db.query.organization.findFirst({ where: { id: enrollment.organizationId } })
+          : undefined;
+        const filename = `${safeFilename(organization?.slug ?? organization?.name ?? "tenant")}-enrollment.mobileconfig`;
+
+        return { plist: result.apple.profile, filename };
+      }),
     getTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -2126,6 +2309,220 @@ export const createEnterpriseService = ({
         });
         return ok;
       }),
+    listDevicePreRegistrations: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = (yield* db
+          .select()
+          .from(schema.devicePreRegistration)
+          .where(eq(schema.devicePreRegistration.organizationId, ctx.organization.id))
+          .orderBy(desc(schema.devicePreRegistration.createdAt))) as Array<
+          typeof schema.devicePreRegistration.$inferSelect
+        >;
+        const groups = (yield* db
+          .select()
+          .from(schema.enterpriseGroup)
+          .where(
+            eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+          )) as Array<EnterpriseGroup>;
+        const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+        return {
+          rows: rows.map((row) =>
+            rowPreRegistration(row, row.groupId ? (groupNames.get(row.groupId) ?? null) : null),
+          ),
+        };
+      }),
+    importDevicePreRegistrations: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { rows?: ReadonlyArray<DevicePreRegistrationImportRow> };
+        const rows = Array.isArray(body.rows) ? body.rows : [];
+        if (rows.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Add at least one device row to import." }),
+          );
+        if (rows.length > 1000)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Import at most 1000 devices at a time." }),
+          );
+
+        const groups = (yield* db
+          .select()
+          .from(schema.enterpriseGroup)
+          .where(
+            eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+          )) as Array<EnterpriseGroup>;
+        const groupsById = new Map(groups.map((group) => [group.id, group]));
+        const groupsByName = new Map<string, Array<EnterpriseGroup>>();
+        for (const group of groups) {
+          const key = group.name.trim().toLowerCase();
+          groupsByName.set(key, [...(groupsByName.get(key) ?? []), group]);
+        }
+
+        const text = (value: string | null | undefined, previous: string | null, max: number) => {
+          if (value === undefined) return previous;
+          if (value === null) return null;
+          const trimmed = value.trim();
+          return trimmed ? trimmed.slice(0, max) : null;
+        };
+
+        const results: Array<NonNullable<DevicePreRegistrationImportResponse["results"][number]>> =
+          [];
+
+        for (const row of rows) {
+          const result = yield* Effect.gen(function* () {
+            const serial = typeof row.serial === "string" ? row.serial.trim().slice(0, 255) : "";
+            if (!serial)
+              return {
+                serial: typeof row.serial === "string" ? row.serial : "",
+                status: "error" as const,
+                error: "Serial is required.",
+              };
+
+            const existing = (yield* db.query.devicePreRegistration.findFirst({
+              where: { organizationId: ctx.organization.id, serial },
+            })) as typeof schema.devicePreRegistration.$inferSelect | undefined;
+
+            let groupId = existing?.groupId ?? null;
+            const wantsGroup = row.groupId !== undefined || row.groupName !== undefined;
+            if (wantsGroup) {
+              const requestedId = row.groupId?.trim() || "";
+              const requestedName = row.groupName?.trim() || "";
+              if (requestedId) {
+                if (!groupsById.has(requestedId))
+                  return {
+                    serial,
+                    status: "error" as const,
+                    error: `Group ${requestedId} does not belong to this tenant.`,
+                  };
+                groupId = requestedId;
+              } else if (requestedName) {
+                const matches = groupsByName.get(requestedName.toLowerCase()) ?? [];
+                if (matches.length === 0)
+                  return {
+                    serial,
+                    status: "error" as const,
+                    error: `Group "${requestedName}" was not found in this tenant.`,
+                  };
+                if (matches.length > 1)
+                  return {
+                    serial,
+                    status: "error" as const,
+                    error: `Group name "${requestedName}" is ambiguous; import a group id instead.`,
+                  };
+                groupId = matches[0]!.id;
+              } else {
+                groupId = null;
+              }
+            }
+
+            const timestamp = now();
+            if (existing) {
+              yield* db
+                .update(schema.devicePreRegistration)
+                .set({
+                  name: text(row.name, existing.name, 255),
+                  assetTag: text(row.assetTag, existing.assetTag, 255),
+                  notes: text(row.notes, existing.notes, 10_000),
+                  groupId,
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(schema.devicePreRegistration.id, existing.id),
+                    eq(schema.devicePreRegistration.organizationId, ctx.organization.id),
+                  ),
+                );
+              return { serial, status: "updated" as const, id: existing.id };
+            }
+
+            const registrationId = id();
+            yield* db.insert(schema.devicePreRegistration).values({
+              id: registrationId,
+              organizationId: ctx.organization.id,
+              serial,
+              name: text(row.name, null, 255),
+              assetTag: text(row.assetTag, null, 255),
+              notes: text(row.notes, null, 10_000),
+              groupId,
+              consumedDeviceId: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+            return { serial, status: "created" as const, id: registrationId };
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.succeed({
+                serial:
+                  typeof row.serial === "string" && row.serial.trim() ? row.serial : "(missing)",
+                status: "error" as const,
+                error:
+                  typeof error === "object" && error !== null && "message" in error
+                    ? String((error as { message: unknown }).message)
+                    : "Could not import this row.",
+              }),
+            ),
+          );
+          results.push(result);
+        }
+
+        const created = results.filter((result) => result.status === "created").length;
+        const updated = results.filter((result) => result.status === "updated").length;
+        const failed = results.length - created - updated;
+        yield* audit(ctx, "device_pre_registration.imported", "device_pre_registration", null, {
+          rows: results.length,
+          created,
+          updated,
+          failed,
+        });
+        return { results, created, updated, failed };
+      }),
+    deleteDevicePreRegistration: (request, tenantId, registrationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const row = yield* db.query.devicePreRegistration.findFirst({
+          where: { id: registrationId, organizationId: ctx.organization.id },
+        });
+        if (!row)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Pre-registered device not found" }),
+          );
+        yield* db
+          .delete(schema.devicePreRegistration)
+          .where(
+            and(
+              eq(schema.devicePreRegistration.id, registrationId),
+              eq(schema.devicePreRegistration.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(
+          ctx,
+          "device_pre_registration.deleted",
+          "device_pre_registration",
+          registrationId,
+          {
+            serial: row.serial,
+          },
+        );
+        return ok;
+      }),
+    deleteDevicePreRegistrations: (request, tenantId, ids) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (ids.length > 0)
+          yield* db
+            .delete(schema.devicePreRegistration)
+            .where(
+              and(
+                eq(schema.devicePreRegistration.organizationId, ctx.organization.id),
+                inArray(schema.devicePreRegistration.id, [...ids]),
+              ),
+            );
+        yield* audit(ctx, "device_pre_registration.deleted", "device_pre_registration", null, {
+          ids: [...ids],
+        });
+        return ok;
+      }),
     patchDevice: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -2356,10 +2753,61 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const declarations = yield* deviceDeclarationsFor(device.id);
         const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
+        const apple =
+          device.proto === "apple"
+            ? yield* db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
+            : undefined;
         return {
           health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
+          push: rowPushInfo(apple),
+        };
+      }),
+    getDeviceActivity: (request, tenantId, deviceId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const limit = normalizeDeviceActivityLimit(query?.limit);
+        const audits = yield* db
+          .select()
+          .from(schema.auditLog)
+          .where(
+            and(
+              eq(schema.auditLog.organizationId, ctx.organization.id),
+              eq(schema.auditLog.targetType, "device"),
+              eq(schema.auditLog.targetId, device.id),
+            ),
+          )
+          .orderBy(desc(schema.auditLog.createdAt))
+          .limit(limit);
+        const commands = yield* db
+          .select()
+          .from(schema.deviceCommand)
+          .where(eq(schema.deviceCommand.deviceId, device.id))
+          .orderBy(desc(schema.deviceCommand.updatedAt))
+          .limit(limit);
+        const declarations = yield* deviceDeclarationsFor(device.id);
+        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
+        return {
+          events: buildDeviceActivity(
+            {
+              audits: audits as any,
+              commands: commands as any,
+              declarations: declarations as any,
+              certificates: certificates as any,
+              device: {
+                enrolledAt: device.enrolledAt,
+                lastSeenAt: device.lastSeenAt,
+                inventoryUpdatedAt: device.inventoryUpdatedAt,
+              },
+            },
+            limit,
+          ),
         };
       }),
     getDeviceHealthSummary: (request, tenantId) =>
@@ -2386,6 +2834,46 @@ export const createEnterpriseService = ({
           rowDeviceHealth(device, byDevice.get(device.id) ?? []),
         );
         return { counts: countDeviceHealth(summaries) };
+      }),
+    getDevicePushHealth: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const devices = yield* db
+          .select()
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              eq(schema.device.proto, "apple"),
+            ),
+          );
+        // Pushes are only attempted for live devices, so retiring devices do
+        // not drag the tenant rollup into a failing state forever.
+        const eligible = devices.filter(
+          (device: EnterpriseDevice) =>
+            device.status === "enrolled" || device.status === "unenrolling",
+        );
+        const deviceIds = eligible.map((device: EnterpriseDevice) => device.id);
+        const appleRows = deviceIds.length
+          ? yield* db
+              .select()
+              .from(schema.deviceApple)
+              .where(inArray(schema.deviceApple.deviceId, deviceIds))
+          : [];
+        const names = new Map(eligible.map((device: EnterpriseDevice) => [device.id, device.name]));
+        const recentFailures = appleRows
+          .filter((row: any) => (row.consecutivePushFailures ?? 0) > 0 && row.lastPushAt)
+          .map((row: any) => ({
+            deviceId: row.deviceId,
+            deviceName: names.get(row.deviceId) ?? row.deviceId,
+            at: iso(row.lastPushAt)!,
+            error: row.lastPushError ?? null,
+            errorCode: row.lastPushErrorCode ?? null,
+            consecutiveFailures: row.consecutivePushFailures ?? 0,
+          }))
+          .sort((left: { at: string }, right: { at: string }) => right.at.localeCompare(left.at))
+          .slice(0, 5);
+        return { counts: summarizeApplePushHealth(appleRows), recentFailures };
       }),
     getCredentialHealth: (request, tenantId) =>
       Effect.gen(function* () {
@@ -3706,6 +4194,20 @@ export const enterpriseHandlers = (
         });
       }),
     )
+    .handleRaw("getAppleEnrollmentProfile", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) => {
+        const headers = request.headers as Record<string, string | undefined>;
+        const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
+        return Effect.map(
+          service.getAppleEnrollmentProfile(params.id, query.code, {
+            platform: query.platform ?? "apple",
+            ip: headers["cf-connecting-ip"] ?? forwarded,
+            userAgent: headers["user-agent"],
+          }),
+          (result: { plist: string; filename: string }) => appleEnrollmentProfileResponse(result),
+        );
+      }),
+    )
     .handle("getTenantEnrollment", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getTenantEnrollment(request, params.tenantId),
@@ -3776,6 +4278,26 @@ export const enterpriseHandlers = (
         service.deleteDevices(request, params.tenantId, payload),
       ),
     )
+    .handle("listDevicePreRegistrations", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDevicePreRegistrations(request, params.tenantId),
+      ),
+    )
+    .handle("importDevicePreRegistrations", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.importDevicePreRegistrations(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteDevicePreRegistration", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteDevicePreRegistration(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("deleteDevicePreRegistrations", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteDevicePreRegistrations(request, params.tenantId, payload),
+      ),
+    )
     .handle("patchDevice", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchDevice(request, params.tenantId, params.id, payload),
@@ -3806,6 +4328,11 @@ export const enterpriseHandlers = (
         service.getDeviceHealth(request, params.tenantId, params.id),
       ),
     )
+    .handle("getDeviceActivity", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceActivity(request, params.tenantId, params.id, query),
+      ),
+    )
     .handle("revokeDeviceIdentity", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.revokeDeviceIdentity(request, params.tenantId, params.id),
@@ -3814,6 +4341,11 @@ export const enterpriseHandlers = (
     .handle("getDeviceHealthSummary", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDeviceHealthSummary(request, params.tenantId),
+      ),
+    )
+    .handle("getDevicePushHealth", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDevicePushHealth(request, params.tenantId),
       ),
     )
     .handle("getCredentialHealth", ({ request, params }) =>

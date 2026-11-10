@@ -9,9 +9,12 @@ import {
   pemEncode,
   sealSecret,
 } from "@mattrax/crypto";
-import { generateApnsKeyPair, makeApnsService } from "@mattrax/apns";
+import { ApnsError, generateApnsKeyPair, makeApnsService } from "@mattrax/apns";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/management-backend-enterprise";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import {
+  appleEnrollmentProfileResponse,
+  createEnterpriseService,
+} from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
@@ -96,7 +99,9 @@ const sealedJwk = async (secret = authSecret) => {
   return { keyPair: keys, jwk, encrypted: await sealSecret(secret, JSON.stringify(jwk)) };
 };
 
-const makeContext = async (overrides: { apns?: any; pushes?: Array<any> } = {}) => {
+const makeContext = async (
+  overrides: { apns?: any; pushes?: Array<any>; authSecret?: string | null } = {},
+) => {
   const db = makeDb();
   const now = new Date();
   const user = {
@@ -131,7 +136,7 @@ const makeContext = async (overrides: { apns?: any; pushes?: Array<any> } = {}) 
     stripeClient: makeStripeClient(),
     storage: {} as any,
     auth: auth as any,
-    authSecret,
+    authSecret: overrides.authSecret === null ? undefined : (overrides.authSecret ?? authSecret),
     apns: overrides.apns,
   });
 
@@ -1226,6 +1231,228 @@ describe("enterprise service APNs", () => {
     await runEffect(service.deleteGroups(request(headers), tenant.id, [group.id]));
     expect(pushes.length).toBe(beforeDelete + 2);
   });
+
+  it("records APNs outcomes, classifies invalid tokens and resets failures", async () => {
+    let mode: "ok" | "fail" | "invalid" = "ok";
+    const apns = makeApnsService({
+      name: "fake",
+      available: true,
+      push: () =>
+        mode === "ok"
+          ? Effect.void
+          : Effect.fail(
+              new ApnsError({
+                message:
+                  mode === "invalid"
+                    ? 'APNs rejected push (HTTP 410): {"reason":"Unregistered"}'
+                    : "APNs request failed: temporary",
+              }),
+            ),
+    });
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    const apple = () => db.store.device_apple.find((row: any) => row.deviceId === "device-1")!;
+
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    expect(apple().lastPushAt).toBeInstanceOf(Date);
+    expect(apple().lastPushOkAt).toBeInstanceOf(Date);
+    expect(apple().lastPushError).toBeNull();
+    expect(apple().lastPushErrorCode).toBeNull();
+    expect(apple().consecutivePushFailures).toBe(0);
+    const firstSuccess = apple().lastPushOkAt as Date;
+
+    mode = "fail";
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    expect(apple().lastPushOkAt).toEqual(firstSuccess);
+    expect(apple().consecutivePushFailures).toBe(1);
+    expect(apple().lastPushErrorCode).toBe("delivery_failed");
+    expect(apple().lastPushError).toContain("temporary");
+
+    mode = "ok";
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    expect(apple().consecutivePushFailures).toBe(0);
+    expect(apple().lastPushError).toBeNull();
+    expect(apple().lastPushErrorCode).toBeNull();
+    expect((apple().lastPushOkAt as Date).getTime()).toBeGreaterThanOrEqual(firstSuccess.getTime());
+
+    mode = "invalid";
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    expect(apple().lastPushErrorCode).toBe("invalid_token");
+    expect(apple().consecutivePushFailures).toBe(1);
+    expect(apple().lastPushError).toContain("Unregistered");
+
+    const health = await runEffect(
+      service.getDeviceHealth(request(headers), tenant.id, "device-1"),
+    );
+    expect(health.push).toMatchObject({
+      configured: true,
+      invalidToken: true,
+      consecutiveFailures: 1,
+      lastErrorCode: "invalid_token",
+    });
+  });
+
+  it("reports tenant-scoped push health and filters failing devices", async () => {
+    let rejectDeviceOne = true;
+    const apns = makeApnsService({
+      name: "fake",
+      available: true,
+      push: (input) =>
+        input.pushToken === "device-1-token" && rejectDeviceOne
+          ? Effect.fail(
+              new ApnsError({
+                message: 'APNs rejected push (HTTP 410): {"reason":"Unregistered"}',
+              }),
+            )
+          : Effect.void,
+    });
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    await seedDevice(db, tenant.id, "device-2");
+
+    const other = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+    await seedCertificate(db, other.id);
+    await seedDevice(db, other.id, "device-other");
+
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2"));
+    await runEffect(service.deviceAction(request(headers), other.id, "device-other"));
+
+    const health = await runEffect(service.getDevicePushHealth(request(headers), tenant.id));
+    expect(health.counts).toEqual({
+      configured: 2,
+      attempted: 2,
+      succeeded: 1,
+      failing: 1,
+      invalidToken: 1,
+    });
+    // The other tenant's failing device is not part of this rollup.
+    expect(health.recentFailures.map((failure) => failure.deviceId)).toEqual(["device-1"]);
+
+    const failing = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { push: "failing" }),
+    );
+    expect(failing.devices.map((device) => device.id)).toEqual(["device-1"]);
+    const invalid = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { push: "invalid" }),
+    );
+    expect(invalid.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    // Recovery removes the device from both filters.
+    rejectDeviceOne = false;
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    const none = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { push: "failing" }),
+    );
+    expect(none.devices).toEqual([]);
+  });
+
+  it("aggregates a tenant-scoped device activity timeline", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const other = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+    await seedDevice(db, tenant.id, "device-1");
+    await seedDevice(db, tenant.id, "device-2");
+
+    const time = (value: string) => new Date(value);
+    db.store.audit_log.push(
+      {
+        id: "audit-own",
+        organizationId: tenant.id,
+        action: "device.updated",
+        targetType: "device",
+        targetId: "device-1",
+        actorEmail: "owner@example.com",
+        metadata: { fields: ["name"] },
+        createdAt: time("2026-01-04T00:00:00.000Z"),
+      },
+      {
+        id: "audit-sibling",
+        organizationId: tenant.id,
+        action: "device.updated",
+        targetType: "device",
+        targetId: "device-2",
+        createdAt: time("2026-01-05T00:00:00.000Z"),
+      },
+      {
+        id: "audit-other-tenant",
+        organizationId: other.id,
+        action: "device.updated",
+        targetType: "device",
+        targetId: "device-1",
+        createdAt: time("2026-01-06T00:00:00.000Z"),
+      },
+    );
+    db.store.device_command.push({
+      id: "command-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      requestType: "DeviceLock",
+      status: "succeeded",
+      resultStatus: "Acknowledged",
+      createdAt: time("2026-01-02T00:00:00.000Z"),
+      updatedAt: time("2026-01-02T00:01:00.000Z"),
+    });
+    db.store.device_declaration.push({
+      deviceId: "device-1",
+      identifier: "com.example.policy",
+      declarationType: "configurations",
+      active: true,
+      valid: "valid",
+      updatedAt: time("2026-01-03T00:00:00.000Z"),
+    });
+    db.store.scep_issued_certificate.push({
+      serial: "serial-1",
+      organizationId: tenant.id,
+      enrollmentId: null,
+      deviceId: "device-1",
+      notAfter: time("2027-01-01T00:00:00.000Z"),
+      revokedAt: null,
+      createdAt: time("2026-01-01T00:00:00.000Z"),
+    });
+
+    const result = await runEffect(
+      service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 50 }),
+    );
+    const ids = result.events.map((event) => event.id);
+    expect(ids).toContain("audit:audit-own");
+    expect(ids).toContain("command:command-1");
+    expect(ids).toContain("declaration:com.example.policy");
+    expect(ids).toContain("certificate:serial-1:issued");
+    expect(ids).toContain("lifecycle:enrolled");
+    expect(ids).not.toContain("audit:audit-sibling");
+    expect(ids).not.toContain("audit:audit-other-tenant");
+    // Newest first.
+    const times = result.events.map((event) => Date.parse(event.at));
+    expect([...times].sort((left, right) => right - left)).toEqual(times);
+
+    const limited = await runEffect(
+      service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 2 }),
+    );
+    expect(limited.events).toHaveLength(2);
+
+    await expect(
+      runEffect(service.getDeviceActivity(request(headers), tenant.id, "missing", {})),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    // The device exists, but in another tenant.
+    await expect(
+      runEffect(service.getDeviceActivity(request(headers), other.id, "device-1", {})),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+  });
 });
 
 describe("enterprise policy validation and enrollment", () => {
@@ -1465,6 +1692,61 @@ describe("enterprise policy validation and enrollment", () => {
     ).toHaveLength(0);
   });
 
+  it("dedupes repeated public enrollment visits within the short window", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+
+    const visit = () =>
+      runEffect(
+        service.getEnrollment(enrollment.id, undefined, {
+          platform: "win",
+          ip: "203.0.113.5",
+          userAgent: "Windows NT 10.0",
+        }),
+      );
+
+    await visit();
+    await visit();
+    await visit();
+    expect(db.store.enrollment_attempt).toHaveLength(1);
+
+    // Outside the short window the same visit is a new diagnostic again.
+    db.store.enrollment_attempt[0]!.createdAt = new Date(Date.now() - 6 * 60 * 1000);
+    await visit();
+    expect(db.store.enrollment_attempt).toHaveLength(2);
+
+    // A different outcome or client address is a distinct diagnostic.
+    await runEffect(
+      service.getEnrollment(enrollment.id, undefined, {
+        platform: "win",
+        ip: "198.51.100.9",
+        userAgent: "Windows NT 10.0",
+      }),
+    );
+    expect(db.store.enrollment_attempt).toHaveLength(3);
+  });
+
+  it("does not persist an address hash when no deployment secret is configured", async () => {
+    const { db, service, headers } = await makeContext({ authSecret: null });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+
+    await runEffect(
+      service.getEnrollment(enrollment.id, undefined, {
+        platform: "win",
+        ip: "203.0.113.5",
+        userAgent: "Windows NT 10.0",
+      }),
+    );
+    expect(db.store.enrollment_attempt).toHaveLength(1);
+    expect(db.store.enrollment_attempt[0]!.ipHash).toBeNull();
+  });
+
   it("classifies bad passwords, disabled platforms, limits and missing APNs", async () => {
     const { db, service, headers } = await makeContext();
     const tenant = await runEffect(
@@ -1548,5 +1830,204 @@ describe("enterprise policy validation and enrollment", () => {
     await expect(
       runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+});
+
+describe("Apple enrollment profile download", () => {
+  const setupEnrollment = async () => {
+    const context = await makeContext();
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), {
+        name: "Profile Tenant",
+        slug: "profile-tenant",
+      }),
+    );
+    Object.assign(context.db.store.enterprise_enrollment[0], {
+      enabledApple: true,
+      maxDevices: 100,
+    });
+    context.db.store.apple_push_certificate.push({
+      organizationId: tenant.id,
+      email: "admin@example.com",
+      topic: "com.apple.mgmt.External.profile",
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: null,
+      updatedAt: new Date(),
+    });
+    const enrollment = await runEffect(
+      context.service.getTenantEnrollment(request(context.headers), tenant.id),
+    );
+    return { ...context, tenant, enrollment };
+  };
+
+  it("returns a plist and a safe tenant filename", async () => {
+    const { service, enrollment } = await setupEnrollment();
+    const result = await runEffect(
+      service.getAppleEnrollmentProfile(enrollment.id, undefined, { ip: "profile-ok" }),
+    );
+    expect(result.filename).toBe("profile-tenant-enrollment.mobileconfig");
+    expect(result.plist).toContain("<plist");
+    expect(result.plist).toContain("com.apple.security.scep");
+    expect(result.plist).toContain("com.apple.mdm.token");
+
+    const response = appleEnrollmentProfileResponse(result);
+    expect(response.headers["content-type"]).toBe("application/x-apple-aspen-config");
+    expect(response.headers["content-disposition"]).toBe(
+      'attachment; filename="profile-tenant-enrollment.mobileconfig"',
+    );
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("rejects a bad password and disabled/APNs-missing enrollments", async () => {
+    const { db, service, enrollment } = await setupEnrollment();
+    Object.assign(db.store.enterprise_enrollment[0], { code: "secret" });
+    await expect(
+      runEffect(
+        service.getAppleEnrollmentProfile(enrollment.id, "wrong", { ip: "profile-bad-code" }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+
+    // Try the missing APNs branch with the correct password.
+    db.store.apple_push_certificate.length = 0;
+    await expect(
+      runEffect(
+        service.getAppleEnrollmentProfile(enrollment.id, "secret", { ip: "profile-no-apns" }),
+      ),
+    ).rejects.toMatchObject({
+      _tag: "EnterpriseBadRequest",
+      message: "Apple management is not configured! Contact your administrator.",
+    });
+
+    Object.assign(db.store.enterprise_enrollment[0], { enabledApple: false });
+    await expect(
+      runEffect(
+        service.getAppleEnrollmentProfile(enrollment.id, "secret", { ip: "profile-disabled" }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("returns not found for an unknown enrollment", async () => {
+    const { service } = await makeContext();
+    await expect(
+      runEffect(service.getAppleEnrollmentProfile("missing", undefined, { ip: "profile-missing" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+  });
+});
+
+describe("device pre-registration", () => {
+  const setup = async () => {
+    const context = await makeContext();
+    const first = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "First", slug: "first" }),
+    );
+    const second = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Second", slug: "second" }),
+    );
+    const firstGroup = await runEffect(
+      context.service.createGroup(request(context.headers), first.id, {
+        name: "Staff",
+      }),
+    );
+    const secondGroup = await runEffect(
+      context.service.createGroup(request(context.headers), second.id, {
+        name: "Other Tenant",
+      }),
+    );
+    return { ...context, first, second, firstGroup, secondGroup };
+  };
+
+  it("imports rows, resolves tenant groups and upserts by serial", async () => {
+    const { db, service, headers, first, second, secondGroup } = await setup();
+    const imported = await runEffect(
+      service.importDevicePreRegistrations(request(headers), first.id, {
+        rows: [
+          {
+            serial: "C02A",
+            name: "Alice Mac",
+            assetTag: "AT-1",
+            notes: "Front desk",
+            groupName: "Staff",
+          },
+          { serial: "C02B", name: "Bob Mac", groupName: "Missing" },
+          { serial: "", name: "No serial" },
+        ],
+      }),
+    );
+    expect(imported).toMatchObject({ created: 1, updated: 0, failed: 2 });
+    expect(imported.results.map((row) => row.status)).toEqual(["created", "error", "error"]);
+    expect(db.store.device_pre_registration).toMatchObject([
+      {
+        organizationId: first.id,
+        serial: "C02A",
+        name: "Alice Mac",
+        assetTag: "AT-1",
+        notes: "Front desk",
+        groupId: expect.any(String),
+        consumedDeviceId: null,
+      },
+    ]);
+
+    // Cross-tenant group ids are rejected, not silently applied.
+    const crossTenant = await runEffect(
+      service.importDevicePreRegistrations(request(headers), first.id, {
+        rows: [{ serial: "C02C", groupId: secondGroup.id }],
+      }),
+    );
+    expect(crossTenant.failed).toBe(1);
+
+    // Re-importing the same serial updates the row rather than duplicating it.
+    const updated = await runEffect(
+      service.importDevicePreRegistrations(request(headers), first.id, {
+        rows: [{ serial: "C02A", name: "Alice MacBook", assetTag: "AT-2", groupName: "Staff" }],
+      }),
+    );
+    expect(updated).toMatchObject({ created: 0, updated: 1, failed: 0 });
+    expect(db.store.device_pre_registration).toHaveLength(1);
+    expect(db.store.device_pre_registration[0]).toMatchObject({
+      name: "Alice MacBook",
+      assetTag: "AT-2",
+      notes: "Front desk",
+    });
+
+    const listed = await runEffect(service.listDevicePreRegistrations(request(headers), first.id));
+    expect(listed.rows).toEqual([
+      expect.objectContaining({ serial: "C02A", groupName: "Staff", assetTag: "AT-2" }),
+    ]);
+
+    // The other tenant cannot see or delete the registration.
+    const otherList = await runEffect(
+      service.listDevicePreRegistrations(request(headers), second.id),
+    );
+    expect(otherList.rows).toEqual([]);
+    await expect(
+      runEffect(
+        service.deleteDevicePreRegistration(request(headers), second.id, listed.rows[0]!.id),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+  });
+
+  it("bulk-deletes only rows in the requested tenant", async () => {
+    const { db, service, headers, first } = await setup();
+    const imported = await runEffect(
+      service.importDevicePreRegistrations(request(headers), first.id, {
+        rows: [{ serial: "C02A" }, { serial: "C02B" }],
+      }),
+    );
+    expect(imported.created).toBe(2);
+    const ids = db.store.device_pre_registration.map((row) => row.id as string);
+    await runEffect(service.deleteDevicePreRegistrations(request(headers), first.id, ids));
+    expect(db.store.device_pre_registration).toHaveLength(0);
+  });
+
+  it("requires write access to import", async () => {
+    const { db, service, headers, first } = await setup();
+    db.store.member[0]!.role = "member";
+    await expect(
+      runEffect(
+        service.importDevicePreRegistrations(request(headers), first.id, {
+          rows: [{ serial: "C02A" }],
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
   });
 });
