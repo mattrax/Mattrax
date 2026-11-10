@@ -110,6 +110,14 @@ const EnterpriseApnsErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
+const EnterpriseApplicationErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+const EnterpriseSsoErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
@@ -862,7 +870,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchSsoConfig", "/v1/tenants/:tenantId/sso", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseSsoErrors,
       params: TenantParam,
       payload: PatchSsoConfigRequest,
       success: SsoConfigResponse,
@@ -1265,7 +1273,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("createApplication", "/v1/tenants/:tenantId/applications", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseApplicationErrors,
       params: TenantParam,
       payload: CreateApplicationRequest,
       success: IdResponse,
@@ -1273,7 +1281,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchApplication", "/v1/tenants/:tenantId/applications/:id", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseApplicationErrors,
       params: TenantIdParam,
       payload: PatchApplicationRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),

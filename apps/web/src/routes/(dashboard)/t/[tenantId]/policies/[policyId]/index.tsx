@@ -183,6 +183,14 @@ export default function PolicyDetailPage() {
                 </div>
               }
             >
+              <Show
+                when={configurations().some(([kind]) => kind.startsWith("mttx.android.policy"))}
+              >
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  Android delivery is not configured. This policy is saved, but no Android device
+                  will receive it until the workspace is connected to Android Enterprise.
+                </div>
+              </Show>
               <For each={configurations()}>
                 {([kind, data]) => (
                   <details class="rounded-lg border">

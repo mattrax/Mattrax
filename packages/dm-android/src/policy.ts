@@ -3,9 +3,10 @@ import { Data } from "effect";
 /**
  * Raised when a policy cannot be merged safely.
  *
- * `name` and `policyName` are rejected at every depth: those keys identify the
- * Google-side resource and must never be controlled by policy JSON (path /
- * resource injection).
+ * `name` and `policyName` are rejected at the top level only: those keys
+ * identify the Google-side resource. Nested maps such as
+ * `applications[].managedConfiguration` are application-defined and may use
+ * any key.
  */
 export class PolicyMergeError extends Data.TaggedError("PolicyMergeError")<{
   message: string;
@@ -22,20 +23,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function assertNoForbiddenKeys(value: unknown, path: string): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoForbiddenKeys(item, `${path}[${index}]`));
-    return;
-  }
   if (!isPlainObject(value)) return;
-  for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.has(key)) {
+  for (const key of Object.keys(value)) {
+    if (path === "" && FORBIDDEN_KEYS.has(key)) {
       throw new PolicyMergeError({
         message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
-        path: path === "" ? key : `${path}.${key}`,
+        path: key,
         key,
       });
     }
-    assertNoForbiddenKeys(child, path === "" ? key : `${path}.${key}`);
   }
 }
 
@@ -77,10 +73,10 @@ function mergeInto(
   path: string,
 ): Record<string, unknown> {
   for (const [key, value] of Object.entries(source)) {
-    if (FORBIDDEN_KEYS.has(key)) {
+    if (path === "" && FORBIDDEN_KEYS.has(key)) {
       throw new PolicyMergeError({
         message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
-        path: path === "" ? key : `${path}.${key}`,
+        path: key,
         key,
       });
     }

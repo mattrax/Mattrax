@@ -1025,7 +1025,40 @@ export const createEnterpriseService = ({
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+        if (body.azureTenantId) {
+          const claimed = yield* db.query.ssoConfig.findFirst({
+            where: { azureTenantId: body.azureTenantId },
+          });
+          if (claimed && claimed.organizationId !== ctx.organization.id)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "That Entra tenant is already linked to another workspace",
+              }),
+            );
+        }
         const timestamp = now();
+        if (existing?.azureTenantId !== body.azureTenantId) {
+          // Delta cursors and imported domains belong to the previous Entra
+          // tenant and cannot be reused after a change.
+          yield* db
+            .update(schema.entraDirectorySync)
+            .set({
+              usersDeltaLink: null,
+              groupsDeltaLink: null,
+              status: "idle",
+              lastError: null,
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+          yield* db
+            .delete(schema.ssoDomain)
+            .where(
+              and(
+                eq(schema.ssoDomain.organizationId, ctx.organization.id),
+                eq(schema.ssoDomain.source, "entra"),
+              ),
+            );
+        }
         if (existing) {
           yield* db
             .update(schema.ssoConfig)
@@ -2374,6 +2407,10 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
             );
         }
+        if (source === "store" && !Number.isSafeInteger(Number(body.storeId)))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+          );
         const applicationId = id();
         yield* db.insert(schema.application).values({
           id: applicationId,
@@ -2413,8 +2450,11 @@ export const createEnterpriseService = ({
           notes?: string | null;
         };
         const source = body.source ?? existing.source;
-        const manifestUrl = body.manifestUrl ?? existing.manifestUrl;
-        const storeId = body.storeId ?? existing.storeId;
+        const manifestUrl =
+          body.manifestUrl === undefined ? existing.manifestUrl : body.manifestUrl;
+        const storeId = body.storeId === undefined ? existing.storeId : body.storeId;
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
         if (existing.platform === "apple") {
           if (source === "manifest" && !manifestUrl?.trim())
             return yield* Effect.fail(
@@ -2427,6 +2467,10 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
             );
         }
+        if (source === "store" && !Number.isSafeInteger(Number(storeId)))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+          );
         yield* db
           .update(schema.application)
           .set({
@@ -2557,7 +2601,9 @@ export const createEnterpriseService = ({
               "Uploaded installers are stored but not deployable yet. Use a manifest URL or store ID for Apple apps.",
           };
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
-        const appleDevices = devices.filter((device) => device.proto === "apple");
+        const appleDevices = devices.filter(
+          (device) => device.proto === "apple" && device.status === "enrolled",
+        );
         const skipped = devices.length - appleDevices.length;
         if (appleDevices.length === 0)
           return {
@@ -2568,7 +2614,12 @@ export const createEnterpriseService = ({
           };
         const payload =
           app.source === "store"
-            ? { iTunesStoreID: Number(app.storeId) }
+            ? {
+                iTunesStoreID: Number(app.storeId),
+                ManagementFlags: 1,
+                InstallAsManaged: true,
+                Options: { PurchaseMethod: 1 },
+              }
             : {
                 ManifestURL: app.manifestUrl,
                 ManagementFlags: 1,
@@ -2599,6 +2650,9 @@ export const createEnterpriseService = ({
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+        const existing = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
         const body = payload as { fileName: string; contentType?: string; content: string };
         const bytes = base64ToBytes(body.content);
         const sha256 = yield* sha256Hex(
@@ -2609,10 +2663,10 @@ export const createEnterpriseService = ({
           httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
           customMetadata: { fileName: body.fileName },
         });
+        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
         yield* db
           .update(schema.application)
           .set({
-            source: "upload",
             fileName: body.fileName,
             contentType: body.contentType ?? null,
             size: bytes.byteLength,
@@ -2651,7 +2705,13 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
-        const object = yield* r2.get(app.r2Key);
+        const object = yield* r2
+          .get(app.r2Key)
+          .pipe(
+            Effect.catchTag("R2FileNotFound", () =>
+              Effect.fail(new EnterpriseNotFound({ message: "Application file not found" })),
+            ),
+          );
         const bytes = yield* r2.arrayBuffer(object);
         return {
           sha256,

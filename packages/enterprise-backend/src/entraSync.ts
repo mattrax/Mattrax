@@ -44,6 +44,11 @@ export const syncEntraDirectory = (options: {
       const existing = yield* db.query.ssoDomain.findFirst({
         where: { domain: domain.id },
       });
+      if (existing && existing.organizationId !== organizationId) {
+        // Never reassign a verified domain between tenants. The first owner
+        // keeps it; a conflicting sync is skipped.
+        continue;
+      }
       if (existing) {
         yield* db
           .update(schema.ssoDomain)
@@ -91,17 +96,46 @@ export const syncEntraDirectory = (options: {
         where: { organizationId, objectId },
       });
 
+    const isExpiredDelta = (error: unknown) => {
+      const value = error as { _tag?: string; status?: number; body?: string };
+      return (
+        value?._tag === "RequestFailed" &&
+        (value.status === 410 || /syncStateNotFound|resyncRequired|resync/i.test(value.body ?? ""))
+      );
+    };
+    const usersDeltaPage = (link?: string) =>
+      graph
+        .usersDelta(azureTenantId, link)
+        .pipe(Effect.catchIf(isExpiredDelta, () => graph.usersDelta(azureTenantId, undefined)));
+    const groupsDeltaPage = (link?: string) =>
+      graph
+        .groupsDelta(azureTenantId, link)
+        .pipe(Effect.catchIf(isExpiredDelta, () => graph.groupsDelta(azureTenantId, undefined)));
+
     let usersLink = options.usersDeltaLink ?? undefined;
-    for (let page = 0; page < 50; page++) {
-      const result = yield* graph.usersDelta(azureTenantId, usersLink);
+    let usersComplete = false;
+    for (let page = 0; page < 1000; page++) {
+      const result = yield* usersDeltaPage(usersLink);
       for (const user of result.items) {
         const email = (user.mail ?? user.userPrincipalName)?.trim().toLowerCase();
         const identity = user.id ? yield* findIdentity(user.id) : undefined;
-        const existing = email
-          ? yield* db.query.user.findFirst({ where: { email } })
-          : identity
-            ? yield* db.query.user.findFirst({ where: { id: identity.userId } })
-            : undefined;
+        let existing = identity
+          ? yield* db.query.user.findFirst({ where: { id: identity.userId } })
+          : undefined;
+        if (!existing && email) {
+          const byEmail = yield* db.query.user.findFirst({ where: { email } });
+          if (byEmail) {
+            // Mirror the SSO guard: link an existing account by email only
+            // when this is its sole tenant. Never pull another tenant's user
+            // into this directory.
+            const memberships = yield* db.query.member.findMany({
+              where: { userId: byEmail.id },
+            });
+            if (memberships.length === 1 && memberships[0]?.organizationId === organizationId)
+              existing = byEmail;
+            else continue;
+          }
+        }
         if (user.removed || user.accountEnabled === false) {
           if (existing) {
             yield* db
@@ -112,9 +146,20 @@ export const syncEntraDirectory = (options: {
                   eq(schema.member.userId, existing.id),
                 ),
               );
-            yield* db
-              .delete(schema.userGroupMember)
-              .where(eq(schema.userGroupMember.userId, existing.id));
+            const orgGroups = yield* db
+              .select({ id: schema.userGroup.id })
+              .from(schema.userGroup)
+              .where(eq(schema.userGroup.organizationId, organizationId));
+            if (orgGroups.length)
+              yield* db.delete(schema.userGroupMember).where(
+                and(
+                  eq(schema.userGroupMember.userId, existing.id),
+                  inArray(
+                    schema.userGroupMember.groupId,
+                    orgGroups.map((group: { id: string }) => group.id),
+                  ),
+                ),
+              );
             const remaining = yield* db
               .select()
               .from(schema.member)
@@ -164,6 +209,11 @@ export const syncEntraDirectory = (options: {
             createdAt: now(),
             updatedAt: now(),
           });
+        if (existing?.disabled)
+          yield* db
+            .update(schema.user)
+            .set({ disabled: false, updatedAt: now() })
+            .where(eq(schema.user.id, userId));
         if (!identity)
           yield* db.insert(schema.ssoIdentity).values({
             organizationId,
@@ -175,14 +225,18 @@ export const syncEntraDirectory = (options: {
       }
       if (!result.nextLink) {
         usersDelta = result.deltaLink ?? undefined;
+        usersComplete = true;
         break;
       }
       usersLink = result.nextLink;
     }
+    if (!usersComplete)
+      return yield* Effect.fail(new Error("Directory sync exceeded 1000 user pages"));
 
     let groupsLink = options.groupsDeltaLink ?? undefined;
-    for (let page = 0; page < 50; page++) {
-      const result = yield* graph.groupsDelta(azureTenantId, groupsLink);
+    let groupsComplete = false;
+    for (let page = 0; page < 1000; page++) {
+      const result = yield* groupsDeltaPage(groupsLink);
       for (const group of result.items) {
         const existing = yield* db.query.userGroup.findFirst({
           where: { organizationId, externalId: group.id },
@@ -244,10 +298,13 @@ export const syncEntraDirectory = (options: {
       }
       if (!result.nextLink) {
         groupsDelta = result.deltaLink ?? undefined;
+        groupsComplete = true;
         break;
       }
       groupsLink = result.nextLink;
     }
+    if (!groupsComplete)
+      return yield* Effect.fail(new Error("Directory sync exceeded 1000 group pages"));
 
     return { ...counts, usersDelta, groupsDelta };
   });

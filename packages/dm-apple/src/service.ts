@@ -202,16 +202,22 @@ const makeAppleMdmService = (
 
   const verifyDeviceSignature: AppleMdmService.Service["verifyDeviceSignature"] = (input) =>
     Effect.gen(function* () {
+      // Hosts that do not wire trust keep the historical behaviour. Once a
+      // host opts in (Cloud), a missing signature or CA is fatal.
+      if (!trust) return;
       if (!input.signature) {
-        if (trust?.requireSignature)
+        if (trust.requireSignature)
           return yield* Effect.fail(new MdmError({ message: "Missing Mdm-Signature" }));
         return;
       }
-      const caCertPems = trust ? yield* trust.caCertPems : [];
-      if (caCertPems.length === 0)
-        return yield* Effect.fail(
-          new MdmError({ message: "No SCEP CA configured to verify Mdm-Signature" }),
-        );
+      const caCertPems = yield* trust.caCertPems;
+      if (caCertPems.length === 0) {
+        if (trust.requireSignature)
+          return yield* Effect.fail(
+            new MdmError({ message: "No SCEP CA configured to verify Mdm-Signature" }),
+          );
+        return;
+      }
       yield* Effect.tryPromise({
         try: () =>
           verifyMdmSignature({

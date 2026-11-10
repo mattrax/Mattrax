@@ -14,8 +14,15 @@ export const NOTIFICATION_TYPES = [
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
-/** Values seen on `enrollmentState` in enrollment notifications. */
-export const ENROLLMENT_STATES = ["ENROLLED", "PENDING"] as const;
+/** Device states carried by `ENROLLMENT` / `STATUS_REPORT` notifications. */
+export const ENROLLMENT_STATES = [
+  "PROVISIONING",
+  "ACTIVE",
+  "DISABLED",
+  "DELETED",
+  "LOST",
+  "PRE_PROVISIONING",
+] as const;
 export type EnrollmentState = (typeof ENROLLMENT_STATES)[number];
 
 /** Values seen on `commandStatus` in command notifications. */
@@ -23,6 +30,7 @@ export const COMMAND_STATUSES = [
   "COMMAND_STATUS_UNSPECIFIED",
   "PENDING",
   "COMPLETED",
+  "FAILED",
   "CANCELLED",
 ] as const;
 export type CommandStatus = (typeof COMMAND_STATUSES)[number];
@@ -52,8 +60,6 @@ export type DecodedPubSubPush = {
 /** Anything carrying the notification fields the helpers read. */
 export type NotificationLike = {
   readonly notificationType?: string | undefined;
-  readonly enrollmentState?: string | undefined;
-  readonly commandStatus?: string | undefined;
   readonly attributes?: Readonly<Record<string, string>> | undefined;
   readonly data?: unknown;
 };
@@ -175,7 +181,7 @@ export function notificationType(notification: NotificationLike): string | undef
  * notification types.
  */
 export function enrollmentState(notification: NotificationLike): string | undefined {
-  return notification.enrollmentState ?? readString(notification.data, "enrollmentState");
+  return readString(notification.data, "state") ?? readString(notification.data, "appliedState");
 }
 
 /**
@@ -185,5 +191,14 @@ export function enrollmentState(notification: NotificationLike): string | undefi
  * Operation without a `commandStatus` field.
  */
 export function commandStatus(notification: NotificationLike): string | undefined {
-  return notification.commandStatus ?? readString(notification.data, "commandStatus");
+  if (typeof notification.data !== "object" || notification.data === null) return undefined;
+  const operation = notification.data as Record<string, unknown>;
+  const metadata =
+    typeof operation.metadata === "object" && operation.metadata !== null
+      ? (operation.metadata as Record<string, unknown>)
+      : undefined;
+  if (metadata && typeof metadata.errorCode === "string") return "FAILED";
+  if (operation.error !== undefined) return "FAILED";
+  if (typeof operation.done === "boolean") return operation.done ? "COMPLETED" : "PENDING";
+  return undefined;
 }

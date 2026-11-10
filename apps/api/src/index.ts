@@ -238,6 +238,15 @@ const makeAppLayer = (env: Env, request: Request) => {
     requireAppleDeviceIdentity: true,
   }).pipe(Layer.provide(Db.layer));
 
+  const azureGraphLayer =
+    env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
+      ? AzureGraphFetchLive({
+          clientId: env.AZURE_CLIENT_ID,
+          clientSecret: env.AZURE_CLIENT_SECRET,
+          origin: env.ORIGIN,
+        })
+      : Layer.empty;
+
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID }).pipe(
       Layer.provide(enterpriseAuthLive),
@@ -246,13 +255,7 @@ const makeAppLayer = (env: Env, request: Request) => {
       Layer.provide(R2.layer(storageBucket)),
       Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
-      Layer.provide(
-        AzureGraphFetchLive({
-          clientId: env.AZURE_CLIENT_ID ?? "",
-          clientSecret: env.AZURE_CLIENT_SECRET ?? "",
-          origin: env.ORIGIN,
-        }),
-      ),
+      Layer.provide(azureGraphLayer),
     ),
     AppleMdmService.layer.pipe(
       Layer.provide(AppleMdmTopic.layer),

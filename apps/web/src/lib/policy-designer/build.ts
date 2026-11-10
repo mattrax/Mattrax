@@ -214,8 +214,16 @@ ${commands}
 </SyncML>`;
 };
 
-export const buildAndroidPolicy = (draft: Draft) =>
-  Object.assign({}, ...draft.selections.map((selection) => payloadValues(selection)));
+export const buildAndroidPolicy = (draft: Draft) => {
+  const policy = Object.assign(
+    {},
+    ...draft.selections.map((selection) => payloadValues(selection)),
+  ) as Record<string, unknown>;
+  // These are read-only Google resource fields, not policy settings.
+  delete policy.name;
+  delete policy.version;
+  return policy;
+};
 
 export type ExportArtifact = {
   readonly fileName: string;

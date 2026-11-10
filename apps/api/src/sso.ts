@@ -37,7 +37,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         // Verified Entra domains route users before they have a Mattrax
         // account. Never route on an unverified/manual domain.
         const mapping = yield* db.query.ssoDomain.findFirst({
-          where: { domain: emailDomain, isVerified: true },
+          where: { domain: emailDomain, isVerified: true, source: "entra" },
         });
         if (mapping) tenantId = mapping.organizationId;
       }

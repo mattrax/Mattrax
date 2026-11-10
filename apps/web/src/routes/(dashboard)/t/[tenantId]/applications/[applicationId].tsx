@@ -41,8 +41,9 @@ export default function ApplicationDetailPage() {
   const [message, setMessage] = createSignal<string | null>(null);
 
   createEffect(
-    () => row(),
-    (value) => {
+    () => row()?.id,
+    () => {
+      const value = row();
       if (!value) return;
       setName(value.name);
       setBundleId(value.bundleId ?? "");
@@ -74,16 +75,21 @@ export default function ApplicationDetailPage() {
       });
       const oldGroups = row()?.groups.map((group) => group.id) ?? [];
       const oldDevices = row()?.devices.map((device) => device.id) ?? [];
-      await enterprise.patchApplicationAssignments(params.tenantId, params.applicationId, {
-        assign: {
-          groups: [...groupIds()].filter((id) => !oldGroups.includes(id)),
-          devices: [...deviceIds()].filter((id) => !oldDevices.includes(id)),
-        },
-        unassign: {
-          groups: oldGroups.filter((id) => !groupIds().has(id)),
-          devices: oldDevices.filter((id) => !deviceIds().has(id)),
-        },
-      });
+      const assignGroups = [...groupIds()].filter((id) => !oldGroups.includes(id));
+      const assignDevices = [...deviceIds()].filter((id) => !oldDevices.includes(id));
+      const unassignGroups = oldGroups.filter((id) => !groupIds().has(id));
+      const unassignDevices = oldDevices.filter((id) => !deviceIds().has(id));
+      if (
+        assignGroups.length +
+          assignDevices.length +
+          unassignGroups.length +
+          unassignDevices.length >
+        0
+      )
+        await enterprise.patchApplicationAssignments(params.tenantId, params.applicationId, {
+          assign: { groups: assignGroups, devices: assignDevices },
+          unassign: { groups: unassignGroups, devices: unassignDevices },
+        });
     },
     onSuccess: async () => {
       setMessage("Application and assignments saved.");
@@ -163,7 +169,9 @@ export default function ApplicationDetailPage() {
         when={row()}
         fallback={
           <div class="rounded-xl border bg-white p-6 text-sm text-stone-500">
-            Loading application…
+            <Show when={app.isError} fallback={<span>Loading application…</span>}>
+              <ErrorText error={app.error} />
+            </Show>
           </div>
         }
       >

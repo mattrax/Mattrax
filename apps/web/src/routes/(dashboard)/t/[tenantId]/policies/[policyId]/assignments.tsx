@@ -27,9 +27,9 @@ export default function PolicyAssignmentsPage() {
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [message, setMessage] = createSignal<string | null>(null);
   createEffect(
-    () => assignments.data,
-    (value) => {
-      setDeviceIds(new Set(value?.devices.map((device) => device.id) ?? []));
+    () => params.policyId,
+    () => {
+      setDeviceIds(new Set(assignments.data?.devices.map((device) => device.id) ?? []));
     },
   );
   const save = useMutation(() => ({
@@ -70,7 +70,9 @@ export default function PolicyAssignmentsPage() {
         when={assignments.data}
         fallback={
           <div class="rounded-xl border bg-white p-6 text-sm text-stone-500">
-            Loading assignments…
+            <Show when={assignments.isError} fallback={<span>Loading assignments…</span>}>
+              <ErrorText error={assignments.error} />
+            </Show>
           </div>
         }
       >

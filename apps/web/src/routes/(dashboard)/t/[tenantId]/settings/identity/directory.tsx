@@ -33,7 +33,14 @@ export default function DirectorySyncPage() {
         <CardContent class="space-y-4 text-sm">
           <Show
             when={status.data}
-            fallback={<p class="text-stone-500">Loading directory sync status…</p>}
+            fallback={
+              <Show
+                when={status.isError}
+                fallback={<p class="text-stone-500">Loading directory sync status…</p>}
+              >
+                <ErrorText error={status.error} />
+              </Show>
+            }
           >
             {(value) => (
               <>
@@ -107,7 +114,7 @@ export default function DirectorySyncPage() {
               </>
             )}
           </Show>
-          <ErrorText error={sync.error ?? toggle.error} />
+          <ErrorText error={status.error ?? sync.error ?? toggle.error} />
         </CardContent>
       </Card>
     </div>

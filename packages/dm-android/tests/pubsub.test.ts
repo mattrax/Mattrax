@@ -31,7 +31,6 @@ function pushOf(data: unknown, attributes: Record<string, string> = {}) {
 const device = {
   name: "enterprises/LC123/devices/device-1",
   state: "ACTIVE",
-  enrollmentState: "ENROLLED",
 };
 
 describe("decodePubSubPush", () => {
@@ -46,7 +45,7 @@ describe("decodePubSubPush", () => {
     expect(push.attributes).toEqual({ notificationType: "ENROLLMENT" });
     expect(push.data).toEqual(device);
     expect(notificationType(push)).toBe("ENROLLMENT");
-    expect(enrollmentState(push)).toBe("ENROLLED");
+    expect(enrollmentState(push)).toBe("ACTIVE");
     expect(commandStatus(push)).toBeUndefined();
   });
 
@@ -56,7 +55,7 @@ describe("decodePubSubPush", () => {
         pushOf(
           {
             name: "enterprises/LC123/devices/device-1/operations/op-1",
-            commandStatus: "COMPLETED",
+            done: true,
           },
           { notificationType: "COMMAND" },
         ),
@@ -73,7 +72,7 @@ describe("decodePubSubPush", () => {
       decodePubSubPush(
         pushOf({
           notificationType: "ENROLLMENT",
-          enrollmentState: "PENDING",
+          state: "PROVISIONING",
           deviceName: "enterprises/LC123/devices/device-1",
         }),
       ),
@@ -81,7 +80,7 @@ describe("decodePubSubPush", () => {
 
     expect(push.notificationType).toBe("ENROLLMENT");
     expect(notificationType(push)).toBe("ENROLLMENT");
-    expect(enrollmentState(push)).toBe("PENDING");
+    expect(enrollmentState(push)).toBe("PROVISIONING");
   });
 
   it("accepts a raw JSON string body", async () => {

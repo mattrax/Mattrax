@@ -55,7 +55,7 @@ export default function DomainsPage() {
             </For>
           </div>
         </Show>
-        <ErrorText error={refresh.error} />
+        <ErrorText error={refresh.error ?? domains.error} />
       </CardContent>
     </Card>
   );

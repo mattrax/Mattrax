@@ -76,24 +76,16 @@ describe("mergeAndroidPolicies", () => {
     expect(() => mergeAndroidPolicies([{ policyName: "other" }])).toThrow(PolicyMergeError);
   });
 
-  it("rejects resource name keys in nested objects and arrays", () => {
-    expect(() => mergeAndroidPolicies([{ statusReportingSettings: { name: "x" } }])).toThrow(
-      PolicyMergeError,
-    );
-    expect(() => mergeAndroidPolicies([{ applications: [{ policyName: "x" }] }])).toThrow(
-      PolicyMergeError,
-    );
-  });
-
-  it("reports the path of the rejected key", () => {
-    try {
-      mergeAndroidPolicies([{ applications: [{ name: "x" }] }]);
-      throw new Error("merge should have thrown");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PolicyMergeError);
-      expect((error as PolicyMergeError).path).toBe("applications[0].name");
-      expect((error as PolicyMergeError).key).toBe("name");
-    }
+  it("keeps nested application-defined name keys", () => {
+    expect(
+      mergeAndroidPolicies([
+        {
+          applications: [{ packageName: "com.example", managedConfiguration: { name: "value" } }],
+        },
+      ]),
+    ).toEqual({
+      applications: [{ packageName: "com.example", managedConfiguration: { name: "value" } }],
+    });
   });
 });
 

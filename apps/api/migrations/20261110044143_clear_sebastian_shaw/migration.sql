@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `sso_config_azure_tenant_unique` ON `sso_config` (`azure_tenant_id`);

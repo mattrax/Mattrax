@@ -280,16 +280,20 @@ export const ssoIdentity = mysqlTable(
 );
 
 /** Tenant SSO configuration. One Azure Entra ID tenant per Mattrax tenant. */
-export const ssoConfig = mysqlTable("sso_config", {
-  organizationId: id("organization_id")
-    .primaryKey()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  enabled: boolean("enabled").notNull().default(false),
-  azureTenantId: shortText("azure_tenant_id"),
-  autoProvision: boolean("auto_provision").notNull().default(true),
-  createdAt: timestamp("created_at").notNull(),
-  updatedAt: timestamp("updated_at").notNull(),
-});
+export const ssoConfig = mysqlTable(
+  "sso_config",
+  {
+    organizationId: id("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    azureTenantId: shortText("azure_tenant_id"),
+    autoProvision: boolean("auto_provision").notNull().default(true),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("sso_config_azure_tenant_unique").on(table.azureTenantId)],
+);
 
 /** Verified Entra domains used for pre-login tenant routing. */
 export const ssoDomain = mysqlTable(

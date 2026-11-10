@@ -159,7 +159,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
     switch (parsed.type) {
       case "unknown":
         return yield* Effect.fail(
-          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id> and mttx.windows.custom.<id>.`,
+          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id> and mttx.android.policy.<id>.`,
         );
       case "application":
         return yield* Effect.fail(
