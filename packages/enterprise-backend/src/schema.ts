@@ -19,6 +19,10 @@ export type EnterpriseGroupDevice = typeof schema.groupDevice.$inferSelect;
 export type EnterpriseGroupPolicy = typeof schema.groupPolicy.$inferSelect;
 export type EnterprisePolicy = typeof schema.policy.$inferSelect;
 export type EnterpriseConfiguration = typeof schema.configuration.$inferSelect;
+export type EnterpriseApplication = typeof schema.application.$inferSelect;
+export type EnterpriseApplicationGroup = typeof schema.applicationGroup.$inferSelect;
+export type EnterpriseApplicationDevice = typeof schema.applicationDevice.$inferSelect;
+export type EnterpriseDevicePolicy = typeof schema.devicePolicy.$inferSelect;
 export type EnterpriseApplePushCertificate = typeof schema.applePushCertificate.$inferSelect;
 export type EnterpriseApplePushKey = typeof schema.applePushKey.$inferSelect;
 

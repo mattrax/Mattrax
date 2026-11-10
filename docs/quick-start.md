@@ -122,6 +122,22 @@ implement Android management. The enrollment toggle does not create a working fl
 3. Policies are assigned to groups, not directly to devices. A device receives the union
    of the policies from every group it belongs to.
 
+### Applications
+
+1. Open **Applications → Add application**.
+2. Catalogue an Apple app by HTTPS manifest URL or numeric App Store ID. Windows and
+   Android package metadata can be stored, but their installers are not delivered yet.
+3. Save, then assign the app to groups or individual devices on its detail page.
+4. **Install on assigned devices** queues an Apple `InstallApplication` command for every
+   assigned Apple device. The command is delivered on the next check-in. Uploaded files are
+   stored for download but cannot be installed without a manifest.
+
+### Direct policy assignment
+
+Group assignment remains the main targeting model. A policy can also be assigned directly
+to devices from **Policy → Assignments**. Direct assignments are additive with group
+assignments and are included in Apple DDM and Windows SyncML delivery.
+
 ### Policies
 
 The fastest route is the **policy designer**, which is the same editor on the public site
@@ -138,8 +154,8 @@ and in the dashboard:
    `mttx.apple.custom.designer` or `mttx.windows.custom.designer`. The source draft is
    kept alongside it, so the designer reopens with your selections on any device.
 
-Android policies can be exported but not deployed; Android management is not available
-yet. Policies created in the advanced editor can still be opened in the designer, but
+Android policies can now be saved to a policy, but device delivery still needs a Google
+Android Enterprise connection. Policies created in the advanced editor can still be opened in the designer, but
 saving replaces their configurations after you confirm the warning.
 
 To configure a policy without the designer:

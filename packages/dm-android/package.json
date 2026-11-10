@@ -1,0 +1,17 @@
+{
+  "name": "@mattrax/dm-android",
+  "private": true,
+  "description": "Android Enterprise device management via the Google Android Management API",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/crypto": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

@@ -25,6 +25,7 @@ const parseDraft = (value: unknown): Draft | undefined => {
 const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
   "mttx.windows.custom.designer",
+  "mttx.android.policy.designer",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

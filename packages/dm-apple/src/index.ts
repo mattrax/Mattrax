@@ -6,3 +6,6 @@ export * from "./enrollment.js";
 export * from "./tokens.js";
 export * from "./service.js";
 export * from "./handlers.js";
+
+export * from "./trust.js";
+export * from "./signature.js";

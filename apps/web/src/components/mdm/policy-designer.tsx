@@ -355,10 +355,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   };
 
   const deploy = () => {
-    if (platform() === "android") {
-      setNotice("Android policies can be exported today; Android management is not available yet.");
-      return;
-    }
     try {
       localStorage.setItem("mattrax:designer-draft", JSON.stringify(draft()));
     } catch {
@@ -369,15 +365,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     navigate(session().data?.user ? returnTo : `/login?returnTo=${encodeURIComponent(returnTo)}`);
   };
 
-  const canSave = () =>
-    Boolean(props.onSave) &&
-    selections().length > 0 &&
-    platform() !== "android" &&
-    !props.saveDisabled;
+  const canSave = () => Boolean(props.onSave) && selections().length > 0 && !props.saveDisabled;
   const disabledHint = () => {
     if (props.saveDisabled) return "Confirm the replacement above before saving.";
     if (selections().length === 0) return "Add a template or a setting to get started.";
-    if (platform() === "android") return "Android policies can be exported but not deployed yet.";
     return null;
   };
   const platforms = (): Array<{ id: PlatformId; short: string }> =>
@@ -435,7 +426,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </div>
           <p class="mt-3 max-w-2xl text-sm text-stone-500">
             {props.mode === "dashboard"
-              ? "Browse the same Apple, Windows and Android catalogue, then save the result to this policy."
+              ? "Browse the same Apple, Windows and Android catalogue, then save the result to this policy. Android delivery needs an Android Enterprise connection."
               : "Browse Apple, Windows and Android settings and export a ready-to-use artifact. No account is needed to export; sign in only to deploy."}
           </p>
         </div>
@@ -454,14 +445,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               fallback={
                 <Button
                   onClick={deploy}
-                  disabled={selections().length === 0 || platform() === "android"}
-                  title={
-                    platform() === "android"
-                      ? "Android policies can be exported, not deployed yet"
-                      : selections().length === 0
-                        ? "Add a setting to enable deploy"
-                        : undefined
-                  }
+                  disabled={selections().length === 0}
+                  title={selections().length === 0 ? "Add a setting to enable deploy" : undefined}
                 >
                   Deploy in Mattrax →
                 </Button>
@@ -472,11 +457,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 title={
                   props.saveDisabled
                     ? "Confirm the replacement above before saving"
-                    : platform() === "android"
-                      ? "Android policies can only be exported"
-                      : selections().length === 0
-                        ? "Add a setting to enable save"
-                        : undefined
+                    : selections().length === 0
+                      ? "Add a setting to enable save"
+                      : undefined
                 }
                 onClick={() => void props.onSave?.(draft())}
               >

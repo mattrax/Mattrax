@@ -48,6 +48,7 @@ export type ConfigurationKind =
   | { readonly type: "declaration"; readonly id: string }
   | { readonly type: "application"; readonly id: string }
   | { readonly type: "windows"; readonly id: string }
+  | { readonly type: "android"; readonly id: string }
   | { readonly type: "unknown" };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9]{1,20}$/;
@@ -57,6 +58,9 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 export const parseConfigurationKind = (kind: string): ConfigurationKind => {
   if (kind === "mttx.apple.device") return { type: "device" };
+  const android = /^mttx\.android\.policy\.(.+)$/.exec(kind);
+  if (android?.[1] && IDENTIFIER_PATTERN.test(android[1]))
+    return { type: "android", id: android[1] };
   const windows = /^mttx\.windows\.custom\.(.+)$/.exec(kind);
   if (windows?.[1] && IDENTIFIER_PATTERN.test(windows[1]))
     return { type: "windows", id: windows[1] };
@@ -210,6 +214,15 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
           return yield* Effect.fail(
             `"${kind}.content" contains a com.apple.mdm payload, which cannot be deployed as a managed profile`,
           );
+        return;
+      }
+      case "android": {
+        const record = asRecord(data);
+        if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+        const policy = record.policy === undefined ? record : asRecord(record.policy);
+        if (!policy) return yield* Effect.fail(`"${kind}.policy" must be an object`);
+        if ("name" in policy || "policyName" in policy)
+          return yield* Effect.fail(`"${kind}.policy" must not contain name or policyName`);
         return;
       }
       case "windows": {

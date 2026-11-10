@@ -21,6 +21,8 @@
     { "path": "./packages/dm-apple" },
     { "path": "./packages/dm-windows" },
     { "path": "./packages/azure-oidc" },
+    { "path": "./packages/azure-graph" },
+    { "path": "./packages/dm-android" },
     { "path": "./packages/policy-apple" },
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },

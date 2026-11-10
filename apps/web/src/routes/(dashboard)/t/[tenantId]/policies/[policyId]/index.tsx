@@ -22,6 +22,7 @@ const kindLabel = (kind: string) => {
   if (kind.startsWith("mttx.apple.application")) return "Application";
   if (kind.startsWith("mttx.apple.declaration")) return "Declaration";
   if (kind.startsWith("mttx.windows.custom")) return "Windows configuration";
+  if (kind.startsWith("mttx.android.policy")) return "Android policy";
   return kind;
 };
 
@@ -106,6 +107,12 @@ export default function PolicyDetailPage() {
         description="Configure what this policy deploys to its device scope."
         actions={
           <>
+            <LinkButton
+              href={`/t/${params.tenantId}/policies/${params.policyId}/assignments`}
+              variant="outline"
+            >
+              Assignments
+            </LinkButton>
             <LinkButton
               href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
               variant="outline"

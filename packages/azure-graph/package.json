@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/azure-graph",
+  "private": true,
+  "description": "Microsoft Graph client for Entra directory sync and verified domains",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

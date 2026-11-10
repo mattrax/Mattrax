@@ -317,5 +317,13 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       },
     };
   }
+  if (draft.platform === "android") {
+    return {
+      "mttx.android.policy.designer": {
+        policy: buildAndroidPolicy(draft),
+        draft: { ...draft, savedAt: draft.savedAt ?? Date.now() },
+      },
+    };
+  }
   return {};
 };

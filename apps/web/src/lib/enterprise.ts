@@ -18,6 +18,8 @@ import {
 } from "@mattrax/enterprise-domain";
 
 export type {
+  ApplicationNode,
+  ApplicationRow,
   ApnsInfo,
   AuditLogEntry,
   BillingSummary,
@@ -68,6 +70,14 @@ export const enterpriseKeys = {
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
   sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
+  applications: (tenantId: RouteParam) => ["enterprise", "applications", tenantId ?? ""] as const,
+  application: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "application", tenantId ?? "", id ?? ""] as const,
+  policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "policy-assignments", tenantId ?? "", id ?? ""] as const,
+  directorySync: (tenantId: RouteParam) =>
+    ["enterprise", "directory-sync", tenantId ?? ""] as const,
+  domains: (tenantId: RouteParam) => ["enterprise", "domains", tenantId ?? ""] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -330,6 +340,142 @@ export const enterprise = {
         },
       }),
     ),
+  getPolicyAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getPolicyAssignments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  patchPolicyAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: { assign?: string[]; unassign?: string[] },
+  ) =>
+    endpoint((api) =>
+      api.patchPolicyAssignments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  listApplications: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listApplications({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getApplication: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getApplication({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  createApplication: (
+    tenantId: RouteParam,
+    payload: {
+      name: string;
+      platform: "apple" | "win" | "android";
+      bundleId?: string | null;
+      version?: string | null;
+      source?: "manifest" | "store" | "upload";
+      manifestUrl?: string | null;
+      storeId?: string | null;
+      notes?: string | null;
+    },
+  ) =>
+    endpoint((api) =>
+      api.createApplication({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  patchApplication: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: {
+      name?: string;
+      bundleId?: string | null;
+      version?: string | null;
+      source?: "manifest" | "store" | "upload";
+      manifestUrl?: string | null;
+      storeId?: string | null;
+      notes?: string | null;
+    },
+  ) =>
+    endpoint((api) =>
+      api.patchApplication({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  deleteApplications: (tenantId: RouteParam, ids: string[]) =>
+    endpoint((api) =>
+      api.deleteApplications({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: ids,
+      }),
+    ),
+  patchApplicationAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: {
+      assign?: { groups?: string[]; devices?: string[] };
+      unassign?: { groups?: string[]; devices?: string[] };
+    },
+  ) =>
+    endpoint((api) =>
+      api.patchApplicationAssignments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  installApplication: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.installApplication({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  uploadApplication: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: { fileName: string; contentType?: string; content: string },
+  ) =>
+    endpoint((api) =>
+      api.uploadApplication({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  downloadApplication: (tenantId: RouteParam, id: RouteParam, sha256: string) =>
+    endpoint((api) =>
+      api.downloadApplication({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          sha256: required(sha256, "sha256"),
+        },
+      }),
+    ),
+  getEntraDirectorySync: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getEntraDirectorySync({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchEntraDirectorySync: (tenantId: RouteParam, payload: { enabled?: boolean }) =>
+    endpoint((api) =>
+      api.patchEntraDirectorySync({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  syncEntraDirectory: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.syncEntraDirectory({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listEntraDomains: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listEntraDomains({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  refreshEntraDomains: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.refreshEntraDomains({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   deletePolicies: (tenantId: RouteParam, ids: string[]) =>
     endpoint((api) =>
       api.deletePolicies({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
@@ -495,6 +641,36 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.sso(tenantId),
       queryFn: () => enterprise.getSsoConfig(tenantId),
       enabled: Boolean(tenantId),
+    }),
+  applications: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.applications(tenantId),
+      queryFn: () => enterprise.listApplications(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  application: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.application(tenantId, id),
+      queryFn: () => enterprise.getApplication(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.policyAssignments(tenantId, id),
+      queryFn: () => enterprise.getPolicyAssignments(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  directorySync: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.directorySync(tenantId),
+      queryFn: () => enterprise.getEntraDirectorySync(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  domains: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.domains(tenantId),
+      queryFn: () => enterprise.listEntraDomains(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
     }),
   scim: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
