@@ -1,13 +1,14 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { ErrorText } from "~/components/mdm/common";
+import { ErrorText, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 
 export default function IdentitySettingsPage() {
   const params = useParams();
@@ -60,16 +61,30 @@ export default function IdentitySettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
     },
   }));
+  const [ssoError, setSsoError] = createSignal<string | null>(null);
   const startSso = async () => {
-    const response = await fetch(
-      `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
-    );
-    const body = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (body.url) window.location.href = body.url;
+    setSsoError(null);
+    try {
+      const response = await fetch(
+        `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
+      if (body.url) {
+        window.location.href = body.url;
+        return;
+      }
+      setSsoError(body.error ?? "Single sign-on is not available for this workspace.");
+    } catch (error) {
+      setSsoError(errorMessage(error));
+    }
   };
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
+      <QueryError class="xl:col-span-2" error={tokens.error ?? sso.error} />
       <Card>
         <CardHeader>
           <CardTitle>SCIM provisioning</CardTitle>
@@ -231,6 +246,13 @@ export default function IdentitySettingsPage() {
                 Test sign-in
               </Button>
             </div>
+            <Show when={ssoError()}>
+              {(message) => (
+                <p role="alert" class="text-sm text-red-600">
+                  {message()}
+                </p>
+              )}
+            </Show>
             <ErrorText error={saveSso.error || sso.error} />
           </form>
         </CardContent>

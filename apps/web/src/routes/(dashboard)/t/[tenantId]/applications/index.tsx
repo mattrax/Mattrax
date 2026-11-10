@@ -25,6 +25,7 @@ export default function ApplicationsPage() {
       <MdmTable<ApplicationRow>
         rows={apps.data ? [...apps.data.applications] : undefined}
         loading={apps.isPending}
+        error={apps.error}
         storageKey="applications"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/applications/${row.id}`)}
         empty={

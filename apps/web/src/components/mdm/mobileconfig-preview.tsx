@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/solid-query";
 import { createEffect, For, Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { enterprise } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 
 function read<T>(data: Record<string, unknown>, camel: string, snake: string): T | undefined {
   return (data[camel] ?? data[snake]) as T | undefined;
@@ -123,7 +124,7 @@ export function MobileconfigPreview(props: { content: string }) {
       </Show>
       <Show when={preview.isError}>
         <p class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          Failed to parse configuration.
+          {errorMessage(preview.error, "Failed to parse configuration.")}
         </p>
       </Show>
     </div>

@@ -1,11 +1,12 @@
 import { useNavigate } from "@solidjs/router";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
-import { EmptyState, PageHeader } from "~/components/mdm/common";
+import { EmptyState, PageHeader, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Building2, Plus } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
 
 const parseDraft = (value: string | null): Draft | undefined => {
@@ -79,6 +80,8 @@ export default function DashboardPage() {
         }
       />
 
+      <QueryError error={me.error} onRetry={() => void me.refetch()} />
+
       <Show when={draft()}>
         {(current) => (
           <div class="rounded-xl border border-stone-900 bg-stone-900 p-5 text-white">
@@ -141,8 +144,8 @@ export default function DashboardPage() {
             </Show>
             <Show when={deployDraft.error}>
               {(error) => (
-                <p class="mt-2 text-sm text-red-300">
-                  {error() instanceof Error ? error().message : String(error())}
+                <p role="alert" class="mt-2 text-sm text-red-300">
+                  {errorMessage(error())}
                 </p>
               )}
             </Show>

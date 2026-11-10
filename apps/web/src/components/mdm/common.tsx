@@ -10,6 +10,7 @@ import {
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
+import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 export function PageHeader(props: { title: string; description?: string; actions?: JSX.Element }) {
@@ -93,9 +94,27 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 export function ErrorText(props: { error: unknown }) {
   return (
     <Show when={props.error}>
-      <p class="text-sm text-red-600">
-        {props.error instanceof Error ? props.error.message : "Something went wrong"}
+      <p role="alert" class="text-sm text-red-600">
+        {errorMessage(props.error)}
       </p>
+    </Show>
+  );
+}
+
+/** A query failure with an optional retry, used by list and detail pages. */
+export function QueryError(props: { error: unknown; onRetry?: () => void; class?: string }) {
+  return (
+    <Show when={props.error}>
+      <div class={cn("rounded-xl border border-red-200 bg-red-50 p-4", props.class)}>
+        <p role="alert" class="text-sm text-red-700">
+          {errorMessage(props.error)}
+        </p>
+        <Show when={props.onRetry}>
+          <Button size="sm" variant="outline" class="mt-3" onClick={() => props.onRetry?.()}>
+            Try again
+          </Button>
+        </Show>
+      </div>
     </Show>
   );
 }

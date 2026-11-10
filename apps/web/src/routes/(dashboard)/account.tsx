@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function AccountPage() {
   const session = authClient.useSession();
@@ -32,9 +33,7 @@ export default function AccountPage() {
       const body = (await response.json().catch(() => undefined)) as
         | { message?: string; error?: { message?: string } }
         | undefined;
-      setDeleteError(
-        body?.message ?? body?.error?.message ?? `Request failed (${response.status})`,
-      );
+      setDeleteError(errorMessage(body ?? { message: `Request failed (${response.status})` }));
       return;
     }
     window.location.href = "/";
@@ -62,7 +61,7 @@ export default function AccountPage() {
     setNamePending(false);
 
     if (result.error) {
-      setNameError(result.error.message ?? "Failed to update name");
+      setNameError(errorMessage(result.error, "Failed to update name"));
     } else {
       setNameSuccess(true);
       setTimeout(() => setNameSuccess(false), 3000);
@@ -87,7 +86,7 @@ export default function AccountPage() {
     setEmailPending(false);
 
     if (result.error) {
-      setEmailError(result.error.message ?? "Failed to request email change");
+      setEmailError(errorMessage(result.error, "Failed to request email change"));
     } else {
       setEmailSent(true);
       setNewEmail("");
@@ -103,12 +102,15 @@ export default function AccountPage() {
   type ApiTokens = Awaited<ReturnType<typeof authClient.listApiTokens>>;
   const [tokens, setTokens] = createSignal<ApiTokens>();
   const [tokensPending, setTokensPending] = createSignal(false);
+  const [tokensError, setTokensError] = createSignal<string | null>(null);
   const refetchTokens = async () => {
     setTokensPending(true);
+    setTokensError(null);
     try {
       setTokens(await authClient.listApiTokens());
-    } catch {
+    } catch (error) {
       setTokens(undefined);
+      setTokensError(errorMessage(error));
     } finally {
       setTokensPending(false);
     }
@@ -126,13 +128,18 @@ export default function AccountPage() {
     }>;
   };
   const [sessions, setSessions] = createSignal<Sessions>();
+  const [sessionsError, setSessionsError] = createSignal<string | null>(null);
   const refetchSessions = async () => {
+    setSessionsError(null);
     try {
       const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
-      if (!response.ok) return;
+      if (!response.ok) {
+        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+        return;
+      }
       setSessions((await response.json()) as Sessions);
-    } catch {
-      // Session management is optional for older deployments.
+    } catch (error) {
+      setSessionsError(errorMessage(error));
     }
   };
   onSettled(() => {
@@ -144,11 +151,15 @@ export default function AccountPage() {
       navigate("/login", { replace: true });
       return;
     }
-    await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
+    const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
       method: "DELETE",
       credentials: "include",
       headers: { "x-effect-auth-csrf": "1" },
     });
+    if (!response.ok) {
+      setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+      return;
+    }
     await refetchSessions();
   };
 
@@ -166,7 +177,7 @@ export default function AccountPage() {
       setTokenName("");
       await refetchTokens();
     } catch (error) {
-      setTokenError(error instanceof Error ? error.message : "Failed to create token");
+      setTokenError(errorMessage(error));
     }
   };
 
@@ -198,7 +209,7 @@ export default function AccountPage() {
     setPasswordPending(false);
 
     if (result.error) {
-      setPasswordError(result.error.message ?? "Failed to change password");
+      setPasswordError(errorMessage(result.error, "Failed to change password"));
     } else {
       setPasswordSuccess(true);
       setCurrentPassword("");
@@ -406,6 +417,10 @@ export default function AccountPage() {
         </Show>
       </section>
 
+      <Show when={sessionsError()}>
+        {(msg) => <p class="mb-4 text-sm text-red-600">{msg()}</p>}
+      </Show>
+
       <Show when={(sessions()?.sessions.length ?? 0) > 0}>
         <section class="rounded-xl border border-border bg-card p-6">
           <h2 class="text-sm font-semibold mb-1">Active sessions</h2>
@@ -506,7 +521,10 @@ export default function AccountPage() {
               </div>
             )}
           </For>
-          <Show when={!tokensPending() && (tokens()?.tokens.length ?? 0) === 0}>
+          <Show when={tokensError()}>
+            {(msg) => <p class="mb-3 text-sm text-red-600">{msg()}</p>}
+          </Show>
+          <Show when={!tokensPending() && !tokensError() && (tokens()?.tokens.length ?? 0) === 0}>
             <p class="text-sm text-muted-foreground">No API tokens yet.</p>
           </Show>
         </div>

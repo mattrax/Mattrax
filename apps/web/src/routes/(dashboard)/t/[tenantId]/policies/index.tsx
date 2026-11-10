@@ -22,6 +22,7 @@ export default function PoliciesPage() {
       <MdmTable<PolicyRow>
         rows={policies.data?.rows}
         loading={policies.isPending}
+        error={policies.error}
         storageKey="policies"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/policies/${row.id}`)}
         actions={(selected, clear) => (

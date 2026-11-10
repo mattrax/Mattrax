@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/solid-query";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { ErrorText } from "~/components/mdm/common";
+import { ErrorText, QueryError } from "~/components/mdm/common";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 export default function BillingSettingsPage() {
@@ -21,6 +21,7 @@ export default function BillingSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
+      <QueryError class="xl:col-span-2" error={billing} onRetry={() => void billing.refetch()} />
       <Card>
         <CardHeader>
           <CardTitle>Plan</CardTitle>

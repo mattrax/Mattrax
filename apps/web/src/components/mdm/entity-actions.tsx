@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
+import { ErrorText } from "./common";
 import {
   enterprise,
   enterpriseKeys,
@@ -66,6 +67,7 @@ function ConfirmAction(props: {
             </p>
             <Input value={value()} onInput={(e) => setValue(e.currentTarget.value)} />
           </div>
+          <ErrorText error={mutation.error} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
@@ -143,6 +145,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
             </DropdownMenuItem>
           )}
         </For>
+        <ErrorText error={patch.error ?? groups.error} />
         <div class="border-t p-2 text-right">
           <Button
             size="sm"
@@ -190,6 +193,9 @@ export function EntityActions(props: {
       <Button variant="outline" disabled={sync.isPending} onClick={() => sync.mutate()}>
         Sync
       </Button>
+      <Show when={sync.error}>
+        <ErrorText error={sync.error} />
+      </Show>
       <Show when={props.entity === "device"}>
         <ConfirmAction
           title="Unenroll"

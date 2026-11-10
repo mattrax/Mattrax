@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import { EmptyState, ErrorText, Field, formatDate, PageHeader } from "~/components/mdm/common";
+import {
+  EmptyState,
+  ErrorText,
+  Field,
+  formatDate,
+  PageHeader,
+  QueryError,
+} from "~/components/mdm/common";
+import { errorMessage } from "~/lib/errors";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -34,8 +42,10 @@ async function platformFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { ...json, ...(init?.headers as Record<string, string> | undefined) },
     ...init,
   });
-  if (!response.ok)
-    throw new Error((await response.text()) || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => undefined);
+    throw new Error(errorMessage(body, `Request failed (${response.status})`));
+  }
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
@@ -125,6 +135,8 @@ export default function InstancesPage() {
           </CardContent>
         </Card>
       </Show>
+
+      <QueryError error={instances.error} onRetry={() => void instances.refetch()} />
 
       <Show
         when={(instances.data?.instances.length ?? 0) > 0}

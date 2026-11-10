@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
-import { ErrorText } from "~/components/mdm/common";
+import { ErrorText, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
@@ -27,6 +27,7 @@ export default function AuditSettingsPage() {
 
   return (
     <div class="space-y-6">
+      <QueryError error={log.error} onRetry={() => void log.refetch()} />
       <Card>
         <CardHeader>
           <CardTitle>Audit log</CardTitle>

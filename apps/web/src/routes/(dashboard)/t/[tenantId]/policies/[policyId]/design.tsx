@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, onSettled, Show } from "solid-js";
-import { LinkButton } from "~/components/mdm/common";
+import { LinkButton, QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -144,12 +144,7 @@ export default function PolicyDesignerPage() {
               </div>
             }
           >
-            <div class="space-y-3 rounded-xl border bg-white p-6 text-sm text-stone-600">
-              <p>Could not load this policy.</p>
-              <Button variant="outline" onClick={() => void policy.refetch()}>
-                Retry
-              </Button>
-            </div>
+            <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
           </Show>
         }
       >

@@ -109,12 +109,15 @@ function CloseMobileSidebarOnNavigate() {
 export default function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
   const [verificationSent, setVerificationSent] = createSignal(false);
+  const [verificationError, setVerificationError] = createSignal<string | null>(null);
   const [sendingVerification, setSendingVerification] = createSignal(false);
   const resendVerification = async () => {
     setSendingVerification(true);
-    await authClient.requestEmailVerification();
+    setVerificationError(null);
+    const result = await authClient.requestEmailVerification();
     setSendingVerification(false);
-    setVerificationSent(true);
+    if (result.error) setVerificationError(result.error.message ?? "Could not send the email.");
+    else setVerificationSent(true);
   };
   const navigate = useNavigate();
   const location = useLocation();
@@ -370,6 +373,9 @@ export default function DashboardLayout(props: ParentProps) {
               when={!verificationSent()}
               fallback={<span class="text-amber-700">Verification email sent.</span>}
             >
+              <Show when={verificationError()}>
+                {(message) => <span class="text-red-700">{message()}</span>}
+              </Show>
               <button
                 type="button"
                 class="font-medium underline underline-offset-2 disabled:opacity-60"

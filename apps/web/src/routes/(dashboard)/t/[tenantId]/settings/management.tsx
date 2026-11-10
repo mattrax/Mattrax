@@ -1,7 +1,8 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
-import { ErrorText, Field } from "~/components/mdm/common";
+import { ErrorText, Field, QueryError } from "~/components/mdm/common";
+import { errorMessage } from "~/lib/errors";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -36,7 +37,10 @@ export default function ManagementSettingsPage() {
         credentials: "include",
         headers: { "x-effect-auth-csrf": "1" },
       });
-      if (!response.ok) throw new Error(`CSR request failed (${response.status})`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => undefined);
+        throw new Error(errorMessage(body, `CSR request failed (${response.status})`));
+      }
       const data = (await response.json()) as { plist?: string };
       if (!data.plist) throw new Error("The server did not return a CSR");
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
@@ -48,7 +52,7 @@ export default function ManagementSettingsPage() {
       URL.revokeObjectURL(url);
       setStep(2);
     } catch (error) {
-      setCsrError(error instanceof Error ? error.message : "Could not download the CSR");
+      setCsrError(errorMessage(error, "Could not download the CSR"));
     }
   };
 
@@ -74,6 +78,7 @@ export default function ManagementSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
+      <QueryError class="xl:col-span-2" error={apns} onRetry={() => void apns.refetch()} />
       <Card class="xl:col-span-2">
         <CardHeader>
           <CardTitle>Apple push notifications</CardTitle>

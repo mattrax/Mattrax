@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
-import { PageHeader } from "~/components/mdm/common";
+import { PageHeader, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -67,6 +67,8 @@ export default function TenantOverviewPage() {
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
+      <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
+
       <PageHeader
         title={tenant.data?.name ?? "Tenant"}
         description={

@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import { ErrorText } from "~/components/mdm/common";
+import { ErrorText, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -57,6 +57,14 @@ export default function AdministratorsSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
+      <QueryError
+        class="xl:col-span-2"
+        error={users.error ?? invitations.error}
+        onRetry={() => {
+          void users.refetch();
+          void invitations.refetch();
+        }}
+      />
       <Card class="xl:col-span-2">
         <CardHeader>
           <CardTitle>Invite an administrator</CardTitle>

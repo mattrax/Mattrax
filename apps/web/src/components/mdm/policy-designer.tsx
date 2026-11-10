@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Check, Download, Plus, Search, ShieldCheck, X } from "~/components/ui/icons";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 import {
   collectionProperties,
   loadManifest,
@@ -85,13 +86,6 @@ const parseStoredDraft = (value: string | null): Draft | undefined => {
   }
 };
 
-const messageOf = (error: unknown) =>
-  error instanceof Error
-    ? error.message
-    : typeof error === "string"
-      ? error
-      : "Something went wrong";
-
 export type PolicyDesignerProps = {
   readonly mode?: "public" | "dashboard";
   readonly initialDraft?: Draft;
@@ -148,7 +142,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       })
       .catch((error) => {
         if (id !== requestId) return;
-        setCatalogErrors((current) => ({ ...current, [target]: messageOf(error) }));
+        setCatalogErrors((current) => ({ ...current, [target]: errorMessage(error) }));
       });
   };
 
@@ -157,7 +151,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     if (!manifest())
       void loadManifest()
         .then(setManifest)
-        .catch((error) => setManifestError(messageOf(error)));
+        .catch((error) => setManifestError(errorMessage(error)));
     beginLoad(platform(), true);
   };
 
@@ -178,7 +172,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   onSettled(() => {
     void loadManifest()
       .then(setManifest)
-      .catch((error) => setManifestError(messageOf(error)));
+      .catch((error) => setManifestError(errorMessage(error)));
 
     if (!initialDraft) {
       const stored = parseStoredDraft(localStorage.getItem(storageKey));
@@ -765,7 +759,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 role="alert"
                 class="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"
               >
-                {messageOf(error())}
+                {errorMessage(error())}
               </p>
             )}
           </Show>

@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, Show } from "solid-js";
-import { ErrorText, Field } from "~/components/mdm/common";
+import { ErrorText, Field, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -70,6 +70,14 @@ export default function EnrollmentSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
+      <QueryError
+        class="xl:col-span-2"
+        error={enrollment.error ?? apns.error}
+        onRetry={() => {
+          void enrollment.refetch();
+          void apns.refetch();
+        }}
+      />
       <Card class="xl:col-span-2">
         <CardHeader>
           <CardTitle>Enrollment link</CardTitle>

@@ -12,6 +12,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { ChevronsUpDown } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
+import { QueryError } from "./common";
 
 export type MdmColumn<T> = {
   id: string;
@@ -45,6 +46,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   /** Navigate when a row is clicked (links/buttons inside the row still win). */
   onRowClick?: (row: T) => void;
   loading?: boolean;
+  error?: unknown;
   searchPlaceholder?: string;
 }) {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
@@ -184,7 +186,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
       </div>
 
-      <Show when={props.loading}>
+      <Show when={props.error}>
+        <QueryError error={props.error} />
+      </Show>
+      <Show when={!props.error && props.loading}>
         <div class="overflow-hidden rounded-xl border bg-card">
           <div class="space-y-2 p-4">
             <For each={[0, 1, 2, 3]}>
@@ -194,8 +199,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
       </Show>
       <Show
-        when={!props.loading && rows().length > 0}
-        fallback={!props.loading ? props.empty : undefined}
+        when={!props.error && !props.loading && rows().length > 0}
+        fallback={!props.error && !props.loading ? props.empty : undefined}
       >
         <div class="overflow-hidden rounded-xl border bg-card">
           <table class="w-full text-sm">

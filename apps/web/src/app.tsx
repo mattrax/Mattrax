@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
+import { errorPresentation, errorTag } from "~/lib/errors";
 import "./app.css";
 
 // Data lives behind the API Worker's auth and only the browser has the session
@@ -16,8 +17,15 @@ const queryClient = new QueryClient({
       enabled: !isServer,
       retry: (count, error) => {
         // Client errors (4xx) will not get better by retrying.
-        const message = error instanceof Error ? error.message : String(error);
-        if (/^(Enterprise(Unauthorized|Forbidden|NotFound|BadRequest))/.test(message)) return false;
+        const tag = errorTag(error);
+        if (
+          tag &&
+          (tag.startsWith("Enterprise") ||
+            tag.startsWith("Platform") ||
+            tag.startsWith("Password") ||
+            tag.startsWith("Session"))
+        )
+          return false;
         return count < 1;
       },
     },
@@ -28,18 +36,12 @@ const Router = createRouter({ routes: fileRoutes(pageRoutes) });
 
 function ErrorFallback(props: { error: unknown; reset: () => void }) {
   console.error("Mattrax page error", props.error);
-  const message =
-    props.error instanceof Error ? props.error.message : String(props.error ?? "Unknown error");
+  const presentation = errorPresentation(props.error);
   return (
     <div class="flex min-h-screen items-center justify-center bg-stone-50 p-6">
       <div class="w-full max-w-md rounded-xl border bg-white p-6 shadow-sm">
-        <h1 class="text-lg font-semibold text-stone-900">Something went wrong</h1>
-        <p class="mt-2 text-sm text-muted-foreground">
-          The page could not load. This is usually temporary.
-        </p>
-        <pre class="mt-4 max-h-40 overflow-auto rounded-lg bg-stone-100 p-3 text-xs text-stone-600">
-          {message}
-        </pre>
+        <h1 class="text-lg font-semibold text-stone-900">{presentation.title}</h1>
+        <p class="mt-2 text-sm text-muted-foreground">{presentation.message}</p>
         <div class="mt-5 flex gap-2">
           <button
             type="button"

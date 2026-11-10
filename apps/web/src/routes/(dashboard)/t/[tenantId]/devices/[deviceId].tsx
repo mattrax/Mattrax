@@ -8,6 +8,7 @@ import {
   formatDate,
   PageHeader,
   PlatformBadge,
+  QueryError,
 } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -148,9 +149,16 @@ export default function DeviceDetailPage() {
       <Show
         when={row()}
         fallback={
-          <Card>
-            <CardContent>Loading device...</CardContent>
-          </Card>
+          <Show
+            when={device.isError}
+            fallback={
+              <Card>
+                <CardContent>Loading device...</CardContent>
+              </Card>
+            }
+          >
+            <QueryError error={device.error} onRetry={() => void device.refetch()} />
+          </Show>
         }
       >
         <div class="grid gap-6 lg:grid-cols-[1fr_360px]">

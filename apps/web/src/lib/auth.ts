@@ -1,6 +1,7 @@
 import { createSignal, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
+import { errorMessage } from "~/lib/errors";
 import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
 
 type AuthUser = {
@@ -56,14 +57,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   const data = (await response.json().catch(() => undefined)) as
-    | { _tag?: string; value?: T; error?: { _tag?: string; message?: string } }
+    | {
+        _tag?: string;
+        value?: T;
+        error?: { _tag?: string; message?: string; reason?: string };
+      }
     | undefined;
 
-  if (data?._tag === "Failure") {
-    throw new Error(data.error?.message ?? data.error?._tag ?? "Request failed");
-  }
-  if (!response.ok) {
-    throw new Error(data?.error?.message ?? `Request failed with ${response.status}`);
+  if (data?._tag === "Failure" || !response.ok) {
+    const tag = data?.error?._tag;
+    const error = new Error(
+      errorMessage(
+        { _tag: tag, message: data?.error?.message, reason: data?.error?.reason },
+        response.status === 429
+          ? "Too many attempts. Wait a minute and try again."
+          : "We couldn't complete that request. Try again.",
+      ),
+    ) as Error & { _tag?: string; reason?: string };
+    if (tag) error._tag = tag;
+    if (data?.error?.reason) error.reason = data.error.reason;
+    throw error;
   }
   return (data && "_tag" in data && data._tag === "Success" ? data.value : data) as T;
 }
@@ -72,7 +85,7 @@ const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
   try {
     return { data: await fn() };
   } catch (error) {
-    return { error: { message: error instanceof Error ? error.message : "Request failed" } };
+    return { error: { message: errorMessage(error) } };
   }
 };
 

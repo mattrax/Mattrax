@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
+import { ErrorText, Field, PageHeader, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -132,6 +132,8 @@ export default function GroupDetailPage() {
   };
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
+      <QueryError error={group.error} onRetry={() => void group.refetch()} />
+
       <PageHeader
         title={row()?.name ?? "Group"}
         description={
