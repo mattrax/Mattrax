@@ -22,6 +22,7 @@ const kindLabel = (kind: string) => {
   if (kind.startsWith("mttx.apple.application")) return "Application";
   if (kind.startsWith("mttx.apple.declaration")) return "Declaration";
   if (kind.startsWith("mttx.windows.custom")) return "Windows configuration";
+  if (kind.startsWith("mttx.android.policy")) return "Android policy";
   return kind;
 };
 
@@ -107,6 +108,12 @@ export default function PolicyDetailPage() {
         actions={
           <>
             <LinkButton
+              href={`/t/${params.tenantId}/policies/${params.policyId}/assignments`}
+              variant="outline"
+            >
+              Assignments
+            </LinkButton>
+            <LinkButton
               href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
               variant="outline"
             >
@@ -176,6 +183,14 @@ export default function PolicyDetailPage() {
                 </div>
               }
             >
+              <Show
+                when={configurations().some(([kind]) => kind.startsWith("mttx.android.policy"))}
+              >
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  Android delivery is not configured. This policy is saved, but no Android device
+                  will receive it until the workspace is connected to Android Enterprise.
+                </div>
+              </Show>
               <For each={configurations()}>
                 {([kind, data]) => (
                   <details class="rounded-lg border">

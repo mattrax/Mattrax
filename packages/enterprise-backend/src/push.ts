@@ -91,7 +91,14 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
         .select()
         .from(schema.groupPolicy)
         .where(inArray(schema.groupPolicy.policyId, [...policyIds]));
-      return yield* deviceIdsInGroups(associations.map((row: { groupId: string }) => row.groupId));
+      const direct = yield* db
+        .select()
+        .from(schema.devicePolicy)
+        .where(inArray(schema.devicePolicy.policyId, [...policyIds]));
+      const grouped = yield* deviceIdsInGroups(
+        associations.map((row: { groupId: string }) => row.groupId),
+      );
+      return [...new Set([...grouped, ...direct.map((row: { deviceId: string }) => row.deviceId)])];
     });
 
   return { pushAppleDevice, pushAppleDevices, deviceIdsInGroups, deviceIdsInPolicies };

@@ -35,6 +35,8 @@ import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
 import { ssoRoutes } from "./sso.js";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
+import { AzureGraphFetchLive } from "@mattrax/azure-graph";
+import { AppleMdmTrust, MdmError } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
 import { listDevEmails, recordDevEmail } from "./devMailbox.js";
 
@@ -208,6 +210,24 @@ const makeAppLayer = (env: Env, request: Request) => {
     list: () => env.STORAGE.list(),
   };
 
+  const appleTrustLayer = Layer.effect(
+    AppleMdmTrust,
+    Effect.gen(function* () {
+      const db = yield* Db;
+      return AppleMdmTrust.of({
+        requireSignature: true,
+        caCertPems: Effect.gen(function* () {
+          const ca = yield* db.query.scepCa.findFirst();
+          return ca ? [ca.certPem] : [];
+        }).pipe(
+          Effect.mapError(
+            (cause) => new MdmError({ message: `Could not load SCEP CA: ${String(cause)}` }),
+          ),
+        ),
+      });
+    }),
+  ).pipe(Layer.provide(Db.layer));
+
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
@@ -218,19 +238,30 @@ const makeAppLayer = (env: Env, request: Request) => {
     requireAppleDeviceIdentity: true,
   }).pipe(Layer.provide(Db.layer));
 
+  const azureGraphLayer =
+    env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
+      ? AzureGraphFetchLive({
+          clientId: env.AZURE_CLIENT_ID,
+          clientSecret: env.AZURE_CLIENT_SECRET,
+          origin: env.ORIGIN,
+        })
+      : Layer.empty;
+
   const servicesLayer = Layer.mergeAll(
-    EnterpriseService({ email }).pipe(
+    EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
       Layer.provide(R2.layer(storageBucket)),
       Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
+      Layer.provide(azureGraphLayer),
     ),
     AppleMdmService.layer.pipe(
       Layer.provide(AppleMdmTopic.layer),
       Layer.provide(managementBackendLayer),
       Layer.provide(appleMdmConfigLayer),
+      Layer.provide(appleTrustLayer),
     ),
     WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(Layer.provide(managementBackendLayer)),
     ScepService.pipe(
@@ -302,13 +333,26 @@ export default {
     // caller-supplied header. Cloudflare exposes the certificate subject here.
     const headers = new Headers(request.headers);
     headers.delete("x-device-identity-certificate");
+    headers.delete("x-device-identity-certificate-serial");
+    headers.delete("x-device-identity-certificate-sha256");
     const tls = (
       request as unknown as {
-        cf?: { tlsClientAuth?: { certVerified?: string; certSubjectDN?: string } };
+        cf?: {
+          tlsClientAuth?: {
+            certVerified?: string;
+            certSubjectDN?: string;
+            certSerial?: string;
+            certFingerprintSHA256?: string;
+          };
+        };
       }
     ).cf?.tlsClientAuth;
-    if (tls?.certVerified === "SUCCESS" && tls.certSubjectDN)
-      headers.set("x-device-identity-certificate", tls.certSubjectDN);
+    if (tls?.certVerified === "SUCCESS") {
+      if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
+      if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
+      if (tls.certFingerprintSHA256)
+        headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
+    }
     const deviceRequest = new Request(request, { headers });
 
     const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env, deviceRequest) as any);

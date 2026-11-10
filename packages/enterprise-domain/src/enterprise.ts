@@ -110,6 +110,14 @@ const EnterpriseApnsErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
+const EnterpriseApplicationErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+const EnterpriseSsoErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
@@ -235,6 +243,36 @@ export const PatchSsoConfigRequest = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   azureTenantId: Schema.optional(NullableString),
   autoProvision: Schema.optional(Schema.Boolean),
+});
+
+export const EntraDomainInfo = Schema.Struct({
+  domain: Schema.String,
+  source: Schema.String,
+  isVerified: Schema.Boolean,
+  verifiedAt: Schema.optional(NullableString),
+});
+export type EntraDomainInfo = typeof EntraDomainInfo.Type;
+export const EntraDomainsResponse = Schema.Struct({ domains: Schema.Array(EntraDomainInfo) });
+
+export const EntraDirectorySyncStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  enabled: Schema.Boolean,
+  status: Schema.String,
+  azureTenantId: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  lastCounts: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  consentUrl: Schema.optional(NullableString),
+});
+export type EntraDirectorySyncStatus = typeof EntraDirectorySyncStatus.Type;
+export const PatchEntraDirectorySyncRequest = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+});
+export const EntraDirectorySyncResult = Schema.Struct({
+  status: Schema.Literal("ok"),
+  users: Schema.Number,
+  groups: Schema.Number,
+  domains: Schema.Number,
 });
 
 export const ScimTokenInfo = Schema.Struct({
@@ -371,6 +409,7 @@ export const GroupRow = Schema.Struct({
 export type GroupRow = typeof GroupRow.Type;
 
 export const GroupRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
+export const DeviceRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
 export const GroupNode = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -453,6 +492,9 @@ export const PolicyApplicationObject = Schema.Struct({
 });
 export type PolicyApplicationObject = typeof PolicyApplicationObject.Type;
 
+export const EnterpriseApplicationUploadErrors = EnterprisePolicyApplicationUploadErrors;
+export const EnterpriseApplicationDownloadErrors = EnterprisePolicyApplicationDownloadErrors;
+
 export const DownloadPolicyApplicationResponse = Schema.Struct({
   sha256: Schema.String,
   fileName: Schema.String,
@@ -461,6 +503,97 @@ export const DownloadPolicyApplicationResponse = Schema.Struct({
   content: Schema.String,
 });
 export type DownloadPolicyApplicationResponse = typeof DownloadPolicyApplicationResponse.Type;
+
+export const ApplicationPlatform = Schema.Literals(["apple", "win", "android"]);
+export type ApplicationPlatform = typeof ApplicationPlatform.Type;
+export const ApplicationSource = Schema.Literals(["manifest", "store", "upload"]);
+export type ApplicationSource = typeof ApplicationSource.Type;
+
+export const ApplicationRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  platform: ApplicationPlatform,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  source: ApplicationSource,
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.Number),
+  sha256: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+  groupsCount: Schema.optional(Schema.Number),
+  devicesCount: Schema.optional(Schema.Number),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type ApplicationRow = typeof ApplicationRow.Type;
+
+export const ApplicationListResponse = Schema.Struct({
+  applications: Schema.Array(ApplicationRow),
+});
+export const ApplicationNode = Schema.Struct({
+  ...ApplicationRow.fields,
+  groups: Schema.Array(GroupRelation),
+  devices: Schema.Array(DeviceRelation),
+});
+export type ApplicationNode = typeof ApplicationNode.Type;
+
+export const CreateApplicationRequest = Schema.Struct({
+  name: Schema.String,
+  platform: ApplicationPlatform,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  source: Schema.optional(ApplicationSource),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+});
+
+export const PatchApplicationRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  source: Schema.optional(ApplicationSource),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+});
+
+export const PatchApplicationAssignmentsRequest = Schema.Struct({
+  assign: Schema.optional(
+    Schema.Struct({
+      groups: Schema.optional(Schema.Array(Schema.String)),
+      devices: Schema.optional(Schema.Array(Schema.String)),
+    }),
+  ),
+  unassign: Schema.optional(
+    Schema.Struct({
+      groups: Schema.optional(Schema.Array(Schema.String)),
+      devices: Schema.optional(Schema.Array(Schema.String)),
+    }),
+  ),
+});
+
+export const ApplicationInstallResult = Schema.Struct({
+  status: Schema.Literal("ok"),
+  queued: Schema.Number,
+  skipped: Schema.Number,
+  message: Schema.optional(Schema.String),
+});
+export type ApplicationInstallResult = typeof ApplicationInstallResult.Type;
+
+export const PolicyAssignmentsResponse = Schema.Struct({
+  groups: Schema.Array(GroupRelation),
+  devices: Schema.Array(DeviceRelation),
+});
+export type PolicyAssignmentsResponse = typeof PolicyAssignmentsResponse.Type;
+
+export const PatchPolicyAssignmentsRequest = Schema.Struct({
+  assign: Schema.optional(Schema.Array(Schema.String)),
+  unassign: Schema.optional(Schema.Array(Schema.String)),
+});
 
 export const MobileconfigPayloadPreview = Schema.Struct({
   type: Schema.String,
@@ -737,10 +870,46 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchSsoConfig", "/v1/tenants/:tenantId/sso", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseSsoErrors,
       params: TenantParam,
       payload: PatchSsoConfigRequest,
       success: SsoConfigResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getEntraDirectorySync", "/v1/tenants/:tenantId/identity/directory", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: EntraDirectorySyncStatus,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchEntraDirectorySync", "/v1/tenants/:tenantId/identity/directory", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchEntraDirectorySyncRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("syncEntraDirectory", "/v1/tenants/:tenantId/identity/directory/sync", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: EntraDirectorySyncResult,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listEntraDomains", "/v1/tenants/:tenantId/identity/domains", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: EntraDomainsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("refreshEntraDomains", "/v1/tenants/:tenantId/identity/domains/refresh", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: EntraDomainsResponse,
     }),
   )
   .add(
@@ -1021,6 +1190,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getPolicyAssignments", "/v1/tenants/:tenantId/policies/:id/assignments", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: PolicyAssignmentsResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("listPolicies", "/v1/tenants/:tenantId/policies", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -1078,6 +1254,98 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterprisePolicyApplicationDownloadErrors,
         params: { tenantId: Schema.String, id: Schema.String, sha256: Schema.String },
         success: DownloadPolicyApplicationResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("listApplications", "/v1/tenants/:tenantId/applications", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: ApplicationListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getApplication", "/v1/tenants/:tenantId/applications/:id", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: ApplicationNode,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createApplication", "/v1/tenants/:tenantId/applications", {
+      error: EnterpriseApplicationErrors,
+      params: TenantParam,
+      payload: CreateApplicationRequest,
+      success: IdResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchApplication", "/v1/tenants/:tenantId/applications/:id", {
+      error: EnterpriseApplicationErrors,
+      params: TenantIdParam,
+      payload: PatchApplicationRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteApplications", "/v1/tenants/:tenantId/applications", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: IdsRequest,
+      success: BulkOperationResult,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchApplicationAssignments",
+      "/v1/tenants/:tenantId/applications/:id/assignments",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantIdParam,
+        payload: PatchApplicationAssignmentsRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("installApplication", "/v1/tenants/:tenantId/applications/:id/install", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantIdParam,
+      success: ApplicationInstallResult,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("uploadApplication", "/v1/tenants/:tenantId/applications/:id/upload", {
+      error: EnterpriseApplicationUploadErrors,
+      params: TenantIdParam,
+      payload: UploadPolicyApplicationRequest,
+      success: PolicyApplicationObject,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "downloadApplication",
+      "/v1/tenants/:tenantId/applications/:id/download/:sha256",
+      {
+        error: EnterpriseApplicationDownloadErrors,
+        params: Schema.Struct({
+          tenantId: Schema.String,
+          id: Schema.String,
+          sha256: Schema.String,
+        }),
+        success: DownloadPolicyApplicationResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchPolicyAssignments",
+      "/v1/tenants/:tenantId/policies/:id/assignments",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantIdParam,
+        payload: PatchPolicyAssignmentsRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
       },
     ),
   )

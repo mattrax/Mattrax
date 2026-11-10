@@ -236,10 +236,18 @@ export const userGroup = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: shortText("name").notNull(),
+    externalId: shortText("external_id"),
+    description: text("description"),
+    source: varchar("source", { length: 16, enum: ["scim", "graph", "manual"] })
+      .notNull()
+      .default("manual"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [index("user_group_organization_idx").on(table.organizationId)],
+  (table) => [
+    index("user_group_organization_idx").on(table.organizationId),
+    uniqueIndex("user_group_external_unique").on(table.organizationId, table.externalId),
+  ],
 );
 
 export const userGroupMember = mysqlTable(
@@ -272,13 +280,56 @@ export const ssoIdentity = mysqlTable(
 );
 
 /** Tenant SSO configuration. One Azure Entra ID tenant per Mattrax tenant. */
-export const ssoConfig = mysqlTable("sso_config", {
+export const ssoConfig = mysqlTable(
+  "sso_config",
+  {
+    organizationId: id("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    azureTenantId: shortText("azure_tenant_id"),
+    autoProvision: boolean("auto_provision").notNull().default(true),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("sso_config_azure_tenant_unique").on(table.azureTenantId)],
+);
+
+/** Verified Entra domains used for pre-login tenant routing. */
+export const ssoDomain = mysqlTable(
+  "sso_domain",
+  {
+    domain: shortText("domain").primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    source: varchar("source", { length: 16, enum: ["entra", "manual"] })
+      .notNull()
+      .default("entra"),
+    isVerified: boolean("is_verified").notNull().default(false),
+    verifiedAt: timestamp("verified_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("sso_domain_organization_idx").on(table.organizationId)],
+);
+
+/** Microsoft Graph directory sync state and delta cursors. */
+export const entraDirectorySync = mysqlTable("entra_directory_sync", {
   organizationId: id("organization_id")
     .primaryKey()
     .references(() => organization.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(false),
-  azureTenantId: shortText("azure_tenant_id"),
-  autoProvision: boolean("auto_provision").notNull().default(true),
+  usersDeltaLink: text("users_delta_link"),
+  groupsDeltaLink: text("groups_delta_link"),
+  domainsSyncedAt: timestamp("domains_synced_at"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  lastError: text("last_error"),
+  lastCounts: json("last_counts"),
+  status: varchar("status", { length: 32, enum: ["idle", "running", "error"] })
+    .notNull()
+    .default("idle"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
@@ -541,6 +592,79 @@ export const groupPolicy = mysqlTable(
   (table) => [primaryKey({ columns: [table.groupId, table.policyId] })],
 );
 
+/**
+ * A tenant application catalogue entry. Apple can deliver manifest/store
+ * installs today; Windows and Android entries are catalogued and assigned but
+ * delivery is not implemented by their management backends yet.
+ */
+export const application = mysqlTable(
+  "application",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    bundleId: shortText("bundle_id"),
+    version: shortText("version"),
+    source: varchar("source", { length: 16, enum: ["manifest", "store", "upload"] })
+      .notNull()
+      .default("manifest"),
+    manifestUrl: text("manifest_url"),
+    storeId: shortText("store_id"),
+    fileName: shortText("file_name"),
+    contentType: shortText("content_type"),
+    size: int("size"),
+    sha256: shortText("sha256"),
+    r2Key: text("r2_key"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("application_organization_id_idx").on(table.organizationId)],
+);
+
+export const applicationGroup = mysqlTable(
+  "application_group",
+  {
+    groupId: id("group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.groupId, table.applicationId] })],
+);
+
+export const applicationDevice = mysqlTable(
+  "application_device",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.deviceId, table.applicationId] })],
+);
+
+/** Direct device-to-policy assignment in addition to group membership. */
+export const devicePolicy = mysqlTable(
+  "device_policy",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    policyId: id("policy_id")
+      .notNull()
+      .references(() => policy.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.deviceId, table.policyId] })],
+);
+
 export const organizationDeviceUsage = mysqlTable(
   "organization_device_usage",
   {
@@ -617,6 +741,8 @@ export const relations = defineRelations(
     accountApiToken,
     auditLog,
     ssoConfig,
+    ssoDomain,
+    entraDirectorySync,
     ssoIdentity,
     scimToken,
     userGroup,
@@ -635,6 +761,10 @@ export const relations = defineRelations(
     configuration,
     groupDevice,
     groupPolicy,
+    application,
+    applicationGroup,
+    applicationDevice,
+    devicePolicy,
     organizationDeviceUsage,
     platformInstance,
     scepCa,
@@ -667,6 +797,11 @@ export const relations = defineRelations(
         to: r.enterpriseGroup.organizationId,
       }),
       policies: r.many.policy({ from: r.organization.id, to: r.policy.organizationId }),
+      ssoDomains: r.many.ssoDomain({ from: r.organization.id, to: r.ssoDomain.organizationId }),
+      applications: r.many.application({
+        from: r.organization.id,
+        to: r.application.organizationId,
+      }),
       deviceUsage: r.many.organizationDeviceUsage({
         from: r.organization.id,
         to: r.organizationDeviceUsage.organizationId,
@@ -682,6 +817,18 @@ export const relations = defineRelations(
         to: r.organization.id,
       }),
       inviter: r.one.user({ from: r.invitation.inviterId, to: r.user.id }),
+    },
+    ssoDomain: {
+      organization: r.one.organization({
+        from: r.ssoDomain.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    entraDirectorySync: {
+      organization: r.one.organization({
+        from: r.entraDirectorySync.organizationId,
+        to: r.organization.id,
+      }),
     },
     ssoIdentity: {
       organization: r.one.organization({
@@ -726,11 +873,16 @@ export const relations = defineRelations(
       }),
       devices: r.many.groupDevice({ from: r.enterpriseGroup.id, to: r.groupDevice.groupId }),
       policies: r.many.groupPolicy({ from: r.enterpriseGroup.id, to: r.groupPolicy.groupId }),
+      applications: r.many.applicationGroup({
+        from: r.enterpriseGroup.id,
+        to: r.applicationGroup.groupId,
+      }),
     },
     policy: {
       organization: r.one.organization({ from: r.policy.organizationId, to: r.organization.id }),
       configurations: r.many.configuration({ from: r.policy.id, to: r.configuration.policyId }),
       groups: r.many.groupPolicy({ from: r.policy.id, to: r.groupPolicy.policyId }),
+      directDevices: r.many.devicePolicy({ from: r.policy.id, to: r.devicePolicy.policyId }),
     },
     configuration: {
       policy: r.one.policy({ from: r.configuration.policyId, to: r.policy.id }),
@@ -742,6 +894,33 @@ export const relations = defineRelations(
     groupPolicy: {
       group: r.one.enterpriseGroup({ from: r.groupPolicy.groupId, to: r.enterpriseGroup.id }),
       policy: r.one.policy({ from: r.groupPolicy.policyId, to: r.policy.id }),
+    },
+    application: {
+      organization: r.one.organization({
+        from: r.application.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    applicationGroup: {
+      application: r.one.application({
+        from: r.applicationGroup.applicationId,
+        to: r.application.id,
+      }),
+      group: r.one.enterpriseGroup({
+        from: r.applicationGroup.groupId,
+        to: r.enterpriseGroup.id,
+      }),
+    },
+    applicationDevice: {
+      application: r.one.application({
+        from: r.applicationDevice.applicationId,
+        to: r.application.id,
+      }),
+      device: r.one.device({ from: r.applicationDevice.deviceId, to: r.device.id }),
+    },
+    devicePolicy: {
+      device: r.one.device({ from: r.devicePolicy.deviceId, to: r.device.id }),
+      policy: r.one.policy({ from: r.devicePolicy.policyId, to: r.policy.id }),
     },
     organizationDeviceUsage: {
       organization: r.one.organization({

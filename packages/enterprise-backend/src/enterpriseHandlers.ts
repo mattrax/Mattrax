@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import {
+  applicationKey,
   EnterpriseBadRequest,
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
@@ -31,6 +32,8 @@ import {
 } from "@mattrax/apns";
 import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
+import { syncEntraDirectory } from "./entraSync.ts";
+import type { AzureGraphService } from "@mattrax/azure-graph";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
@@ -48,6 +51,7 @@ import type {
   EnterpriseGroup,
   EnterpriseGroupDevice,
   EnterpriseGroupPolicy,
+  EnterpriseApplication,
   EnterpriseOrganization,
   EnterprisePolicy,
   EnterpriseSchema,
@@ -59,6 +63,10 @@ export type EnterpriseHandlersConfig = {
   readonly storage: R2Bucket;
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
+  /** Microsoft Graph client used by directory sync (optional). */
+  readonly azureGraph?: AzureGraphService;
+  /** Public Entra app client id, exposed only to build the admin consent URL. */
+  readonly azureClientId?: string;
   /** Apple MDM vendor certificate/key used to sign APNs CSRs (optional). */
   readonly cloudAppleVendorCert?: string;
   readonly cloudAppleVendorKey?: string;
@@ -140,6 +148,8 @@ export const createEnterpriseService = ({
   cloudAppleVendorKey,
   apns: apnsService,
   email,
+  azureGraph,
+  azureClientId,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
   const auth = authService;
@@ -326,6 +336,60 @@ export const createEnterpriseService = ({
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
     });
 
+  const assertTenantApplications = (tenantId: string, ids: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (ids.length === 0) return;
+      const rows = yield* db
+        .select({ id: schema.application.id })
+        .from(schema.application)
+        .where(
+          and(
+            eq(schema.application.organizationId, tenantId),
+            inArray(schema.application.id, [...ids]),
+          ),
+        );
+      if (rows.length !== new Set(ids).size)
+        return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+    });
+
+  const applicationAssignedDeviceIds = (organizationId: string, applicationId: string) =>
+    Effect.gen(function* () {
+      const groups = yield* db
+        .select({ groupId: schema.applicationGroup.groupId })
+        .from(schema.applicationGroup)
+        .where(eq(schema.applicationGroup.applicationId, applicationId));
+      const direct = yield* db
+        .select({ deviceId: schema.applicationDevice.deviceId })
+        .from(schema.applicationDevice)
+        .where(eq(schema.applicationDevice.applicationId, applicationId));
+      const groupDevices = groups.length
+        ? yield* db
+            .select({ deviceId: schema.groupDevice.deviceId })
+            .from(schema.groupDevice)
+            .where(
+              inArray(
+                schema.groupDevice.groupId,
+                groups.map((group: { groupId: string }) => group.groupId),
+              ),
+            )
+        : [];
+      const ids = new Set<string>([
+        ...direct.map((row: { deviceId: string }) => row.deviceId),
+        ...groupDevices.map((row: { deviceId: string }) => row.deviceId),
+      ]);
+      if (ids.size === 0) return [] as Array<EnterpriseDevice>;
+      const devices = yield* db
+        .select()
+        .from(schema.device)
+        .where(
+          and(
+            eq(schema.device.organizationId, organizationId),
+            inArray(schema.device.id, [...ids]),
+          ),
+        );
+      return devices as Array<EnterpriseDevice>;
+    });
+
   const assertTenantGroup = (tenantId: string, groupId: string) =>
     Effect.gen(function* () {
       const group = yield* db.query.enterpriseGroup.findFirst({
@@ -410,6 +474,26 @@ export const createEnterpriseService = ({
       }
       return base;
     });
+
+  const rowApplication = (row: EnterpriseApplication, groupsCount = 0, devicesCount = 0) => ({
+    id: row.id,
+    name: row.name,
+    platform: row.platform,
+    bundleId: row.bundleId,
+    version: row.version,
+    source: row.source,
+    manifestUrl: row.manifestUrl,
+    storeId: row.storeId,
+    fileName: row.fileName,
+    contentType: row.contentType,
+    size: row.size ?? undefined,
+    sha256: row.sha256,
+    notes: row.notes,
+    groupsCount,
+    devicesCount,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
 
   const rowEnrollment = (row: EnterpriseEnrollment) => ({
     id: row.id,
@@ -734,6 +818,190 @@ export const createEnterpriseService = ({
         yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
         return ok;
       }),
+    getEntraDirectorySync: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const config = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const state = yield* db.query.entraDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        return {
+          configured: Boolean(azureGraph && azureClientId),
+          enabled: state?.enabled ?? false,
+          status: state?.status ?? "idle",
+          azureTenantId: config?.azureTenantId ?? null,
+          lastSyncedAt: state?.lastSyncedAt ? iso(state.lastSyncedAt) : null,
+          lastError: state?.lastError ?? null,
+          lastCounts: state?.lastCounts ?? null,
+          consentUrl:
+            azureGraph && config?.azureTenantId
+              ? azureGraph.consentUrl(config.azureTenantId)
+              : null,
+        };
+      }),
+    patchEntraDirectorySync: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { enabled?: boolean };
+        const existing = yield* db.query.entraDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const enabled = body.enabled ?? existing?.enabled ?? false;
+        if (existing)
+          yield* db
+            .update(schema.entraDirectorySync)
+            .set({ enabled, updatedAt: now() })
+            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+        else
+          yield* db.insert(schema.entraDirectorySync).values({
+            organizationId: ctx.organization.id,
+            enabled,
+            status: "idle",
+            createdAt: now(),
+            updatedAt: now(),
+          });
+        yield* audit(ctx, "entra.directory_updated", "entra", ctx.organization.id, { enabled });
+        return ok;
+      }),
+    syncEntraDirectory: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!azureGraph)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Microsoft Graph is not configured. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET and grant admin consent.",
+            }),
+          );
+        const config = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        if (!config?.azureTenantId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Enable Entra ID SSO with a tenant id first." }),
+          );
+        const state = yield* db.query.entraDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        yield* db
+          .insert(schema.entraDirectorySync)
+          .values({
+            organizationId: ctx.organization.id,
+            enabled: state?.enabled ?? true,
+            status: "running",
+            lastAttemptedAt: now(),
+            createdAt: now(),
+            updatedAt: now(),
+          })
+          .onDuplicateKeyUpdate({
+            set: { status: "running", lastAttemptedAt: now(), lastError: null, updatedAt: now() },
+          });
+        const exit = yield* Effect.exit(
+          syncEntraDirectory({
+            db,
+            graph: azureGraph,
+            organizationId: ctx.organization.id,
+            azureTenantId: config.azureTenantId,
+            autoProvision: config.autoProvision,
+            usersDeltaLink: state?.usersDeltaLink,
+            groupsDeltaLink: state?.groupsDeltaLink,
+            syncUsersAndGroups: true,
+          }),
+        );
+        if (Exit.isFailure(exit)) {
+          const message = String(exit.cause);
+          yield* db
+            .update(schema.entraDirectorySync)
+            .set({ status: "error", lastError: message.slice(0, 2000), updatedAt: now() })
+            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+          yield* audit(ctx, "entra.sync_failed", "entra", ctx.organization.id, {
+            message: message.slice(0, 500),
+          });
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: `Directory sync failed: ${message}` }),
+          );
+        }
+        const result = exit.value;
+        yield* db
+          .update(schema.entraDirectorySync)
+          .set({
+            status: "idle",
+            lastError: null,
+            lastSyncedAt: now(),
+            usersDeltaLink: result.usersDelta ?? null,
+            groupsDeltaLink: result.groupsDelta ?? null,
+            lastCounts: {
+              users: result.users,
+              groups: result.groups,
+              domains: result.domains,
+            },
+            updatedAt: now(),
+          })
+          .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+        yield* audit(ctx, "entra.sync_completed", "entra", ctx.organization.id, result);
+        return {
+          status: "ok" as const,
+          users: result.users,
+          groups: result.groups,
+          domains: result.domains,
+        };
+      }),
+    listEntraDomains: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* db
+          .select()
+          .from(schema.ssoDomain)
+          .where(eq(schema.ssoDomain.organizationId, ctx.organization.id));
+        return {
+          domains: rows.map((row: (typeof rows)[number]) => ({
+            domain: row.domain,
+            source: row.source,
+            isVerified: row.isVerified,
+            verifiedAt: row.verifiedAt ? iso(row.verifiedAt) : null,
+          })),
+        };
+      }),
+    refreshEntraDomains: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!azureGraph)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Microsoft Graph is not configured." }),
+          );
+        const config = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        if (!config?.azureTenantId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Enable Entra ID SSO with a tenant id first." }),
+          );
+        yield* syncEntraDirectory({
+          db,
+          graph: azureGraph,
+          organizationId: ctx.organization.id,
+          azureTenantId: config.azureTenantId,
+          autoProvision: config.autoProvision,
+          syncUsersAndGroups: false,
+        });
+        const rows = yield* db
+          .select()
+          .from(schema.ssoDomain)
+          .where(eq(schema.ssoDomain.organizationId, ctx.organization.id));
+        yield* audit(ctx, "entra.domains_refreshed", "entra", ctx.organization.id, {
+          count: rows.length,
+        });
+        return {
+          domains: rows.map((row: (typeof rows)[number]) => ({
+            domain: row.domain,
+            source: row.source,
+            isVerified: row.isVerified,
+            verifiedAt: row.verifiedAt ? iso(row.verifiedAt) : null,
+          })),
+        };
+      }),
     getSsoConfig: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -757,7 +1025,40 @@ export const createEnterpriseService = ({
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+        if (body.azureTenantId) {
+          const claimed = yield* db.query.ssoConfig.findFirst({
+            where: { azureTenantId: body.azureTenantId },
+          });
+          if (claimed && claimed.organizationId !== ctx.organization.id)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "That Entra tenant is already linked to another workspace",
+              }),
+            );
+        }
         const timestamp = now();
+        if (existing?.azureTenantId !== body.azureTenantId) {
+          // Delta cursors and imported domains belong to the previous Entra
+          // tenant and cannot be reused after a change.
+          yield* db
+            .update(schema.entraDirectorySync)
+            .set({
+              usersDeltaLink: null,
+              groupsDeltaLink: null,
+              status: "idle",
+              lastError: null,
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+          yield* db
+            .delete(schema.ssoDomain)
+            .where(
+              and(
+                eq(schema.ssoDomain.organizationId, ctx.organization.id),
+                eq(schema.ssoDomain.source, "entra"),
+              ),
+            );
+        }
         if (existing) {
           yield* db
             .update(schema.ssoConfig)
@@ -1966,6 +2267,460 @@ export const createEnterpriseService = ({
           content: bytesToBase64(new Uint8Array(bytes)),
         };
       }).pipe(Effect.provide(r2Layer)),
+    getPolicyAssignments: (request, tenantId, policyId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+        const groupLinks = yield* db
+          .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+          .from(schema.groupPolicy)
+          .innerJoin(
+            schema.enterpriseGroup,
+            eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
+          )
+          .where(eq(schema.groupPolicy.policyId, policyId));
+        const devices = yield* db
+          .select({ id: schema.device.id, name: schema.device.name })
+          .from(schema.devicePolicy)
+          .innerJoin(schema.device, eq(schema.device.id, schema.devicePolicy.deviceId))
+          .where(eq(schema.devicePolicy.policyId, policyId));
+        return { groups: groupLinks, devices };
+      }),
+    patchPolicyAssignments: (request, tenantId, policyId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+        const body = payload as { assign?: Array<string>; unassign?: Array<string> };
+        yield* assertTenantDevices(ctx.organization.id, [
+          ...(body.assign ?? []),
+          ...(body.unassign ?? []),
+        ]);
+        if (body.assign?.length)
+          yield* db
+            .insert(schema.devicePolicy)
+            .ignore()
+            .values(body.assign.map((deviceId) => ({ deviceId, policyId })));
+        if (body.unassign?.length)
+          yield* db
+            .delete(schema.devicePolicy)
+            .where(
+              and(
+                eq(schema.devicePolicy.policyId, policyId),
+                inArray(schema.devicePolicy.deviceId, body.unassign),
+              ),
+            );
+        yield* applePush.pushAppleDevices([...(body.assign ?? []), ...(body.unassign ?? [])]);
+        yield* audit(ctx, "policy.assignments_changed", "policy", policyId, {
+          assign: body.assign?.length ?? 0,
+          unassign: body.unassign?.length ?? 0,
+        });
+        return ok;
+      }),
+    listApplications: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const apps = (yield* db
+          .select()
+          .from(schema.application)
+          .where(
+            eq(schema.application.organizationId, ctx.organization.id),
+          )) as Array<EnterpriseApplication>;
+        if (apps.length === 0) return { applications: [] };
+        const ids = apps.map((app) => app.id);
+        const groupLinks = yield* db
+          .select()
+          .from(schema.applicationGroup)
+          .where(inArray(schema.applicationGroup.applicationId, ids));
+        const deviceLinks = yield* db
+          .select()
+          .from(schema.applicationDevice)
+          .where(inArray(schema.applicationDevice.applicationId, ids));
+        return {
+          applications: apps.map((app) =>
+            rowApplication(
+              app,
+              groupLinks.filter((link: { applicationId: string }) => link.applicationId === app.id)
+                .length,
+              deviceLinks.filter((link: { applicationId: string }) => link.applicationId === app.id)
+                .length,
+            ),
+          ),
+        };
+      }),
+    getApplication: (request, tenantId, applicationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const app = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
+        if (!app)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+        const groupLinks = yield* db
+          .select()
+          .from(schema.applicationGroup)
+          .where(eq(schema.applicationGroup.applicationId, applicationId));
+        const deviceLinks = yield* db
+          .select()
+          .from(schema.applicationDevice)
+          .where(eq(schema.applicationDevice.applicationId, applicationId));
+        const groupIds = groupLinks.map((link: { groupId: string }) => link.groupId);
+        const deviceIds = deviceLinks.map((link: { deviceId: string }) => link.deviceId);
+        const groups = groupIds.length
+          ? yield* db
+              .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+              .from(schema.enterpriseGroup)
+              .where(inArray(schema.enterpriseGroup.id, groupIds))
+          : [];
+        const devices = deviceIds.length
+          ? yield* db
+              .select({ id: schema.device.id, name: schema.device.name })
+              .from(schema.device)
+              .where(inArray(schema.device.id, deviceIds))
+          : [];
+        return { ...rowApplication(app, groups.length, devices.length), groups, devices };
+      }),
+    createApplication: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          name: string;
+          platform: "apple" | "win" | "android";
+          bundleId?: string | null;
+          version?: string | null;
+          source?: "manifest" | "store" | "upload";
+          manifestUrl?: string | null;
+          storeId?: string | null;
+          notes?: string | null;
+        };
+        if (!body.name.trim())
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
+        const source = body.source ?? (body.storeId ? "store" : "manifest");
+        if (body.platform === "apple") {
+          if (source === "manifest" && !body.manifestUrl?.trim())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Apple manifest applications require a manifest URL",
+              }),
+            );
+          if (source === "store" && !body.storeId?.trim())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
+            );
+        }
+        if (source === "store" && !Number.isSafeInteger(Number(body.storeId)))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+          );
+        const applicationId = id();
+        yield* db.insert(schema.application).values({
+          id: applicationId,
+          organizationId: ctx.organization.id,
+          name: body.name.trim(),
+          platform: body.platform,
+          bundleId: body.bundleId ?? null,
+          version: body.version ?? null,
+          source,
+          manifestUrl: body.manifestUrl ?? null,
+          storeId: body.storeId ?? null,
+          notes: body.notes ?? null,
+          createdAt: now(),
+          updatedAt: now(),
+        });
+        yield* audit(ctx, "application.created", "application", applicationId, {
+          name: body.name.trim(),
+          platform: body.platform,
+        });
+        return { id: applicationId };
+      }),
+    patchApplication: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const existing = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
+        if (!existing)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+        const body = payload as {
+          name?: string;
+          bundleId?: string | null;
+          version?: string | null;
+          source?: "manifest" | "store" | "upload";
+          manifestUrl?: string | null;
+          storeId?: string | null;
+          notes?: string | null;
+        };
+        const source = body.source ?? existing.source;
+        const manifestUrl =
+          body.manifestUrl === undefined ? existing.manifestUrl : body.manifestUrl;
+        const storeId = body.storeId === undefined ? existing.storeId : body.storeId;
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
+        if (existing.platform === "apple") {
+          if (source === "manifest" && !manifestUrl?.trim())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Apple manifest applications require a manifest URL",
+              }),
+            );
+          if (source === "store" && !storeId?.trim())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
+            );
+        }
+        if (source === "store" && !Number.isSafeInteger(Number(storeId)))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+          );
+        yield* db
+          .update(schema.application)
+          .set({
+            name: body.name?.trim() ?? existing.name,
+            bundleId: body.bundleId === undefined ? existing.bundleId : body.bundleId,
+            version: body.version === undefined ? existing.version : body.version,
+            source,
+            manifestUrl,
+            storeId,
+            notes: body.notes === undefined ? existing.notes : body.notes,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.application.id, applicationId),
+              eq(schema.application.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(ctx, "application.updated", "application", applicationId, {
+          fields: Object.keys(body),
+        });
+        return ok;
+      }),
+    deleteApplications: (request, tenantId, ids) =>
+      Effect.gen(function* () {
+        const r2 = yield* R2Storage;
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const deleted: Array<string> = [];
+        const failed: Array<{ id: string; reason: string }> = [];
+        for (const applicationId of ids) {
+          const existing = (yield* db.query.application.findFirst({
+            where: { id: applicationId, organizationId: ctx.organization.id },
+          })) as EnterpriseApplication | undefined;
+          if (!existing) {
+            failed.push({ id: applicationId, reason: "notFound" });
+            continue;
+          }
+          if (existing.r2Key) yield* r2.delete(existing.r2Key);
+          yield* db
+            .delete(schema.application)
+            .where(
+              and(
+                eq(schema.application.id, applicationId),
+                eq(schema.application.organizationId, ctx.organization.id),
+              ),
+            );
+          deleted.push(applicationId);
+        }
+        yield* audit(ctx, "application.deleted", "application", null, { ids: deleted });
+        return { deleted, failed };
+      }).pipe(Effect.provide(r2Layer)),
+    patchApplicationAssignments: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+        const body = payload as {
+          assign?: { groups?: Array<string>; devices?: Array<string> };
+          unassign?: { groups?: Array<string>; devices?: Array<string> };
+        };
+        const groupIds = [...(body.assign?.groups ?? []), ...(body.unassign?.groups ?? [])];
+        for (const groupId of groupIds) yield* assertTenantGroup(ctx.organization.id, groupId);
+        yield* assertTenantDevices(ctx.organization.id, [
+          ...(body.assign?.devices ?? []),
+          ...(body.unassign?.devices ?? []),
+        ]);
+        if (body.assign?.groups?.length)
+          yield* db
+            .insert(schema.applicationGroup)
+            .ignore()
+            .values(body.assign.groups.map((groupId) => ({ groupId, applicationId })));
+        if (body.assign?.devices?.length)
+          yield* db
+            .insert(schema.applicationDevice)
+            .ignore()
+            .values(body.assign.devices.map((deviceId) => ({ deviceId, applicationId })));
+        if (body.unassign?.groups?.length)
+          yield* db
+            .delete(schema.applicationGroup)
+            .where(
+              and(
+                eq(schema.applicationGroup.applicationId, applicationId),
+                inArray(schema.applicationGroup.groupId, body.unassign.groups),
+              ),
+            );
+        if (body.unassign?.devices?.length)
+          yield* db
+            .delete(schema.applicationDevice)
+            .where(
+              and(
+                eq(schema.applicationDevice.applicationId, applicationId),
+                inArray(schema.applicationDevice.deviceId, body.unassign.devices),
+              ),
+            );
+        const affected = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+        yield* applePush.pushAppleDevices(affected.map((device) => device.id));
+        yield* audit(ctx, "application.assignments_changed", "application", applicationId, {
+          assignGroups: body.assign?.groups?.length ?? 0,
+          assignDevices: body.assign?.devices?.length ?? 0,
+          unassignGroups: body.unassign?.groups?.length ?? 0,
+          unassignDevices: body.unassign?.devices?.length ?? 0,
+        });
+        return ok;
+      }),
+    installApplication: (request, tenantId, applicationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const app = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
+        if (!app)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+        if (app.platform !== "apple")
+          return {
+            status: "ok" as const,
+            queued: 0,
+            skipped: 0,
+            message:
+              app.platform === "win"
+                ? "Windows app delivery is not implemented yet; the catalogue entry was saved."
+                : "Android app delivery is not implemented yet; the catalogue entry was saved.",
+          };
+        if (app.source === "upload")
+          return {
+            status: "ok" as const,
+            queued: 0,
+            skipped: 0,
+            message:
+              "Uploaded installers are stored but not deployable yet. Use a manifest URL or store ID for Apple apps.",
+          };
+        const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+        const appleDevices = devices.filter(
+          (device) => device.proto === "apple" && device.status === "enrolled",
+        );
+        const skipped = devices.length - appleDevices.length;
+        if (appleDevices.length === 0)
+          return {
+            status: "ok" as const,
+            queued: 0,
+            skipped,
+            message: "No assigned Apple devices.",
+          };
+        const payload =
+          app.source === "store"
+            ? {
+                iTunesStoreID: Number(app.storeId),
+                ManagementFlags: 1,
+                InstallAsManaged: true,
+                Options: { PurchaseMethod: 1 },
+              }
+            : {
+                ManifestURL: app.manifestUrl,
+                ManagementFlags: 1,
+                InstallAsManaged: true,
+                Options: { PurchaseMethod: 1 },
+              };
+        yield* db.insert(schema.deviceCommand).values(
+          appleDevices.map((device) => ({
+            id: id(),
+            organizationId: ctx.organization.id,
+            deviceId: device.id,
+            requestType: "InstallApplication",
+            payload,
+            status: "queued",
+            createdAt: now(),
+            updatedAt: now(),
+          })),
+        );
+        yield* applePush.pushAppleDevices(appleDevices.map((device) => device.id));
+        yield* audit(ctx, "application.install_queued", "application", applicationId, {
+          queued: appleDevices.length,
+          skipped,
+        });
+        return { status: "ok" as const, queued: appleDevices.length, skipped };
+      }),
+    uploadApplication: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const r2 = yield* R2Storage;
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+        const existing = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
+        const body = payload as { fileName: string; contentType?: string; content: string };
+        const bytes = base64ToBytes(body.content);
+        const sha256 = yield* sha256Hex(
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+        );
+        const key = applicationKey(ctx.organization.id, applicationId, sha256);
+        yield* r2.put(key, bytes, {
+          httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
+          customMetadata: { fileName: body.fileName },
+        });
+        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
+        yield* db
+          .update(schema.application)
+          .set({
+            fileName: body.fileName,
+            contentType: body.contentType ?? null,
+            size: bytes.byteLength,
+            sha256,
+            r2Key: key,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.application.id, applicationId),
+              eq(schema.application.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(ctx, "application.uploaded", "application", applicationId, {
+          fileName: body.fileName,
+          sha256,
+          size: bytes.byteLength,
+        });
+        return {
+          sha256,
+          fileName: body.fileName,
+          contentType: body.contentType ?? null,
+          size: bytes.byteLength,
+        };
+      }).pipe(Effect.provide(r2Layer)),
+    downloadApplication: (request, tenantId, applicationId, sha256) =>
+      Effect.gen(function* () {
+        const r2 = yield* R2Storage;
+        const ctx = yield* requireTenant(request, tenantId);
+        const app = (yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        })) as EnterpriseApplication | undefined;
+        if (!app)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+        if (app.sha256 !== sha256 || !app.r2Key)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Application file not found" }),
+          );
+        const object = yield* r2
+          .get(app.r2Key)
+          .pipe(
+            Effect.catchTag("R2FileNotFound", () =>
+              Effect.fail(new EnterpriseNotFound({ message: "Application file not found" })),
+            ),
+          );
+        const bytes = yield* r2.arrayBuffer(object);
+        return {
+          sha256,
+          fileName: object.customMetadata?.fileName ?? app.fileName ?? sha256,
+          contentType: object.httpMetadata?.contentType ?? app.contentType ?? null,
+          size: object.size ?? bytes.byteLength,
+          content: bytesToBase64(new Uint8Array(bytes)),
+        };
+      }).pipe(Effect.provide(r2Layer)),
     syncPolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
@@ -2226,6 +2981,31 @@ export const enterpriseHandlers = (
         service.deleteTenant(request, params.tenantId),
       ),
     )
+    .handle("getEntraDirectorySync", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getEntraDirectorySync(request, params.tenantId),
+      ),
+    )
+    .handle("patchEntraDirectorySync", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchEntraDirectorySync(request, params.tenantId, payload),
+      ),
+    )
+    .handle("syncEntraDirectory", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncEntraDirectory(request, params.tenantId),
+      ),
+    )
+    .handle("listEntraDomains", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listEntraDomains(request, params.tenantId),
+      ),
+    )
+    .handle("refreshEntraDomains", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.refreshEntraDomains(request, params.tenantId),
+      ),
+    )
     .handle("getSsoConfig", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getSsoConfig(request, params.tenantId),
@@ -2397,6 +3177,61 @@ export const enterpriseHandlers = (
     .handle("duplicateGroup", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.duplicateGroup(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("listApplications", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listApplications(request, params.tenantId),
+      ),
+    )
+    .handle("getApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("createApplication", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createApplication(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchApplication", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchApplication(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("deleteApplications", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteApplications(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchApplicationAssignments", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchApplicationAssignments(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("installApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.installApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("uploadApplication", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplication(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("downloadApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplication(request, params.tenantId, params.id, params.sha256),
+      ),
+    )
+    .handle("getPolicyAssignments", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getPolicyAssignments(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("patchPolicyAssignments", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchPolicyAssignments(request, params.tenantId, params.id, payload),
       ),
     )
     .handle("listPolicies", ({ request, params }) =>

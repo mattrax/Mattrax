@@ -214,8 +214,16 @@ ${commands}
 </SyncML>`;
 };
 
-export const buildAndroidPolicy = (draft: Draft) =>
-  Object.assign({}, ...draft.selections.map((selection) => payloadValues(selection)));
+export const buildAndroidPolicy = (draft: Draft) => {
+  const policy = Object.assign(
+    {},
+    ...draft.selections.map((selection) => payloadValues(selection)),
+  ) as Record<string, unknown>;
+  // These are read-only Google resource fields, not policy settings.
+  delete policy.name;
+  delete policy.version;
+  return policy;
+};
 
 export type ExportArtifact = {
   readonly fileName: string;
@@ -313,6 +321,14 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
           value: node.value,
           format: node.format,
         })),
+        draft: { ...draft, savedAt: draft.savedAt ?? Date.now() },
+      },
+    };
+  }
+  if (draft.platform === "android") {
+    return {
+      "mttx.android.policy.designer": {
+        policy: buildAndroidPolicy(draft),
         draft: { ...draft, savedAt: draft.savedAt ?? Date.now() },
       },
     };

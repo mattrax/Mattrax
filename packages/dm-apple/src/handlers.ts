@@ -49,12 +49,22 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
     const buf = yield* request.arrayBuffer;
-    const text = new TextDecoder().decode(buf);
-    const plist = yield* parsePlist(text);
-
     const identityCertificate = request.headers["x-device-identity-certificate"] as
       | string
       | undefined;
+    yield* service.verifyDeviceSignature({
+      signature: request.headers["mdm-signature"] as string | undefined,
+      body: buf,
+      identityCertificateSubject: identityCertificate,
+      identityCertificateSerial: request.headers["x-device-identity-certificate-serial"] as
+        | string
+        | undefined,
+      identityCertificateFingerprintSha256: request.headers[
+        "x-device-identity-certificate-sha256"
+      ] as string | undefined,
+    });
+    const text = new TextDecoder().decode(buf);
+    const plist = yield* parsePlist(text);
 
     const messageType = (plist as any)?.MessageType;
     const status = (plist as any)?.Status;

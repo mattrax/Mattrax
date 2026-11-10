@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 import {
   type AuthenticatePlist,
   type CheckOutPlist,
@@ -12,6 +12,8 @@ import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
 import { verifyAppleProfileToken } from "./tokens.js";
+import { verifyMdmSignature } from "./signature.js";
+import { AppleMdmTrust, type AppleMdmTrustService } from "./trust.js";
 
 function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");
@@ -47,8 +49,9 @@ export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmSe
     readonly backend: ManagementBackend.Service;
     readonly config: AppleMdmConfig.Service;
     readonly topic: string;
+    readonly trust?: AppleMdmTrustService;
   }): AppleMdmService.Service =>
-    makeAppleMdmService(options.backend, options.config, options.topic);
+    makeAppleMdmService(options.backend, options.config, options.topic, options.trust);
 
   /**
    * Hosts must provide `AppleMdmConfig` (origin, vendor certificate, auth
@@ -60,7 +63,13 @@ export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmSe
       const backend = yield* ManagementBackend;
       const config = yield* AppleMdmConfig;
       const topic = yield* AppleMdmTopic;
-      return AppleMdmService.make({ backend, config, topic: yield* topic.get });
+      const trust = yield* Effect.serviceOption(AppleMdmTrust);
+      return AppleMdmService.make({
+        backend,
+        config,
+        topic: yield* topic.get,
+        trust: Option.getOrUndefined(trust),
+      });
     }),
   );
 }
@@ -68,6 +77,13 @@ export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmSe
 export declare namespace AppleMdmService {
   export type Service = {
     readonly mdmOrigin: MdmOrigin;
+    readonly verifyDeviceSignature: (input: {
+      readonly signature?: string;
+      readonly body: ArrayBuffer;
+      readonly identityCertificateSubject?: string;
+      readonly identityCertificateSerial?: string;
+      readonly identityCertificateFingerprintSha256?: string;
+    }) => Effect.Effect<void, MdmError>;
     readonly handleAuthenticate: (
       auth: AuthenticatePlist,
       identityCertificate?: string,
@@ -180,8 +196,44 @@ const makeAppleMdmService = (
   backend: ManagementBackend.Service,
   config: AppleMdmConfig.Service,
   topic: string,
+  trust?: AppleMdmTrustService,
 ): AppleMdmService.Service => {
   const toMdmError = (message: string) => () => new MdmError({ message });
+
+  const verifyDeviceSignature: AppleMdmService.Service["verifyDeviceSignature"] = (input) =>
+    Effect.gen(function* () {
+      // Hosts that do not wire trust keep the historical behaviour. Once a
+      // host opts in (Cloud), a missing signature or CA is fatal.
+      if (!trust) return;
+      if (!input.signature) {
+        if (trust.requireSignature)
+          return yield* Effect.fail(new MdmError({ message: "Missing Mdm-Signature" }));
+        return;
+      }
+      const caCertPems = yield* trust.caCertPems;
+      if (caCertPems.length === 0) {
+        if (trust.requireSignature)
+          return yield* Effect.fail(
+            new MdmError({ message: "No SCEP CA configured to verify Mdm-Signature" }),
+          );
+        return;
+      }
+      yield* Effect.tryPromise({
+        try: () =>
+          verifyMdmSignature({
+            signature: input.signature!,
+            body: input.body,
+            caCertPems,
+            identityCertificateSubject: input.identityCertificateSubject,
+            identityCertificateSerial: input.identityCertificateSerial,
+            identityCertificateFingerprintSha256: input.identityCertificateFingerprintSha256,
+          }),
+        catch: (cause) =>
+          new MdmError({
+            message: cause instanceof Error ? cause.message : "Invalid Mdm-Signature",
+          }),
+      }).pipe(Effect.asVoid);
+    });
 
   const mdmOrigin = new MdmOrigin({ url: config.origin });
 
@@ -498,6 +550,7 @@ const makeAppleMdmService = (
 
   return AppleMdmService.of({
     mdmOrigin,
+    verifyDeviceSignature,
     handleAuthenticate,
     handleTokenUpdate,
     handleCheckOut,

@@ -75,6 +75,21 @@ test.describe("policy designer", () => {
     await expect(page.getByText("Deployment history")).toBeVisible();
   });
 
+  test("saves an Android policy from the dashboard designer", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Android Designer Tenant");
+    await page.goto(`/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Android policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const policyUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await page.getByRole("button", { name: "Android", exact: true }).click();
+    await page.getByRole("button", { name: /Android baseline/i }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Android policy", exact: true })).toBeVisible();
+  });
+
   test("warns before replacing advanced-editor configurations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Guard Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);

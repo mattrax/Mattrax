@@ -130,7 +130,7 @@ const findDeviceByScope = (
 const scopedConfigurations = (deviceId: string) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    return yield* db
+    const grouped = yield* db
       .select({
         kind: s.configuration.kind,
         policyId: s.configuration.policyId,
@@ -144,6 +144,30 @@ const scopedConfigurations = (deviceId: string) =>
       .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
       .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
       .where(eq(s.groupDevice.deviceId, deviceId));
+
+    // Direct device assignments are additive with group assignments. Group
+    // membership wins when a policy is assigned both ways, so the activation
+    // remains stable.
+    const direct = yield* db
+      .select({
+        kind: s.configuration.kind,
+        policyId: s.configuration.policyId,
+        data: s.configuration.data,
+        hash: s.configuration.hash,
+        organizationId: s.policy.organizationId,
+      })
+      .from(s.configuration)
+      .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+      .innerJoin(s.devicePolicy, eq(s.devicePolicy.policyId, s.configuration.policyId))
+      .where(eq(s.devicePolicy.deviceId, deviceId));
+
+    const seen = new Set(grouped.map((row) => `${row.policyId}:${row.kind}`));
+    return [
+      ...grouped,
+      ...direct
+        .filter((row) => !seen.has(`${row.policyId}:${row.kind}`))
+        .map((row) => ({ ...row, groupId: `direct:${row.policyId}` })),
+    ];
   });
 
 const deviceTokenFor = (deviceId: string) =>

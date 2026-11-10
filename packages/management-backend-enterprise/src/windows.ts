@@ -347,7 +347,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             .where(and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)));
         }
 
-        const configurations = yield* db
+        const groupedConfigurations = yield* db
           .select({
             policyId: s.configuration.policyId,
             kind: s.configuration.kind,
@@ -359,6 +359,26 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
           .where(eq(s.groupDevice.deviceId, device.id))
           .limit(1000);
+        const directConfigurations = yield* db
+          .select({
+            policyId: s.configuration.policyId,
+            kind: s.configuration.kind,
+            data: s.configuration.data,
+          })
+          .from(s.configuration)
+          .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+          .innerJoin(s.devicePolicy, eq(s.devicePolicy.policyId, s.configuration.policyId))
+          .where(eq(s.devicePolicy.deviceId, device.id))
+          .limit(1000);
+        const configurationKeys = new Set(
+          groupedConfigurations.map((row) => `${row.policyId}:${row.kind}`),
+        );
+        const configurations = [
+          ...groupedConfigurations,
+          ...directConfigurations.filter(
+            (row) => !configurationKeys.has(`${row.policyId}:${row.kind}`),
+          ),
+        ];
 
         const commands: Array<{
           kind: string;

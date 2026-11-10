@@ -119,11 +119,17 @@ Completed in this branch:
 
 Remaining after this branch:
 
+- [ ] Android device delivery. The Android Management API client and policy storage
+      are implemented, but the enterprise signup, Pub/Sub handler and policy push
+      need a Google Cloud project/service account and a managed device.
+- [ ] Windows federated Entra enrollment. Discovery/WSTEP remains OnPremise; the
+      federated STS flow is not ported.
+- [ ] ADE/VPP token sync. There is no Apple Business Manager or VPP token flow yet.
+- [ ] SCEP PKCSReq outer-CMS verification. Mdm-Signature verification is enforced
+      for MDM messages; the SCEP envelope signature is still challenge-bound.
 - [ ] SAML SSO. Entra ID (Microsoft OIDC) tenant SSO is implemented; a generic
       SAML provider is not.
-- [ ] Fleet-derived Apple suite expanded to real device fixtures in CI. Protocol
-      tests cover enrollment, authentication, token update, DDM, SCEP and profile
-      delivery, but no physical macOS/iOS fixture is attached.
+- [ ] Fleet-derived Apple suite expanded to real device fixtures in CI.
 
 Completed:
 
@@ -137,3 +143,13 @@ Completed:
 - [x] Tenant audit logs, SCIM 2.0 user/group provisioning and Entra ID SSO.
 - [x] Shared Apple/Windows/Android policy designer on the landing page and in the
       dashboard, with templates, search, artifact export and workspace deployment.
+- [x] Application catalogue with uploads, Apple manifest/store installs, group/device
+      assignment and a dashboard subpage.
+- [x] Direct policy assignment to devices, included in Apple/Windows delivery and
+      policy push reconciliation.
+- [x] Entra Graph directory sync (users, groups, verified domains), email-domain
+      SSO routing and identity subpages.
+- [x] Apple `Mdm-Signature` CMS verification against the tenant SCEP CA, with mTLS
+      serial/fingerprint forwarding.
+- [x] Android policy validation/persistence and a provider-ready Android Management
+      API client package.

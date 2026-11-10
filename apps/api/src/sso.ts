@@ -32,6 +32,15 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       let tenantId = url.searchParams.get("tenantId");
       const email = url.searchParams.get("email")?.trim().toLowerCase();
       const db = yield* Db;
+      const emailDomain = email?.slice(email.lastIndexOf("@") + 1).toLowerCase();
+      if (!tenantId && emailDomain) {
+        // Verified Entra domains route users before they have a Mattrax
+        // account. Never route on an unverified/manual domain.
+        const mapping = yield* db.query.ssoDomain.findFirst({
+          where: { domain: emailDomain, isVerified: true, source: "entra" },
+        });
+        if (mapping) tenantId = mapping.organizationId;
+      }
       if (!tenantId && email) {
         const user = yield* db.query.user.findFirst({ where: { email } });
         if (user) {
@@ -71,6 +80,8 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       authorize.searchParams.set("scope", "openid profile email");
       authorize.searchParams.set("state", state);
       authorize.searchParams.set("nonce", nonce);
+      if (email) authorize.searchParams.set("login_hint", email);
+      if (emailDomain) authorize.searchParams.set("domain_hint", emailDomain);
       return json({ url: authorize.toString() }, 200, {
         "set-cookie": `__Host-sso_state=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
       });
