@@ -42,14 +42,14 @@ That Worker listens on port `9051` by default.
 
 `serve` flags:
 
-| Flag                  | Required | Description                                                                                        |
-| --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `--port`              | No       | HTTP port. Defaults to `3000`.                                                                     |
-| `--origin`            | No       | Public origin used in enrollment and asset URLs. Defaults to `http://localhost:3000`.              |
-| `--webhook-url`       | Yes      | Base URL for your management webhook backend.                                                      |
-| `--webhook-secret`    | No       | HMAC secret for webhook requests. Defaults to `MATTRAX_WEBHOOK_SECRET`.                            |
-| `--data-dir`          | No       | Directory for filesystem-backed state. Defaults to `./.data`, or `/opt/mattrax` in bundled builds. |
-| `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM used to derive the MDM topic.                              |
+| Flag                  | Required | Description                                                                                                                                |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--port`              | No       | HTTP port. Defaults to `3000`.                                                                                                             |
+| `--origin`            | No       | Public origin used in enrollment and asset URLs. Defaults to `http://localhost:3000`.                                                      |
+| `--webhook-url`       | Yes      | Base URL for your management webhook backend.                                                                                              |
+| `--webhook-secret`    | Yes      | HMAC secret for webhook requests. Defaults to `MATTRAX_WEBHOOK_SECRET`. The management backend rejects unsigned requests when it is unset. |
+| `--data-dir`          | No       | Directory for filesystem-backed state. Defaults to `./.data`, or `/opt/mattrax` in bundled builds.                                         |
+| `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM used to derive the MDM topic.                                                                      |
 
 Example:
 

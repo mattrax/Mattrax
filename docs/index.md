@@ -22,11 +22,11 @@ All product decisions are delegated to the management backend you control. See
 
 ## Supported platforms
 
-| Platform    | Status                                                                                                                                                                                                                                    |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Apple**   | Supported. Enrollment profile, SCEP identity certificate, MDM check-in, APNs credentials and declarative management (DDM) configuration delivery.                                                                                         |
-| **Windows** | Preview. Discovery, WSTEP certificate issuance and SyncML check-in are mounted in `apps/api` and `apps/mttx`. Policy/command delivery is the next phase; configure `WINDOWS_ORGANIZATION_ID` so Windows devices land in the right tenant. |
-| **Android** | Not available. There is no Android device-management backend in this repository. The enrollment toggle is present but does not provide a working enrollment flow.                                                                         |
+| Platform    | Status                                                                                                                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Apple**   | Supported. Enrollment profile, SCEP identity certificate, MDM check-in, APNs credentials and declarative management (DDM) configuration delivery.                                                                                     |
+| **Windows** | Preview. Discovery, WSTEP certificate issuance and SyncML check-in are mounted in `apps/api` and `apps/mttx`. Policy/command delivery is the next phase; Cloud requires `WINDOWS_ORGANIZATION_ID` and returns `503` when it is unset. |
+| **Android** | Not available. There is no Android device-management backend in this repository. The enrollment toggle is present but does not provide a working enrollment flow.                                                                     |
 
 ## How the pieces fit
 

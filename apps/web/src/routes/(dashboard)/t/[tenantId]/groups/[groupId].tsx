@@ -28,9 +28,20 @@ export default function GroupDetailPage() {
     queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
     queryFn: () => enterprise.get(params.tenantId, "group", params.groupId),
   }));
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
+  // Viewing a group only needs its own devices. The full tenant list is loaded
+  // lazily when editing, because the picker must also offer unassigned devices.
+  const groupDevices = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceSearch(params.tenantId, {
+      groupId: params.groupId,
+      limit: 200,
+      sort: "name",
+    }),
+    queryFn: () =>
+      enterprise.searchDevices(params.tenantId, {
+        groupId: params.groupId,
+        limit: 200,
+        sort: "name",
+      }),
   }));
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
@@ -38,6 +49,17 @@ export default function GroupDetailPage() {
   }));
   const row = () => group.data as GroupNode | undefined;
   const [edit, setEdit] = createSignal(false);
+  // The full tenant list is only needed while editing, because the picker must
+  // offer unassigned devices too.
+  const allDevices = useQuery(() => ({
+    queryKey: enterpriseKeys.list(params.tenantId, "device"),
+    queryFn: () => enterprise.list(params.tenantId, "device"),
+    enabled: edit(),
+  }));
+  const deviceRows = () =>
+    edit() ? (allDevices.data?.rows ?? []) : (groupDevices.data?.devices ?? []);
+  const deviceTotal = () =>
+    edit() ? (allDevices.data?.rows.length ?? 0) : (groupDevices.data?.total ?? 0);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [deleteConfirm, setDeleteConfirm] = createSignal("");
   const [tab, setTab] = createSignal<"overview" | "devices" | "policies">("overview");
@@ -217,12 +239,25 @@ export default function GroupDetailPage() {
         </Card>
       </Show>
       <Show when={tab() === "devices"}>
+        <QueryError
+          error={groupDevices.error ?? allDevices.error}
+          onRetry={() => {
+            void groupDevices.refetch();
+            void allDevices.refetch();
+          }}
+        />
         <AssignmentTable
-          rows={devices.data?.rows ?? []}
+          rows={deviceRows()}
           selected={deviceIds()}
           toggle={(id) => toggle(deviceIds, setDeviceIds, id)}
           href={(id) => `/t/${params.tenantId}/devices/${id}`}
         />
+        <Show when={!edit() && deviceTotal() > deviceRows().length}>
+          <p class="text-sm text-muted-foreground">
+            Showing the first {deviceRows().length} of {deviceTotal()} devices. Edit the group to
+            assign devices outside this list.
+          </p>
+        </Show>
       </Show>
       <Show when={tab() === "policies"}>
         <AssignmentTable
@@ -263,7 +298,7 @@ export default function GroupDetailPage() {
 }
 
 function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
-  rows: T[];
+  rows: readonly T[];
   selected: Set<string>;
   toggle: (id: string) => void;
   href: (id: string) => string;

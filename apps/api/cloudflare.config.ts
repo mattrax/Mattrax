@@ -1,4 +1,4 @@
-import { bindings, defineConfig } from "cf/config";
+import { bindings, defineConfig, triggers } from "cf/config";
 import type { InferEnv, UnwrapConfig } from "cf/config";
 
 /**
@@ -14,6 +14,9 @@ export const apiWorker = {
   previewUrls: false,
   observability: { enabled: true },
   placement: { mode: "smart" as const },
+  // Daily maintenance: expired invitations, stale devices, expired auth
+  // proofs/sessions and audit retention. Keep the off-peak UTC schedule.
+  triggers: [triggers.scheduled({ schedule: "17 3 * * *" })],
   env: {
     // `ORIGIN` is a secret so local dev and whitelabel deployments can set
     // their own canonical origin. Production sets the hosted Mattrax domain.
@@ -32,6 +35,12 @@ export const apiWorker = {
     AZURE_CLIENT_SECRET: bindings.secret(),
     /** Local-only mailbox flag. Never set in production. */
     DEV_MAILBOX: bindings.secret(),
+    DEV_MAILBOX_ALLOW_REMOTE: bindings.secret(),
+    DEV_MAILBOX_SECRET: bindings.secret(),
+    /** Days without a check-in before the maintenance job marks a device unenrolled. */
+    MAINTENANCE_STALE_DEVICE_DAYS: bindings.text("30"),
+    /** Audit-log retention in days; `0` keeps audit entries indefinitely. */
+    MAINTENANCE_AUDIT_RETENTION_DAYS: bindings.text("365"),
     HYPERDRIVE: bindings.hyperdrive({
       id: "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/

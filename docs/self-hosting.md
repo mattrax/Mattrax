@@ -157,6 +157,27 @@ curl https://mdm.example.com/api/health
 It should return `ok`. The API Worker also has a `/health` alias, but only `/api/*` is
 proxied by the public web Worker.
 
+### Operational defaults
+
+- **Security headers.** The dashboard Worker sets `Content-Security-Policy`
+  (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin` and HSTS on HTTPS responses. No
+  extra configuration is required.
+- **Scheduled maintenance.** `apps/api/cloudflare.config.ts` registers a daily cron
+  (`17 3 * * *`). It expires invitations, marks devices stale after 30 days without a
+  check-in, removes expired auth proofs/sessions and applies 365-day audit retention.
+  Override with `MAINTENANCE_STALE_DEVICE_DAYS` and
+  `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the latter to `0` to keep audit entries
+  indefinitely). The same `runMaintenance` function is exported from
+  `@mattrax/enterprise-backend` for external schedulers.
+- **Windows.** Set `WINDOWS_ORGANIZATION_ID` to the tenant that owns Windows devices.
+  Without it, `/mdm/windows/*` returns `503` with a configuration message; Cloud never
+  guesses a tenant.
+- **Debug mailbox.** `DEV_MAILBOX=true` only enables `/api/debug/emails` on a loopback
+  origin. A non-loopback dev origin needs `DEV_MAILBOX_ALLOW_REMOTE=true`, and
+  `DEV_MAILBOX_SECRET` adds a required `x-dev-mailbox-secret` header. Never enable it in
+  production.
+
 ### 6. Create the first administrator
 
 Open `https://mdm.example.com/register`, create an account, then create a tenant. The

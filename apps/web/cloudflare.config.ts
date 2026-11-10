@@ -7,7 +7,7 @@ export const webWorker = {
   compatibilityFlags: ["nodejs_compat"],
   entrypoint: new URL("./src/server/index.ts", import.meta.url).pathname,
   domains: ["e.mattrax.app"],
-  previewUrls: true,
+  previewUrls: false,
   observability: { enabled: true },
   env: {
     API: bindings.worker({ worker: "mattrax-api" }),

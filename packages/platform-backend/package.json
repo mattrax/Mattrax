@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@mattrax/apns": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/platform-api": "workspace:*",

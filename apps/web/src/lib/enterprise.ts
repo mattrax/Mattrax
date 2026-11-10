@@ -8,6 +8,8 @@ import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
   type DeviceRow,
+  type DeviceSearchQuery,
+  type DeviceSearchRow,
   type Entity,
   type GroupNode,
   type GroupRow,
@@ -15,6 +17,7 @@ import {
   type RowFor,
   type TenantEnrollmentInfo,
   type TenantInfo,
+  type WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
 
 export type {
@@ -23,7 +26,14 @@ export type {
   ApnsInfo,
   AuditLogEntry,
   BillingSummary,
+  DeviceCertificateInfo,
+  DeviceHealth,
+  DeviceHealthCounts,
+  DeviceHealthReason,
+  DeviceHealthResponse,
   DeviceRow,
+  DeviceSearchQuery,
+  DeviceSearchRow,
   DownloadPolicyApplicationResponse as PolicyApplicationDownload,
   EnrollmentResponse,
   Entity,
@@ -43,6 +53,7 @@ export type {
   TenantInvitation,
   TenantUser,
   UserInfo,
+  WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
 
 type RouteParam = string | undefined;
@@ -59,6 +70,12 @@ export const enterpriseKeys = {
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", tenantId ?? ""] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", tenantId ?? "", entity, group ?? ""] as const,
+  deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+    ["enterprise", "device-search", tenantId ?? "", query] as const,
+  deviceHealth: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-health", tenantId ?? "", id ?? ""] as const,
+  deviceHealthSummary: (tenantId: RouteParam) =>
+    ["enterprise", "device-health-summary", tenantId ?? ""] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
     ["enterprise", "item", tenantId ?? "", entity, id ?? ""] as const,
   users: (tenantId: RouteParam) => ["enterprise", "tenant-users", tenantId ?? ""] as const,
@@ -188,6 +205,15 @@ export const enterprise = {
         never
       >;
     }),
+  searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+    endpoint((api) =>
+      api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Returns CSV text; callers turn it into a file download. */
+  exportDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+    endpoint((api) =>
+      api.exportDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
   get: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) =>
     endpoint((api) => {
       const params = { tenantId: required(tenantId, "tenantId"), id: required(id, "id") };
@@ -254,6 +280,22 @@ export const enterprise = {
   deviceUnenroll: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
       api.deviceUnenroll({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceHealth: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceHealth({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceHealthSummary: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceHealthSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  revokeDeviceIdentity: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.revokeDeviceIdentity({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),

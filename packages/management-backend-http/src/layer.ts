@@ -116,6 +116,10 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
     ManagementBackend,
     Effect.gen(function* () {
       const options = typeof input === "string" ? { baseUrl: input } : input;
+      if (!options.secret)
+        console.error(
+          "ManagementBackendHttp has no webhook secret; requests will be unsigned and a correctly configured backend will reject them. Set WEBHOOK_SECRET / MATTRAX_WEBHOOK_SECRET.",
+        );
       const raw = yield* HttpApiClient.make(managementApi, { baseUrl: options.baseUrl });
       const client = options.secret ? signingClient(raw, options.secret) : raw;
 

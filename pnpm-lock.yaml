@@ -283,6 +283,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)(redis@6.3.1)
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
@@ -692,6 +695,9 @@ importers:
       '@mattrax/apns':
         specifier: workspace:*
         version: link:../apns
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../enterprise-core

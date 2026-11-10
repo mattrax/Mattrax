@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",

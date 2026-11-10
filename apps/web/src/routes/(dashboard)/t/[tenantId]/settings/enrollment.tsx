@@ -131,7 +131,12 @@ export default function EnrollmentSettingsPage() {
               badge={!apns.data?.configured ? "APNs setup required" : undefined}
             />
             <ToggleRow checked={windows()} onChange={setWindows} title="Windows" />
-            <ToggleRow checked={android()} onChange={setAndroid} title="Android" />
+            <ToggleRow
+              checked={android()}
+              onChange={setAndroid}
+              title="Android"
+              description="Android enrollment isn't available yet."
+            />
             <ToggleRow
               checked={assetTag()}
               onChange={setAssetTag}

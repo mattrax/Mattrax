@@ -830,6 +830,163 @@ describe("enterprise service APNs", () => {
     expect(pushes).toHaveLength(2);
   });
 
+  it("revokes device-scoped SCEP identities when unenrolling", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    const otherTenant = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+    const future = new Date(Date.now() + 86_400_000);
+    db.store.scep_issued_certificate.push(
+      {
+        serial: "serial-1",
+        organizationId: tenant.id,
+        enrollmentId: null,
+        deviceId: "device-1",
+        notAfter: future,
+        revokedAt: null,
+        createdAt: new Date(),
+      },
+      {
+        serial: "serial-other",
+        organizationId: otherTenant.id,
+        enrollmentId: null,
+        deviceId: "device-1",
+        notAfter: future,
+        revokedAt: null,
+        createdAt: new Date(),
+      },
+    );
+
+    await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
+    const revoked = db.store.scep_issued_certificate.find((row: any) => row.serial === "serial-1");
+    expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    // Tenant scoping: the same device id in another tenant is untouched.
+    expect(
+      db.store.scep_issued_certificate.find((row: any) => row.serial === "serial-other")?.revokedAt,
+    ).toBeNull();
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.unenrolled",
+      metadata: { revokedCertificates: 1 },
+    });
+  });
+
+  it("revokes device-scoped SCEP identities when deleting a device", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedDevice(db, tenant.id, "device-1");
+    db.store.scep_issued_certificate.push({
+      serial: "serial-1",
+      organizationId: tenant.id,
+      enrollmentId: null,
+      deviceId: "device-1",
+      notAfter: new Date(Date.now() + 86_400_000),
+      revokedAt: null,
+      createdAt: new Date(),
+    });
+
+    await runEffect(service.deleteDevices(request(headers), tenant.id, ["device-1"]));
+    expect(db.store.scep_issued_certificate[0].revokedAt).toBeInstanceOf(Date);
+    expect(db.store.device).toHaveLength(0);
+  });
+
+  it("supports an explicit identity revocation action", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedDevice(db, tenant.id, "device-1");
+    db.store.scep_issued_certificate.push({
+      serial: "serial-1",
+      organizationId: tenant.id,
+      enrollmentId: null,
+      deviceId: "device-1",
+      notAfter: new Date(Date.now() + 86_400_000),
+      revokedAt: null,
+      createdAt: new Date(),
+    });
+
+    const result = await runEffect(
+      service.revokeDeviceIdentity(request(headers), tenant.id, "device-1"),
+    );
+    expect(result).toEqual({ status: "ok", revoked: 1 });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.identity_revoked",
+      targetType: "device",
+      targetId: "device-1",
+      metadata: { revokedCertificates: 1 },
+    });
+
+    // Repeating the action is safe and reports nothing left to revoke.
+    await expect(
+      runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "device-1")),
+    ).resolves.toEqual({ status: "ok", revoked: 0 });
+
+    await expect(
+      runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "missing")),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+  });
+
+  it("rejects identity revocation when no certificates are recorded", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedDevice(db, tenant.id, "device-1");
+    await expect(
+      runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "device-1")),
+    ).rejects.toMatchObject({ _tag: "EnterpriseConflict" });
+  });
+
+  it("derives device health and tenant-level counts", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedDevice(db, tenant.id, "device-1");
+    await seedDevice(db, tenant.id, "device-2");
+    db.store.device[1].lastSeenAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    db.store.device_declaration.push({
+      deviceId: "device-1",
+      identifier: "com.acme.wifi",
+      declarationType: "configurations",
+      active: true,
+      valid: "invalid",
+      serverToken: null,
+      reasons: [{ code: "Error", description: "Invalid payload" }],
+      updatedAt: new Date(),
+    });
+
+    const detail = await runEffect(
+      service.getDeviceHealth(request(headers), tenant.id, "device-1"),
+    );
+    expect(detail.health).toMatchObject({ level: "attention", stale: false });
+    expect(detail.health.reasons).toContainEqual(
+      expect.objectContaining({ code: "declaration_invalid" }),
+    );
+    expect(detail.declarations).toHaveLength(1);
+
+    const summary = await runEffect(service.getDeviceHealthSummary(request(headers), tenant.id));
+    expect(summary.counts).toEqual({
+      total: 2,
+      healthy: 0,
+      attention: 2,
+      critical: 0,
+      stale: 1,
+      unknown: 0,
+    });
+
+    await expect(
+      runEffect(service.getDeviceHealth(request(headers), tenant.id, "missing")),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+  });
+
   it("pushes enrolled Apple devices when groups sync", async () => {
     const { apns, pushes } = makeFakeApns();
     const { db, service, headers } = await makeContext({ apns });
@@ -979,6 +1136,92 @@ describe("enterprise policy validation and enrollment", () => {
     expect(profile).toContain("<key>Challenge</key>");
     expect(profile).toContain(`<string>${enrollment.id}.`);
     expect(profile).toContain("com.apple.mdm.token");
+  });
+
+  it("treats maxDevices=0 as unlimited when enrolling", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Existing Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    // A finite cap of 1 is already used, so enrollment is blocked.
+    Object.assign(db.store.enterprise_enrollment[0], {
+      enabledWindows: true,
+      maxDevices: 1,
+    });
+    const blocked = await runEffect(service.getEnrollment(tenant.id, undefined));
+    if (!blocked.authenticated) throw new Error("expected authenticated enrollment");
+    expect(blocked.windows).toEqual({
+      error: "Windows enrollment is disabled! Contact your administrator.",
+    });
+
+    // 0 means unlimited, even with devices already enrolled.
+    Object.assign(db.store.enterprise_enrollment[0], { maxDevices: 0 });
+    const unlimited = await runEffect(service.getEnrollment(tenant.id, undefined));
+    if (!unlimited.authenticated) throw new Error("expected authenticated enrollment");
+    expect(unlimited.windows).toEqual({
+      discoveryUrl: `${origin}/mdm/windows/discovery`,
+      tenantScoped: false,
+    });
+  });
+
+  it("scopes device search and CSV export to the tenant", async () => {
+    const { db, service, headers } = await makeContext();
+    const first = await runEffect(
+      service.createTenant(request(headers), { name: "First", slug: "first" }),
+    );
+    const second = await runEffect(
+      service.createTenant(request(headers), { name: "Second", slug: "second" }),
+    );
+    const now = new Date("2026-11-10T12:00:00.000Z");
+    const device = (id: string, organizationId: string, name: string) => ({
+      id,
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name,
+      serial: `SERIAL-${id}`,
+      model: "MacBook Pro",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device.push(
+      device("device-first", first.id, "First Mac"),
+      device("device-second", second.id, "Second Mac"),
+    );
+    db.store.enterprise_group.push({
+      id: "group-second",
+      organizationId: second.id,
+      name: "Second Ops",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.group_device.push({ groupId: "group-second", deviceId: "device-second" });
+
+    const found = await runEffect(service.searchDevices(request(headers), first.id, { limit: 50 }));
+    expect(found.total).toBe(1);
+    expect(found.devices.map((row: any) => row.id)).toEqual(["device-first"]);
+    expect(found.devices[0].groups).toEqual([]);
+
+    const csv = await runEffect(service.exportDevices(request(headers), first.id, {}));
+    expect(csv).toContain("Name,Serial,Model,Platform,Status,OS version,OS build");
+    expect(csv).toContain("First Mac,SERIAL-device-first,MacBook Pro,Apple,enrolled");
+    expect(csv).not.toContain("Second Mac");
+
+    // A group belonging to another tenant is not addressable from this tenant.
+    await expect(
+      runEffect(service.searchDevices(request(headers), first.id, { groupId: "group-second" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
   });
 
   it("previews a mobileconfig with friendly payload categories", async () => {

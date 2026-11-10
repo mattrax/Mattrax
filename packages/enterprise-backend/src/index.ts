@@ -12,3 +12,5 @@ export { makeAppAuth } from "@mattrax/enterprise-domain";
 export type { AppAuthService, AuthLiveOptions } from "./auth.js";
 export { makeEnterpriseAuthLive } from "./enterpriseAuth.js";
 export type { EnterpriseAuthOptions } from "./enterpriseAuth.js";
+export { runMaintenance } from "./maintenance.js";
+export type { MaintenanceOptions, MaintenanceResult } from "./maintenance.js";

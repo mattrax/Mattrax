@@ -92,9 +92,10 @@ check-in happen sooner.
 `packages/dm-windows` implements Windows discovery, WSTEP certificate issuance, SyncML
 check-in, and the corresponding management webhook operations. The routes are mounted in
 both `apps/api` and `apps/mttx`, and Cloud signs the WSTEP identity certificate with the
-tenant's device CA. Windows enrollment carries no tenant identity, so set
-`WINDOWS_ORGANIZATION_ID` on the API Worker; otherwise the earliest tenant is used
-deterministically. Policy/command delivery is the next phase.
+tenant's device CA. Windows enrollment carries no tenant identity, so Cloud requires
+`WINDOWS_ORGANIZATION_ID` on the API Worker. When it is unset, `/mdm/windows/*` returns a
+clear `503` configuration error instead of guessing a tenant. There is no "earliest
+tenant" fallback. Policy/command delivery is the next phase.
 
 Windows enrollment flow:
 

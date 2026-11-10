@@ -367,12 +367,20 @@ describe("Windows enterprise backend", () => {
     expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
   });
 
-  it("falls back to the earliest organization when no tenant is configured", async () => {
-    const { backend, db } = await setup();
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
-
-    expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-early");
+  it("fails closed when no tenant is configured", async () => {
+    const { backend } = await setup({ windowsOrganizationId: null });
+    await expect(
+      run(
+        backend.windowsDiscovery({
+          requestVersion: "5.0",
+          deviceType: "CIMClient_Windows",
+          applicationVersion: "10.0",
+          osEdition: 48,
+          authPolicies: ["OnPremise"],
+          mdmOrigin,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "InternalServerError" });
   });
 });
 

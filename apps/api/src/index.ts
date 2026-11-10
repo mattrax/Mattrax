@@ -10,6 +10,7 @@ import { appleMdmApi } from "@mattrax/dm-apple";
 import {
   EnterpriseService,
   enterpriseHandlers,
+  runMaintenance,
   scimRoutes,
   makeAppAuth,
   makeAuthLive,
@@ -38,9 +39,15 @@ import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AppleMdmTrust, MdmError } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
-import { listDevEmails, recordDevEmail } from "./devMailbox.js";
+import {
+  isDevMailboxEnabled,
+  listDevEmails,
+  recordDevEmail,
+  timingSafeStringEqual,
+} from "./devMailbox.js";
 
 const rateLimitWindow = new Map<string, { count: number; resetAt: number }>();
+
 const sensitiveAuthPaths = new Set([
   "/api/v1/signIn",
   "/api/v1/register",
@@ -81,15 +88,61 @@ const authHttps = Http.make(appAuth, {
     .filter(Boolean),
 });
 
-// Proof delivery (password reset email) is queued by Auth with no remaining
-// services. Hand it to `waitUntil` so the Worker stays alive after the response
-// instead of interrupting the request-scoped auth layer.
+// Proof delivery (password-reset links and passwordless email codes) is
+// scheduled by Auth after the proof commit resolves. Await it inside the
+// request: a `waitUntil`-only hand-off can be dropped when the request-scoped
+// Worker context is torn down before the provider accepts the message, which
+// silently loses reset/code emails. Unexpected scheduler failures are logged
+// and surfaced as `ProofUnavailable`; provider rejections are reported by the
+// auth delivery layer.
 const proofSchedulerLayer = Layer.succeed(Proofs.ProofDispatchScheduler, {
   schedule: (work: Effect.Effect<void>) =>
-    Effect.sync(() => {
-      waitUntil(Effect.runPromise(work));
+    Effect.tryPromise({
+      try: () => Effect.runPromise(work),
+      catch: (cause) => {
+        console.error("Proof delivery failed", cause);
+        return Proofs.ProofUnavailable.make({});
+      },
     }),
 });
+
+const windowsMdmConfigurationMessage =
+  "Windows MDM is not configured for this deployment. Set WINDOWS_ORGANIZATION_ID on the API Worker to the tenant that owns Windows devices.";
+
+const windowsMdmNotConfiguredRoutes = Layer.mergeAll(
+  HttpRouter.add(
+    "POST",
+    "/mdm/windows/discovery",
+    HttpServerResponse.text(windowsMdmConfigurationMessage, {
+      status: 503,
+      contentType: "text/plain; charset=utf-8",
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    "/mdm/windows/policy",
+    HttpServerResponse.text(windowsMdmConfigurationMessage, {
+      status: 503,
+      contentType: "text/plain; charset=utf-8",
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    "/mdm/windows/enroll",
+    HttpServerResponse.text(windowsMdmConfigurationMessage, {
+      status: 503,
+      contentType: "text/plain; charset=utf-8",
+    }),
+  ),
+  HttpRouter.add(
+    "POST",
+    "/mdm/windows/management",
+    HttpServerResponse.text(windowsMdmConfigurationMessage, {
+      status: 503,
+      contentType: "text/plain; charset=utf-8",
+    }),
+  ),
+).pipe(Layer.provide(HttpServer.layerServices));
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
@@ -129,12 +182,29 @@ const apiLayer = Layer.mergeAll(
   ),
   HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
   appleMdmRoutes,
-  windowsMdmRoutes,
   scepRoutes,
   scimRoutes,
 );
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
+
+const databaseLayer = (env: Env) =>
+  MysqlClient.layer({
+    // Hyperdrive exposes individual connection fields for MySQL. Do not
+    // pass `url`: `@effect/sql-mysql2` ignores `poolConfig` when it is set,
+    // which would silently drop `disableEval` and break Workers builds.
+    host: env.HYPERDRIVE.host,
+    port: env.HYPERDRIVE.port,
+    username: env.HYPERDRIVE.user,
+    password: Redacted.make(env.HYPERDRIVE.password),
+    database: env.HYPERDRIVE.database,
+    // `mysql2` uses `eval` for some protocol decoding; Workers forbids it.
+    // `timezone: "Z"` keeps `DATETIME(3)` reads/writes UTC, matching the
+    // `toISOString()` encoding Drizzle uses for `datetime` columns.
+    poolConfig: { disableEval: true, timezone: "Z" },
+    // Hyperdrive rejects MySQL `COM_STMT_PREPARE`; use the text protocol.
+    disablePreparedStatements: true,
+  });
 
 const makeAppLayer = (env: Env, request: Request) => {
   const staticEnvLayer = CoreEnv.layer({
@@ -163,7 +233,12 @@ const makeAppLayer = (env: Env, request: Request) => {
   );
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
-  const devMailbox = (env as unknown as { DEV_MAILBOX?: string }).DEV_MAILBOX === "true";
+  const devMailbox = isDevMailboxEnabled(
+    env as unknown as { DEV_MAILBOX?: string; DEV_MAILBOX_ALLOW_REMOTE?: string },
+    env.ORIGIN,
+    request.url,
+  );
+  const devMailboxSecret = (env as unknown as { DEV_MAILBOX_SECRET?: string }).DEV_MAILBOX_SECRET;
   const devEmail = devMailbox
     ? {
         send: async (message: { to: string; subject: string; text?: string; html?: string }) => {
@@ -231,8 +306,9 @@ const makeAppLayer = (env: Env, request: Request) => {
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
-    // Windows discovery/enrollment has no tenant identity. Cloud falls back to
-    // the earliest organization; set this to pin Windows devices to one tenant.
+    // Windows discovery/enrollment has no tenant identity. Cloud requires an
+    // explicit tenant pin; setting it enables the Windows routes, otherwise the
+    // API serves a 503 configuration response instead of guessing a tenant.
     windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
     requireWindowsDeviceIdentity: true,
     requireAppleDeviceIdentity: true,
@@ -280,6 +356,7 @@ const makeAppLayer = (env: Env, request: Request) => {
 
   const appWithDevRoutes = Layer.mergeAll(
     appLayer,
+    apiEnv.WINDOWS_ORGANIZATION_ID ? windowsMdmRoutes : windowsMdmNotConfiguredRoutes,
     ssoRoutes({
       origin: env.ORIGIN,
       clientId: env.AZURE_CLIENT_ID,
@@ -288,36 +365,31 @@ const makeAppLayer = (env: Env, request: Request) => {
     }).pipe(Layer.provide(HttpServer.layerServices)),
     ...(devMailbox
       ? [
-          HttpRouter.add("GET", "/api/debug/emails", HttpServerResponse.json(listDevEmails())).pipe(
-            Layer.provide(HttpServer.layerServices),
-          ),
+          HttpRouter.add("GET", "/api/debug/emails", (debugRequest) => {
+            // A shared secret is optional locally and mandatory whenever the
+            // remote opt-in is used, so an exposed dev deployment cannot leak
+            // verification links to arbitrary callers.
+            const supplied = debugRequest.headers["x-dev-mailbox-secret"];
+            if (
+              devMailboxSecret &&
+              !timingSafeStringEqual(typeof supplied === "string" ? supplied : "", devMailboxSecret)
+            )
+              return Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }));
+            return HttpServerResponse.json(listDevEmails());
+          }).pipe(Layer.provide(HttpServer.layerServices)),
         ]
       : []),
   );
 
   return appWithDevRoutes.pipe(
-    Layer.provide(servicesLayer),
+    // `provideMerge` keeps the MDM/SCEP service instances in the layer's
+    // output. With plain `provide` the routes were built, but their handlers
+    // failed at request time with `Service not found: ScepService`.
+    Layer.provideMerge(servicesLayer),
     Layer.provide(authLive),
     Layer.provide(proofContextLayer),
     Layer.provideMerge(Db.layer),
-    Layer.provide(
-      MysqlClient.layer({
-        // Hyperdrive exposes individual connection fields for MySQL. Do not
-        // pass `url`: `@effect/sql-mysql2` ignores `poolConfig` when it is set,
-        // which would silently drop `disableEval` and break Workers builds.
-        host: env.HYPERDRIVE.host,
-        port: env.HYPERDRIVE.port,
-        username: env.HYPERDRIVE.user,
-        password: Redacted.make(env.HYPERDRIVE.password),
-        database: env.HYPERDRIVE.database,
-        // `mysql2` uses `eval` for some protocol decoding; Workers forbids it.
-        // `timezone: "Z"` keeps `DATETIME(3)` reads/writes UTC, matching the
-        // `toISOString()` encoding Drizzle uses for `datetime` columns.
-        poolConfig: { disableEval: true, timezone: "Z" },
-        // Hyperdrive rejects MySQL `COM_STMT_PREPARE`; use the text protocol.
-        disablePreparedStatements: true,
-      }),
-    ),
+    Layer.provide(databaseLayer(env)),
   );
 };
 
@@ -361,5 +433,33 @@ export default {
     const response = await handler(deviceRequest, context);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     return response;
+  },
+
+  /**
+   * Daily maintenance. Cloudflare Cron Triggers call this; the same function is
+   * exported from `@mattrax/enterprise-backend` so a future self-hosted
+   * Enterprise deployment can run it from its own scheduler.
+   */
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    const parseDays = (value: string | undefined) => {
+      if (value === undefined) return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    };
+    const maintenance = runMaintenance({
+      staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+      auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
+    }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+    ctx.waitUntil(
+      Effect.runPromise(maintenance).then(
+        (result) => console.log("Scheduled maintenance complete", result),
+        (cause) => console.error("Scheduled maintenance failed", cause),
+      ),
+    );
   },
 } satisfies ExportedHandler<Env>;

@@ -36,10 +36,24 @@ const ApiEnvSchema = Schema.Struct({
   /** HTTPS landing URL for password-reset emails; defaults to `ORIGIN`. */
   AUTH_RESET_URL: Schema.optional(Schema.String),
   /**
+   * Local-only debug mailbox. The mailbox is only exposed when the canonical
+   * `ORIGIN` is loopback, or when `DEV_MAILBOX_ALLOW_REMOTE=true` is also set.
+   */
+  DEV_MAILBOX: Schema.optional(nonEmptyString),
+  /** Explicit opt-in for exposing the debug mailbox on a non-loopback origin. */
+  DEV_MAILBOX_ALLOW_REMOTE: Schema.optional(nonEmptyString),
+  /** Optional shared secret required in `x-dev-mailbox-secret`. */
+  DEV_MAILBOX_SECRET: Schema.optional(nonEmptyString),
+  /**
    * Organization that owns Windows devices. Windows discovery/enrollment has no
-   * tenant identity, so when unset the backend uses the earliest organization.
+   * tenant identity, so Cloud requires this pin; when unset `/mdm/windows/*`
+   * returns a configuration error rather than guessing a tenant.
    */
   WINDOWS_ORGANIZATION_ID: Schema.optional(nonEmptyString),
+  /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
+  MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
+  /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
+  MAINTENANCE_AUDIT_RETENTION_DAYS: Schema.optional(nonEmptyString),
 });
 
 const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
@@ -64,5 +78,14 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   AZURE_CLIENT_SECRET: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_SECRET),
   TRUSTED_ORIGINS: emptyStringAsUndefined((cfEnv as any).TRUSTED_ORIGINS),
   AUTH_RESET_URL: emptyStringAsUndefined((cfEnv as any).AUTH_RESET_URL),
+  DEV_MAILBOX: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX),
+  DEV_MAILBOX_ALLOW_REMOTE: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_ALLOW_REMOTE),
+  DEV_MAILBOX_SECRET: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_SECRET),
   WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined((cfEnv as any).WINDOWS_ORGANIZATION_ID),
+  MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(
+    (cfEnv as any).MAINTENANCE_STALE_DEVICE_DAYS,
+  ),
+  MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(
+    (cfEnv as any).MAINTENANCE_AUDIT_RETENTION_DAYS,
+  ),
 });

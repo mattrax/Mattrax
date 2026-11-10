@@ -1,8 +1,10 @@
 import { Effect, Exit } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
+import { HttpServerResponse } from "effect/http";
 import {
   applicationKey,
   EnterpriseBadRequest,
+  EnterpriseConflict,
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
@@ -14,7 +16,8 @@ import {
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
-import { and, count, desc, eq, inArray, like, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, like, lt, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
@@ -33,6 +36,15 @@ import {
 import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
 import { syncEntraDirectory } from "./entraSync.ts";
+import {
+  DEVICE_EXPORT_MAX_ROWS,
+  normalizeDeviceSearchQuery,
+  platformLabel,
+  toCsv,
+  type DeviceSearchFilters,
+} from "./deviceSearch.ts";
+import { canEnrollDevice } from "./enrollmentLimit.ts";
+import { countDeviceHealth, deriveDeviceHealth, normalizeDeviceHealth } from "./deviceHealth.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
@@ -456,6 +468,92 @@ export const createEnterpriseService = ({
     diskUsed: row.diskUsed,
   });
 
+  const deviceDeclarationsFor = (deviceId: string) =>
+    db
+      .select()
+      .from(schema.deviceDeclaration)
+      .where(eq(schema.deviceDeclaration.deviceId, deviceId));
+
+  const deviceCertificatesFor = (organizationId: string, deviceId: string) =>
+    db
+      .select()
+      .from(schema.scepIssuedCertificate)
+      .where(
+        and(
+          eq(schema.scepIssuedCertificate.organizationId, organizationId),
+          eq(schema.scepIssuedCertificate.deviceId, deviceId),
+        ),
+      )
+      .orderBy(desc(schema.scepIssuedCertificate.createdAt));
+
+  /**
+   * Mark every active identity certificate issued to these devices as revoked.
+   * Returns the number of certificates that changed state. Tenant scoping is
+   * applied in SQL so a crafted device id cannot revoke another tenant's certs.
+   */
+  const revokeDeviceCertificates = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return 0;
+      const active = yield* db
+        .select({ serial: schema.scepIssuedCertificate.serial })
+        .from(schema.scepIssuedCertificate)
+        .where(
+          and(
+            eq(schema.scepIssuedCertificate.organizationId, organizationId),
+            inArray(schema.scepIssuedCertificate.deviceId, [...deviceIds]),
+            isNull(schema.scepIssuedCertificate.revokedAt),
+          ),
+        );
+      if (active.length === 0) return 0;
+      const revokedAt = now();
+      yield* db
+        .update(schema.scepIssuedCertificate)
+        .set({ revokedAt })
+        .where(
+          and(
+            eq(schema.scepIssuedCertificate.organizationId, organizationId),
+            inArray(schema.scepIssuedCertificate.deviceId, [...deviceIds]),
+            isNull(schema.scepIssuedCertificate.revokedAt),
+          ),
+        );
+      return active.length;
+    });
+
+  const rowDeviceHealth = (
+    device: Pick<EnterpriseDevice, "status" | "lastSeenAt" | "diskTotal" | "diskUsed">,
+    declarations: ReadonlyArray<{
+      readonly identifier?: string;
+      readonly declarationType?: string;
+      readonly valid?: string | null;
+      readonly active?: boolean;
+      readonly reasons?: unknown;
+    }>,
+  ) =>
+    deriveDeviceHealth({
+      status: device.status,
+      lastSeenAt: device.lastSeenAt,
+      declarations,
+      diskTotal: device.diskTotal,
+      diskUsed: device.diskUsed,
+    });
+
+  const rowCertificate = (row: typeof schema.scepIssuedCertificate.$inferSelect) => ({
+    serial: row.serial,
+    notAfter: iso(row.notAfter),
+    revokedAt: row.revokedAt ? iso(row.revokedAt) : null,
+    createdAt: iso(row.createdAt),
+  });
+
+  const rowDeclaration = (declaration: any) => ({
+    identifier: declaration.identifier,
+    declarationType: declaration.declarationType,
+    active: declaration.active,
+    valid: declaration.valid,
+    serverToken: declaration.serverToken,
+    reasons: declaration.reasons,
+    updatedAt: iso(declaration.updatedAt),
+  });
+
   const rowGroup = (row: EnterpriseGroup, devicesCount = 0, policiesCount = 0) => ({
     id: row.id,
     name: row.name,
@@ -552,6 +650,98 @@ export const createEnterpriseService = ({
           }),
         );
       return authSecret;
+    });
+
+  const escapeLike = (value: string) =>
+    value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+
+  /**
+   * Build the tenant-scoped `WHERE` clause shared by the device search and CSV
+   * export endpoints. Group filtering resolves the membership list up front
+   * (one extra query) instead of joining per row.
+   */
+  const deviceSearchWhere = (organizationId: string, filters: DeviceSearchFilters) =>
+    Effect.gen(function* () {
+      const conditions: SQL[] = [eq(schema.device.organizationId, organizationId)];
+      if (filters.q) {
+        const pattern = `%${escapeLike(filters.q)}%`;
+        conditions.push(
+          or(
+            like(schema.device.name, pattern),
+            like(schema.device.serial, pattern),
+            like(schema.device.model, pattern),
+            like(schema.device.dmIdentifier, pattern),
+            like(schema.device.assetTag, pattern),
+          ) as SQL,
+        );
+      }
+      if (filters.status) conditions.push(eq(schema.device.status, filters.status));
+      if (filters.proto) conditions.push(eq(schema.device.proto, filters.proto));
+      if (filters.notSeenBefore)
+        conditions.push(lt(schema.device.lastSeenAt, filters.notSeenBefore));
+      if (filters.groupId) {
+        const group = yield* db.query.enterpriseGroup.findFirst({
+          where: { id: filters.groupId, organizationId },
+        });
+        if (!group)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+        // Keep the membership set in SQL so large groups do not inflate the
+        // parameter list (the group_device primary key covers this lookup).
+        conditions.push(
+          inArray(
+            schema.device.id,
+            db
+              .select({ deviceId: schema.groupDevice.deviceId })
+              .from(schema.groupDevice)
+              .where(eq(schema.groupDevice.groupId, filters.groupId)),
+          ),
+        );
+      }
+      return and(...conditions);
+    });
+
+  const deviceOrder = (filters: DeviceSearchFilters) => {
+    const column =
+      filters.sort === "lastSeenAt"
+        ? schema.device.lastSeenAt
+        : filters.sort === "enrolledAt"
+          ? schema.device.enrolledAt
+          : filters.sort === "status"
+            ? schema.device.status
+            : schema.device.name;
+    const primary = filters.direction === "desc" ? desc(column) : asc(column);
+    // A stable tiebreaker keeps offset pagination deterministic.
+    return [primary, asc(schema.device.id)];
+  };
+
+  /** Load group memberships for a page of devices in one query (avoids N+1). */
+  const deviceGroupsFor = (organizationId: string, deviceIds: string[]) =>
+    Effect.gen(function* () {
+      const groups = new Map<string, Array<{ id: string; name: string }>>();
+      if (deviceIds.length === 0) return groups;
+      const rows = yield* db
+        .select({
+          deviceId: schema.groupDevice.deviceId,
+          id: schema.enterpriseGroup.id,
+          name: schema.enterpriseGroup.name,
+        })
+        .from(schema.groupDevice)
+        .innerJoin(
+          schema.enterpriseGroup,
+          eq(schema.groupDevice.groupId, schema.enterpriseGroup.id),
+        )
+        .where(
+          and(
+            inArray(schema.groupDevice.deviceId, deviceIds),
+            eq(schema.enterpriseGroup.organizationId, organizationId),
+          ),
+        );
+      for (const row of rows) {
+        const list = groups.get(row.deviceId) ?? [];
+        list.push({ id: row.id, name: row.name });
+        groups.set(row.deviceId, list);
+      }
+      return groups;
     });
 
   /**
@@ -1458,7 +1648,7 @@ export const createEnterpriseService = ({
           .select({ value: count() })
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
-        const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
+        const enabled = canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
         const challenge = yield* Effect.tryPromise({
           try: () =>
             createScepChallenge(enrollment.id, authSecret ?? "", {
@@ -1491,11 +1681,16 @@ export const createEnterpriseService = ({
           windows:
             !enabled || !enrollment.enabledWindows
               ? { error: "Windows enrollment is disabled! Contact your administrator." }
-              : "available",
+              : {
+                  discoveryUrl: `${origin}/mdm/windows/discovery`,
+                  // Windows discovery carries no tenant identity, so devices
+                  // are pinned to one tenant by the deployment.
+                  tenantScoped: false as const,
+                },
           android:
             !enabled || !enrollment.enabledAndroid
               ? { error: "Android enrollment is disabled! Contact your administrator." }
-              : "available",
+              : "unavailable",
           assetTag: enabled && enrollment.enabledAssetTag,
         };
       }),
@@ -1695,6 +1890,7 @@ export const createEnterpriseService = ({
     deleteDevices: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, ids);
         if (ids.length > 0)
           yield* db
             .delete(schema.device)
@@ -1704,7 +1900,10 @@ export const createEnterpriseService = ({
                 inArray(schema.device.id, [...ids]),
               ),
             );
-        yield* audit(ctx, "device.deleted", "device", null, { ids: [...ids] });
+        yield* audit(ctx, "device.deleted", "device", null, {
+          ids: [...ids],
+          revokedCertificates: revoked,
+        });
         return ok;
       }),
     patchDevice: (request, tenantId, deviceId, payload) =>
@@ -1884,21 +2083,8 @@ export const createEnterpriseService = ({
         });
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-        const declarations = yield* db
-          .select()
-          .from(schema.deviceDeclaration)
-          .where(eq(schema.deviceDeclaration.deviceId, device.id));
-        return {
-          declarations: declarations.map((declaration: any) => ({
-            identifier: declaration.identifier,
-            declarationType: declaration.declarationType,
-            active: declaration.active,
-            valid: declaration.valid,
-            serverToken: declaration.serverToken,
-            reasons: declaration.reasons,
-            updatedAt: iso(declaration.updatedAt),
-          })),
-        };
+        const declarations = yield* deviceDeclarationsFor(device.id);
+        return { declarations: declarations.map(rowDeclaration) };
       }),
     deviceUnenroll: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -1929,8 +2115,79 @@ export const createEnterpriseService = ({
         // requests still nudge the device.
         if (device.status === "enrolled" || device.status === "unenrolling")
           yield* applePush.pushAppleDevice(device.id, true);
-        yield* audit(ctx, "device.unenrolled", "device", deviceId);
+        // Retiring a device must also invalidate its SCEP identity, otherwise a
+        // stolen certificate could renew forever. Apple-issued certs are not
+        // linked to a device id (the SCEP challenge is tenant-scoped), so this
+        // covers Windows/enrolled identities; the explicit revoke action is
+        // available for the rest.
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [deviceId]);
+        yield* audit(ctx, "device.unenrolled", "device", deviceId, {
+          revokedCertificates: revoked,
+        });
         return ok;
+      }),
+    getDeviceHealth: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const declarations = yield* deviceDeclarationsFor(device.id);
+        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device.id);
+        return {
+          health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
+          declarations: declarations.map(rowDeclaration),
+          certificates: certificates.map(rowCertificate),
+        };
+      }),
+    getDeviceHealthSummary: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const devices = yield* db
+          .select()
+          .from(schema.device)
+          .where(eq(schema.device.organizationId, ctx.organization.id));
+        const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
+        const declarations = deviceIds.length
+          ? yield* db
+              .select()
+              .from(schema.deviceDeclaration)
+              .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
+          : [];
+        const byDevice = new Map<string, Array<any>>();
+        for (const declaration of declarations) {
+          const list = byDevice.get(declaration.deviceId) ?? [];
+          list.push(declaration);
+          byDevice.set(declaration.deviceId, list);
+        }
+        const summaries = devices.map((device: EnterpriseDevice) =>
+          rowDeviceHealth(device, byDevice.get(device.id) ?? []),
+        );
+        return { counts: countDeviceHealth(summaries) };
+      }),
+    revokeDeviceIdentity: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device.id);
+        if (certificates.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "No issued identity certificates are recorded for this device. Apple SCEP identities are tenant-scoped, so they cannot be revoked per device.",
+            }),
+          );
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device.id]);
+        yield* audit(ctx, "device.identity_revoked", "device", device.id, {
+          revokedCertificates: revoked,
+        });
+        return { status: "ok" as const, revoked };
       }),
     createGroup: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -2898,6 +3155,72 @@ export const createEnterpriseService = ({
           .where(eq(schema.device.organizationId, ctx.organization.id));
         return { rows: rows.map(rowDevice) };
       }),
+    searchDevices: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const filters = normalizeDeviceSearchQuery(query);
+        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const [total] = yield* db.select({ value: count() }).from(schema.device).where(where);
+        const rows = yield* db
+          .select()
+          .from(schema.device)
+          .where(where)
+          .orderBy(...deviceOrder(filters))
+          .limit(filters.limit)
+          .offset(filters.offset);
+        const groups = yield* deviceGroupsFor(
+          ctx.organization.id,
+          rows.map((row) => row.id),
+        );
+        return {
+          devices: rows.map((row) => ({ ...rowDevice(row), groups: groups.get(row.id) ?? [] })),
+          total: Number(total?.value ?? 0),
+        };
+      }),
+    exportDevices: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const filters = normalizeDeviceSearchQuery(query);
+        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const rows = yield* db
+          .select()
+          .from(schema.device)
+          .where(where)
+          .orderBy(...deviceOrder(filters))
+          .limit(DEVICE_EXPORT_MAX_ROWS);
+        const groups = yield* deviceGroupsFor(
+          ctx.organization.id,
+          rows.map((row) => row.id),
+        );
+        return toCsv(
+          [
+            "Name",
+            "Serial",
+            "Model",
+            "Platform",
+            "Status",
+            "OS version",
+            "OS build",
+            "Last seen",
+            "Enrolled at",
+            "Asset tag",
+            "Groups",
+          ],
+          rows.map((row) => [
+            row.name,
+            row.serial,
+            row.model,
+            platformLabel(row.proto),
+            row.status,
+            row.osVersion,
+            row.osBuild,
+            iso(row.lastSeenAt),
+            iso(row.enrolledAt),
+            row.assetTag,
+            (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
+          ]),
+        );
+      }),
     getDevice: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -3165,6 +3488,23 @@ export const enterpriseHandlers = (
     .handle("listDevices", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listDevices(request, params.tenantId)),
     )
+    .handle("searchDevices", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.searchDevices(request, params.tenantId, query),
+      ),
+    )
+    .handleRaw("exportDevices", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(service.exportDevices(request, params.tenantId, query), (csv: string) =>
+          HttpServerResponse.text(csv, {
+            contentType: "text/csv; charset=utf-8",
+            headers: {
+              "Content-Disposition": `attachment; filename="devices-${new Date().toISOString().slice(0, 10)}.csv"`,
+            },
+          }),
+        ),
+      ),
+    )
     .handle("getDevice", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDevice(request, params.tenantId, params.id),
@@ -3198,6 +3538,21 @@ export const enterpriseHandlers = (
     .handle("deviceUnenroll", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deviceUnenroll(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceHealth", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceHealth(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("revokeDeviceIdentity", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revokeDeviceIdentity(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceHealthSummary", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceHealthSummary(request, params.tenantId),
       ),
     )
     .handle("listGroups", ({ request, params }) =>

@@ -121,10 +121,8 @@ export type WindowsBackendOptions = {
   readonly authSecret?: string;
   /**
    * Tenant that owns Windows devices. Windows discovery/enrollment carries no
-   * tenant identity, so this backend falls back to the earliest organization
-   * (ordered by `createdAt`, then `id`) when unset. That makes multi-organization
-   * deployments deterministic: configure this to route Windows devices to a
-   * specific tenant.
+   * tenant identity, so this backend fails closed when the pin is unset rather
+   * than guessing a tenant. Configure this to enable Windows enrollment.
    */
   readonly windowsOrganizationId?: string;
   readonly enrollmentTokenTtlSeconds?: number;
@@ -246,13 +244,16 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           .where(eq(s.enterpriseEnrollment.organizationId, organizationId))
           .limit(1);
         if (!enrollment?.enabledWindows) return yield* Effect.fail(new UnknownDevice());
-        const windowsDevices = yield* db
-          .select({ id: s.device.id })
-          .from(s.device)
-          .where(and(eq(s.device.organizationId, organizationId), eq(s.device.proto, "win")))
-          .limit(enrollment.maxDevices);
-        if (windowsDevices.length >= enrollment.maxDevices)
-          return yield* Effect.fail(new UnknownDevice());
+        // `maxDevices === 0` means unlimited for the tenant.
+        if (enrollment.maxDevices > 0) {
+          const windowsDevices = yield* db
+            .select({ id: s.device.id })
+            .from(s.device)
+            .where(and(eq(s.device.organizationId, organizationId), eq(s.device.proto, "win")))
+            .limit(enrollment.maxDevices);
+          if (windowsDevices.length >= enrollment.maxDevices)
+            return yield* Effect.fail(new UnknownDevice());
+        }
 
         const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);
         if (!ca || typeof ca.privateKeyJwk !== "object" || ca.privateKeyJwk === null) {

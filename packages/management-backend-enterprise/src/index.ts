@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
@@ -357,11 +357,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     /** Application secret used to unseal the tenant APNs private key and sign Windows WSTEP tokens. */
     readonly authSecret?: string;
     /**
-     * Tenant that owns Windows devices. When omitted, Windows enrollment uses the
-     * earliest organization (ordered by `createdAt`, then `id`). Windows
-     * discovery/enrollment carries no tenant identity, so this makes the choice
-     * deterministic and lets multi-tenant deployments route Windows to a
-     * dedicated organization.
+     * Tenant that owns Windows devices. When omitted, Windows enrollment fails
+     * closed: Windows discovery/enrollment carries no tenant identity, so
+     * guessing would let an anonymous caller enrol into the wrong workspace.
      */
     readonly windowsOrganizationId?: string;
     readonly requireWindowsDeviceIdentity?: boolean;
@@ -604,6 +602,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     tokenUpdatedAt: null,
                   })
                   .where(eq(s.deviceApple.deviceId, device.id));
+                // A device that checked out must not be able to renew its old
+                // SCEP identity. There is no admin audit context on this
+                // protocol path, so the revokedAt timestamp is the record.
+                yield* db
+                  .update(s.scepIssuedCertificate)
+                  .set({ revokedAt: now() })
+                  .where(
+                    and(
+                      eq(s.scepIssuedCertificate.deviceId, device.id),
+                      eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+                      isNull(s.scepIssuedCertificate.revokedAt),
+                    ),
+                  );
                 return;
               }
 

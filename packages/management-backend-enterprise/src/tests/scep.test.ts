@@ -85,3 +85,90 @@ describe("ScepRepositoryLive challenge authentication", () => {
     }
   });
 });
+
+/**
+ * Queued stand-in for the select chain used by `findIssuedCertificate`.
+ * Each `select().from().where().limit()` consumes one result set.
+ */
+const makeQueuedDb = (results: Array<Array<Record<string, unknown>>>) => {
+  let index = 0;
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Effect.succeed(results[index++] ?? []),
+        }),
+      }),
+    }),
+  } as never;
+};
+
+const issuedCertificate = (overrides: Record<string, unknown> = {}) => ({
+  serial: "01",
+  organizationId: "tenant-1",
+  enrollmentId: null,
+  deviceId: null,
+  notAfter: new Date(Date.now() + 86_400_000),
+  revokedAt: null,
+  createdAt: new Date(),
+  ...overrides,
+});
+
+describe("ScepRepositoryLive identity revocation", () => {
+  it("rejects renewal when the issued certificate was revoked", async () => {
+    const repository = ScepRepositoryLive.make(
+      makeQueuedDb([[issuedCertificate({ revokedAt: new Date() })]]),
+      { authSecret },
+    );
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+      _tag: "ScepError",
+      message: expect.stringContaining("revoked"),
+    });
+  });
+
+  it("rejects renewal when the certificate's device is no longer enrolled", async () => {
+    const repository = ScepRepositoryLive.make(
+      makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], [{ status: "unenrolled" }]]),
+      { authSecret },
+    );
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+      _tag: "ScepError",
+      message: expect.stringContaining("no longer enrolled"),
+    });
+  });
+
+  it("rejects renewal when the certificate's device has been deleted", async () => {
+    const repository = ScepRepositoryLive.make(
+      makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], []]),
+      { authSecret },
+    );
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+      _tag: "ScepError",
+      message: expect.stringContaining("no longer enrolled"),
+    });
+  });
+
+  it("accepts renewal for an active, still-enrolled identity", async () => {
+    const repository = ScepRepositoryLive.make(
+      makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], [{ status: "enrolled" }]]),
+      { authSecret },
+    );
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
+      { serial: "01", organizationId: "tenant-1", deviceId: "device-1" },
+    );
+  });
+
+  it("accepts non-device-scoped (Apple) certificates until they are revoked", async () => {
+    const repository = ScepRepositoryLive.make(makeQueuedDb([[issuedCertificate()]]), {
+      authSecret,
+    });
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
+      { serial: "01" },
+    );
+  });
+
+  it("returns null for an unknown serial", async () => {
+    const repository = ScepRepositoryLive.make(makeQueuedDb([[]]), { authSecret });
+    await expect(Effect.runPromise(repository.findIssuedCertificate!("ff"))).resolves.toBeNull();
+  });
+});

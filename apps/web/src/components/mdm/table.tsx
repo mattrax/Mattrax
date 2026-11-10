@@ -20,12 +20,15 @@ export type MdmColumn<T> = {
   class?: string;
   cell: (row: T) => JSX.Element;
   sort?: (row: T) => string | number | undefined | null;
+  /** Server-side sort key when it differs from the column id. */
+  sortId?: string;
   search?: (row: T) => string | undefined | null;
   /** Columns hidden by default can be enabled from the column picker. */
   defaultHidden?: boolean;
 };
 
 type SortState = { id: string; dir: "asc" | "desc" } | null;
+export type MdmSortState = SortState;
 
 function readVisibility(key: string | undefined): Record<string, boolean> {
   if (!key || typeof localStorage === "undefined") return {};
@@ -37,7 +40,7 @@ function readVisibility(key: string | undefined): Record<string, boolean> {
 }
 
 export function MdmTable<T extends { id: string; name?: string }>(props: {
-  rows: T[] | undefined;
+  rows: readonly T[] | undefined;
   columns: MdmColumn<T>[];
   empty: JSX.Element;
   actions?: (selected: T[], clear: () => void) => JSX.Element;
@@ -48,14 +51,41 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   loading?: boolean;
   error?: unknown;
   searchPlaceholder?: string;
+  /**
+   * `server` disables the built-in client-side filtering/sorting so the parent
+   * can drive both through the API using the controlled props below.
+   */
+  mode?: "client" | "server";
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  sortValue?: MdmSortState;
+  onSortChange?: (value: MdmSortState) => void;
+  /** Extra controls rendered below the search row (filters, export, …). */
+  toolbar?: JSX.Element;
+  /** Rendered below the table (pagination, range summary, …). */
+  footer?: JSX.Element;
+  /** Total number of rows on the server; enables the "showing x of y" label. */
+  total?: number;
 }) {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
-  const [search, setSearch] = createSignal("");
-  const [sort, setSort] = createSignal<SortState>(null);
+  const [internalSearch, setInternalSearch] = createSignal("");
+  const [internalSort, setInternalSort] = createSignal<SortState>(null);
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
     readVisibility(props.storageKey),
   );
   let searchInput: HTMLInputElement | undefined;
+
+  const serverMode = () => props.mode === "server";
+  const search = () => (serverMode() ? (props.searchValue ?? "") : internalSearch());
+  const setSearch = (value: string) => {
+    if (serverMode()) props.onSearchChange?.(value);
+    else setInternalSearch(value);
+  };
+  const sort = () => (serverMode() ? (props.sortValue ?? null) : internalSort());
+  const setSort = (value: SortState) => {
+    if (serverMode()) props.onSortChange?.(value);
+    else setInternalSort(value);
+  };
 
   // Cmd/Ctrl+F focuses the table search, matching the production UI.
   onSettled(() => {
@@ -77,6 +107,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   );
 
   const rows = createMemo(() => {
+    if (serverMode()) return [...(props.rows ?? [])];
     const term = search().trim().toLowerCase();
     let result = [...(props.rows ?? [])];
     if (term)
@@ -109,8 +140,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         : (Object.fromEntries(rows().map((row) => [row.id, true])) as Record<string, true>),
     );
   const toggleSort = (id: string) =>
-    setSort((value) =>
-      value?.id !== id ? { id, dir: "asc" } : value.dir === "asc" ? { id, dir: "desc" } : null,
+    setSort(
+      sort()?.id !== id ? { id, dir: "asc" } : sort()?.dir === "asc" ? { id, dir: "desc" } : null,
     );
   const toggleRow = (row: T, checked: boolean) => {
     setSelected((value) => {
@@ -129,9 +160,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     });
   };
   const actions = () => props.actions?.(selectedRows(), clear);
-  const sortIndicator = (id: string) => {
+  const sortIndicator = (column: MdmColumn<T>) => {
     const value = sort();
-    if (value?.id !== id) return "";
+    if (value?.id !== (column.sortId ?? column.id)) return "";
     return value.dir === "asc" ? " ↑" : " ↓";
   };
 
@@ -154,9 +185,11 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
         <div class="flex items-center gap-3">
           <span class="text-sm text-muted-foreground">
-            {rows().length === (props.rows?.length ?? 0)
-              ? `${rows().length} rows`
-              : `${rows().length} of ${props.rows?.length ?? 0}`}
+            {props.total !== undefined
+              ? `${props.rows?.length ?? 0} of ${props.total}`
+              : rows().length === (props.rows?.length ?? 0)
+                ? `${rows().length} rows`
+                : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger class="inline-flex">
@@ -186,6 +219,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
       </div>
 
+      <Show when={props.toolbar}>{props.toolbar}</Show>
+
       <Show when={props.error}>
         <QueryError error={props.error} />
       </Show>
@@ -202,7 +237,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         when={!props.error && !props.loading && rows().length > 0}
         fallback={!props.error && !props.loading ? props.empty : undefined}
       >
-        <div class="overflow-hidden rounded-xl border bg-card">
+        <div class="overflow-x-auto rounded-xl border bg-card">
           <table class="w-full text-sm">
             <thead class="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -220,10 +255,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       <button
                         type="button"
                         class={cn("uppercase tracking-wide", col.sort && "hover:text-stone-900")}
-                        onClick={() => col.sort && toggleSort(col.id)}
+                        onClick={() => col.sort && toggleSort(col.sortId ?? col.id)}
                       >
                         {col.header}
-                        {sortIndicator(col.id)}
+                        {sortIndicator(col)}
                       </button>
                     </th>
                   )}
@@ -266,6 +301,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           </table>
         </div>
       </Show>
+
+      <Show when={props.footer}>{props.footer}</Show>
 
       <Show when={selectedRows().length > 0 && actions()}>
         <div class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-xl">

@@ -112,6 +112,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
       setChanges({});
       setOpen(false);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+      await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     },
   }));
   const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
@@ -171,6 +172,8 @@ export function EntityActions(props: {
   const ids = () => rows().map((row) => row.id);
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, props.entity) });
+    if (props.entity === "device")
+      await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     props.clear();
   };
   const sync = useMutation(() => ({

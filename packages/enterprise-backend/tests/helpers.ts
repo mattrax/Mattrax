@@ -129,6 +129,7 @@ class SelectBuilder {
   private joined?: string;
   private condition: any;
   private limitCount?: number;
+  private offsetCount?: number;
 
   constructor(store: Store, fields?: Record<string, any>) {
     this.store = store;
@@ -159,6 +160,11 @@ class SelectBuilder {
     return this;
   }
 
+  offset(count: number) {
+    this.offsetCount = count;
+    return this;
+  }
+
   private execute() {
     let rows: Row[];
     if (this.fields && "value" in this.fields && Object.keys(this.fields).length === 1) {
@@ -177,7 +183,9 @@ class SelectBuilder {
         .filter((row) => matches(this.condition, row))
         .map((row) => project(this.fields, row));
     }
-    return this.limitCount === undefined ? rows : rows.slice(0, this.limitCount);
+    const start = this.offsetCount ?? 0;
+    const sliced = start > 0 ? rows.slice(start) : rows;
+    return this.limitCount === undefined ? sliced : sliced.slice(0, this.limitCount);
   }
 
   then(resolve: (value: Row[]) => void, reject: (reason?: unknown) => void) {

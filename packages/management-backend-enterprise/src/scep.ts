@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import {
   ScepError,
@@ -122,6 +122,8 @@ export class ScepRepositoryLive extends ScepRepository {
               enrollmentId: certificate.enrollmentId ?? null,
               deviceId: certificate.deviceId ?? null,
               notAfter: certificate.notAfter,
+              // A reused serial has been reissued, so it is valid again.
+              revokedAt: null,
             },
           })
           .pipe(
@@ -135,21 +137,55 @@ export class ScepRepositoryLive extends ScepRepository {
             .select()
             .from(schema.scepIssuedCertificate)
             .where(eq(schema.scepIssuedCertificate.serial, serial))
-            .limit(1);
-          return row
-            ? {
-                serial: row.serial,
-                organizationId: row.organizationId,
-                enrollmentId: row.enrollmentId ?? undefined,
-                deviceId: row.deviceId ?? undefined,
-                notAfter: row.notAfter,
-              }
-            : null;
-        }).pipe(
-          Effect.mapError(
-            (cause) => new ScepError({ message: "Failed to read certificate", cause }),
-          ),
-        ),
+            .limit(1)
+            .pipe(
+              Effect.mapError(
+                (cause) => new ScepError({ message: "Failed to read certificate", cause }),
+              ),
+            );
+          if (!row) return null;
+          // Revocation is checked before expiry so operators get an actionable
+          // log line ("revoked") instead of a generic "unknown or expired".
+          if (row.revokedAt) {
+            return yield* Effect.fail(
+              new ScepError({
+                message: "SCEP renewal rejected: the issued identity certificate has been revoked",
+              }),
+            );
+          }
+          if (row.deviceId) {
+            const [device] = yield* db
+              .select({ status: schema.device.status })
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.id, row.deviceId),
+                  eq(schema.device.organizationId, row.organizationId),
+                ),
+              )
+              .limit(1)
+              .pipe(
+                Effect.mapError(
+                  (cause) => new ScepError({ message: "Failed to read device", cause }),
+                ),
+              );
+            if (!device || device.status !== "enrolled") {
+              return yield* Effect.fail(
+                new ScepError({
+                  message:
+                    "SCEP renewal rejected: the device is no longer enrolled or no longer exists",
+                }),
+              );
+            }
+          }
+          return {
+            serial: row.serial,
+            organizationId: row.organizationId,
+            enrollmentId: row.enrollmentId ?? undefined,
+            deviceId: row.deviceId ?? undefined,
+            notAfter: row.notAfter,
+          };
+        }),
     });
   };
 

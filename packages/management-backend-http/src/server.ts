@@ -42,7 +42,15 @@ const verifySignature = (
   secret: string | undefined,
 ): Effect.Effect<void, InternalServerError> =>
   Effect.gen(function* () {
-    if (!secret) return;
+    // Authentication must fail closed. A deployment that forgets to configure
+    // `WEBHOOK_SECRET` must not accept anonymous management traffic, so every
+    // request errors with a logged configuration failure instead.
+    if (!secret) {
+      console.error(
+        "Management webhook rejected: WEBHOOK_SECRET is not configured. Set the same secret on the gateway and this backend.",
+      );
+      return yield* Effect.fail(new InternalServerError());
+    }
     const timestamp = request.headers["x-mattrax-timestamp"];
     const signature = request.headers["x-mattrax-signature"];
     if (!timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300)
@@ -53,7 +61,10 @@ const verifySignature = (
   });
 
 export type ManagementWebhookOptions = {
-  /** Shared HMAC secret. When set, unsigned/invalid requests are rejected. */
+  /**
+   * Shared HMAC secret. Required: when unset every webhook request is rejected
+   * with `InternalServerError` so authentication can never fail open.
+   */
   readonly secret?: string;
 };
 

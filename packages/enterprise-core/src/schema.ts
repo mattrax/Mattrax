@@ -725,9 +725,14 @@ export const scepIssuedCertificate = mysqlTable(
     enrollmentId: shortText("enrollment_id"),
     deviceId: shortText("device_id"),
     notAfter: timestamp("not_after").notNull(),
+    /** Set when the identity certificate can no longer be used for renewal. */
+    revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").notNull(),
   },
-  (table) => [index("scep_issued_certificate_org_idx").on(table.organizationId)],
+  (table) => [
+    index("scep_issued_certificate_org_idx").on(table.organizationId),
+    index("scep_issued_certificate_device_idx").on(table.deviceId),
+  ],
 );
 
 export const scepCa = mysqlTable("scep_ca", {

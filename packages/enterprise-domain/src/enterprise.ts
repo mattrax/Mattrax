@@ -29,6 +29,12 @@ export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>
     message: Schema.String,
   },
 ) {}
+export class EnterpriseConflict extends Schema.TaggedError<EnterpriseConflict>()(
+  "EnterpriseConflict",
+  {
+    message: Schema.String,
+  },
+) {}
 export class EnterpriseNotFound extends Schema.TaggedError<EnterpriseNotFound>()(
   "EnterpriseNotFound",
   {
@@ -84,6 +90,7 @@ const EnterpriseTenantReadErrors = [
 const EnterpriseTenantWriteErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
 const EnterpriseTenantDeleteErrors = [
@@ -360,6 +367,59 @@ export const DeviceDeclarationInfo = Schema.Struct({
 });
 export const DeviceDeclarationsResponse = Schema.Struct({
   declarations: Schema.Array(DeviceDeclarationInfo),
+});
+
+export const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
+export type DeviceHealthLevel = typeof DeviceHealthLevel.Type;
+export const DeviceHealthReasonSeverity = Schema.Literals(["info", "warning", "critical"]);
+export type DeviceHealthReasonSeverity = typeof DeviceHealthReasonSeverity.Type;
+export const DeviceHealthReason = Schema.Struct({
+  code: Schema.String,
+  label: Schema.String,
+  severity: DeviceHealthReasonSeverity,
+});
+export type DeviceHealthReason = typeof DeviceHealthReason.Type;
+export const DeviceHealth = Schema.Struct({
+  level: DeviceHealthLevel,
+  reasons: Schema.Array(DeviceHealthReason),
+  lastSeenAt: Schema.optional(NullableString),
+  stale: Schema.Boolean,
+});
+export type DeviceHealth = typeof DeviceHealth.Type;
+
+/** Identity certificate metadata. Private keys are never exposed. */
+export const DeviceCertificateInfo = Schema.Struct({
+  serial: Schema.String,
+  notAfter: Schema.String,
+  revokedAt: Schema.optional(NullableString),
+  createdAt: Schema.String,
+});
+export type DeviceCertificateInfo = typeof DeviceCertificateInfo.Type;
+
+export const DeviceHealthResponse = Schema.Struct({
+  health: DeviceHealth,
+  declarations: Schema.Array(DeviceDeclarationInfo),
+  certificates: Schema.Array(DeviceCertificateInfo),
+});
+export type DeviceHealthResponse = typeof DeviceHealthResponse.Type;
+
+export const DeviceHealthCounts = Schema.Struct({
+  total: Schema.Number,
+  healthy: Schema.Number,
+  attention: Schema.Number,
+  critical: Schema.Number,
+  /** Devices past the stale threshold, regardless of their health level. */
+  stale: Schema.Number,
+  unknown: Schema.Number,
+});
+export type DeviceHealthCounts = typeof DeviceHealthCounts.Type;
+export const DeviceHealthSummaryResponse = Schema.Struct({ counts: DeviceHealthCounts });
+export type DeviceHealthSummaryResponse = typeof DeviceHealthSummaryResponse.Type;
+
+export const DeviceIdentityRevokeResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** Number of identity certificates that were active and are now revoked. */
+  revoked: Schema.Number,
 });
 
 export const DeviceActionResponse = Schema.Struct({
@@ -641,6 +701,46 @@ export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) 
 export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
+export const DeviceSearchSort = Schema.Literals(["name", "lastSeenAt", "enrolledAt", "status"]);
+export type DeviceSearchSort = typeof DeviceSearchSort.Type;
+export const SortDirection = Schema.Literals(["asc", "desc"]);
+export type SortDirection = typeof SortDirection.Type;
+
+/**
+ * Server-side device list filters. Every field is optional; the backend applies
+ * a bounded default page size and treats an empty query as "all devices".
+ */
+export const DeviceSearchQuery = Schema.Struct({
+  /** Matches name, serial, model, `dmIdentifier` and asset tag. */
+  q: Schema.optional(Schema.String),
+  status: Schema.optional(DeviceStatus),
+  proto: Schema.optional(DeviceProtocol),
+  /** Only devices that are members of this group. */
+  groupId: Schema.optional(Schema.String),
+  /** ISO timestamp; only devices last seen before it. */
+  notSeenSince: Schema.optional(Schema.String),
+  /** Shorthand for `notSeenSince = now - staleDays`; 0 or omitted disables it. */
+  staleDays: Schema.optional(Schema.Number),
+  limit: Schema.optional(Schema.Number),
+  offset: Schema.optional(Schema.Number),
+  sort: Schema.optional(DeviceSearchSort),
+  direction: Schema.optional(SortDirection),
+});
+export type DeviceSearchQuery = typeof DeviceSearchQuery.Type;
+
+/** A device row plus its group memberships, populated by the search endpoint. */
+export const DeviceSearchRow = Schema.Struct({
+  ...DeviceRow.fields,
+  groups: Schema.Array(DeviceRelation),
+});
+export type DeviceSearchRow = typeof DeviceSearchRow.Type;
+
+export const DeviceSearchResponse = Schema.Struct({
+  devices: Schema.Array(DeviceSearchRow),
+  total: Schema.Number,
+});
+export type DeviceSearchResponse = typeof DeviceSearchResponse.Type;
+
 export const NodeResponse = Schema.Union([DeviceRow, GroupNode, PolicyRow]);
 export type NodeResponse = typeof NodeResponse.Type;
 
@@ -648,8 +748,25 @@ export const PlatformEnrollment = Schema.Union([
   Schema.Struct({ error: Schema.String }),
   Schema.Struct({ profile: Schema.String }),
   Schema.Literal("available"),
+  /** The platform toggle is on, but delivery is not wired up in this build. */
+  Schema.Literal("unavailable"),
 ]);
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
+
+/**
+ * Windows enrollment is driven by a deployment-wide discovery URL
+ * (`/mdm/windows/discovery`). Discovery requests carry no tenant identity, so a
+ * deployment pins Windows devices to one tenant instead of routing per tenant.
+ */
+export const WindowsEnrollment = Schema.Union([
+  Schema.Struct({ error: Schema.String }),
+  Schema.Struct({
+    discoveryUrl: Schema.String,
+    /** False until Windows discovery can resolve a tenant from the request. */
+    tenantScoped: Schema.Literal(false),
+  }),
+]);
+export type WindowsEnrollment = typeof WindowsEnrollment.Type;
 
 export const EnrollmentResponse = Schema.Union([
   Schema.Struct({ name: Schema.String, authenticated: Schema.Literal(false) }),
@@ -657,7 +774,7 @@ export const EnrollmentResponse = Schema.Union([
     name: Schema.String,
     authenticated: Schema.Literal(true),
     apple: PlatformEnrollment,
-    windows: PlatformEnrollment,
+    windows: WindowsEnrollment,
     android: PlatformEnrollment,
     assetTag: Schema.Boolean,
   }),
@@ -1065,6 +1182,22 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("searchDevices", "/v1/tenants/:tenantId/devices/search", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: DeviceSearchQuery,
+      success: DeviceSearchResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("exportDevices", "/v1/tenants/:tenantId/devices/export", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: DeviceSearchQuery,
+      success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/csv; charset=utf-8" })),
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("getDevice", "/v1/tenants/:tenantId/devices/:id", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
@@ -1118,6 +1251,31 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getDeviceHealth", "/v1/tenants/:tenantId/devices/:id/health", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: DeviceHealthResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "revokeDeviceIdentity",
+      "/v1/tenants/:tenantId/devices/:id/revoke-identity",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantIdParam,
+        success: DeviceIdentityRevokeResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("getDeviceHealthSummary", "/v1/tenants/:tenantId/device-health", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: DeviceHealthSummaryResponse,
     }),
   )
   .add(

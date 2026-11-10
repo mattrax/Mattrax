@@ -26,6 +26,13 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm doc:build
+      # Production Workers must actually build. Typechecking alone did not
+      # catch a layer-wiring bug that made every /mdm route return 500.
+      - run: pnpm api build
+      - run: pnpm web build
+      # Fail when the schema changes without a committed migration snapshot.
+      - run: pnpm api db:generate
+      - run: test -z "$(git status --porcelain -- apps/api/migrations)"
 
   e2e:
     name: Browser tests (CDP)

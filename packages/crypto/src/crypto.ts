@@ -77,6 +77,60 @@ export function pemDecode(label: string, pem: string): ArrayBuffer {
   return base64ToArrayBuffer(base64);
 }
 
+// ─── Shared request signing ──────────────────────────────────────
+//
+// The product-key/licence handshake is HMAC-SHA256 over a UTF-8 message. Both
+// the self-hosted gateway and the Cloud platform must use the same encoding:
+// lowercase hex. (The gateway previously emitted base64url, so valid keys were
+// rejected by the platform and the process exited.)
+
+const encoder = new TextEncoder();
+
+const bytesToHex = (bytes: ArrayBuffer): string =>
+  Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** HMAC-SHA256 as lowercase hex, matching the Platform API signature format. */
+export async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return bytesToHex(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+}
+
+/** Constant-time comparison for hex/ASCII signatures. */
+export function constantTimeEqual(left: string, right: string): boolean {
+  const a = encoder.encode(left);
+  const b = encoder.encode(right);
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  return difference === 0;
+}
+
+/** Sign the licence-verification message used by `POST /instances/verify`. */
+export const productKeyVerifyMessage = (
+  timestamp: number | string,
+  payload: { userCount?: number; deviceCount?: number },
+): string => `${timestamp}.${payload.userCount ?? 0}:${payload.deviceCount ?? 0}`;
+
+/** Sign a Platform API request; always emits lowercase hex. */
+export async function signProductKeyRequest(secret: string, message: string): Promise<string> {
+  return hmacSha256Hex(secret, message);
+}
+
+/** Verify a Platform API signature using the shared hex encoding. */
+export async function verifyProductKeyRequest(
+  secret: string,
+  message: string,
+  signature: string,
+): Promise<boolean> {
+  return constantTimeEqual(await hmacSha256Hex(secret, message), signature);
+}
+
 // ─── At-rest secret sealing ──────────────────────────────────────
 //
 // Secrets (APNs private keys) are sealed with AES-256-GCM using a key derived

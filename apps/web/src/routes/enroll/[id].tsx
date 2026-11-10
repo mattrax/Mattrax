@@ -5,7 +5,12 @@ import { createSignal, For, Match, Show, Switch } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { enterprise, type EnrollmentResponse, type PlatformEnrollment } from "~/lib/enterprise";
+import {
+  enterprise,
+  type EnrollmentResponse,
+  type PlatformEnrollment,
+  type WindowsEnrollment,
+} from "~/lib/enterprise";
 
 export default function EnrollPage() {
   const params = useParams();
@@ -86,8 +91,9 @@ export default function EnrollPage() {
 
 type Platform = "apple" | "windows" | "android";
 
-const isAvailable = (value: PlatformEnrollment) =>
-  value === "available" || (typeof value === "object" && "profile" in value);
+const isAvailable = (value: PlatformEnrollment | WindowsEnrollment) =>
+  value === "available" ||
+  (typeof value === "object" && ("profile" in value || "discoveryUrl" in value));
 
 function EnrollmentOptions(props: {
   id: string | undefined;
@@ -122,7 +128,7 @@ function EnrollmentOptions(props: {
           <ApplePane apple={props.enrollment.apple} />
         </Match>
         <Match when={active() === "windows"}>
-          <AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" />
+          <WindowsPane windows={props.enrollment.windows} />
         </Match>
         <Match when={active() === "android"}>
           <AndroidPane id={props.id} android={props.enrollment.android} />
@@ -179,15 +185,43 @@ function ApplePane(props: { apple: PlatformEnrollment }) {
   );
 }
 
-function AvailabilityPane(props: { value: PlatformEnrollment; label: string }) {
-  if (typeof props.value === "object" && "error" in props.value)
-    return <p class="text-center text-sm text-red-600">{props.value.error}</p>;
+function WindowsPane(props: { windows: WindowsEnrollment }) {
+  if (typeof props.windows === "object" && "error" in props.windows)
+    return <p class="text-center text-sm text-red-600">{props.windows.error}</p>;
+  if (typeof props.windows !== "object" || !("discoveryUrl" in props.windows))
+    return (
+      <p class="text-center text-sm text-muted-foreground">Windows enrollment is unavailable.</p>
+    );
+  const url = props.windows.discoveryUrl;
+  const [copied, setCopied] = createSignal(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied; the input is selectable as a fallback.
+    }
+  };
   return (
-    <div class="space-y-2 text-center text-sm text-muted-foreground">
-      <p>{props.label} is available.</p>
-      <p class="text-xs">
-        Open Settings &gt; Accounts &gt; Access work or school &gt; Connect and enter the enrollment
-        URL from this page.
+    <div class="space-y-3">
+      <p class="text-sm text-muted-foreground">
+        Add this discovery URL to your Windows provisioning package or Autopilot profile.
+      </p>
+      <div class="flex gap-2">
+        <Input readonly value={url} onClick={(event) => event.currentTarget.select()} />
+        <Button variant="outline" onClick={copy}>
+          {copied() ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        Windows discovery is deployment-wide: the request carries no tenant identity, so this
+        deployment must pin Windows enrollment to a single tenant. Per-tenant Windows routing is not
+        supported yet.
+      </p>
+      <p class="text-sm text-muted-foreground">
+        On the device, open Settings &gt; Accounts &gt; Access work or school &gt; Connect and use
+        the URL above.
       </p>
     </div>
   );

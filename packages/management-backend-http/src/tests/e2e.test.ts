@@ -11,13 +11,34 @@ import {
 import { managementApi, managementWebhookHandlers } from "../index.js";
 import { mockManagementBackend } from "./helpers.js";
 
-async function makeHandler(backendLayer: Layer.Layer<any>, secret?: string) {
+const webhookOperations: Record<string, string> = {
+  "/webhook/apple/event": "appleDeviceEvent",
+  "/webhook/apple/checkin": "appleManagementCheckin",
+  "/webhook/apple/bootstrap-token": "getAppleBootstrapToken",
+  "/webhook/apple/declaration-tokens": "getAppleDeclarationTokens",
+  "/webhook/apple/declaration-items": "getAppleDeclarationItems",
+  "/webhook/apple/declaration": "getAppleDeclaration",
+  "/webhook/apple/asset": "getAppleAsset",
+  "/webhook/apple/profile": "getAppleProfile",
+  "/webhook/windows/discovery": "windowsDiscovery",
+  "/webhook/windows/policy": "getWindowsEnrollmentPolicy",
+  "/webhook/windows/enroll": "windowsEnroll",
+  "/webhook/windows/checkin": "windowsManagementCheckin",
+  "/webhook/windows/event": "windowsDeviceEvent",
+};
+
+const TEST_WEBHOOK_SECRET = "test-webhook-secret";
+
+async function makeHandler(
+  backendLayer: Layer.Layer<any>,
+  secret: string | null = TEST_WEBHOOK_SECRET,
+) {
   const apiLayer = HttpApiBuilder.layer(managementApi, {
     openapiPath: "/openapi.json",
   }).pipe(
     Layer.provide(
       HttpApiBuilder.group(managementApi, "ManagementWebhook", (handlers) =>
-        managementWebhookHandlers(handlers, { secret }),
+        managementWebhookHandlers(handlers, { secret: secret ?? undefined }),
       ),
     ),
   );
@@ -26,7 +47,38 @@ async function makeHandler(backendLayer: Layer.Layer<any>, secret?: string) {
     Layer.provide(HttpServer.layerServices),
   );
   const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
-  return { handler, dispose };
+
+  /**
+   * Sign every request the way `ManagementBackendHttp` does, so tests focus on
+   * behaviour instead of repeating HMAC plumbing. The server now rejects
+   * unsigned requests, including when no secret is configured.
+   */
+  const request = async (input: Request) => {
+    if (input.headers.get("x-mattrax-test-passthrough") === "1") {
+      const headers = new Headers(input.headers);
+      headers.delete("x-mattrax-test-passthrough");
+      return handler(new Request(input, { headers }));
+    }
+    if (!secret) return handler(input);
+    const operation = webhookOperations[new URL(input.url).pathname];
+    if (!operation) return handler(input);
+
+    const body = await input.clone().text();
+    const payload = body ? JSON.parse(body) : null;
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const digest = createHash("sha256")
+      .update(JSON.stringify(payload ?? null))
+      .digest("hex");
+    const signature = createHmac("sha256", secret)
+      .update(`${operation}.${timestamp}.${digest}`)
+      .digest("hex");
+    const headers = new Headers(input.headers);
+    headers.set("x-mattrax-timestamp", timestamp);
+    headers.set("x-mattrax-signature", signature);
+    return handler(new Request(input, { headers }));
+  };
+
+  return { handler: request, dispose };
 }
 
 const deviceScope = {
@@ -418,7 +470,10 @@ describe("Management webhook signing", () => {
     const unsigned = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-mattrax-test-passthrough": "1",
+        },
         body: JSON.stringify(payload),
       }),
     );
@@ -428,7 +483,11 @@ describe("Management webhook signing", () => {
     const tampered = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
-        headers: { "content-type": "application/json", ...headers },
+        headers: {
+          "content-type": "application/json",
+          "x-mattrax-test-passthrough": "1",
+          ...headers,
+        },
         body: JSON.stringify({
           scope: { ...deviceScope, udid: "tampered-udid" },
           event: { _tag: "CheckOut" as const },
@@ -436,6 +495,31 @@ describe("Management webhook signing", () => {
       }),
     );
     expect(tampered.status).toBe(500);
+    await dispose();
+  });
+
+  it("fails closed when no secret is configured", async () => {
+    let received = false;
+    const backend = mockManagementBackend({
+      appleDeviceEvent: () =>
+        Effect.sync(() => {
+          received = true;
+        }),
+    });
+    const { handler, dispose } = await makeHandler(backend, null);
+    const payload = { scope: deviceScope, event: { _tag: "CheckOut" as const } };
+    const response = await handler(
+      new Request("http://localhost/webhook/apple/event", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(await sign("appleDeviceEvent", payload)),
+        },
+        body: JSON.stringify(payload),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(received).toBe(false);
     await dispose();
   });
 });

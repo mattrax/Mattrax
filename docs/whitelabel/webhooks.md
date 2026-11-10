@@ -17,8 +17,10 @@ Every endpoint below is relative to that base URL.
 ## Authentication and signing
 
 Set the same secret on the gateway (`--webhook-secret` or
-`MATTRAX_WEBHOOK_SECRET`) and on your management backend. When set, every gateway
-request carries:
+`MATTRAX_WEBHOOK_SECRET`) and on your management backend (`WEBHOOK_SECRET`). The secret
+is **required**: a backend configured without it rejects every webhook request instead
+of failing open, and a gateway without it sends unsigned requests that the backend will
+reject. Every gateway request carries:
 
 ```http
 x-mattrax-timestamp: <unix seconds>

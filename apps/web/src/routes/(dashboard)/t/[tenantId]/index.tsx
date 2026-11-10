@@ -27,6 +27,10 @@ export default function TenantOverviewPage() {
     queryKey: enterpriseKeys.list(tenantId(), "device"),
     queryFn: () => enterprise.list(tenantId(), "device"),
   }));
+  const health = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceHealthSummary(tenantId()),
+    queryFn: () => enterprise.getDeviceHealthSummary(tenantId()),
+  }));
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(tenantId(), "group"),
     queryFn: () => enterprise.list(tenantId(), "group"),
@@ -64,6 +68,42 @@ export default function TenantOverviewPage() {
       icon: ShieldCheck,
     },
   ];
+
+  const healthCards = () => {
+    const counts = health.data?.counts;
+    return [
+      {
+        label: "Healthy",
+        value: counts?.healthy ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-green-200 bg-green-50/60 text-green-800",
+      },
+      {
+        label: "Attention",
+        value: counts?.attention ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-amber-200 bg-amber-50/60 text-amber-900",
+      },
+      {
+        label: "Critical",
+        value: counts?.critical ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-red-200 bg-red-50/60 text-red-800",
+      },
+      {
+        label: "Stale (7d)",
+        value: counts?.stale ?? 0,
+        href: `/t/${tenantId()}/devices?staleDays=7`,
+        class: "border-stone-200 bg-stone-50 text-stone-700",
+      },
+      {
+        label: "Unknown",
+        value: counts?.unknown ?? 0,
+        href: `/t/${tenantId()}/devices`,
+        class: "border-stone-200 bg-stone-50 text-stone-700",
+      },
+    ];
+  };
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
@@ -106,6 +146,38 @@ export default function TenantOverviewPage() {
           )}
         </For>
       </div>
+
+      <section class="rounded-xl border bg-card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-semibold text-stone-900">Device health</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Compliance rollup from enrollment, check-in freshness, declarations, storage, and
+              identity state.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/t/${tenantId()}/devices`)}>
+            View devices
+          </Button>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <For each={healthCards()}>
+            {(card) => (
+              <button
+                type="button"
+                onClick={() => navigate(card.href)}
+                class={`rounded-lg border p-3 text-left transition-colors hover:brightness-[0.98] ${card.class}`}
+              >
+                <p class="text-xs font-medium uppercase tracking-wide opacity-80">{card.label}</p>
+                <p class="mt-1 text-2xl font-semibold tracking-tight">{card.value}</p>
+              </button>
+            )}
+          </For>
+        </div>
+        <Show when={health.isError}>
+          <QueryError error={health.error} class="mt-3" onRetry={() => void health.refetch()} />
+        </Show>
+      </section>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-xl border bg-card p-5">

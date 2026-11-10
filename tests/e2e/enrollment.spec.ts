@@ -34,4 +34,47 @@ test.describe("device enrollment", () => {
     await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page.getByText(/invalid/i)).toBeVisible();
   });
+
+  test("shows the Windows discovery URL and marks Android unavailable", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Windows Tenant");
+    await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabledAndroid: true }),
+    });
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+    const details = await api<{
+      windows: { discoveryUrl: string; tenantScoped: boolean };
+      android: string;
+    }>(page, `/api/v1/enrollment/${enrollment.id}`);
+
+    expect(details.windows.discoveryUrl).toContain("/mdm/windows/discovery");
+    expect(details.windows.tenantScoped).toBe(false);
+    expect(details.android).toBe("unavailable");
+
+    await gotoHydrated(page, `/enroll/${enrollment.id}`);
+    await page.getByRole("button", { name: /^Windows$/ }).click();
+    await expect(page.locator("input[readonly]")).toHaveValue(/\/mdm\/windows\/discovery/);
+    await expect(page.getByText(/deployment-wide/i)).toBeVisible();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", { name: /^Copy$/ }).click();
+    await expect(page.getByRole("button", { name: /^Copied$/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /^Android$/ }).click();
+    await expect(page.getByText(/Android enrollment isn't available yet/i)).toBeVisible();
+  });
+
+  test("saves maxDevices=0 as unlimited", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Unlimited Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/enrollment`);
+    await page.getByRole("button", { name: /^edit settings$/i }).click();
+    await page.getByLabel("Maximum devices").fill("0");
+    await page.getByRole("button", { name: /^save$/i }).click();
+    await expect(page.getByLabel("Maximum devices")).toHaveValue("0");
+
+    const enrollment = await api<{ id: string; maxDevices: number }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/enrollment`,
+    );
+    expect(enrollment.maxDevices).toBe(0);
+  });
 });

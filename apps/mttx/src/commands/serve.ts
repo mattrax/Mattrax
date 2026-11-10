@@ -4,6 +4,7 @@ import { Command, Flag } from "effect/cli";
 import { FetchHttpClient } from "effect/http";
 import { HttpRouter } from "effect/http";
 import { createServer } from "node:http";
+import { productKeyVerifyMessage, signProductKeyRequest } from "@mattrax/crypto";
 import { createAppLayer } from "../app.ts";
 import { clientCertificateSubject } from "../mtls.ts";
 
@@ -73,23 +74,10 @@ export const serveCommand = Command.make(
         }
         const timestamp = Math.floor(Date.now() / 1000).toString();
         const payload = { userCount: 0, deviceCount: 0 };
-        const key = await crypto.subtle.importKey(
-          "raw",
-          new TextEncoder().encode(config.productKey),
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"],
+        const signature = await signProductKeyRequest(
+          config.productKey,
+          productKeyVerifyMessage(timestamp, payload),
         );
-        const signatureBytes = await crypto.subtle.sign(
-          "HMAC",
-          key,
-          new TextEncoder().encode(`${timestamp}.${payload.userCount}:${payload.deviceCount}`),
-        );
-        const signature = Buffer.from(signatureBytes)
-          .toString("base64")
-          .replaceAll("+", "-")
-          .replaceAll("/", "_")
-          .replace(/=+$/, "");
         const response = await fetch(
           `${config.platformUrl.replace(/\/$/, "")}/api/platform/instances/verify`,
           {

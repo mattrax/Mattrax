@@ -14,6 +14,8 @@ const worker = {
   env: {
     ORIGIN: bindings.text("http://localhost:9051"),
     AUTH_SECRET: bindings.secret(),
+    /** Required: webhook authentication fails closed when this is unset. */
+    WEBHOOK_SECRET: bindings.secret(),
     APNS_CERT: bindings.secret(),
     APNS_KEY: bindings.secret(),
     DB: bindings.d1({ name: "mattrax-whitelabel" }),

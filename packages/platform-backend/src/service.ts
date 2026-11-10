@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { eq } from "drizzle-orm";
 import { signApnsCsr } from "@mattrax/apns";
+import { constantTimeEqual, hmacSha256Hex, productKeyVerifyMessage } from "@mattrax/crypto";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseAuth } from "@mattrax/enterprise-domain";
 import {
@@ -20,22 +21,7 @@ const sha256 = (value: string) =>
     Effect.map(hex),
   );
 
-const hmac = (secret: string, value: string) =>
-  Effect.gen(function* () {
-    const key = yield* Effect.promise(() =>
-      crypto.subtle.importKey(
-        "raw",
-        encoder.encode(secret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-      ),
-    );
-    const signature = yield* Effect.promise(() =>
-      crypto.subtle.sign("HMAC", key, encoder.encode(value)),
-    );
-    return hex(signature);
-  });
+const hmac = (secret: string, value: string) => Effect.promise(() => hmacSha256Hex(secret, value));
 
 const randomKey = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -198,11 +184,8 @@ export const PlatformServiceLive = (options: PlatformServiceOptions = {}) =>
             const row = yield* db.query.platformInstance.findFirst({ where: { keyHash } });
             if (!row) return { valid: false, revoked: false };
 
-            const expected = yield* hmac(
-              key,
-              `${timestamp}.${payload.userCount ?? 0}:${payload.deviceCount ?? 0}`,
-            );
-            if (expected !== signature)
+            const expected = yield* hmac(key, productKeyVerifyMessage(timestamp, payload));
+            if (!constantTimeEqual(expected, signature))
               return yield* Effect.fail(new PlatformBadRequest({ message: "Invalid signature" }));
 
             if (row.revokedAt) return { valid: false, revoked: true };
@@ -240,7 +223,7 @@ export const PlatformServiceLive = (options: PlatformServiceOptions = {}) =>
               );
 
             const expected = yield* hmac(key, `${timestamp}.${payload.csrDer}`);
-            if (expected !== signature)
+            if (!constantTimeEqual(expected, signature))
               return yield* Effect.fail(new PlatformBadRequest({ message: "Invalid signature" }));
 
             if (!options.cloudAppleVendorKey || !options.cloudAppleVendorCert)
