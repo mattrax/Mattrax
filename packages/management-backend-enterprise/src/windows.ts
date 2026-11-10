@@ -150,21 +150,12 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     authSecret ? Effect.succeed(authSecret) : Effect.fail(new InternalServerError());
 
   const resolveOrganizationId = (): Effect.Effect<string, InternalServerError> =>
-    Effect.gen(function* () {
-      if (windowsOrganizationId) return windowsOrganizationId;
-      const [organization] = yield* db
-        .select({ id: s.organization.id })
-        .from(s.organization)
-        .orderBy(asc(s.organization.createdAt), asc(s.organization.id))
-        .limit(1);
-      if (!organization) {
-        // There is no tenant to attach a Windows device to. Deployments always
-        // have at least one organization in the product flow; fail closed rather
-        // than inventing a tenant the dashboard can never administer.
-        return yield* Effect.fail(new InternalServerError());
-      }
-      return organization.id;
-    }).pipe(Effect.mapError(internal));
+    // Windows discovery has no tenant identity. A deployment-wide pin is the
+    // only safe mapping; guessing the earliest tenant would let an anonymous
+    // caller enroll into the wrong workspace.
+    windowsOrganizationId
+      ? Effect.succeed(windowsOrganizationId)
+      : Effect.fail(new InternalServerError());
 
   const findDevice = (organizationId: string, deviceId: string) =>
     Effect.gen(function* () {
@@ -203,12 +194,15 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     windowsDiscovery: (
       _request: WindowsDiscoveryRequest,
     ): Effect.Effect<WindowsDiscoveryResponse, InternalServerError> =>
-      Effect.succeed({
-        authPolicy: "OnPremise",
-        // MS-MDE2 enrollment version supported by the WSTEP implementation.
-        enrollmentVersion: "4.0",
-        enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy`,
-        enrollmentServiceUrl: `${origin}/mdm/windows/enroll`,
+      Effect.gen(function* () {
+        yield* resolveOrganizationId();
+        return {
+          authPolicy: "OnPremise",
+          // MS-MDE2 enrollment version supported by the WSTEP implementation.
+          enrollmentVersion: "4.0",
+          enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy`,
+          enrollmentServiceUrl: `${origin}/mdm/windows/enroll`,
+        };
       }),
 
     getWindowsEnrollmentPolicy: (
@@ -216,6 +210,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     ): Effect.Effect<WindowsEnrollmentPolicy, InternalServerError> =>
       Effect.gen(function* () {
         const secret = yield* requireSecret();
+        yield* resolveOrganizationId();
         // A device may retry the policy call; keep the subject stable when it
         // presents one of our own still-valid tokens.
         const existing = yield* Effect.promise(() =>
@@ -245,6 +240,19 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
         const deviceIdentifier = request.deviceId?.trim() || verification.subject;
         const organizationId = yield* resolveOrganizationId();
+        const [enrollment] = yield* db
+          .select()
+          .from(s.enterpriseEnrollment)
+          .where(eq(s.enterpriseEnrollment.organizationId, organizationId))
+          .limit(1);
+        if (!enrollment?.enabledWindows) return yield* Effect.fail(new UnknownDevice());
+        const windowsDevices = yield* db
+          .select({ id: s.device.id })
+          .from(s.device)
+          .where(and(eq(s.device.organizationId, organizationId), eq(s.device.proto, "win")))
+          .limit(enrollment.maxDevices);
+        if (windowsDevices.length >= enrollment.maxDevices)
+          return yield* Effect.fail(new UnknownDevice());
 
         const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);
         if (!ca || typeof ca.privateKeyJwk !== "object" || ca.privateKeyJwk === null) {

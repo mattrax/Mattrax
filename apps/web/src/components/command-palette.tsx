@@ -68,41 +68,45 @@ export function CommandPalette() {
       href: "/dashboard",
       icon: LayoutDashboard,
     },
-    {
-      id: "nav-devices",
-      label: "Devices",
-      group: "Navigation",
-      href: `${base()}/devices`,
-      icon: Laptop,
-    },
-    {
-      id: "nav-groups",
-      label: "Groups",
-      group: "Navigation",
-      href: `${base()}/groups`,
-      icon: UsersRound,
-    },
-    {
-      id: "nav-policies",
-      label: "Policies",
-      group: "Navigation",
-      href: `${base()}/policies`,
-      icon: ShieldCheck,
-    },
-    {
-      id: "nav-enrollment",
-      label: "Enrollment",
-      group: "Navigation",
-      href: `${base()}/settings/enrollment`,
-      icon: LinkIcon,
-    },
-    {
-      id: "nav-settings",
-      label: "Tenant settings",
-      group: "Navigation",
-      href: `${base()}/settings`,
-      icon: Settings,
-    },
+    ...(tenantId()
+      ? [
+          {
+            id: "nav-devices",
+            label: "Devices",
+            group: "Navigation",
+            href: `${base()}/devices`,
+            icon: Laptop,
+          },
+          {
+            id: "nav-groups",
+            label: "Groups",
+            group: "Navigation",
+            href: `${base()}/groups`,
+            icon: UsersRound,
+          },
+          {
+            id: "nav-policies",
+            label: "Policies",
+            group: "Navigation",
+            href: `${base()}/policies`,
+            icon: ShieldCheck,
+          },
+          {
+            id: "nav-enrollment",
+            label: "Enrollment",
+            group: "Navigation",
+            href: `${base()}/settings/enrollment`,
+            icon: LinkIcon,
+          },
+          {
+            id: "nav-settings",
+            label: "Tenant settings",
+            group: "Navigation",
+            href: `${base()}/settings`,
+            icon: Settings,
+          },
+        ]
+      : []),
     { id: "nav-account", label: "Account", group: "Navigation", href: "/account", icon: Settings },
   ]);
 

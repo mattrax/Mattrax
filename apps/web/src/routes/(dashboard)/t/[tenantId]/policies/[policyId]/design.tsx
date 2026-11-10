@@ -92,6 +92,7 @@ export default function PolicyDesignerPage() {
         if (kind in next) continue;
         if (
           isDesignerDeclaration(kind, value) ||
+          CUSTOM_DESIGNER_KINDS.has(kind) ||
           (replaceExisting() && !isDesignerConfiguration(kind, value))
         )
           next[kind] = null;

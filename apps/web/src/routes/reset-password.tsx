@@ -85,7 +85,7 @@ export default function ResetPasswordPage() {
             <span class="font-semibold tracking-tight text-lg">Mattrax</span>
           </a>
           <h1 class="text-2xl font-semibold text-stone-900">Choose a new password</h1>
-          <p class="text-stone-500 text-sm mt-1">Must be at least 8 characters</p>
+          <p class="text-stone-500 text-sm mt-1">Must be at least 15 characters</p>
         </div>
 
         <Show
@@ -112,7 +112,7 @@ export default function ResetPasswordPage() {
                 id="password"
                 type="password"
                 required
-                minlength={8}
+                minlength={15}
                 autocomplete="new-password"
                 placeholder="••••••••"
                 value={password()}

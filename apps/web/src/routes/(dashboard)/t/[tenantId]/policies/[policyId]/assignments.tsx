@@ -26,10 +26,13 @@ export default function PolicyAssignmentsPage() {
   }));
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [message, setMessage] = createSignal<string | null>(null);
+  let seededPolicyId: string | undefined;
   createEffect(
-    () => params.policyId,
-    () => {
-      setDeviceIds(new Set(assignments.data?.devices.map((device) => device.id) ?? []));
+    () => ({ policyId: params.policyId, data: assignments.data }),
+    ({ policyId, data }) => {
+      if (!data || seededPolicyId === policyId) return;
+      seededPolicyId = policyId;
+      setDeviceIds(new Set(data.devices.map((device) => device.id)));
     },
   );
   const save = useMutation(() => ({

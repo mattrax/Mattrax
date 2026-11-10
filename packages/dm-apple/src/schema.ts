@@ -3,6 +3,7 @@ export { PlistParseError, PlistSerializeError } from "@mattrax/plist";
 
 export class MdmError extends Data.TaggedError("MdmError")<{ message: string; cause?: unknown }> {}
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
+export class DeviceUnenrolled extends Data.TaggedError("DeviceUnenrolled")<{}> {}
 export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{
   declarationId: string;
 }> {}

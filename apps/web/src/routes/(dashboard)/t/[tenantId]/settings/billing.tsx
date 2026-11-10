@@ -21,7 +21,11 @@ export default function BillingSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
-      <QueryError class="xl:col-span-2" error={billing} onRetry={() => void billing.refetch()} />
+      <QueryError
+        class="xl:col-span-2"
+        error={billing.error}
+        onRetry={() => void billing.refetch()}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Plan</CardTitle>

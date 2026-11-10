@@ -15,8 +15,12 @@ export default function AccountPage() {
       const token = searchParams.emailToken;
       if (!token || Array.isArray(token)) return;
       const result = await authClient.verifyEmailChange({ token });
+      if (result.error) {
+        setEmailError(errorMessage(result.error, "That email change link is invalid or expired."));
+        return;
+      }
       setSearchParams({ emailToken: undefined }, { replace: true });
-      if (!result.error) await session().refetch();
+      await session().refetch();
     })();
   });
 
@@ -196,7 +200,7 @@ export default function AccountPage() {
       return;
     }
     if (newPassword().length < 8) {
-      setPasswordError("Password must be at least 8 characters");
+      setPasswordError("Password must be at least 15 characters");
       return;
     }
 
@@ -323,7 +327,7 @@ export default function AccountPage() {
       <section class="rounded-xl border border-border bg-card p-6">
         <h2 class="text-sm font-semibold mb-1">Change password</h2>
         <p class="text-sm text-muted-foreground mb-4">
-          Choose a strong password of at least 8 characters.
+          Choose a strong password of at least 15 characters.
         </p>
         <form onSubmit={handlePasswordChange} class="space-y-3">
           <div class="space-y-1.5">
@@ -349,7 +353,7 @@ export default function AccountPage() {
               id="new-password"
               type="password"
               required
-              minlength={8}
+              minlength={15}
               value={newPassword()}
               onInput={(e) => setNewPassword(e.currentTarget.value)}
               class={inputClass}
@@ -365,7 +369,7 @@ export default function AccountPage() {
               id="confirm-password"
               type="password"
               required
-              minlength={8}
+              minlength={15}
               value={confirmPassword()}
               onInput={(e) => setConfirmPassword(e.currentTarget.value)}
               class={inputClass}

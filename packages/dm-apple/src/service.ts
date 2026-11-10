@@ -5,6 +5,7 @@ import {
   type CommandResultPlist,
   type DDMStatusReport,
   type TokenUpdatePlist,
+  DeviceUnenrolled,
   MdmError,
 } from "./schema.js";
 import { ManagementBackend, MdmOrigin, type CheckinScope } from "@mattrax/management-backend";
@@ -117,7 +118,7 @@ export declare namespace AppleMdmService {
       scope: CheckinScope,
     ) => Effect.Effect<
       { commandUUID: string; requestType: string; payload: unknown } | null,
-      MdmError
+      MdmError | DeviceUnenrolled
     >;
     readonly handleDeclarativeTokens: (
       scope: CheckinScope,
@@ -343,12 +344,17 @@ const makeAppleMdmService = (
     scope: CheckinScope,
   ): Effect.Effect<
     { commandUUID: string; requestType: string; payload: unknown } | null,
-    MdmError
+    MdmError | DeviceUnenrolled
   > =>
     Effect.gen(function* () {
       const manifest = yield* backend.appleManagementCheckin(scope).pipe(
         Effect.catchTag("UnknownDevice", () => Effect.succeed({ _tag: "Idle" } as const)),
-        Effect.mapError(toMdmError("Management backend checkin failed")),
+        Effect.catchTag("ServerInitiatedUnenrollment", () => Effect.fail(new DeviceUnenrolled())),
+        Effect.mapError((error) =>
+          error instanceof DeviceUnenrolled
+            ? error
+            : new MdmError({ message: "Management backend checkin failed" }),
+        ),
       );
       switch (manifest._tag) {
         case "Idle":

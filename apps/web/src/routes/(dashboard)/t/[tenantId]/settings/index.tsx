@@ -30,8 +30,9 @@ export default function GeneralSettingsPage() {
   const [deleteOpen, setDeleteOpen] = createSignal(false);
 
   createEffect(
-    () => tenant.data,
-    (data) => {
+    () => tenant.data?.id,
+    () => {
+      const data = tenant.data;
       if (data) {
         setName(data.name);
         setSlug(data.slug);
@@ -56,7 +57,11 @@ export default function GeneralSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
-      <QueryError class="xl:col-span-2" error={tenant} onRetry={() => void tenant.refetch()} />
+      <QueryError
+        class="xl:col-span-2"
+        error={tenant.error}
+        onRetry={() => void tenant.refetch()}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Tenant profile</CardTitle>

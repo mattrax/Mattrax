@@ -62,8 +62,24 @@ const organizationRow = (id: string, createdAt: Date) => ({
   updatedAt: createdAt,
 });
 
+const enrollmentRow = (organizationId: string) => ({
+  id: `enrollment-${organizationId}`,
+  organizationId,
+  code: null,
+  enabledApple: true,
+  enabledWindows: true,
+  enabledAndroid: false,
+  enabledAssetTag: false,
+  maxDevices: 100,
+  createdAt: new Date("2024-01-01T00:00:00Z"),
+  updatedAt: new Date("2024-01-01T00:00:00Z"),
+});
+
 const setup = async (
-  overrides: { windowsOrganizationId?: string; requireDeviceIdentity?: boolean } = {},
+  overrides: {
+    windowsOrganizationId?: string | null;
+    requireDeviceIdentity?: boolean;
+  } = {},
 ) => {
   const ca = await makeCa();
   const db = makeDb({
@@ -74,12 +90,19 @@ const setup = async (
     [tableName(schema.scepCa)]: [
       { id: 1, certPem: ca.certPem, privateKeyJwk: ca.privateKeyJwk, createdAt: new Date() },
     ],
+    [tableName(schema.enterpriseEnrollment)]: [
+      enrollmentRow("org-late"),
+      enrollmentRow("org-early"),
+    ],
   });
   const backend = makeWindowsBackend({
     db: db as any,
     origin,
     authSecret,
-    windowsOrganizationId: overrides.windowsOrganizationId,
+    windowsOrganizationId:
+      overrides.windowsOrganizationId === null
+        ? undefined
+        : (overrides.windowsOrganizationId ?? "org-early"),
     requireDeviceIdentity: overrides.requireDeviceIdentity,
   });
   return { ca, db, backend };

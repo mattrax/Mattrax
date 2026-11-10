@@ -129,6 +129,18 @@ const findUser = (ctx: ScimContext, userId: string) =>
     return row ?? null;
   });
 
+const isOwnerRole = (role: string) => role.split(",").includes("owner");
+
+const ownerCount = (ctx: ScimContext) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const rows = yield* db
+      .select({ id: schema.member.id, role: schema.member.role })
+      .from(schema.member)
+      .where(eq(schema.member.organizationId, ctx.organizationId));
+    return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
+  });
+
 const createUser = (ctx: ScimContext, body: any) =>
   Effect.gen(function* () {
     const db = yield* Db;
@@ -205,10 +217,32 @@ const patchUser = (ctx: ScimContext, userId: string, body: any) =>
             .where(eq(schema.user.id, userId));
       }
     }
-    yield* db
-      .update(schema.user)
-      .set({ name, disabled: !active, updatedAt: now() })
-      .where(eq(schema.user.id, userId));
+    if (!active) {
+      if (isOwnerRole(current.member.role) && (yield* ownerCount(ctx)) <= 1)
+        return scimError(409, "Cannot deactivate the last owner");
+      yield* db
+        .delete(schema.member)
+        .where(
+          and(
+            eq(schema.member.organizationId, ctx.organizationId),
+            eq(schema.member.userId, userId),
+          ),
+        );
+      const remaining = yield* db
+        .select({ id: schema.member.id })
+        .from(schema.member)
+        .where(eq(schema.member.userId, userId))
+        .limit(1);
+      yield* db
+        .update(schema.user)
+        .set({ name, disabled: remaining.length === 0, updatedAt: now() })
+        .where(eq(schema.user.id, userId));
+    } else {
+      yield* db
+        .update(schema.user)
+        .set({ name, disabled: false, updatedAt: now() })
+        .where(eq(schema.user.id, userId));
+    }
     const updated = yield* findUser(ctx, userId);
     return updated
       ? json(userResource(updated.user, updated.member))
@@ -219,6 +253,8 @@ const deleteUser = (ctx: ScimContext, userId: string) =>
   Effect.gen(function* () {
     const current = yield* findUser(ctx, userId);
     if (!current) return scimError(404, "User not found");
+    if (isOwnerRole(current.member.role) && (yield* ownerCount(ctx)) <= 1)
+      return scimError(409, "Cannot remove the last owner");
     const db = yield* Db;
     yield* db
       .delete(schema.member)

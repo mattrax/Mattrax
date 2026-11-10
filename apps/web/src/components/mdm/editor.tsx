@@ -34,8 +34,9 @@ export function PolicyConfigurationEditor() {
   const [raw, setRaw] = createSignal("{}");
 
   createEffect(
-    () => row()?.configurations,
-    (configurations) => {
+    () => row()?.id,
+    () => {
+      const configurations = row()?.configurations;
       if (!configurations) return;
       setConfig(configurations);
       setInitial(JSON.stringify(configurations));

@@ -5,6 +5,7 @@ import { AppleMdmService } from "./service.js";
 import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
   AuthenticatePlist,
+  DeviceUnenrolled,
   TokenUpdatePlist,
   CheckOutPlist,
   CommandResultPlist,
@@ -199,6 +200,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     Effect.match({
       onSuccess: (val) => val,
       onFailure: (err) => {
+        if (err instanceof DeviceUnenrolled) return HttpServerResponse.empty({ status: 410 });
         console.error("mdm error:", err);
         return HttpServerResponse.empty({ status: 400 });
       },

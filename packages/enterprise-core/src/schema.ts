@@ -427,7 +427,7 @@ export const device = mysqlTable(
   },
   (table) => [
     index("device_organization_id_idx").on(table.organizationId),
-    uniqueIndex("device_serial_unique").on(table.serial),
+    uniqueIndex("device_organization_serial_unique").on(table.organizationId, table.serial),
   ],
 );
 

@@ -199,15 +199,9 @@ function AndroidPane(props: { id: string | undefined; android: PlatformEnrollmen
   return (
     <div class="space-y-3 text-center text-sm text-muted-foreground">
       <p>
-        Scan the QR code with Android Device Policy or open the setup link on the Android device.
+        Android enrollment isn't available yet. Ask your administrator for an Apple or Windows
+        device.
       </p>
-      <Button
-        as="a"
-        href={`/api/v1/enrollment/${encodeURIComponent(props.id ?? "")}/android/link`}
-        variant="outline"
-      >
-        Open Android setup link
-      </Button>
     </div>
   );
 }

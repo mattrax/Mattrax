@@ -84,6 +84,7 @@ const EnterpriseTenantReadErrors = [
 const EnterpriseTenantWriteErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
 const EnterpriseTenantDeleteErrors = [
   ...EnterpriseTenantWriteErrors,
@@ -106,23 +107,15 @@ const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
 ] as const;
-const EnterpriseApnsErrors = [
-  ...EnterpriseTenantWriteErrors,
-  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-] as const;
-const EnterpriseApplicationErrors = [
-  ...EnterpriseTenantWriteErrors,
-  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-] as const;
-const EnterpriseSsoErrors = [
-  ...EnterpriseTenantWriteErrors,
-  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-] as const;
+const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
+const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
+const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 const EnterprisePublicEmailErrors = [
   ...EnterpriseDbErrors,
@@ -759,14 +752,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("requestEmailChange", "/v1/account/email-change", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       payload: ChangeEmailRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
     HttpApiEndpoint.post("verifyEmailChange", "/v1/account/email-change/verify", {
-      error: EnterpriseNoDomainErrors,
+      error: EnterpriseAccountErrors,
       payload: VerifyEmailChangeRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -799,7 +792,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.delete("revokeAccountSession", "/v1/account/sessions/:sessionId", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       params: { sessionId: Schema.String },
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -812,14 +805,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("updateMe", "/v1/me", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       payload: UpdateMeRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
     HttpApiEndpoint.delete("deleteMe", "/v1/me", {
-      error: EnterpriseNoDomainErrors,
+      error: EnterpriseAccountErrors,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )

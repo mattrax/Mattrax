@@ -40,11 +40,12 @@ export default function PolicyDetailPage() {
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   createEffect(
-    () => row(),
-    (row) => {
-      if (row) {
-        setName(row.name);
-        setNotes(row.notes ?? "");
+    () => row()?.id,
+    () => {
+      const policy = row();
+      if (policy) {
+        setName(policy.name);
+        setNotes(policy.notes ?? "");
       }
     },
   );

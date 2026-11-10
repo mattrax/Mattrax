@@ -134,6 +134,7 @@ export default function GroupDetailPage() {
     <div class="flex flex-1 flex-col gap-6 p-6">
       <QueryError error={group.error} onRetry={() => void group.refetch()} />
 
+      <ErrorText error={sync.error} />
       <PageHeader
         title={row()?.name ?? "Group"}
         description={
@@ -210,7 +211,7 @@ export default function GroupDetailPage() {
                   onInput={(e) => setNotes(e.currentTarget.value)}
                 />
               </Field>
-              <ErrorText error={save.error || dup.error || del.error || sync.error} />
+              <ErrorText error={save.error || dup.error || del.error} />
             </form>
           </CardContent>
         </Card>

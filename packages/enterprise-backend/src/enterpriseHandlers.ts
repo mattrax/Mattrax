@@ -132,6 +132,18 @@ const hashJson = (value: unknown) =>
     ),
   );
 
+const TENANT_ROLES = new Set(["owner", "admin", "member"]);
+const rolesOf = (role: string) =>
+  role
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+const validRoles = (role: string) => {
+  const roles = rolesOf(role);
+  return roles.length > 0 && roles.every((item) => TENANT_ROLES.has(item));
+};
+const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
+
 const canWriteTenant = (role: string) =>
   role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
@@ -664,6 +676,15 @@ export const createEnterpriseService = ({
               .delete(schema.organization)
               .where(eq(schema.organization.id, membership.organizationId));
           } else {
+            if (
+              hasOwnerRole(membership.role) &&
+              (yield* ownerCount(membership.organizationId)) <= 1
+            )
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message: "Transfer ownership of this workspace before deleting your account.",
+                }),
+              );
             yield* db.delete(schema.member).where(eq(schema.member.id, membership.id));
           }
         }
@@ -789,6 +810,15 @@ export const createEnterpriseService = ({
           logo?: string | null;
           metadata?: Record<string, unknown> | null;
         };
+        if (body.slug) {
+          const claimed = yield* db.query.organization.findFirst({
+            where: { slug: body.slug },
+          });
+          if (claimed && claimed.id !== tenantId)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "That workspace URL is already in use" }),
+            );
+        }
         yield* db
           .update(schema.organization)
           .set({
@@ -1025,9 +1055,11 @@ export const createEnterpriseService = ({
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
-        if (body.azureTenantId) {
+        const nextAzureTenantId =
+          body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
+        if (nextAzureTenantId) {
           const claimed = yield* db.query.ssoConfig.findFirst({
-            where: { azureTenantId: body.azureTenantId },
+            where: { azureTenantId: nextAzureTenantId },
           });
           if (claimed && claimed.organizationId !== ctx.organization.id)
             return yield* Effect.fail(
@@ -1037,7 +1069,7 @@ export const createEnterpriseService = ({
             );
         }
         const timestamp = now();
-        if (existing?.azureTenantId !== body.azureTenantId) {
+        if ((existing?.azureTenantId ?? null) !== nextAzureTenantId) {
           // Delta cursors and imported domains belong to the previous Entra
           // tenant and cannot be reused after a change.
           yield* db
@@ -1199,6 +1231,15 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { user } = ctx;
         const body = payload as { email: string; role?: string; resend?: boolean };
+        const role = body.role ?? "member";
+        if (!validRoles(role))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose a valid workspace role" }),
+          );
+        if (hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only an owner can invite another owner" }),
+          );
         const invitationId = id();
         const timestamp = now();
         const rawToken = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
@@ -1213,7 +1254,7 @@ export const createEnterpriseService = ({
           organizationId: tenantId,
           inviterId: user.id,
           email: body.email,
-          role: body.role ?? "member",
+          role,
           status: "pending",
           tokenHash,
           expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000),
@@ -1244,7 +1285,7 @@ export const createEnterpriseService = ({
         }
         yield* audit(ctx, "member.invited", "invitation", invitationId, {
           email: body.email,
-          role: body.role ?? "member",
+          role,
         });
         return { id: invitationId, inviteUrl };
       }),
@@ -1346,8 +1387,18 @@ export const createEnterpriseService = ({
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
         const body = payload as { role: string };
-        const removingOwner =
-          member.role.split(",").includes("owner") && !body.role.split(",").includes("owner");
+        if (!validRoles(body.role))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose a valid workspace role" }),
+          );
+        if (
+          (hasOwnerRole(body.role) || hasOwnerRole(member.role)) &&
+          !hasOwnerRole(ctx.member.role)
+        )
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
+          );
+        const removingOwner = hasOwnerRole(member.role) && !hasOwnerRole(body.role);
         if (removingOwner && (yield* ownerCount(tenantId)) <= 1)
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
@@ -1857,6 +1908,12 @@ export const createEnterpriseService = ({
         });
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Remote unenroll is only available for Apple devices today.",
+            }),
+          );
         if (device.status === "enrolled")
           yield* db
             .update(schema.device)
@@ -2508,7 +2565,6 @@ export const createEnterpriseService = ({
             failed.push({ id: applicationId, reason: "notFound" });
             continue;
           }
-          if (existing.r2Key) yield* r2.delete(existing.r2Key);
           yield* db
             .delete(schema.application)
             .where(
@@ -2517,6 +2573,9 @@ export const createEnterpriseService = ({
                 eq(schema.application.organizationId, ctx.organization.id),
               ),
             );
+          // Delete the object only after the row is gone. A failure here leaves
+          // an orphaned object, never a row pointing at a deleted file.
+          if (existing.r2Key) yield* r2.delete(existing.r2Key);
           deleted.push(applicationId);
         }
         yield* audit(ctx, "application.deleted", "application", null, { ids: deleted });
@@ -2663,7 +2722,6 @@ export const createEnterpriseService = ({
           httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
           customMetadata: { fileName: body.fileName },
         });
-        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
         yield* db
           .update(schema.application)
           .set({
@@ -2680,6 +2738,7 @@ export const createEnterpriseService = ({
               eq(schema.application.organizationId, ctx.organization.id),
             ),
           );
+        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
           fileName: body.fileName,
           sha256,

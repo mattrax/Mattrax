@@ -225,7 +225,7 @@ export const errorPresentation = (
   if (tag === "NewPasswordRejected" && reason) {
     const message =
       reason === "too-short"
-        ? "Use at least 12 characters for your password."
+        ? "Use at least 15 characters for your password."
         : reason === "too-long"
           ? "That password is too long. Use a shorter passphrase."
           : reason === "compromised"

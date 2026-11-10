@@ -41,10 +41,12 @@ export default function IdentitySettingsPage() {
   const [azureTenantId, setAzureTenantId] = createSignal("");
   const [ssoEnabled, setSsoEnabled] = createSignal(false);
   const [autoProvision, setAutoProvision] = createSignal(true);
+  let ssoSeeded = false;
   createEffect(
     () => sso.data,
     (config) => {
-      if (!config) return;
+      if (!config || ssoSeeded) return;
+      ssoSeeded = true;
       setAzureTenantId(config.azureTenantId ?? "");
       setSsoEnabled(config.enabled);
       setAutoProvision(config.autoProvision);

@@ -20,7 +20,7 @@ export default function RegisterPage() {
       return;
     }
     if (password().length < 12) {
-      setError("Choose a password of at least 12 characters");
+      setError("Choose a password of at least 15 characters");
       return;
     }
     setPending(true);
@@ -122,7 +122,7 @@ export default function RegisterPage() {
           </div>
 
           <p class="text-xs text-stone-400">
-            Use at least 12 characters. A longer passphrase is stronger.
+            Use at least 15 characters. A longer passphrase is stronger.
           </p>
 
           <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>

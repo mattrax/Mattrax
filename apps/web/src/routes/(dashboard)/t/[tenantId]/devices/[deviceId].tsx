@@ -38,12 +38,13 @@ export default function DeviceDetailPage() {
   const [confirmAction, setConfirmAction] = createSignal<"unenroll" | "delete" | null>(null);
   const [confirmName, setConfirmName] = createSignal("");
   createEffect(
-    () => row(),
-    (row) => {
-      if (row) {
-        setName(row.name);
-        setAssetTag(row.assetTag ?? "");
-        setNotes(row.notes ?? "");
+    () => row()?.id,
+    () => {
+      const device = row();
+      if (device) {
+        setName(device.name);
+        setAssetTag(device.assetTag ?? "");
+        setNotes(device.notes ?? "");
       }
     },
   );

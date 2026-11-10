@@ -91,6 +91,16 @@ export const syncEntraDirectory = (options: {
 
     if (!options.syncUsersAndGroups) return { ...counts, usersDelta, groupsDelta };
 
+    const isOwnerRole = (role: string) => role.split(",").includes("owner");
+    const ownerCount = () =>
+      Effect.gen(function* () {
+        const rows = yield* db
+          .select({ role: schema.member.role })
+          .from(schema.member)
+          .where(eq(schema.member.organizationId, organizationId));
+        return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
+      });
+
     const findIdentity = (objectId: string) =>
       db.query.ssoIdentity.findFirst({
         where: { organizationId, objectId },
@@ -131,13 +141,20 @@ export const syncEntraDirectory = (options: {
             const memberships = yield* db.query.member.findMany({
               where: { userId: byEmail.id },
             });
-            if (memberships.length === 1 && memberships[0]?.organizationId === organizationId)
+            if (
+              (memberships.length === 1 && memberships[0]?.organizationId === organizationId) ||
+              (memberships.length === 0 && autoProvision)
+            )
               existing = byEmail;
             else continue;
           }
         }
         if (user.removed || user.accountEnabled === false) {
           if (existing) {
+            const membership = yield* db.query.member.findFirst({
+              where: { organizationId, userId: existing.id },
+            });
+            if (membership && isOwnerRole(membership.role) && (yield* ownerCount()) <= 1) continue;
             yield* db
               .delete(schema.member)
               .where(

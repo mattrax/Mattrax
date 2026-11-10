@@ -78,7 +78,7 @@ export default function ManagementSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
-      <QueryError class="xl:col-span-2" error={apns} onRetry={() => void apns.refetch()} />
+      <QueryError class="xl:col-span-2" error={apns.error} onRetry={() => void apns.refetch()} />
       <Card class="xl:col-span-2">
         <CardHeader>
           <CardTitle>Apple push notifications</CardTitle>
