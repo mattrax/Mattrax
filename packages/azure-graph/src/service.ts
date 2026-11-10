@@ -397,12 +397,15 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         tenantId: string,
       ): Effect.Effect<ReadonlyArray<GraphDomain>, AzureGraphError> =>
         Effect.gen(function* () {
-          const page = yield* get(
-            tenantId,
-            `${graphBaseUrl}/domains?$select=id,isVerified,isDefault,isInitial`,
-            GraphDomainsResponse,
-          );
-          return page.value;
+          const result: GraphDomain[] = [];
+          let link: string | undefined =
+            `${graphBaseUrl}/domains?$select=id,isVerified,isDefault,isInitial`;
+          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
+            const page: GraphDomainsResponse = yield* get(tenantId, link, GraphDomainsResponse);
+            result.push(...page.value);
+            link = page["@odata.nextLink"] ?? undefined;
+          }
+          return result;
         });
 
       const consentUrl = (tenantId: string): string => {

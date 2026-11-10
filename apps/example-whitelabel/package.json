@@ -18,6 +18,7 @@
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
+    "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "@solidjs/router": "^1.0.1",
     "effect": "catalog:",

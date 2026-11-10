@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Cause, Effect, Layer } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { WindowsMdmService } from "./service.js";
 
@@ -14,9 +14,14 @@ function soapHandler(
       const service = yield* WindowsMdmService;
       const body = yield* textRequest(request);
       const response = yield* handle(service, body).pipe(
-        Effect.match({
-          onFailure: (err) => Effect.runSync(service.fault(String((err as any)?.message ?? err))),
+        Effect.matchCause({
           onSuccess: (value) => value,
+          onFailure: (cause) => {
+            const error = Cause.squash(cause);
+            return Effect.runSync(
+              service.fault(error instanceof Error ? error.message : "Invalid SOAP request"),
+            );
+          },
         }),
       );
       return HttpServerResponse.text(response, {
@@ -33,9 +38,14 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
       | string
       | undefined;
     const response = yield* service.management(body, identityCertificate).pipe(
-      Effect.match({
-        onFailure: (err) => Effect.runSync(service.fault(String((err as any)?.message ?? err))),
+      Effect.matchCause({
         onSuccess: (value) => value,
+        onFailure: (cause) => {
+          const error = Cause.squash(cause);
+          return Effect.runSync(
+            service.fault(error instanceof Error ? error.message : "Invalid SyncML request"),
+          );
+        },
       }),
     );
     return HttpServerResponse.text(response, { contentType: "application/vnd.syncml.dm+xml" });

@@ -9,6 +9,7 @@ import {
   MdmOrigin,
 } from "@mattrax/management-backend";
 import { mockManagementBackend } from "./helpers.js";
+import { parsePlist } from "@mattrax/plist";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
 const TEST_MDM_ORIGIN = new MdmOrigin({ url: TEST_CONFIG.origin });
@@ -547,7 +548,7 @@ describe("AppleMdmService", () => {
   });
 
   describe("generateEnrollmentProfile", () => {
-    it("returns a valid enrollment profile JSON", async () => {
+    it("returns a valid enrollment profile plist", async () => {
       const backend = mockManagementBackend();
 
       const profile = await runWithService(
@@ -561,7 +562,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
-      const parsed = JSON.parse(profile);
+      const parsed = (await Effect.runPromise(parsePlist(profile))) as any;
 
       expect(parsed.PayloadType).toBe("Configuration");
       expect(parsed.PayloadIdentifier).toBe("com.mattrax.enrollment");

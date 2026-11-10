@@ -35,10 +35,13 @@ export const ScepRepositoryD1 = (db: D1Database, options: { authSecret?: string 
         Effect.gen(function* () {
           const secret = options.authSecret;
           if (!secret) {
-            // The example deployment may run without a shared secret. Keep the
-            // legacy open behaviour in that case; configuring AUTH_SECRET
-            // enables per-enrollment challenge verification.
-            return;
+            // Issuing a CA-signed identity without a challenge lets anyone
+            // enroll. Require AUTH_SECRET for the example deployment too.
+            return yield* Effect.fail(
+              new ScepError({
+                message: "SCEP authentication is not configured; set AUTH_SECRET",
+              }),
+            );
           }
           const verification = yield* Effect.tryPromise({
             try: () => verifyScepChallenge(req.challengePassword, secret),
@@ -47,7 +50,7 @@ export const ScepRepositoryD1 = (db: D1Database, options: { authSecret?: string 
           if (!verification) {
             return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
           }
-          return { organizationalUnit: undefined };
+          return { enrollmentId: verification.enrollmentId };
         }),
     }),
   );

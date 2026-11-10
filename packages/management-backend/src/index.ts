@@ -26,11 +26,18 @@ export const CheckinScope = Schema.Union([
   Schema.TaggedStruct("device", {
     udid: Schema.String,
     identityCertificate: Schema.optional(Schema.String),
+    /**
+     * SHA-256 of the CMS signer certificate, set only after the request
+     * signature has been verified. Backends use it to bind a UDID to the
+     * identity certificate that first enrolled it.
+     */
+    identityCertificateFingerprintSha256: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,
   }),
   Schema.TaggedStruct("user", {
     udid: Schema.String,
     identityCertificate: Schema.optional(Schema.String),
+    identityCertificateFingerprintSha256: Schema.optional(Schema.String),
     userId: Schema.String,
     userShortName: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,

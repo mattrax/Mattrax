@@ -113,15 +113,27 @@ export const syncEntraDirectory = (options: {
         (value.status === 410 || /syncStateNotFound|resyncRequired|resync/i.test(value.body ?? ""))
       );
     };
+    // A full listing (first sync, or after Graph expires the delta cursor)
+    // is authoritative: identities and groups that no longer appear must be
+    // reconciled away. Delta pages only describe changes.
+    let usersReset = false;
+    let groupsReset = false;
     const usersDeltaPage = (link?: string) =>
-      graph
-        .usersDelta(azureTenantId, link)
-        .pipe(Effect.catchIf(isExpiredDelta, () => graph.usersDelta(azureTenantId, undefined)));
+      graph.usersDelta(azureTenantId, link).pipe(
+        Effect.catchIf(isExpiredDelta, () => {
+          usersReset = true;
+          return graph.usersDelta(azureTenantId, undefined);
+        }),
+      );
     const groupsDeltaPage = (link?: string) =>
-      graph
-        .groupsDelta(azureTenantId, link)
-        .pipe(Effect.catchIf(isExpiredDelta, () => graph.groupsDelta(azureTenantId, undefined)));
+      graph.groupsDelta(azureTenantId, link).pipe(
+        Effect.catchIf(isExpiredDelta, () => {
+          groupsReset = true;
+          return graph.groupsDelta(azureTenantId, undefined);
+        }),
+      );
 
+    const seenObjectIds = new Set<string>();
     let usersLink = options.usersDeltaLink ?? undefined;
     let usersComplete = false;
     for (let page = 0; page < 1000; page++) {
@@ -238,6 +250,7 @@ export const syncEntraDirectory = (options: {
             userId,
             createdAt: now(),
           });
+        seenObjectIds.add(user.id);
         counts.users++;
       }
       if (!result.nextLink) {
@@ -250,6 +263,63 @@ export const syncEntraDirectory = (options: {
     if (!usersComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 user pages"));
 
+    if (!options.usersDeltaLink || usersReset) {
+      const identities = yield* db
+        .select()
+        .from(schema.ssoIdentity)
+        .where(eq(schema.ssoIdentity.organizationId, organizationId));
+      const orgGroups = yield* db
+        .select({ id: schema.userGroup.id })
+        .from(schema.userGroup)
+        .where(eq(schema.userGroup.organizationId, organizationId));
+      for (const identity of identities as Array<{ objectId: string; userId: string }>) {
+        if (seenObjectIds.has(identity.objectId)) continue;
+        const membership = yield* db.query.member.findFirst({
+          where: { organizationId, userId: identity.userId },
+        });
+        if (membership) {
+          // Never strand a tenant without an owner during reconciliation.
+          if (isOwnerRole(membership.role) && (yield* ownerCount()) <= 1) continue;
+          yield* db
+            .delete(schema.member)
+            .where(
+              and(
+                eq(schema.member.organizationId, organizationId),
+                eq(schema.member.userId, identity.userId),
+              ),
+            );
+          if (orgGroups.length)
+            yield* db.delete(schema.userGroupMember).where(
+              and(
+                eq(schema.userGroupMember.userId, identity.userId),
+                inArray(
+                  schema.userGroupMember.groupId,
+                  orgGroups.map((group: { id: string }) => group.id),
+                ),
+              ),
+            );
+          const remaining = yield* db
+            .select({ id: schema.member.id })
+            .from(schema.member)
+            .where(eq(schema.member.userId, identity.userId));
+          if (remaining.length === 0)
+            yield* db
+              .update(schema.user)
+              .set({ disabled: true, updatedAt: now() })
+              .where(eq(schema.user.id, identity.userId));
+        }
+        yield* db
+          .delete(schema.ssoIdentity)
+          .where(
+            and(
+              eq(schema.ssoIdentity.organizationId, organizationId),
+              eq(schema.ssoIdentity.objectId, identity.objectId),
+            ),
+          );
+      }
+    }
+
+    const seenGroupIds = new Set<string>();
     let groupsLink = options.groupsDeltaLink ?? undefined;
     let groupsComplete = false;
     for (let page = 0; page < 1000; page++) {
@@ -311,6 +381,7 @@ export const syncEntraDirectory = (options: {
               .values({ groupId, userId: identity.userId });
           }
         }
+        seenGroupIds.add(group.id);
         counts.groups++;
       }
       if (!result.nextLink) {
@@ -322,6 +393,23 @@ export const syncEntraDirectory = (options: {
     }
     if (!groupsComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 group pages"));
+
+    if (!options.groupsDeltaLink || groupsReset) {
+      const graphGroups = yield* db
+        .select()
+        .from(schema.userGroup)
+        .where(
+          and(
+            eq(schema.userGroup.organizationId, organizationId),
+            eq(schema.userGroup.source, "graph"),
+          ),
+        );
+      const staleGroups = (graphGroups as Array<{ id: string; externalId: string | null }>)
+        .filter((group) => group.externalId && !seenGroupIds.has(group.externalId))
+        .map((group) => group.id);
+      if (staleGroups.length)
+        yield* db.delete(schema.userGroup).where(inArray(schema.userGroup.id, staleGroups));
+    }
 
     return { ...counts, usersDelta, groupsDelta };
   });

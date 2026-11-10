@@ -138,6 +138,7 @@ export type GraphGroupDeltaResponse = typeof GraphGroupDeltaResponse.Type;
 
 export const GraphDomainsResponse = Schema.Struct({
   value: Schema.Array(GraphDomainSchema),
+  "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type GraphDomainsResponse = typeof GraphDomainsResponse.Type;
 

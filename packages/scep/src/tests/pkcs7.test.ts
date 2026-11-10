@@ -179,6 +179,9 @@ async function buildFullPkcsReq(
 
   // Encrypt CSR for the CA
   const envelopedCsrDer = await encryptTestEnvelopedData(csrDer, caCert);
+  const envelopedDigest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", envelopedCsrDer as ArrayBuffer),
+  );
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -213,6 +216,10 @@ async function buildFullPkcsReq(
         new pkijs.Attribute({
           type: "1.2.840.113549.1.9.3",
           values: [new asn1js.ObjectIdentifier({ value: pkijs.ContentInfo.DATA })],
+        }),
+        new pkijs.Attribute({
+          type: "1.2.840.113549.1.9.4",
+          values: [new asn1js.OctetString({ valueHex: envelopedDigest.buffer })],
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.7", // transactionID
@@ -256,6 +263,7 @@ async function buildRawCsrPkcsReq(
 ): Promise<ArrayBuffer> {
   const csrDer = csr.toSchema().toBER(false);
 
+  const csrDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", csrDer as ArrayBuffer));
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [
@@ -288,6 +296,10 @@ async function buildRawCsrPkcsReq(
         new pkijs.Attribute({
           type: "1.2.840.113549.1.9.3",
           values: [new asn1js.ObjectIdentifier({ value: pkijs.ContentInfo.DATA })],
+        }),
+        new pkijs.Attribute({
+          type: "1.2.840.113549.1.9.4",
+          values: [new asn1js.OctetString({ valueHex: csrDigest.buffer })],
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.7",

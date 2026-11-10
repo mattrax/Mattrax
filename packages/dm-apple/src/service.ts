@@ -12,8 +12,9 @@ import { ManagementBackend, MdmOrigin, type CheckinScope } from "@mattrax/manage
 import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
+import { serializePlist } from "@mattrax/plist";
 import { verifyAppleProfileToken } from "./tokens.js";
-import { verifyMdmSignature } from "./signature.js";
+import { verifyMdmSignature, type VerifiedMdmSignature } from "./signature.js";
 import { AppleMdmTrust, type AppleMdmTrustService } from "./trust.js";
 
 function base64ToHex(base64: string): string {
@@ -84,22 +85,26 @@ export declare namespace AppleMdmService {
       readonly identityCertificateSubject?: string;
       readonly identityCertificateSerial?: string;
       readonly identityCertificateFingerprintSha256?: string;
-    }) => Effect.Effect<void, MdmError>;
+    }) => Effect.Effect<VerifiedMdmSignature | null, MdmError>;
     readonly handleAuthenticate: (
       auth: AuthenticatePlist,
       identityCertificate?: string,
+      identityFingerprintSha256?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleTokenUpdate: (
       update: TokenUpdatePlist,
       identityCertificate?: string,
+      identityFingerprintSha256?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCheckOut: (
       checkout: CheckOutPlist,
       identityCertificate?: string,
+      identityFingerprintSha256?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCommandResult: (
       result: CommandResultPlist,
       identityCertificate?: string,
+      identityFingerprintSha256?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleSetBootstrapToken: (
       token: string,
@@ -205,11 +210,11 @@ const makeAppleMdmService = (
     Effect.gen(function* () {
       // Hosts that do not wire trust keep the historical behaviour. Once a
       // host opts in (Cloud), a missing signature or CA is fatal.
-      if (!trust) return;
+      if (!trust) return null;
       if (!input.signature) {
         if (trust.requireSignature)
           return yield* Effect.fail(new MdmError({ message: "Missing Mdm-Signature" }));
-        return;
+        return null;
       }
       const caCertPems = yield* trust.caCertPems;
       if (caCertPems.length === 0) {
@@ -217,9 +222,9 @@ const makeAppleMdmService = (
           return yield* Effect.fail(
             new MdmError({ message: "No SCEP CA configured to verify Mdm-Signature" }),
           );
-        return;
+        return null;
       }
-      yield* Effect.tryPromise({
+      return yield* Effect.tryPromise({
         try: () =>
           verifyMdmSignature({
             signature: input.signature!,
@@ -233,7 +238,7 @@ const makeAppleMdmService = (
           new MdmError({
             message: cause instanceof Error ? cause.message : "Invalid Mdm-Signature",
           }),
-      }).pipe(Effect.asVoid);
+      });
     });
 
   const mdmOrigin = new MdmOrigin({ url: config.origin });
@@ -241,8 +246,17 @@ const makeAppleMdmService = (
   const handleAuthenticate = (
     auth: AuthenticatePlist,
     identityCertificate?: string,
+    identityFingerprintSha256?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = { _tag: "device", udid: auth.UDID, identityCertificate, mdmOrigin };
+    const scope: CheckinScope = {
+      _tag: "device",
+      udid: auth.UDID,
+      identityCertificate,
+      ...(identityFingerprintSha256
+        ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+        : {}),
+      mdmOrigin,
+    };
     return backend
       .appleDeviceEvent(scope, {
         _tag: "Authenticate",
@@ -259,10 +273,28 @@ const makeAppleMdmService = (
   const handleTokenUpdate = (
     update: TokenUpdatePlist,
     identityCertificate?: string,
+    identityFingerprintSha256?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = update.UserID
-      ? { _tag: "user", udid: update.UDID, identityCertificate, userId: update.UserID, mdmOrigin }
-      : { _tag: "device", udid: update.UDID, identityCertificate, mdmOrigin };
+      ? {
+          _tag: "user",
+          udid: update.UDID,
+          identityCertificate,
+          ...(identityFingerprintSha256
+            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+            : {}),
+          userId: update.UserID,
+          mdmOrigin,
+        }
+      : {
+          _tag: "device",
+          udid: update.UDID,
+          identityCertificate,
+          ...(identityFingerprintSha256
+            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+            : {}),
+          mdmOrigin,
+        };
     const pushToken = base64ToHex(update.Token);
     return backend
       .appleDeviceEvent(scope, {
@@ -289,6 +321,7 @@ const makeAppleMdmService = (
   const handleCheckOut = (
     checkout: CheckOutPlist,
     identityCertificate?: string,
+    identityFingerprintSha256?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = checkout.UserID
       ? {
@@ -296,9 +329,20 @@ const makeAppleMdmService = (
           udid: checkout.UDID,
           userId: checkout.UserID,
           identityCertificate,
+          ...(identityFingerprintSha256
+            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+            : {}),
           mdmOrigin,
         }
-      : { _tag: "device", udid: checkout.UDID, identityCertificate, mdmOrigin };
+      : {
+          _tag: "device",
+          udid: checkout.UDID,
+          identityCertificate,
+          ...(identityFingerprintSha256
+            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+            : {}),
+          mdmOrigin,
+        };
     return backend
       .appleDeviceEvent(scope, {
         _tag: "CheckOut",
@@ -314,11 +358,15 @@ const makeAppleMdmService = (
   const handleCommandResult = (
     result: CommandResultPlist,
     identityCertificate?: string,
+    identityFingerprintSha256?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = {
       _tag: "device",
       udid: result.UDID,
       identityCertificate,
+      ...(identityFingerprintSha256
+        ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
+        : {}),
       mdmOrigin,
     };
     const detail = result.ErrorChain
@@ -540,17 +588,19 @@ const makeAppleMdmService = (
     readonly displayName?: string;
     readonly identifier?: string;
   }): Effect.Effect<string, MdmError> =>
-    Effect.sync(() =>
-      JSON.stringify(
-        buildAppleEnrollmentProfile({
-          origin: config.origin,
-          topic,
-          organizationId: options?.organizationId ?? config.organizationId ?? "",
-          organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
-          challenge: options?.challenge ?? crypto.randomUUID(),
-          displayName: options?.displayName,
-          identifier: options?.identifier,
-        }),
+    serializePlist(
+      buildAppleEnrollmentProfile({
+        origin: config.origin,
+        topic,
+        organizationId: options?.organizationId ?? config.organizationId ?? "",
+        organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
+        challenge: options?.challenge ?? crypto.randomUUID(),
+        displayName: options?.displayName,
+        identifier: options?.identifier,
+      }),
+    ).pipe(
+      Effect.mapError(
+        (cause) => new MdmError({ message: "Failed to serialize enrollment profile", cause }),
       ),
     );
 

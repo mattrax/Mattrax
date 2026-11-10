@@ -170,7 +170,7 @@ describe("Windows enterprise backend", () => {
     expect(certificate.subject.typesAndValues[0]!.value.valueBlock.value).toBe("device-1");
     const extensionIds = certificate.extensions?.map((extension) => extension.extnID) ?? [];
     // ExtendedKeyUsage (clientAuth) and the Microsoft DeviceID extension.
-    expect(extensionIds).toContain("2.5.29.37");
+    expect(extensionIds.filter((id) => id === "2.5.29.37")).toHaveLength(1);
     expect(extensionIds).toContain("1.3.6.1.4.1.311.66.1.0");
 
     const deviceExtension = certificate.extensions!.find(
@@ -391,7 +391,7 @@ describe("SCEP CSR signing helper", () => {
     const certificate = signed.certificate;
     expect(await certificate.verify(ca.certificate)).toBe(true);
     const extensionIds = certificate.extensions?.map((extension) => extension.extnID) ?? [];
-    expect(extensionIds).toContain("2.5.29.37");
+    expect(extensionIds.filter((id) => id === "2.5.29.37")).toHaveLength(1);
     expect(extensionIds).toContain("1.3.6.1.4.1.311.66.1.0");
 
     const eku = certificate.extensions!.find((extension) => extension.extnID === "2.5.29.37")!;

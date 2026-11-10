@@ -218,6 +218,9 @@ export async function buildPkcsReq(
 ): Promise<ArrayBuffer> {
   const csrDer = csr.toSchema().toBER(false);
   const innerContent = encryptCsr ? await encryptEnvelopedData(csrDer, caCert) : csrDer;
+  const innerDigest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", innerContent as ArrayBuffer),
+  );
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -251,6 +254,10 @@ export async function buildPkcsReq(
         new pkijs.Attribute({
           type: "1.2.840.113549.1.9.3",
           values: [new asn1js.ObjectIdentifier({ value: pkijs.ContentInfo.DATA })],
+        }),
+        new pkijs.Attribute({
+          type: "1.2.840.113549.1.9.4",
+          values: [new asn1js.OctetString({ valueHex: innerDigest.buffer })],
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.7",

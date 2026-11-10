@@ -1,4 +1,4 @@
-import { Context, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/http-api";
 import { HttpRouter, HttpServer } from "effect/http";
 import {
@@ -8,9 +8,12 @@ import {
   appleMdmApi,
   appleMdmHandlers,
   appleMdmRoutes,
+  buildAppleEnrollmentProfile,
+  extractTopicFromCertPem,
 } from "@mattrax/dm-apple";
 import { WindowsMdmServiceLive, windowsMdmRoutes } from "@mattrax/dm-windows";
-import { ScepService, scepRoutes } from "@mattrax/scep";
+import { ScepService, createScepChallenge, scepRoutes } from "@mattrax/scep";
+import { serializePlist } from "@mattrax/plist";
 import {
   managementWebhookGroup,
   managementWebhookHandlers,
@@ -81,6 +84,31 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       return handleApi(request, env, ctx);
+    }
+
+    // The tenant-scoped Cloud worker refuses this endpoint because it cannot
+    // mint a bound challenge. A single-tenant whitelabel deployment can serve
+    // a fully-formed profile itself.
+    if (url.pathname === "/mdm/apple/enroll" && request.method === "GET") {
+      const authSecret = (env as unknown as { AUTH_SECRET?: string }).AUTH_SECRET;
+      const topic = env.APNS_CERT ? extractTopicFromCertPem(env.APNS_CERT) : null;
+      if (!env.ORIGIN || !topic || !authSecret)
+        return new Response("Apple MDM enrollment is not configured", { status: 503 });
+      const challenge = await createScepChallenge(crypto.randomUUID(), authSecret);
+      const profile = await Effect.runPromise(
+        serializePlist(
+          buildAppleEnrollmentProfile({
+            origin: env.ORIGIN,
+            topic,
+            organizationId: "whitelabel",
+            organizationName: "Mattrax",
+            challenge,
+          }),
+        ),
+      );
+      return new Response(profile, {
+        headers: { "content-type": "application/x-apple-aspen-config" },
+      });
     }
 
     if (

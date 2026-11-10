@@ -53,7 +53,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const identityCertificate = request.headers["x-device-identity-certificate"] as
       | string
       | undefined;
-    yield* service.verifyDeviceSignature({
+    const verifiedSignature = yield* service.verifyDeviceSignature({
       signature: request.headers["mdm-signature"] as string | undefined,
       body: buf,
       identityCertificateSubject: identityCertificate,
@@ -64,6 +64,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         "x-device-identity-certificate-sha256"
       ] as string | undefined,
     });
+    const identityFingerprint = verifiedSignature?.fingerprintSha256;
     const text = new TextDecoder().decode(buf);
     const plist = yield* parsePlist(text);
 
@@ -75,6 +76,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       _tag: "device",
       udid: udid ?? "",
       identityCertificate,
+      ...(identityFingerprint ? { identityCertificateFingerprintSha256: identityFingerprint } : {}),
       mdmOrigin: service.mdmOrigin,
     });
 
@@ -84,21 +86,21 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleAuthenticate(auth, identityCertificate);
+          yield* service.handleAuthenticate(auth, identityCertificate, identityFingerprint);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "TokenUpdate": {
           const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleTokenUpdate(update, identityCertificate);
+          yield* service.handleTokenUpdate(update, identityCertificate, identityFingerprint);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "CheckOut": {
           const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleCheckOut(checkout, identityCertificate);
+          yield* service.handleCheckOut(checkout, identityCertificate, identityFingerprint);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "DeclarativeManagement": {
@@ -177,7 +179,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         Effect.mapError((err) => new Error(String(err))),
       );
       if (result.CommandUUID) {
-        yield* service.handleCommandResult(result, identityCertificate);
+        yield* service.handleCommandResult(result, identityCertificate, identityFingerprint);
       }
       if (!udid) return HttpServerResponse.empty({ status: 200 });
       const command = yield* service.handleCheckin(scope());

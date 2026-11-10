@@ -19,10 +19,14 @@ export const ScepRepositoryLive = (db: FsDb, options: { authSecret?: string } = 
         Effect.gen(function* () {
           const secret = options.authSecret;
           if (!secret) {
-            // Self-hosted deployments may not configure a shared secret. Keep
-            // accepting the legacy static/auto challenge in that case; set
-            // MATTRAX_AUTH_SECRET to enable per-enrollment verification.
-            return;
+            // Issuing certificates without a challenge lets anyone obtain a
+            // CA-signed identity. Require an auth secret explicitly.
+            return yield* Effect.fail(
+              new ScepError({
+                message:
+                  "SCEP authentication is not configured; set MATTRAX_AUTH_SECRET or --auth-secret",
+              }),
+            );
           }
           const verification = yield* Effect.tryPromise({
             try: () => verifyScepChallenge(req.challengePassword, secret),

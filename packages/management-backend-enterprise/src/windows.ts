@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { schema as s, type Db } from "@mattrax/enterprise-core";
 import { signScepCsr } from "@mattrax/scep";
@@ -437,6 +437,18 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           });
         }
 
+        // Commands handed out but never acknowledged would otherwise stay
+        // "sent" forever. Re-queue them so the next check-in retries.
+        yield* db
+          .update(s.deviceCommand)
+          .set({ status: "queued", updatedAt: new Date() })
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.status, "sent"),
+              lt(s.deviceCommand.updatedAt, new Date(Date.now() - 30 * 60 * 1000)),
+            ),
+          );
         const queued = yield* db
           .select()
           .from(s.deviceCommand)

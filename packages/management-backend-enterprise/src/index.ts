@@ -124,7 +124,16 @@ const findDeviceByScope = (
           : eq(s.device.dmIdentifier, scope.udid),
       )
       .limit(1);
-    return device ?? null;
+    if (!device) return null;
+    // A UDID is only an identifier: bind it to the certificate that first
+    // enrolled it so another tenant device cannot check in as this device.
+    if (
+      scope.identityCertificateFingerprintSha256 &&
+      device.dmIdentityFingerprint &&
+      device.dmIdentityFingerprint !== scope.identityCertificateFingerprintSha256
+    )
+      return null;
+    return device;
   });
 
 const scopedConfigurations = (deviceId: string) =>
@@ -443,6 +452,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     ),
                   )
                   .limit(1);
+                const identityFingerprint = scope.identityCertificateFingerprintSha256;
+                // Only an unenrolled slot may be reclaimed by a new identity.
+                // Overwriting an enrolled device from a different certificate
+                // would let one enrolled device hijack another device's UDID.
+                if (
+                  existing &&
+                  identityFingerprint &&
+                  existing.dmIdentityFingerprint &&
+                  existing.dmIdentityFingerprint !== identityFingerprint &&
+                  existing.status === "enrolled"
+                )
+                  return yield* Effect.fail(new UnknownDevice());
                 const deviceId = existing?.id ?? id();
                 const common = {
                   organizationId,
@@ -456,6 +477,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   physicalName: event.serialNumber ?? event.model ?? scope.udid,
                   dmIdentifier: scope.udid,
                   dmCertHash: yield* Effect.promise(() => certHash(scope.identityCertificate)),
+                  dmIdentityFingerprint:
+                    identityFingerprint ?? existing?.dmIdentityFingerprint ?? null,
+                  ddmDeclarationsToken: null,
                   lastSeenAt: now(),
                 };
                 if (existing) {
@@ -641,7 +665,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
             if (device.status !== "enrolled") return { _tag: "Idle" as const };
-            // Retry commands the device deferred for a while.
+            // Retry commands the device deferred for a while, and commands
+            // that were handed out but never acknowledged. Re-sending the same
+            // command UUID is idempotent for the device; leaving them "sent"
+            // forever would silently drop the action.
             yield* db
               .update(s.deviceCommand)
               .set({ status: "queued", updatedAt: now() })
@@ -650,6 +677,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   eq(s.deviceCommand.deviceId, device.id),
                   eq(s.deviceCommand.status, "not-now"),
                   lt(s.deviceCommand.updatedAt, new Date(Date.now() - 10 * 60 * 1000)),
+                ),
+              );
+            yield* db
+              .update(s.deviceCommand)
+              .set({ status: "queued", updatedAt: now() })
+              .where(
+                and(
+                  eq(s.deviceCommand.deviceId, device.id),
+                  eq(s.deviceCommand.status, "sent"),
+                  lt(s.deviceCommand.updatedAt, new Date(Date.now() - 30 * 60 * 1000)),
                 ),
               );
             const [command] = yield* db
@@ -690,10 +727,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               catch: internal,
             });
             if (device.ddmDeclarationsToken === token) return { _tag: "Idle" as const };
-            yield* db
-              .update(s.device)
-              .set({ ddmDeclarationsToken: token })
-              .where(eq(s.device.id, device.id));
+            // Do not persist the token here: that would mark the sync complete
+            // before the device has fetched anything. The declaration
+            // endpoints record it once the device actually asks for content.
             return { _tag: "DdmSync" as const, serverToken: token };
           }).pipe(
             Effect.mapError((cause) =>
@@ -734,7 +770,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               hashToken(
                 items[category].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
               );
-            return yield* Effect.tryPromise({
+            const tokens = yield* Effect.tryPromise({
               try: async () => ({
                 activationsToken: await categoryToken("activations"),
                 configurationsToken: await categoryToken("configurations"),
@@ -751,6 +787,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               }),
               catch: internal,
             });
+            // The device has now fetched the sync token, so this version has
+            // been observed. Persist it to stop repeating the DDM sync prompt.
+            yield* db
+              .update(s.device)
+              .set({ ddmDeclarationsToken: tokens.declarationsToken })
+              .where(eq(s.device.id, device.id))
+              .pipe(Effect.mapError(internal));
+            return tokens;
           }),
         ),
 
@@ -761,10 +805,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
             const deviceToken = yield* deviceTokenFor(device.id);
-            return yield* declarationItemsForDevice(device.id, deviceToken, {
+            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
               origin,
               authSecret: authSecret ?? "",
             }).pipe(Effect.mapError(internal));
+            const token = yield* Effect.tryPromise({
+              try: () =>
+                hashToken(
+                  [
+                    ...items.activations,
+                    ...items.configurations,
+                    ...items.assets,
+                    ...items.management,
+                  ].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
+                ),
+              catch: internal,
+            });
+            yield* db
+              .update(s.device)
+              .set({ ddmDeclarationsToken: token })
+              .where(eq(s.device.id, device.id))
+              .pipe(Effect.mapError(internal));
+            return items;
           }),
         ),
 

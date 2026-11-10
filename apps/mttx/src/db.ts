@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface ScepCaRecord {
@@ -24,8 +24,11 @@ export class FsDb {
       const data = readFileSync(this.caPath(), "utf-8");
       const record = JSON.parse(data) as ScepCaRecord;
       return { certPem: record.certPem, privateKeyJwk: record.privateKeyJwk };
-    } catch {
-      return null;
+    } catch (error) {
+      // Only a missing file means "no CA yet". A partial/corrupt file must not
+      // silently generate a new CA and invalidate every issued device cert.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
     }
   }
 
@@ -35,6 +38,9 @@ export class FsDb {
       privateKeyJwk,
       createdAt: new Date().toISOString(),
     };
-    writeFileSync(this.caPath(), JSON.stringify(record, null, 2));
+    const path = this.caPath();
+    const temporary = `${path}.${process.pid}.tmp`;
+    writeFileSync(temporary, JSON.stringify(record, null, 2), { mode: 0o600 });
+    renameSync(temporary, path);
   }
 }

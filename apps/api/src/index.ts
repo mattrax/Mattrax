@@ -340,6 +340,7 @@ export default {
         cf?: {
           tlsClientAuth?: {
             certVerified?: string;
+            certRevoked?: string | boolean;
             certSubjectDN?: string;
             certSerial?: string;
             certFingerprintSHA256?: string;
@@ -347,7 +348,7 @@ export default {
         };
       }
     ).cf?.tlsClientAuth;
-    if (tls?.certVerified === "SUCCESS") {
+    if (tls?.certVerified === "SUCCESS" && tls.certRevoked !== "1" && tls.certRevoked !== true) {
       if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
       if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
       if (tls.certFingerprintSHA256)

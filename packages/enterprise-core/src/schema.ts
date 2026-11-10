@@ -422,6 +422,12 @@ export const device = mysqlTable(
     diskUsed: shortText("disk_used"),
     dmIdentifier: shortText("dm_identifier"),
     dmCertHash: shortText("dm_cert_hash"),
+    /**
+     * Verified SHA-256 of the MDM client identity certificate signing the
+     * device's check-ins. Used to stop a different enrolled device from
+     * claiming this UDID. Null for devices enrolled before verification.
+     */
+    dmIdentityFingerprint: shortText("dm_identity_fingerprint"),
     /** Last declarations token sent to the device, to avoid DDM sync loops. */
     ddmDeclarationsToken: text("ddm_declarations_token"),
   },

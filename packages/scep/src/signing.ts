@@ -46,15 +46,6 @@ const subjectFromCsr = (csr: pkijs.CertificationRequest, fallback: string) => {
   return subject;
 };
 
-const clientAuthExtension = () =>
-  new pkijs.Extension({
-    extnID: "2.5.29.37",
-    critical: false,
-    extnValue: new asn1js.Sequence({
-      value: [new asn1js.ObjectIdentifier({ value: CLIENT_AUTH_EKU_OID })],
-    }).toBER(false),
-  });
-
 const microsoftDeviceIdExtension = (deviceId: string) =>
   new pkijs.Extension({
     extnID: MS_DEVICE_ID_OID,
@@ -118,8 +109,9 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
       const notAfter =
         options.notAfter ?? new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
 
-      const extensions = [clientAuthExtension()];
-      if (options.deviceId) extensions.push(microsoftDeviceIdExtension(options.deviceId));
+      // createDeviceCertificate already adds the client-auth EKU; adding it
+      // here would produce a duplicate 2.5.29.37 extension.
+      const extensions = options.deviceId ? [microsoftDeviceIdExtension(options.deviceId)] : [];
 
       const certificate = await createDeviceCertificate(
         Math.floor(Math.random() * 0x7fffffff),

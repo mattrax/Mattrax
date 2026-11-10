@@ -654,10 +654,27 @@ export function parseScepPkcsReq(
 
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
+      if (signedData.signerInfos.length !== 1) {
+        throw new Error("SCEP request must contain exactly one signer");
+      }
       const signerInfo = signedData.signerInfos[0];
       if (!signerInfo || !signerInfo.signedAttrs) {
         throw new Error("Missing signerInfo or signedAttrs in SCEP request");
       }
+
+      // The outer CMS signature proves possession of the signer key. Without
+      // this check a RenewalReq can embed any CA-issued certificate while being
+      // signed by an unrelated key.
+      const verification = await signedData.verify({
+        signer: 0,
+        checkChain: false,
+        extendedMode: true,
+      });
+      if (!verification.signatureVerified) {
+        throw new Error("SCEP request CMS signature is invalid");
+      }
+      const verifiedSigner = (verification as { signerCertificate?: pkijs.Certificate })
+        .signerCertificate;
 
       let transactionId = "";
       let senderNonce = new ArrayBuffer(0);
@@ -689,11 +706,13 @@ export function parseScepPkcsReq(
       }
 
       // Collect signer certificates for encrypting the CertRep response
-      const signerCerts: pkijs.Certificate[] = signedData.certificates
-        ? (signedData.certificates as pkijs.Certificate[]).filter(
-            (c) => c instanceof pkijs.Certificate,
-          )
-        : [];
+      const signerCerts: pkijs.Certificate[] = verifiedSigner
+        ? [verifiedSigner]
+        : signedData.certificates
+          ? (signedData.certificates as pkijs.Certificate[]).filter(
+              (c) => c instanceof pkijs.Certificate,
+            )
+          : [];
 
       // Extract eContent
       const eContent = signedData.encapContentInfo.eContent;

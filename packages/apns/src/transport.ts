@@ -1,4 +1,4 @@
-import https from "node:https";
+import http2 from "node:http2";
 import { Data, Effect } from "effect";
 
 export class ApnsError extends Data.TaggedError("ApnsError")<{
@@ -80,36 +80,45 @@ export function NodePushTransport(defaults?: {
           const request = buildApnsRequest(input);
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
-          const agent = new https.Agent({ cert: certPem, key: privateKeyPem });
+          const client = http2.connect(url.origin, {
+            cert: certPem,
+            key: privateKeyPem,
+          });
 
           return new Promise<void>((resolve, reject) => {
-            const req = https.request(
-              {
-                hostname: url.hostname,
-                port: url.port ? parseInt(url.port, 10) : 443,
-                path: url.pathname + url.search,
-                method: request.method,
-                headers: { ...request.headers, "content-length": body.byteLength },
-                agent,
-              },
-              (res) => {
-                const chunks: Buffer[] = [];
-                res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-                res.on("end", () => {
-                  if (res.statusCode === 200) return resolve();
-                  const text = Buffer.concat(chunks).toString("utf8");
-                  reject(
-                    new ApnsError({
-                      message: `APNs rejected push (HTTP ${res.statusCode ?? 0})${text ? `: ${text}` : ""}`,
-                    }),
-                  );
-                });
-                res.on("error", reject);
-              },
-            );
-            req.on("error", reject);
-            req.write(body);
-            req.end();
+            let status = 0;
+            let settled = false;
+            const fail = (error: unknown) => {
+              if (settled) return;
+              settled = true;
+              client.close();
+              reject(error);
+            };
+            client.on("error", fail);
+            const req = client.request({
+              ":method": request.method,
+              ":path": url.pathname + url.search,
+              ...request.headers,
+            });
+            const chunks: Buffer[] = [];
+            req.on("response", (headers) => {
+              status = Number(headers[":status"] ?? 0);
+            });
+            req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+            req.on("error", fail);
+            req.on("end", () => {
+              if (settled) return;
+              settled = true;
+              client.close();
+              if (status === 200) return resolve();
+              const text = Buffer.concat(chunks).toString("utf8");
+              reject(
+                new ApnsError({
+                  message: `APNs rejected push (HTTP ${status})${text ? `: ${text}` : ""}`,
+                }),
+              );
+            });
+            req.end(body);
           });
         },
         catch: (cause) =>
