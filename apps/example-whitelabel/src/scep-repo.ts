@@ -1,35 +1,76 @@
 import { Effect, Layer } from "effect";
-import { ScepError, ScepRepository, verifyScepChallenge } from "@mattrax/scep";
+import {
+  ScepCaKeyError,
+  ScepError,
+  ScepRepository,
+  openCaPrivateKey,
+  sealCaPrivateKey,
+  verifyScepChallenge,
+} from "@mattrax/scep";
+
+const storageError =
+  (message: string) =>
+  (cause: unknown): ScepError =>
+    cause instanceof ScepError
+      ? cause
+      : cause instanceof ScepCaKeyError
+        ? new ScepError({ message: cause.message })
+        : new ScepError({ message, cause });
 
 export const ScepRepositoryD1 = (db: D1Database, options: { authSecret?: string } = {}) =>
   Layer.succeed(
     ScepRepository,
     ScepRepository.of({
       getCa: () =>
-        Effect.tryPromise({
-          try: async () => {
-            const row = await db
-              .prepare("SELECT cert_pem, private_key_jwk FROM scep_ca WHERE id = 1")
-              .first<{ cert_pem: string; private_key_jwk: string }>();
-            if (!row) return null;
-            return {
-              certPem: row.cert_pem,
-              privateKeyJwk: JSON.parse(row.private_key_jwk) as JsonWebKey,
-            };
-          },
-          catch: (cause) => new ScepError({ message: "Failed to get CA", cause }),
+        Effect.gen(function* () {
+          const row = yield* Effect.tryPromise({
+            try: () =>
+              db
+                .prepare("SELECT cert_pem, private_key_jwk FROM scep_ca WHERE id = 1")
+                .first<{ cert_pem: string; private_key_jwk: string }>(),
+            catch: storageError("Failed to get CA"),
+          });
+          if (!row) return null;
+
+          // The column holds either the sealed envelope or a legacy plaintext
+          // JWK. Sealing on read keeps existing CA certificates valid while
+          // ensuring the plaintext only exists in memory.
+          const opened = yield* Effect.tryPromise({
+            try: () => openCaPrivateKey(row.private_key_jwk, options.authSecret),
+            catch: storageError("Failed to read the SCEP CA private key"),
+          });
+          if (opened.migrated) {
+            yield* Effect.tryPromise({
+              try: () =>
+                db
+                  .prepare("UPDATE scep_ca SET private_key_jwk = ? WHERE id = 1")
+                  .bind(JSON.stringify(opened.migrated))
+                  .run(),
+              catch: storageError("Failed to persist the encrypted SCEP CA private key"),
+            });
+          }
+
+          return {
+            certPem: row.cert_pem,
+            privateKeyJwk: opened.privateKeyJwk,
+          };
         }),
       saveCa: (certPem, privateKeyJwk) =>
-        Effect.tryPromise({
-          try: async () => {
-            await db
-              .prepare(
-                "INSERT INTO scep_ca (id, cert_pem, private_key_jwk) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET cert_pem = excluded.cert_pem, private_key_jwk = excluded.private_key_jwk",
-              )
-              .bind(certPem, JSON.stringify(privateKeyJwk))
-              .run();
-          },
-          catch: (cause) => new ScepError({ message: "Failed to save CA", cause }),
+        Effect.gen(function* () {
+          const sealed = yield* Effect.tryPromise({
+            try: () => sealCaPrivateKey(options.authSecret, privateKeyJwk),
+            catch: storageError("Failed to encrypt the SCEP CA private key"),
+          });
+          yield* Effect.tryPromise({
+            try: () =>
+              db
+                .prepare(
+                  "INSERT INTO scep_ca (id, cert_pem, private_key_jwk) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET cert_pem = excluded.cert_pem, private_key_jwk = excluded.private_key_jwk",
+                )
+                .bind(certPem, JSON.stringify(sealed))
+                .run(),
+            catch: storageError("Failed to save CA"),
+          });
         }),
       authenticatePkcsReq: (req) =>
         Effect.gen(function* () {

@@ -2,11 +2,17 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
+import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import {
+  enterprise,
+  enterpriseKeys,
+  type DynamicGroupKind,
+  type DynamicGroupRules,
+} from "~/lib/enterprise";
 
 export default function NewGroupPage() {
   const params = useParams();
@@ -14,6 +20,8 @@ export default function NewGroupPage() {
   const qc = useQueryClient();
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [kind, setKind] = createSignal<DynamicGroupKind>("manual");
+  const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [devices, setDevices] = createSignal<Set<string>>(new Set());
   const [policies, setPolicies] = createSignal<Set<string>>(new Set());
   const deviceList = useQuery(() => ({
@@ -29,7 +37,9 @@ export default function NewGroupPage() {
       enterprise.createGroup(params.tenantId, {
         name: name(),
         notes: notes() || null,
-        devices: [...devices()],
+        kind: kind(),
+        rules: kind() === "dynamic" ? rules() : null,
+        devices: kind() === "manual" ? [...devices()] : [],
         policies: [...policies()],
       }),
     onSuccess: async ({ id }) => {
@@ -69,6 +79,21 @@ export default function NewGroupPage() {
                 placeholder="What is this group for?"
               />
             </Field>
+            <Field label="Membership">
+              <select
+                class="h-9 rounded-lg border bg-white px-3 text-sm"
+                value={kind()}
+                onChange={(e) => setKind(e.currentTarget.value as DynamicGroupKind)}
+              >
+                <option value="manual">Manual — choose devices</option>
+                <option value="dynamic">Dynamic — match device rules</option>
+              </select>
+            </Field>
+            <Show when={kind() === "dynamic"}>
+              <div class="rounded-lg border bg-muted/20 p-3">
+                <GroupRuleBuilder rules={rules()} onChange={setRules} />
+              </div>
+            </Show>
             <ErrorText error={create.error} />
             <div class="flex gap-2">
               <Button type="submit" disabled={create.isPending}>
@@ -89,26 +114,39 @@ export default function NewGroupPage() {
           <Card>
             <CardContent class="space-y-2">
               <p class="text-sm font-medium">
-                Devices <Badge variant="secondary">{devices().size}</Badge>
+                Devices{" "}
+                <Badge variant="secondary">
+                  {kind() === "dynamic" ? "rule-based" : devices().size}
+                </Badge>
               </p>
               <Show
-                when={(deviceList.data?.rows.length ?? 0) > 0}
-                fallback={<p class="text-sm text-muted-foreground">No devices enrolled yet.</p>}
+                when={kind() === "manual"}
+                fallback={
+                  <p class="text-sm text-muted-foreground">
+                    Membership is computed from the rules above. You can preview matches after the
+                    group is created.
+                  </p>
+                }
               >
-                <div class="max-h-48 space-y-1 overflow-auto">
-                  <For each={deviceList.data?.rows ?? []}>
-                    {(device) => (
-                      <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
-                        <input
-                          type="checkbox"
-                          checked={devices().has(device.id)}
-                          onChange={() => toggle(devices, setDevices, device.id)}
-                        />
-                        <span class="truncate">{device.name}</span>
-                      </label>
-                    )}
-                  </For>
-                </div>
+                <Show
+                  when={(deviceList.data?.rows.length ?? 0) > 0}
+                  fallback={<p class="text-sm text-muted-foreground">No devices enrolled yet.</p>}
+                >
+                  <div class="max-h-48 space-y-1 overflow-auto">
+                    <For each={deviceList.data?.rows ?? []}>
+                      {(device) => (
+                        <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
+                          <input
+                            type="checkbox"
+                            checked={devices().has(device.id)}
+                            onChange={() => toggle(devices, setDevices, device.id)}
+                          />
+                          <span class="truncate">{device.name}</span>
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </Show>
             </CardContent>
           </Card>

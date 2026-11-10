@@ -8,13 +8,34 @@ import {
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
+  EnterpriseStripeError,
   EnterpriseTenantHasMembers,
   EnterpriseService,
   enterpriseApi,
+  TENANT_EXPORT_MAX_ROWS,
+  TENANT_EXPORT_VERSION,
+  TENANT_IMPORT_MAX_BYTES,
   type DevicePreRegistrationImportRow,
   type DevicePreRegistrationImportResponse,
   type EnterpriseAuth,
+  type TenantExportApplication,
+  type TenantExportAuditEntry,
+  type TenantExportCertificate,
+  type TenantExportEnvelope,
+  type TenantExportEnrollment,
+  type TenantExportGroup,
+  type TenantExportMember,
+  type TenantExportPolicy,
+  type TenantExportPreRegistration,
+  type TenantExportProfile,
+  type TenantImportRequest,
+  type TenantImportResponse,
   policyApplicationKey,
+  normalizeBrandColor,
+  resolveTenantBranding,
+  validateTenantBranding,
+  dynamicGroupRulesProblem,
+  type DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
@@ -23,11 +44,18 @@ import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
   certificateDeviceIdsFor,
+  createWindowsTenantToken,
   enterpriseEnrollmentProfile,
+  previewDynamicGroup,
+  resolveEffectivePolicyForDevice,
+  syncDynamicGroup,
+  syncDynamicGroupsForDevice,
+  windowsTenantTokenExpiresAt,
 } from "@mattrax/management-backend-enterprise";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { parseMobileconfigPreview } from "./mobileconfig.ts";
+import { tokenScopes } from "./enterpriseAuth.ts";
 import {
   ApnsService,
   NoopPushTransport,
@@ -42,7 +70,7 @@ import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
-import { syncEntraDirectory } from "./entraSync.ts";
+import { syncEntraDirectory, acquireEntraSyncLock } from "./entraSync.ts";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   normalizeDeviceSearchQuery,
@@ -50,6 +78,18 @@ import {
   toCsv,
   type DeviceSearchFilters,
 } from "./deviceSearch.ts";
+import {
+  AUDIT_EXPORT_MAX_ROWS,
+  auditCsv,
+  auditJson,
+  auditOrder,
+  auditWhere,
+  encodeAuditCursor,
+  encodeAuditOffsetCursor,
+  normalizeAuditSearchQuery,
+  type AuditExportEntry,
+  type AuditSearchFilters,
+} from "./auditLog.ts";
 import { canEnrollDevice } from "./enrollmentLimit.ts";
 import {
   detectEnrollmentPlatform,
@@ -87,7 +127,12 @@ import type {
 
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
-  readonly stripeClient: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
+  /**
+   * Stripe client used for billing. Deployments without Stripe credentials leave
+   * this unset; billing handlers then return `EnterpriseStripeError` instead of
+   * failing at boot.
+   */
+  readonly stripeClient?: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
   readonly storage: R2Bucket;
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
@@ -128,6 +173,61 @@ const isEffectStripeClient = (
   typeof (client as { readonly effect?: unknown }).effect === "function";
 
 const now = () => new Date();
+
+/** Tenant-controlled text is interpolated into invitation HTML. */
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const optionalText = (value: string | null | undefined): string | null | undefined => {
+  if (value === undefined) return undefined;
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+type BrandingPayload = {
+  readonly displayName?: string | null;
+  readonly logo?: string | null;
+  readonly supportEmail?: string | null;
+  readonly brandColor?: string | null;
+};
+
+/**
+ * Validate and normalise the write payload for tenant branding. Returns the
+ * fields to persist, omitting anything the caller did not send.
+ */
+const brandingUpdate = (body: BrandingPayload): Record<string, string | null> => {
+  const errors = validateTenantBranding(body);
+  const firstError = Object.values(errors)[0];
+  if (firstError) throw new EnterpriseBadRequest({ message: firstError });
+
+  const update: Record<string, string | null> = {};
+  const displayName = optionalText(body.displayName);
+  if (displayName !== undefined) update.displayName = displayName;
+  const logo = optionalText(body.logo);
+  if (logo !== undefined) update.logo = logo;
+  const supportEmail = optionalText(body.supportEmail);
+  if (supportEmail !== undefined) update.supportEmail = supportEmail;
+  const brandColor = optionalText(body.brandColor);
+  if (brandColor !== undefined)
+    update.brandColor = brandColor ? normalizeBrandColor(brandColor) : null;
+  return update;
+};
+
+/** Throwing here keeps the validation helper usable from Effect.gen. */
+const brandingOrFail = (body: BrandingPayload) =>
+  Effect.try({
+    try: () => brandingUpdate(body),
+    catch: (cause) =>
+      cause instanceof EnterpriseBadRequest
+        ? cause
+        : new EnterpriseBadRequest({ message: "Invalid tenant branding" }),
+  });
+
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const ok = { status: "ok" as const };
 
@@ -165,6 +265,38 @@ const safeFilename = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
 
+/** Slug candidates are derived from tenant input and bounded for MySQL indexes. */
+const slugBase = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 240);
+
+/**
+ * `organization.metadata` is stored as JSON text. A malformed historical value
+ * must not make the rest of a bundle unexportable.
+ */
+const exportMetadata = (value: string | null | undefined): Record<string, unknown> | null => {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Compact bundle validation helper; mirrors the limits used by write handlers. */
+const importString = (value: unknown, max: number): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+};
+
 /**
  * Build the download response for an Apple enrollment profile. Exported so the
  * content type, attachment filename and cache policy can be asserted without
@@ -189,6 +321,27 @@ const capabilityText = (value: unknown): string => {
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 };
+
+/** Public audit row shape shared by list, search and export endpoints. */
+const auditEntry = (entry: {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  actorUserId?: string | null;
+  actorEmail?: string | null;
+  metadata?: unknown;
+  createdAt: Date;
+}): AuditExportEntry => ({
+  id: entry.id,
+  action: entry.action,
+  targetType: entry.targetType,
+  targetId: entry.targetId,
+  actorUserId: entry.actorUserId ?? null,
+  actorEmail: entry.actorEmail ?? null,
+  metadata: entry.metadata ?? null,
+  createdAt: iso(entry.createdAt),
+});
 
 const headersFromRequest = (request: HttpServerRequest) => {
   const headers = new Headers();
@@ -219,7 +372,7 @@ const hashJson = (value: unknown) =>
     ),
   );
 
-const TENANT_ROLES = new Set(["owner", "admin", "member"]);
+const TENANT_ROLES = new Set(["owner", "admin", "member", "auditor"]);
 const rolesOf = (role: string) =>
   role
     .split(",")
@@ -231,6 +384,16 @@ const validRoles = (role: string) => {
 };
 const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
 
+/**
+ * Role matrix:
+ * - owner: read, write, delete
+ * - admin: read, write
+ * - member: read (baseline tenant access)
+ * - auditor: read only (compliance/read-only access; cannot write)
+ *
+ * There is no `operator` role: device-only writes would require every handler
+ * to declare a resource class, and this layer only distinguishes read/write.
+ */
 const canWriteTenant = (role: string) =>
   role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
@@ -254,9 +417,22 @@ export const createEnterpriseService = ({
   const auth = authService;
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
   const applePush = makeApplePush({ db, schema, apns, authSecret });
-  const stripe = isEffectStripeClient(stripeClient)
-    ? stripeClient
-    : makeEffectStripeClient(stripeClient as StripeClientLike);
+  const stripe = stripeClient
+    ? isEffectStripeClient(stripeClient)
+      ? stripeClient
+      : makeEffectStripeClient(stripeClient as StripeClientLike)
+    : undefined;
+  const billingConfigured = Boolean(stripe);
+
+  const billingNotConfigured = () =>
+    new EnterpriseStripeError({
+      message: "Billing is not configured for this deployment.",
+    });
+
+  const billingUnavailable = () =>
+    new EnterpriseStripeError({
+      message: "Billing is temporarily unavailable. Try again shortly.",
+    });
   const r2Layer = R2StorageLive(storage);
 
   const requireTenant = (
@@ -265,7 +441,26 @@ export const createEnterpriseService = ({
     access: "read" | "write" | "delete" = "read",
   ) =>
     Effect.gen(function* () {
-      const { user } = yield* auth.requireUser({ headers: request.headers });
+      const { user, apiToken } = yield* auth.requireUser({ headers: request.headers });
+
+      if (apiToken) {
+        // A tenant-bound token cannot be used against another tenant. Report it
+        // as missing so token holders cannot probe tenant existence.
+        if (apiToken.tenantId && apiToken.tenantId !== tenantId)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+        const scopes = tokenScopes(apiToken.scopes);
+        if (access === "read" && !scopes.has("read"))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "This token is not allowed to read this tenant" }),
+          );
+        if ((access === "write" || access === "delete") && !scopes.has("write"))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "This token is read-only and cannot modify this tenant",
+            }),
+          );
+      }
+
       const member = yield* db.query.member.findFirst({
         where: { userId: user.id, organizationId: tenantId },
       });
@@ -339,34 +534,38 @@ export const createEnterpriseService = ({
   const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
     Effect.gen(function* () {
       if (organization.stripeCustomerId) return organization.stripeCustomerId;
+      if (!stripe) return yield* Effect.fail(billingNotConfigured());
 
-      let stripeCustomer: Stripe.Customer | undefined;
-      const search = yield* Effect.catch(
+      // Search is the cheap path. Some Stripe accounts/API versions reject
+      // search, so fall back to a single bounded page instead of iterating the
+      // entire customer list.
+      const search = yield* Effect.exit(
         stripe.customers.search({
           query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
           limit: 1,
         }) as Effect.Effect<{ data: Array<Stripe.Customer> }, unknown>,
-        () =>
-          stripe.effect(async (client: Stripe) => {
-            for await (const customer of client.customers.list({ limit: 100 })) {
-              if (
-                customer.metadata?.organizationId === organization.id &&
-                customer.metadata?.customerType === "organization"
-              )
-                return customer;
-            }
-            return undefined;
-          }) as Effect.Effect<Stripe.Customer | undefined, unknown>,
       );
-      stripeCustomer = search && "data" in search ? search.data[0] : search;
+      let stripeCustomer: Stripe.Customer | undefined = Exit.isSuccess(search)
+        ? search.value.data[0]
+        : undefined;
 
-      stripeCustomer ??= yield* stripe.customers.create({
-        name: organization.name,
-        metadata: { organizationId: organization.id, customerType: "organization" },
-      }) as Effect.Effect<Stripe.Customer, unknown>;
+      if (!stripeCustomer && Exit.isFailure(search)) {
+        const page = yield* stripe
+          .effect((client: Stripe) => client.customers.list({ limit: 100 }))
+          .pipe(Effect.mapError(() => billingUnavailable()));
+        stripeCustomer = page.data.find(
+          (customer: Stripe.Customer) =>
+            customer.metadata?.organizationId === organization.id &&
+            customer.metadata?.customerType === "organization",
+        );
+      }
 
-      if (!stripeCustomer)
-        return yield* Effect.fail(new EnterpriseNotFound({ message: "Stripe customer not found" }));
+      stripeCustomer ??= (yield* stripe.customers
+        .create({
+          name: organization.name,
+          metadata: { organizationId: organization.id, customerType: "organization" },
+        })
+        .pipe(Effect.mapError(() => billingUnavailable()))) as Stripe.Customer;
 
       yield* db
         .update(schema.organization)
@@ -383,12 +582,21 @@ export const createEnterpriseService = ({
           name: schema.organization.name,
           slug: schema.organization.slug,
           logo: schema.organization.logo,
+          displayName: schema.organization.displayName,
+          supportEmail: schema.organization.supportEmail,
+          brandColor: schema.organization.brandColor,
           role: schema.member.role,
         })
         .from(schema.member)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
         .where(eq(schema.member.userId, userId));
-      return rows;
+      return rows.map((row: any) => ({
+        ...row,
+        logo: row.logo ?? null,
+        displayName: row.displayName ?? null,
+        supportEmail: row.supportEmail ?? null,
+        brandColor: row.brandColor ?? null,
+      }));
     });
 
   const memberCount = (tenantId: string) =>
@@ -519,6 +727,9 @@ export const createEnterpriseService = ({
         status: subscription?.status,
         billableDevices: devices?.value ?? 0,
         subscriptionId: subscription?.stripeSubscriptionId ?? null,
+        periodEnd: subscription?.periodEnd ? iso(subscription.periodEnd) : null,
+        cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
+        configured: billingConfigured,
       };
     });
 
@@ -678,6 +889,9 @@ export const createEnterpriseService = ({
     id: row.id,
     name: row.name,
     notes: row.notes,
+    kind: row.kind ?? ("manual" as const),
+    rules: (row.rules as DynamicGroupRules | null | undefined) ?? null,
+    lastEvaluatedAt: row.lastEvaluatedAt ? iso(row.lastEvaluatedAt) : null,
     devicesCount,
     policiesCount,
     createdAt: iso(row.createdAt),
@@ -690,6 +904,7 @@ export const createEnterpriseService = ({
         id: row.id,
         name: row.name,
         notes: row.notes,
+        priority: row.priority ?? 0,
         createdAt: iso(row.createdAt),
         updatedAt: iso(row.updatedAt),
       };
@@ -1002,6 +1217,31 @@ export const createEnterpriseService = ({
       return groups;
     });
 
+  const loadAuditEntries = (organizationId: string, filters: AuditSearchFilters, take: number) =>
+    Effect.gen(function* () {
+      const rows = yield* db
+        .select()
+        .from(schema.auditLog)
+        .where(auditWhere(schema, organizationId, filters))
+        .orderBy(...auditOrder(schema))
+        .limit(take)
+        .offset(filters.offset);
+      return rows;
+    });
+
+  /**
+   * `normalizeAuditSearchQuery` throws for bad dates/cursors. Wrap the call so
+   * a synchronous throw becomes a typed 400 instead of an Effect defect (500).
+   */
+  const normalizedAuditFilters = (query: Parameters<typeof normalizeAuditSearchQuery>[0]) =>
+    Effect.try({
+      try: () => normalizeAuditSearchQuery(query),
+      catch: (cause) =>
+        cause instanceof EnterpriseBadRequest
+          ? cause
+          : new EnterpriseBadRequest({ message: "Invalid audit filters" }),
+    });
+
   /**
    * Return the private key for the tenant's in-progress CSR. We reuse the
    * pending key (multiple tabs) or the key from an existing certificate
@@ -1070,6 +1310,19 @@ export const createEnterpriseService = ({
     cloudAppleVendorCert && cloudAppleVendorKey
       ? { certificatePem: cloudAppleVendorCert, privateKeyPem: cloudAppleVendorKey }
       : undefined;
+
+  /**
+   * Assignment payloads accept either a bare id (legacy callers, defaults to
+   * include) or `{ id, mode }`. Unassign ignores the mode.
+   */
+  const assignmentRefs = (
+    values: ReadonlyArray<string | { id: string; mode?: "include" | "exclude" }> | undefined,
+  ) =>
+    (values ?? []).map((value) =>
+      typeof value === "string"
+        ? { id: value, mode: "include" as const }
+        : { id: value.id, mode: value.mode ?? "include" },
+    );
 
   const service: Record<
     string,
@@ -1194,6 +1447,9 @@ export const createEnterpriseService = ({
           name: string;
           slug: string;
           logo?: string | null;
+          displayName?: string | null;
+          supportEmail?: string | null;
+          brandColor?: string | null;
           metadata?: Record<string, unknown>;
         };
         const existing = yield* db.query.organization.findFirst({
@@ -1203,13 +1459,18 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "That tenant slug is already in use" }),
           );
+        const branding = yield* brandingOrFail(body);
         const tenantId = id();
         const timestamp = now();
         yield* db.insert(schema.organization).values({
           id: tenantId,
           name: body.name,
           slug: body.slug,
-          logo: body.logo ?? null,
+          logo: null,
+          displayName: null,
+          supportEmail: null,
+          brandColor: null,
+          ...branding,
           metadata: body.metadata ? JSON.stringify(body.metadata) : null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -1245,9 +1506,825 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         return {
           ...ctx.organization,
+          logo: ctx.organization.logo ?? null,
+          displayName: ctx.organization.displayName ?? null,
+          supportEmail: ctx.organization.supportEmail ?? null,
+          brandColor: ctx.organization.brandColor ?? null,
           role: ctx.member.role,
           createdAt: iso(ctx.organization.createdAt),
         };
+      }),
+    exportTenant: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        // A bundle carries member emails, application metadata and policy
+        // configuration. Restrict it to an owner even though admins can write.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!hasOwnerRole(ctx.member.role))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only a tenant owner can export this tenant" }),
+          );
+
+        const organizationId = ctx.organization.id;
+        const members = (yield* db
+          .select()
+          .from(schema.member)
+          .where(eq(schema.member.organizationId, organizationId))) as Array<{
+          userId: string;
+          role: string;
+          createdAt: Date;
+        }>;
+        const userIds = [...new Set(members.map((member) => member.userId))];
+        const users = userIds.length
+          ? ((yield* db
+              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+              .from(schema.user)
+              .where(inArray(schema.user.id, userIds))) as Array<{
+              id: string;
+              name: string;
+              email: string;
+            }>)
+          : [];
+        const usersById = new Map(users.map((user) => [user.id, user]));
+
+        const groups = (yield* db
+          .select()
+          .from(schema.enterpriseGroup)
+          .where(
+            eq(schema.enterpriseGroup.organizationId, organizationId),
+          )) as Array<EnterpriseGroup>;
+        const groupIds = groups.map((group) => group.id);
+        const policies = (yield* db
+          .select()
+          .from(schema.policy)
+          .where(eq(schema.policy.organizationId, organizationId))) as Array<EnterprisePolicy>;
+        const policyIds = policies.map((policy) => policy.id);
+        const applications = (yield* db
+          .select()
+          .from(schema.application)
+          .where(
+            eq(schema.application.organizationId, organizationId),
+          )) as Array<EnterpriseApplication>;
+        const applicationIds = applications.map((application) => application.id);
+
+        const groupDevices = groupIds.length
+          ? ((yield* db
+              .select()
+              .from(schema.groupDevice)
+              .where(inArray(schema.groupDevice.groupId, groupIds))) as Array<{
+              groupId: string;
+              deviceId: string;
+            }>)
+          : [];
+        const deviceIds = [...new Set(groupDevices.map((link) => link.deviceId))];
+        const devices = deviceIds.length
+          ? ((yield* db
+              .select({
+                id: schema.device.id,
+                name: schema.device.name,
+                serial: schema.device.serial,
+              })
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.organizationId, organizationId),
+                  inArray(schema.device.id, deviceIds),
+                ),
+              )) as Array<{ id: string; name: string; serial: string | null }>)
+          : [];
+        const devicesById = new Map(devices.map((device) => [device.id, device]));
+
+        const groupPolicies = groupIds.length
+          ? ((yield* db
+              .select()
+              .from(schema.groupPolicy)
+              .where(inArray(schema.groupPolicy.groupId, groupIds))) as Array<{
+              groupId: string;
+              policyId: string;
+            }>)
+          : [];
+        const policyKeys = new Set(policyIds);
+        const groupPolicyKeys = new Map<string, string[]>();
+        for (const link of groupPolicies) {
+          if (!policyKeys.has(link.policyId)) continue;
+          groupPolicyKeys.set(link.groupId, [
+            ...(groupPolicyKeys.get(link.groupId) ?? []),
+            link.policyId,
+          ]);
+        }
+
+        const configurations = policyIds.length
+          ? ((yield* db
+              .select()
+              .from(schema.configuration)
+              .where(inArray(schema.configuration.policyId, policyIds))) as Array<{
+              policyId: string;
+              kind: string;
+              data: unknown;
+            }>)
+          : [];
+        const policyConfigurations = new Map<string, Record<string, unknown>>();
+        for (const configuration of configurations) {
+          const current = policyConfigurations.get(configuration.policyId) ?? {};
+          current[configuration.kind] = configuration.data;
+          policyConfigurations.set(configuration.policyId, current);
+        }
+
+        const applicationGroups = applicationIds.length
+          ? ((yield* db
+              .select()
+              .from(schema.applicationGroup)
+              .where(inArray(schema.applicationGroup.applicationId, applicationIds))) as Array<{
+              applicationId: string;
+              groupId: string;
+            }>)
+          : [];
+        const groupKeys = new Set(groupIds);
+        const applicationGroupKeys = new Map<string, string[]>();
+        for (const link of applicationGroups) {
+          if (!groupKeys.has(link.groupId)) continue;
+          applicationGroupKeys.set(link.applicationId, [
+            ...(applicationGroupKeys.get(link.applicationId) ?? []),
+            link.groupId,
+          ]);
+        }
+
+        const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
+          where: { organizationId },
+        });
+        const preRegistrations = (yield* db
+          .select()
+          .from(schema.devicePreRegistration)
+          .where(eq(schema.devicePreRegistration.organizationId, organizationId))) as Array<{
+          serial: string;
+          name: string | null;
+          assetTag: string | null;
+          notes: string | null;
+          groupId: string | null;
+        }>;
+        const certificates = (yield* db
+          .select()
+          .from(schema.scepIssuedCertificate)
+          .where(eq(schema.scepIssuedCertificate.organizationId, organizationId))) as Array<{
+          serial: string;
+          enrollmentId: string | null;
+          deviceId: string | null;
+          notAfter: Date;
+          revokedAt: Date | null;
+          createdAt: Date;
+        }>;
+
+        let auditLog: TenantExportAuditEntry[] | undefined;
+        let auditTruncated: boolean | undefined;
+        if (query?.includeAudit === "true" || query?.includeAudit === "1") {
+          const rows = (yield* db
+            .select()
+            .from(schema.auditLog)
+            .where(eq(schema.auditLog.organizationId, organizationId))
+            .orderBy(desc(schema.auditLog.createdAt))
+            .limit(TENANT_EXPORT_MAX_ROWS + 1)) as Array<{
+            action: string;
+            targetType: string;
+            targetId: string | null;
+            actorEmail: string | null;
+            metadata: unknown;
+            createdAt: Date;
+          }>;
+          auditTruncated = rows.length > TENANT_EXPORT_MAX_ROWS;
+          auditLog = rows.slice(0, TENANT_EXPORT_MAX_ROWS).map((entry) => ({
+            action: entry.action,
+            targetType: entry.targetType,
+            targetId: entry.targetId,
+            actorEmail: entry.actorEmail,
+            metadata: entry.metadata,
+            createdAt: iso(entry.createdAt),
+          }));
+        }
+
+        const profile: TenantExportProfile = {
+          name: ctx.organization.name,
+          slug: ctx.organization.slug,
+          logo: ctx.organization.logo ?? null,
+          displayName: ctx.organization.displayName ?? null,
+          supportEmail: ctx.organization.supportEmail ?? null,
+          brandColor: ctx.organization.brandColor ?? null,
+          metadata: exportMetadata(ctx.organization.metadata),
+        };
+        const exportedMembers: TenantExportMember[] = members.flatMap((member) => {
+          const user = usersById.get(member.userId);
+          if (!user) return [];
+          return [
+            {
+              email: user.email,
+              name: user.name,
+              role: member.role,
+              createdAt: iso(member.createdAt),
+            },
+          ];
+        });
+        const exportedGroups: TenantExportGroup[] = groups.map((group) => ({
+          key: group.id,
+          name: group.name,
+          notes: group.notes,
+          devices: groupDevices.flatMap((link) => {
+            if (link.groupId !== group.id) return [];
+            const device = devicesById.get(link.deviceId);
+            if (!device) return [];
+            return [{ key: device.id, name: device.name, serial: device.serial }];
+          }),
+          policyKeys: groupPolicyKeys.get(group.id) ?? [],
+        }));
+        const exportedPolicies: TenantExportPolicy[] = policies.map((policy) => ({
+          key: policy.id,
+          name: policy.name,
+          notes: policy.notes,
+          configurations: policyConfigurations.get(policy.id) ?? {},
+        }));
+        const exportedApplications: TenantExportApplication[] = applications.map((application) => ({
+          key: application.id,
+          name: application.name,
+          platform: application.platform,
+          bundleId: application.bundleId,
+          version: application.version,
+          source: application.source,
+          manifestUrl: application.manifestUrl,
+          storeId: application.storeId,
+          fileName: application.fileName,
+          contentType: application.contentType,
+          size: application.size,
+          sha256: application.sha256,
+          r2Key: application.r2Key,
+          notes: application.notes,
+          groupKeys: applicationGroupKeys.get(application.id) ?? [],
+        }));
+        const exportedEnrollment: TenantExportEnrollment | undefined = enrollment
+          ? {
+              code: enrollment.code,
+              enabledApple: enrollment.enabledApple ?? true,
+              enabledWindows: enrollment.enabledWindows ?? true,
+              enabledAndroid: enrollment.enabledAndroid ?? false,
+              enabledAssetTag: enrollment.enabledAssetTag ?? false,
+              maxDevices: enrollment.maxDevices ?? 100,
+            }
+          : undefined;
+        const exportedPreRegistrations: TenantExportPreRegistration[] = preRegistrations.map(
+          (row) => ({
+            serial: row.serial,
+            name: row.name,
+            assetTag: row.assetTag,
+            notes: row.notes,
+            groupKey: row.groupId && groupKeys.has(row.groupId) ? row.groupId : null,
+          }),
+        );
+        const exportedCertificates: TenantExportCertificate[] = certificates.map((row) => ({
+          serial: row.serial,
+          enrollmentId: row.enrollmentId,
+          deviceKey: row.deviceId && devicesById.has(row.deviceId) ? row.deviceId : null,
+          notAfter: iso(row.notAfter),
+          revokedAt: row.revokedAt ? iso(row.revokedAt) : null,
+          createdAt: iso(row.createdAt),
+        }));
+
+        const bundle: TenantExportEnvelope = {
+          version: TENANT_EXPORT_VERSION,
+          exportedAt: new Date().toISOString(),
+          tenant: profile,
+          members: exportedMembers,
+          groups: exportedGroups,
+          policies: exportedPolicies,
+          applications: exportedApplications,
+          ...(exportedEnrollment ? { enrollment: exportedEnrollment } : {}),
+          preRegistrations: exportedPreRegistrations,
+          scepCertificates: exportedCertificates,
+          ...(auditLog ? { auditLog } : {}),
+          ...(auditTruncated !== undefined ? { auditTruncated } : {}),
+        };
+        return {
+          body: JSON.stringify(bundle, null, 2),
+          filename: `tenant-${safeFilename(ctx.organization.slug)}-${new Date()
+            .toISOString()
+            .slice(0, 10)}.json`,
+          version: TENANT_EXPORT_VERSION,
+          counts: {
+            members: exportedMembers.length,
+            groups: exportedGroups.length,
+            policies: exportedPolicies.length,
+            applications: exportedApplications.length,
+            preRegistrations: exportedPreRegistrations.length,
+            certificates: exportedCertificates.length,
+          },
+        };
+      }),
+    importTenant: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const bundle = payload as TenantImportRequest;
+
+        // The payload has already been decoded, so this bounds what a caller
+        // can make us hold in memory (and what could be written in one go).
+        const bytes = new TextEncoder().encode(JSON.stringify(bundle)).byteLength;
+        if (bytes > TENANT_IMPORT_MAX_BYTES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The bundle is too large (${Math.ceil(
+                bytes / 1024,
+              )} KB). The limit is ${TENANT_IMPORT_MAX_BYTES / 1024} KB.`,
+            }),
+          );
+        const declaredBytes = Number(request.headers?.["content-length"]);
+        if (Number.isFinite(declaredBytes) && declaredBytes > TENANT_IMPORT_MAX_BYTES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The bundle is too large. The limit is ${TENANT_IMPORT_MAX_BYTES / 1024} KB.`,
+            }),
+          );
+        if (bundle.version !== TENANT_EXPORT_VERSION)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Unsupported tenant bundle version ${String(
+                bundle.version,
+              )}. This server imports version ${TENANT_EXPORT_VERSION}.`,
+            }),
+          );
+
+        const profile = bundle.tenant;
+        if (!profile)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "The bundle is missing tenant details" }),
+          );
+        const name = importString(profile.name, 255);
+        if (!name)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "The bundle tenant name is required" }),
+          );
+        if ((profile.name ?? "").trim().length > 255)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "The tenant name is longer than 255 characters" }),
+          );
+        const branding = yield* brandingOrFail(profile);
+        const metadata = profile.metadata ? JSON.stringify(profile.metadata) : null;
+        if (metadata && metadata.length > 60_000)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "The tenant metadata is too large (limit 60000 characters)",
+            }),
+          );
+        const requestedSlug = slugBase((profile.slug ?? "").trim() || name);
+        if (!requestedSlug)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "The bundle tenant slug is not usable" }),
+          );
+
+        const groups = bundle.groups ?? [];
+        const policies = bundle.policies ?? [];
+        const applications = bundle.applications ?? [];
+        const preRegistrations = bundle.preRegistrations ?? [];
+        for (const [label, rows] of [
+          ["groups", groups],
+          ["policies", policies],
+          ["applications", applications],
+          ["pre-registrations", preRegistrations],
+        ] as const) {
+          if (rows.length > TENANT_EXPORT_MAX_ROWS)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `The bundle contains too many ${label} (${rows.length}); the limit is ${TENANT_EXPORT_MAX_ROWS}.`,
+              }),
+            );
+        }
+
+        const groupKeys = new Set<string>();
+        for (const group of groups) {
+          const key = importString(group.key, 255);
+          if (!key)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Every group needs a key" }),
+            );
+          if (groupKeys.has(key))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Duplicate group key "${key}"` }),
+            );
+          groupKeys.add(key);
+          const groupName = importString(group.name, 255);
+          if (!groupName)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Group "${key}" needs a name` }),
+            );
+          if ((group.notes ?? "").length > 10_000)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Group "${groupName}" has notes longer than 10000 characters`,
+              }),
+            );
+          if (!Array.isArray(group.policyKeys))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Group "${groupName}" must list its policy assignments`,
+              }),
+            );
+        }
+
+        const policyKeys = new Set<string>();
+        const policyConfigurations = new Map<string, Array<[string, unknown]>>();
+        for (const policy of policies) {
+          const key = importString(policy.key, 255);
+          if (!key)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Every policy needs a key" }),
+            );
+          if (policyKeys.has(key))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Duplicate policy key "${key}"` }),
+            );
+          policyKeys.add(key);
+          const policyName = importString(policy.name, 255);
+          if (!policyName)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Policy "${key}" needs a name` }),
+            );
+          if ((policy.notes ?? "").length > 10_000)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Policy "${policyName}" has notes longer than 10000 characters`,
+              }),
+            );
+          const configurations = policy.configurations ?? {};
+          if (typeof configurations !== "object" || Array.isArray(configurations))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Policy "${policyName}" has invalid configuration data`,
+              }),
+            );
+          const entries: Array<[string, unknown]> = [];
+          for (const [kind, data] of Object.entries(configurations)) {
+            if (data === null || data === undefined)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `Policy "${policyName}" has an empty "${kind}" configuration`,
+                }),
+              );
+            yield* validateConfiguration(kind, data).pipe(
+              Effect.mapError(
+                (message) =>
+                  new EnterpriseBadRequest({
+                    message: `Policy "${policyName}": ${message}`,
+                  }),
+              ),
+            );
+            entries.push([kind, data]);
+          }
+          policyConfigurations.set(key, entries);
+        }
+
+        for (const group of groups) {
+          for (const policyKey of group.policyKeys) {
+            if (!policyKeys.has(policyKey))
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `Group "${group.name}" references policy "${policyKey}", which is not in this bundle`,
+                }),
+              );
+          }
+        }
+
+        const applicationKeys = new Set<string>();
+        let applicationsWithoutFiles = 0;
+        for (const application of applications) {
+          const key = importString(application.key, 255);
+          if (!key)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Every application needs a key" }),
+            );
+          if (applicationKeys.has(key))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Duplicate application key "${key}"` }),
+            );
+          applicationKeys.add(key);
+          const applicationName = importString(application.name, 255);
+          if (!applicationName)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: `Application "${key}" needs a name` }),
+            );
+          if ((application.notes ?? "").length > 10_000)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" has notes longer than 10000 characters`,
+              }),
+            );
+          if (
+            application.platform !== "apple" &&
+            application.platform !== "win" &&
+            application.platform !== "android"
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" has an unknown platform`,
+              }),
+            );
+          if (
+            application.source !== "manifest" &&
+            application.source !== "store" &&
+            application.source !== "upload"
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" has an unknown source`,
+              }),
+            );
+          if (application.platform === "apple" && application.source === "manifest") {
+            if (!application.manifestUrl?.trim())
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `Apple manifest application "${applicationName}" requires a manifest URL`,
+                }),
+              );
+          }
+          if (application.source === "store" && !Number.isSafeInteger(Number(application.storeId)))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" must have a whole-number store ID`,
+              }),
+            );
+          if (
+            application.size !== null &&
+            application.size !== undefined &&
+            (!Number.isSafeInteger(application.size) ||
+              application.size < 0 ||
+              application.size > 2_147_483_647)
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" has an invalid file size`,
+              }),
+            );
+          if (!Array.isArray(application.groupKeys))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Application "${applicationName}" must list its group assignments`,
+              }),
+            );
+          for (const groupKey of application.groupKeys) {
+            if (!groupKeys.has(groupKey))
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `Application "${applicationName}" references group "${groupKey}", which is not in this bundle`,
+                }),
+              );
+          }
+          // Bundle bytes are metadata-only, so an uploaded object cannot be
+          // restored and must be re-uploaded after import.
+          if (application.source === "upload" || application.r2Key) applicationsWithoutFiles++;
+        }
+
+        const serials = new Set<string>();
+        for (const row of preRegistrations) {
+          const serial = importString(row.serial, 255);
+          if (!serial)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Every pre-registration needs a serial" }),
+            );
+          if (serials.has(serial.toLowerCase()))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Duplicate pre-registration serial "${serial}"`,
+              }),
+            );
+          serials.add(serial.toLowerCase());
+          if (row.groupKey && !groupKeys.has(row.groupKey))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Pre-registration "${serial}" references group "${row.groupKey}", which is not in this bundle`,
+              }),
+            );
+        }
+
+        const enrollment = bundle.enrollment;
+        if (enrollment) {
+          if (
+            !Number.isSafeInteger(enrollment.maxDevices) ||
+            enrollment.maxDevices < 0 ||
+            enrollment.maxDevices > 1_000_000
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "The enrollment device limit must be a whole number between 0 and 1000000",
+              }),
+            );
+          if (
+            enrollment.code !== null &&
+            enrollment.code !== undefined &&
+            (typeof enrollment.code !== "string" || enrollment.code.length > 255)
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "The enrollment code must be 255 characters or fewer",
+              }),
+            );
+        }
+
+        const timestamp = now();
+        const tenantId = id();
+        const result = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            let slug = requestedSlug;
+            let available = yield* tx.query.organization.findFirst({ where: { slug } });
+            for (let attempt = 2; available && attempt <= 100; attempt++) {
+              slug = `${requestedSlug.slice(0, 240)}-${attempt}`;
+              available = yield* tx.query.organization.findFirst({ where: { slug } });
+            }
+            if (available)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "Could not derive a unique tenant slug for this import",
+                }),
+              );
+
+            yield* tx.insert(schema.organization).values({
+              id: tenantId,
+              name,
+              slug,
+              logo: null,
+              displayName: null,
+              supportEmail: null,
+              brandColor: null,
+              ...branding,
+              metadata,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+            yield* tx.insert(schema.member).values({
+              id: id(),
+              organizationId: tenantId,
+              userId: user.id,
+              role: "owner",
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+            yield* tx.insert(schema.enterpriseEnrollment).values({
+              id: tenantId,
+              organizationId: tenantId,
+              ...(enrollment
+                ? {
+                    code: enrollment.code?.trim() || null,
+                    enabledApple: enrollment.enabledApple,
+                    enabledWindows: enrollment.enabledWindows,
+                    enabledAndroid: enrollment.enabledAndroid,
+                    enabledAssetTag: enrollment.enabledAssetTag,
+                    maxDevices: enrollment.maxDevices,
+                  }
+                : {}),
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+
+            const policyIdByKey = new Map<string, string>();
+            for (const policy of policies) {
+              const policyId = id();
+              policyIdByKey.set(policy.key, policyId);
+              yield* tx.insert(schema.policy).values({
+                id: policyId,
+                organizationId: tenantId,
+                name: importString(policy.name, 255)!,
+                notes: policy.notes ?? null,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              });
+              const configurations = policyConfigurations.get(policy.key) ?? [];
+              if (configurations.length > 0) {
+                const values = yield* Effect.all(
+                  configurations.map(([kind, data]) =>
+                    Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
+                  ),
+                );
+                yield* tx.insert(schema.configuration).values(values);
+              }
+              yield* tx.insert(schema.policyDeployment).values({
+                id: id(),
+                organizationId: tenantId,
+                policyId,
+                version: 1,
+                snapshot: Object.fromEntries(configurations),
+                createdByUserId: user.id,
+                createdAt: timestamp,
+              });
+            }
+
+            const groupIdByKey = new Map<string, string>();
+            for (const group of groups) {
+              const groupId = id();
+              groupIdByKey.set(group.key, groupId);
+              yield* tx.insert(schema.enterpriseGroup).values({
+                id: groupId,
+                organizationId: tenantId,
+                name: importString(group.name, 255)!,
+                notes: group.notes ?? null,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              });
+            }
+            const groupPolicyValues: Array<{ groupId: string; policyId: string }> = [];
+            for (const group of groups) {
+              const groupId = groupIdByKey.get(group.key)!;
+              for (const policyKey of group.policyKeys) {
+                const policyId = policyIdByKey.get(policyKey);
+                if (policyId) groupPolicyValues.push({ groupId, policyId });
+              }
+            }
+            if (groupPolicyValues.length > 0)
+              yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
+
+            const applicationIdByKey = new Map<string, string>();
+            for (const application of applications) {
+              const applicationId = id();
+              applicationIdByKey.set(application.key, applicationId);
+              yield* tx.insert(schema.application).values({
+                id: applicationId,
+                organizationId: tenantId,
+                name: importString(application.name, 255)!,
+                platform: application.platform,
+                bundleId: importString(application.bundleId, 255),
+                version: importString(application.version, 255),
+                source: application.source,
+                manifestUrl: application.manifestUrl ?? null,
+                storeId: importString(application.storeId, 255),
+                fileName: importString(application.fileName, 255),
+                contentType: importString(application.contentType, 255),
+                size: application.size ?? null,
+                sha256: importString(application.sha256, 255),
+                // Object bytes are not in the bundle; never point a new tenant
+                // at the source tenant's R2 key.
+                r2Key: null,
+                notes: application.notes ?? null,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              });
+            }
+            const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
+            for (const application of applications) {
+              const applicationId = applicationIdByKey.get(application.key)!;
+              for (const groupKey of application.groupKeys) {
+                const groupId = groupIdByKey.get(groupKey);
+                if (groupId) applicationGroupValues.push({ groupId, applicationId });
+              }
+            }
+            if (applicationGroupValues.length > 0)
+              yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
+
+            for (const row of preRegistrations)
+              yield* tx.insert(schema.devicePreRegistration).values({
+                id: id(),
+                organizationId: tenantId,
+                serial: importString(row.serial, 255)!,
+                name: importString(row.name, 255),
+                assetTag: importString(row.assetTag, 255),
+                notes: importString(row.notes, 10_000),
+                groupId: row.groupKey ? (groupIdByKey.get(row.groupKey) ?? null) : null,
+                consumedDeviceId: null,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              });
+
+            yield* tx.insert(schema.auditLog).values({
+              id: id(),
+              organizationId: tenantId,
+              actorUserId: user.id,
+              actorEmail: user.email,
+              action: "tenant.imported",
+              targetType: "tenant",
+              targetId: tenantId,
+              metadata: {
+                sourceTenant: profile.slug ?? null,
+                bundleVersion: bundle.version,
+                counts: {
+                  groups: groups.length,
+                  policies: policies.length,
+                  applications: applications.length,
+                  preRegistrations: preRegistrations.length,
+                },
+              },
+              createdAt: timestamp,
+            });
+
+            return { slug };
+          }),
+        );
+
+        return {
+          tenantId,
+          slug: result.slug,
+          counts: {
+            groups: groups.length,
+            policies: policies.length,
+            applications: applications.length,
+            preRegistrations: preRegistrations.length,
+          },
+          skipped: {
+            members: bundle.members?.length ?? 0,
+            devices: groups.reduce((total, group) => total + (group.devices?.length ?? 0), 0),
+            certificates: bundle.scepCertificates?.length ?? 0,
+            auditLog: bundle.auditLog?.length ?? 0,
+          },
+          applicationsWithoutFiles,
+        } satisfies TenantImportResponse;
       }),
     patchTenant: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -1256,6 +2333,9 @@ export const createEnterpriseService = ({
           name?: string;
           slug?: string;
           logo?: string | null;
+          displayName?: string | null;
+          supportEmail?: string | null;
+          brandColor?: string | null;
           metadata?: Record<string, unknown> | null;
         };
         if (body.slug) {
@@ -1267,10 +2347,18 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({ message: "That workspace URL is already in use" }),
             );
         }
+        const branding = yield* brandingOrFail(body);
+        const name = optionalText(body.name);
+        if (body.name !== undefined && name === null)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Tenant name cannot be empty" }),
+          );
         yield* db
           .update(schema.organization)
           .set({
-            ...body,
+            ...(name !== undefined && name !== null ? { name } : {}),
+            ...(body.slug !== undefined ? { slug: body.slug } : {}),
+            ...branding,
             metadata:
               body.metadata === undefined
                 ? undefined
@@ -1363,19 +2451,18 @@ export const createEnterpriseService = ({
         const state = yield* db.query.entraDirectorySync.findFirst({
           where: { organizationId: ctx.organization.id },
         });
-        yield* db
-          .insert(schema.entraDirectorySync)
-          .values({
-            organizationId: ctx.organization.id,
-            enabled: state?.enabled ?? true,
-            status: "running",
-            lastAttemptedAt: now(),
-            createdAt: now(),
-            updatedAt: now(),
-          })
-          .onDuplicateKeyUpdate({
-            set: { status: "running", lastAttemptedAt: now(), lastError: null, updatedAt: now() },
-          });
+        const lock = yield* acquireEntraSyncLock({
+          db,
+          organizationId: ctx.organization.id,
+        });
+        if (!lock.acquired) {
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "A directory sync is already running for this tenant. Wait for it to finish, or retry after the lock becomes stale.",
+            }),
+          );
+        }
         const exit = yield* Effect.exit(
           syncEntraDirectory({
             db,
@@ -1386,6 +2473,22 @@ export const createEnterpriseService = ({
             usersDeltaLink: state?.usersDeltaLink,
             groupsDeltaLink: state?.groupsDeltaLink,
             syncUsersAndGroups: true,
+            // Persist each resource class's delta cursor as soon as it is
+            // complete, so a later failure does not replay the whole tenant.
+            onProgress: (progress) =>
+              db
+                .update(schema.entraDirectorySync)
+                .set({
+                  ...(progress.usersDelta ? { usersDeltaLink: progress.usersDelta } : {}),
+                  ...(progress.groupsDelta ? { groupsDeltaLink: progress.groupsDelta } : {}),
+                  lastCounts: {
+                    users: progress.users,
+                    groups: progress.groups,
+                    domains: progress.domains,
+                  },
+                  updatedAt: now(),
+                })
+                .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id)),
           }),
         );
         if (Exit.isFailure(exit)) {
@@ -1408,8 +2511,8 @@ export const createEnterpriseService = ({
             status: "idle",
             lastError: null,
             lastSyncedAt: now(),
-            usersDeltaLink: result.usersDelta ?? null,
-            groupsDeltaLink: result.groupsDelta ?? null,
+            ...(result.usersDelta ? { usersDeltaLink: result.usersDelta } : {}),
+            ...(result.groupsDelta ? { groupsDeltaLink: result.groupsDelta } : {}),
             lastCounts: {
               users: result.users,
               groups: result.groups,
@@ -1456,14 +2559,52 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Enable Entra ID SSO with a tenant id first." }),
           );
-        yield* syncEntraDirectory({
+        const lock = yield* acquireEntraSyncLock({
           db,
-          graph: azureGraph,
           organizationId: ctx.organization.id,
-          azureTenantId: config.azureTenantId,
-          autoProvision: config.autoProvision,
-          syncUsersAndGroups: false,
         });
+        if (!lock.acquired) {
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "A directory sync is already running for this tenant. Wait for it to finish, or retry after the lock becomes stale.",
+            }),
+          );
+        }
+        const exit = yield* Effect.exit(
+          syncEntraDirectory({
+            db,
+            graph: azureGraph,
+            organizationId: ctx.organization.id,
+            azureTenantId: config.azureTenantId,
+            autoProvision: config.autoProvision,
+            syncUsersAndGroups: false,
+          }),
+        );
+        if (Exit.isFailure(exit)) {
+          yield* db
+            .update(schema.entraDirectorySync)
+            .set({
+              status: "error",
+              lastError: String(exit.cause).slice(0, 2000),
+              updatedAt: now(),
+            })
+            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Domain refresh failed: ${String(exit.cause)}`,
+            }),
+          );
+        }
+        yield* db
+          .update(schema.entraDirectorySync)
+          .set({
+            status: "idle",
+            lastError: null,
+            domainsSyncedAt: now(),
+            updatedAt: now(),
+          })
+          .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
         const rows = yield* db
           .select()
           .from(schema.ssoDomain)
@@ -1633,23 +2774,58 @@ export const createEnterpriseService = ({
       }),
     listAuditLog: (request, tenantId) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId);
+        const ctx = yield* requireTenant(request, tenantId);
+        // Kept for older dashboard bundles; new callers use `/audit/search`.
         const entries = yield* db
           .select()
           .from(schema.auditLog)
-          .where(eq(schema.auditLog.organizationId, tenantId))
-          .orderBy(desc(schema.auditLog.createdAt))
+          .where(eq(schema.auditLog.organizationId, ctx.organization.id))
+          .orderBy(desc(schema.auditLog.createdAt), desc(schema.auditLog.id))
           .limit(200);
+        return { entries: entries.map((entry: any) => auditEntry(entry)) };
+      }),
+    searchAuditLog: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const filters = yield* normalizedAuditFilters(query);
+        // Fetch one extra row to detect more pages without a second count.
+        const rows = yield* loadAuditEntries(ctx.organization.id, filters, filters.limit + 1);
+        const hasMore = rows.length > filters.limit;
+        const page = hasMore ? rows.slice(0, filters.limit) : rows;
+        let nextCursor: string | null = null;
+        if (hasMore && page.length > 0) {
+          const last = page[page.length - 1]!;
+          nextCursor = filters.offsetPaging
+            ? encodeAuditOffsetCursor(filters.offset + filters.limit)
+            : encodeAuditCursor({ createdAt: last.createdAt, id: last.id });
+        }
+        return { entries: page.map((entry: any) => auditEntry(entry)), nextCursor };
+      }),
+    exportAuditLog: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const format = query.format ?? "csv";
+        // Exports always start at the newest matching row; a cursor from an
+        // interactive page would silently export only the remainder.
+        const filters = {
+          ...(yield* normalizedAuditFilters(query)),
+          cursor: undefined,
+          offset: 0,
+        };
+        const rows = yield* loadAuditEntries(
+          ctx.organization.id,
+          filters,
+          AUDIT_EXPORT_MAX_ROWS + 1,
+        );
+        const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
+        const entries = (truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows).map(
+          (entry: any) => auditEntry(entry),
+        );
         return {
-          entries: entries.map((entry: any) => ({
-            id: entry.id,
-            action: entry.action,
-            targetType: entry.targetType,
-            targetId: entry.targetId,
-            actorEmail: entry.actorEmail,
-            metadata: entry.metadata,
-            createdAt: iso(entry.createdAt),
-          })),
+          format,
+          body: format === "json" ? auditJson(entries) : auditCsv(entries),
+          truncated,
+          rowCount: entries.length,
         };
       }),
     listTenantUsers: (request, tenantId) =>
@@ -1710,16 +2886,18 @@ export const createEnterpriseService = ({
           updatedAt: timestamp,
         });
         const inviteUrl = `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
-        const organization = ctx.organization.name;
+        const branding = resolveTenantBranding(ctx.organization);
+        const organization = branding.displayName;
+        const roleLabel = body.role ?? "member";
         if (email) {
           yield* Effect.tryPromise({
             try: () =>
               email.send({
                 to: body.email,
-                from: { name: "Mattrax", email: "hello@mattrax.cloud" },
-                subject: `You have been invited to ${organization} on Mattrax`,
-                text: `You have been invited to join ${organization} on Mattrax as ${body.role ?? "member"}.\n\nAccept the invitation by opening this link:\n\n${inviteUrl}\n\nThis link expires in 7 days.`,
-                html: `<p>You have been invited to join <strong>${organization}</strong> on Mattrax as ${body.role ?? "member"}.</p><p><a href="${inviteUrl}">Accept the invitation</a></p><p>This link expires in 7 days.</p>`,
+                from: { name: branding.displayName, email: "hello@mattrax.cloud" },
+                subject: `You have been invited to ${organization}`,
+                text: `You have been invited to join ${organization} as ${roleLabel}.\n\nAccept the invitation by opening this link:\n\n${inviteUrl}\n\nThis link expires in 7 days.\n\nNeed help? Contact ${branding.supportEmail}.`,
+                html: `<p>You have been invited to join <strong>${escapeHtml(organization)}</strong> as ${escapeHtml(roleLabel)}.</p><p><a href="${inviteUrl}">Accept the invitation</a></p><p>This link expires in 7 days.</p><p>Need help? Contact <a href="mailto:${escapeHtml(branding.supportEmail)}">${escapeHtml(branding.supportEmail)}</a>.</p>`,
               }),
             catch: () =>
               new EnterpriseBadRequest({ message: "Could not send the invitation email" }),
@@ -1904,6 +3082,7 @@ export const createEnterpriseService = ({
         });
         if (!organization)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
+        const branding = resolveTenantBranding(organization);
 
         const platform = detectEnrollmentPlatform(options?.userAgent, options?.platform);
         const record = (outcome: EnrollmentAttemptOutcome, detail: string): Effect.Effect<void> =>
@@ -1919,7 +3098,7 @@ export const createEnterpriseService = ({
 
         if (enrollment.code && enrollment.code !== code) {
           yield* record("bad_code", "The enrollment password did not match");
-          return { name: organization.name, authenticated: false as const };
+          return { name: organization.name, branding, authenticated: false as const };
         }
 
         const apns = yield* db.query.applePushCertificate.findFirst({
@@ -1968,8 +3147,25 @@ export const createEnterpriseService = ({
         });
         yield* record(evaluation.outcome, evaluation.detail);
 
+        // Windows discovery has no built-in tenant identity, so bind the tenant
+        // into a short-lived signed token that travels in the discovery URL and
+        // is preserved through policy/enroll. This replaces the old
+        // deployment-wide pin for Cloud. Regenerated on every page load.
+        const windowsToken =
+          enabled && enrollment.enabledWindows && authSecret
+            ? yield* Effect.tryPromise({
+                try: () => createWindowsTenantToken(organization.id, authSecret),
+                catch: () =>
+                  new EnterpriseBadRequest({
+                    message: "Could not create the Windows enrollment link",
+                  }),
+              }).pipe(Effect.catch(() => Effect.succeed(null)))
+            : null;
+        const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
+
         return {
           name: organization.name,
+          branding,
           authenticated: true as const,
           apple:
             !enabled || !enrollment.enabledApple
@@ -1987,7 +3183,8 @@ export const createEnterpriseService = ({
                           origin,
                           topic: apns.topic,
                           organizationId: organization.id,
-                          organizationName: organization.name,
+                          organizationName: branding.displayName,
+                          supportEmail: branding.supportEmail,
                           challenge,
                         }),
                       ),
@@ -1995,12 +3192,16 @@ export const createEnterpriseService = ({
           windows:
             !enabled || !enrollment.enabledWindows
               ? { error: "Windows enrollment is disabled! Contact your administrator." }
-              : {
-                  discoveryUrl: `${origin}/mdm/windows/discovery`,
-                  // Windows discovery carries no tenant identity, so devices
-                  // are pinned to one tenant by the deployment.
-                  tenantScoped: false as const,
-                },
+              : !windowsToken
+                ? {
+                    error:
+                      "Windows enrollment is temporarily unavailable! Contact your administrator.",
+                  }
+                : {
+                    discoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
+                    tenantScoped: true as const,
+                    ...(windowsExpiry ? { expiresAt: windowsExpiry.toISOString() } : {}),
+                  },
           android:
             !enabled || !enrollment.enabledAndroid
               ? { error: "Android enrollment is disabled! Contact your administrator." }
@@ -2058,7 +3259,10 @@ export const createEnterpriseService = ({
         const organization = enrollment
           ? yield* db.query.organization.findFirst({ where: { id: enrollment.organizationId } })
           : undefined;
-        const filename = `${safeFilename(organization?.slug ?? organization?.name ?? "tenant")}-enrollment.mobileconfig`;
+        const filename = `${safeFilename(
+          organization?.slug ??
+            resolveTenantBranding(organization ?? { name: "tenant" }).displayName,
+        )}-enrollment.mobileconfig`;
 
         return { plist: result.apple.profile, filename };
       }),
@@ -2066,7 +3270,28 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const enrollment = yield* getOrCreateEnrollment(ctx.organization.id);
-        return rowEnrollment(enrollment);
+        const windowsToken =
+          enrollment.enabledWindows && authSecret
+            ? yield* Effect.tryPromise({
+                try: () => createWindowsTenantToken(ctx.organization.id, authSecret),
+                catch: () =>
+                  new EnterpriseBadRequest({
+                    message: "Could not create the Windows enrollment link",
+                  }),
+              }).pipe(Effect.catch(() => Effect.succeed(null)))
+            : null;
+        const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
+        return {
+          ...rowEnrollment(enrollment),
+          ...(windowsToken
+            ? {
+                windowsDiscoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
+                ...(windowsExpiry
+                  ? { windowsDiscoveryExpiresAt: windowsExpiry.toISOString() }
+                  : {}),
+              }
+            : {}),
+        };
       }),
     listEnrollmentAttempts: (request, tenantId, query = {}) =>
       Effect.gen(function* () {
@@ -2536,6 +3761,7 @@ export const createEnterpriseService = ({
               eq(schema.device.organizationId, ctx.organization.id),
             ),
           );
+        yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, { now: now() });
         yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
         return ok;
       }),
@@ -2733,10 +3959,9 @@ export const createEnterpriseService = ({
         if (device.status === "enrolled" || device.status === "unenrolling")
           yield* applePush.pushAppleDevice(device.id, true);
         // Retiring a device must also invalidate its SCEP identity, otherwise a
-        // stolen certificate could renew forever. Apple-issued certs are not
-        // linked to a device id (the SCEP challenge is tenant-scoped), so this
-        // covers Windows/enrolled identities; the explicit revoke action is
-        // available for the rest.
+        // stolen certificate could renew forever. Windows certificates and
+        // Apple certificates bound at check-in are keyed by the internal device
+        // id, so this covers both platforms.
         const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device]);
         yield* audit(ctx, "device.unenrolled", "device", deviceId, {
           revokedCertificates: revoked,
@@ -2892,8 +4117,7 @@ export const createEnterpriseService = ({
         if (certificates.length === 0)
           return yield* Effect.fail(
             new EnterpriseConflict({
-              message:
-                "No issued identity certificates are recorded for this device. Apple SCEP identities are tenant-scoped, so they cannot be revoked per device.",
+              message: "No issued identity certificates are recorded for this device.",
             }),
           );
         const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device]);
@@ -2908,9 +4132,27 @@ export const createEnterpriseService = ({
         const body = payload as {
           name: string;
           notes?: string | null;
+          kind?: "manual" | "dynamic";
+          rules?: DynamicGroupRules | null;
           devices?: Array<string>;
           policies?: Array<string>;
         };
+        const kind = body.kind ?? "manual";
+        const rules = kind === "dynamic" ? (body.rules ?? null) : null;
+        if (kind === "dynamic") {
+          const problem = dynamicGroupRulesProblem(rules);
+          if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+          if (body.devices?.length)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Dynamic groups derive device membership from rules",
+              }),
+            );
+        } else if (body.rules != null) {
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Manual groups do not accept membership rules" }),
+          );
+        }
         yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
         yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
         const groupId = id();
@@ -2919,6 +4161,9 @@ export const createEnterpriseService = ({
           organizationId: ctx.organization.id,
           name: body.name,
           notes: body.notes ?? null,
+          kind,
+          rules,
+          lastEvaluatedAt: null,
           createdAt: now(),
           updatedAt: now(),
         });
@@ -2926,14 +4171,19 @@ export const createEnterpriseService = ({
           yield* db
             .insert(schema.groupDevice)
             .ignore()
-            .values(body.devices.map((deviceId) => ({ groupId, deviceId })));
+            .values(
+              body.devices.map((deviceId) => ({ groupId, deviceId, source: "manual" as const })),
+            );
         if (body.policies?.length)
           yield* db
             .insert(schema.groupPolicy)
             .ignore()
             .values(body.policies.map((policyId) => ({ groupId, policyId })));
+        if (kind === "dynamic")
+          yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
         yield* audit(ctx, "group.created", "group", groupId, {
           name: body.name,
+          kind,
           devices: body.devices?.length ?? 0,
           policies: body.policies?.length ?? 0,
         });
@@ -2942,30 +4192,34 @@ export const createEnterpriseService = ({
     deleteGroups: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const deleted: Array<string> = [];
-        const failed: Array<{ id: string; reason: string }> = [];
-        const affectedDevices: Array<string> = [];
-        for (const groupId of ids) {
-          // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
-          // first, then delete it by the same predicate.
-          const existing = yield* db.query.enterpriseGroup.findFirst({
-            where: { id: groupId, organizationId: ctx.organization.id },
-          });
-          if (!existing) {
-            failed.push({ id: groupId, reason: "notFound" });
-            continue;
-          }
-          affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
-          yield* db
-            .delete(schema.enterpriseGroup)
-            .where(
-              and(
-                eq(schema.enterpriseGroup.id, groupId),
-                eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-              ),
-            );
-          deleted.push(groupId);
-        }
+        const results = yield* Effect.forEach(
+          [...(ids as ReadonlyArray<string>)],
+          (groupId) =>
+            Effect.gen(function* () {
+              // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped
+              // row first, then delete it by the same predicate.
+              const existing = yield* db.query.enterpriseGroup.findFirst({
+                where: { id: groupId, organizationId: ctx.organization.id },
+              });
+              if (!existing) return { id: groupId, deleted: false as const, reason: "notFound" };
+              const devices = yield* applePush.deviceIdsInGroups([groupId]);
+              yield* db
+                .delete(schema.enterpriseGroup)
+                .where(
+                  and(
+                    eq(schema.enterpriseGroup.id, groupId),
+                    eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                  ),
+                );
+              return { id: groupId, deleted: true as const, devices };
+            }),
+          { concurrency: 10 },
+        );
+        const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+        const failed = results
+          .filter((row) => !row.deleted)
+          .map((row) => ({ id: row.id, reason: row.reason }));
+        const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         // Devices in a deleted group lose policies and must re-sync.
         yield* applePush.pushAppleDevices(affectedDevices);
         yield* audit(ctx, "group.deleted", "group", null, { ids: [...deleted] });
@@ -2974,45 +4228,125 @@ export const createEnterpriseService = ({
     patchGroup: (request, tenantId, groupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name?: string; notes?: string | null };
+        const existing = yield* assertTenantGroup(ctx.organization.id, groupId);
+        const body = payload as {
+          name?: string;
+          notes?: string | null;
+          kind?: "manual" | "dynamic";
+          rules?: DynamicGroupRules | null;
+        };
+        const kind = body.kind ?? existing.kind ?? "manual";
+        const rules =
+          kind === "dynamic"
+            ? body.rules !== undefined
+              ? body.rules
+              : ((existing.rules as DynamicGroupRules | null | undefined) ?? null)
+            : null;
+        if (kind === "dynamic") {
+          const problem = dynamicGroupRulesProblem(rules);
+          if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+        } else if (body.rules != null) {
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Manual groups do not accept membership rules" }),
+          );
+        }
+        const wasDynamic = existing.kind === "dynamic";
         yield* db
           .update(schema.enterpriseGroup)
-          .set({ name: body.name, notes: body.notes, updatedAt: now() })
+          .set({ name: body.name, notes: body.notes, kind, rules, updatedAt: now() })
           .where(
             and(
               eq(schema.enterpriseGroup.id, groupId),
               eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
             ),
           );
+        if (kind === "dynamic") {
+          yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+        } else if (wasDynamic) {
+          // Switching to manual keeps administrator rows but drops rule rows.
+          yield* db
+            .delete(schema.groupDevice)
+            .where(
+              and(
+                eq(schema.groupDevice.groupId, groupId),
+                eq(schema.groupDevice.source, "dynamic"),
+              ),
+            );
+          yield* db
+            .update(schema.enterpriseGroup)
+            .set({ lastEvaluatedAt: null })
+            .where(eq(schema.enterpriseGroup.id, groupId));
+        }
         yield* audit(ctx, "group.updated", "group", groupId, { fields: Object.keys(body) });
         return ok;
       }),
     patchGroupMembers: (request, tenantId, groupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* assertTenantGroup(ctx.organization.id, groupId);
+        const group = yield* assertTenantGroup(ctx.organization.id, groupId);
         const body = payload as {
-          assign?: { devices?: Array<string>; policies?: Array<string> };
-          unassign?: { devices?: Array<string>; policies?: Array<string> };
+          assign?: {
+            devices?: Array<string>;
+            policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          };
+          unassign?: {
+            devices?: Array<string>;
+            policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          };
         };
+        if (
+          group.kind === "dynamic" &&
+          ((body.assign?.devices?.length ?? 0) > 0 || (body.unassign?.devices?.length ?? 0) > 0)
+        )
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Dynamic group device membership is controlled by its rules",
+            }),
+          );
+        const assignPolicies = assignmentRefs(body.assign?.policies);
+        const unassignPolicies = assignmentRefs(body.unassign?.policies);
         yield* assertTenantDevices(ctx.organization.id, [
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
         ]);
         yield* assertTenantPolicies(ctx.organization.id, [
-          ...(body.assign?.policies ?? []),
-          ...(body.unassign?.policies ?? []),
+          ...assignPolicies.map((assignment) => assignment.id),
+          ...unassignPolicies.map((assignment) => assignment.id),
         ]);
         if (body.assign?.devices?.length)
           yield* db
             .insert(schema.groupDevice)
             .ignore()
-            .values(body.assign.devices.map((deviceId) => ({ groupId, deviceId })));
-        if (body.assign?.policies?.length)
-          yield* db
-            .insert(schema.groupPolicy)
-            .ignore()
-            .values(body.assign.policies.map((policyId) => ({ groupId, policyId })));
+            .values(
+              body.assign.devices.map((deviceId) => ({
+                groupId,
+                deviceId,
+                source: "manual" as const,
+              })),
+            );
+        if (assignPolicies.length) {
+          // Upsert by replacing the affected link rows so a mode change is
+          // applied atomically even on MySQL versions without RETURNING.
+          const unique = [
+            ...new Map(assignPolicies.map((assignment) => [assignment.id, assignment])).values(),
+          ];
+          yield* db.delete(schema.groupPolicy).where(
+            and(
+              eq(schema.groupPolicy.groupId, groupId),
+              inArray(
+                schema.groupPolicy.policyId,
+                unique.map((assignment) => assignment.id),
+              ),
+            ),
+          );
+          yield* db.insert(schema.groupPolicy).values(
+            unique.map((assignment) => ({
+              groupId,
+              policyId: assignment.id,
+              mode: assignment.mode,
+            })),
+          );
+        }
         if (body.unassign?.devices?.length)
           yield* db
             .delete(schema.groupDevice)
@@ -3022,15 +4356,16 @@ export const createEnterpriseService = ({
                 inArray(schema.groupDevice.deviceId, body.unassign.devices),
               ),
             );
-        if (body.unassign?.policies?.length)
-          yield* db
-            .delete(schema.groupPolicy)
-            .where(
-              and(
-                eq(schema.groupPolicy.groupId, groupId),
-                inArray(schema.groupPolicy.policyId, body.unassign.policies),
+        if (unassignPolicies.length)
+          yield* db.delete(schema.groupPolicy).where(
+            and(
+              eq(schema.groupPolicy.groupId, groupId),
+              inArray(
+                schema.groupPolicy.policyId,
+                unassignPolicies.map((assignment) => assignment.id),
               ),
-            );
+            ),
+          );
 
         // Device membership changes affect those devices; policy membership
         // changes affect every device in the group. Deduplicate in the helper.
@@ -3038,28 +4373,35 @@ export const createEnterpriseService = ({
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
         ];
-        if (body.assign?.policies?.length || body.unassign?.policies?.length)
+        if (assignPolicies.length || unassignPolicies.length)
           affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
         yield* applePush.pushAppleDevices(affectedDevices);
         yield* audit(ctx, "group.members_changed", "group", groupId, {
           assignDevices: body.assign?.devices?.length ?? 0,
           unassignDevices: body.unassign?.devices?.length ?? 0,
-          assignPolicies: body.assign?.policies?.length ?? 0,
-          unassignPolicies: body.unassign?.policies?.length ?? 0,
+          assignPolicies: assignPolicies.length,
+          unassignPolicies: unassignPolicies.length,
         });
         return ok;
       }),
     syncGroups: (request, tenantId, ids) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId, "write");
-        const affected: Array<string> = [];
-        for (const groupId of ids) {
-          const group = yield* db.query.enterpriseGroup.findFirst({
-            where: { id: groupId, organizationId: tenantId },
-          });
-          if (group) affected.push(...(yield* applePush.deviceIdsInGroups([groupId])));
-        }
-        yield* applePush.pushAppleDevices(affected);
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const affected = yield* Effect.forEach(
+          [...(ids as ReadonlyArray<string>)],
+          (groupId) =>
+            Effect.gen(function* () {
+              const group = yield* db.query.enterpriseGroup.findFirst({
+                where: { id: groupId, organizationId: ctx.organization.id },
+              });
+              if (!group) return [];
+              if (group.kind === "dynamic")
+                yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+              return yield* applePush.deviceIdsInGroups([groupId]);
+            }),
+          { concurrency: 10 },
+        );
+        yield* applePush.pushAppleDevices(affected.flat());
         return ok;
       }),
     duplicateGroup: (request, tenantId, groupId, payload) =>
@@ -3068,48 +4410,65 @@ export const createEnterpriseService = ({
         const source = yield* assertTenantGroup(ctx.organization.id, groupId);
         const body = payload as { name?: string };
         const newId = id();
+        const kind = source.kind ?? "manual";
         yield* db.insert(schema.enterpriseGroup).values({
           id: newId,
           organizationId: ctx.organization.id,
           name: body.name ?? `${source.name} [duplicated]`,
           notes: source.notes,
+          kind,
+          rules: kind === "dynamic" ? (source.rules as DynamicGroupRules | null) : null,
+          lastEvaluatedAt: null,
           createdAt: now(),
           updatedAt: now(),
         });
-        const devices = yield* db
-          .select()
-          .from(schema.groupDevice)
-          .where(eq(schema.groupDevice.groupId, groupId));
+        const devices =
+          kind === "manual"
+            ? yield* db
+                .select()
+                .from(schema.groupDevice)
+                .where(eq(schema.groupDevice.groupId, groupId))
+            : [];
         const policies = yield* db
           .select()
           .from(schema.groupPolicy)
           .where(eq(schema.groupPolicy.groupId, groupId));
         if (devices.length)
-          yield* db
-            .insert(schema.groupDevice)
-            .values(
-              devices.map((d: EnterpriseGroupDevice) => ({ groupId: newId, deviceId: d.deviceId })),
-            );
+          yield* db.insert(schema.groupDevice).values(
+            devices.map((d: EnterpriseGroupDevice) => ({
+              groupId: newId,
+              deviceId: d.deviceId,
+              source: d.source ?? ("manual" as const),
+            })),
+          );
         if (policies.length)
           yield* db.insert(schema.groupPolicy).values(
             policies.map((p: EnterpriseGroupPolicy) => ({
               groupId: newId,
               policyId: p.policyId,
+              mode: p.mode ?? "include",
             })),
           );
+        if (kind === "dynamic")
+          yield* syncDynamicGroup(db, ctx.organization.id, newId, { now: now() });
         yield* audit(ctx, "group.duplicated", "group", newId, { sourceId: groupId });
         return { id: newId };
       }),
     createPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name: string; notes?: string | null };
+        const body = payload as { name: string; notes?: string | null; priority?: number };
+        if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
+          );
         const policyId = id();
         yield* db.insert(schema.policy).values({
           id: policyId,
           organizationId: ctx.organization.id,
           name: body.name,
           notes: body.notes ?? null,
+          priority: body.priority ?? 0,
           createdAt: now(),
           updatedAt: now(),
         });
@@ -3120,30 +4479,34 @@ export const createEnterpriseService = ({
     deletePolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const deleted: Array<string> = [];
-        const failed: Array<{ id: string; reason: string }> = [];
-        const affectedDevices: Array<string> = [];
-        for (const policyId of ids) {
-          // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
-          // first, then delete it by the same predicate.
-          const existing = yield* db.query.policy.findFirst({
-            where: { id: policyId, organizationId: ctx.organization.id },
-          });
-          if (!existing) {
-            failed.push({ id: policyId, reason: "notFound" });
-            continue;
-          }
-          affectedDevices.push(...(yield* applePush.deviceIdsInPolicies([policyId])));
-          yield* db
-            .delete(schema.policy)
-            .where(
-              and(
-                eq(schema.policy.id, policyId),
-                eq(schema.policy.organizationId, ctx.organization.id),
-              ),
-            );
-          deleted.push(policyId);
-        }
+        const results = yield* Effect.forEach(
+          [...(ids as ReadonlyArray<string>)],
+          (policyId) =>
+            Effect.gen(function* () {
+              // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped
+              // row first, then delete it by the same predicate.
+              const existing = yield* db.query.policy.findFirst({
+                where: { id: policyId, organizationId: ctx.organization.id },
+              });
+              if (!existing) return { id: policyId, deleted: false as const, reason: "notFound" };
+              const devices = yield* applePush.deviceIdsInPolicies([policyId]);
+              yield* db
+                .delete(schema.policy)
+                .where(
+                  and(
+                    eq(schema.policy.id, policyId),
+                    eq(schema.policy.organizationId, ctx.organization.id),
+                  ),
+                );
+              return { id: policyId, deleted: true as const, devices };
+            }),
+          { concurrency: 10 },
+        );
+        const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+        const failed = results
+          .filter((row) => !row.deleted)
+          .map((row) => ({ id: row.id, reason: row.reason }));
+        const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         yield* applePush.pushAppleDevices(affectedDevices);
         yield* audit(ctx, "policy.deleted", "policy", null, { ids: [...deleted] });
         return { deleted, failed };
@@ -3154,8 +4517,13 @@ export const createEnterpriseService = ({
         const body = payload as {
           name?: string;
           notes?: string | null;
+          priority?: number;
           configurations?: Record<string, unknown>;
         };
+        if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
+          );
         const policy = yield* db.query.policy.findFirst({
           where: { id: policyId, organizationId: ctx.organization.id },
         });
@@ -3172,7 +4540,7 @@ export const createEnterpriseService = ({
         }
         yield* db
           .update(schema.policy)
-          .set({ name: body.name, notes: body.notes, updatedAt: now() })
+          .set({ name: body.name, notes: body.notes, priority: body.priority, updatedAt: now() })
           .where(eq(schema.policy.id, policyId));
         for (const [kind, data] of configurations) {
           if (data === null) {
@@ -3298,48 +4666,121 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+        const policy = yield* db.query.policy.findFirst({
+          where: { id: policyId, organizationId: ctx.organization.id },
+        });
+        if (!policy)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+        const priority = policy.priority ?? 0;
         const groupLinks = yield* db
-          .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+          .select({ groupId: schema.groupPolicy.groupId, mode: schema.groupPolicy.mode })
           .from(schema.groupPolicy)
-          .innerJoin(
-            schema.enterpriseGroup,
-            eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
-          )
           .where(eq(schema.groupPolicy.policyId, policyId));
-        const devices = yield* db
-          .select({ id: schema.device.id, name: schema.device.name })
+        const groups = groupLinks.length
+          ? yield* db
+              .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+              .from(schema.enterpriseGroup)
+              .where(
+                inArray(
+                  schema.enterpriseGroup.id,
+                  groupLinks.map((link) => link.groupId),
+                ),
+              )
+          : [];
+        const groupModes = new Map(
+          groupLinks.map((link) => [link.groupId, link.mode ?? ("include" as const)]),
+        );
+        const deviceLinks = yield* db
+          .select({ deviceId: schema.devicePolicy.deviceId, mode: schema.devicePolicy.mode })
           .from(schema.devicePolicy)
-          .innerJoin(schema.device, eq(schema.device.id, schema.devicePolicy.deviceId))
           .where(eq(schema.devicePolicy.policyId, policyId));
-        return { groups: groupLinks, devices };
+        const devices = deviceLinks.length
+          ? yield* db
+              .select({ id: schema.device.id, name: schema.device.name })
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.organizationId, ctx.organization.id),
+                  inArray(
+                    schema.device.id,
+                    deviceLinks.map((link) => link.deviceId),
+                  ),
+                ),
+              )
+          : [];
+        const deviceModes = new Map(
+          deviceLinks.map((link) => [link.deviceId, link.mode ?? ("include" as const)]),
+        );
+        return {
+          groups: groups
+            .map((group) => ({
+              ...group,
+              mode: groupModes.get(group.id) ?? "include",
+              priority,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+          devices: devices
+            .map((device) => ({
+              ...device,
+              mode: deviceModes.get(device.id) ?? "include",
+              priority,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+        };
       }),
     patchPolicyAssignments: (request, tenantId, policyId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
-        const body = payload as { assign?: Array<string>; unassign?: Array<string> };
+        const body = payload as {
+          assign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          unassign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+        };
+        const assign = assignmentRefs(body.assign);
+        const unassign = assignmentRefs(body.unassign);
         yield* assertTenantDevices(ctx.organization.id, [
-          ...(body.assign ?? []),
-          ...(body.unassign ?? []),
+          ...assign.map((assignment) => assignment.id),
+          ...unassign.map((assignment) => assignment.id),
         ]);
-        if (body.assign?.length)
-          yield* db
-            .insert(schema.devicePolicy)
-            .ignore()
-            .values(body.assign.map((deviceId) => ({ deviceId, policyId })));
-        if (body.unassign?.length)
-          yield* db
-            .delete(schema.devicePolicy)
-            .where(
-              and(
-                eq(schema.devicePolicy.policyId, policyId),
-                inArray(schema.devicePolicy.deviceId, body.unassign),
+        if (assign.length) {
+          const unique = [
+            ...new Map(assign.map((assignment) => [assignment.id, assignment])).values(),
+          ];
+          yield* db.delete(schema.devicePolicy).where(
+            and(
+              eq(schema.devicePolicy.policyId, policyId),
+              inArray(
+                schema.devicePolicy.deviceId,
+                unique.map((assignment) => assignment.id),
               ),
-            );
-        yield* applePush.pushAppleDevices([...(body.assign ?? []), ...(body.unassign ?? [])]);
+            ),
+          );
+          yield* db.insert(schema.devicePolicy).values(
+            unique.map((assignment) => ({
+              policyId,
+              deviceId: assignment.id,
+              mode: assignment.mode,
+            })),
+          );
+        }
+        if (unassign.length)
+          yield* db.delete(schema.devicePolicy).where(
+            and(
+              eq(schema.devicePolicy.policyId, policyId),
+              inArray(
+                schema.devicePolicy.deviceId,
+                unassign.map((assignment) => assignment.id),
+              ),
+            ),
+          );
+        yield* applePush.pushAppleDevices([
+          ...assign.map((assignment) => assignment.id),
+          ...unassign.map((assignment) => assignment.id),
+        ]);
         yield* audit(ctx, "policy.assignments_changed", "policy", policyId, {
-          assign: body.assign?.length ?? 0,
-          unassign: body.unassign?.length ?? 0,
+          assign: assign.length,
+          unassign: unassign.length,
+          exclude: assign.filter((assignment) => assignment.mode === "exclude").length,
         });
         return ok;
       }),
@@ -3525,29 +4966,44 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const deleted: Array<string> = [];
-        const failed: Array<{ id: string; reason: string }> = [];
-        for (const applicationId of ids) {
-          const existing = (yield* db.query.application.findFirst({
-            where: { id: applicationId, organizationId: ctx.organization.id },
-          })) as EnterpriseApplication | undefined;
-          if (!existing) {
-            failed.push({ id: applicationId, reason: "notFound" });
-            continue;
-          }
-          yield* db
-            .delete(schema.application)
-            .where(
-              and(
-                eq(schema.application.id, applicationId),
-                eq(schema.application.organizationId, ctx.organization.id),
-              ),
-            );
-          // Delete the object only after the row is gone. A failure here leaves
-          // an orphaned object, never a row pointing at a deleted file.
-          if (existing.r2Key) yield* r2.delete(existing.r2Key);
-          deleted.push(applicationId);
-        }
+        const results = yield* Effect.forEach(
+          [...(ids as ReadonlyArray<string>)],
+          (applicationId) =>
+            Effect.gen(function* () {
+              const existing = (yield* db.query.application.findFirst({
+                where: { id: applicationId, organizationId: ctx.organization.id },
+              })) as EnterpriseApplication | undefined;
+              if (!existing)
+                return { id: applicationId, deleted: false as const, reason: "notFound" };
+              yield* db
+                .delete(schema.application)
+                .where(
+                  and(
+                    eq(schema.application.id, applicationId),
+                    eq(schema.application.organizationId, ctx.organization.id),
+                  ),
+                );
+              // Delete the object only after the row is gone. A failure here
+              // leaves an orphaned object, never a row pointing at a deleted
+              // file, and must not abort the rest of the batch.
+              if (existing.r2Key)
+                yield* r2
+                  .delete(existing.r2Key)
+                  .pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning(
+                        `Failed to delete application object ${applicationId}: ${String(cause)}`,
+                      ),
+                    ),
+                  );
+              return { id: applicationId, deleted: true as const };
+            }),
+          { concurrency: 10 },
+        );
+        const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+        const failed = results
+          .filter((row) => !row.deleted)
+          .map((row) => ({ id: row.id, reason: row.reason }));
         yield* audit(ctx, "application.deleted", "application", null, { ids: deleted });
         return { deleted, failed };
       }).pipe(Effect.provide(r2Layer)),
@@ -3753,14 +5209,18 @@ export const createEnterpriseService = ({
     syncPolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
-        const affected: Array<string> = [];
-        for (const policyId of ids) {
-          const policy = yield* db.query.policy.findFirst({
-            where: { id: policyId, organizationId: tenantId },
-          });
-          if (policy) affected.push(...(yield* applePush.deviceIdsInPolicies([policyId])));
-        }
-        yield* applePush.pushAppleDevices(affected);
+        const affected = yield* Effect.forEach(
+          [...(ids as ReadonlyArray<string>)],
+          (policyId) =>
+            Effect.gen(function* () {
+              const policy = yield* db.query.policy.findFirst({
+                where: { id: policyId, organizationId: tenantId },
+              });
+              return policy ? yield* applePush.deviceIdsInPolicies([policyId]) : [];
+            }),
+          { concurrency: 10 },
+        );
+        yield* applePush.pushAppleDevices(affected.flat());
         return ok;
       }),
     duplicatePolicy: (request, tenantId, policyId, payload) =>
@@ -3778,6 +5238,7 @@ export const createEnterpriseService = ({
           organizationId: ctx.organization.id,
           name: body.name ?? `${source.name} [duplicated]`,
           notes: source.notes,
+          priority: source.priority ?? 0,
           createdAt: now(),
           updatedAt: now(),
         });
@@ -3963,6 +5424,19 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         return rowDevice(row);
       }),
+    getDeviceEffectivePolicy: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const row = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        return yield* resolveEffectivePolicyForDevice(db, {
+          id: row.id,
+          organizationId: ctx.organization.id,
+        });
+      }),
     listGroups: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -3979,7 +5453,76 @@ export const createEnterpriseService = ({
           where: { id: groupId, organizationId: ctx.organization.id },
         });
         if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
-        return rowGroup(row);
+        const deviceLinks = yield* db
+          .select({ deviceId: schema.groupDevice.deviceId })
+          .from(schema.groupDevice)
+          .where(eq(schema.groupDevice.groupId, groupId));
+        const devices = deviceLinks.length
+          ? yield* db
+              .select({ id: schema.device.id, name: schema.device.name })
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.organizationId, ctx.organization.id),
+                  inArray(
+                    schema.device.id,
+                    deviceLinks.map((link) => link.deviceId),
+                  ),
+                ),
+              )
+          : [];
+        const policyLinks = yield* db
+          .select({ policyId: schema.groupPolicy.policyId, mode: schema.groupPolicy.mode })
+          .from(schema.groupPolicy)
+          .where(eq(schema.groupPolicy.groupId, groupId));
+        const policies = policyLinks.length
+          ? yield* db
+              .select({
+                id: schema.policy.id,
+                name: schema.policy.name,
+                priority: schema.policy.priority,
+              })
+              .from(schema.policy)
+              .where(
+                and(
+                  eq(schema.policy.organizationId, ctx.organization.id),
+                  inArray(
+                    schema.policy.id,
+                    policyLinks.map((link) => link.policyId),
+                  ),
+                ),
+              )
+          : [];
+        const modes = new Map(
+          policyLinks.map((link) => [link.policyId, link.mode ?? ("include" as const)]),
+        );
+        return {
+          ...rowGroup(row, devices.length, policies.length),
+          devices: [...devices].sort((left, right) => left.name.localeCompare(right.name)),
+          policies: policies
+            .map((policy) => ({
+              ...policy,
+              priority: policy.priority ?? 0,
+              mode: modes.get(policy.id) ?? "include",
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+        };
+      }),
+    previewGroup: (request, tenantId, groupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const preview = yield* previewDynamicGroup(db, ctx.organization.id, groupId, {
+          now: now(),
+        });
+        if (!preview)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+        return {
+          groupId: preview.groupId,
+          kind: preview.kind,
+          count: preview.count,
+          devices: [...preview.devices],
+          evaluatedAt: iso(preview.evaluatedAt),
+        };
       }),
     listPolicies: (request, tenantId) =>
       Effect.gen(function* () {
@@ -4008,12 +5551,15 @@ export const createEnterpriseService = ({
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body = payload as { returnUrl: string };
         const customer = yield* ensureStripeCustomer(ctx.organization);
-        const result = yield* stripe.billingPortal.sessions.create({
-          customer,
-          return_url: body.returnUrl,
-        });
+        const result = yield* stripe.billingPortal.sessions
+          .create({
+            customer,
+            return_url: body.returnUrl,
+          })
+          .pipe(Effect.mapError(() => billingUnavailable()));
         return { url: result.url ?? body.returnUrl };
       }),
     requestEmailVerification: (request) =>
@@ -4082,8 +5628,27 @@ export const enterpriseHandlers = (
     .handle("createTenant", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.createTenant(request, payload)),
     )
+    .handle("importTenant", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.importTenant(request, payload)),
+    )
     .handle("getTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.getTenant(request, params.tenantId)),
+    )
+    .handleRaw("exportTenant", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportTenant(request, params.tenantId, query),
+          (result: { body: string; filename: string; version: number }) =>
+            HttpServerResponse.text(result.body, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+                "X-Tenant-Export-Version": String(result.version),
+              },
+            }),
+        ),
+      ),
     )
     .handle("patchTenant", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
@@ -4148,6 +5713,37 @@ export const enterpriseHandlers = (
     .handle("listAuditLog", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listAuditLog(request, params.tenantId),
+      ),
+    )
+    .handle("searchAuditLog", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.searchAuditLog(request, params.tenantId, query),
+      ),
+    )
+    .handleRaw("exportAuditLog", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportAuditLog(request, params.tenantId, query),
+          (result: {
+            format: "csv" | "json";
+            body: string;
+            truncated: boolean;
+            rowCount: number;
+          }) => {
+            const extension = result.format;
+            return HttpServerResponse.text(result.body, {
+              contentType:
+                result.format === "json"
+                  ? "application/json; charset=utf-8"
+                  : "text/csv; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.${extension}"`,
+                ...(result.truncated ? { "X-Export-Truncated": "true" } : {}),
+                "X-Export-Rows": String(result.rowCount),
+              },
+            });
+          },
+        ),
       ),
     )
     .handle("listTenantUsers", ({ request, params }) =>
@@ -4273,6 +5869,11 @@ export const enterpriseHandlers = (
         service.getDevice(request, params.tenantId, params.id),
       ),
     )
+    .handle("getDeviceEffectivePolicy", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceEffectivePolicy(request, params.tenantId, params.id),
+      ),
+    )
     .handle("deleteDevices", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deleteDevices(request, params.tenantId, payload),
@@ -4359,6 +5960,11 @@ export const enterpriseHandlers = (
     .handle("getGroup", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getGroup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("previewGroup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewGroup(request, params.tenantId, params.id),
       ),
     )
     .handle("createGroup", ({ request, params, payload }) =>

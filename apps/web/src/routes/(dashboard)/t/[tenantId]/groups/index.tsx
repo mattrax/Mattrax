@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable } from "~/components/mdm/table";
+import { Badge } from "~/components/ui/badge";
 import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
 
 export default function GroupsPage() {
@@ -49,6 +50,18 @@ export default function GroupsPage() {
                 {row.name}
               </a>
             ),
+          },
+          {
+            id: "kind",
+            header: "Membership",
+            sort: (row) => row.kind ?? "manual",
+            search: (row) => row.kind ?? "manual",
+            cell: (row) =>
+              row.kind === "dynamic" ? (
+                <Badge>Dynamic</Badge>
+              ) : (
+                <Badge variant="secondary">Manual</Badge>
+              ),
           },
           {
             id: "devices",

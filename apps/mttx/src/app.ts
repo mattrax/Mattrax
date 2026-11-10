@@ -1,6 +1,7 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { HttpServer } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
@@ -20,10 +21,33 @@ export interface ServerConfig {
   readonly appleVendorCert?: string;
   /** Shared with the management backend so SCEP challenges can be verified. */
   readonly authSecret?: string;
+  /** White-label identity used in generated enrollment profiles. */
+  readonly brandName?: string;
+  readonly brandLogoUrl?: string;
+  readonly supportEmail?: string;
+  readonly brandColor?: string;
 }
 
+const DEFAULT_BRAND_COLOR = "#1c1917";
+
+/**
+ * A white-label frontend can render the same identity used in enrollment
+ * profiles instead of hard-coding a product name.
+ */
+const brandingRoutes = (config: ServerConfig) =>
+  HttpRouter.add("GET", "/branding.json", () =>
+    Effect.succeed(
+      HttpServerResponse.jsonUnsafe({
+        displayName: config.brandName || "Mattrax",
+        logo: config.brandLogoUrl || null,
+        supportEmail: config.supportEmail || "hello@mattrax.app",
+        brandColor: config.brandColor || DEFAULT_BRAND_COLOR,
+      }),
+    ),
+  );
+
 export const createAppLayer = (config: ServerConfig) => {
-  const db = new FsDb(config.dataDir);
+  const db = new FsDb(config.dataDir, { authSecret: config.authSecret });
 
   const healthApi = HttpApiGroup.make("HealthApi")
     .add(
@@ -59,12 +83,16 @@ export const createAppLayer = (config: ServerConfig) => {
     appleMdmRoutes,
     windowsMdmRoutes,
     scepRoutes,
+    brandingRoutes(config),
   );
 
   const appleMdmConfigLayer = AppleMdmConfig.layer({
     origin: config.origin,
     cloudAppleVendorCert: config.appleVendorCert,
     authSecret: config.authSecret,
+    organizationId: "self-hosted",
+    organizationName: config.brandName,
+    supportEmail: config.supportEmail,
   });
 
   const appleMdmServiceResolved = AppleMdmService.layer.pipe(

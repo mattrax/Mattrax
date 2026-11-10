@@ -6,6 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+};
+
 export default function BillingSettingsPage() {
   const params = useParams();
   const billing = useQuery(() => ({
@@ -18,6 +24,7 @@ export default function BillingSettingsPage() {
       globalThis.location.href = url;
     },
   }));
+  const configured = () => billing.data?.configured !== false;
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
@@ -26,6 +33,12 @@ export default function BillingSettingsPage() {
         error={billing.error}
         onRetry={() => void billing.refetch()}
       />
+      {billing.data && !billing.data.configured && (
+        <div class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm xl:col-span-2">
+          Billing is not configured for this deployment. An administrator must set the Stripe
+          environment variables before a plan can be purchased or managed.
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Plan</CardTitle>
@@ -37,20 +50,37 @@ export default function BillingSettingsPage() {
           </div>
           <div class="flex items-center justify-between">
             <span class="text-muted-foreground">Status</span>
-            <Badge variant="outline">{billing.data?.status ?? "inactive"}</Badge>
+            <Badge variant="outline">
+              {billing.data?.configured === false
+                ? "unavailable"
+                : (billing.data?.status ?? "inactive")}
+            </Badge>
           </div>
           <div class="flex items-center justify-between">
             <span class="text-muted-foreground">Billable devices</span>
             <span class="font-medium">{billing.data?.billableDevices ?? 0}</span>
           </div>
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">Current period ends</span>
+            <span class="font-medium">{formatDate(billing.data?.periodEnd)}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">Cancels at period end</span>
+            <span class="font-medium">{billing.data?.cancelAtPeriodEnd ? "Yes" : "No"}</span>
+          </div>
           <Button
             class="mt-2"
             variant="outline"
             onClick={() => portal.mutate()}
-            disabled={portal.isPending}
+            disabled={portal.isPending || billing.isLoading || !configured()}
           >
             {portal.isPending ? "Opening…" : "Open billing portal"}
           </Button>
+          {!configured() && (
+            <p class="text-xs text-muted-foreground">
+              The billing portal is unavailable until Stripe is configured for this deployment.
+            </p>
+          )}
           <ErrorText error={portal.error} />
         </CardContent>
       </Card>

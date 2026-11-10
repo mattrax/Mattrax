@@ -27,6 +27,10 @@ include `/webhook` yourself.
 | `--webhook-url`       | Base URL of your management backend, reachable only by the gateway.                      |
 | `--data-dir`          | Persistent, backed-up directory or volume. Bundled builds default to `/opt/mattrax`.     |
 | `--apple-vendor-cert` | Apple MDM vendor certificate PEM, so profiles use the correct topic.                     |
+| `--brand-name`        | Organisation/display name written to generated Apple enrollment profiles.                |
+| `--brand-logo-url`    | Optional logo URL/data URL for a white-label frontend.                                   |
+| `--support-email`     | Support address included in the enrollment profile description.                          |
+| `--brand-color`       | Optional hex brand colour for a white-label frontend.                                    |
 | TLS                   | Terminate HTTPS at a load balancer, reverse proxy, or hosting platform.                  |
 | Supervisor            | Restart the process automatically; `serve` exits after 24 hours.                         |
 | Webhook security      | Require mTLS or a shared bearer token at your proxy; the gateway does not sign requests. |
@@ -34,12 +38,15 @@ include `/webhook` yourself.
 ## Persistent data
 
 The gateway stores SCEP CA material in `scep-ca.json` under `--data-dir`. It contains
-private key material.
+private key material, sealed with AES-256-GCM using `--auth-secret`
+(`MATTRAX_AUTH_SECRET`). Back up that secret with the data directory: the CA key cannot be
+opened without it.
 
 | Requirement                     | Reason                                                  |
 | ------------------------------- | ------------------------------------------------------- |
 | Restrict filesystem permissions | Prevent access to SCEP private key material.            |
 | Back up the data directory      | Preserve enrollment continuity across host replacement. |
+| Back up the auth secret         | Without it the sealed SCEP CA key cannot be opened.     |
 | Mount persistent storage        | Avoid regenerating CA state on every deploy.            |
 | Exclude from source control     | Prevent accidental key disclosure.                      |
 
@@ -99,9 +106,14 @@ If you do not push, devices still converge on their next scheduled check-in.
 
 ## Branding
 
-There is no gateway-rendered UI. Your enrollment page, dashboard, domain, and emails are
-yours. The Apple enrollment profile currently has fixed `Mattrax` display/organisation
-text from the protocol package; changing it requires modifying `packages/dm-apple`.
+There is no gateway-rendered UI, but `--brand-name` and `--support-email` control the
+Apple enrollment profile text (`PayloadDisplayName`, `PayloadOrganization` and the support
+contact in `PayloadDescription`). `--brand-logo-url` and `--brand-color` are available to a
+white-label frontend that reads the same configuration. Your enrollment page, dashboard,
+domain, and emails are yours to brand.
+
+The payload identifiers and UUIDs remain stable across re-branding, so a re-served profile
+replaces the existing management profile.
 
 ## Operational notes
 

@@ -1,5 +1,6 @@
 import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
+import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
   GraphDomainsResponse,
   GraphGroupDeltaResponse,
@@ -71,6 +72,12 @@ export type AzureGraphConfig = {
   readonly loginBaseUrl?: string;
   /** Backoff for 5xx and for 429s without a `Retry-After` header, in ms. */
   readonly retryDelayMs?: number;
+  /**
+   * Deadline for each Graph/token request attempt, in ms. Defaults to
+   * {@link OUTBOUND_TIMEOUTS.azureGraph}. A hung request fails with
+   * `AzureGraphRequestFailed` instead of holding the caller open forever.
+   */
+  readonly timeoutMs?: number;
 };
 
 export type AzureGraphService = {
@@ -172,6 +179,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const graphBaseUrl = trimTrailingSlashes(config.graphBaseUrl ?? DEFAULT_GRAPH_BASE_URL);
       const loginBaseUrl = trimTrailingSlashes(config.loginBaseUrl ?? DEFAULT_LOGIN_BASE_URL);
       const retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+      const timeoutMs = config.timeoutMs ?? OUTBOUND_TIMEOUTS.azureGraph;
       const tokenCache = new Map<string, TokenEntry>();
 
       const execute = (
@@ -180,14 +188,25 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         Effect.gen(function* () {
           const send = (): Effect.Effect<RawResponse, AzureGraphError> =>
             Effect.gen(function* () {
-              const response = yield* client.execute(makeRequest()).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new AzureGraphRequestFailed({
-                      message: "Microsoft Graph request failed",
-                      cause,
-                    }),
+              const response = yield* Effect.timeoutOrElse(
+                client.execute(makeRequest()).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new AzureGraphRequestFailed({
+                        message: "Microsoft Graph request failed",
+                        cause,
+                      }),
+                  ),
                 ),
+                {
+                  duration: timeoutMs,
+                  orElse: () =>
+                    Effect.fail(
+                      new AzureGraphRequestFailed({
+                        message: `Microsoft Graph request timed out after ${timeoutMs}ms`,
+                      }),
+                    ),
+                },
               );
               const text = yield* response.text.pipe(
                 Effect.mapError(
@@ -197,6 +216,15 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
                       cause,
                     }),
                 ),
+                Effect.timeoutOrElse({
+                  duration: timeoutMs,
+                  orElse: () =>
+                    Effect.fail(
+                      new AzureGraphRequestFailed({
+                        message: `Reading the Microsoft Graph response timed out after ${timeoutMs}ms`,
+                      }),
+                    ),
+                }),
               );
               return { status: response.status, headers: response.headers, text };
             });

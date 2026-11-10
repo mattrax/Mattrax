@@ -16,6 +16,8 @@ export type AppleEnrollmentProfileOptions = {
   readonly organizationId: string;
   /** Human-readable tenant name written to the SCEP subject O. */
   readonly organizationName: string;
+  /** Support address shown in the profile description. */
+  readonly supportEmail?: string;
   /** Per-enrollment SCEP challenge password. */
   readonly challenge: string;
   readonly displayName?: string;
@@ -24,6 +26,7 @@ export type AppleEnrollmentProfileOptions = {
 
 export type AppleEnrollmentProfile = {
   PayloadContent: Array<Record<string, unknown>>;
+  PayloadDescription?: string;
   PayloadDisplayName: string;
   PayloadIdentifier: string;
   PayloadOrganization: string;
@@ -87,6 +90,11 @@ export const buildAppleEnrollmentProfile = (
         Topic: options.topic,
       },
     ],
+    ...(options.supportEmail
+      ? {
+          PayloadDescription: `Enrollment profile for ${options.organizationName}. Contact ${options.supportEmail} for support.`,
+        }
+      : {}),
     PayloadDisplayName: displayName,
     PayloadIdentifier: options.identifier ?? "com.mattrax.enrollment",
     PayloadOrganization: options.organizationName,

@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { syncDynamicGroupsForTenant } from "@mattrax/management-backend-enterprise";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
 
 export type MaintenanceOptions = {
@@ -20,6 +21,8 @@ export type MaintenanceOptions = {
   readonly enrollmentAttemptRetentionDays?: number;
   /** Disable credential-expiry alerts (for example in tests). Defaults to true. */
   readonly credentialAlerts?: boolean;
+  /** Recompute dynamic group membership. Defaults to true. */
+  readonly dynamicGroups?: boolean;
 };
 
 export type MaintenanceResult = {
@@ -32,6 +35,8 @@ export type MaintenanceResult = {
   readonly purgedEnrollmentAttempts: number;
   /** Credential expiry audit events written this run. */
   readonly credentialAlerts: number;
+  /** Dynamic groups whose materialised membership was recomputed. */
+  readonly dynamicGroupsEvaluated: number;
 };
 
 const day = 24 * 60 * 60 * 1000;
@@ -92,6 +97,7 @@ export const runMaintenance = (
       purgedAuditEntries: 0,
       purgedEnrollmentAttempts: 0,
       credentialAlerts: 0,
+      dynamicGroupsEvaluated: 0,
     };
 
     // 1. Expire pending invitations whose acceptance window has closed.
@@ -240,6 +246,17 @@ export const runMaintenance = (
           createdAt: now,
         });
         result.credentialAlerts += 1;
+      }
+    }
+
+    // 7. Recompute dynamic group membership. Rules can depend on last-seen age
+    //    and inventory health, so daily maintenance is the backstop even when a
+    //    device never checks in again. Tenant-scoped: one pass per tenant.
+    if (options.dynamicGroups !== false) {
+      const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
+      for (const organization of organizations) {
+        const evaluated = yield* syncDynamicGroupsForTenant(db, organization.id, { now });
+        result.dynamicGroupsEvaluated += evaluated.length;
       }
     }
 

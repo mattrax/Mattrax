@@ -25,19 +25,17 @@ test.describe("protocol routes", () => {
     expect(response.status()).toBeLessThan(500);
   });
 
-  test("Windows discovery returns a clear configuration response, not 500", async ({ page }) => {
+  test("Windows discovery is mounted and reports malformed SOAP as a fault, not 500", async ({
+    page,
+  }) => {
     const response = await page.request.post("/mdm/windows/discovery", {
       headers: { "content-type": "application/soap+xml" },
       data: "<x/>",
     });
-    // Development does not pin WINDOWS_ORGANIZATION_ID, so the Cloud route must
-    // explain the missing configuration. With it pinned, malformed SOAP is a
-    // 200 SOAP fault. Neither is an opaque 500.
-    expect(response.status()).not.toBe(500);
-    expect([200, 503]).toContain(response.status());
-    if (response.status() === 503) {
-      expect(await response.text()).toContain("WINDOWS_ORGANIZATION_ID");
-    }
+    // The tenant-scoped route is always mounted now; no deployment-wide pin is
+    // required. Malformed SOAP is a 200 SOAP fault, never an opaque 500.
+    expect(response.status()).toBe(200);
+    expect(await response.text()).toContain("Fault");
   });
 
   test("debug mailbox is available on localhost", async ({ page }) => {

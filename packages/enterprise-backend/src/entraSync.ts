@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import type { AzureGraphService } from "@mattrax/azure-graph";
+import type { AzureGraphService, GraphGroup, GraphUser } from "@mattrax/azure-graph";
 import { schema, type EnterpriseDb } from "./schema.ts";
 
 const newId = () => crypto.randomUUID();
@@ -9,10 +9,345 @@ const now = () => new Date();
 const normalizedDomain = (domain: string) => domain.trim().toLowerCase().replace(/\.$/, "");
 
 /**
+ * How long a `running` sync may sit before another request may take over.
+ * Long enough for a large tenant's pages, short enough that a crashed Worker
+ * does not wedge directory sync until someone edits the database.
+ */
+export const ENTRA_SYNC_STALE_MS = 15 * 60_000;
+
+export type EntraSyncLockState = {
+  /** True when this caller now owns the sync slot. */
+  readonly acquired: boolean;
+  /** True when the previous owner's lock was stale and was taken over. */
+  readonly stale: boolean;
+  readonly previousStatus: "idle" | "running" | "error" | null;
+  readonly enabled: boolean;
+};
+
+/**
+ * Tenant-scoped sync lock stored on `entra_directory_sync`.
+ *
+ * The read + conditional write run in one transaction so two concurrent
+ * requests cannot both observe `idle` and both start. A `running` row older
+ * than {@link ENTRA_SYNC_STALE_MS} is treated as abandoned; the new owner takes
+ * it over instead of leaving the tenant stuck until manual cleanup.
+ */
+export const acquireEntraSyncLock = (options: {
+  readonly db: EnterpriseDb;
+  readonly organizationId: string;
+  readonly now?: Date;
+  readonly staleAfterMs?: number;
+}): Effect.Effect<EntraSyncLockState, unknown> => {
+  const { db, organizationId } = options;
+  const timestamp = options.now ?? now();
+  const staleAfterMs = options.staleAfterMs ?? ENTRA_SYNC_STALE_MS;
+
+  return db.transaction((tx) =>
+    Effect.gen(function* () {
+      const state = yield* tx.query.entraDirectorySync.findFirst({
+        where: { organizationId },
+      });
+
+      if (!state) {
+        yield* tx.insert(schema.entraDirectorySync).values({
+          organizationId,
+          enabled: true,
+          status: "running",
+          lastAttemptedAt: timestamp,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        return { acquired: true, stale: false, previousStatus: null, enabled: true };
+      }
+
+      const previousStatus = state.status as "idle" | "running" | "error";
+      if (previousStatus === "running") {
+        const updatedAt =
+          state.updatedAt instanceof Date
+            ? state.updatedAt.getTime()
+            : Date.parse(String(state.updatedAt));
+        const age = Number.isFinite(updatedAt) ? timestamp.getTime() - updatedAt : Number.NaN;
+        const stale = !Number.isFinite(age) || age > staleAfterMs;
+        if (!stale)
+          return {
+            acquired: false,
+            stale: false,
+            previousStatus,
+            enabled: state.enabled,
+          };
+        yield* tx
+          .update(schema.entraDirectorySync)
+          .set({ status: "running", lastAttemptedAt: timestamp, updatedAt: timestamp })
+          .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+        return { acquired: true, stale: true, previousStatus, enabled: state.enabled };
+      }
+
+      yield* tx
+        .update(schema.entraDirectorySync)
+        .set({
+          status: "running",
+          lastAttemptedAt: timestamp,
+          lastError: null,
+          updatedAt: timestamp,
+        })
+        .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+      return { acquired: true, stale: false, previousStatus, enabled: state.enabled };
+    }),
+  );
+};
+
+export type EntraSyncProgress = {
+  readonly users: number;
+  readonly groups: number;
+  readonly domains: number;
+  readonly usersDelta?: string;
+  readonly groupsDelta?: string;
+};
+
+const isOwnerRole = (role: string) => role.split(",").includes("owner");
+
+const ownerCount = (database: EnterpriseDb, organizationId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* database
+      .select({ role: schema.member.role })
+      .from(schema.member)
+      .where(eq(schema.member.organizationId, organizationId));
+    return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
+  });
+
+const findIdentity = (database: EnterpriseDb, organizationId: string, objectId: string) =>
+  database.query.ssoIdentity.findFirst({
+    where: { organizationId, objectId },
+  });
+
+type UserPageContext = {
+  readonly organizationId: string;
+  readonly autoProvision: boolean;
+  readonly seenObjectIds: Set<string>;
+  readonly onUser: () => void;
+};
+
+/**
+ * Apply one `/users/delta` page. Callers run this inside a transaction so a
+ * failure half-way through a page cannot leave a user provisioned without its
+ * membership/identity link.
+ */
+const syncUsersPage = (
+  database: EnterpriseDb,
+  users: ReadonlyArray<GraphUser>,
+  context: UserPageContext,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const { organizationId, autoProvision, seenObjectIds } = context;
+
+    for (const user of users) {
+      const email = (user.mail ?? user.userPrincipalName)?.trim().toLowerCase();
+      const identity = user.id ? yield* findIdentity(database, organizationId, user.id) : undefined;
+      let existing = identity
+        ? yield* database.query.user.findFirst({ where: { id: identity.userId } })
+        : undefined;
+      if (!existing && email) {
+        const byEmail = yield* database.query.user.findFirst({ where: { email } });
+        if (byEmail) {
+          // Mirror the SSO guard: link an existing account by email only when
+          // this is its sole tenant. Never pull another tenant's user into this
+          // directory.
+          const memberships = yield* database.query.member.findMany({
+            where: { userId: byEmail.id },
+          });
+          if (
+            (memberships.length === 1 && memberships[0]?.organizationId === organizationId) ||
+            (memberships.length === 0 && autoProvision)
+          )
+            existing = byEmail;
+          else continue;
+        }
+      }
+      if (user.removed || user.accountEnabled === false) {
+        if (existing) {
+          const membership = yield* database.query.member.findFirst({
+            where: { organizationId, userId: existing.id },
+          });
+          if (
+            membership &&
+            isOwnerRole(membership.role) &&
+            (yield* ownerCount(database, organizationId)) <= 1
+          )
+            continue;
+          yield* database
+            .delete(schema.member)
+            .where(
+              and(
+                eq(schema.member.organizationId, organizationId),
+                eq(schema.member.userId, existing.id),
+              ),
+            );
+          const orgGroups = yield* database
+            .select({ id: schema.userGroup.id })
+            .from(schema.userGroup)
+            .where(eq(schema.userGroup.organizationId, organizationId));
+          if (orgGroups.length)
+            yield* database.delete(schema.userGroupMember).where(
+              and(
+                eq(schema.userGroupMember.userId, existing.id),
+                inArray(
+                  schema.userGroupMember.groupId,
+                  orgGroups.map((group: { id: string }) => group.id),
+                ),
+              ),
+            );
+          const remaining = yield* database
+            .select()
+            .from(schema.member)
+            .where(eq(schema.member.userId, existing.id));
+          if (remaining.length === 0)
+            yield* database
+              .update(schema.user)
+              .set({ disabled: true, updatedAt: now() })
+              .where(eq(schema.user.id, existing.id));
+        }
+        if (user.id)
+          yield* database
+            .delete(schema.ssoIdentity)
+            .where(
+              and(
+                eq(schema.ssoIdentity.organizationId, organizationId),
+                eq(schema.ssoIdentity.objectId, user.id),
+              ),
+            );
+        continue;
+      }
+      if (!email || !user.id) continue;
+      let userId = existing?.id;
+      if (!userId) {
+        if (!autoProvision) continue;
+        userId = newId();
+        yield* database.insert(schema.user).values({
+          id: userId,
+          name: user.displayName?.trim() || email,
+          email,
+          emailVerified: true,
+          disabled: false,
+          authRevision: newId(),
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      }
+      const membership = yield* database.query.member.findFirst({
+        where: { organizationId, userId },
+      });
+      if (!membership)
+        yield* database.insert(schema.member).values({
+          id: newId(),
+          organizationId,
+          userId,
+          role: "member",
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      if (existing?.disabled)
+        yield* database
+          .update(schema.user)
+          .set({ disabled: false, updatedAt: now() })
+          .where(eq(schema.user.id, userId));
+      if (!identity)
+        yield* database.insert(schema.ssoIdentity).values({
+          organizationId,
+          objectId: user.id,
+          userId,
+          createdAt: now(),
+        });
+      seenObjectIds.add(user.id);
+      context.onUser();
+    }
+  });
+
+type GroupPageContext = {
+  readonly organizationId: string;
+  readonly seenGroupIds: Set<string>;
+  readonly onGroup: () => void;
+};
+
+/** Apply one `/groups/delta` page inside a transaction. */
+const syncGroupsPage = (
+  database: EnterpriseDb,
+  groups: ReadonlyArray<GraphGroup>,
+  context: GroupPageContext,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const { organizationId, seenGroupIds } = context;
+
+    for (const group of groups) {
+      const existing = yield* database.query.userGroup.findFirst({
+        where: { organizationId, externalId: group.id },
+      });
+      if (group.removed) {
+        if (existing)
+          yield* database.delete(schema.userGroup).where(eq(schema.userGroup.id, existing.id));
+        continue;
+      }
+      let groupId = existing?.id;
+      if (!groupId) {
+        groupId = newId();
+        yield* database.insert(schema.userGroup).values({
+          id: groupId,
+          organizationId,
+          name: group.displayName || group.id,
+          externalId: group.id,
+          description: group.description ?? null,
+          source: "graph",
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      } else {
+        yield* database
+          .update(schema.userGroup)
+          .set({
+            name: group.displayName || existing!.name,
+            description: group.description ?? existing!.description,
+            source: "graph",
+            updatedAt: now(),
+          })
+          .where(eq(schema.userGroup.id, groupId));
+      }
+      for (const member of group.members ?? []) {
+        if (member.type && member.type !== "user") continue;
+        const identity = yield* findIdentity(database, organizationId, member.id);
+        if (!identity) continue;
+        if (member.removed) {
+          yield* database
+            .delete(schema.userGroupMember)
+            .where(
+              and(
+                eq(schema.userGroupMember.groupId, groupId),
+                eq(schema.userGroupMember.userId, identity.userId),
+              ),
+            );
+        } else {
+          const membership = yield* database.query.member.findFirst({
+            where: { organizationId, userId: identity.userId },
+          });
+          if (!membership) continue;
+          yield* database
+            .insert(schema.userGroupMember)
+            .ignore()
+            .values({ groupId, userId: identity.userId });
+        }
+      }
+      seenGroupIds.add(group.id);
+      context.onGroup();
+    }
+  });
+
+/**
  * Pull verified domains and (optionally) users/groups from Microsoft Graph.
  * The sync is delta-based: the stored deltaLink is passed on the next run and
  * replaced with the fresh one. Removed/disabled users lose their tenant
  * membership; Graph-sourced groups are upserted by Entra object id.
+ *
+ * Each Graph page is applied in its own transaction, and `onProgress` fires as
+ * soon as a resource class completes so the caller can persist that cursor even
+ * if a later page fails.
  */
 export const syncEntraDirectory = (options: {
   readonly db: EnterpriseDb;
@@ -23,6 +358,7 @@ export const syncEntraDirectory = (options: {
   readonly usersDeltaLink?: string | null;
   readonly groupsDeltaLink?: string | null;
   readonly syncUsersAndGroups?: boolean;
+  readonly onProgress?: (progress: EntraSyncProgress) => Effect.Effect<void, unknown>;
 }) =>
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId, autoProvision } = options;
@@ -91,21 +427,6 @@ export const syncEntraDirectory = (options: {
 
     if (!options.syncUsersAndGroups) return { ...counts, usersDelta, groupsDelta };
 
-    const isOwnerRole = (role: string) => role.split(",").includes("owner");
-    const ownerCount = () =>
-      Effect.gen(function* () {
-        const rows = yield* db
-          .select({ role: schema.member.role })
-          .from(schema.member)
-          .where(eq(schema.member.organizationId, organizationId));
-        return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
-      });
-
-    const findIdentity = (objectId: string) =>
-      db.query.ssoIdentity.findFirst({
-        where: { organizationId, objectId },
-      });
-
     const isExpiredDelta = (error: unknown) => {
       const value = error as { _tag?: string; status?: number; body?: string };
       return (
@@ -134,125 +455,23 @@ export const syncEntraDirectory = (options: {
       );
 
     const seenObjectIds = new Set<string>();
+    const userContext: UserPageContext = {
+      organizationId,
+      autoProvision,
+      seenObjectIds,
+      onUser: () => {
+        counts.users++;
+      },
+    };
     let usersLink = options.usersDeltaLink ?? undefined;
     let usersComplete = false;
     for (let page = 0; page < 1000; page++) {
       const result = yield* usersDeltaPage(usersLink);
-      for (const user of result.items) {
-        const email = (user.mail ?? user.userPrincipalName)?.trim().toLowerCase();
-        const identity = user.id ? yield* findIdentity(user.id) : undefined;
-        let existing = identity
-          ? yield* db.query.user.findFirst({ where: { id: identity.userId } })
-          : undefined;
-        if (!existing && email) {
-          const byEmail = yield* db.query.user.findFirst({ where: { email } });
-          if (byEmail) {
-            // Mirror the SSO guard: link an existing account by email only
-            // when this is its sole tenant. Never pull another tenant's user
-            // into this directory.
-            const memberships = yield* db.query.member.findMany({
-              where: { userId: byEmail.id },
-            });
-            if (
-              (memberships.length === 1 && memberships[0]?.organizationId === organizationId) ||
-              (memberships.length === 0 && autoProvision)
-            )
-              existing = byEmail;
-            else continue;
-          }
-        }
-        if (user.removed || user.accountEnabled === false) {
-          if (existing) {
-            const membership = yield* db.query.member.findFirst({
-              where: { organizationId, userId: existing.id },
-            });
-            if (membership && isOwnerRole(membership.role) && (yield* ownerCount()) <= 1) continue;
-            yield* db
-              .delete(schema.member)
-              .where(
-                and(
-                  eq(schema.member.organizationId, organizationId),
-                  eq(schema.member.userId, existing.id),
-                ),
-              );
-            const orgGroups = yield* db
-              .select({ id: schema.userGroup.id })
-              .from(schema.userGroup)
-              .where(eq(schema.userGroup.organizationId, organizationId));
-            if (orgGroups.length)
-              yield* db.delete(schema.userGroupMember).where(
-                and(
-                  eq(schema.userGroupMember.userId, existing.id),
-                  inArray(
-                    schema.userGroupMember.groupId,
-                    orgGroups.map((group: { id: string }) => group.id),
-                  ),
-                ),
-              );
-            const remaining = yield* db
-              .select()
-              .from(schema.member)
-              .where(eq(schema.member.userId, existing.id));
-            if (remaining.length === 0)
-              yield* db
-                .update(schema.user)
-                .set({ disabled: true, updatedAt: now() })
-                .where(eq(schema.user.id, existing.id));
-          }
-          if (user.id)
-            yield* db
-              .delete(schema.ssoIdentity)
-              .where(
-                and(
-                  eq(schema.ssoIdentity.organizationId, organizationId),
-                  eq(schema.ssoIdentity.objectId, user.id),
-                ),
-              );
-          continue;
-        }
-        if (!email || !user.id) continue;
-        let userId = existing?.id;
-        if (!userId) {
-          if (!autoProvision) continue;
-          userId = newId();
-          yield* db.insert(schema.user).values({
-            id: userId,
-            name: user.displayName?.trim() || email,
-            email,
-            emailVerified: true,
-            disabled: false,
-            authRevision: newId(),
-            createdAt: now(),
-            updatedAt: now(),
-          });
-        }
-        const membership = yield* db.query.member.findFirst({
-          where: { organizationId, userId },
-        });
-        if (!membership)
-          yield* db.insert(schema.member).values({
-            id: newId(),
-            organizationId,
-            userId,
-            role: "member",
-            createdAt: now(),
-            updatedAt: now(),
-          });
-        if (existing?.disabled)
-          yield* db
-            .update(schema.user)
-            .set({ disabled: false, updatedAt: now() })
-            .where(eq(schema.user.id, userId));
-        if (!identity)
-          yield* db.insert(schema.ssoIdentity).values({
-            organizationId,
-            objectId: user.id,
-            userId,
-            createdAt: now(),
-          });
-        seenObjectIds.add(user.id);
-        counts.users++;
-      }
+      // `tx` has the same query/builders as the outer db; the cast keeps the
+      // page helpers usable from both.
+      yield* db.transaction((tx) =>
+        syncUsersPage(tx as unknown as EnterpriseDb, result.items, userContext),
+      );
       if (!result.nextLink) {
         usersDelta = result.deltaLink ?? undefined;
         usersComplete = true;
@@ -262,6 +481,14 @@ export const syncEntraDirectory = (options: {
     }
     if (!usersComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 user pages"));
+
+    if (options.onProgress)
+      yield* options.onProgress({
+        users: counts.users,
+        groups: counts.groups,
+        domains: counts.domains,
+        ...(usersDelta ? { usersDelta } : {}),
+      });
 
     if (!options.usersDeltaLink || usersReset) {
       const identities = yield* db
@@ -279,7 +506,8 @@ export const syncEntraDirectory = (options: {
         });
         if (membership) {
           // Never strand a tenant without an owner during reconciliation.
-          if (isOwnerRole(membership.role) && (yield* ownerCount()) <= 1) continue;
+          if (isOwnerRole(membership.role) && (yield* ownerCount(db, organizationId)) <= 1)
+            continue;
           yield* db
             .delete(schema.member)
             .where(
@@ -320,70 +548,20 @@ export const syncEntraDirectory = (options: {
     }
 
     const seenGroupIds = new Set<string>();
+    const groupContext: GroupPageContext = {
+      organizationId,
+      seenGroupIds,
+      onGroup: () => {
+        counts.groups++;
+      },
+    };
     let groupsLink = options.groupsDeltaLink ?? undefined;
     let groupsComplete = false;
     for (let page = 0; page < 1000; page++) {
       const result = yield* groupsDeltaPage(groupsLink);
-      for (const group of result.items) {
-        const existing = yield* db.query.userGroup.findFirst({
-          where: { organizationId, externalId: group.id },
-        });
-        if (group.removed) {
-          if (existing)
-            yield* db.delete(schema.userGroup).where(eq(schema.userGroup.id, existing.id));
-          continue;
-        }
-        let groupId = existing?.id;
-        if (!groupId) {
-          groupId = newId();
-          yield* db.insert(schema.userGroup).values({
-            id: groupId,
-            organizationId,
-            name: group.displayName || group.id,
-            externalId: group.id,
-            description: group.description ?? null,
-            source: "graph",
-            createdAt: now(),
-            updatedAt: now(),
-          });
-        } else {
-          yield* db
-            .update(schema.userGroup)
-            .set({
-              name: group.displayName || existing!.name,
-              description: group.description ?? existing!.description,
-              source: "graph",
-              updatedAt: now(),
-            })
-            .where(eq(schema.userGroup.id, groupId));
-        }
-        for (const member of group.members ?? []) {
-          if (member.type && member.type !== "user") continue;
-          const identity = yield* findIdentity(member.id);
-          if (!identity) continue;
-          if (member.removed) {
-            yield* db
-              .delete(schema.userGroupMember)
-              .where(
-                and(
-                  eq(schema.userGroupMember.groupId, groupId),
-                  eq(schema.userGroupMember.userId, identity.userId),
-                ),
-              );
-          } else {
-            const membership = yield* db.query.member.findFirst({
-              where: { organizationId, userId: identity.userId },
-            });
-            if (!membership) continue;
-            yield* db
-              .insert(schema.userGroupMember)
-              .ignore()
-              .values({ groupId, userId: identity.userId });
-          }
-        }
-        seenGroupIds.add(group.id);
-        counts.groups++;
-      }
+      yield* db.transaction((tx) =>
+        syncGroupsPage(tx as unknown as EnterpriseDb, result.items, groupContext),
+      );
       if (!result.nextLink) {
         groupsDelta = result.deltaLink ?? undefined;
         groupsComplete = true;
@@ -393,6 +571,15 @@ export const syncEntraDirectory = (options: {
     }
     if (!groupsComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 group pages"));
+
+    if (options.onProgress)
+      yield* options.onProgress({
+        users: counts.users,
+        groups: counts.groups,
+        domains: counts.domains,
+        ...(usersDelta ? { usersDelta } : {}),
+        ...(groupsDelta ? { groupsDelta } : {}),
+      });
 
     if (!options.groupsDeltaLink || groupsReset) {
       const graphGroups = yield* db

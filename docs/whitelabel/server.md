@@ -36,13 +36,15 @@ backend and persistence differ.
 
 The Node gateway persists only SCEP CA state:
 
-| File                      | Purpose                                                         |
-| ------------------------- | --------------------------------------------------------------- |
-| `<data-dir>/scep-ca.json` | SCEP CA certificate and private key used for device enrollment. |
+| File                      | Purpose                                                                |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `<data-dir>/scep-ca.json` | SCEP CA certificate and sealed private key used for device enrollment. |
 
-Treat the data directory as sensitive production state. Back it up before replacing hosts
-or moving to a new volume. Losing the SCEP CA breaks continuity for future enrollments
-that depend on the existing CA identity.
+Treat the data directory as sensitive production state. It is sealed with
+`--auth-secret`/`MATTRAX_AUTH_SECRET`, so back up the data directory **and** that secret
+before replacing hosts or moving to a new volume. Losing either breaks continuity for
+future enrollments that depend on the existing CA identity; the gateway fails closed
+instead of generating a replacement CA.
 
 The gateway deliberately does not persist devices. Your management backend is the source
 of truth for device identity and lifecycle.
@@ -78,11 +80,24 @@ Without push, devices still check in and converge, just later.
 
 ## Branding
 
-The gateway serves no HTML UI and has no branding configuration. Your product frontend,
-enrollment page, emails, and domain are yours.
+The gateway serves no HTML UI, but it does parameterise the Apple enrollment profile:
 
-The generated Apple enrollment profile currently uses the fixed display name
-`Mattrax Enrollment` and organisation `Mattrax` in `packages/dm-apple`. If you need
-per-tenant profile branding, that requires changing the protocol package rather than a
-gateway flag. The Cloud Enterprise path already stores tenant name/logo for its dashboard,
-but the enrollment profile text is also fixed there today.
+| Flag               | Effect                                                                 |
+| ------------------ | ---------------------------------------------------------------------- |
+| `--brand-name`     | `PayloadDisplayName`, `PayloadOrganization` and the SCEP subject `O`.  |
+| `--support-email`  | Support contact in the profile's `PayloadDescription`.                 |
+| `--brand-logo-url` | Carried in gateway configuration for a white-label frontend to render. |
+| `--brand-color`    | Carried in gateway configuration for a white-label frontend to render. |
+
+All four also read the `MATTRAX_BRAND_*` / `MATTRAX_SUPPORT_EMAIL` environment variables.
+`GET /branding.json` returns the resolved `displayName`, `logo`, `supportEmail` and
+`brandColor` for a white-label frontend.
+The protocol payload identifiers (`com.mattrax.scep`, `com.mattrax.mdm`,
+`com.mattrax.enrollment`) and payload UUIDs stay stable, so re-branding replaces the
+existing management profile instead of installing a second one.
+
+Your product frontend, enrollment page, emails, and domain remain yours. The hosted
+Enterprise product stores per-tenant `displayName`, `logo`, `supportEmail` and
+`brandColor` in the `organization` table and resolves them for its enrollment page, Apple
+profile, DDM management declaration and invitation emails; unset values fall back to
+Mattrax defaults.

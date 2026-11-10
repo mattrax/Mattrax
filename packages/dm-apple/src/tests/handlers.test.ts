@@ -74,6 +74,45 @@ describe("Apple MDM handlers", () => {
       );
       expect(response.status).toBe(200);
     });
+
+    it("forwards the mTLS identity certificate serial in the check-in scope", async () => {
+      let receivedScope: unknown;
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (scope: unknown) =>
+          Effect.sync(() => {
+            receivedScope = scope;
+          }),
+      });
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>Authenticate</string>
+  <key>Topic</key><string>${TEST_CONFIG.topic}</string>
+  <key>UDID</key><string>udid-auth-002</string>
+  <key>SerialNumber</key><string>SN002</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: {
+            "Content-Type": "application/x-apple-aspen-mdm-checkin",
+            "x-device-identity-certificate-serial": "A1:B2:C3",
+          },
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(receivedScope).toMatchObject({
+        _tag: "device",
+        udid: "udid-auth-002",
+        identityCertificateSerial: "A1:B2:C3",
+      });
+    });
   });
 
   describe("PUT /mdm/apple/mdm - TokenUpdate", () => {

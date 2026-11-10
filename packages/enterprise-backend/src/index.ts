@@ -1,5 +1,32 @@
 export { createEnterpriseService, enterpriseHandlers } from "./enterpriseHandlers.js";
 export type { EnterpriseHandlersConfig } from "./enterpriseHandlers.js";
+export {
+  BillingWebhookError,
+  billingWebhookRoutes,
+  processStripeWebhook,
+} from "./billingWebhook.js";
+export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "./billingWebhook.js";
+export {
+  AUDIT_EXPORT_MAX_ROWS,
+  AUDIT_SEARCH_DEFAULT_LIMIT,
+  AUDIT_SEARCH_MAX_LIMIT,
+  SYSTEM_AUDIT_ACTOR,
+  auditCsv,
+  auditJson,
+  auditOrder,
+  auditWhere,
+  decodeAuditCursor,
+  encodeAuditCursor,
+  encodeAuditOffsetCursor,
+  escapeLike,
+  normalizeAuditSearchQuery,
+} from "./auditLog.js";
+export type {
+  AuditCursor,
+  AuditExportEntry,
+  AuditSearchFilters,
+  DecodedAuditCursor,
+} from "./auditLog.js";
 export { makeApplePush } from "./push.js";
 export type { ApplePush, ApplePushOptions } from "./push.js";
 export { EnterpriseService } from "./service.js";

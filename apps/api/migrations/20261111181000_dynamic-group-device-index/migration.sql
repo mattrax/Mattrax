@@ -1,0 +1,1 @@
+CREATE INDEX `group_device_device_id_idx` ON `group_device` (`device_id`);

@@ -53,18 +53,22 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const identityCertificate = request.headers["x-device-identity-certificate"] as
       | string
       | undefined;
+    const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"] as
+      | string
+      | undefined;
     const verifiedSignature = yield* service.verifyDeviceSignature({
       signature: request.headers["mdm-signature"] as string | undefined,
       body: buf,
       identityCertificateSubject: identityCertificate,
-      identityCertificateSerial: request.headers["x-device-identity-certificate-serial"] as
-        | string
-        | undefined,
+      identityCertificateSerial,
       identityCertificateFingerprintSha256: request.headers[
         "x-device-identity-certificate-sha256"
       ] as string | undefined,
     });
     const identityFingerprint = verifiedSignature?.fingerprintSha256;
+    // Prefer the serial from the verified CMS signer (canonical lowercase hex)
+    // over the forwarded header, which is only checked when trust is wired.
+    const identitySerial = verifiedSignature?.serial ?? identityCertificateSerial;
     const text = new TextDecoder().decode(buf);
     const plist = yield* parsePlist(text);
 
@@ -77,6 +81,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       udid: udid ?? "",
       identityCertificate,
       ...(identityFingerprint ? { identityCertificateFingerprintSha256: identityFingerprint } : {}),
+      ...(identitySerial ? { identityCertificateSerial: identitySerial } : {}),
       mdmOrigin: service.mdmOrigin,
     });
 
@@ -86,21 +91,36 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleAuthenticate(auth, identityCertificate, identityFingerprint);
+          yield* service.handleAuthenticate(
+            auth,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+          );
           return HttpServerResponse.empty({ status: 200 });
         }
         case "TokenUpdate": {
           const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleTokenUpdate(update, identityCertificate, identityFingerprint);
+          yield* service.handleTokenUpdate(
+            update,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+          );
           return HttpServerResponse.empty({ status: 200 });
         }
         case "CheckOut": {
           const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleCheckOut(checkout, identityCertificate, identityFingerprint);
+          yield* service.handleCheckOut(
+            checkout,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+          );
           return HttpServerResponse.empty({ status: 200 });
         }
         case "DeclarativeManagement": {
@@ -148,6 +168,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             token.BootstrapToken ?? "",
             identityCertificate,
             token.UDID ?? token.EnrollmentID,
+            identitySerial,
           );
           return HttpServerResponse.empty({ status: 200 });
         }
@@ -158,6 +179,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const value = yield* service.handleGetBootstrapToken(
             identityCertificate,
             request.UDID ?? request.EnrollmentID,
+            identitySerial,
           );
           if (!value) return HttpServerResponse.empty({ status: 200 });
           const binary = Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
@@ -179,7 +201,12 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         Effect.mapError((err) => new Error(String(err))),
       );
       if (result.CommandUUID) {
-        yield* service.handleCommandResult(result, identityCertificate, identityFingerprint);
+        yield* service.handleCommandResult(
+          result,
+          identityCertificate,
+          identityFingerprint,
+          identitySerial,
+        );
       }
       if (!udid) return HttpServerResponse.empty({ status: 200 });
       const command = yield* service.handleCheckin(scope());

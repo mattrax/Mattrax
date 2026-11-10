@@ -65,3 +65,81 @@ describe("maintenance enrollment-attempt retention", () => {
     expect(db.store.enrollment_attempt).toHaveLength(1);
   });
 });
+
+describe("maintenance dynamic groups", () => {
+  it("reconciles dynamic membership as devices become stale or check in", async () => {
+    const db = makeDb();
+    db.store.organization.push({
+      id: "org-1",
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.device.push({
+      id: "device-1",
+      organizationId: "org-1",
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: new Date(now.getTime() - 40 * DAY),
+      lastSeenAt: new Date(now.getTime() - 20 * DAY),
+    });
+    db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Stale Macs",
+      notes: null,
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "staleDays", op: "gte", value: 14 }] },
+      lastEvaluatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const first = await run(db);
+    expect(first.dynamicGroupsEvaluated).toBe(1);
+    expect(db.store.group_device).toEqual([
+      { groupId: "group-1", deviceId: "device-1", source: "dynamic" },
+    ]);
+
+    // A fresh check-in makes the device no longer stale; maintenance removes
+    // the rule-derived row on the next run.
+    db.store.device[0].lastSeenAt = now;
+    const second = await run(db);
+    expect(second.dynamicGroupsEvaluated).toBe(1);
+    expect(db.store.group_device).toEqual([]);
+  });
+
+  it("can be disabled for tests and constrained hosts", async () => {
+    const db = makeDb();
+    db.store.organization.push({
+      id: "org-1",
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Dynamic",
+      notes: null,
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "platform", op: "eq", value: "apple" }] },
+      lastEvaluatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        dynamicGroups: false,
+      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+    );
+    expect(result.dynamicGroupsEvaluated).toBe(0);
+  });
+});

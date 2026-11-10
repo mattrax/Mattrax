@@ -1,8 +1,11 @@
 import { Effect } from "effect";
 import { and, asc, eq, lt } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
+import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
+import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
 import { schema as s, type Db } from "@mattrax/enterprise-core";
-import { certificateSerialHex, signScepCsr } from "@mattrax/scep";
+import { certificateSerialHex, openCaPrivateKey, signScepCsr } from "@mattrax/scep";
+import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import {
   InternalServerError,
   UnknownDevice,
@@ -150,6 +153,150 @@ export const verifyWindowsEnrollmentTokenDetailed = async (
   return { verification: { subject, issuedAt }, expired: false };
 };
 
+const fromBase64Url = (value: string): string | null => {
+  try {
+    const padded = value.replaceAll("-", "+").replaceAll("_", "/");
+    const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
+    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+};
+
+/** Prefix that marks a tenant-scoped Windows enrollment token. */
+const TENANT_TOKEN_PREFIX = "mttxw1";
+const TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v1";
+/** Prefix that binds the organization into a WSTEP enrollment token subject. */
+const ENROLLMENT_SUBJECT_PREFIX = "mttxw1:";
+
+/**
+ * Tenant enrollment links are shared by administrators (settings, QR code,
+ * email), so the token lifetime is measured in days rather than minutes. The
+ * enrollment page mints a fresh token on every load.
+ */
+export const DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+export type WindowsTenantTokenOptions = {
+  /** Lifetime in seconds. Defaults to seven days. */
+  readonly ttlSeconds?: number;
+  /** Injectable clock in milliseconds, for tests. */
+  readonly now?: number;
+};
+
+export type WindowsTenantTokenVerification = {
+  readonly organizationId: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+};
+
+export type WindowsTenantTokenEvaluation = {
+  /** Non-null only when the signature is valid and the token has not expired. */
+  readonly verification: WindowsTenantTokenVerification | null;
+  /** True when the signature is valid but the token's lifetime has elapsed. */
+  readonly expired: boolean;
+};
+
+const tenantTokenMessage = (organizationId: string, issuedAt: number, expiresAt: number) =>
+  `${TENANT_TOKEN_CONTEXT}.${organizationId}.${issuedAt}.${expiresAt}`;
+
+/**
+ * Stateless tenant enrollment token.
+ *
+ * Encoding: `mttxw1.<base64url organization id>.<issuedAt>.<expiresAt>.<hmac>`
+ * signed with `AUTH_SECRET`. Unlike the WSTEP token (which a device echoes back
+ * in a SOAP header), this token lives in the discovery/policy/enroll URL so a
+ * tenant-scoped enrollment link never needs a deployment-wide tenant pin.
+ */
+export const createWindowsTenantToken = (
+  organizationId: string,
+  authSecret: string,
+  options: WindowsTenantTokenOptions = {},
+): Promise<string> =>
+  (async () => {
+    if (!organizationId) throw new Error("Windows tenant token organization is required");
+    if (!authSecret) throw new Error("Windows tenant token requires a secret");
+    const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
+    const expiresAt = issuedAt + (options.ttlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS);
+    const signature = await hmac(
+      authSecret,
+      tenantTokenMessage(organizationId, issuedAt, expiresAt),
+    );
+    return [
+      TENANT_TOKEN_PREFIX,
+      toBase64Url(encoder.encode(organizationId)),
+      issuedAt,
+      expiresAt,
+      signature,
+    ].join(".");
+  })();
+
+export const verifyWindowsTenantTokenDetailed = async (
+  token: string | undefined,
+  authSecret: string,
+  options: WindowsTenantTokenOptions = {},
+): Promise<WindowsTenantTokenEvaluation> => {
+  const invalid = { verification: null, expired: false } as const;
+  if (!token || !authSecret) return invalid;
+  const parts = token.split(".");
+  if (parts.length !== 5) return invalid;
+  const [prefix, encodedOrganization, issuedAtRaw, expiresAtRaw, signature] = parts;
+  if (
+    prefix !== TENANT_TOKEN_PREFIX ||
+    !encodedOrganization ||
+    !issuedAtRaw ||
+    !expiresAtRaw ||
+    !signature
+  )
+    return invalid;
+  const organizationId = fromBase64Url(encodedOrganization);
+  const issuedAt = Number(issuedAtRaw);
+  const expiresAt = Number(expiresAtRaw);
+  if (!organizationId || !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return invalid;
+  if (expiresAt <= issuedAt) return invalid;
+
+  const expected = await hmac(authSecret, tenantTokenMessage(organizationId, issuedAt, expiresAt));
+  if (!timingSafeEqual(expected, signature)) return invalid;
+
+  const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
+  if (nowSeconds > expiresAt) return { verification: null, expired: true };
+  // Allow a little clock skew for freshly issued tokens.
+  if (issuedAt > nowSeconds + 300) return invalid;
+
+  return { verification: { organizationId, issuedAt, expiresAt }, expired: false };
+};
+
+export const verifyWindowsTenantToken = (
+  token: string | undefined,
+  authSecret: string,
+  options: WindowsTenantTokenOptions = {},
+): Promise<WindowsTenantTokenVerification | null> =>
+  verifyWindowsTenantTokenDetailed(token, authSecret, options).then(
+    (result) => result.verification,
+  );
+
+/** Expiry encoded in a tenant token, for display in the enrollment UI. */
+export const windowsTenantTokenExpiresAt = (token: string): Date | null => {
+  const parts = token.split(".");
+  if (parts.length !== 5) return null;
+  const seconds = Number(parts[3]);
+  return Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
+};
+
+/** Bind the organization into a WSTEP token so enrollment cannot switch tenants. */
+export const windowsEnrollmentSubject = (organizationId: string): string =>
+  `${ENROLLMENT_SUBJECT_PREFIX}${toBase64Url(encoder.encode(organizationId))}:${crypto.randomUUID()}`;
+
+/** Recover the organization previously bound into a WSTEP token subject. */
+export const organizationFromWindowsEnrollmentSubject = (
+  subject: string | undefined,
+): string | null => {
+  if (!subject?.startsWith(ENROLLMENT_SUBJECT_PREFIX)) return null;
+  const rest = subject.slice(ENROLLMENT_SUBJECT_PREFIX.length);
+  const separator = rest.indexOf(":");
+  if (separator <= 0) return null;
+  return fromBase64Url(rest.slice(0, separator));
+};
+
 /**
  * Identity values a SCEP certificate row may carry for a device.
  *
@@ -172,15 +319,18 @@ export const certificateDeviceIdsFor = (device: {
 export type WindowsBackendOptions = {
   readonly db: Db["Service"];
   readonly origin: string;
-  /** Shared application secret used to sign/verify WSTEP enrollment tokens. */
+  /** Shared application secret used to sign/verify WSTEP and tenant tokens. */
   readonly authSecret?: string;
   /**
-   * Tenant that owns Windows devices. Windows discovery/enrollment carries no
-   * tenant identity, so this backend fails closed when the pin is unset rather
-   * than guessing a tenant. Configure this to enable Windows enrollment.
+   * Legacy deployment-wide tenant pin. Tenant-scoped enrollment links carry
+   * their own signed token, so this is only consulted when a request has no
+   * tenant token and no identity certificate. Set it only for single-tenant
+   * deployments that need to keep accepting the old un-scoped URL.
    */
   readonly windowsOrganizationId?: string;
   readonly enrollmentTokenTtlSeconds?: number;
+  /** Lifetime of the tenant token embedded in enrollment URLs. */
+  readonly tenantTokenTtlSeconds?: number;
   /** Require a verified client certificate on SyncML check-in. */
   readonly requireDeviceIdentity?: boolean;
 };
@@ -194,21 +344,115 @@ type WindowsBackend = Pick<
   | "windowsDeviceEvent"
 >;
 
+const decodeCertificateSubject = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const certificateAttribute = (
+  identityCertificate: string | undefined,
+  attribute: "OU" | "CN",
+): string | null => {
+  if (!identityCertificate) return null;
+  const text = decodeCertificateSubject(identityCertificate);
+  return (
+    text.match(new RegExp(`(?:^|[,/\\n])\\s*${attribute}\\s*=\\s*([^,/\\n]+)`, "i"))?.[1]?.trim() ??
+    null
+  );
+};
+
+/**
+ * A forwarded mTLS serial may be hex (`certificateSerialHex`), uppercase,
+ * `0x`-prefixed, colon-separated, or decimal. Compare against every plausible
+ * canonical form rather than trusting one forwarder convention.
+ */
+const certificateSerialCandidates = (value: string): string[] => {
+  const candidates = new Set<string>();
+  const normalized = normalizeIssuedCertificateSerial(value);
+  if (normalized) candidates.add(normalized);
+  const compact = value.trim().replace(/[\s:]/g, "");
+  if (/^\d+$/.test(compact)) {
+    try {
+      candidates.add(BigInt(compact).toString(16));
+    } catch {
+      // Not a decimal serial; the hex form above still applies.
+    }
+  }
+  return [...candidates];
+};
+
+type ResolveOrganizationInput = {
+  readonly tenantToken?: string;
+  readonly identityCertificate?: string;
+  /** Require an identity certificate and use its OU as the organization. */
+  readonly requireCertificate?: boolean;
+  /** Set false to ignore the legacy deployment-wide pin. */
+  readonly allowPin?: boolean;
+  /**
+   * Discovery/policy/enroll must reject a bad or expired tenant token. Device
+   * check-ins may instead fall back to the verified certificate OU: the token
+   * on the management URL expires long before a device's certificate does.
+   */
+  readonly rejectInvalidToken?: boolean;
+};
+
+type OrganizationResolution = Effect.Effect<string, UnknownDevice | InternalServerError, never>;
+
 export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
   const { db, origin, authSecret, windowsOrganizationId, requireDeviceIdentity } = options;
   const ttlSeconds = options.enrollmentTokenTtlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
+  const tenantTokenTtlSeconds =
+    options.tenantTokenTtlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS;
   const internal = () => new InternalServerError();
 
   const requireSecret = (): Effect.Effect<string, InternalServerError> =>
     authSecret ? Effect.succeed(authSecret) : Effect.fail(new InternalServerError());
 
-  const resolveOrganizationId = (): Effect.Effect<string, InternalServerError> =>
-    // Windows discovery has no tenant identity. A deployment-wide pin is the
-    // only safe mapping; guessing the earliest tenant would let an anonymous
-    // caller enroll into the wrong workspace.
-    windowsOrganizationId
-      ? Effect.succeed(windowsOrganizationId)
-      : Effect.fail(new InternalServerError());
+  const evaluateTenantToken = (
+    tenantToken: string | undefined,
+  ): Effect.Effect<WindowsTenantTokenEvaluation, InternalServerError> =>
+    Effect.gen(function* () {
+      const trimmed = tenantToken?.trim();
+      if (!trimmed) return { verification: null, expired: false };
+      const secret = yield* requireSecret();
+      return yield* Effect.promise(() =>
+        verifyWindowsTenantTokenDetailed(trimmed, secret, { ttlSeconds: tenantTokenTtlSeconds }),
+      );
+    });
+
+  /**
+   * Resolve the owning organization from, in order: the signed tenant token,
+   * the mTLS certificate OU, then the legacy deployment-wide pin. Sources that
+   * are present must agree; a conflicting token/certificate pair is rejected
+   * rather than silently choosing one tenant over another.
+   */
+  const resolveOrganization = (input: ResolveOrganizationInput = {}): OrganizationResolution =>
+    Effect.gen(function* () {
+      const evaluation = yield* evaluateTenantToken(input.tenantToken);
+      const tokenOrganizationId = evaluation.verification?.organizationId ?? null;
+      if (input.tenantToken?.trim() && !tokenOrganizationId && (input.rejectInvalidToken ?? true))
+        return yield* Effect.fail(new UnknownDevice());
+
+      const certificateOrganizationId = certificateAttribute(input.identityCertificate, "OU");
+      if (input.requireCertificate && !certificateOrganizationId)
+        return yield* Effect.fail(new UnknownDevice());
+      if (
+        tokenOrganizationId &&
+        certificateOrganizationId &&
+        tokenOrganizationId !== certificateOrganizationId
+      )
+        return yield* Effect.fail(new UnknownDevice());
+
+      const organizationId =
+        tokenOrganizationId ??
+        certificateOrganizationId ??
+        (input.allowPin === false ? null : (windowsOrganizationId ?? null));
+      if (!organizationId) return yield* Effect.fail(new UnknownDevice());
+      return organizationId;
+    });
 
   const findDevice = (organizationId: string, deviceId: string) =>
     Effect.gen(function* () {
@@ -231,42 +475,101 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     readonly name: string;
     readonly timestamp: Date;
   }) =>
-    db.insert(s.device).values({
-      id: input.id,
-      organizationId: input.organizationId,
-      proto: "win",
-      status: "enrolled",
-      name: input.name,
-      vendor: "Microsoft",
-      dmIdentifier: input.deviceId,
-      enrolledAt: input.timestamp,
-      lastSeenAt: input.timestamp,
+    Effect.gen(function* () {
+      yield* db.insert(s.device).values({
+        id: input.id,
+        organizationId: input.organizationId,
+        proto: "win",
+        status: "enrolled",
+        name: input.name,
+        vendor: "Microsoft",
+        dmIdentifier: input.deviceId,
+        enrolledAt: input.timestamp,
+        lastSeenAt: input.timestamp,
+      });
+      yield* syncDynamicGroupsForDevice(db, input.organizationId, input.id, {
+        now: input.timestamp,
+      }).pipe(Effect.catch(() => Effect.void));
     });
 
-  const touchDevice = (deviceId: string, timestamp: Date) =>
-    db.update(s.device).set({ lastSeenAt: timestamp }).where(eq(s.device.id, deviceId));
+  const touchDevice = (deviceId: string, organizationId: string, timestamp: Date) =>
+    Effect.gen(function* () {
+      yield* db.update(s.device).set({ lastSeenAt: timestamp }).where(eq(s.device.id, deviceId));
+      yield* syncDynamicGroupsForDevice(db, organizationId, deviceId, { now: timestamp }).pipe(
+        Effect.catch(() => Effect.void),
+      );
+    });
+
+  /**
+   * Reject a device presenting an identity certificate whose serial was
+   * revoked. The edge may forward the serial as hex or decimal, so compare
+   * canonical forms. Certificate rows can be keyed by the internal device id or
+   * the legacy Windows DeviceID.
+   */
+  const identityCertificateRevoked = (
+    organizationId: string,
+    device: { readonly id: string; readonly dmIdentifier?: string | null },
+    serial: string | undefined,
+  ): Effect.Effect<boolean, unknown> =>
+    Effect.gen(function* () {
+      const trimmed = serial?.trim();
+      if (!trimmed) return false;
+      const candidates = certificateSerialCandidates(trimmed);
+      if (candidates.length === 0) return false;
+      for (const deviceId of certificateDeviceIdsFor(device)) {
+        const rows = yield* db
+          .select({
+            serial: s.scepIssuedCertificate.serial,
+            revokedAt: s.scepIssuedCertificate.revokedAt,
+          })
+          .from(s.scepIssuedCertificate)
+          .where(
+            and(
+              eq(s.scepIssuedCertificate.organizationId, organizationId),
+              eq(s.scepIssuedCertificate.deviceId, deviceId),
+            ),
+          );
+        if (
+          rows.some(
+            (row) =>
+              row.revokedAt != null &&
+              candidates.includes(normalizeIssuedCertificateSerial(row.serial)),
+          )
+        )
+          return true;
+      }
+      return false;
+    });
+
+  /** Preserve the tenant token through discovery -> policy -> enroll URLs. */
+  const tenantQuery = (token: string | undefined): string =>
+    token?.trim() ? `?tenant=${encodeURIComponent(token.trim())}` : "";
 
   return {
     windowsDiscovery: (
-      _request: WindowsDiscoveryRequest,
-    ): Effect.Effect<WindowsDiscoveryResponse, InternalServerError> =>
+      request: WindowsDiscoveryRequest,
+    ): Effect.Effect<WindowsDiscoveryResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
-        yield* resolveOrganizationId();
+        yield* resolveOrganization({ tenantToken: request.tenantToken });
+        const query = tenantQuery(request.tenantToken);
         return {
           authPolicy: "OnPremise",
           // MS-MDE2 enrollment version supported by the WSTEP implementation.
           enrollmentVersion: "4.0",
-          enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy`,
-          enrollmentServiceUrl: `${origin}/mdm/windows/enroll`,
+          enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy${query}`,
+          enrollmentServiceUrl: `${origin}/mdm/windows/enroll${query}`,
         };
       }),
 
     getWindowsEnrollmentPolicy: (
       authToken: string,
+      context = {},
     ): Effect.Effect<WindowsEnrollmentPolicy, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const secret = yield* requireSecret();
-        yield* resolveOrganizationId();
+        const organizationId = yield* resolveOrganization({
+          tenantToken: context.tenantToken,
+        });
         // A device may retry the policy call; keep the subject stable when it
         // presents one of our own still-valid tokens.
         const presentedToken = authToken.trim();
@@ -288,7 +591,19 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           !evaluated.expired
         )
           return yield* Effect.fail(new UnknownDevice());
-        const subject = evaluated.verification?.subject ?? crypto.randomUUID();
+        const presentedOrganizationId = evaluated.verification
+          ? organizationFromWindowsEnrollmentSubject(evaluated.verification.subject)
+          : null;
+        // A token minted for another tenant must never be upgraded into this
+        // tenant's enrollment flow.
+        if (presentedOrganizationId && presentedOrganizationId !== organizationId)
+          return yield* Effect.fail(new UnknownDevice());
+        const subject =
+          evaluated.verification &&
+          presentedOrganizationId === organizationId &&
+          evaluated.verification.subject
+            ? evaluated.verification.subject
+            : windowsEnrollmentSubject(organizationId);
         const issued = yield* Effect.promise(() =>
           createWindowsEnrollmentToken(subject, secret, { ttlSeconds }),
         );
@@ -311,7 +626,17 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         if (!verification) return yield* Effect.fail(new UnknownDevice());
 
         const deviceIdentifier = request.deviceId?.trim() || verification.subject;
-        const organizationId = yield* resolveOrganizationId();
+        const organizationId = yield* resolveOrganization({
+          tenantToken: request.tenantToken,
+        });
+        const boundOrganizationId = organizationFromWindowsEnrollmentSubject(verification.subject);
+        // The WSTEP token is minted per tenant. URL token and WSTEP token must
+        // agree; an unbound legacy token is only accepted for the legacy
+        // deployment-wide pin, never alongside a tenant token.
+        if (boundOrganizationId && boundOrganizationId !== organizationId)
+          return yield* Effect.fail(new UnknownDevice());
+        if (!boundOrganizationId && request.tenantToken?.trim())
+          return yield* Effect.fail(new UnknownDevice());
         const [enrollment] = yield* db
           .select()
           .from(s.enterpriseEnrollment)
@@ -335,8 +660,20 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         }
 
         const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);
-        if (!ca || typeof ca.privateKeyJwk !== "object" || ca.privateKeyJwk === null) {
-          return yield* Effect.fail(internal());
+        if (!ca) return yield* Effect.fail(internal());
+
+        // Windows issuance reads the same sealed CA key as SCEP issuance. Pick
+        // up a lazy migration (legacy plaintext row) exactly like the SCEP
+        // repository does; failure must never fall back to a new CA.
+        const caKey = yield* Effect.tryPromise({
+          try: () => openCaPrivateKey(ca.privateKeyJwk, authSecret),
+          catch: internal,
+        });
+        if (caKey.migrated) {
+          yield* db
+            .update(s.scepCa)
+            .set({ privateKeyJwk: caKey.migrated })
+            .where(eq(s.scepCa.id, 1));
         }
 
         const timestamp = new Date();
@@ -344,7 +681,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const signed = yield* signScepCsr({
           csr: request.csr,
           caCertPem: ca.certPem,
-          caPrivateKeyJwk: ca.privateKeyJwk as JsonWebKey,
+          caPrivateKeyJwk: caKey.privateKeyJwk,
           notBefore: timestamp,
           notAfter,
           deviceId: deviceIdentifier,
@@ -369,6 +706,9 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               lastSeenAt: timestamp,
             })
             .where(eq(s.device.id, existing.id));
+          yield* syncDynamicGroupsForDevice(db, organizationId, existing.id, {
+            now: timestamp,
+          }).pipe(Effect.catch(() => Effect.void));
         } else {
           yield* insertDevice({
             id: deviceRowId,
@@ -444,21 +784,32 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
       checkinRequest: WindowsManagementRequest,
     ): Effect.Effect<WindowsManagementResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
-        const organizationId = yield* resolveOrganizationId();
+        const organizationId = yield* resolveOrganization({
+          tenantToken: scope.tenantToken,
+          identityCertificate: scope.identityCertificate,
+          requireCertificate: requireDeviceIdentity,
+          // The management URL's enrollment token may have expired; the
+          // client certificate remains the durable device identity.
+          rejectInvalidToken: false,
+        });
         if (requireDeviceIdentity) {
-          const certificate = scope.identityCertificate ?? "";
-          const subjectOu = certificate.match(/(?:^|[,/\n])\s*OU\s*=\s*([^,/\n]+)/i)?.[1]?.trim();
-          const subjectCn = certificate.match(/(?:^|[,/\n])\s*CN\s*=\s*([^,/\n]+)/i)?.[1]?.trim();
-          if (!certificate || subjectOu !== organizationId) {
-            return yield* Effect.fail(new UnknownDevice());
-          }
+          const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
           if (subjectCn && subjectCn !== scope.deviceId) {
             return yield* Effect.fail(new UnknownDevice());
           }
         }
         const device = yield* findDevice(organizationId, scope.deviceId);
         if (!device) return yield* Effect.fail(new UnknownDevice());
-        yield* touchDevice(device.id, new Date());
+        if (
+          requireDeviceIdentity &&
+          (yield* identityCertificateRevoked(
+            organizationId,
+            device,
+            scope.identityCertificateSerial,
+          ))
+        )
+          return yield* Effect.fail(new UnknownDevice());
+        yield* touchDevice(device.id, organizationId, new Date());
 
         for (const status of checkinRequest.statuses) {
           const entry = status as { cmdRef?: unknown; data?: unknown };
@@ -475,38 +826,15 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             .where(and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)));
         }
 
-        const groupedConfigurations = yield* db
-          .select({
-            policyId: s.configuration.policyId,
-            kind: s.configuration.kind,
-            data: s.configuration.data,
-          })
-          .from(s.configuration)
-          .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
-          .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
-          .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
-          .where(eq(s.groupDevice.deviceId, device.id))
-          .limit(1000);
-        const directConfigurations = yield* db
-          .select({
-            policyId: s.configuration.policyId,
-            kind: s.configuration.kind,
-            data: s.configuration.data,
-          })
-          .from(s.configuration)
-          .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
-          .innerJoin(s.devicePolicy, eq(s.devicePolicy.policyId, s.configuration.policyId))
-          .where(eq(s.devicePolicy.deviceId, device.id))
-          .limit(1000);
-        const configurationKeys = new Set(
-          groupedConfigurations.map((row) => `${row.policyId}:${row.kind}`),
-        );
-        const configurations = [
-          ...groupedConfigurations,
-          ...directConfigurations.filter(
-            (row) => !configurationKeys.has(`${row.policyId}:${row.kind}`),
-          ),
-        ];
+        const effective = yield* resolveEffectivePolicyForDevice(db, {
+          id: device.id,
+          organizationId: device.organizationId,
+        });
+        const configurations = effective.configurations.map((configuration) => ({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          data: configuration.data,
+        }));
 
         const commands: Array<{
           kind: string;
@@ -598,10 +926,37 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
       event: WindowsDeviceEvent,
     ): Effect.Effect<void, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
-        const organizationId = yield* resolveOrganizationId();
         const deviceId = event.deviceId || scope.deviceId;
+        // An `Enrolled` event is the tail of the enrollment flow, which may not
+        // have a client certificate yet; it is allowed to authenticate with the
+        // tenant token (or the legacy pin). Management events must prove device
+        // identity when configured.
+        const isEnrollmentEvent = event._tag === "Enrolled";
+        const organizationId = yield* resolveOrganization({
+          tenantToken: scope.tenantToken,
+          identityCertificate: scope.identityCertificate,
+          requireCertificate: requireDeviceIdentity && !isEnrollmentEvent,
+          // A management event authenticated by certificate must not be
+          // wedged by an expired enrollment URL token.
+          rejectInvalidToken: isEnrollmentEvent,
+        });
+        if (requireDeviceIdentity && !isEnrollmentEvent) {
+          const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
+          if (subjectCn && subjectCn !== deviceId) return yield* Effect.fail(new UnknownDevice());
+        }
         const device = yield* findDevice(organizationId, deviceId);
         const timestamp = new Date();
+
+        if (requireDeviceIdentity && !isEnrollmentEvent && device) {
+          if (
+            yield* identityCertificateRevoked(
+              organizationId,
+              device,
+              scope.identityCertificateSerial,
+            )
+          )
+            return yield* Effect.fail(new UnknownDevice());
+        }
 
         if (event._tag === "Enrolled") {
           if (device) {
@@ -609,6 +964,9 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               .update(s.device)
               .set({ status: "enrolled", lastSeenAt: timestamp })
               .where(eq(s.device.id, device.id));
+            yield* syncDynamicGroupsForDevice(db, organizationId, device.id, {
+              now: timestamp,
+            }).pipe(Effect.catch(() => Effect.void));
           } else {
             yield* insertDevice({
               id: newDeviceId(),
@@ -624,7 +982,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         if (!device) return yield* Effect.fail(new UnknownDevice());
         // ManagementCheckin and CommandResult both prove liveness. Command
         // history is not persisted because command delivery is not implemented.
-        yield* touchDevice(device.id, timestamp);
+        yield* touchDevice(device.id, organizationId, timestamp);
       }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
   };
 };

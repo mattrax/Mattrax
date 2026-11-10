@@ -1,6 +1,7 @@
 import { AuthPersistence } from "@yielded/auth-persistence-drizzle/Mysql2";
 import { Schema as AuthSchema, Sessions } from "@yielded/auth";
 import { AuthDefinition } from "@mattrax/enterprise-domain";
+import type { DynamicGroupRules } from "@mattrax/enterprise-domain";
 import { defineRelations } from "drizzle-orm";
 import {
   boolean,
@@ -98,6 +99,9 @@ export const organization = mysqlTable(
     name: shortText("name").notNull(),
     slug: shortText("slug").notNull(),
     logo: text("logo"),
+    displayName: shortText("display_name"),
+    supportEmail: varchar("support_email", { length: 320 }),
+    brandColor: varchar("brand_color", { length: 7 }),
     metadata: text("metadata"),
     stripeCustomerId: shortText("stripe_customer_id"),
     createdAt: timestamp("created_at").notNull(),
@@ -176,6 +180,16 @@ export const accountApiToken = mysqlTable(
     name: shortText("name").notNull(),
     tokenPrefix: shortText("token_prefix").notNull(),
     tokenHash: varchar("token_hash", { length: 255 }).notNull(),
+    /**
+     * When set, the token may only be used against this tenant. Existing and
+     * account-wide tokens leave this null.
+     */
+    tenantId: id("tenant_id").references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * Allowed scopes (`read`, `write`). Null is treated as full access so tokens
+     * created before scoping was introduced keep working.
+     */
+    scopes: json("scopes").$type<string[]>(),
     lastUsedAt: timestamp("last_used_at"),
     expiresAt: timestamp("expires_at"),
     revokedAt: timestamp("revoked_at"),
@@ -185,6 +199,7 @@ export const accountApiToken = mysqlTable(
   (table) => [
     uniqueIndex("account_api_token_hash_unique").on(table.tokenHash),
     index("account_api_token_user_id_idx").on(table.userId),
+    index("account_api_token_tenant_id_idx").on(table.tenantId),
   ],
 );
 
@@ -582,6 +597,19 @@ export const enterpriseGroup = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: shortText("name").notNull(),
     notes: text("notes"),
+    /**
+     * `manual` groups keep administrator-managed `group_device` rows.
+     * `dynamic` groups materialise rule matches into rows with
+     * `group_device.source = 'dynamic'`; manual rows are never removed by a
+     * recompute, so an administrator can keep explicit exceptions.
+     */
+    kind: varchar("kind", { length: 16, enum: ["manual", "dynamic"] })
+      .notNull()
+      .default("manual"),
+    /** Versioned membership rules. Required for `dynamic`, null for `manual`. */
+    rules: json("rules").$type<DynamicGroupRules>(),
+    /** Last time a dynamic group's materialised membership was recomputed. */
+    lastEvaluatedAt: timestamp("last_evaluated_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -597,6 +625,12 @@ export const policy = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: shortText("name").notNull(),
     notes: text("notes"),
+    /**
+     * Conflict weight when included policies provide the same configuration
+     * kind. Higher numbers win; ties fall back to the most recently updated
+     * policy, then the lexicographically smallest id.
+     */
+    priority: int("priority").notNull().default(0),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -679,8 +713,21 @@ export const groupDevice = mysqlTable(
     deviceId: id("device_id")
       .notNull()
       .references(() => device.id, { onDelete: "cascade" }),
+    /**
+     * `manual` rows are created by an administrator. `dynamic` rows are
+     * materialised from `enterprise_group.rules` and may be replaced on every
+     * recompute; manual rows survive recomputes as explicit exceptions.
+     */
+    source: varchar("source", { length: 16, enum: ["manual", "dynamic"] })
+      .notNull()
+      .default("manual"),
   },
-  (table) => [primaryKey({ columns: [table.groupId, table.deviceId] })],
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.deviceId] }),
+    // Device check-ins evaluate that device's dynamic groups, so lookups by
+    // device id must not scan the whole membership table.
+    index("group_device_device_id_idx").on(table.deviceId),
+  ],
 );
 
 export const groupPolicy = mysqlTable(
@@ -692,6 +739,13 @@ export const groupPolicy = mysqlTable(
     policyId: id("policy_id")
       .notNull()
       .references(() => policy.id, { onDelete: "cascade" }),
+    /**
+     * `exclude` vetoes group delivery of this policy for every member. A
+     * direct device include can still deliver it (see policyResolution.ts).
+     */
+    mode: varchar("mode", { length: 16, enum: ["include", "exclude"] })
+      .notNull()
+      .default("include"),
   },
   (table) => [primaryKey({ columns: [table.groupId, table.policyId] })],
 );
@@ -765,6 +819,13 @@ export const devicePolicy = mysqlTable(
     policyId: id("policy_id")
       .notNull()
       .references(() => policy.id, { onDelete: "cascade" }),
+    /**
+     * `exclude` removes this policy from the device's effective set, including
+     * group includes. Direct includes take precedence over group assignments.
+     */
+    mode: varchar("mode", { length: 16, enum: ["include", "exclude"] })
+      .notNull()
+      .default("include"),
   },
   (table) => [primaryKey({ columns: [table.deviceId, table.policyId] })],
 );

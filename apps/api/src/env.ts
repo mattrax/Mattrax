@@ -16,9 +16,9 @@ const urlString = Schema.String.check(
 const ApiEnvSchema = Schema.Struct({
   ORIGIN: urlString,
   AUTH_SECRET: nonEmptyString,
-  STRIPE_SECRET_KEY: nonEmptyString,
-  STRIPE_WEBHOOK_SECRET: nonEmptyString,
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: nonEmptyString,
+  STRIPE_SECRET_KEY: Schema.optional(nonEmptyString),
+  STRIPE_WEBHOOK_SECRET: Schema.optional(nonEmptyString),
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: Schema.optional(nonEmptyString),
   CLOUD_APPLE_VENDOR_CERT: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
   /** Hosted Cloud push relay. When set, APNs pushes go through the relay. */
@@ -48,9 +48,10 @@ const ApiEnvSchema = Schema.Struct({
   /** Optional shared secret required in `x-dev-mailbox-secret`. */
   DEV_MAILBOX_SECRET: Schema.optional(nonEmptyString),
   /**
-   * Organization that owns Windows devices. Windows discovery/enrollment has no
-   * tenant identity, so Cloud requires this pin; when unset `/mdm/windows/*`
-   * returns a configuration error rather than guessing a tenant.
+   * Legacy fallback tenant for Windows devices. Tenant-scoped enrollment URLs
+   * carry a signed token, so this is no longer required. Set it only for a
+   * single-tenant deployment that must keep accepting the old un-scoped
+   * `/mdm/windows/*` discovery URL.
    */
   WINDOWS_ORGANIZATION_ID: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */

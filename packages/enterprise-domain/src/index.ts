@@ -12,6 +12,9 @@ export {
   enterpriseApi,
 } from "./enterprise.ts";
 export * from "./enterprise.ts";
+export * from "./branding.ts";
+export * from "./deviceHealth.ts";
+export * from "./dynamicGroups.ts";
 export {
   applicationKey,
   applicationPrefix,

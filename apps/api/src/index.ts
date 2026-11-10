@@ -10,6 +10,7 @@ import { appleMdmApi } from "@mattrax/dm-apple";
 import {
   EnterpriseService,
   enterpriseHandlers,
+  billingWebhookRoutes,
   runMaintenance,
   scimRoutes,
   makeAppAuth,
@@ -45,35 +46,31 @@ import {
   recordDevEmail,
   timingSafeStringEqual,
 } from "./devMailbox.js";
+import {
+  errorResponse,
+  logRequest,
+  readErrorTag,
+  resolveRequestId,
+  shouldLogRequest,
+  tenantIdFromPath,
+  withRequestId,
+} from "./observability.js";
+import { makeRateLimiter, rateLimitResponse, type RateLimitBindingLike } from "./rateLimit.js";
+import { checkReadiness } from "./readiness.js";
 
-const rateLimitWindow = new Map<string, { count: number; resetAt: number }>();
+const rateLimiter = makeRateLimiter();
 
-const sensitiveAuthPaths = new Set([
-  "/api/v1/signIn",
-  "/api/v1/register",
-  "/api/v1/requestReset",
-  "/api/v1/requestEmailCode",
-  "/api/v1/beginEmailSignIn",
-  "/api/v1/completeEmailCode",
-  "/api/v1/ssoSignIn",
-  "/api/v1/verifyEmail",
-]);
-
-const tooManyRequests = (request: Request) => {
-  const url = new URL(request.url);
-  if (request.method !== "POST" || !sensitiveAuthPaths.has(url.pathname)) return false;
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "local";
-  const now = Date.now();
-  const entry = rateLimitWindow.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    rateLimitWindow.set(ip, { count: 1, resetAt: now + 60_000 });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > 120;
+/**
+ * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
+ * without one use the per-isolate fallback.
+ */
+const rateLimitBindings = (env: Env) => {
+  const candidate = env as unknown as Record<string, unknown>;
+  const binding = (name: string) => candidate[name] as RateLimitBindingLike | undefined;
+  return {
+    auth: binding("RATE_LIMITER_AUTH"),
+    enrollment: binding("RATE_LIMITER_ENROLLMENT"),
+  };
 };
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
@@ -106,44 +103,6 @@ const proofSchedulerLayer = Layer.succeed(Proofs.ProofDispatchScheduler, {
     }),
 });
 
-const windowsMdmConfigurationMessage =
-  "Windows MDM is not configured for this deployment. Set WINDOWS_ORGANIZATION_ID on the API Worker to the tenant that owns Windows devices.";
-
-const windowsMdmNotConfiguredRoutes = Layer.mergeAll(
-  HttpRouter.add(
-    "POST",
-    "/mdm/windows/discovery",
-    HttpServerResponse.text(windowsMdmConfigurationMessage, {
-      status: 503,
-      contentType: "text/plain; charset=utf-8",
-    }),
-  ),
-  HttpRouter.add(
-    "POST",
-    "/mdm/windows/policy",
-    HttpServerResponse.text(windowsMdmConfigurationMessage, {
-      status: 503,
-      contentType: "text/plain; charset=utf-8",
-    }),
-  ),
-  HttpRouter.add(
-    "POST",
-    "/mdm/windows/enroll",
-    HttpServerResponse.text(windowsMdmConfigurationMessage, {
-      status: 503,
-      contentType: "text/plain; charset=utf-8",
-    }),
-  ),
-  HttpRouter.add(
-    "POST",
-    "/mdm/windows/management",
-    HttpServerResponse.text(windowsMdmConfigurationMessage, {
-      status: 503,
-      contentType: "text/plain; charset=utf-8",
-    }),
-  ),
-).pipe(Layer.provide(HttpServer.layerServices));
-
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
   .add(authHttp)
@@ -167,6 +126,12 @@ const applicationHandlers = Layer.mergeAll(
 const handlersLayer = Layer.mergeAll(
   applicationHandlers,
   authHttps.handlers(apiRoot),
+  // Raw Stripe webhook: unauthenticated but signature-verified. Mounted before
+  // the Effect HttpApi routes so it can read the raw request body.
+  billingWebhookRoutes({
+    webhookSecret: apiEnv.STRIPE_WEBHOOK_SECRET,
+    deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
+  }),
   HttpRouter.add("GET", "/api/health", HttpServerResponse.text("ok")),
   HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
   HttpRouter.add(
@@ -310,9 +275,10 @@ const makeAppLayer = (env: Env, request: Request) => {
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
-    // Windows discovery/enrollment has no tenant identity. Cloud requires an
-    // explicit tenant pin; setting it enables the Windows routes, otherwise the
-    // API serves a 503 configuration response instead of guessing a tenant.
+    // Tenant-scoped enrollment URLs carry a signed tenant token, so Cloud no
+    // longer needs a deployment-wide pin. An explicitly configured pin is kept
+    // as a fallback for single-tenant deployments that still use the old
+    // un-scoped discovery URL.
     windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
     requireWindowsDeviceIdentity: true,
     requireAppleDeviceIdentity: true,
@@ -327,11 +293,15 @@ const makeAppLayer = (env: Env, request: Request) => {
         })
       : Layer.empty;
 
+  const stripeLayer = env.STRIPE_SECRET_KEY
+    ? StripeService.layer(env.STRIPE_SECRET_KEY)
+    : Layer.empty;
+
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
-      Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
+      Layer.provide(stripeLayer),
       Layer.provide(R2.layer(storageBucket)),
       Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
@@ -360,7 +330,7 @@ const makeAppLayer = (env: Env, request: Request) => {
 
   const appWithDevRoutes = Layer.mergeAll(
     appLayer,
-    apiEnv.WINDOWS_ORGANIZATION_ID ? windowsMdmRoutes : windowsMdmNotConfiguredRoutes,
+    windowsMdmRoutes,
     ssoRoutes({
       origin: env.ORIGIN,
       clientId: env.AZURE_CLIENT_ID,
@@ -397,46 +367,143 @@ const makeAppLayer = (env: Env, request: Request) => {
   );
 };
 
+const checkDatabaseReady = (env: Env) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const db = yield* Db;
+      // The cheapest possible round-trip; no tenant data is read.
+      yield* db.execute("select 1");
+    }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env))),
+  );
+
+const deploymentId = (env: Env): string | null => {
+  const metadata = (env as unknown as { CF_VERSION_METADATA?: { id?: string } })
+    .CF_VERSION_METADATA;
+  return metadata?.id ?? null;
+};
+
+const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {
+  const result = await checkReadiness({
+    checkDatabase: () => checkDatabaseReady(env),
+    version,
+    deploymentId: deploymentId(env),
+  });
+  return withRequestId(
+    new Response(JSON.stringify(result.body), {
+      status: result.httpStatus,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    }),
+    requestId,
+  );
+};
+
+/** Redact emails and long opaque tokens before an error message reaches logs. */
+const describeError = (cause: unknown): string => {
+  const error = cause instanceof Error ? cause : undefined;
+  const text = error ? `${error.name}: ${error.message}` : String(cause);
+  return text
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted]")
+    .slice(0, 500);
+};
+
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    if (tooManyRequests(request))
-      return new Response("Too Many Requests", {
-        status: 429,
-        headers: { "retry-after": "60", "content-type": "text/plain" },
-      });
+    const requestId = resolveRequestId(request);
+    const startedAt = Date.now();
+    const pathname = new URL(request.url).pathname;
 
-    // Device identity must come from the verified mTLS handshake, never from a
-    // caller-supplied header. Cloudflare exposes the certificate subject here.
-    const headers = new Headers(request.headers);
-    headers.delete("x-device-identity-certificate");
-    headers.delete("x-device-identity-certificate-serial");
-    headers.delete("x-device-identity-certificate-sha256");
-    const tls = (
-      request as unknown as {
-        cf?: {
-          tlsClientAuth?: {
-            certVerified?: string;
-            certRevoked?: string | boolean;
-            certSubjectDN?: string;
-            certSerial?: string;
-            certFingerprintSHA256?: string;
-          };
-        };
+    let response: Response;
+    let uncaught: unknown;
+    let dispose: (() => Promise<void>) | undefined;
+
+    try {
+      const limited = await rateLimiter.check(request, rateLimitBindings(env));
+      if (limited.limited) {
+        response = rateLimitResponse(limited, requestId);
+      } else if (
+        (pathname === "/api/health" || pathname === "/health") &&
+        request.method === "GET"
+      ) {
+        // Liveness must not build the service layer or touch MySQL.
+        response = new Response("ok", {
+          status: 200,
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "no-store",
+          },
+        });
+      } else if (pathname === "/api/ready" && request.method === "GET") {
+        response = await readinessResponse(env, requestId);
+      } else {
+        // Device identity must come from the verified mTLS handshake, never
+        // from a caller-supplied header. Cloudflare exposes the certificate
+        // subject here.
+        const headers = new Headers(request.headers);
+        headers.delete("x-device-identity-certificate");
+        headers.delete("x-device-identity-certificate-serial");
+        headers.delete("x-device-identity-certificate-sha256");
+        const tls = (
+          request as unknown as {
+            cf?: {
+              tlsClientAuth?: {
+                certVerified?: string;
+                certRevoked?: string | boolean;
+                certSubjectDN?: string;
+                certSerial?: string;
+                certFingerprintSHA256?: string;
+              };
+            };
+          }
+        ).cf?.tlsClientAuth;
+        if (
+          tls?.certVerified === "SUCCESS" &&
+          tls.certRevoked !== "1" &&
+          tls.certRevoked !== true
+        ) {
+          if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
+          if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
+          if (tls.certFingerprintSHA256)
+            headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
+        }
+        const deviceRequest = new Request(request, { headers });
+
+        const handlerAndDispose = HttpRouter.toWebHandler(makeAppLayer(env, deviceRequest) as any);
+        dispose = handlerAndDispose.dispose;
+        const context = Context.makeUnsafe<any>(new Map());
+        response = await handlerAndDispose.handler(deviceRequest, context);
       }
-    ).cf?.tlsClientAuth;
-    if (tls?.certVerified === "SUCCESS" && tls.certRevoked !== "1" && tls.certRevoked !== true) {
-      if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
-      if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
-      if (tls.certFingerprintSHA256)
-        headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
+    } catch (cause) {
+      uncaught = cause;
+      response = errorResponse(500, requestId, {
+        error: "internal_error",
+        message: "Internal Server Error",
+      });
+    } finally {
+      // Dispose even when the handler threw so the per-request Db pool/HTTP
+      // sessions are not leaked.
+      if (dispose)
+        waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     }
-    const deviceRequest = new Request(request, { headers });
 
-    const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env, deviceRequest) as any);
-    const context = Context.makeUnsafe<any>(new Map());
-    const response = await handler(deviceRequest, context);
-    waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
-    return response;
+    const errorTag = uncaught ? "UncaughtError" : await readErrorTag(response);
+    if (shouldLogRequest(pathname, response.status)) {
+      logRequest({
+        requestId,
+        method: request.method,
+        path: pathname,
+        status: response.status,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        tenantId: tenantIdFromPath(pathname),
+        ...(errorTag ? { errorTag } : {}),
+        ...(uncaught ? { error: describeError(uncaught) } : {}),
+      });
+    }
+
+    return withRequestId(response, requestId);
   },
 
   /**

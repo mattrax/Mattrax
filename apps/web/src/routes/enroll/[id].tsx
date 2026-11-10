@@ -1,6 +1,7 @@
 import { Meta, Title } from "@solidjs/meta";
 import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
+import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
@@ -31,21 +32,31 @@ export default function EnrollPage() {
   const enrollmentUrl = createMemo(
     () => `${globalThis.location?.origin ?? ""}/enroll/${params.id}`,
   );
+  const branding = () => enrollment.data?.branding;
+  const brandName = () => branding()?.displayName ?? "Mattrax";
+  const brandColor = () => branding()?.brandColor ?? DEFAULT_BRAND_COLOR;
+  const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
 
   return (
     <main class="min-h-svh bg-stone-950 px-4 py-10 text-stone-950">
-      <Title>Enroll in Mattrax</Title>
+      <Title>Enroll in {brandName()}</Title>
       <Meta name="robots" content="noindex" />
       <div class="mx-auto flex min-h-[calc(100svh-5rem)] max-w-md items-center">
-        <Card class="w-full bg-white">
+        <Card class="w-full overflow-hidden bg-white">
+          <div class="h-1.5" style={{ "background-color": brandColor() }} />
           <CardHeader class="text-center">
-            <CardTitle>Enroll in Mattrax</CardTitle>
+            <Show when={branding()?.logo}>
+              {(logo) => (
+                <img src={logo()} alt="" class="mx-auto mb-2 h-12 max-w-[12rem] object-contain" />
+              )}
+            </Show>
+            <CardTitle>Enroll in {brandName()}</CardTitle>
             <CardDescription>
               <Show when={enrollment.data} fallback="Verifying enrollment link...">
                 {(data) => (
                   <>
                     Enroll a device into{" "}
-                    <span class="font-medium text-stone-900">{data().name}</span>.
+                    <span class="font-medium text-stone-900">{data().branding.displayName}</span>.
                   </>
                 )}
               </Show>
@@ -85,6 +96,7 @@ export default function EnrollPage() {
                 enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>}
                 id={params.id}
                 code={searchCode() ?? ""}
+                brandColor={brandColor()}
               />
               <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
                 <p class="text-sm font-medium text-stone-800">Scan to open this page</p>
@@ -95,6 +107,17 @@ export default function EnrollPage() {
                 </p>
               </div>
             </Show>
+
+            <div class="mt-5 border-t pt-4 text-center text-xs text-muted-foreground">
+              Need help?{" "}
+              <a
+                class="font-medium underline"
+                style={{ color: brandColor() }}
+                href={`mailto:${supportEmail()}`}
+              >
+                Contact {supportEmail()}
+              </a>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -111,6 +134,7 @@ const isAvailable = (value: PlatformEnrollment | WindowsEnrollment) =>
 function EnrollmentOptions(props: {
   id: string | undefined;
   code: string;
+  brandColor: string;
   enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
 }) {
   // Always show every platform tab so an administrator can explain why a
@@ -139,7 +163,12 @@ function EnrollmentOptions(props: {
       </div>
       <Switch>
         <Match when={active() === "apple"}>
-          <ApplePane apple={props.enrollment.apple} id={props.id} code={props.code} />
+          <ApplePane
+            apple={props.enrollment.apple}
+            id={props.id}
+            code={props.code}
+            brandColor={props.brandColor}
+          />
         </Match>
         <Match when={active() === "windows"}>
           <WindowsPane windows={props.enrollment.windows} />
@@ -168,7 +197,12 @@ function TabButton(props: { active: boolean; onClick: () => void; children: stri
   );
 }
 
-function ApplePane(props: { apple: PlatformEnrollment; id: string | undefined; code: string }) {
+function ApplePane(props: {
+  apple: PlatformEnrollment;
+  id: string | undefined;
+  code: string;
+  brandColor: string;
+}) {
   if (typeof props.apple === "object" && "error" in props.apple)
     return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
   if (typeof props.apple !== "object" || !("profile" in props.apple))
@@ -181,7 +215,12 @@ function ApplePane(props: { apple: PlatformEnrollment; id: string | undefined; c
   });
   return (
     <div class="space-y-4">
-      <Button as="a" href={downloadUrl()} class="w-full">
+      <Button
+        as="a"
+        href={downloadUrl()}
+        class="w-full text-white"
+        style={{ "background-color": props.brandColor }}
+      >
         Install Apple profile
       </Button>
       <p class="text-center text-xs text-muted-foreground">
@@ -230,14 +269,16 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
           {copied() ? "Copied" : "Copy"}
         </Button>
       </div>
-      <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        Windows discovery is deployment-wide: the request carries no tenant identity, so this
-        deployment must pin Windows enrollment to a single tenant. Per-tenant Windows routing is not
-        supported yet.
+      <p class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600">
+        This link is scoped to this tenant by a signed token. It expires
+        {props.windows.expiresAt
+          ? ` on ${new Date(props.windows.expiresAt).toLocaleString()}`
+          : " after a short period"}
+        ; reload this page to generate a fresh one.
       </p>
       <p class="text-sm text-muted-foreground">
         On the device, open Settings &gt; Accounts &gt; Access work or school &gt; Connect and use
-        the URL above.
+        the URL above. Reopen this page if the device reports that the enrollment link has expired.
       </p>
     </div>
   );

@@ -1,5 +1,6 @@
 import http2 from "node:http2";
 import { Data, Effect } from "effect";
+import { OUTBOUND_TIMEOUTS, OutboundTimeoutError, fetchWithTimeout } from "@mattrax/net";
 
 export class ApnsError extends Data.TaggedError("ApnsError")<{
   message: string;
@@ -57,11 +58,20 @@ const responseError = async (response: Response) => {
 /**
  * Direct HTTP/2 delivery using the tenant's APNs client certificate. Used by
  * self-hosted deployments (and by Cloudflare Workers through `nodejs_compat`).
+ *
+ * The whole connect + request lifecycle is bounded by `timeoutMs` (default
+ * {@link OUTBOUND_TIMEOUTS.apns}); on expiry or error the HTTP/2 session is
+ * destroyed so a hung Apple gateway cannot pin the request open.
  */
 export function NodePushTransport(defaults?: {
   readonly certPem?: string;
   readonly privateKeyPem?: string;
+  readonly timeoutMs?: number;
+  /** Override the Apple endpoint (tests, or an APNs proxy). */
+  readonly endpoint?: string;
 }): ApnsPushTransport {
+  const timeoutMs = defaults?.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
+  const endpoint = defaults?.endpoint ?? APNS_PRODUCTION_ENDPOINT;
   return {
     name: "node",
     available: true,
@@ -77,7 +87,7 @@ export function NodePushTransport(defaults?: {
 
       return Effect.tryPromise({
         try: () => {
-          const request = buildApnsRequest(input);
+          const request = buildApnsRequest(input, endpoint);
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
           const client = http2.connect(url.origin, {
@@ -88,12 +98,31 @@ export function NodePushTransport(defaults?: {
           return new Promise<void>((resolve, reject) => {
             let status = 0;
             let settled = false;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const timeoutError = () =>
+              new ApnsError({ message: `APNs request timed out after ${timeoutMs}ms` });
+            const close = () => {
+              // `close` only waits for existing streams; `destroy` guarantees
+              // the socket (and any in-flight TLS handshake) is released.
+              try {
+                client.close();
+              } catch {}
+              try {
+                client.destroy();
+              } catch {}
+            };
             const fail = (error: unknown) => {
               if (settled) return;
               settled = true;
-              client.close();
+              if (timer !== undefined) clearTimeout(timer);
+              close();
               reject(error);
             };
+            timer = setTimeout(() => fail(timeoutError()), timeoutMs);
+            timer.unref?.();
+
+            // Covers a stalled TCP/TLS connect as well as an idle socket.
+            client.setTimeout(timeoutMs, () => fail(timeoutError()));
             client.on("error", fail);
             const req = client.request({
               ":method": request.method,
@@ -109,7 +138,8 @@ export function NodePushTransport(defaults?: {
             req.on("end", () => {
               if (settled) return;
               settled = true;
-              client.close();
+              if (timer !== undefined) clearTimeout(timer);
+              close();
               if (status === 200) return resolve();
               const text = Buffer.concat(chunks).toString("utf8");
               reject(
@@ -134,9 +164,11 @@ export function NodePushTransport(defaults?: {
  * Deliver through a preconfigured Workers mTLS Fetcher binding. Whitelabel
  * deployments deploy one binding per APNs certificate.
  */
-export function MtlsPushTransport(fetcher: {
+export function MtlsPushTransport(options: {
   fetch: (request: Request) => Promise<Response>;
+  readonly timeoutMs?: number;
 }): ApnsPushTransport {
+  const timeoutMs = options.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
   return {
     name: "mtls",
     available: true,
@@ -144,12 +176,14 @@ export function MtlsPushTransport(fetcher: {
       Effect.tryPromise({
         try: async () => {
           const request = buildApnsRequest(input);
-          const response = await fetcher.fetch(
+          const response = await fetchWithTimeout(
             new Request(request.url, {
               method: request.method,
               headers: request.headers,
               body: request.body,
             }),
+            {},
+            { timeoutMs, fetch: options.fetch as typeof globalThis.fetch },
           );
           if (response.status !== 200)
             throw new ApnsError({ message: await responseError(response) });
@@ -157,7 +191,9 @@ export function MtlsPushTransport(fetcher: {
         catch: (cause) =>
           cause instanceof ApnsError
             ? cause
-            : new ApnsError({ message: "APNs mTLS request failed", cause }),
+            : cause instanceof OutboundTimeoutError
+              ? new ApnsError({ message: cause.message })
+              : new ApnsError({ message: "APNs mTLS request failed", cause }),
       }),
   };
 }
@@ -196,6 +232,8 @@ export type RelayPushTransportOptions = {
   readonly fetch?: typeof globalThis.fetch;
   /** Override for deterministic signatures in tests. */
   readonly now?: () => number;
+  /** Deadline for the relay request. Defaults to {@link OUTBOUND_TIMEOUTS.relay}. */
+  readonly timeoutMs?: number;
 };
 
 /**
@@ -205,6 +243,7 @@ export type RelayPushTransportOptions = {
 export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPushTransport {
   const doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const timeoutMs = options.timeoutMs ?? OUTBOUND_TIMEOUTS.relay;
 
   return {
     name: "relay",
@@ -221,21 +260,29 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
           });
           const timestamp = String(now());
           const signature = await relaySignature(options.secret, timestamp, body);
-          const response = await doFetch(options.url, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-apns-timestamp": timestamp,
-              "x-apns-signature": signature,
+          // The relay talks to APNs on our behalf; a hung relay must not hold
+          // the Worker's request open.
+          const response = await fetchWithTimeout(
+            options.url,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-apns-timestamp": timestamp,
+                "x-apns-signature": signature,
+              },
+              body,
             },
-            body,
-          });
+            { timeoutMs, fetch: doFetch },
+          );
           if (!response.ok) throw new ApnsError({ message: await responseError(response) });
         },
         catch: (cause) =>
           cause instanceof ApnsError
             ? cause
-            : new ApnsError({ message: "APNs relay request failed", cause }),
+            : cause instanceof OutboundTimeoutError
+              ? new ApnsError({ message: cause.message })
+              : new ApnsError({ message: "APNs relay request failed", cause }),
       }),
   };
 }

@@ -16,6 +16,8 @@ export declare namespace AppleMdmConfig {
     /** Optional defaults for the standalone `/enroll` endpoint. */
     readonly organizationId?: string;
     readonly organizationName?: string;
+    /** Support address embedded in generated enrollment profiles. */
+    readonly supportEmail?: string;
   };
 }
 

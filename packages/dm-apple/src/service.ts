@@ -90,30 +90,36 @@ export declare namespace AppleMdmService {
       auth: AuthenticatePlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleTokenUpdate: (
       update: TokenUpdatePlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCheckOut: (
       checkout: CheckOutPlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCommandResult: (
       result: CommandResultPlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleSetBootstrapToken: (
       token: string,
       identityCertificate?: string,
       udid?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleGetBootstrapToken: (
       identityCertificate?: string,
       udid?: string,
+      identityCertificateSerial?: string,
     ) => Effect.Effect<string | null, MdmError>;
     readonly handleStatusReport: (
       scope: CheckinScope,
@@ -160,6 +166,7 @@ export declare namespace AppleMdmService {
       readonly challenge?: string;
       readonly organizationId?: string;
       readonly organizationName?: string;
+      readonly supportEmail?: string;
       readonly displayName?: string;
       readonly identifier?: string;
     }) => Effect.Effect<string, MdmError>;
@@ -247,6 +254,7 @@ const makeAppleMdmService = (
     auth: AuthenticatePlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = {
       _tag: "device",
@@ -255,6 +263,7 @@ const makeAppleMdmService = (
       ...(identityFingerprintSha256
         ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
         : {}),
+      ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
       mdmOrigin,
     };
     return backend
@@ -274,6 +283,7 @@ const makeAppleMdmService = (
     update: TokenUpdatePlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = update.UserID
       ? {
@@ -283,6 +293,7 @@ const makeAppleMdmService = (
           ...(identityFingerprintSha256
             ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
             : {}),
+          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           userId: update.UserID,
           mdmOrigin,
         }
@@ -293,6 +304,7 @@ const makeAppleMdmService = (
           ...(identityFingerprintSha256
             ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
             : {}),
+          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           mdmOrigin,
         };
     const pushToken = base64ToHex(update.Token);
@@ -322,6 +334,7 @@ const makeAppleMdmService = (
     checkout: CheckOutPlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = checkout.UserID
       ? {
@@ -332,6 +345,7 @@ const makeAppleMdmService = (
           ...(identityFingerprintSha256
             ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
             : {}),
+          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           mdmOrigin,
         }
       : {
@@ -341,6 +355,7 @@ const makeAppleMdmService = (
           ...(identityFingerprintSha256
             ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
             : {}),
+          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           mdmOrigin,
         };
     return backend
@@ -359,6 +374,7 @@ const makeAppleMdmService = (
     result: CommandResultPlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = {
       _tag: "device",
@@ -367,6 +383,7 @@ const makeAppleMdmService = (
       ...(identityFingerprintSha256
         ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
         : {}),
+      ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
       mdmOrigin,
     };
     const detail = result.ErrorChain
@@ -533,10 +550,17 @@ const makeAppleMdmService = (
     token: string,
     identityCertificate?: string,
     udid?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return yield* new MdmError({ message: "Bootstrap token has no UDID" });
-      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin };
+      const scope: CheckinScope = {
+        _tag: "device",
+        udid,
+        identityCertificate,
+        ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+        mdmOrigin,
+      };
       yield* backend.appleDeviceEvent(scope, { _tag: "BootstrapToken", token }).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
@@ -547,10 +571,17 @@ const makeAppleMdmService = (
   const handleGetBootstrapToken = (
     identityCertificate?: string,
     udid?: string,
+    identityCertificateSerial?: string,
   ): Effect.Effect<string | null, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return null;
-      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin };
+      const scope: CheckinScope = {
+        _tag: "device",
+        udid,
+        identityCertificate,
+        ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+        mdmOrigin,
+      };
       return yield* backend.getAppleBootstrapToken(scope).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
         Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
@@ -585,6 +616,7 @@ const makeAppleMdmService = (
     readonly challenge?: string;
     readonly organizationId?: string;
     readonly organizationName?: string;
+    readonly supportEmail?: string;
     readonly displayName?: string;
     readonly identifier?: string;
   }): Effect.Effect<string, MdmError> =>
@@ -594,6 +626,7 @@ const makeAppleMdmService = (
         topic,
         organizationId: options?.organizationId ?? config.organizationId ?? "",
         organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
+        supportEmail: options?.supportEmail ?? config.supportEmail,
         challenge: options?.challenge ?? crypto.randomUUID(),
         displayName: options?.displayName,
         identifier: options?.identifier,

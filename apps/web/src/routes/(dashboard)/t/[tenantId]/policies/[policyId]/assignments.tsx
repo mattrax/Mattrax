@@ -24,7 +24,7 @@ export default function PolicyAssignmentsPage() {
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
   }));
-  const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
+  const [modes, setModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
   const [message, setMessage] = createSignal<string | null>(null);
   let seededPolicyId: string | undefined;
   createEffect(
@@ -32,15 +32,20 @@ export default function PolicyAssignmentsPage() {
     ({ policyId, data }) => {
       if (!data || seededPolicyId === policyId) return;
       seededPolicyId = policyId;
-      setDeviceIds(new Set(data.devices.map((device) => device.id)));
+      setModes(new Map(data.devices.map((device) => [device.id, device.mode])));
     },
   );
   const save = useMutation(() => ({
     mutationFn: () => {
-      const old = assignments.data?.devices.map((device) => device.id) ?? [];
+      const previous = new Map(
+        (assignments.data?.devices ?? []).map((device) => [device.id, device.mode]),
+      );
+      const next = modes();
       return enterprise.patchPolicyAssignments(params.tenantId, params.policyId, {
-        assign: [...deviceIds()].filter((id) => !old.includes(id)),
-        unassign: old.filter((id) => !deviceIds().has(id)),
+        assign: [...next]
+          .filter(([id, mode]) => previous.get(id) !== mode)
+          .map(([id, mode]) => ({ id, mode })),
+        unassign: [...previous.keys()].filter((id) => !next.has(id)),
       });
     },
     onSuccess: async () => {
@@ -50,25 +55,40 @@ export default function PolicyAssignmentsPage() {
       });
     },
   }));
-  const toggle = (id: string) => {
-    const next = new Set(deviceIds());
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setDeviceIds(next);
+  const setMode = (id: string, mode: "include" | "exclude" | "") => {
+    const next = new Map(modes());
+    if (mode) next.set(id, mode);
+    else next.delete(id);
+    setModes(next);
   };
+  const includedCount = () => [...modes().values()].filter((mode) => mode === "include").length;
+  const excludedCount = () => [...modes().values()].filter((mode) => mode === "exclude").length;
   const row = () => policy.data as PolicyRow | undefined;
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
       <PageHeader
         title={`Assignments — ${row()?.name ?? "Policy"}`}
-        description="Group assignments deliver the policy to every member. Direct device assignments are additive."
+        description="Direct device assignments beat group assignments. Excludes veto a policy; group excludes can only be overridden by a direct include of that same policy."
         actions={
           <LinkButton href={`/t/${params.tenantId}/policies/${params.policyId}`} variant="outline">
             Back to policy
           </LinkButton>
         }
       />
+      <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+        <p class="font-medium">Precedence</p>
+        <ol class="mt-1 list-decimal space-y-0.5 pl-5">
+          <li>A direct device exclude removes the policy, including group includes.</li>
+          <li>A direct device include beats any group include or group exclude.</li>
+          <li>A group exclude vetoes that policy for every group.</li>
+          <li>Between included policies providing the same kind, highest priority wins.</li>
+        </ol>
+        <p class="mt-2 text-xs">
+          Ties go to the most recently updated policy, then the smallest id. This policy has
+          priority {row()?.priority ?? 0}.
+        </p>
+      </div>
       <Show
         when={assignments.data}
         fallback={
@@ -101,7 +121,9 @@ export default function PolicyAssignmentsPage() {
                         href={`/t/${params.tenantId}/groups/${group.id}`}
                       >
                         <span>{group.name}</span>
-                        <Badge variant="secondary">Group</Badge>
+                        <Badge variant={group.mode === "exclude" ? "destructive" : "secondary"}>
+                          {group.mode === "exclude" ? "Group exclude" : "Group include"}
+                        </Badge>
                       </a>
                     )}
                   </For>
@@ -111,7 +133,12 @@ export default function PolicyAssignmentsPage() {
             <Card>
               <CardHeader class="border-b">
                 <CardTitle class="text-base">
-                  Direct devices <Badge variant="secondary">{deviceIds().size}</Badge>
+                  Direct devices <Badge variant="secondary">{includedCount()} included</Badge>
+                  <Show when={excludedCount() > 0}>
+                    <Badge variant="destructive" class="ml-1">
+                      {excludedCount()} excluded
+                    </Badge>
+                  </Show>
                 </CardTitle>
               </CardHeader>
               <CardContent class="space-y-4">
@@ -123,13 +150,22 @@ export default function PolicyAssignmentsPage() {
                     <For each={devices.data?.rows ?? []}>
                       {(device: DeviceRow) => (
                         <label class="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-50">
-                          <input
-                            type="checkbox"
-                            checked={deviceIds().has(device.id)}
-                            onChange={() => toggle(device.id)}
-                          />
                           <span class="flex-1">{device.name}</span>
                           <span class="text-xs text-stone-400">{device.proto}</span>
+                          <select
+                            class="rounded border bg-white px-2 py-1 text-xs"
+                            value={modes().get(device.id) ?? ""}
+                            onChange={(event) =>
+                              setMode(
+                                device.id,
+                                event.currentTarget.value as "include" | "exclude" | "",
+                              )
+                            }
+                          >
+                            <option value="">Not assigned</option>
+                            <option value="include">Include</option>
+                            <option value="exclude">Exclude</option>
+                          </select>
                         </label>
                       )}
                     </For>

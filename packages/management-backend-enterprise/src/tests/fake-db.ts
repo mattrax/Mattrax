@@ -116,6 +116,18 @@ class SelectBuilder {
     return Effect.succeed(this.execute().slice(0, count));
   }
 
+  then(resolve: (value: Row[]) => void, reject: (reason?: unknown) => void) {
+    try {
+      resolve(this.execute());
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  [Symbol.iterator]() {
+    return Effect.succeed(this.execute())[Symbol.iterator]();
+  }
+
   private condition: any = undefined;
   private order: string[] = [];
 

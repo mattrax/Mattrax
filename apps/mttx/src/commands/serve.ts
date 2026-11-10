@@ -44,6 +44,24 @@ export const serveCommand = Command.make(
         "Shared secret used to verify per-enrollment SCEP challenges and signed profile URLs",
       ),
     ),
+    brandName: Flag.String("brand-name").pipe(
+      Flag.withDefault(process.env.MATTRAX_BRAND_NAME ?? "Mattrax"),
+      Flag.withDescription("Organisation/display name used in generated Apple enrollment profiles"),
+    ),
+    brandLogoUrl: Flag.String("brand-logo-url").pipe(
+      Flag.withDefault(process.env.MATTRAX_BRAND_LOGO_URL ?? ""),
+      Flag.withDescription("Logo URL or data URL for white-label frontends"),
+      Flag.optional,
+    ),
+    supportEmail: Flag.String("support-email").pipe(
+      Flag.withDefault(process.env.MATTRAX_SUPPORT_EMAIL ?? "hello@mattrax.app"),
+      Flag.withDescription("Support email embedded in enrollment profiles"),
+    ),
+    brandColor: Flag.String("brand-color").pipe(
+      Flag.withDefault(process.env.MATTRAX_BRAND_COLOR ?? ""),
+      Flag.withDescription("Hex brand colour (for example #1c1917) for white-label frontends"),
+      Flag.optional,
+    ),
     productKey: Flag.String("product-key").pipe(
       Flag.withDefault(process.env.MATTRAX_PRODUCT_KEY ?? ""),
       Flag.withDescription("Cloud platform product key used to verify this instance"),
@@ -65,6 +83,8 @@ export const serveCommand = Command.make(
       yield* Console.log(`Public origin: ${config.origin}`);
       yield* Console.log(`Webhook backend: ${config.webhookUrl}`);
       yield* Console.log(`Data directory: ${config.dataDir}`);
+      yield* Console.log(`Brand name: ${config.brandName}`);
+      yield* Console.log(`Support email: ${config.supportEmail}`);
 
       const verifyLicence = async () => {
         if (!config.productKey) return;
@@ -124,6 +144,10 @@ export const serveCommand = Command.make(
         dataDir: config.dataDir,
         appleVendorCert: Option.getOrUndefined(config.appleVendorCert),
         authSecret: config.authSecret || undefined,
+        brandName: config.brandName,
+        brandLogoUrl: Option.getOrUndefined(config.brandLogoUrl) || undefined,
+        supportEmail: config.supportEmail,
+        brandColor: Option.getOrUndefined(config.brandColor) || undefined,
       });
 
       const fullLayer = appLayer.pipe(

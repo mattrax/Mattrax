@@ -100,9 +100,17 @@ const sealedJwk = async (secret = authSecret) => {
 };
 
 const makeContext = async (
-  overrides: { apns?: any; pushes?: Array<any>; authSecret?: string | null } = {},
+  overrides: {
+    apns?: any;
+    pushes?: Array<any>;
+    authSecret?: string | null;
+    email?: { send: (message: any) => Promise<unknown> };
+    stripeClient?: any;
+    apiToken?: any;
+    db?: any;
+  } = {},
 ) => {
-  const db = makeDb();
+  const db = overrides.db ?? makeDb();
   const now = new Date();
   const user = {
     id: "user-1",
@@ -119,7 +127,7 @@ const makeContext = async (
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
       return headers.cookie
-        ? Effect.succeed({ user })
+        ? Effect.succeed({ user, apiToken: overrides.apiToken })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -133,11 +141,13 @@ const makeContext = async (
     db: db as any,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
+    stripeClient:
+      overrides.stripeClient === null ? undefined : (overrides.stripeClient ?? makeStripeClient()),
     storage: {} as any,
     auth: auth as any,
     authSecret: overrides.authSecret === null ? undefined : (overrides.authSecret ?? authSecret),
     apns: overrides.apns,
+    email: overrides.email,
   });
 
   return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
@@ -181,8 +191,136 @@ describe("enterprise service tenant flow", () => {
 
     const result = await runEffect(service.listTenants(request(headers)));
     expect(result.tenants).toEqual([
-      { id: owned.id, name: "Acme", slug: "acme", logo: null, role: "owner" },
+      {
+        id: owned.id,
+        name: "Acme",
+        slug: "acme",
+        logo: null,
+        displayName: null,
+        supportEmail: null,
+        brandColor: null,
+        role: "owner",
+      },
     ]);
+  });
+
+  it("stores tenant branding and applies fallbacks for unconfigured tenants", async () => {
+    const { service, headers } = await makeContext();
+    const branded = await runEffect(
+      service.createTenant(request(headers), {
+        name: "Acme",
+        slug: "acme",
+        displayName: "Acme Corp",
+        logo: "https://cdn.example.com/acme.png",
+        supportEmail: "help@acme.test",
+        brandColor: "#2563EB",
+      }),
+    );
+    const plain = await runEffect(
+      service.createTenant(request(headers), { name: "Plain", slug: "plain" }),
+    );
+
+    const detail = await runEffect(service.getTenant(request(headers), branded.id));
+    expect(detail).toMatchObject({
+      displayName: "Acme Corp",
+      supportEmail: "help@acme.test",
+      brandColor: "#2563eb",
+      logo: "https://cdn.example.com/acme.png",
+    });
+
+    const brandedEnrollment = await runEffect(service.getEnrollment(branded.id, undefined));
+    expect(brandedEnrollment.branding).toEqual({
+      displayName: "Acme Corp",
+      logo: "https://cdn.example.com/acme.png",
+      supportEmail: "help@acme.test",
+      brandColor: "#2563eb",
+    });
+
+    const fallback = await runEffect(service.getEnrollment(plain.id, undefined));
+    expect(fallback.branding).toEqual({
+      displayName: "Plain",
+      logo: null,
+      supportEmail: "hello@mattrax.app",
+      brandColor: "#1c1917",
+    });
+  });
+
+  it("validates and normalises tenant branding writes", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(service.patchTenant(request(headers), tenant.id, { brandColor: "blue" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    await expect(
+      runEffect(service.patchTenant(request(headers), tenant.id, { supportEmail: "not-an-email" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    await expect(
+      runEffect(service.patchTenant(request(headers), tenant.id, { logo: "javascript:alert(1)" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+
+    await runEffect(
+      service.patchTenant(request(headers), tenant.id, {
+        brandColor: "#abc",
+        supportEmail: "  help@acme.test ",
+        displayName: "  Acme Corp  ",
+      }),
+    );
+    expect(db.store.organization[0]).toMatchObject({
+      displayName: "Acme Corp",
+      supportEmail: "help@acme.test",
+      brandColor: "#aabbcc",
+    });
+
+    // Clearing a value restores the default at read time.
+    await runEffect(
+      service.patchTenant(request(headers), tenant.id, {
+        displayName: null,
+        supportEmail: null,
+        brandColor: null,
+      }),
+    );
+    const enrollment = await runEffect(service.getEnrollment(tenant.id, undefined));
+    expect(enrollment.branding).toMatchObject({
+      displayName: "Acme",
+      supportEmail: "hello@mattrax.app",
+      brandColor: "#1c1917",
+    });
+  });
+
+  it("keeps branding scoped to its tenant", async () => {
+    const { service, headers } = await makeContext();
+    const first = await runEffect(
+      service.createTenant(request(headers), { name: "First", slug: "first" }),
+    );
+    const second = await runEffect(
+      service.createTenant(request(headers), {
+        name: "Second",
+        slug: "second",
+        displayName: "Second Brand",
+      }),
+    );
+    await runEffect(
+      service.patchTenant(request(headers), first.id, {
+        displayName: "First Brand",
+        supportEmail: "first@example.test",
+      }),
+    );
+
+    await expect(runEffect(service.getTenant(request(headers), second.id))).resolves.toMatchObject({
+      displayName: "Second Brand",
+      supportEmail: null,
+      brandColor: null,
+    });
+
+    const firstEnrollment = await runEffect(service.getEnrollment(first.id, undefined));
+    const secondEnrollment = await runEffect(service.getEnrollment(second.id, undefined));
+    expect(firstEnrollment.branding.displayName).toBe("First Brand");
+    expect(firstEnrollment.branding.supportEmail).toBe("first@example.test");
+    expect(secondEnrollment.branding.displayName).toBe("Second Brand");
+    expect(secondEnrollment.branding.supportEmail).toBe("hello@mattrax.app");
   });
 
   it("enforces tenant role access", async () => {
@@ -203,6 +341,121 @@ describe("enterprise service tenant flow", () => {
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
     ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+  });
+
+  it("allows auditors to read but not write or delete", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    db.store.member[0].role = "auditor";
+
+    await expect(runEffect(service.getTenant(request(headers), tenant.id))).resolves.toMatchObject({
+      id: tenant.id,
+      role: "auditor",
+    });
+    await expect(
+      runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    await expect(
+      runEffect(service.deleteTenant(request(headers), tenant.id)),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+  });
+
+  it("accepts auditor invitations and role changes", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await runEffect(
+      service.inviteTenantUser(request(headers), tenant.id, {
+        email: "auditor@example.com",
+        role: "auditor",
+      }),
+    );
+    expect(db.store.invitation[0]).toMatchObject({ role: "auditor" });
+
+    const now = new Date();
+    db.store.user.push({
+      id: "user-2",
+      name: "Auditor",
+      email: "auditor@example.com",
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.member.push({
+      id: "member-2",
+      organizationId: tenant.id,
+      userId: "user-2",
+      role: "member",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await runEffect(
+      service.patchTenantUser(request(headers), tenant.id, "member-2", { role: "auditor" }),
+    );
+    expect(db.store.member.find((member: any) => member.id === "member-2")?.role).toBe("auditor");
+  });
+
+  it("enforces API token scopes and tenant binding", async () => {
+    const first = await makeContext({
+      apiToken: { tenantId: null, scopes: ["read"] },
+    });
+    const firstTenant = await runEffect(
+      first.service.createTenant(request(first.headers), { name: "First", slug: "first" }),
+    );
+    const secondTenant = await runEffect(
+      first.service.createTenant(request(first.headers), { name: "Second", slug: "second" }),
+    );
+
+    // Read-only tokens can read.
+    await expect(
+      runEffect(first.service.getTenant(request(first.headers), firstTenant.id)),
+    ).resolves.toMatchObject({ id: firstTenant.id });
+    // ...but can never mutate.
+    await expect(
+      runEffect(
+        first.service.patchTenant(request(first.headers), firstTenant.id, { name: "Denied" }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    await expect(
+      runEffect(first.service.deleteTenant(request(first.headers), firstTenant.id)),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+
+    // A tenant-bound token cannot reach another tenant, even when the user is
+    // a member.
+    const bound = await makeContext({
+      db: first.db,
+      apiToken: { tenantId: firstTenant.id, scopes: ["read", "write"] },
+    });
+    await expect(
+      runEffect(bound.service.getTenant(request(bound.headers), secondTenant.id)),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+
+    // A write token passes the scope check and the member role check.
+    const writer = await makeContext({
+      db: first.db,
+      apiToken: { tenantId: firstTenant.id, scopes: ["read", "write"] },
+    });
+    await runEffect(
+      writer.service.patchTenant(request(writer.headers), firstTenant.id, { name: "Allowed" }),
+    );
+    expect(writer.db.store.organization.find((row: any) => row.id === firstTenant.id)?.name).toBe(
+      "Allowed",
+    );
+
+    // Tokens created before scoping existed behave as full-access tokens.
+    const legacy = await makeContext({
+      db: first.db,
+      apiToken: { tenantId: null, scopes: null },
+    });
+    await runEffect(
+      legacy.service.patchTenant(request(legacy.headers), firstTenant.id, { name: "Legacy" }),
+    );
+    expect(legacy.db.store.organization.find((row: any) => row.id === firstTenant.id)?.name).toBe(
+      "Legacy",
+    );
   });
 
   it("prevents deleting tenants with more than one member", async () => {
@@ -264,6 +517,50 @@ describe("enterprise service tenant flow", () => {
 
     await runEffect(service.cancelTenantInvitation(request(headers), tenant.id, invitation.id));
     expect(db.store.invitation[0].status).toBe("canceled");
+  });
+
+  it("uses tenant branding in invitation emails", async () => {
+    const sent: Array<{
+      to: string;
+      from: { name: string; email: string };
+      subject: string;
+      text?: string;
+      html?: string;
+    }> = [];
+    const { service, headers } = await makeContext({
+      email: {
+        send: async (message) => {
+          sent.push(message);
+        },
+      },
+    });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), {
+        name: "Acme",
+        slug: "acme",
+        displayName: "Acme <Corp>",
+        supportEmail: "help@acme.test",
+      }),
+    );
+
+    await runEffect(
+      service.inviteTenantUser(request(headers), tenant.id, {
+        email: "new@example.com",
+        role: "admin",
+      }),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      to: "new@example.com",
+      from: { name: "Acme <Corp>", email: "hello@mattrax.cloud" },
+      subject: "You have been invited to Acme <Corp>",
+    });
+    expect(sent[0]!.text).toContain("Acme <Corp>");
+    expect(sent[0]!.text).toContain("help@acme.test");
+    // Tenant names are escaped before entering the HTML body.
+    expect(sent[0]!.html).toContain("Acme &lt;Corp&gt;");
+    expect(sent[0]!.html).not.toContain("Acme <Corp>");
   });
 
   it("supports tenant user role updates and removal while protecting the last user", async () => {
@@ -341,6 +638,9 @@ describe("enterprise service billing flow", () => {
       status: "active",
       billableDevices: 1,
       subscriptionId: "stripe-sub-1",
+      periodEnd: null,
+      cancelAtPeriodEnd: false,
+      configured: true,
     });
   });
 
@@ -412,6 +712,105 @@ describe("enterprise service billing flow", () => {
       ),
     ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
   });
+
+  it("reports unconfigured billing without failing the summary", async () => {
+    const { service, headers } = await makeContext({ stripeClient: null });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(runEffect(service.billing(request(headers), tenant.id))).resolves.toMatchObject({
+      billableDevices: 0,
+      configured: false,
+    });
+    await expect(
+      runEffect(
+        service.billingPortal(request(headers), tenant.id, {
+          returnUrl: "https://app.test/settings",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseStripeError" });
+  });
+
+  it("maps Stripe failures to EnterpriseStripeError", async () => {
+    const { service, headers } = await makeContext({
+      stripeClient: makeStripeClient({
+        billingPortal: {
+          sessions: {
+            create: async () => {
+              throw new Error("stripe is down");
+            },
+          },
+        },
+      }),
+    });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(
+        service.billingPortal(request(headers), tenant.id, {
+          returnUrl: "https://app.test/settings",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseStripeError" });
+  });
+
+  it("bounds the customer-list fallback to one page", async () => {
+    const { db, auth, headers } = await makeContext();
+    const tenant = await runEffect(
+      createEnterpriseService({
+        db: db as any,
+        schema,
+        origin,
+        stripeClient: makeStripeClient(),
+        storage: {} as any,
+        auth: auth as any,
+        authSecret,
+      }).createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const listCalls: any[] = [];
+    const boundedService = createEnterpriseService({
+      db: db as any,
+      schema,
+      origin,
+      stripeClient: makeStripeClient({
+        customers: {
+          search: async () => {
+            throw new Error("search is unavailable");
+          },
+          list: async (args: any) => {
+            listCalls.push(args);
+            return {
+              data: [
+                {
+                  id: "cus_bounded",
+                  metadata: { organizationId: tenant.id, customerType: "organization" },
+                },
+              ],
+            };
+          },
+          create: async () => {
+            throw new Error("should not create a customer");
+          },
+        },
+      }),
+      storage: {} as any,
+      auth: auth as any,
+    });
+
+    await expect(
+      runEffect(
+        boundedService.billingPortal(request(headers), tenant.id, {
+          returnUrl: "https://app.test/settings",
+        }),
+      ),
+    ).resolves.toEqual({ url: "https://app.test/settings" });
+    expect(listCalls).toEqual([{ limit: 100 }]);
+    expect(db.store.organization[0].stripeCustomerId).toBe("cus_bounded");
+  });
 });
 
 describe("enterprise service group flow", () => {
@@ -450,7 +849,9 @@ describe("enterprise service group flow", () => {
     expect(db.store.enterprise_group).toMatchObject([
       { id: group.id, organizationId: tenant.id, name: "Engineering" },
     ]);
-    expect(db.store.group_device).toEqual([{ groupId: group.id, deviceId: "device-1" }]);
+    expect(db.store.group_device).toEqual([
+      { groupId: group.id, deviceId: "device-1", source: "manual" },
+    ]);
     expect(db.store.group_policy).toEqual([{ groupId: group.id, policyId: "policy-1" }]);
   });
 
@@ -525,7 +926,9 @@ describe("enterprise service group flow", () => {
     );
 
     expect(db.store.enterprise_group[0]).toMatchObject({ name: "Platform", notes: "Core devices" });
-    expect(db.store.group_device).toEqual([{ groupId: group.id, deviceId: "device-2" }]);
+    expect(db.store.group_device).toEqual([
+      { groupId: group.id, deviceId: "device-2", source: "manual" },
+    ]);
   });
 
   it("duplicates groups and deletes with partial failure reporting", async () => {
@@ -558,7 +961,11 @@ describe("enterprise service group flow", () => {
       name: "Engineering Copy",
       notes: "Original",
     });
-    expect(db.store.group_device).toContainEqual({ groupId: duplicated.id, deviceId: "device-1" });
+    expect(db.store.group_device).toContainEqual({
+      groupId: duplicated.id,
+      deviceId: "device-1",
+      source: "manual",
+    });
 
     const result = await runEffect(
       service.deleteGroups(request(headers), tenant.id, [group.id, "missing-group"]),
@@ -567,6 +974,174 @@ describe("enterprise service group flow", () => {
       deleted: [group.id],
       failed: [{ id: "missing-group", reason: "notFound" }],
     });
+  });
+
+  const dynamicRules = {
+    version: 1 as const,
+    all: [{ field: "platform" as const, op: "eq" as const, value: "apple" as const }],
+  };
+
+  it("creates dynamic groups and materialises only matching devices", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const now = new Date();
+    db.store.device.push(
+      {
+        id: "apple-1",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Mac",
+        serial: "C02APPLE",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "win-1",
+        organizationId: tenant.id,
+        proto: "win",
+        status: "enrolled",
+        name: "PC",
+        serial: "WIN123",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+    );
+
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Macs",
+        kind: "dynamic",
+        rules: dynamicRules,
+      }),
+    );
+
+    expect(db.store.enterprise_group[0]).toMatchObject({
+      id: group.id,
+      kind: "dynamic",
+      rules: dynamicRules,
+    });
+    expect(db.store.group_device).toEqual([
+      { groupId: group.id, deviceId: "apple-1", source: "dynamic" },
+    ]);
+
+    const preview = await runEffect(service.previewGroup(request(headers), tenant.id, group.id));
+    expect(preview).toMatchObject({ kind: "dynamic", count: 1 });
+    expect(preview.devices.map((device) => device.id)).toEqual(["apple-1"]);
+  });
+
+  it("re-evaluates on group update and preserves manual exceptions", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const now = new Date();
+    db.store.device.push(
+      {
+        id: "apple-1",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "win-1",
+        organizationId: tenant.id,
+        proto: "win",
+        status: "enrolled",
+        name: "PC",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+    );
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Macs",
+        kind: "dynamic",
+        rules: dynamicRules,
+      }),
+    );
+    db.store.group_device.push({ groupId: group.id, deviceId: "win-1", source: "manual" });
+
+    await runEffect(
+      service.patchGroup(request(headers), tenant.id, group.id, {
+        rules: { version: 1, all: [{ field: "platform", op: "eq", value: "win" }] },
+      }),
+    );
+
+    expect(db.store.group_device).toEqual([
+      { groupId: group.id, deviceId: "win-1", source: "manual" },
+    ]);
+
+    // Switching back to manual drops rule-derived rows but keeps explicit ones.
+    db.store.group_device.push({ groupId: group.id, deviceId: "apple-2", source: "dynamic" });
+    await runEffect(
+      service.patchGroup(request(headers), tenant.id, group.id, { kind: "manual", rules: null }),
+    );
+    expect(db.store.group_device.filter((row: any) => row.source === "dynamic")).toEqual([]);
+  });
+
+  it("rejects manual device assignment on dynamic groups", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Macs",
+        kind: "dynamic",
+        rules: dynamicRules,
+      }),
+    );
+
+    await expect(
+      runEffect(
+        service.patchGroupMembers(request(headers), tenant.id, group.id, {
+          assign: { devices: ["device-1"] },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("rejects dynamic rules without conditions and manual groups with rules", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(
+        service.createGroup(request(headers), tenant.id, {
+          name: "Empty",
+          kind: "dynamic",
+          rules: { version: 1 },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+
+    await expect(
+      runEffect(
+        service.createGroup(request(headers), tenant.id, {
+          name: "Manual",
+          kind: "manual",
+          rules: dynamicRules,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
   });
 });
 
@@ -685,6 +1260,115 @@ describe("enterprise service policy flow", () => {
       deleted: [policy.id],
       failed: [{ id: "missing-policy", reason: "notFound" }],
     });
+  });
+});
+
+describe("enterprise service effective policy", () => {
+  const seedDevice = (db: any, organizationId: string, id: string) => {
+    const now = new Date();
+    db.store.device.push({
+      id,
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: id,
+      dmIdentifier: `dm-${id}`,
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+  };
+
+  it("resolves includes, priority and direct exclusions for a device", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Engineering" }),
+    );
+    const low = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Low", priority: 1 }),
+    );
+    const high = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "High", priority: 10 }),
+    );
+    const excluded = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Excluded", priority: 100 }),
+    );
+    const kind = "mttx.apple.device";
+    for (const [policyId, camera] of [
+      [low.id, false],
+      [high.id, true],
+      [excluded.id, false],
+    ] as const) {
+      await runEffect(
+        service.patchPolicy(request(headers), tenant.id, policyId, {
+          configurations: { [kind]: { camera } },
+        }),
+      );
+    }
+    seedDevice(db, tenant.id, "device-1");
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, group.id, {
+        assign: {
+          devices: ["device-1"],
+          policies: [
+            { id: low.id, mode: "include" },
+            { id: high.id, mode: "include" },
+            { id: excluded.id, mode: "include" },
+          ],
+        },
+      }),
+    );
+    await runEffect(
+      service.patchPolicyAssignments(request(headers), tenant.id, excluded.id, {
+        assign: [{ id: "device-1", mode: "exclude" }],
+      }),
+    );
+
+    const result = await runEffect(
+      service.getDeviceEffectivePolicy(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        kind,
+        policyId: high.id,
+        policyName: "High",
+        scope: "group",
+        groupIds: [group.id],
+      }),
+    ]);
+    expect(result.policies).toEqual([
+      expect.objectContaining({ policyId: high.id, policyName: "High", kinds: [kind] }),
+    ]);
+    expect(result.overridden).toEqual([
+      expect.objectContaining({ kind, policyId: low.id, reason: "lower-priority" }),
+    ]);
+    expect(result.exclusions).toEqual([
+      expect.objectContaining({
+        policyId: excluded.id,
+        scope: "direct",
+        effective: true,
+        reason: "device-exclude",
+      }),
+    ]);
+  });
+
+  it("scopes the effective policy to the tenant", async () => {
+    const { db, service, headers } = await makeContext();
+    const first = await runEffect(
+      service.createTenant(request(headers), { name: "First", slug: "first" }),
+    );
+    const second = await runEffect(
+      service.createTenant(request(headers), { name: "Second", slug: "second" }),
+    );
+    seedDevice(db, first.id, "device-1");
+
+    await expect(
+      runEffect(service.getDeviceEffectivePolicy(request(headers), second.id, "device-1")),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
   });
 });
 
@@ -1517,6 +2201,80 @@ describe("enterprise policy validation and enrollment", () => {
     expect(profile).toContain("com.apple.mdm.token");
   });
 
+  it("brands the Apple enrollment profile and enrollment payload", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), {
+        name: "Acme",
+        slug: "acme",
+        displayName: "Acme Corp",
+        supportEmail: "help@acme.test",
+        brandColor: "#2563eb",
+        logo: "https://cdn.example.com/acme.png",
+      }),
+    );
+    Object.assign(db.store.enterprise_enrollment[0], {
+      enabledApple: true,
+      enabledWindows: true,
+      enabledAndroid: false,
+      enabledAssetTag: false,
+      maxDevices: 100,
+    });
+    db.store.apple_push_certificate.push({
+      organizationId: tenant.id,
+      email: "admin@example.com",
+      topic: "com.apple.mgmt.External.acme",
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: null,
+      updatedAt: new Date(),
+    });
+
+    const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+    const result = await runEffect(service.getEnrollment(enrollment.id, undefined));
+    if (!result.authenticated || !("profile" in result.apple)) throw new Error("expected profile");
+
+    expect(result.branding).toEqual({
+      displayName: "Acme Corp",
+      logo: "https://cdn.example.com/acme.png",
+      supportEmail: "help@acme.test",
+      brandColor: "#2563eb",
+    });
+    expect(result.apple.profile).toContain("<string>Acme Corp Enrollment</string>");
+    expect(result.apple.profile).toContain("<string>Acme Corp</string>");
+    expect(result.apple.profile).toContain("help@acme.test");
+    expect(result.apple.profile).not.toContain("hello@mattrax.app");
+    // Branding must not disturb the identifiers devices already trust.
+    expect(result.apple.profile).toContain("com.mattrax.scep");
+    expect(result.apple.profile).toContain("com.mattrax.mdm");
+  });
+
+  it("uses the display name for the downloaded profile filename", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), {
+        name: "Acme",
+        slug: "acme",
+        displayName: "Acme Corp",
+      }),
+    );
+    Object.assign(db.store.enterprise_enrollment[0], {
+      enabledApple: true,
+      maxDevices: 100,
+    });
+    db.store.apple_push_certificate.push({
+      organizationId: tenant.id,
+      email: "admin@example.com",
+      topic: "com.apple.mgmt.External.acme",
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: null,
+      updatedAt: new Date(),
+    });
+
+    const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+    const profile = await runEffect(service.getAppleEnrollmentProfile(enrollment.id, undefined));
+    expect(profile.filename).toBe("acme-enrollment.mobileconfig");
+  });
+
   it("treats maxDevices=0 as unlimited when enrolling", async () => {
     const { db, service, headers } = await makeContext();
     const tenant = await runEffect(
@@ -1548,10 +2306,21 @@ describe("enterprise policy validation and enrollment", () => {
     Object.assign(db.store.enterprise_enrollment[0], { maxDevices: 0 });
     const unlimited = await runEffect(service.getEnrollment(tenant.id, undefined));
     if (!unlimited.authenticated) throw new Error("expected authenticated enrollment");
-    expect(unlimited.windows).toEqual({
-      discoveryUrl: `${origin}/mdm/windows/discovery`,
-      tenantScoped: false,
-    });
+    expect(unlimited.windows).toMatchObject({ tenantScoped: true });
+    if (!("discoveryUrl" in unlimited.windows)) throw new Error("expected a Windows URL");
+    expect(unlimited.windows.discoveryUrl).toMatch(
+      new RegExp(`^${origin}/mdm/windows/discovery\\?tenant=mttxw1\\.`),
+    );
+    expect(unlimited.windows.discoveryUrl).toContain(
+      encodeURIComponent(Buffer.from(tenant.id).toString("base64url")),
+    );
+
+    // The dashboard settings response carries the same tenant-scoped URL.
+    const settings = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+    expect(settings.windowsDiscoveryUrl).toMatch(
+      new RegExp(`^${origin}/mdm/windows/discovery\\?tenant=mttxw1\\.`),
+    );
+    expect(settings.windowsDiscoveryExpiresAt).toBeTruthy();
   });
 
   it("scopes device search and CSV export to the tenant", async () => {
@@ -2029,5 +2798,191 @@ describe("device pre-registration", () => {
         }),
       ),
     ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+  });
+});
+
+describe("audit search and export", () => {
+  const setup = async () => {
+    const context = await makeContext();
+    const first = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "First", slug: "first" }),
+    );
+    const second = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Second", slug: "second" }),
+    );
+    return { ...context, first, second };
+  };
+
+  const auditRow = (
+    organizationId: string,
+    id: string,
+    createdAt: Date,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    id,
+    organizationId,
+    actorUserId: "user-1",
+    actorEmail: "owner@example.com",
+    action: "device.action",
+    targetType: "device",
+    targetId: `device-${id}`,
+    metadata: { id },
+    createdAt,
+    ...overrides,
+  });
+
+  it("scopes to the tenant and pages newest first with a stable cursor", async () => {
+    const { db, service, headers, first, second } = await setup();
+    const at = (hour: number) => new Date(`2026-01-01T${String(hour).padStart(2, "0")}:00:00.000Z`);
+    db.store.audit_log.push(
+      auditRow(first.id, "audit-a", at(10)),
+      auditRow(first.id, "audit-b", at(12)),
+      auditRow(first.id, "audit-c", at(12)),
+      auditRow(first.id, "audit-d", at(11)),
+      auditRow(second.id, "audit-other", at(13)),
+    );
+
+    const firstPage = await runEffect(
+      service.searchAuditLog(request(headers), first.id, { action: "device.action", limit: 2 }),
+    );
+    expect(firstPage.entries.map((entry: any) => entry.id)).toEqual(["audit-c", "audit-b"]);
+    expect(firstPage.nextCursor).toBeTruthy();
+    expect(firstPage.entries.every((entry: any) => entry.id !== "audit-other")).toBe(true);
+
+    const secondPage = await runEffect(
+      service.searchAuditLog(request(headers), first.id, {
+        action: "device.action",
+        limit: 2,
+        cursor: firstPage.nextCursor!,
+      }),
+    );
+    expect(secondPage.entries.map((entry: any) => entry.id)).toEqual(["audit-d", "audit-a"]);
+    expect(secondPage.nextCursor).toBeNull();
+
+    const all = [...firstPage.entries, ...secondPage.entries].map((entry: any) => entry.id);
+    expect(new Set(all).size).toBe(4);
+  });
+
+  it("supports legacy offset paging", async () => {
+    const { db, service, headers, first } = await setup();
+    const at = (hour: number) => new Date(`2026-01-01T${String(hour).padStart(2, "0")}:00:00.000Z`);
+    db.store.audit_log.push(
+      auditRow(first.id, "audit-a", at(10)),
+      auditRow(first.id, "audit-b", at(11)),
+      auditRow(first.id, "audit-c", at(12)),
+    );
+    const page = await runEffect(
+      service.searchAuditLog(request(headers), first.id, {
+        action: "device.action",
+        offset: 1,
+        limit: 1,
+      }),
+    );
+    expect(page.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
+    expect(page.nextCursor).toBeTruthy();
+    const next = await runEffect(
+      service.searchAuditLog(request(headers), first.id, {
+        action: "device.action",
+        cursor: page.nextCursor!,
+        limit: 1,
+      }),
+    );
+    expect(next.entries.map((entry: any) => entry.id)).toEqual(["audit-a"]);
+  });
+
+  it("filters by actor, target, dates and escapes LIKE wildcards", async () => {
+    const { db, service, headers, first } = await setup();
+    db.store.audit_log.push(
+      auditRow(first.id, "audit-a", new Date("2026-01-01T10:00:00.000Z"), {
+        actorEmail: "alice@example.com",
+        targetId: "device-ABC",
+      }),
+      auditRow(first.id, "audit-b", new Date("2026-01-02T10:00:00.000Z"), {
+        actorUserId: "user-bob",
+        actorEmail: "bob@example.com",
+        targetId: "dev%1",
+      }),
+      auditRow(first.id, "audit-c", new Date("2026-01-03T10:00:00.000Z"), {
+        targetId: "devZZ1",
+        targetType: "policy",
+        action: "policy.updated",
+      }),
+    );
+
+    const byEmail = await runEffect(
+      service.searchAuditLog(request(headers), first.id, { actor: "alice" }),
+    );
+    expect(byEmail.entries.map((entry: any) => entry.id)).toEqual(["audit-a"]);
+
+    const byUserId = await runEffect(
+      service.searchAuditLog(request(headers), first.id, { actor: "user-bob" }),
+    );
+    expect(byUserId.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
+
+    // `%` in the filter is literal, not a wildcard.
+    const byTarget = await runEffect(
+      service.searchAuditLog(request(headers), first.id, { targetId: "dev%1" }),
+    );
+    expect(byTarget.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
+
+    const byType = await runEffect(
+      service.searchAuditLog(request(headers), first.id, { targetType: "policy" }),
+    );
+    expect(byType.entries.map((entry: any) => entry.id)).toEqual(["audit-c"]);
+
+    const byRange = await runEffect(
+      service.searchAuditLog(request(headers), first.id, {
+        action: "device.action",
+        from: "2026-01-01T10:00:00.000Z",
+        to: "2026-01-02T10:00:00.000Z",
+      }),
+    );
+    expect(byRange.entries.map((entry: any) => entry.id)).toEqual(["audit-b", "audit-a"]);
+
+    await expect(
+      runEffect(
+        service.searchAuditLog(request(headers), first.id, {
+          from: "2026-02-01T00:00:00.000Z",
+          to: "2026-01-01T00:00:00.000Z",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("caps CSV exports, signals truncation and neutralises formulas", async () => {
+    const { db, service, headers, first } = await setup();
+    for (let index = 0; index < 10_001; index++)
+      db.store.audit_log.push(
+        auditRow(first.id, `audit-${index}`, new Date(2026, 0, 1, 0, 0, index), {
+          // Newest row, so it survives the export cap and is the first CSV row.
+          actorEmail: index === 10_000 ? '=HYPERLINK("https://evil.example")' : "owner@example.com",
+          action: "device.action",
+        }),
+      );
+
+    const exported = await runEffect(
+      service.exportAuditLog(request(headers), first.id, {
+        action: "device.action",
+        format: "csv",
+      }),
+    );
+    expect(exported.truncated).toBe(true);
+    expect(exported.rowCount).toBe(10_000);
+    expect(exported.body.trimEnd().split("\r\n")).toHaveLength(10_001);
+    expect(exported.body).toContain("'=HYPERLINK");
+    expect(exported.body).not.toContain(",=HYPERLINK");
+
+    const json = await runEffect(
+      service.exportAuditLog(request(headers), first.id, {
+        action: "tenant.created",
+        format: "json",
+      }),
+    );
+    const entries = JSON.parse(json.body) as Array<{ action: string; actorEmail: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: "tenant.created",
+      actorEmail: "owner@example.com",
+    });
   });
 });

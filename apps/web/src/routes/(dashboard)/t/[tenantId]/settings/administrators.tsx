@@ -90,6 +90,7 @@ export default function AdministratorsSettingsPage() {
               onChange={(e) => setRole(e.currentTarget.value)}
             >
               <option value="member">Member</option>
+              <option value="auditor">Auditor (read-only)</option>
               <option value="admin">Administrator</option>
               <option value="owner">Owner</option>
             </select>
@@ -112,8 +113,8 @@ export default function AdministratorsSettingsPage() {
           </Show>
           <p class="mt-3 text-xs text-muted-foreground">
             Invitations expire after 7 days. The recipient must sign in with the invited email
-            address. Administrators can manage devices and policies; owners can also manage billing
-            and the team.
+            address. Members and auditors have read-only access; administrators can manage devices,
+            policies and the team; owners can also manage billing and delete the tenant.
           </p>
         </CardContent>
       </Card>
@@ -144,6 +145,7 @@ export default function AdministratorsSettingsPage() {
                       disabled={changeRole.isPending}
                     >
                       <option value="member">Member</option>
+                      <option value="auditor">Auditor (read-only)</option>
                       <option value="admin">Administrator</option>
                       <option value="owner">Owner</option>
                     </select>

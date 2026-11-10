@@ -32,12 +32,19 @@ export const CheckinScope = Schema.Union([
      * identity certificate that first enrolled it.
      */
     identityCertificateFingerprintSha256: Schema.optional(Schema.String),
+    /**
+     * Serial number (lowercase hex) of the mTLS identity certificate presented
+     * by the device. Backends use it to bind the SCEP certificate issued at
+     * enrollment to this device, enabling per-device revocation and health.
+     */
+    identityCertificateSerial: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,
   }),
   Schema.TaggedStruct("user", {
     udid: Schema.String,
     identityCertificate: Schema.optional(Schema.String),
     identityCertificateFingerprintSha256: Schema.optional(Schema.String),
+    identityCertificateSerial: Schema.optional(Schema.String),
     userId: Schema.String,
     userShortName: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,
@@ -140,6 +147,12 @@ export const WindowsDiscoveryRequest = Schema.Struct({
   osEdition: Schema.Number,
   authPolicies: Schema.Array(Schema.String),
   mdmOrigin: MdmOrigin,
+  /**
+   * HMAC-signed tenant enrollment token from the discovery URL
+   * (`/mdm/windows/discovery?tenant=<token>`). Discovery has no other tenant
+   * identity, so this is how a request is routed to the right organization.
+   */
+  tenantToken: Schema.optional(Schema.String),
 });
 export type WindowsDiscoveryRequest = typeof WindowsDiscoveryRequest.Type;
 
@@ -155,6 +168,10 @@ export type WindowsDiscoveryResponse = typeof WindowsDiscoveryResponse.Type;
 export const WindowsManagementScope = Schema.Struct({
   deviceId: Schema.String,
   identityCertificate: Schema.optional(Schema.String),
+  /** Serial from the verified mTLS handshake, when the edge forwards it. */
+  identityCertificateSerial: Schema.optional(Schema.String),
+  /** Tenant token preserved on the management URL, if the device kept it. */
+  tenantToken: Schema.optional(Schema.String),
   mdmOrigin: MdmOrigin,
 });
 export type WindowsManagementScope = typeof WindowsManagementScope.Type;
@@ -167,6 +184,11 @@ export const WindowsEnrollmentPolicy = Schema.Struct({
 });
 export type WindowsEnrollmentPolicy = typeof WindowsEnrollmentPolicy.Type;
 
+/** Request-scoped tenant identity for the WSTEP policy endpoint. */
+export type WindowsEnrollmentContext = {
+  readonly tenantToken?: string;
+};
+
 export const WindowsEnrollmentRequest = Schema.Struct({
   authToken: Schema.String,
   csr: Schema.String,
@@ -175,6 +197,8 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   enrollmentType: Schema.optional(Schema.String),
   context: Schema.Record(Schema.String, Schema.String),
   mdmOrigin: MdmOrigin,
+  /** Tenant token from the enrollment URL (or provisioning context). */
+  tenantToken: Schema.optional(Schema.String),
 });
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;
 
@@ -283,9 +307,13 @@ export declare namespace ManagementBackend {
 
     readonly windowsDiscovery: (
       request: WindowsDiscoveryRequest,
-    ) => Effect.Effect<WindowsDiscoveryResponse, ManagementNotSupported | InternalServerError>;
+    ) => Effect.Effect<
+      WindowsDiscoveryResponse,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
     readonly getWindowsEnrollmentPolicy: (
       authToken: string,
+      context?: WindowsEnrollmentContext,
     ) => Effect.Effect<
       WindowsEnrollmentPolicy,
       ManagementNotSupported | UnknownDevice | InternalServerError

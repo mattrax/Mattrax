@@ -3,6 +3,7 @@ import { Effect, Layer, Redacted } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
+  EnterpriseForbidden,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -47,12 +48,54 @@ const tokenInfo = (item: any) => ({
   id: item.id,
   name: item.name,
   tokenPrefix: item.tokenPrefix,
+  scopes: Array.isArray(item.scopes) ? item.scopes : ["read", "write"],
+  tenantId: item.tenantId ?? null,
   createdAt: item.createdAt.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
   lastUsedAt: item.lastUsedAt ? item.lastUsedAt.toISOString() : null,
   expiresAt: item.expiresAt ? item.expiresAt.toISOString() : null,
   revokedAt: item.revokedAt ? item.revokedAt.toISOString() : null,
 });
+
+export const API_TOKEN_SCOPES = ["read", "write"] as const;
+export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
+
+/**
+ * Resolve the scopes stored on a token. Tokens created before scoping existed
+ * have no scopes and keep full access. Malformed values fail closed.
+ */
+export const tokenScopes = (value: unknown): Set<ApiTokenScope> => {
+  if (value == null) return new Set(API_TOKEN_SCOPES);
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  return new Set(
+    raw.filter((scope): scope is ApiTokenScope =>
+      (API_TOKEN_SCOPES as readonly string[]).includes(scope),
+    ),
+  );
+};
+
+/** Normalise requested scopes into the canonical order, or reject unknowns. */
+const normalizeTokenScopes = (scopes: readonly string[] | undefined) => {
+  if (scopes === undefined) return [...API_TOKEN_SCOPES] as ApiTokenScope[];
+  const requested = new Set(scopes);
+  if (requested.size === 0) return undefined;
+  if ([...requested].some((scope) => !(API_TOKEN_SCOPES as readonly string[]).includes(scope)))
+    return undefined;
+  // `write` means read + mutate, so a write token always carries `read`.
+  if (requested.has("write")) requested.add("read");
+  return API_TOKEN_SCOPES.filter((scope) => requested.has(scope));
+};
 
 const randomToken = (prefix = "") =>
   `${prefix}${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -142,21 +185,84 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       const createApiToken = (
         request: Request,
-        body: { name: string; expiresAt?: string | null },
+        body: {
+          name: string;
+          expiresAt?: string | null;
+          scopes?: ApiTokenScope[];
+          tenantId?: string | null;
+        },
       ) =>
         Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
+          const { user, apiToken } = yield* requireUser(request);
+          const name = body.name?.trim();
+          if (!name)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Enter a name for the token" }),
+            );
+
+          const scopes = normalizeTokenScopes(body.scopes);
+          if (!scopes)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Choose valid token scopes" }),
+            );
+
+          // A token must not be able to mint a token with more access than it
+          // already has, otherwise read-only tenants could be bypassed.
+          if (apiToken) {
+            const ownScopes = tokenScopes(apiToken.scopes);
+            if (!scopes.every((scope) => ownScopes.has(scope)))
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message: "An API token cannot create a token with broader scopes",
+                }),
+              );
+            const tokenTenantId = body.tenantId ?? null;
+            if (apiToken.tenantId && apiToken.tenantId !== tokenTenantId)
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message: "A tenant-bound API token can only create tokens for that tenant",
+                }),
+              );
+          }
+
+          const tenantId = body.tenantId ?? null;
+          if (tenantId) {
+            const member = yield* db.query.member.findFirst({
+              where: { userId: user.id, organizationId: tenantId },
+            });
+            if (!member)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({ message: "Choose a tenant you belong to" }),
+              );
+          }
+
+          let expiresAt: Date | null = null;
+          if (body.expiresAt) {
+            const parsed = new Date(body.expiresAt);
+            if (Number.isNaN(parsed.getTime()))
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({ message: "Choose a valid expiry date" }),
+              );
+            if (parsed <= new Date())
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({ message: "The expiry date must be in the future" }),
+              );
+            expiresAt = parsed;
+          }
+
           const raw = randomToken("mtx_");
           const now = new Date();
           const tokenHash = yield* sha256(raw);
           const item = {
             id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
             userId: user.id,
-            name: body.name,
+            name,
             tokenPrefix: raw.slice(0, 12),
             tokenHash,
+            scopes,
+            tenantId,
             lastUsedAt: null,
-            expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+            expiresAt,
             revokedAt: null,
             createdAt: now,
             updatedAt: now,

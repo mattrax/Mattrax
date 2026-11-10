@@ -417,6 +417,9 @@ importers:
       '@mattrax/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@mattrax/net':
+        specifier: workspace:*
+        version: link:../net
       '@mattrax/plist':
         specifier: workspace:*
         version: link:../plist
@@ -436,6 +439,9 @@ importers:
 
   packages/azure-graph:
     dependencies:
+      '@mattrax/net':
+        specifier: workspace:*
+        version: link:../net
       effect:
         specifier: 'catalog:'
         version: 4.1.2
@@ -523,6 +529,9 @@ importers:
 
   packages/effect-stripe:
     dependencies:
+      '@mattrax/net':
+        specifier: workspace:*
+        version: link:../net
       effect:
         specifier: 'catalog:'
         version: 4.1.2
@@ -556,6 +565,9 @@ importers:
       '@mattrax/management-backend-enterprise':
         specifier: workspace:*
         version: link:../management-backend-enterprise
+      '@mattrax/net':
+        specifier: workspace:*
+        version: link:../net
       '@mattrax/plist':
         specifier: workspace:*
         version: link:../plist
@@ -647,6 +659,9 @@ importers:
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../enterprise-core
+      '@mattrax/enterprise-domain':
+        specifier: workspace:*
+        version: link:../enterprise-domain
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
@@ -681,6 +696,12 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.2
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+
+  packages/net:
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

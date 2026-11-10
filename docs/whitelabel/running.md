@@ -30,7 +30,11 @@ To run a complete example, including a management backend and dashboard, use:
 pnpm --filter @mattrax/example-whitelabel dev
 ```
 
-That Worker listens on port `9051` by default.
+That Worker listens on port `9051` by default. It reads branding from
+`BRAND_NAME` (default `Mattrax`), `BRAND_LOGO_URL`, `SUPPORT_EMAIL` (default
+`hello@mattrax.app`) and `BRAND_COLOR` in `cloudflare.config.ts`, and uses the first two
+for the generated Apple enrollment profile. `GET /branding.json` exposes the resolved
+values to a white-label frontend.
 
 ## CLI
 
@@ -50,6 +54,10 @@ That Worker listens on port `9051` by default.
 | `--webhook-secret`    | Yes      | HMAC secret for webhook requests. Defaults to `MATTRAX_WEBHOOK_SECRET`. The management backend rejects unsigned requests when it is unset. |
 | `--data-dir`          | No       | Directory for filesystem-backed state. Defaults to `./.data`, or `/opt/mattrax` in bundled builds.                                         |
 | `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM used to derive the MDM topic.                                                                      |
+| `--brand-name`        | No       | Organisation name in generated enrollment profiles. Defaults to `Mattrax` / `MATTRAX_BRAND_NAME`.                                          |
+| `--brand-logo-url`    | No       | Optional logo URL or data URL for a white-label frontend.                                                                                  |
+| `--support-email`     | No       | Support address in the enrollment profile description. Defaults to `hello@mattrax.app`.                                                    |
+| `--brand-color`       | No       | Optional hex brand colour for a white-label frontend.                                                                                      |
 
 Example:
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("device enrollment", () => {
   test("renders the public enrollment page and hides disabled platforms", async ({ page }) => {
@@ -7,8 +7,8 @@ test.describe("device enrollment", () => {
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
-    await expect(page.getByText(/enroll in mattrax/i).first()).toBeVisible();
-    await expect(page.getByText("Enroll Tenant", { exact: false })).toBeVisible();
+    await expect(page.locator('[data-slot="card-title"]').first()).toContainText(/enroll in/i);
+    await expect(page.getByText("Enroll Tenant", { exact: false }).first()).toBeVisible();
 
     // Every platform is explained; Windows is available even before APNs is set up.
     for (const platform of ["Apple", "Windows", "Android"]) {
@@ -35,26 +35,45 @@ test.describe("device enrollment", () => {
     await expect(page.getByText(/invalid/i)).toBeVisible();
   });
 
-  test("shows the Windows discovery URL and marks Android unavailable", async ({ page }) => {
+  test("shows a tenant-scoped Windows discovery URL and marks Android unavailable", async ({
+    page,
+  }) => {
     const tenant = await bootstrapTenant(page, "Windows Tenant");
+    const other = await createTenant(
+      page,
+      `Windows Other ${Math.random().toString(36).slice(2, 8)}`,
+    );
     await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
       method: "PATCH",
       body: JSON.stringify({ enabledAndroid: true }),
     });
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+    const otherEnrollment = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${other.id}/enrollment`,
+    );
     const details = await api<{
-      windows: { discoveryUrl: string; tenantScoped: boolean };
+      windows: { discoveryUrl: string; tenantScoped: boolean; expiresAt?: string };
       android: string;
     }>(page, `/api/v1/enrollment/${enrollment.id}`);
+    const otherDetails = await api<{
+      windows: { discoveryUrl: string; tenantScoped: boolean };
+    }>(page, `/api/v1/enrollment/${otherEnrollment.id}`);
 
-    expect(details.windows.discoveryUrl).toContain("/mdm/windows/discovery");
-    expect(details.windows.tenantScoped).toBe(false);
+    expect(details.windows.discoveryUrl).toMatch(/\/mdm\/windows\/discovery\?tenant=mttxw1\./);
+    expect(details.windows.tenantScoped).toBe(true);
+    expect(details.windows.expiresAt).toBeTruthy();
+    // The token is tenant-specific: two tenants never share a URL.
+    expect(otherDetails.windows.discoveryUrl).not.toBe(details.windows.discoveryUrl);
     expect(details.android).toBe("unavailable");
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await page.getByRole("button", { name: /^Windows$/ }).click();
-    await expect(page.locator("input[readonly]")).toHaveValue(/\/mdm\/windows\/discovery/);
-    await expect(page.getByText(/deployment-wide/i)).toBeVisible();
+    await expect(page.locator("input[readonly]")).toHaveValue(
+      /\/mdm\/windows\/discovery\?tenant=mttxw1\./,
+    );
+    await expect(page.getByText(/deployment-wide/i)).toHaveCount(0);
+    await expect(page.getByText(/scoped to this tenant/i)).toBeVisible();
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.getByRole("button", { name: /^Copy$/ }).click();
     await expect(page.getByRole("button", { name: /^Copied$/ })).toBeVisible();
@@ -70,7 +89,7 @@ test.describe("device enrollment", () => {
     // Visiting the public link writes an enrollment_attempt row. Tenant
     // deletion relies on ON DELETE CASCADE for that table.
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
-    await expect(page.getByText(/enroll in mattrax/i).first()).toBeVisible();
+    await expect(page.locator('[data-slot="card-title"]').first()).toContainText(/enroll in/i);
 
     await expect(
       api<{ status: string }>(page, `/api/v1/tenants/${tenant.id}`, { method: "DELETE" }),

@@ -37,6 +37,7 @@ export default function PolicyDetailPage() {
   const row = () => policy.data as PolicyRow | undefined;
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [priority, setPriority] = createSignal("0");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   createEffect(
@@ -46,6 +47,7 @@ export default function PolicyDetailPage() {
       if (policy) {
         setName(policy.name);
         setNotes(policy.notes ?? "");
+        setPriority(String(policy.priority ?? 0));
       }
     },
   );
@@ -60,6 +62,7 @@ export default function PolicyDetailPage() {
       enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: name(),
         notes: notes() || null,
+        priority: Number(priority()) || 0,
       }),
     onSuccess: invalidate,
   }));
@@ -164,6 +167,19 @@ export default function PolicyDetailPage() {
                   onInput={(e) => setNotes(e.currentTarget.value)}
                   placeholder="What does this policy do?"
                 />
+              </Field>
+              <Field label="Conflict priority">
+                <Input
+                  type="number"
+                  step="1"
+                  value={priority()}
+                  onInput={(e) => setPriority(e.currentTarget.value)}
+                />
+                <p class="mt-1 text-xs text-muted-foreground">
+                  Higher numbers win when included policies provide the same configuration kind.
+                  Direct device assignments beat group assignments first; ties fall back to the most
+                  recently updated policy, then the smallest id.
+                </p>
               </Field>
               <ErrorText error={save.error} />
               <Button type="submit" disabled={save.isPending}>

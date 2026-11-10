@@ -82,6 +82,17 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // The same identity is embedded in generated enrollment profiles, so a
+    // white-label frontend can fetch it instead of hard-coding a product name.
+    if (url.pathname === "/branding.json") {
+      return Response.json({
+        displayName: env.BRAND_NAME || "Mattrax",
+        logo: env.BRAND_LOGO_URL || null,
+        supportEmail: env.SUPPORT_EMAIL || "hello@mattrax.app",
+        brandColor: env.BRAND_COLOR || "#1c1917",
+      });
+    }
+
     if (url.pathname.startsWith("/api/")) {
       return handleApi(request, env, ctx);
     }
@@ -101,7 +112,8 @@ export default {
             origin: env.ORIGIN,
             topic,
             organizationId: "whitelabel",
-            organizationName: "Mattrax",
+            organizationName: env.BRAND_NAME || "Mattrax",
+            supportEmail: env.SUPPORT_EMAIL || undefined,
             challenge,
           }),
         ),

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { createHmac } from "node:crypto";
+import { createServer } from "node:net";
+import { pemEncode } from "@mattrax/crypto";
+import { createTestApnsCertificate, createTestApnsKeys } from "./helpers.js";
 import {
   ApnsError,
   MtlsPushTransport,
   NoopPushTransport,
+  NodePushTransport,
   RelayPushTransport,
   buildApnsRequest,
   relaySignature,
@@ -138,6 +142,105 @@ describe("APNs relay transport", () => {
       ),
     );
     expect(error.message).toContain("502");
+  });
+});
+
+describe("APNs outbound timeouts", () => {
+  const push = (transport: ReturnType<typeof MtlsPushTransport>) =>
+    Effect.runPromise(
+      Effect.flip(
+        transport.push({
+          pushToken: "abcd",
+          pushMagic: "magic",
+          topic: "com.apple.mgmt.External.tenant",
+        }),
+      ),
+    );
+
+  it("aborts a hung mTLS fetch", async () => {
+    let aborted: AbortSignal | undefined;
+    const transport = MtlsPushTransport({
+      timeoutMs: 25,
+      fetch: ((_request: Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          aborted = init?.signal ?? undefined;
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        })) as unknown as (request: Request) => Promise<Response>,
+    });
+
+    const started = Date.now();
+    const error = await push(transport);
+    expect(error).toBeInstanceOf(ApnsError);
+    expect(error.message).toContain("timed out");
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(aborted?.aborted).toBe(true);
+  });
+
+  it("aborts a hung relay fetch", async () => {
+    const transport = RelayPushTransport({
+      url: "https://relay.test/apns",
+      secret: "relay-secret",
+      timeoutMs: 25,
+      fetch: ((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        })) as typeof fetch,
+    });
+
+    const error = await push(transport as ReturnType<typeof MtlsPushTransport>);
+    expect(error).toBeInstanceOf(ApnsError);
+    expect(error.message).toContain("timed out");
+  });
+
+  it("closes the HTTP/2 session when the connection stalls", async () => {
+    // A TCP server that accepts the connection but never completes the TLS
+    // handshake. Without a deadline this promise would never settle.
+    const sockets: Array<import("node:net").Socket> = [];
+    const server = createServer((socket) => {
+      sockets.push(socket);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+
+    const keys = await createTestApnsKeys();
+    const certificate = await createTestApnsCertificate({
+      keyPair: keys,
+      topic: "com.apple.mgmt.External.tenant",
+    });
+    const privateKeyPem = pemEncode(
+      "PRIVATE KEY",
+      await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+    );
+
+    try {
+      const transport = NodePushTransport({
+        certPem: certificate.pem,
+        privateKeyPem,
+        timeoutMs: 150,
+        endpoint: `https://127.0.0.1:${port}`,
+      });
+      const started = Date.now();
+      const error = await Effect.runPromise(
+        Effect.flip(
+          transport.push({
+            pushToken: "abcd",
+            pushMagic: "magic",
+            topic: "com.apple.mgmt.External.tenant",
+          }),
+        ),
+      );
+      expect(error).toBeInstanceOf(ApnsError);
+      expect(error.message).toContain("timed out");
+      expect(Date.now() - started).toBeLessThan(2_000);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    }
   });
 });
 

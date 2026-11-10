@@ -33,17 +33,6 @@ const normalize = <A, E extends { readonly _tag?: string | undefined }, R>(
   effect: Effect.Effect<A, E, R>,
 ) => effect.pipe(Effect.mapError(toManagementError));
 
-const normalizeNoDevice = <A, E extends { readonly _tag?: string | undefined }, R>(
-  effect: Effect.Effect<A, E, R>,
-) =>
-  effect.pipe(
-    Effect.mapError((error): ManagementNotSupported | InternalServerError =>
-      error._tag === "ManagementNotSupported"
-        ? new ManagementNotSupported()
-        : new InternalServerError(),
-    ),
-  );
-
 const normalizeCheckin = <A, E extends { readonly _tag?: string | undefined }, R>(
   effect: Effect.Effect<A, E, R>,
 ) => effect.pipe(Effect.mapError(toCheckinError));
@@ -156,11 +145,13 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
           normalize(client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind } })),
 
         windowsDiscovery: (request) =>
-          normalizeNoDevice(client.ManagementWebhook.windowsDiscovery({ payload: request })),
+          normalize(client.ManagementWebhook.windowsDiscovery({ payload: request })),
 
-        getWindowsEnrollmentPolicy: (authToken) =>
-          normalizeNoDevice(
-            client.ManagementWebhook.getWindowsEnrollmentPolicy({ payload: { authToken } }),
+        getWindowsEnrollmentPolicy: (authToken, context) =>
+          normalize(
+            client.ManagementWebhook.getWindowsEnrollmentPolicy({
+              payload: { authToken, tenantToken: context?.tenantToken },
+            }),
           ),
 
         windowsEnroll: (request) =>

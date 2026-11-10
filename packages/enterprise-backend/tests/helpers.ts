@@ -52,51 +52,123 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+const comparable = (value: unknown): any => {
+  if (value instanceof Date) return value.getTime();
+  // Drizzle serialises `datetime` parameters as SQL strings rather than Date
+  // objects, so normalise date-looking strings before relational compares.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const parsed = Date.parse(value.replace(" ", "T") + "Z");
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return value;
+};
+
+/** Split on a connector that appears outside parentheses/quotes. */
+const splitTopLevel = (sql: string, connector: string): string[] => {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let index = 0; index < sql.length; index++) {
+    const character = sql[index]!;
+    if (character === '"') quoted = !quoted;
+    else if (!quoted && character === "(") depth++;
+    else if (!quoted && character === ")") depth--;
+    else if (!quoted && depth === 0 && sql.startsWith(connector, index)) {
+      parts.push(sql.slice(start, index));
+      start = index + connector.length;
+      index += connector.length - 1;
+    }
+  }
+  parts.push(sql.slice(start));
+  return parts;
+};
+
+const stripOuterParens = (sql: string) => {
+  let value = sql.trim();
+  while (value.startsWith("(") && value.endsWith(")")) {
+    let depth = 0;
+    let closesAtEnd = false;
+    for (let index = 0; index < value.length; index++) {
+      const character = value[index]!;
+      if (character === "(") depth++;
+      else if (character === ")") {
+        depth--;
+        if (depth === 0) {
+          closesAtEnd = index === value.length - 1;
+          break;
+        }
+      }
+    }
+    if (!closesAtEnd) break;
+    value = value.slice(1, -1).trim();
+  }
+  return value;
+};
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const likeRegex = (pattern: string) => {
+  let source = "^";
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index]!;
+    if (character === "\\" && index + 1 < pattern.length) {
+      source += escapeRegex(pattern[++index]!);
+    } else if (character === "%") source += ".*";
+    else if (character === "_") source += ".";
+    else source += escapeRegex(character);
+  }
+  return new RegExp(`${source}$`, "i");
+};
+
+const rowValue = (row: Row, table: string | undefined, column: string) => {
+  const name = camel(column);
+  const key = table ? `${table}.${name}` : name;
+  return key in row ? row[key] : (row[column] ?? row[name]);
+};
+
+const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
+  const isNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+null$/i);
+  if (isNull) return rowValue(row, isNull[1], isNull[2]!) == null;
+
+  const inList = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+in\s+\(([^)]*)\)$/i);
+  if (inList) {
+    const values = [...inList[3]!.matchAll(/\$(\d+)/g)].map(
+      (match) => params[Number(match[1]) - 1],
+    );
+    return values.includes(rowValue(row, inList[1], inList[2]!));
+  }
+
+  const comparison = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s*(<=|>=|<|>|=|like)\s*\$(\d+)$/i);
+  // Unknown leaf (e.g. a generated literal): do not exclude the row.
+  if (!comparison) return true;
+  const actual = rowValue(row, comparison[1], comparison[2]!);
+  const operator = comparison[3]!.toLowerCase();
+  const expected = params[Number(comparison[4]) - 1];
+  if (operator === "=") return actual === expected;
+  if (operator === "like")
+    return actual != null && likeRegex(String(expected)).test(String(actual));
+  const left = comparable(actual) as number | string;
+  const right = comparable(expected) as number | string;
+  if (operator === "<") return left < right;
+  if (operator === "<=") return left <= right;
+  if (operator === ">") return left > right;
+  return left >= right;
+};
+
+const matchesSql = (sql: string, params: any[], row: Row): boolean => {
+  const text = stripOuterParens(sql);
+  if (!text) return true;
+  const orParts = splitTopLevel(text, " or ");
+  if (orParts.length > 1) return orParts.some((part) => matchesSql(part, params, row));
+  const andParts = splitTopLevel(text, " and ");
+  if (andParts.length > 1) return andParts.every((part) => matchesSql(part, params, row));
+  return matchesLeaf(text, params, row);
+};
+
 const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
   if (!query) return true;
-  let index = 0;
-  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
-  const comparable = (value: unknown): any => {
-    if (value instanceof Date) return value.getTime();
-    // Drizzle serialises `datetime` parameters as SQL strings rather than Date
-    // objects, so normalise date-looking strings before relational compares.
-    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-      const parsed = Date.parse(value.replace(" ", "T") + "Z");
-      if (Number.isFinite(parsed)) return parsed;
-    }
-    return value;
-  };
-  for (const match of query.sql.matchAll(regex)) {
-    const column = camel(match[2]);
-    const key = match[1] ? `${match[1]}.${column}` : column;
-    const actual = key in row ? row[key] : (row[column] ?? row[match[2]]);
-    const operator = match[3].toLowerCase();
-    if (operator === "is null") {
-      if (actual != null) return false;
-    } else if (operator === "in") {
-      const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
-      const values = query.params.slice(index, index + count);
-      index += count;
-      if (!values.includes(actual)) return false;
-    } else if (operator === "=") {
-      if (actual !== query.params[index++]) return false;
-    } else {
-      const expected = query.params[index++];
-      const left = comparable(actual) as number | string;
-      const right = comparable(expected) as number | string;
-      const passes =
-        operator === "<"
-          ? left < right
-          : operator === "<="
-            ? left <= right
-            : operator === ">"
-              ? left > right
-              : left >= right;
-      if (!passes) return false;
-    }
-  }
-  return true;
+  return matchesSql(query.sql, query.params, row);
 };
 
 const matchesFieldFilter = (filter: any, value: unknown): boolean => {
@@ -154,6 +226,7 @@ class SelectBuilder {
   private condition: any;
   private limitCount?: number;
   private offsetCount?: number;
+  private order: Array<{ table: string; name: string; descending: boolean }> = [];
 
   constructor(store: Store, fields?: Record<string, any>) {
     this.store = store;
@@ -175,7 +248,18 @@ class SelectBuilder {
     return this;
   }
 
-  orderBy() {
+  orderBy(...columns: any[]) {
+    this.order = columns.flatMap((column) => {
+      const chunks = flattenChunks(column);
+      const found = chunks.find((chunk) => chunk?.table && typeof chunk.name === "string") as
+        | { table: any; name: string }
+        | undefined;
+      if (!found) return [];
+      const descending = chunks.some(
+        (chunk) => typeof chunk?.value === "string" && chunk.value.toLowerCase().trim() === "desc",
+      );
+      return [{ table: columnTable(found), name: found.name, descending }];
+    });
     return this;
   }
 
@@ -207,6 +291,19 @@ class SelectBuilder {
         .filter((row) => matches(this.condition, row))
         .map((row) => project(this.fields, row));
     }
+    if (this.order.length > 0)
+      rows = [...rows].sort((left, right) => {
+        for (const key of this.order) {
+          const a = rowValue(left, key.table, key.name);
+          const b = rowValue(right, key.table, key.name);
+          const aValue = a instanceof Date ? a.getTime() : a;
+          const bValue = b instanceof Date ? b.getTime() : b;
+          if (aValue === bValue) continue;
+          const compared = (aValue ?? 0) < (bValue ?? 0) ? -1 : 1;
+          return key.descending ? -compared : compared;
+        }
+        return 0;
+      });
     const start = this.offsetCount ?? 0;
     const sliced = start > 0 ? rows.slice(start) : rows;
     return this.limitCount === undefined ? sliced : sliced.slice(0, this.limitCount);
@@ -370,19 +467,25 @@ export const makeDb = (initial: Partial<Store> = {}) => {
         {
           findFirst: ({ where }: { where?: any } = {}) =>
             Effect.sync(() => store[table].find((row) => matches(where, row))),
+          findMany: ({ where }: { where?: any } = {}) =>
+            Effect.sync(() => store[table].filter((row) => matches(where, row))),
         },
       ];
     }),
   );
 
-  return {
+  const db: any = {
     store,
     query,
     insert: (table: any) => new InsertBuilder(store, tableName(table)),
     update: (table: any) => new UpdateBuilder(store, tableName(table)),
     delete: (table: any) => new DeleteBuilder(store, tableName(table)),
     select: (fields?: Record<string, any>) => new SelectBuilder(store, fields),
+    // The production Db exposes a transaction; the in-memory fake applies the
+    // work directly so page-per-transaction code paths can be exercised.
+    transaction: (work: (tx: any) => unknown) => work(db),
   };
+  return db;
 };
 
 export const runEffect = async <A, E>(

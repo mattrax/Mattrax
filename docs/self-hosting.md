@@ -65,7 +65,7 @@ Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 | Secret                           | Required | Purpose                                                         |
 | -------------------------------- | -------- | --------------------------------------------------------------- |
 | `ORIGIN`                         | Yes      | Canonical public origin used in enrollment profiles and emails. |
-| `AUTH_SECRET`                    | Yes      | Signs sessions and seals APNs private keys. Back this up.       |
+| `AUTH_SECRET`                    | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.      |
 | `AUTH_RESET_URL`                 | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`. |
 | `TRUSTED_ORIGINS`                | No       | Extra comma-separated browser origins for split-origin setups.  |
 | `STRIPE_SECRET_KEY`              | Yes      | Stripe API key.                                                 |
@@ -170,9 +170,10 @@ proxied by the public web Worker.
   `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the latter to `0` to keep audit entries
   indefinitely). The same `runMaintenance` function is exported from
   `@mattrax/enterprise-backend` for external schedulers.
-- **Windows.** Set `WINDOWS_ORGANIZATION_ID` to the tenant that owns Windows devices.
-  Without it, `/mdm/windows/*` returns `503` with a configuration message; Cloud never
-  guesses a tenant.
+- **Windows.** Tenant-scoped discovery URLs work without extra configuration. Each
+  enrollment link carries a signed tenant token that expires; reload the enrollment page
+  for a fresh one. `WINDOWS_ORGANIZATION_ID` is optional and only keeps the old
+  un-scoped discovery URL working for a single-tenant deployment.
 - **Debug mailbox.** `DEV_MAILBOX=true` only enables `/api/debug/emails` on a loopback
   origin. A non-loopback dev origin needs `DEV_MAILBOX_ALLOW_REMOTE=true`, and
   `DEV_MAILBOX_SECRET` adds a required `x-dev-mailbox-secret` header. Never enable it in
@@ -206,13 +207,24 @@ pnpm mserver dev serve \
   --apple-vendor-cert ./certs/apple-vendor.pem
 ```
 
-| Flag                  | Required | Default                    | Purpose                                                               |
-| --------------------- | -------- | -------------------------- | --------------------------------------------------------------------- |
-| `--port`              | No       | `3000`                     | HTTP listen port.                                                     |
-| `--origin`            | No       | `http://localhost:3000`    | Public origin embedded in enrollment and asset URLs.                  |
-| `--webhook-url`       | Yes      | —                          | Base URL of your management backend.                                  |
-| `--data-dir`          | No       | `./.data` / `/opt/mattrax` | Filesystem state (SCEP CA). Bundled builds default to `/opt/mattrax`. |
-| `--apple-vendor-cert` | No       | —                          | PEM used to derive the Apple MDM topic for enrollment profiles.       |
+| Flag                  | Required | Default                          | Purpose                                                               |
+| --------------------- | -------- | -------------------------------- | --------------------------------------------------------------------- |
+| `--port`              | No       | `3000`                           | HTTP listen port.                                                     |
+| `--origin`            | No       | `http://localhost:3000`          | Public origin embedded in enrollment and asset URLs.                  |
+| `--webhook-url`       | Yes      | —                                | Base URL of your management backend.                                  |
+| `--data-dir`          | No       | `./.data` / `/opt/mattrax`       | Filesystem state (SCEP CA). Bundled builds default to `/opt/mattrax`. |
+| `--auth-secret`       | Yes      | `MATTRAX_AUTH_SECRET`            | Verifies SCEP challenges and seals the SCEP CA private key at rest.   |
+| `--apple-vendor-cert` | No       | —                                | PEM used to derive the Apple MDM topic for enrollment profiles.       |
+| `--brand-name`        | No       | `Mattrax` / `MATTRAX_BRAND_NAME` | Organisation name in generated enrollment profiles.                   |
+| `--brand-logo-url`    | No       | `MATTRAX_BRAND_LOGO_URL`         | Logo URL or data URL for white-label frontends.                       |
+| `--support-email`     | No       | `hello@mattrax.app`              | Support address embedded in enrollment profiles.                      |
+| `--brand-color`       | No       | `MATTRAX_BRAND_COLOR`            | Hex brand colour (for example `#1c1917`) for white-label frontends.   |
+
+The gateway stores `scep-ca.json` with the CA certificate and the CA private key sealed
+with AES-256-GCM keyed from `--auth-secret`/`MATTRAX_AUTH_SECRET`. Keep that secret in the
+same backup set as the data directory: without it the CA key cannot be opened, and the
+gateway fails closed rather than generating a new CA (which would invalidate every issued
+device identity). A legacy plaintext `scep-ca.json` is sealed on first read.
 
 ### Build a standalone binary
 
@@ -372,15 +384,158 @@ sudo systemctl restart mattrax-gateway
 
 ## Backups
 
-| Deployment | Back up                                                                                                               |
-| ---------- | --------------------------------------------------------------------------------------------------------------------- |
-| Cloud      | MySQL (tenants, devices, policies, declarations), R2 bucket (policy assets and other objects), Worker secrets.        |
-| Cloud      | `AUTH_SECRET`. Losing it invalidates sessions and makes stored APNs private keys undecryptable.                       |
-| Gateway    | `--data-dir/scep-ca.json` (SCEP CA certificate and private key). Losing it breaks continuity for existing enrolments. |
-| Gateway    | The Apple vendor certificate/key if you supplied one, and your management backend's own data.                         |
+Nothing in this repository schedules backups today. Treat the following as the
+minimum production checklist and wire it into your platform's scheduler, with
+restore drills at least quarterly.
 
-Restore the database and R2 objects before bringing the API Worker back. For the gateway,
-restore `scep-ca.json` with restrictive permissions before restarting.
+### What to back up
+
+| Deployment | Item                                  | Why it matters                                                                                                              |
+| ---------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Cloud      | MySQL database                        | Tenants, members, devices, groups, policies, applications, enrollment and audit history.                                    |
+| Cloud      | R2 bucket (`STORAGE`)                 | Policy and application objects. Without them uploads download as 404 even though rows still exist.                          |
+| Cloud      | `AUTH_SECRET`                         | Signs sessions and seals APNs private keys and the SCEP CA key. Losing it makes all sealed keys unreadable.                 |
+| Cloud      | APNs certificate/key                  | Stored in `apple_push_certificate`; the private key is sealed with `AUTH_SECRET`. Back up the database and secret together. |
+| Cloud      | SCEP CA (`scep_ca` table)             | Global CA certificate and sealed private key. Losing it breaks identity renewal and new SCEP issuance.                      |
+| Cloud      | `CLOUD_APPLE_VENDOR_CERT` / `..._KEY` | Deployment key material used for the one-click APNs CSR flow. Not in the database.                                          |
+| Cloud      | Stripe account and webhook secret     | Billing state lives in Stripe plus `subscription`/usage rows.                                                               |
+| Gateway    | `--data-dir/scep-ca.json`             | SCEP CA certificate and sealed private key.                                                                                 |
+| Gateway    | `--auth-secret`/`MATTRAX_AUTH_SECRET` | Unseals the CA private key; the gateway fails closed without it.                                                            |
+| Gateway    | Apple vendor certificate/key          | Needed to derive the enrollment topic and sign profiles.                                                                    |
+| Gateway    | Your management backend's data        | The gateway itself only stores gateway state.                                                                               |
+
+Never store the backup of `AUTH_SECRET` in the same bucket as the database dump:
+a leaked dump plus secret is equivalent to full tenant compromise.
+
+### MySQL dump and restore
+
+Use a consistent, single-transaction dump (the application writes continuously):
+
+```bash
+mysqldump \
+  --host "$DATABASE_HOST" --port "${DATABASE_PORT:-3306}" \
+  --user "$DATABASE_USER" --password \
+  --single-transaction --quick --routines --triggers \
+  --set-gtid-purged=OFF \
+  "$DATABASE_NAME" | gzip > "mattraxe-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+```
+
+Restore into an empty database before starting the API Worker:
+
+```bash
+gunzip -c mattraxe-YYYYMMDDTHHMMSSZ.sql.gz | \
+  mysql --host "$DATABASE_HOST" --port "${DATABASE_PORT:-3306}" \
+        --user "$DATABASE_USER" --password "$DATABASE_NAME"
+```
+
+Apply migrations after restore when the restored dump predates the code you are
+deploying:
+
+```bash
+DATABASE_HOST=... DATABASE_PORT=3306 DATABASE_USER=... \
+  DATABASE_PASSWORD=... DATABASE_NAME=... pnpm api db:migrate
+```
+
+Do not deploy code that expects a new column or table before its migration runs.
+
+### R2 object backup
+
+Object keys are stable and derive from tenant/policy/application ids
+(`p/<tenant>/<policy>/<sha256>` and `a/<tenant>/<application>/<sha256>`), so a
+normal object-store mirror is enough:
+
+```bash
+# Any S3-compatible mirror works; rclone is a common choice for R2.
+rclone sync r2:mattraxe-storage ./backups/r2 --fast-list --checksum
+```
+
+Restore by copying the objects back into the same bucket and key layout. Restore
+objects **before** returning the API to service: policy sync and application
+downloads resolve keys from the database but read bytes from R2.
+
+### APNs and SCEP CA caveats
+
+- The APNs private key is sealed with `AUTH_SECRET`. Restoring the database
+  without the matching secret leaves the certificate configured but the push key
+  unreadable; devices fall back to check-in until it is re-uploaded.
+- If the APNs certificate/key pair is lost, generate a new CSR under
+  **Settings → Management** and upload Apple's signed certificate. A certificate
+  rotation does not require devices to re-enroll, but keep the old certificate
+  until the new one is verified.
+- The SCEP CA private key is sealed with `AUTH_SECRET` in `scep_ca` (Cloud) or
+  `scep-ca.json` (gateway). Never regenerate it during a restore: a new CA
+  invalidates every issued device identity. Restore the database (or file) and
+  the original secret together, then verify a renewal before rotating anything.
+- Rotating `AUTH_SECRET` is a separate, planned operation (see below). A backup
+  captured before the rotation is only readable with the pre-rotation secret.
+
+### Restore order
+
+1. Provision an empty MySQL database and restore the most recent dump.
+2. Restore the R2 bucket (same bucket name and key prefix) or point `STORAGE` at
+   the restored bucket.
+3. Restore Worker secrets/config: `AUTH_SECRET`, `ORIGIN`, APNs/SCEP vendor
+   material, Stripe keys and any optional Azure settings.
+4. Run pending migrations against the restored database.
+5. Deploy the API and web Workers.
+6. Verify `/api/health` and `/api/ready`; then check a tenant's devices, policy
+   download, APNs push and SCEP renewal before declaring the restore complete.
+7. Re-enable schedules/cron. Maintenance is safe to run after restore but may
+   expire invitations, sessions and audit rows that aged out during the outage.
+
+### Tenant export and import limits
+
+Owners can download a versioned JSON bundle from **Tenant settings → General →
+Data and backups** (`GET /v1/tenants/:tenantId/export`) and import it as a new
+tenant (`POST /v1/tenants/import`). This is for migration and selective restores,
+not a replacement for the database/R2 backup above.
+
+Included:
+
+- Organization profile, branding and metadata.
+- Member emails and roles (informational; import never creates members).
+- Groups, their policy assignments and device membership metadata (keys/names,
+  not devices).
+- Policies and configuration payloads.
+- Application metadata (name, platform, bundle/store/manifest, file name/size/
+  hash, original R2 key hint).
+- Enrollment settings and pre-registrations.
+- SCEP-issued certificate metadata (serial, expiry, revocation; no private keys).
+- Audit entries only when **Include the audit log** is selected (capped at
+  10,000 recent entries).
+
+Excluded and never exported: APNs private keys, the SCEP CA private key, API/SCIM
+token hashes, user passwords/sessions/auth proofs, and R2 object bytes.
+
+Import behaviour:
+
+- The caller becomes the owner of a **new** tenant; existing tenants are never
+  modified. Internal ids are regenerated and group/policy/application references
+  are re-mapped.
+- Slugs are sanitised; if the exported slug is taken, `-2`, `-3`, … is appended.
+- Members, devices, audit history and SCEP certificates are **not** imported.
+  Uploaded application objects are not in the bundle, so their files must be
+  re-uploaded (the imported row keeps the hash/metadata).
+- Bundles are capped at 8 MB and unknown versions or unknown group/policy
+  references are rejected. The import is applied in one transaction.
+
+There is no scheduled export or automatic off-site backup yet. Add both if
+export/import is part of your recovery objective rather than an ad-hoc migration
+tool.
+
+### Rotating `AUTH_SECRET`
+
+`AUTH_SECRET` seals APNs private keys and the SCEP CA private key. A rotation that only
+changes the deployment secret makes both unreadable (the code fails closed; it does not
+regenerate the CA). To rotate safely:
+
+1. With the old secret configured, export the unsealed values through a trusted script
+   (`openSecret` from `@mattrax/crypto`) or start a maintenance window.
+2. Re-seal each value with the new secret and write it back before switching the deployment
+   to the new secret.
+3. Keep the old secret available until you have verified SCEP issuance and an APNs push.
+
+There is no online re-wrap job yet; treat a rotation as a planned operation.
 
 ## Next steps
 

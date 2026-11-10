@@ -1,6 +1,7 @@
 import { Effect, Layer } from "effect";
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { resolveTenantBranding } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
@@ -16,7 +17,16 @@ import {
   type ManagementManifest,
 } from "@mattrax/management-backend";
 import { certificateDeviceIdsFor, makeWindowsBackend } from "./windows.ts";
+import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import { parseDeviceInventory } from "./inventory.ts";
+import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
+import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
+import {
+  SYSTEM_AUDIT_ACTIONS,
+  commandFailureTransition,
+  declarationFailedTransition,
+  writeSystemAudit,
+} from "./audit.ts";
 import {
   buildAssetContent,
   buildAssetDeclaration,
@@ -147,47 +157,89 @@ const findDeviceByScope = (
     return device;
   });
 
+/**
+ * Bind the SCEP certificate issued at enrollment to the internal device row.
+ *
+ * SCEP challenges are tenant-wide, so Apple certificates are recorded with an
+ * `enrollmentId` but no `deviceId`. The mTLS identity certificate serial is the
+ * only reliable link between an issued certificate and the device presenting
+ * it. Binding it enables per-device revocation, renewal checks, credential
+ * health and the device certificate list.
+ *
+ * Never steal a certificate: a serial already bound to another device or
+ * tenant is logged and ignored.
+ */
+const bindAppleIdentityCertificate = (
+  device: Pick<DeviceRow, "id" | "organizationId" | "dmIdentifier">,
+  scope: CheckinScope,
+) =>
+  Effect.gen(function* () {
+    if (!scope.identityCertificateSerial) return;
+    const serial = normalizeIssuedCertificateSerial(scope.identityCertificateSerial);
+    if (!serial) return;
+
+    const db = yield* Db;
+    // The serial is a global primary key, so read it unscoped first and apply
+    // tenant/device ownership checks in code. A scoped lookup would silently
+    // treat another tenant's certificate as missing.
+    const [certificate] = yield* db
+      .select()
+      .from(s.scepIssuedCertificate)
+      .where(eq(s.scepIssuedCertificate.serial, serial))
+      .limit(1);
+    if (!certificate) return;
+
+    if (certificate.organizationId !== device.organizationId) {
+      yield* Effect.logWarning(
+        "Refusing to bind a SCEP identity certificate issued to another tenant",
+      );
+      return;
+    }
+    if (certificate.deviceId && !certificateDeviceIdsFor(device).includes(certificate.deviceId)) {
+      yield* Effect.logWarning(
+        "Refusing to rebind a SCEP identity certificate already bound to another device",
+      );
+      return;
+    }
+    if (certificate.deviceId === device.id) return;
+
+    yield* db
+      .update(s.scepIssuedCertificate)
+      // Legacy rows keyed by `device.dmIdentifier` are migrated to the internal
+      // id as they are seen, matching the Windows path.
+      .set({ deviceId: device.id })
+      .where(
+        and(
+          eq(s.scepIssuedCertificate.serial, certificate.serial),
+          eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+        ),
+      );
+  });
+
 const scopedConfigurations = (deviceId: string) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const grouped = yield* db
-      .select({
-        kind: s.configuration.kind,
-        policyId: s.configuration.policyId,
-        data: s.configuration.data,
-        hash: s.configuration.hash,
-        organizationId: s.policy.organizationId,
-        groupId: s.groupDevice.groupId,
-      })
-      .from(s.configuration)
-      .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
-      .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
-      .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
-      .where(eq(s.groupDevice.deviceId, deviceId));
+    const [device] = yield* db
+      .select({ id: s.device.id, organizationId: s.device.organizationId })
+      .from(s.device)
+      .where(eq(s.device.id, deviceId))
+      .limit(1);
+    if (!device) return [];
 
-    // Direct device assignments are additive with group assignments. Group
-    // membership wins when a policy is assigned both ways, so the activation
-    // remains stable.
-    const direct = yield* db
-      .select({
-        kind: s.configuration.kind,
-        policyId: s.configuration.policyId,
-        data: s.configuration.data,
-        hash: s.configuration.hash,
-        organizationId: s.policy.organizationId,
-      })
-      .from(s.configuration)
-      .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
-      .innerJoin(s.devicePolicy, eq(s.devicePolicy.policyId, s.configuration.policyId))
-      .where(eq(s.devicePolicy.deviceId, deviceId));
-
-    const seen = new Set(grouped.map((row) => `${row.policyId}:${row.kind}`));
-    return [
-      ...grouped,
-      ...direct
-        .filter((row) => !seen.has(`${row.policyId}:${row.kind}`))
-        .map((row) => ({ ...row, groupId: `direct:${row.policyId}` })),
-    ];
+    // Precedence and exclusions live in the shared resolver so Apple, Windows
+    // and the effective-policy API all agree.
+    const effective = yield* resolveEffectivePolicyForDevice(db, device);
+    return effective.configurations.map((configuration) => ({
+      policyId: configuration.policyId,
+      kind: configuration.kind,
+      data: configuration.data,
+      hash: configuration.hash ?? "",
+      organizationId: device.organizationId,
+      groupId:
+        configuration.scope === "group"
+          ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
+          : `direct:${configuration.policyId}`,
+    }));
   });
 
 const deviceTokenFor = (deviceId: string) =>
@@ -286,6 +338,7 @@ const declarationItemsForDevice = (
 
 const updateInventoryFromStatus = (
   deviceId: string,
+  organizationId: string,
   statusItems: unknown,
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
@@ -332,6 +385,20 @@ const updateInventoryFromStatus = (
       record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
     if (!declarations) return;
     const timestamp = now();
+    // Status reports arrive on every check-in. Read the previous declaration
+    // states first so audit events are emitted only on a failure transition.
+    const existingDeclarations = yield* db
+      .select()
+      .from(s.deviceDeclaration)
+      .where(eq(s.deviceDeclaration.deviceId, deviceId));
+    const previousValid = new Map<string, string>();
+    for (const row of existingDeclarations) previousValid.set(row.identifier, row.valid);
+    const transitions: Array<{
+      identifier: string;
+      declarationType: string;
+      previousValid: string | null;
+      valid: string;
+    }> = [];
     for (const declarationType of ["activations", "configurations", "assets", "management"]) {
       const values = declarations[declarationType];
       if (!Array.isArray(values)) continue;
@@ -343,6 +410,13 @@ const updateInventoryFromStatus = (
         const active = entry.Active === true || entry.active === true;
         const serverToken =
           stringField(entry, "ServerToken") ?? stringField(entry, "server-token") ?? null;
+        if (declarationFailedTransition(previousValid.get(identifier), valid))
+          transitions.push({
+            identifier,
+            declarationType,
+            previousValid: previousValid.get(identifier) ?? null,
+            valid,
+          });
         yield* db
           .insert(s.deviceDeclaration)
           .values({
@@ -367,6 +441,19 @@ const updateInventoryFromStatus = (
           });
       }
     }
+    for (const transition of transitions)
+      yield* writeSystemAudit(db, {
+        organizationId,
+        action: SYSTEM_AUDIT_ACTIONS.declarationInvalid,
+        targetType: "device",
+        targetId: deviceId,
+        metadata: {
+          identifier: transition.identifier,
+          declarationType: transition.declarationType,
+          previousValid: transition.previousValid,
+          valid: transition.valid,
+        },
+      });
   });
 
 export class ManagementBackendEnterpriseLive extends ManagementBackend {
@@ -444,6 +531,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           device ? Effect.succeed(device) : Effect.fail(new UnknownDevice()),
         ),
         Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal(cause))),
+      );
+
+    /**
+     * Dynamic group membership must not make a device check-in fail. A group
+     * that cannot be evaluated is retried on the next check-in and by daily
+     * maintenance.
+     */
+    const syncDeviceGroups = (organizationId: string, deviceId: string, at = now()) =>
+      syncDynamicGroupsForDevice(db, organizationId, deviceId, { now: at }).pipe(
+        Effect.catch(() => Effect.void),
       );
 
     return ManagementBackend.of({
@@ -600,11 +697,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       tokenUpdatedAt: null,
                     },
                   });
+                yield* bindAppleIdentityCertificate(
+                  { id: deviceId, organizationId, dmIdentifier: scope.udid },
+                  scope,
+                );
+                yield* syncDeviceGroups(organizationId, deviceId);
                 return;
               }
 
               const device = yield* findDeviceByScope(scope, options.requireAppleDeviceIdentity);
               if (!device) return yield* Effect.fail(new UnknownDevice());
+              yield* bindAppleIdentityCertificate(device, scope);
 
               if (event._tag === "TokenUpdate") {
                 if (event.channel === "user" && event.userId) {
@@ -649,7 +752,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ status: "enrolled", lastSeenAt: now() })
                     .where(eq(s.device.id, device.id));
+                  yield* writeSystemAudit(db, {
+                    organizationId: device.organizationId,
+                    action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
+                    targetType: "device",
+                    targetId: device.id,
+                    metadata: {
+                      platform: "apple",
+                      serial: device.serial ?? null,
+                      model: device.model ?? null,
+                    },
+                  });
                   yield* pushEnrolledDevice(device.id, device.organizationId);
+                  yield* syncDeviceGroups(device.organizationId, device.id);
                 }
                 return;
               }
@@ -663,6 +778,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .update(s.device)
                   .set({ lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
+                yield* syncDeviceGroups(device.organizationId, device.id);
                 return;
               }
 
@@ -680,12 +796,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ lastSeenAt: now() })
                     .where(eq(s.device.id, device.id));
+                  yield* syncDeviceGroups(device.organizationId, device.id);
                   return;
                 }
                 yield* db
                   .update(s.device)
                   .set({ status: "unenrolled", lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
+                if (device.status !== "unenrolled")
+                  yield* writeSystemAudit(db, {
+                    organizationId: device.organizationId,
+                    action: SYSTEM_AUDIT_ACTIONS.deviceCheckedOut,
+                    targetType: "device",
+                    targetId: device.id,
+                    metadata: { platform: "apple", previousStatus: device.status },
+                  });
                 yield* db
                   .update(s.deviceApple)
                   .set({
@@ -709,21 +834,33 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       isNull(s.scepIssuedCertificate.revokedAt),
                     ),
                   );
+                yield* syncDeviceGroups(device.organizationId, device.id);
                 return;
               }
 
               if (event._tag === "CommandResult") {
+                const [command] = yield* db
+                  .select()
+                  .from(s.deviceCommand)
+                  .where(
+                    and(
+                      eq(s.deviceCommand.id, event.commandUUID),
+                      eq(s.deviceCommand.deviceId, device.id),
+                    ),
+                  )
+                  .limit(1);
+                const nextStatus =
+                  event.status === "Acknowledged"
+                    ? "succeeded"
+                    : event.status === "NotNow"
+                      ? "not-now"
+                      : event.status === "Idle"
+                        ? "sent"
+                        : "failed";
                 yield* db
                   .update(s.deviceCommand)
                   .set({
-                    status:
-                      event.status === "Acknowledged"
-                        ? "succeeded"
-                        : event.status === "NotNow"
-                          ? "not-now"
-                          : event.status === "Idle"
-                            ? "sent"
-                            : "failed",
+                    status: nextStatus,
                     resultStatus: event.status,
                     resultDetail: event.errorDetail ?? null,
                     updatedAt: now(),
@@ -734,15 +871,39 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       eq(s.deviceCommand.deviceId, device.id),
                     ),
                   );
+                // A device can repeat the same result on retries. Only the
+                // first transition into failed/not-now is audited, and the
+                // detail text (which may echo device data) is not stored.
+                if (command && commandFailureTransition(command.status, nextStatus))
+                  yield* writeSystemAudit(db, {
+                    organizationId: device.organizationId,
+                    action:
+                      nextStatus === "failed"
+                        ? SYSTEM_AUDIT_ACTIONS.commandFailed
+                        : SYSTEM_AUDIT_ACTIONS.commandNotNow,
+                    targetType: "device_command",
+                    targetId: event.commandUUID,
+                    metadata: {
+                      deviceId: device.id,
+                      requestType: command.requestType,
+                      resultStatus: event.status,
+                    },
+                  });
                 yield* db
                   .update(s.device)
                   .set({ lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
+                yield* syncDeviceGroups(device.organizationId, device.id);
                 return;
               }
 
               if (event._tag === "DeclarationStatus") {
-                yield* updateInventoryFromStatus(device.id, event.statusItems);
+                yield* updateInventoryFromStatus(
+                  device.id,
+                  device.organizationId,
+                  event.statusItems,
+                );
+                yield* syncDeviceGroups(device.organizationId, device.id);
                 return;
               }
 
@@ -750,6 +911,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 .update(s.device)
                 .set({ lastSeenAt: now() })
                 .where(eq(s.device.id, device.id));
+              yield* syncDeviceGroups(device.organizationId, device.id);
             }).pipe(
               Effect.mapError((cause) =>
                 cause instanceof UnknownDevice ? cause : internal(cause),
@@ -767,6 +929,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
+            yield* bindAppleIdentityCertificate(device, scope);
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
             if (device.status !== "enrolled") return { _tag: "Idle" as const };
@@ -1013,13 +1176,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 .where(eq(s.organization.id, device.organizationId))
                 .limit(1)
                 .pipe(Effect.mapError(internal));
+              const branding = organization
+                ? resolveTenantBranding(organization)
+                : resolveTenantBranding({ name: "Mattrax" });
               return {
                 Type: "com.apple.management.organization-info",
                 Identifier: MANAGEMENT_DECLARATION_ID,
                 ServerToken: MANAGEMENT_DECLARATION_SERVER_TOKEN,
                 Payload: {
-                  Email: "hello@mattrax.app",
-                  Name: organization?.name ?? "Mattrax",
+                  Email: branding.supportEmail,
+                  Name: branding.displayName,
                   URL: origin,
                 },
               };
@@ -1133,6 +1299,7 @@ export const enterpriseEnrollmentProfile = (config: {
   topic: string;
   organizationId: string;
   organizationName?: string;
+  supportEmail?: string;
   challenge?: string;
   displayName?: string;
   identifier?: string;
@@ -1142,15 +1309,28 @@ export const enterpriseEnrollmentProfile = (config: {
     topic: config.topic,
     organizationId: config.organizationId,
     organizationName: config.organizationName ?? "Mattrax",
+    supportEmail: config.supportEmail,
     challenge: config.challenge ?? crypto.randomUUID(),
     displayName: config.displayName,
     identifier: config.identifier,
   });
 
 export const policyHash = jsonHash;
+export {
+  SYSTEM_AUDIT_ACTOR,
+  SYSTEM_AUDIT_ACTIONS,
+  commandFailureTransition,
+  declarationFailedTransition,
+  isDeclarationFailure,
+  pushInvalidTokenTransition,
+  writeSystemAudit,
+  type SystemAuditEvent,
+} from "./audit.ts";
 export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
 export { ScepRepositoryLive } from "./scep.ts";
 export * from "./policy.ts";
+export * from "./policyResolution.ts";
+export { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 export * from "./windows.ts";
 export {
   parseDeviceInventory,
@@ -1160,3 +1340,12 @@ export {
   statusItemValue,
   type DeviceInventory,
 } from "./inventory.ts";
+export {
+  syncDynamicGroup,
+  syncDynamicGroupsForDevice,
+  syncDynamicGroupsForTenant,
+  previewDynamicGroup,
+  type DynamicGroupPreview,
+  type DynamicGroupSyncOptions,
+  type DynamicGroupSyncResult,
+} from "./dynamicGroups.ts";

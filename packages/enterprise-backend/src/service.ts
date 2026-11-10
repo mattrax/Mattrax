@@ -32,7 +32,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
       const db = yield* Db;
       const env = yield* Env;
       const auth = yield* EnterpriseAuth;
-      const stripeClient = yield* StripeService;
+      const stripeClient = yield* Effect.serviceOption(StripeService);
       const r2 = yield* R2;
       const apns = yield* ApnsService;
       const azureGraph = yield* Effect.serviceOption(AzureGraph);
@@ -58,7 +58,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           db,
           schema,
           origin: env.origin,
-          stripeClient,
+          stripeClient: Option.getOrUndefined(stripeClient),
           storage,
           auth,
           authSecret: env.authSecret,

@@ -145,7 +145,9 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getWindowsEnrollmentPolicy", payload, options.secret);
         const backend = yield* ManagementBackend;
-        return yield* backend.getWindowsEnrollmentPolicy(payload.authToken);
+        return yield* backend.getWindowsEnrollmentPolicy(payload.authToken, {
+          tenantToken: payload.tenantToken,
+        });
       }),
     )
     .handle("windowsEnroll", ({ request, payload }) =>

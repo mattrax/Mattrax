@@ -323,6 +323,8 @@ export const authClient = {
         id: string;
         name: string;
         tokenPrefix: string;
+        scopes: Array<"read" | "write">;
+        tenantId?: string | null;
         createdAt: string;
         updatedAt: string;
         lastUsedAt?: string | null;
@@ -330,13 +332,20 @@ export const authClient = {
         revokedAt?: string | null;
       }>;
     }>("/v1/account/api-tokens"),
-  createApiToken: (payload: { name: string; expiresAt?: string | null }) =>
+  createApiToken: (payload: {
+    name: string;
+    expiresAt?: string | null;
+    scopes?: Array<"read" | "write">;
+    tenantId?: string | null;
+  }) =>
     request<{
       token: string;
       item: {
         id: string;
         name: string;
         tokenPrefix: string;
+        scopes: Array<"read" | "write">;
+        tenantId?: string | null;
         createdAt: string;
         updatedAt: string;
         lastUsedAt?: string | null;

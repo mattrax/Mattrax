@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
+import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 
 const IdParam = { id: Schema.String };
 const TenantParam = { tenantId: Schema.String };
@@ -88,6 +89,11 @@ const EnterpriseTenantReadErrors = [
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
+/** Read endpoints that validate user input (filters, cursors) can return 400. */
+const EnterpriseTenantValidatedReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 const EnterpriseTenantWriteErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
@@ -114,6 +120,16 @@ const EnterprisePolicyApplicationDownloadErrors = [
 const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseTenantExportErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+] as const;
+const EnterpriseTenantImportErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
 ] as const;
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
@@ -162,6 +178,9 @@ export const TenantInfo = Schema.Struct({
   slug: Schema.String,
   role: Schema.String,
   logo: Schema.optional(NullableString),
+  displayName: Schema.optional(NullableString),
+  supportEmail: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
 });
 export type TenantInfo = typeof TenantInfo.Type;
 
@@ -171,16 +190,34 @@ export const TenantDetail = Schema.Struct({
   slug: Schema.String,
   role: Schema.String,
   logo: Schema.optional(NullableString),
+  displayName: Schema.optional(NullableString),
+  supportEmail: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
 export type TenantDetail = typeof TenantDetail.Type;
+
+/**
+ * Public-facing branding resolved server-side. Unset fields fall back to the
+ * hosted defaults, so clients never need to know Mattrax's defaults themselves.
+ */
+export const TenantBranding = Schema.Struct({
+  displayName: Schema.String,
+  logo: Schema.optional(NullableString),
+  supportEmail: Schema.String,
+  brandColor: Schema.String,
+});
+export type TenantBranding = typeof TenantBranding.Type;
 
 export const BillingSummary = Schema.Struct({
   plan: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
   billableDevices: Schema.Number,
   subscriptionId: Schema.optional(NullableString),
+  periodEnd: Schema.optional(NullableString),
+  cancelAtPeriodEnd: Schema.Boolean,
+  configured: Schema.Boolean,
 });
 export type BillingSummary = typeof BillingSummary.Type;
 
@@ -194,6 +231,9 @@ export const CreateTenantRequest = Schema.Struct({
   name: Schema.String,
   slug: Schema.String,
   logo: Schema.optional(NullableString),
+  displayName: Schema.optional(NullableString),
+  supportEmail: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(JsonRecord),
 });
 
@@ -201,6 +241,9 @@ export const PatchTenantRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   slug: Schema.optional(Schema.String),
   logo: Schema.optional(NullableString),
+  displayName: Schema.optional(NullableString),
+  supportEmail: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(Schema.NullOr(JsonRecord)),
 });
 
@@ -301,6 +344,7 @@ export const AuditLogEntry = Schema.Struct({
   action: Schema.String,
   targetType: Schema.String,
   targetId: Schema.optional(NullableString),
+  actorUserId: Schema.optional(NullableString),
   actorEmail: Schema.optional(NullableString),
   metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
   createdAt: Schema.String,
@@ -308,6 +352,37 @@ export const AuditLogEntry = Schema.Struct({
 export type AuditLogEntry = typeof AuditLogEntry.Type;
 
 export const AuditLogResponse = Schema.Struct({ entries: Schema.Array(AuditLogEntry) });
+
+/**
+ * Audit search filters. `cursor` is opaque and may encode a keyset position
+ * (`createdAt` + `id`) or a legacy offset; `offset` is accepted for callers
+ * that page numerically. Dates are ISO timestamps, inclusive on both ends.
+ */
+export const AuditSearchQuery = Schema.Struct({
+  action: Schema.optional(Schema.String),
+  /** Matches actor email or user id (case-insensitive substring). */
+  actor: Schema.optional(Schema.String),
+  targetType: Schema.optional(Schema.String),
+  targetId: Schema.optional(Schema.String),
+  from: Schema.optional(Schema.String),
+  to: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Number),
+  cursor: Schema.optional(Schema.String),
+  offset: Schema.optional(Schema.Number),
+});
+export type AuditSearchQuery = typeof AuditSearchQuery.Type;
+
+export const AuditSearchResponse = Schema.Struct({
+  entries: Schema.Array(AuditLogEntry),
+  nextCursor: Schema.NullOr(Schema.String),
+});
+export type AuditSearchResponse = typeof AuditSearchResponse.Type;
+
+export const AuditExportQuery = Schema.Struct({
+  ...AuditSearchQuery.fields,
+  format: Schema.optional(Schema.Literals(["csv", "json"])),
+});
+export type AuditExportQuery = typeof AuditExportQuery.Type;
 
 export const CreateInvitationResponse = Schema.Struct({
   id: Schema.String,
@@ -581,6 +656,10 @@ export const GroupRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** `manual` groups use explicit membership; `dynamic` groups use rules. */
+  kind: DynamicGroupKind,
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
+  lastEvaluatedAt: Schema.optional(NullableString),
   devicesCount: Schema.optional(Schema.Number),
   policiesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
@@ -590,22 +669,47 @@ export type GroupRow = typeof GroupRow.Type;
 
 export const GroupRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
 export const DeviceRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
+
+/** Policy rows shown inside a group assignment table. */
+export const PolicyAssignmentMode = Schema.Literals(["include", "exclude"]);
+export type PolicyAssignmentMode = typeof PolicyAssignmentMode.Type;
+export const GroupPolicyRelation = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  mode: PolicyAssignmentMode,
+  priority: Schema.Number,
+});
+export type GroupPolicyRelation = typeof GroupPolicyRelation.Type;
+
+/** Accepts a bare id (= include) or an explicit id/mode pair. */
+export const PolicyAssignmentRef = Schema.Union([
+  Schema.String,
+  Schema.Struct({ id: Schema.String, mode: Schema.optional(PolicyAssignmentMode) }),
+]);
+export type PolicyAssignmentRef = typeof PolicyAssignmentRef.Type;
+
 export const GroupNode = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  kind: DynamicGroupKind,
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
+  lastEvaluatedAt: Schema.optional(NullableString),
   devicesCount: Schema.optional(Schema.Number),
   policiesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   devices: Schema.optional(Schema.Array(GroupRelation)),
-  policies: Schema.optional(Schema.Array(GroupRelation)),
+  policies: Schema.optional(Schema.Array(GroupPolicyRelation)),
 });
 export type GroupNode = typeof GroupNode.Type;
 
 export const CreateGroupRequest = Schema.Struct({
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** Defaults to `manual` so existing clients are unchanged. */
+  kind: Schema.optional(DynamicGroupKind),
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
   devices: Schema.optional(Schema.Array(Schema.String)),
   policies: Schema.optional(Schema.Array(Schema.String)),
 });
@@ -613,19 +717,21 @@ export const CreateGroupRequest = Schema.Struct({
 export const PatchGroupRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
+  kind: Schema.optional(DynamicGroupKind),
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
 });
 
 export const PatchGroupMembersRequest = Schema.Struct({
   assign: Schema.optional(
     Schema.Struct({
       devices: Schema.optional(Schema.Array(Schema.String)),
-      policies: Schema.optional(Schema.Array(Schema.String)),
+      policies: Schema.optional(Schema.Array(PolicyAssignmentRef)),
     }),
   ),
   unassign: Schema.optional(
     Schema.Struct({
       devices: Schema.optional(Schema.Array(Schema.String)),
-      policies: Schema.optional(Schema.Array(Schema.String)),
+      policies: Schema.optional(Schema.Array(PolicyAssignmentRef)),
     }),
   ),
 });
@@ -634,6 +740,8 @@ export const PolicyRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** Higher wins when policies provide the same configuration kind. */
+  priority: Schema.Number,
   configurations: Schema.optional(JsonRecord),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -650,11 +758,14 @@ export type RowFor<E extends Entity> = E extends "device"
 export const CreatePolicyRequest = Schema.Struct({
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** Higher wins when included policies provide the same configuration kind. */
+  priority: Schema.optional(Schema.Number),
 });
 
 export const PatchPolicyRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
+  priority: Schema.optional(Schema.Number),
   configurations: Schema.optional(JsonRecord),
 });
 
@@ -720,6 +831,195 @@ export const ApplicationNode = Schema.Struct({
 });
 export type ApplicationNode = typeof ApplicationNode.Type;
 
+/**
+ * Tenant backup bundle format.
+ *
+ * A bundle is intentionally self-contained: internal ids are exported as
+ * opaque `key` values and relationships reference those keys, so an import can
+ * allocate fresh ids without trusting (or colliding with) another deployment.
+ * Secrets never belong in a bundle: APNs/SCEP private keys, token hashes,
+ * passwords, sessions and auth proofs are excluded by construction.
+ */
+export const TENANT_EXPORT_VERSION = 1;
+/** Reject bundles larger than this before doing any database work. */
+export const TENANT_IMPORT_MAX_BYTES = 8 * 1024 * 1024;
+/** Per-collection cap for an export, so a huge tenant cannot exhaust memory. */
+export const TENANT_EXPORT_MAX_ROWS = 10_000;
+
+export const TenantExportProfile = Schema.Struct({
+  name: Schema.String,
+  /** Optional on import so a bundle can be renamed while restoring. */
+  slug: Schema.optional(NullableString),
+  logo: Schema.optional(NullableString),
+  displayName: Schema.optional(NullableString),
+  supportEmail: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
+  metadata: Schema.optional(Schema.NullOr(JsonRecord)),
+});
+export type TenantExportProfile = typeof TenantExportProfile.Type;
+
+export const TenantExportMember = Schema.Struct({
+  email: Schema.String,
+  name: Schema.optional(NullableString),
+  role: Schema.String,
+  createdAt: Schema.optional(NullableString),
+});
+export type TenantExportMember = typeof TenantExportMember.Type;
+
+export const TenantExportDeviceRef = Schema.Struct({
+  key: Schema.String,
+  name: Schema.optional(NullableString),
+  serial: Schema.optional(NullableString),
+});
+export type TenantExportDeviceRef = typeof TenantExportDeviceRef.Type;
+
+export const TenantExportGroup = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  notes: Schema.optional(NullableString),
+  /** Device members are metadata only; devices themselves are never imported. */
+  devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
+  policyKeys: Schema.Array(Schema.String),
+});
+export type TenantExportGroup = typeof TenantExportGroup.Type;
+
+export const TenantExportPolicy = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  notes: Schema.optional(NullableString),
+  /** Configuration kind mapped to its stored JSON payload. */
+  configurations: Schema.optional(JsonRecord),
+});
+export type TenantExportPolicy = typeof TenantExportPolicy.Type;
+
+export const TenantExportApplication = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  platform: ApplicationPlatform,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  source: ApplicationSource,
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.NullOr(Schema.Number)),
+  sha256: Schema.optional(NullableString),
+  /** Hint only. Object bytes are never part of a bundle. */
+  r2Key: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+  groupKeys: Schema.Array(Schema.String),
+});
+export type TenantExportApplication = typeof TenantExportApplication.Type;
+
+export const TenantExportEnrollment = Schema.Struct({
+  code: Schema.optional(NullableString),
+  enabledApple: Schema.Boolean,
+  enabledWindows: Schema.Boolean,
+  enabledAndroid: Schema.Boolean,
+  enabledAssetTag: Schema.Boolean,
+  maxDevices: Schema.Number,
+});
+export type TenantExportEnrollment = typeof TenantExportEnrollment.Type;
+
+export const TenantExportPreRegistration = Schema.Struct({
+  serial: Schema.String,
+  name: Schema.optional(NullableString),
+  assetTag: Schema.optional(NullableString),
+  notes: Schema.optional(NullableString),
+  groupKey: Schema.optional(NullableString),
+});
+export type TenantExportPreRegistration = typeof TenantExportPreRegistration.Type;
+
+/** SCEP-issued identity metadata. Private keys are never exported. */
+export const TenantExportCertificate = Schema.Struct({
+  serial: Schema.String,
+  enrollmentId: Schema.optional(NullableString),
+  deviceKey: Schema.optional(NullableString),
+  notAfter: Schema.String,
+  revokedAt: Schema.optional(NullableString),
+  createdAt: Schema.String,
+});
+export type TenantExportCertificate = typeof TenantExportCertificate.Type;
+
+export const TenantExportAuditEntry = Schema.Struct({
+  action: Schema.String,
+  targetType: Schema.String,
+  targetId: Schema.optional(NullableString),
+  actorEmail: Schema.optional(NullableString),
+  metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  createdAt: Schema.String,
+});
+export type TenantExportAuditEntry = typeof TenantExportAuditEntry.Type;
+
+export const TenantExportEnvelope = Schema.Struct({
+  version: Schema.Literal(TENANT_EXPORT_VERSION),
+  exportedAt: Schema.String,
+  tenant: TenantExportProfile,
+  members: Schema.Array(TenantExportMember),
+  groups: Schema.Array(TenantExportGroup),
+  policies: Schema.Array(TenantExportPolicy),
+  applications: Schema.Array(TenantExportApplication),
+  enrollment: Schema.optional(TenantExportEnrollment),
+  preRegistrations: Schema.Array(TenantExportPreRegistration),
+  scepCertificates: Schema.Array(TenantExportCertificate),
+  auditLog: Schema.optional(Schema.Array(TenantExportAuditEntry)),
+  auditTruncated: Schema.optional(Schema.Boolean),
+});
+export type TenantExportEnvelope = typeof TenantExportEnvelope.Type;
+
+export const TenantExportQuery = Schema.Struct({
+  /** `true`/`1` includes recent audit entries in the bundle (export-only). */
+  includeAudit: Schema.optional(Schema.String),
+});
+export type TenantExportQuery = typeof TenantExportQuery.Type;
+
+/**
+ * An imported bundle. Arrays are optional so a trimmed or hand-edited bundle
+ * still validates; unsupported versions are rejected by the handler.
+ */
+export const TenantImportRequest = Schema.Struct({
+  version: Schema.Number,
+  exportedAt: Schema.optional(Schema.String),
+  tenant: TenantExportProfile,
+  members: Schema.optional(Schema.Array(TenantExportMember)),
+  groups: Schema.optional(Schema.Array(TenantExportGroup)),
+  policies: Schema.optional(Schema.Array(TenantExportPolicy)),
+  applications: Schema.optional(Schema.Array(TenantExportApplication)),
+  enrollment: Schema.optional(TenantExportEnrollment),
+  preRegistrations: Schema.optional(Schema.Array(TenantExportPreRegistration)),
+  scepCertificates: Schema.optional(Schema.Array(TenantExportCertificate)),
+  auditLog: Schema.optional(Schema.Array(TenantExportAuditEntry)),
+  auditTruncated: Schema.optional(Schema.Boolean),
+});
+export type TenantImportRequest = typeof TenantImportRequest.Type;
+
+export const TenantImportCounts = Schema.Struct({
+  groups: Schema.Number,
+  policies: Schema.Number,
+  applications: Schema.Number,
+  preRegistrations: Schema.Number,
+});
+export type TenantImportCounts = typeof TenantImportCounts.Type;
+
+export const TenantImportSkipped = Schema.Struct({
+  members: Schema.Number,
+  devices: Schema.Number,
+  certificates: Schema.Number,
+  auditLog: Schema.Number,
+});
+export type TenantImportSkipped = typeof TenantImportSkipped.Type;
+
+export const TenantImportResponse = Schema.Struct({
+  tenantId: Schema.String,
+  slug: Schema.String,
+  counts: TenantImportCounts,
+  skipped: TenantImportSkipped,
+  /** Uploaded applications whose object bytes are not part of a bundle. */
+  applicationsWithoutFiles: Schema.Number,
+});
+export type TenantImportResponse = typeof TenantImportResponse.Type;
+
 export const CreateApplicationRequest = Schema.Struct({
   name: Schema.String,
   platform: ApplicationPlatform,
@@ -765,15 +1065,93 @@ export const ApplicationInstallResult = Schema.Struct({
 export type ApplicationInstallResult = typeof ApplicationInstallResult.Type;
 
 export const PolicyAssignmentsResponse = Schema.Struct({
-  groups: Schema.Array(GroupRelation),
-  devices: Schema.Array(DeviceRelation),
+  groups: Schema.Array(GroupPolicyRelation),
+  devices: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      mode: PolicyAssignmentMode,
+      priority: Schema.Number,
+    }),
+  ),
 });
 export type PolicyAssignmentsResponse = typeof PolicyAssignmentsResponse.Type;
 
 export const PatchPolicyAssignmentsRequest = Schema.Struct({
-  assign: Schema.optional(Schema.Array(Schema.String)),
-  unassign: Schema.optional(Schema.Array(Schema.String)),
+  assign: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+  unassign: Schema.optional(Schema.Array(PolicyAssignmentRef)),
 });
+
+/** Scope of an assignment that contributed to the effective policy. */
+export const EffectivePolicyScope = Schema.Literals(["direct", "group"]);
+export type EffectivePolicyScope = typeof EffectivePolicyScope.Type;
+
+export const EffectivePolicyConfiguration = Schema.Struct({
+  kind: Schema.String,
+  policyId: Schema.String,
+  policyName: Schema.String,
+  priority: Schema.Number,
+  scope: EffectivePolicyScope,
+  groupIds: Schema.Array(Schema.String),
+  groupNames: Schema.Array(Schema.String),
+  hash: Schema.String,
+});
+export type EffectivePolicyConfiguration = typeof EffectivePolicyConfiguration.Type;
+
+export const EffectivePolicyContributor = Schema.Struct({
+  policyId: Schema.String,
+  policyName: Schema.String,
+  priority: Schema.Number,
+  scope: EffectivePolicyScope,
+  groupIds: Schema.Array(Schema.String),
+  groupNames: Schema.Array(Schema.String),
+  kinds: Schema.Array(Schema.String),
+});
+export type EffectivePolicyContributor = typeof EffectivePolicyContributor.Type;
+
+export const EffectivePolicyOverrideReason = Schema.Literals([
+  "direct-device-include",
+  "lower-priority",
+  "older-updated-at",
+  "lexicographic-id",
+]);
+export type EffectivePolicyOverrideReason = typeof EffectivePolicyOverrideReason.Type;
+
+export const EffectivePolicyOverride = Schema.Struct({
+  kind: Schema.String,
+  policyId: Schema.String,
+  policyName: Schema.String,
+  priority: Schema.Number,
+  scope: EffectivePolicyScope,
+  groupIds: Schema.Array(Schema.String),
+  groupNames: Schema.Array(Schema.String),
+  reason: EffectivePolicyOverrideReason,
+});
+export type EffectivePolicyOverride = typeof EffectivePolicyOverride.Type;
+
+export const EffectivePolicyExclusionReason = Schema.Literals(["device-exclude", "group-exclude"]);
+export type EffectivePolicyExclusionReason = typeof EffectivePolicyExclusionReason.Type;
+
+export const EffectivePolicyExclusion = Schema.Struct({
+  policyId: Schema.String,
+  policyName: Schema.String,
+  scope: EffectivePolicyScope,
+  groupId: Schema.NullOr(Schema.String),
+  groupName: Schema.NullOr(Schema.String),
+  kinds: Schema.Array(Schema.String),
+  effective: Schema.Boolean,
+  reason: EffectivePolicyExclusionReason,
+});
+export type EffectivePolicyExclusion = typeof EffectivePolicyExclusion.Type;
+
+export const EffectivePolicyResponse = Schema.Struct({
+  deviceId: Schema.String,
+  configurations: Schema.Array(EffectivePolicyConfiguration),
+  policies: Schema.Array(EffectivePolicyContributor),
+  overridden: Schema.Array(EffectivePolicyOverride),
+  exclusions: Schema.Array(EffectivePolicyExclusion),
+});
+export type EffectivePolicyResponse = typeof EffectivePolicyResponse.Type;
 
 export const MobileconfigPayloadPreview = Schema.Struct({
   type: Schema.String,
@@ -878,6 +1256,20 @@ export const DevicePreRegistrationImportResponse = Schema.Struct({
 });
 export type DevicePreRegistrationImportResponse = typeof DevicePreRegistrationImportResponse.Type;
 export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
+
+/**
+ * Live membership preview. Dynamic groups evaluate their rules without
+ * materialising anything, so the dashboard can show a count while the rule
+ * builder is being edited.
+ */
+export const GroupPreviewResponse = Schema.Struct({
+  groupId: Schema.String,
+  kind: DynamicGroupKind,
+  count: Schema.Number,
+  devices: Schema.Array(GroupRelation),
+  evaluatedAt: Schema.String,
+});
+export type GroupPreviewResponse = typeof GroupPreviewResponse.Type;
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
 export const DeviceSearchSort = Schema.Literals(["name", "lastSeenAt", "enrolledAt", "status"]);
@@ -946,24 +1338,31 @@ export const PlatformEnrollment = Schema.Union([
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
 /**
- * Windows enrollment is driven by a deployment-wide discovery URL
- * (`/mdm/windows/discovery`). Discovery requests carry no tenant identity, so a
- * deployment pins Windows devices to one tenant instead of routing per tenant.
+ * Windows enrollment is driven by a tenant-scoped discovery URL
+ * (`/mdm/windows/discovery?tenant=<signed token>`). The token identifies the
+ * organization, so every tenant gets its own link. `expiresAt` tells the UI how
+ * long the current link stays valid; reloading the enrollment page mints a new
+ * one.
  */
 export const WindowsEnrollment = Schema.Union([
   Schema.Struct({ error: Schema.String }),
   Schema.Struct({
     discoveryUrl: Schema.String,
-    /** False until Windows discovery can resolve a tenant from the request. */
-    tenantScoped: Schema.Literal(false),
+    tenantScoped: Schema.Literal(true),
+    expiresAt: Schema.optional(Schema.String),
   }),
 ]);
 export type WindowsEnrollment = typeof WindowsEnrollment.Type;
 
 export const EnrollmentResponse = Schema.Union([
-  Schema.Struct({ name: Schema.String, authenticated: Schema.Literal(false) }),
   Schema.Struct({
     name: Schema.String,
+    branding: TenantBranding,
+    authenticated: Schema.Literal(false),
+  }),
+  Schema.Struct({
+    name: Schema.String,
+    branding: TenantBranding,
     authenticated: Schema.Literal(true),
     apple: PlatformEnrollment,
     windows: WindowsEnrollment,
@@ -1027,6 +1426,13 @@ export const TenantEnrollmentInfo = Schema.Struct({
   maxDevices: Schema.Number,
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  /**
+   * Tenant-scoped Windows discovery URL with a signed tenant token. Omitted
+   * when Windows enrollment is disabled or the deployment has no signing
+   * secret; the public enrollment page mints the same URL on demand.
+   */
+  windowsDiscoveryUrl: Schema.optional(Schema.String),
+  windowsDiscoveryExpiresAt: Schema.optional(Schema.String),
 });
 export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
@@ -1059,10 +1465,20 @@ export const AuthUser = UserInfo;
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
 
+/**
+ * Token scopes. `read` allows read-only tenant access; `write` allows reads and
+ * mutations (subject to the user's tenant role). Tokens created before scoping
+ * was introduced report both scopes.
+ */
+export const ApiTokenScope = Schema.Union([Schema.Literal("read"), Schema.Literal("write")]);
+export type ApiTokenScope = typeof ApiTokenScope.Type;
+
 export const ApiTokenInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   tokenPrefix: Schema.String,
+  scopes: Schema.Array(ApiTokenScope),
+  tenantId: Schema.optional(NullableString),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   lastUsedAt: Schema.optional(NullableString),
@@ -1073,6 +1489,10 @@ export const ApiTokensResponse = Schema.Struct({ tokens: Schema.Array(ApiTokenIn
 export const CreateApiTokenRequest = Schema.Struct({
   name: Schema.String,
   expiresAt: Schema.optional(NullableString),
+  /** Defaults to `["read", "write"]` for backwards compatibility. */
+  scopes: Schema.optional(Schema.Array(ApiTokenScope)),
+  /** Restricts the token to a single tenant; omit for all current memberships. */
+  tenantId: Schema.optional(NullableString),
 });
 export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
 
@@ -1191,6 +1611,23 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("exportTenant", "/v1/tenants/:tenantId/export", {
+      error: EnterpriseTenantExportErrors,
+      params: TenantParam,
+      query: TenantExportQuery,
+      success: Schema.String.pipe(
+        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
+      ),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("importTenant", "/v1/tenants/import", {
+      error: EnterpriseTenantImportErrors,
+      payload: TenantImportRequest,
+      success: TenantImportResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
@@ -1283,6 +1720,22 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: AuditLogResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("searchAuditLog", "/v1/tenants/:tenantId/audit/search", {
+      error: EnterpriseTenantValidatedReadErrors,
+      params: TenantParam,
+      query: AuditSearchQuery,
+      success: AuditSearchResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("exportAuditLog", "/v1/tenants/:tenantId/audit/export", {
+      error: EnterpriseTenantValidatedReadErrors,
+      params: TenantParam,
+      query: AuditExportQuery,
+      success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/csv; charset=utf-8" })),
     }),
   )
   .add(
@@ -1455,6 +1908,17 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get(
+      "getDeviceEffectivePolicy",
+      "/v1/tenants/:tenantId/devices/:id/effective-policy",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantIdParam,
+        success: EffectivePolicyResponse,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
@@ -1608,6 +2072,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
       success: GroupNode,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("previewGroup", "/v1/tenants/:tenantId/groups/:id/preview", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: GroupPreviewResponse,
     }),
   )
   .add(

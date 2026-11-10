@@ -61,6 +61,43 @@ describe("AppleMdmService", () => {
       expect(ev.model).toBe("MacBookPro18,1");
     });
 
+    it("passes the identity certificate serial to the backend scope", async () => {
+      let receivedScope: unknown;
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (scope: unknown) =>
+          Effect.sync(() => {
+            receivedScope = scope;
+          }),
+      });
+
+      await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+          return yield* service.handleAuthenticate(
+            {
+              MessageType: "Authenticate",
+              Topic: TEST_CONFIG.topic,
+              UDID: "udid-123",
+              SerialNumber: "SN123",
+            },
+            "CN=Device,OU=org-1",
+            "fingerprint-1",
+            "a1b2c3",
+          );
+        }),
+      );
+
+      expect(receivedScope).toMatchObject({
+        _tag: "device",
+        udid: "udid-123",
+        identityCertificate: "CN=Device,OU=org-1",
+        identityCertificateFingerprintSha256: "fingerprint-1",
+        identityCertificateSerial: "a1b2c3",
+        mdmOrigin: TEST_MDM_ORIGIN,
+      });
+    });
+
     it("rejects UnknownDevice", async () => {
       const backend = mockManagementBackend({
         appleDeviceEvent: () => Effect.fail(new UnknownDevice()),

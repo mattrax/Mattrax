@@ -17,6 +17,7 @@
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/management-backend-enterprise": "workspace:*",
+    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@yielded/auth": "catalog:",
     "@yielded/auth-platform-workerd": "catalog:",

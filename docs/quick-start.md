@@ -92,14 +92,23 @@ check-in happen sooner.
 `packages/dm-windows` implements Windows discovery, WSTEP certificate issuance, SyncML
 check-in, and the corresponding management webhook operations. The routes are mounted in
 both `apps/api` and `apps/mttx`, and Cloud signs the WSTEP identity certificate with the
-tenant's device CA. Windows enrollment carries no tenant identity, so Cloud requires
-`WINDOWS_ORGANIZATION_ID` on the API Worker. When it is unset, `/mdm/windows/*` returns a
-clear `503` configuration error instead of guessing a tenant. There is no "earliest
-tenant" fallback. Policy/command delivery is the next phase.
+tenant's device CA.
+
+Windows enrollment is **tenant-scoped**. The enrollment page shows a discovery URL of the
+form `/mdm/windows/discovery?tenant=<token>`, where the token is an HMAC-signed payload
+(tenant id, issue time, expiry) generated with `AUTH_SECRET`. Discovery verifies the token
+and returns policy/enroll URLs that preserve it; policy and enrollment resolve the tenant
+from that token, and the WSTEP token is bound to the same tenant. Links are short-lived
+(seven days by default); reload the enrollment page to mint a fresh one.
+
+`WINDOWS_ORGANIZATION_ID` is no longer required. It remains as an optional,
+single-tenant fallback for deployments that still use the old un-scoped discovery URL.
+When neither a tenant token nor the pin is present, `/mdm/windows/*` rejects the request
+instead of guessing a tenant. Federated Entra enrollment is not implemented.
 
 Windows enrollment flow:
 
-1. Windows discovers the enrollment service and receives an auth policy.
+1. Windows discovers the enrollment service from the tenant URL and receives an auth policy.
 2. The device requests the enrollment policy and submits a PKCS#10 CSR.
 3. The backend signs the identity certificate and returns an enrollment result.
 4. The gateway builds the WAP provisioning document and the device checks in over SyncML.

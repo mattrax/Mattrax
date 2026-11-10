@@ -22,7 +22,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { enterprise, enterpriseKeys, type DeviceRow } from "~/lib/enterprise";
+import {
+  enterprise,
+  enterpriseKeys,
+  enterpriseQueries,
+  type DeviceRow,
+  type EffectivePolicyResponse,
+} from "~/lib/enterprise";
 
 export default function DeviceDetailPage() {
   const params = useParams();
@@ -71,6 +77,9 @@ export default function DeviceDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
     });
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
+    });
   };
   const save = useMutation(() => ({
     mutationFn: () =>
@@ -97,6 +106,10 @@ export default function DeviceDetailPage() {
     queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
     queryFn: () => enterprise.getDeviceHealth(params.tenantId, params.deviceId),
   }));
+  const effectivePolicy = useQuery(() =>
+    enterpriseQueries.deviceEffectivePolicy(params.tenantId, params.deviceId),
+  );
+  const resolved = () => effectivePolicy.data as EffectivePolicyResponse | undefined;
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
   const command = useMutation(() => ({
@@ -621,6 +634,126 @@ export default function DeviceDetailPage() {
                   )}
                 </For>
               </dl>
+            </CardContent>
+          </Card>
+          <Card class="lg:col-span-2">
+            <CardHeader>
+              <div class="flex items-center justify-between gap-2">
+                <CardTitle>Effective policy</CardTitle>
+                <span class="text-xs text-muted-foreground">
+                  {resolved()?.configurations.length ?? 0} resolved kinds
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <Show
+                when={effectivePolicy.data}
+                fallback={
+                  <Show
+                    when={effectivePolicy.isError}
+                    fallback={
+                      <p class="text-sm text-muted-foreground">Loading effective policy…</p>
+                    }
+                  >
+                    <QueryError
+                      error={effectivePolicy.error}
+                      onRetry={() => void effectivePolicy.refetch()}
+                    />
+                  </Show>
+                }
+              >
+                <Show
+                  when={(resolved()?.configurations.length ?? 0) > 0}
+                  fallback={
+                    <p class="text-sm text-muted-foreground">
+                      No policy configurations resolve for this device. Assign an included policy
+                      directly or through a group.
+                    </p>
+                  }
+                >
+                  <ul class="divide-y rounded-lg border">
+                    <For each={resolved()?.configurations ?? []}>
+                      {(configuration) => (
+                        <li class="space-y-1 p-3 text-sm">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-mono text-xs">{configuration.kind}</span>
+                            <span class="flex items-center gap-1.5">
+                              <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
+                                {configuration.scope === "direct"
+                                  ? "Direct include"
+                                  : "Group include"}
+                              </span>
+                              <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
+                                priority {configuration.priority}
+                              </span>
+                            </span>
+                          </div>
+                          <p>
+                            <a
+                              class="font-medium hover:underline"
+                              href={`/t/${params.tenantId}/policies/${configuration.policyId}`}
+                            >
+                              {configuration.policyName}
+                            </a>
+                            <Show when={configuration.groupNames.length > 0}>
+                              <span class="text-muted-foreground">
+                                {" "}
+                                via {configuration.groupNames.join(", ")}
+                              </span>
+                            </Show>
+                          </p>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <Show when={(resolved()?.overridden.length ?? 0) > 0}>
+                  <div>
+                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Overridden policies
+                    </p>
+                    <ul class="mt-2 space-y-1">
+                      <For each={resolved()?.overridden ?? []}>
+                        {(override) => (
+                          <li class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                            <span class="font-medium">{override.policyName}</span> ({override.kind})
+                            lost to {override.reason.replaceAll("-", " ")}.
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
+                <Show when={(resolved()?.exclusions.length ?? 0) > 0}>
+                  <div>
+                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Exclusions
+                    </p>
+                    <ul class="mt-2 space-y-1">
+                      <For each={resolved()?.exclusions ?? []}>
+                        {(exclusion) => (
+                          <li
+                            class={
+                              exclusion.effective
+                                ? "rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800"
+                                : "rounded-lg border bg-muted/20 p-2 text-xs text-muted-foreground"
+                            }
+                          >
+                            <span class="font-medium">{exclusion.policyName}</span>{" "}
+                            {exclusion.scope === "direct"
+                              ? "is excluded directly"
+                              : `is excluded by ${exclusion.groupName ?? "a group"}`}
+                            .{" "}
+                            {exclusion.effective
+                              ? "It removed a group include."
+                              : "No include to remove."}
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
+              </Show>
             </CardContent>
           </Card>
           <Show

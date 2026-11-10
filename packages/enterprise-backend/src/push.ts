@@ -2,7 +2,21 @@ import { Effect } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import { ApnsError, ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
+import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
+import {
+  SYSTEM_AUDIT_ACTIONS,
+  pushInvalidTokenTransition,
+  writeSystemAudit,
+} from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb, EnterpriseSchema } from "./schema.ts";
+import { forEachBounded } from "./bounded.ts";
+
+/**
+ * Backstop for the configured transport. Transports bound their own requests,
+ * but a custom/injected transport (or a wedged DNS resolver inside one) must
+ * not be able to hold the request that triggered the push open indefinitely.
+ */
+const APNS_PUSH_BACKSTOP_MS = OUTBOUND_TIMEOUTS.apns + 1_000;
 
 /** Machine-readable class for a failed APNs delivery. */
 export type ApplePushFailureCode = "invalid_token" | "delivery_failed";
@@ -84,7 +98,32 @@ export type ApplePushOptions = {
   readonly apns: ApnsService.Service;
   /** Application secret used to unseal APNs private keys. */
   readonly authSecret?: string;
+  /**
+   * Backstop deadline for a single transport call, in ms. Defaults to
+   * {@link APNS_PUSH_BACKSTOP_MS}; transports already bound themselves.
+   */
+  readonly pushTimeoutMs?: number;
+  /**
+   * Maximum APNs deliveries in flight for a fan-out. Defaults to 12: enough to
+   * drain a large group quickly without flooding the relay or the DB pool.
+   */
+  readonly pushConcurrency?: number;
+  /** Items scheduled together; defaults to twice the concurrency. */
+  readonly pushChunkSize?: number;
 };
+
+/** Per-device outcome of a fan-out. `skipped` means nothing was pushable. */
+export type ApplePushBatchResult = {
+  readonly requested: number;
+  readonly succeeded: ReadonlyArray<string>;
+  readonly failed: ReadonlyArray<{ readonly deviceId: string; readonly error: string }>;
+  readonly skipped: ReadonlyArray<string>;
+};
+
+type PushOutcome =
+  | { readonly status: "pushed" }
+  | { readonly status: "skipped" }
+  | { readonly status: "failed"; readonly error: string };
 
 /**
  * Product-level APNs helper. Reads the device's push credentials and tenant
@@ -94,7 +133,18 @@ export type ApplePushOptions = {
  * Every failure is swallowed and logged: pushes are a best-effort optimisation
  * and must never fail the surrounding HTTP request (devices still poll).
  */
-export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions) => {
+export const makeApplePush = ({
+  db,
+  schema,
+  apns,
+  authSecret,
+  pushTimeoutMs,
+  pushConcurrency = 12,
+  pushChunkSize,
+}: ApplePushOptions) => {
+  const backstopMs = pushTimeoutMs ?? APNS_PUSH_BACKSTOP_MS;
+  const concurrency = Math.max(1, Math.floor(pushConcurrency));
+  const chunkSize = Math.max(concurrency, Math.floor(pushChunkSize ?? concurrency * 2));
   const privateKeyPem = (encryptedKey: string) =>
     Effect.tryPromise({
       try: async () => {
@@ -114,6 +164,7 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
    */
   const recordPushOutcome = (
     deviceId: string,
+    organizationId: string,
     outcome: { readonly ok: true } | { readonly ok: false; readonly error: unknown },
   ) =>
     Effect.gen(function* () {
@@ -133,15 +184,26 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
           .where(eq(schema.deviceApple.deviceId, deviceId));
         return;
       }
+      const errorCode = classifyApplePushFailure(outcome.error);
       yield* db
         .update(schema.deviceApple)
         .set({
           lastPushAt: at,
           lastPushError: describeApplePushFailure(outcome.error),
-          lastPushErrorCode: classifyApplePushFailure(outcome.error),
+          lastPushErrorCode: errorCode,
           consecutivePushFailures: (apple.consecutivePushFailures ?? 0) + 1,
         })
         .where(eq(schema.deviceApple.deviceId, deviceId));
+      // A dead token stays dead until the device re-enrols. Audit only the
+      // transition so every subsequent failed push does not create an event.
+      if (pushInvalidTokenTransition(apple.lastPushErrorCode, errorCode))
+        yield* writeSystemAudit(db, {
+          organizationId,
+          action: SYSTEM_AUDIT_ACTIONS.pushInvalidToken,
+          targetType: "device",
+          targetId: deviceId,
+          metadata: { previousCode: apple.lastPushErrorCode ?? null },
+        });
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning(
@@ -150,50 +212,109 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
       ),
     );
 
-  const pushAppleDevice = (deviceId: string, allowUnenrolling = false): Effect.Effect<void> =>
+  const pushAppleDeviceInternal = (
+    deviceId: string,
+    allowUnenrolling = false,
+  ): Effect.Effect<PushOutcome> =>
     Effect.gen(function* () {
       const device = yield* db.query.device.findFirst({ where: { id: deviceId } });
       const pushable =
         device?.proto === "apple" &&
         (device.status === "enrolled" || (allowUnenrolling && device.status === "unenrolling"));
-      if (!device || !pushable) return;
+      if (!device || !pushable) return { status: "skipped" as const };
 
       const apple = yield* db.query.deviceApple.findFirst({ where: { deviceId } });
-      if (!apple?.token || !apple.pushMagic) return;
+      if (!apple?.token || !apple.pushMagic) return { status: "skipped" as const };
 
       const certificate = yield* db.query.applePushCertificate.findFirst({
         where: { organizationId: device.organizationId },
       });
-      if (!certificate?.encryptedKey) return;
+      if (!certificate?.encryptedKey) return { status: "skipped" as const };
 
       const keyPem = yield* privateKeyPem(certificate.encryptedKey);
       const outcome = yield* Effect.match(
-        apns.push({
-          pushToken: apple.token,
-          pushMagic: apple.pushMagic,
-          topic: apple.topic ?? certificate.topic,
-          certPem: certificate.certPem,
-          privateKeyPem: keyPem,
-        }),
+        apns
+          .push({
+            pushToken: apple.token,
+            pushMagic: apple.pushMagic,
+            topic: apple.topic ?? certificate.topic,
+            certPem: certificate.certPem,
+            privateKeyPem: keyPem,
+          })
+          .pipe(
+            Effect.timeoutOrElse({
+              duration: backstopMs,
+              orElse: () =>
+                Effect.fail(
+                  new ApnsError({ message: `APNs push timed out after ${backstopMs}ms` }),
+                ),
+            }),
+          ),
         {
           onSuccess: () => ({ ok: true as const }),
           onFailure: (error) => ({ ok: false as const, error }),
         },
       );
-      yield* recordPushOutcome(device.id, outcome);
-      if (!outcome.ok)
-        yield* Effect.logWarning(
-          `Failed to send APNs push for device ${deviceId}: ${String(outcome.error)}`,
-        );
+      yield* recordPushOutcome(device.id, device.organizationId, outcome);
+      if (!outcome.ok) {
+        const error = describeApplePushFailure(outcome.error);
+        yield* Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${error}`);
+        return { status: "failed" as const, error };
+      }
+      return { status: "pushed" as const };
     }).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${String(error)}`),
-      ),
+      // A DB/decrypt failure is per-device: report it to the batch instead of
+      // aborting every other device.
+      Effect.catchCause((cause) => {
+        const error = describeApplePushFailure(cause);
+        return Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${error}`).pipe(
+          Effect.as({ status: "failed" as const, error }),
+        );
+      }),
     );
 
-  const pushAppleDevices = (deviceIds: ReadonlyArray<string>): Effect.Effect<void> =>
-    Effect.forEach([...new Set(deviceIds)], (deviceId) => pushAppleDevice(deviceId), {
-      discard: true,
+  const pushAppleDevice = (deviceId: string, allowUnenrolling = false): Effect.Effect<void> =>
+    Effect.asVoid(pushAppleDeviceInternal(deviceId, allowUnenrolling));
+
+  const pushAppleDevices = (
+    deviceIds: ReadonlyArray<string>,
+    options?: { readonly concurrency?: number; readonly chunkSize?: number },
+  ): Effect.Effect<ApplePushBatchResult> =>
+    Effect.gen(function* () {
+      const ids = [...new Set(deviceIds)];
+      const outcomes = new Array<PushOutcome | undefined>(ids.length);
+      yield* forEachBounded(
+        ids,
+        {
+          concurrency: Math.max(1, Math.floor(options?.concurrency ?? concurrency)),
+          chunkSize: Math.max(1, Math.floor(options?.chunkSize ?? chunkSize)),
+        },
+        (deviceId, index) =>
+          pushAppleDeviceInternal(deviceId).pipe(
+            Effect.map((outcome) => {
+              outcomes[index] = outcome;
+            }),
+          ),
+      );
+
+      const result: {
+        requested: number;
+        succeeded: string[];
+        failed: Array<{ deviceId: string; error: string }>;
+        skipped: string[];
+      } = { requested: ids.length, succeeded: [], failed: [], skipped: [] };
+      ids.forEach((deviceId, index) => {
+        const outcome = outcomes[index];
+        if (!outcome || outcome.status === "skipped") result.skipped.push(deviceId);
+        else if (outcome.status === "failed")
+          result.failed.push({ deviceId, error: outcome.error });
+        else result.succeeded.push(deviceId);
+      });
+      if (result.failed.length > 0)
+        yield* Effect.logWarning(
+          `APNs push batch completed with ${result.failed.length}/${result.requested} failures`,
+        );
+      return result;
     });
 
   /** Device ids assigned to any of the given groups, including unenrolled ones. */

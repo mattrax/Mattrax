@@ -1,0 +1,91 @@
+import { Effect } from "effect";
+import { Db, schema as s } from "@mattrax/enterprise-core";
+
+/**
+ * Actor recorded on events that are not initiated by a signed-in user. The
+ * audit table keeps `actor_user_id` null and uses this sentinel email so the
+ * UI can label the actor "System" without inventing a user row.
+ */
+export const SYSTEM_AUDIT_ACTOR = "system";
+
+/** Low-cardinality system audit actions. Keep this list stable for filters. */
+export const SYSTEM_AUDIT_ACTIONS = {
+  deviceEnrolled: "device.enrolled",
+  deviceCheckedOut: "device.checked_out",
+  commandFailed: "device.command_failed",
+  commandNotNow: "device.command_not_now",
+  declarationInvalid: "device.declaration_invalid",
+  pushInvalidToken: "device.push_invalid_token",
+} as const;
+
+export type SystemAuditEvent = {
+  readonly organizationId: string;
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetId?: string | null;
+  /** Small, secret-free context. Never include tokens, keys or passwords. */
+  readonly metadata?: unknown;
+};
+
+const id = () => `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`;
+
+/**
+ * Write a tenant-scoped audit row without a request context.
+ *
+ * Device protocol paths must never fail because audit storage is unavailable,
+ * so write errors are logged and swallowed. Callers should still `yield*` the
+ * effect when ordering matters for tests/telemetry.
+ */
+export const writeSystemAudit = (db: Db["Service"], event: SystemAuditEvent) =>
+  Effect.gen(function* () {
+    yield* db.insert(s.auditLog).values({
+      id: id(),
+      organizationId: event.organizationId,
+      actorUserId: null,
+      actorEmail: SYSTEM_AUDIT_ACTOR,
+      action: event.action,
+      targetType: event.targetType,
+      targetId: event.targetId ?? null,
+      metadata: event.metadata === undefined ? null : (event.metadata as object),
+      createdAt: new Date(),
+    });
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),
+    ),
+  );
+
+const normalizeEnum = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+
+/**
+ * Apple reports declarations as valid/invalid/unknown. Only a transition into
+ * a failure state is interesting; repeated status reports must stay quiet.
+ */
+export const isDeclarationFailure = (valid: string | null | undefined) => {
+  const value = normalizeEnum(valid);
+  return value === "invalid" || value === "failed" || value === "error";
+};
+
+export const declarationFailedTransition = (
+  previousValid: string | null | undefined,
+  nextValid: string | null | undefined,
+) => isDeclarationFailure(nextValid) && !isDeclarationFailure(previousValid);
+
+/**
+ * APNs only flags a token as invalid once it has been rejected. A later failed
+ * delivery that is not a token rejection must not repeat the event, and a
+ * recovered token re-arms it.
+ */
+export const pushInvalidTokenTransition = (
+  previousCode: string | null | undefined,
+  nextCode: string | null | undefined,
+) => nextCode === "invalid_token" && previousCode !== "invalid_token";
+
+/**
+ * Commands move queued -> sent -> not-now/failed. Record the first time a
+ * command reports a terminal/deferred state so check-in retries do not spam.
+ */
+export const commandFailureTransition = (
+  previousStatus: string | null | undefined,
+  nextStatus: string | null | undefined,
+) => (nextStatus === "failed" || nextStatus === "not-now") && previousStatus !== nextStatus;

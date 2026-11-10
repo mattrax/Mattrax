@@ -124,6 +124,42 @@ export default function EnrollmentSettingsPage() {
         </CardContent>
       </Card>
 
+      <Show when={windows() && enrollment.data?.windowsDiscoveryUrl}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Windows enrollment URL</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            <p class="text-sm text-muted-foreground">
+              Use this URL in the Windows provisioning package or the "Access work or school" setup
+              screen. It identifies this tenant and expires; reopen this page for a fresh link.
+            </p>
+            <div class="flex gap-2">
+              <Input
+                readonly
+                value={enrollment.data?.windowsDiscoveryUrl ?? ""}
+                onClick={(e) => e.currentTarget.select()}
+              />
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigator.clipboard.writeText(enrollment.data?.windowsDiscoveryUrl ?? "")
+                }
+              >
+                Copy
+              </Button>
+            </div>
+            <Show when={enrollment.data?.windowsDiscoveryExpiresAt}>
+              {(expiresAt) => (
+                <p class="text-xs text-muted-foreground">
+                  This link expires {new Date(expiresAt()).toLocaleString()}.
+                </p>
+              )}
+            </Show>
+          </CardContent>
+        </Card>
+      </Show>
+
       <Card>
         <CardHeader>
           <CardTitle>Enrollment settings</CardTitle>

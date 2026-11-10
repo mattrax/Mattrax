@@ -7,16 +7,23 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
+  type AuditSearchQuery,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
   type DeviceSearchQuery,
   type DeviceSearchRow,
+  type DynamicGroupCondition,
+  type DynamicGroupKind,
+  type DynamicGroupRules,
+  type EffectivePolicyResponse,
   type Entity,
   type GroupNode,
+  type GroupPreviewResponse,
   type GroupRow,
   type PolicyRow,
   type RowFor,
   type TenantEnrollmentInfo,
+  type TenantImportRequest,
   type TenantInfo,
   type WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
@@ -26,6 +33,8 @@ export type {
   ApplicationRow,
   ApnsInfo,
   AuditLogEntry,
+  AuditSearchQuery,
+  AuditSearchResponse,
   BillingSummary,
   CredentialHealthResponse,
   CredentialInfo,
@@ -52,13 +61,18 @@ export type {
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
+  DynamicGroupCondition,
+  DynamicGroupKind,
+  DynamicGroupRules,
   DownloadPolicyApplicationResponse as PolicyApplicationDownload,
+  EffectivePolicyResponse,
   EnrollmentAttempt,
   EnrollmentAttemptOutcome,
   EnrollmentAttemptPlatform,
   EnrollmentResponse,
   Entity,
   GroupNode,
+  GroupPreviewResponse,
   GroupRow,
   MeResponse,
   NodeResponse,
@@ -69,7 +83,10 @@ export type {
   ScimTokenInfo,
   SsoConfigResponse,
   TenantDetail,
+  TenantBranding,
   TenantEnrollmentInfo,
+  TenantImportRequest,
+  TenantImportResponse,
   TenantInfo,
   TenantInvitation,
   TenantUser,
@@ -118,6 +135,8 @@ export const enterpriseKeys = {
   search: (tenantId: RouteParam, term: string, limit = 30) =>
     ["enterprise", "search", tenantId ?? "", term, limit] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
+  auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
+    ["enterprise", "audit-search", tenantId ?? "", query] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
   sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
   applications: (tenantId: RouteParam) => ["enterprise", "applications", tenantId ?? ""] as const,
@@ -125,6 +144,8 @@ export const enterpriseKeys = {
     ["enterprise", "application", tenantId ?? "", id ?? ""] as const,
   policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "policy-assignments", tenantId ?? "", id ?? ""] as const,
+  deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-effective-policy", tenantId ?? "", id ?? ""] as const,
   directorySync: (tenantId: RouteParam) =>
     ["enterprise", "directory-sync", tenantId ?? ""] as const,
   domains: (tenantId: RouteParam) => ["enterprise", "domains", tenantId ?? ""] as const,
@@ -199,8 +220,21 @@ export const enterprise = {
     name: string;
     slug: string;
     logo?: string | null;
+    displayName?: string | null;
+    supportEmail?: string | null;
+    brandColor?: string | null;
     metadata?: Record<string, unknown>;
   }) => endpoint((api) => api.createTenant({ payload })),
+  /** Returns the versioned JSON bundle; callers turn it into a file download. */
+  exportTenant: (tenantId: RouteParam, query: { includeAudit?: boolean } = {}) =>
+    endpoint((api) =>
+      api.exportTenant({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query: query.includeAudit ? { includeAudit: "true" } : {},
+      }),
+    ),
+  /** Creates a new tenant owned by the caller from an exported bundle. */
+  importTenant: (payload: TenantImportRequest) => endpoint((api) => api.importTenant({ payload })),
   getTenant: (tenantId: RouteParam) =>
     endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
   patchTenant: (
@@ -209,6 +243,9 @@ export const enterprise = {
       name: string;
       slug: string;
       logo: string | null;
+      displayName: string | null;
+      supportEmail: string | null;
+      brandColor: string | null;
       metadata: Record<string, unknown> | null;
     }>,
   ) =>
@@ -271,6 +308,12 @@ export const enterprise = {
         never
       >;
     }),
+  getDeviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceEffectivePolicy({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
   patchDevice: (
     tenantId: RouteParam,
     id: RouteParam,
@@ -377,9 +420,22 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
+  previewGroup: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.previewGroup({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
   createGroup: (
     tenantId: RouteParam,
-    payload: { name: string; notes?: string | null; devices?: string[]; policies?: string[] },
+    payload: {
+      name: string;
+      notes?: string | null;
+      kind?: DynamicGroupKind;
+      rules?: DynamicGroupRules | null;
+      devices?: string[];
+      policies?: string[];
+    },
   ) =>
     endpoint((api) =>
       api.createGroup({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -387,7 +443,7 @@ export const enterprise = {
   patchGroup: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<GroupRow, "name" | "notes">>,
+    payload: Partial<Pick<GroupRow, "name" | "notes" | "kind" | "rules">>,
   ) =>
     endpoint((api) =>
       api.patchGroup({
@@ -399,8 +455,14 @@ export const enterprise = {
     tenantId: RouteParam,
     id: RouteParam,
     payload: {
-      assign?: { devices?: string[]; policies?: string[] };
-      unassign?: { devices?: string[]; policies?: string[] };
+      assign?: {
+        devices?: string[];
+        policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      };
+      unassign?: {
+        devices?: string[];
+        policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      };
     },
   ) =>
     endpoint((api) =>
@@ -424,14 +486,17 @@ export const enterprise = {
     endpoint((api) =>
       api.syncGroups({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
-  createPolicy: (tenantId: RouteParam, payload: { name: string; notes?: string | null }) =>
+  createPolicy: (
+    tenantId: RouteParam,
+    payload: { name: string; notes?: string | null; priority?: number },
+  ) =>
     endpoint((api) =>
       api.createPolicy({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
   patchPolicy: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations">>,
+    payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations" | "priority">>,
   ) =>
     endpoint((api) =>
       api.patchPolicy({
@@ -469,7 +534,10 @@ export const enterprise = {
   patchPolicyAssignments: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: { assign?: string[]; unassign?: string[] },
+    payload: {
+      assign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      unassign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+    },
   ) =>
     endpoint((api) =>
       api.patchPolicyAssignments({
@@ -690,6 +758,10 @@ export const enterprise = {
     ),
   listAuditLog: (tenantId: RouteParam) =>
     endpoint((api) => api.listAuditLog({ params: { tenantId: required(tenantId, "tenantId") } })),
+  searchAuditLog: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
+    endpoint((api) =>
+      api.searchAuditLog({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
   listUsers: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantUsers({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -785,6 +857,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.policyAssignments(tenantId, id),
       queryFn: () => enterprise.getPolicyAssignments(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceEffectivePolicy(tenantId, id),
+      queryFn: () => enterprise.getDeviceEffectivePolicy(tenantId, id),
       enabled: Boolean(tenantId && id) && !isServer,
     }),
   directorySync: (tenantId: RouteParam) =>

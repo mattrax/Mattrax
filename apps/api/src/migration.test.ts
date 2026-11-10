@@ -73,6 +73,51 @@ describe("device inventory migration", () => {
   });
 });
 
+describe("tenant branding migration", () => {
+  const names = migrationNames();
+  const brandingMigrations = names.filter((name) => readMigration(name).includes("`display_name`"));
+
+  it("is added by exactly one migration", () => {
+    expect(brandingMigrations).toHaveLength(1);
+  });
+
+  it("adds nullable branding columns to the organization table", () => {
+    const sql = readMigration(brandingMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `organization`");
+    for (const column of ["display_name", "support_email", "brand_color"])
+      expect(sql).toContain(`\`${column}\``);
+    expect(sql).not.toContain("NOT NULL");
+  });
+
+  it("ships a snapshot with nullable branding columns of the expected types", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "organization")
+        .map((entry) => [entry.name, entry]),
+    );
+    expect(columns.get("display_name")).toMatchObject({
+      type: "varchar(255)",
+      notNull: false,
+    });
+    expect(columns.get("support_email")).toMatchObject({
+      type: "varchar(320)",
+      notNull: false,
+    });
+    expect(columns.get("brand_color")).toMatchObject({
+      type: "varchar(7)",
+      notNull: false,
+    });
+  });
+
+  it("does not leave the branding columns in a later migration", () => {
+    const [brandingMigration] = brandingMigrations;
+    for (const name of names.filter((candidate) => candidate > brandingMigration!))
+      for (const column of ["`display_name`", "`support_email`", "`brand_color`"])
+        expect(readMigration(name)).not.toContain(column);
+  });
+});
+
 describe("APNs push telemetry migration", () => {
   const names = migrationNames();
   const pushMigrations = names.filter((name) => readMigration(name).includes("`last_push_at`"));
@@ -114,5 +159,91 @@ describe("APNs push telemetry migration", () => {
     }
     const counter = columns.get("consecutive_push_failures");
     expect(counter).toMatchObject({ type: "int", notNull: true, default: "0" });
+  });
+});
+
+describe("scoped API token migration", () => {
+  const names = migrationNames();
+  const tokenMigrations = names.filter((name) => readMigration(name).includes("`scopes`"));
+
+  it("is added by exactly one migration", () => {
+    expect(tokenMigrations).toHaveLength(1);
+  });
+
+  it("adds nullable tenant and scope columns and backfills legacy tokens", () => {
+    const sql = readMigration(tokenMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `account_api_token`");
+    expect(sql).toContain("`tenant_id`");
+    expect(sql).toContain("`scopes` json");
+    expect(sql).toContain("JSON_ARRAY('read', 'write')");
+    expect(sql).toContain("WHERE `scopes` IS NULL");
+    // tenant_id stays nullable (account-wide tokens), scopes is backfilled but
+    // also nullable so a future default can be applied without a rewrite.
+    expect(sql).not.toMatch(/`scopes` json NOT NULL/);
+  });
+
+  it("ships a snapshot with nullable scoped columns", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "account_api_token")
+        .map((entry) => [entry.name, entry]),
+    );
+    expect(columns.get("tenant_id")).toMatchObject({
+      type: "varchar(255)",
+      notNull: false,
+    });
+    expect(columns.get("scopes")).toMatchObject({
+      type: "json",
+      notNull: false,
+    });
+  });
+});
+
+describe("dynamic groups migration", () => {
+  const names = migrationNames();
+  const dynamicMigrations = names.filter((name) =>
+    readMigration(name).includes("ALTER TABLE `enterprise_group` ADD `kind`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(dynamicMigrations).toHaveLength(1);
+  });
+
+  it("adds group kind/rules/evaluation and membership source columns", () => {
+    const sql = readMigration(dynamicMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `enterprise_group`");
+    expect(sql).toContain("`kind` varchar(16) DEFAULT 'manual' NOT NULL");
+    expect(sql).toContain("`rules` json");
+    expect(sql).toContain("`last_evaluated_at` datetime(3)");
+    expect(sql).toContain("ALTER TABLE `group_device`");
+    expect(sql).toContain("`source` varchar(16) DEFAULT 'manual' NOT NULL");
+  });
+
+  it("ships a snapshot with the new columns", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns")
+        .map((entry) => [`${entry.table}.${entry.name}`, entry]),
+    );
+    expect(columns.get("enterprise_group.kind")).toMatchObject({
+      type: "varchar(16)",
+      notNull: true,
+      default: "'manual'",
+    });
+    expect(columns.get("enterprise_group.rules")).toMatchObject({
+      type: "json",
+      notNull: false,
+    });
+    expect(columns.get("enterprise_group.last_evaluated_at")).toMatchObject({
+      type: "datetime(3)",
+      notNull: false,
+    });
+    expect(columns.get("group_device.source")).toMatchObject({
+      type: "varchar(16)",
+      notNull: true,
+      default: "'manual'",
+    });
   });
 });

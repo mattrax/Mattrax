@@ -8,6 +8,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/net": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -107,12 +107,15 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
     HttpApiEndpoint.post("windowsDiscovery", "/windows/discovery", {
       payload: WindowsDiscoveryRequest,
       success: WindowsDiscoveryResponse,
-      error: Schema.Union([ManagementNotSupported, InternalServerError]),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )
   .add(
     HttpApiEndpoint.post("getWindowsEnrollmentPolicy", "/windows/policy", {
-      payload: Schema.Struct({ authToken: Schema.String }),
+      payload: Schema.Struct({
+        authToken: Schema.String,
+        tenantToken: Schema.optional(Schema.String),
+      }),
       success: WindowsEnrollmentPolicy,
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),

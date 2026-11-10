@@ -7,9 +7,13 @@ import { certToPem, createCaCertificate, pemToCert, signScepCsr } from "@mattrax
 import { MdmOrigin, UnknownDevice } from "@mattrax/management-backend";
 import {
   createWindowsEnrollmentToken,
+  createWindowsTenantToken,
   makeWindowsBackend,
   verifyWindowsEnrollmentToken,
   verifyWindowsEnrollmentTokenDetailed,
+  verifyWindowsTenantToken,
+  verifyWindowsTenantTokenDetailed,
+  windowsTenantTokenExpiresAt,
 } from "../windows.js";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 import { schema } from "@mattrax/enterprise-core";
@@ -80,6 +84,7 @@ const setup = async (
   overrides: {
     windowsOrganizationId?: string | null;
     requireDeviceIdentity?: boolean;
+    tenantTokenTtlSeconds?: number;
   } = {},
 ) => {
   const ca = await makeCa();
@@ -105,6 +110,7 @@ const setup = async (
         ? undefined
         : (overrides.windowsOrganizationId ?? "org-early"),
     requireDeviceIdentity: overrides.requireDeviceIdentity,
+    tenantTokenTtlSeconds: overrides.tenantTokenTtlSeconds,
   });
   return { ca, db, backend };
 };
@@ -420,7 +426,7 @@ describe("Windows enterprise backend", () => {
     expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
   });
 
-  it("fails closed when no tenant is configured", async () => {
+  it("fails closed when neither a tenant token nor a pin is present", async () => {
     const { backend } = await setup({ windowsOrganizationId: null });
     await expect(
       run(
@@ -433,7 +439,211 @@ describe("Windows enterprise backend", () => {
           mdmOrigin,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "InternalServerError" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+  });
+});
+
+describe("Windows tenant enrollment tokens", () => {
+  it("creates a verifiable token that expires", async () => {
+    const now = 1_700_000_000_000;
+    const token = await createWindowsTenantToken("org-late", authSecret, {
+      now,
+      ttlSeconds: 60,
+    });
+
+    await expect(verifyWindowsTenantToken(token, authSecret, { now })).resolves.toMatchObject({
+      organizationId: "org-late",
+    });
+    const expiresAt = windowsTenantTokenExpiresAt(token);
+    expect(expiresAt?.getTime()).toBe(now + 60_000);
+    await expect(
+      verifyWindowsTenantToken(token, authSecret, { now: now + 61_000 }),
+    ).resolves.toBeNull();
+    await expect(
+      verifyWindowsTenantTokenDetailed(token, authSecret, { now: now + 61_000 }),
+    ).resolves.toEqual({ verification: null, expired: true });
+  });
+
+  it("rejects tampered and wrong-secret tokens", async () => {
+    const now = 1_700_000_000_000;
+    const token = await createWindowsTenantToken("org-late", authSecret, { now });
+    await expect(
+      verifyWindowsTenantToken(`${token}tampered`, authSecret, { now }),
+    ).resolves.toBeNull();
+    await expect(verifyWindowsTenantToken(token, "wrong-secret", { now })).resolves.toBeNull();
+    // Swapping the encoded organization must invalidate the signature.
+    const parts = token.split(".");
+    const other = (await createWindowsTenantToken("org-early", authSecret, { now })).split(".");
+    const swapped = [parts[0], other[1], parts[2], parts[3], parts[4]].join(".");
+    await expect(verifyWindowsTenantToken(swapped, authSecret, { now })).resolves.toBeNull();
+  });
+
+  it("routes discovery, policy and enrollment to the token's tenant", async () => {
+    const { backend, db } = await setup({ windowsOrganizationId: null });
+    const token = await createWindowsTenantToken("org-late", authSecret);
+    const encoded = encodeURIComponent(token);
+
+    const discovery = await run(
+      backend.windowsDiscovery({
+        requestVersion: "5.0",
+        deviceType: "CIMClient_Windows",
+        applicationVersion: "10.0",
+        osEdition: 48,
+        authPolicies: ["OnPremise"],
+        mdmOrigin,
+        tenantToken: token,
+      }),
+    );
+    expect(discovery.enrollmentPolicyServiceUrl).toBe(
+      `${origin}/mdm/windows/policy?tenant=${encoded}`,
+    );
+    expect(discovery.enrollmentServiceUrl).toBe(`${origin}/mdm/windows/enroll?tenant=${encoded}`);
+
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken: token }));
+    await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(policy.authToken, await makeCsr()),
+        tenantToken: token,
+      }),
+    );
+    expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
+  });
+
+  it("rejects a WSTEP token issued to another tenant", async () => {
+    const { backend } = await setup({ windowsOrganizationId: null });
+    const lateToken = await createWindowsTenantToken("org-late", authSecret);
+    const earlyToken = await createWindowsTenantToken("org-early", authSecret);
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken: lateToken }));
+
+    await expect(
+      run(
+        backend.windowsEnroll({
+          ...enrollmentRequest(policy.authToken, await makeCsr()),
+          tenantToken: earlyToken,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+
+    // Replaying the late tenant's WSTEP token through the early tenant's
+    // policy endpoint must also fail.
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(policy.authToken, { tenantToken: earlyToken })),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+  });
+
+  it("rejects a tenant token that disagrees with the client certificate", async () => {
+    const { backend } = await setup({ requireDeviceIdentity: true });
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const lateToken = await createWindowsTenantToken("org-late", authSecret);
+    await expect(
+      run(
+        backend.windowsManagementCheckin(
+          {
+            deviceId: "device-1",
+            identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+            tenantToken: lateToken,
+            mdmOrigin,
+          },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: [],
+            alerts: [],
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+  });
+});
+
+describe("Windows identity lifecycle", () => {
+  const checkin = (backend: Awaited<ReturnType<typeof setup>>["backend"], scope: any) =>
+    run(
+      backend.windowsManagementCheckin(scope, {
+        sessionID: "1",
+        msgID: "1",
+        source: scope.deviceId,
+        target: origin,
+        statuses: [],
+        alerts: [],
+      }),
+    );
+
+  it("rejects a revoked identity certificate serial and accepts an active one", async () => {
+    const { backend, db } = await setup({ requireDeviceIdentity: true });
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0]!;
+    const storedCertificate = db.store[tableName(schema.scepIssuedCertificate)]![0]!;
+    const scope = {
+      deviceId: "device-1",
+      identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+      identityCertificateSerial: certificate.serial as string,
+      mdmOrigin,
+    };
+
+    await expect(checkin(backend, scope)).resolves.toEqual({ commands: [] });
+
+    // A management URL token expires long before the device certificate; the
+    // certificate OU must keep the device checking in.
+    const expiredToken = await createWindowsTenantToken("org-early", authSecret, {
+      now: Date.now() - 8 * 24 * 60 * 60 * 1000,
+    });
+    await expect(checkin(backend, { ...scope, tenantToken: expiredToken })).resolves.toEqual({
+      commands: [],
+    });
+
+    storedCertificate.revokedAt = new Date();
+    await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" });
+
+    storedCertificate.revokedAt = null;
+    await expect(checkin(backend, scope)).resolves.toEqual({ commands: [] });
+  });
+
+  it("enforces identity on management events but allows enrollment with a tenant token", async () => {
+    const { backend } = await setup({
+      requireDeviceIdentity: true,
+      windowsOrganizationId: null,
+    });
+    const token = await createWindowsTenantToken("org-early", authSecret);
+
+    // Enrollment events arrive before a client certificate exists.
+    await expect(
+      run(
+        backend.windowsDeviceEvent(
+          { deviceId: "device-2", tenantToken: token, mdmOrigin },
+          { _tag: "Enrolled", deviceId: "device-2" },
+        ),
+      ),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      run(
+        backend.windowsDeviceEvent(
+          { deviceId: "device-2", tenantToken: token, mdmOrigin },
+          { _tag: "ManagementCheckin", deviceId: "device-2" },
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+
+    await expect(
+      run(
+        backend.windowsDeviceEvent(
+          {
+            deviceId: "device-2",
+            identityCertificate: "O=Mattrax, OU=org-early, CN=device-2",
+            tenantToken: token,
+            mdmOrigin,
+          },
+          { _tag: "ManagementCheckin", deviceId: "device-2" },
+        ),
+      ),
+    ).resolves.toBeUndefined();
   });
 });
 

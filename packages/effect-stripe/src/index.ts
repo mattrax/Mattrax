@@ -1,5 +1,6 @@
 import { Context, Data, Effect, Layer } from "effect";
 import Stripe from "stripe";
+import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
 
 export interface StripeErrorDetails {
   readonly message: string;
@@ -180,8 +181,19 @@ export const makeEffectStripeClient = (client: StripeClient): EffectStripeClient
 export class StripeService extends Context.Service<StripeService, EffectStripeClient>()(
   "StripeService",
 ) {
+  /**
+   * Build a client with explicit outbound bounds. Stripe's SDK retries network
+   * failures and 5xx/429 responses itself, so `maxNetworkRetries` is the only
+   * retry loop we want; callers may still override both values (e.g. tests).
+   */
   static readonly make = (apiKey: string, config?: StripeConfig): EffectStripeClient =>
-    makeEffectStripeClient(new Stripe(apiKey, config));
+    makeEffectStripeClient(
+      new Stripe(apiKey, {
+        timeout: OUTBOUND_TIMEOUTS.stripe,
+        maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
+        ...config,
+      }),
+    );
 
   static readonly layer = (apiKey: string, config?: StripeConfig): Layer.Layer<StripeService> =>
     Layer.succeed(StripeService, StripeService.make(apiKey, config));
@@ -192,5 +204,23 @@ export const StripeServiceLive = (apiKey: string, config?: StripeConfig) =>
 
 export const StripeServiceFromClient = (client: StripeClient) =>
   Layer.succeed(StripeService, makeEffectStripeClient(client));
+
+/**
+ * Verify a webhook payload against the `Stripe-Signature` header and return the
+ * parsed event. Uses the async constructor so it works on Workers/WebCrypto
+ * without Node's synchronous crypto primitives.
+ */
+export const verifyStripeWebhookSignature = (
+  payload: string,
+  signature: string,
+  secret: string,
+): Effect.Effect<Stripe.Event, StripeError> =>
+  Effect.tryPromise({
+    try: () => Stripe.webhooks.constructEventAsync(payload, signature, secret),
+    catch: toStripeError,
+  });
+
+/** Exposed for tests that need to generate signature headers without a network call. */
+export { default as StripeClient } from "stripe";
 
 export type { Stripe };

@@ -1,0 +1,388 @@
+import { Data, Effect } from "effect";
+import { eq } from "drizzle-orm";
+import { HttpRouter, HttpServerResponse } from "effect/http";
+import { Db } from "@mattrax/enterprise-core";
+import { verifyStripeWebhookSignature, type Stripe } from "@mattrax/effect-stripe";
+import { schema } from "./schema.ts";
+import type { EnterpriseDb } from "./schema.ts";
+
+export type BillingWebhookConfig = {
+  readonly webhookSecret?: string;
+  readonly deviceMonthlyPriceId?: string;
+};
+
+export class BillingWebhookError extends Data.TaggedError("BillingWebhookError")<{
+  readonly message: string;
+  readonly statusCode: number;
+}> {}
+
+const fail = (message: string, statusCode = 400) =>
+  new BillingWebhookError({ message, statusCode });
+
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+
+const idOf = (value: unknown): string | undefined => {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof (value as { id?: unknown }).id === "string"
+  )
+    return (value as { id: string }).id;
+  return undefined;
+};
+
+const organizationIdFromMetadata = (metadata: unknown): string | undefined => {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value = (metadata as Record<string, unknown>).organizationId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+};
+
+const dateFromUnix = (value: unknown): Date | null =>
+  typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000) : null;
+
+const subscriptionPeriod = (subscription: any) => {
+  // Stripe moved current period fields onto subscription items in newer API
+  // versions; older subscriptions still carry them at the top level.
+  const item = subscription.items?.data?.[0];
+  return {
+    periodStart: dateFromUnix(
+      item?.current_period_start ?? subscription.current_period_start ?? subscription.start_date,
+    ),
+    periodEnd: dateFromUnix(item?.current_period_end ?? subscription.current_period_end),
+  };
+};
+
+const planFor = (subscription: any, deviceMonthlyPriceId?: string) => {
+  const metadataPlan = subscription.metadata?.plan;
+  if (typeof metadataPlan === "string" && metadataPlan.trim())
+    return metadataPlan.trim().slice(0, 255);
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+  if (deviceMonthlyPriceId && priceId === deviceMonthlyPriceId) return "device";
+  return "device";
+};
+
+type ResolveOrganizationInput = {
+  readonly db: EnterpriseDb;
+  readonly metadataOrganizationId?: string;
+  readonly customerId?: string;
+  readonly now: Date;
+};
+
+/**
+ * Map a Stripe object to exactly one Mattrax organization. Metadata is
+ * authoritative, but it must not conflict with the organization already linked
+ * to the Stripe customer. Anything unknown or ambiguous is rejected rather than
+ * guessed, so a webhook can never write across tenants.
+ */
+const resolveOrganization = (input: ResolveOrganizationInput) =>
+  Effect.gen(function* () {
+    let customerOrganizationId: string | undefined;
+    if (input.customerId) {
+      const [row] = yield* input.db
+        .select({ id: schema.organization.id })
+        .from(schema.organization)
+        .where(eq(schema.organization.stripeCustomerId, input.customerId))
+        .limit(1);
+      customerOrganizationId = row?.id;
+    }
+
+    if (
+      input.metadataOrganizationId &&
+      customerOrganizationId &&
+      input.metadataOrganizationId !== customerOrganizationId
+    )
+      return yield* Effect.fail(fail("Stripe object maps to conflicting Mattrax organizations"));
+
+    const organizationId = input.metadataOrganizationId ?? customerOrganizationId;
+    if (!organizationId)
+      return yield* Effect.fail(fail("Stripe object is not linked to a Mattrax organization"));
+
+    const organization = yield* input.db.query.organization.findFirst({
+      where: { id: organizationId },
+    });
+    if (!organization)
+      return yield* Effect.fail(fail("Stripe object references an unknown Mattrax organization"));
+
+    if (
+      input.customerId &&
+      organization.stripeCustomerId &&
+      organization.stripeCustomerId !== input.customerId
+    )
+      return yield* Effect.fail(
+        fail("Stripe customer does not belong to the mapped Mattrax organization"),
+      );
+
+    // Persist the customer link when metadata identified the organization, so
+    // invoice events (which may only carry a customer id) resolve next time.
+    if (input.customerId && organization.stripeCustomerId !== input.customerId) {
+      yield* input.db
+        .update(schema.organization)
+        .set({ stripeCustomerId: input.customerId, updatedAt: input.now })
+        .where(eq(schema.organization.id, organization.id));
+    }
+
+    return organization;
+  });
+
+type ApplySubscriptionInput = {
+  readonly db: EnterpriseDb;
+  readonly subscription: any;
+  readonly statusOverride?: string;
+  readonly deviceMonthlyPriceId?: string;
+  readonly now: Date;
+};
+
+const applySubscription = (input: ApplySubscriptionInput) =>
+  Effect.gen(function* () {
+    const subscription = input.subscription;
+    const stripeSubscriptionId = idOf(subscription.id);
+    if (!stripeSubscriptionId)
+      return yield* Effect.fail(fail("Subscription event is missing a subscription id"));
+
+    const customerId = idOf(subscription.customer);
+    const organization = yield* resolveOrganization({
+      db: input.db,
+      metadataOrganizationId: organizationIdFromMetadata(subscription.metadata),
+      customerId,
+      now: input.now,
+    });
+
+    const [byStripeId] = yield* input.db
+      .select()
+      .from(schema.subscription)
+      .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
+      .limit(1);
+    if (byStripeId && byStripeId.referenceId !== organization.id)
+      return yield* Effect.fail(
+        fail("Stripe subscription already belongs to another Mattrax organization"),
+      );
+
+    const existing =
+      byStripeId ??
+      (yield* input.db
+        .select()
+        .from(schema.subscription)
+        .where(eq(schema.subscription.referenceId, organization.id))
+        .limit(1))[0];
+
+    const { periodStart, periodEnd } = subscriptionPeriod(subscription);
+    const values = {
+      plan: planFor(subscription, input.deviceMonthlyPriceId),
+      referenceId: organization.id,
+      stripeCustomerId: customerId ?? organization.stripeCustomerId ?? null,
+      stripeSubscriptionId,
+      status:
+        input.statusOverride ??
+        (typeof subscription.status === "string" && subscription.status
+          ? subscription.status
+          : "incomplete"),
+      periodStart,
+      periodEnd,
+      cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+    };
+
+    if (existing) {
+      yield* input.db
+        .update(schema.subscription)
+        .set({ ...values, updatedAt: input.now })
+        .where(eq(schema.subscription.id, existing.id));
+    } else {
+      yield* input.db.insert(schema.subscription).values({
+        id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+        ...values,
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
+    }
+
+    return { organizationId: organization.id, stripeSubscriptionId };
+  });
+
+type ApplyInvoiceInput = {
+  readonly db: EnterpriseDb;
+  readonly invoice: any;
+  readonly paymentFailed: boolean;
+  readonly deviceMonthlyPriceId?: string;
+  readonly now: Date;
+};
+
+const applyInvoice = (input: ApplyInvoiceInput) =>
+  Effect.gen(function* () {
+    const invoice = input.invoice;
+    const embeddedSubscription =
+      typeof invoice.subscription === "object" && invoice.subscription !== null
+        ? invoice.subscription
+        : undefined;
+    const stripeSubscriptionId =
+      idOf(invoice.subscription) ??
+      idOf(invoice.parent?.subscription_details?.subscription) ??
+      idOf(invoice.subscription_details?.subscription);
+    const metadataOrganizationId =
+      organizationIdFromMetadata(embeddedSubscription?.metadata) ??
+      organizationIdFromMetadata(invoice.parent?.subscription_details?.metadata) ??
+      organizationIdFromMetadata(invoice.subscription_details?.metadata);
+    const customerId = idOf(invoice.customer);
+
+    if (embeddedSubscription?.id) {
+      return yield* applySubscription({
+        db: input.db,
+        subscription: {
+          ...embeddedSubscription,
+          // Expanded invoice subscriptions do not always repeat metadata.
+          metadata: {
+            ...(embeddedSubscription.metadata ?? {}),
+            ...(metadataOrganizationId ? { organizationId: metadataOrganizationId } : {}),
+          },
+          customer: embeddedSubscription.customer ?? customerId,
+        },
+        statusOverride: input.paymentFailed
+          ? embeddedSubscription.status === "canceled"
+            ? "canceled"
+            : "past_due"
+          : (embeddedSubscription.status ?? "active"),
+        deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+        now: input.now,
+      });
+    }
+
+    const organization = yield* resolveOrganization({
+      db: input.db,
+      metadataOrganizationId,
+      customerId,
+      now: input.now,
+    });
+
+    let existing: any;
+    if (stripeSubscriptionId) {
+      [existing] = yield* input.db
+        .select()
+        .from(schema.subscription)
+        .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
+        .limit(1);
+    }
+    if (!existing) {
+      [existing] = yield* input.db
+        .select()
+        .from(schema.subscription)
+        .where(eq(schema.subscription.referenceId, organization.id))
+        .limit(1);
+    }
+    if (!existing)
+      return yield* Effect.fail(fail("Invoice does not match a known Mattrax subscription"));
+
+    yield* input.db
+      .update(schema.subscription)
+      .set({
+        // A late invoice event must not resurrect a canceled subscription.
+        status:
+          existing.status === "canceled" ? "canceled" : input.paymentFailed ? "past_due" : "active",
+        updatedAt: input.now,
+      })
+      .where(eq(schema.subscription.id, existing.id));
+
+    return { organizationId: organization.id, stripeSubscriptionId };
+  });
+
+export type ProcessStripeWebhookInput = BillingWebhookConfig & {
+  readonly payload: string;
+  readonly signature: string | null;
+  readonly db: EnterpriseDb;
+  /** Injectable clock for deterministic tests. */
+  readonly now?: Date;
+};
+
+/**
+ * Verify and apply one Stripe event. Idempotent: replays update the same row by
+ * subscription id (or organization reference), and deletions are recorded as
+ * `canceled` rather than removing history.
+ */
+export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
+  Effect.gen(function* () {
+    if (!input.webhookSecret)
+      return yield* Effect.fail(fail("Billing webhook is not configured for this deployment", 503));
+    if (!input.signature) return yield* Effect.fail(fail("Missing Stripe-Signature header"));
+
+    const event = yield* verifyStripeWebhookSignature(
+      input.payload,
+      input.signature,
+      input.webhookSecret,
+    ).pipe(Effect.mapError(() => fail("Invalid Stripe signature")));
+
+    const now = input.now ?? new Date();
+    switch (event.type) {
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+        return yield* applySubscription({
+          db: input.db,
+          subscription: event.data.object as Stripe.Subscription,
+          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+          now,
+        });
+      case "customer.subscription.deleted":
+        return yield* applySubscription({
+          db: input.db,
+          subscription: event.data.object as Stripe.Subscription,
+          statusOverride: "canceled",
+          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+          now,
+        });
+      case "invoice.paid":
+      case "invoice.payment_succeeded":
+        return yield* applyInvoice({
+          db: input.db,
+          invoice: event.data.object as Stripe.Invoice,
+          paymentFailed: false,
+          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+          now,
+        });
+      case "invoice.payment_failed":
+        return yield* applyInvoice({
+          db: input.db,
+          invoice: event.data.object as Stripe.Invoice,
+          paymentFailed: true,
+          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+          now,
+        });
+      default:
+        return { ignored: true as const };
+    }
+  });
+
+/**
+ * Raw route layer. It is mounted inside the API's handler layer (before the
+ * Effect HttpApi routes) and needs `Db` from the surrounding app layer.
+ */
+export const billingWebhookRoutes = (config: BillingWebhookConfig) =>
+  HttpRouter.add("POST", "/api/v1/billing/webhook", (request) =>
+    Effect.gen(function* () {
+      const db = yield* Db;
+      const signatureHeader = request.headers["stripe-signature"];
+      const signature = Array.isArray(signatureHeader)
+        ? (signatureHeader[0] ?? null)
+        : (signatureHeader ?? null);
+      const payload = yield* request.text.pipe(
+        Effect.mapError(() => fail("Could not read the webhook request body")),
+      );
+
+      return yield* processStripeWebhook({
+        db,
+        payload,
+        signature,
+        webhookSecret: config.webhookSecret,
+        deviceMonthlyPriceId: config.deviceMonthlyPriceId,
+      }).pipe(
+        Effect.as(json({ received: true })),
+        Effect.tapError((error) => Effect.logWarning(`Stripe webhook rejected: ${error.message}`)),
+        Effect.catchTag("BillingWebhookError", (error) =>
+          Effect.succeed(json({ error: error.message }, error.statusCode)),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logError("Stripe webhook processing failed", cause).pipe(
+            Effect.as(json({ error: "Webhook processing failed" }, 500)),
+          ),
+        ),
+      );
+    }),
+  );

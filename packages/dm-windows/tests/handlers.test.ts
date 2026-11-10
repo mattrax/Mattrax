@@ -82,6 +82,66 @@ describe("Windows MDM handlers", () => {
     expect(text).toContain(`${config.origin}/mdm/windows/enroll`);
   });
 
+  it("forwards the tenant token from the URL to discovery", async () => {
+    let received: string | undefined;
+    const h = await handler({
+      windowsDiscovery: (request: { tenantToken?: string }) => {
+        received = request.tenantToken;
+        return Effect.succeed({
+          authPolicy: "OnPremise",
+          enrollmentVersion: "4.0",
+          enrollmentPolicyServiceUrl: `${config.origin}/mdm/windows/policy?tenant=${request.tenantToken}`,
+          enrollmentServiceUrl: `${config.origin}/mdm/windows/enroll?tenant=${request.tenantToken}`,
+        });
+      },
+    });
+    const body = soapEnvelope(
+      `<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment"><request><RequestVersion>5.0</RequestVersion><DeviceType>CIMClient_Windows</DeviceType><ApplicationVersion>10.0</ApplicationVersion><OSEdition>48</OSEdition><AuthPolicies><AuthPolicy>OnPremise</AuthPolicy></AuthPolicies></request></Discover>`,
+    );
+    const res = await h(
+      new Request("http://localhost/mdm/windows/discovery?tenant=mttxw1.abc", {
+        method: "POST",
+        body,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(received).toBe("mttxw1.abc");
+    const text = await res.text();
+    expect(text).toContain("policy?tenant=mttxw1.abc");
+    expect(text).toContain("enroll?tenant=mttxw1.abc");
+  });
+
+  it("keeps the tenant token on the provisioning management URL", async () => {
+    const h = await handler({
+      windowsEnroll: () =>
+        Effect.succeed({
+          deviceId: "device-1",
+          signedCertificate: "signed",
+          identityCertificate: "identity",
+          username: "device-1",
+          secret: "secret",
+          providerId: "Mattrax",
+        }),
+    });
+    const body = soapEnvelope(
+      `<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-1</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>`,
+    );
+    const res = await h(
+      new Request("http://localhost/mdm/windows/enroll?tenant=mttxw1.abc", {
+        method: "POST",
+        body,
+      }),
+    );
+    const text = await res.text();
+    const encoded = text.match(
+      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
+    )?.[1];
+    const provisioning = new TextDecoder().decode(
+      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
+    );
+    expect(provisioning).toContain(`${config.origin}/mdm/windows/management?tenant=mttxw1.abc`);
+  });
+
   it("handles enroll", async () => {
     const h = await handler({
       windowsEnroll: () =>

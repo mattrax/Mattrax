@@ -387,3 +387,73 @@ describe("AzureGraph", () => {
     );
   });
 });
+
+/** Never responds, but rejects when the underlying fetch is aborted. */
+const hangingResponse = (_url: string, init: RequestInit | undefined) =>
+  new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () =>
+      reject(new DOMException("aborted", "AbortError")),
+    );
+  });
+
+function runWithConfig<A, E>(
+  effect: Effect.Effect<A, E, AzureGraph>,
+  handler: FetchHandler,
+  overrides: Partial<AzureGraphConfig>,
+) {
+  return Effect.runPromise(
+    effect.pipe(
+      Effect.provide(
+        AzureGraphLive({ ...config, ...overrides }).pipe(Layer.provide(mockLayer(handler))),
+      ),
+    ),
+  );
+}
+
+describe("AzureGraph outbound timeouts", () => {
+  const domains = Effect.gen(function* () {
+    const graph = yield* AzureGraph;
+    return yield* graph.domains(tenantId);
+  });
+
+  it("fails a hung Graph request with a timeout instead of hanging", async () => {
+    const started = Date.now();
+    const error = await runWithConfig(
+      domains,
+      (url, init) => (isTokenRequest(url) ? tokenResponse() : hangingResponse(url, init)),
+      { timeoutMs: 50 },
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toMatchObject({ _tag: "RequestFailed" });
+    expect((error as Error).message).toContain("timed out after 50ms");
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it("bounds the token request too", async () => {
+    const error = await runWithConfig(domains, hangingResponse, { timeoutMs: 50 }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toMatchObject({ _tag: "RequestFailed" });
+    expect((error as Error).message).toContain("timed out after 50ms");
+  });
+
+  it("still retries a throttled request within the deadline", async () => {
+    let graphCalls = 0;
+    const result = await runWithConfig(
+      domains,
+      (url) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        graphCalls++;
+        if (graphCalls === 1) {
+          return json({ error: "throttled" }, 429);
+        }
+        return domainsResponse([contosoDomain]);
+      },
+      { timeoutMs: 1_000 },
+    );
+
+    expect(graphCalls).toBe(2);
+    expect(result).toEqual([contosoDomain]);
+  });
+});

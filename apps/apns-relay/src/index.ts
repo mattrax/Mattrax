@@ -103,7 +103,10 @@ const server = createServer(async (request, response) => {
     );
     response.writeHead(204).end();
   } catch (error) {
-    response.writeHead(502).end(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    // A deadline hit means APNs did not answer in time; report a gateway
+    // timeout so the caller can distinguish it from an APNs rejection.
+    response.writeHead(/timed out/i.test(message) ? 504 : 502).end(message);
   }
 });
 

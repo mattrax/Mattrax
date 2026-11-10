@@ -125,6 +125,32 @@ describe("ScepService", () => {
       expect(result.raw.byteLength).toBeGreaterThan(0);
       expect(saveCount).toBe(1);
     });
+
+    it("does not regenerate the CA when the stored key cannot be opened", async () => {
+      let saveCount = 0;
+      const repo = mockScepRepository({
+        getCa: () =>
+          Effect.fail(
+            new ScepError({ message: "Failed to decrypt the stored SCEP CA private key" }),
+          ),
+        saveCa: () =>
+          Effect.sync(() => {
+            saveCount++;
+          }),
+      });
+
+      await expect(
+        runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
+            return yield* scep.getCaCert();
+          }),
+        ),
+      ).rejects.toMatchObject({ _tag: "ScepError", message: expect.stringContaining("decrypt") });
+      // Issuing a fresh CA here would invalidate every existing device identity.
+      expect(saveCount).toBe(0);
+    });
   });
 
   describe("pkiOperation", () => {

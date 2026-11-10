@@ -1,19 +1,28 @@
 import { Effect, Layer } from "effect";
-import { ScepError, ScepRepository, verifyScepChallenge } from "@mattrax/scep";
+import { ScepCaKeyError, ScepError, ScepRepository, verifyScepChallenge } from "@mattrax/scep";
 import { FsDb } from "../db.ts";
+
+const storageError =
+  (message: string) =>
+  (cause: unknown): ScepError =>
+    cause instanceof ScepError
+      ? cause
+      : cause instanceof ScepCaKeyError
+        ? new ScepError({ message: cause.message })
+        : new ScepError({ message, cause });
 
 export const ScepRepositoryLive = (db: FsDb, options: { authSecret?: string } = {}) =>
   Layer.succeed(ScepRepository)(
     ScepRepository.of({
       getCa: () =>
-        Effect.try({
+        Effect.tryPromise({
           try: () => db.getCa(),
-          catch: (cause) => new ScepError({ message: "Failed to get CA", cause }),
+          catch: storageError("Failed to get CA"),
         }),
       saveCa: (certPem, privateKeyJwk) =>
-        Effect.try({
+        Effect.tryPromise({
           try: () => db.saveCa(certPem, privateKeyJwk),
-          catch: (cause) => new ScepError({ message: "Failed to save CA", cause }),
+          catch: storageError("Failed to save CA"),
         }),
       authenticatePkcsReq: (req) =>
         Effect.gen(function* () {

@@ -16,19 +16,41 @@ architecture notes in the porting plan.
   remote opt-in plus shared secret).
 - Whitelabel management webhooks fail closed when no secret is configured.
 - Product-key signatures use one shared hex encoding and timing-safe comparison.
-- Cloud Windows MDM returns an explicit configuration response until a tenant
-  is pinned; the docs no longer advertise an automatic tenant fallback.
+- Cloud Windows MDM is tenant-scoped. Enrollment links carry an HMAC-signed
+  tenant token (tenant id, issued-at, expiry) that discovery verifies and
+  policy/enroll preserve; the WSTEP token is bound to the same tenant. The
+  deployment-wide `WINDOWS_ORGANIZATION_ID` pin is now an optional legacy
+  fallback, not a prerequisite.
 - The dashboard Worker sends CSP, HSTS, `X-Frame-Options`, `nosniff` and a
   referrer policy. Preview URLs are disabled in production.
 - Migration snapshots are present for every migration and `db:generate`
   produces no spurious diff.
 - Daily maintenance runs via a Worker Cron Trigger: expired invitations, stale
   devices, expired auth proofs/sessions and audit retention.
+- Audit logs have a filterable, cursor-paginated search endpoint
+  (`GET /v1/tenants/:tenantId/audit/search`) and CSV/JSON export with the same
+  filters, a 10k-row cap and an `X-Export-Truncated` header. Device lifecycle
+  events (enrollment, check-out, failed/deferred commands, declaration failures
+  and dead APNs tokens) are written by a system actor on state transitions
+  only, never per check-in. The legacy `/audit-log` endpoint remains for older
+  dashboard bundles.
 - Device lists have server-side search, filters, sort, pagination and CSV export.
   Group detail loads only its own devices. The `health` filter is derived from
   declarations/inventory rather than a stored column, so it evaluates the
   tenant's devices in application code (bounded by the tenant, not the whole
   fleet); it is not indexed.
+- Groups can be `manual` (unchanged) or `dynamic`. Dynamic groups store a
+  versioned rule set (`platform`, OS comparisons, model/serial/asset-tag
+  matches, stale days and health) and materialise matches into `group_device`
+  with `source = 'dynamic'`. Recomputes run on group create/update, on device
+  create/update/inventory check-in (evaluating that one device against the
+  tenant's dynamic rules) and in daily maintenance (full tenant-scoped pass).
+  Manual `group_device` rows are never removed by a recompute and act as
+  explicit exceptions; device assign/unassign is rejected for dynamic groups.
+  `GET /v1/tenants/:tenantId/groups/:id/preview` returns a live match count for
+  the dashboard. Evaluation is application-side and not indexed:
+  check-in cost is `O(dynamic groups in tenant)` and a full recompute is
+  `O(devices × dynamic groups)`, including declaration loads for health rules.
 - `maxDevices = 0` means unlimited, and the enrollment page shows the Windows
   discovery URL and an accurate Android availability state.
 - Device health rolls up enrollment state, last-seen age, declaration failures,
@@ -45,7 +67,13 @@ architecture notes in the porting plan.
   endpoint. Daily maintenance writes one audit event per tenant per expiry
   threshold (30/7/expired) per day; there is no email delivery yet.
 - SCEP identities can be revoked per device; unenrollment/deletion revokes
-  device-scoped certificates and renewal rejects revoked identities.
+  device-scoped certificates and renewal rejects revoked identities. Apple
+  certificates are bound to the internal device on Authenticate/TokenUpdate
+  using the mTLS identity-certificate serial, so revocation, renewal checks,
+  credential health and the device certificate list apply to Apple as well as
+  Windows. This requires the edge to forward
+  `x-device-identity-certificate-serial`; self-hosted deployments that do not
+  forward it keep tenant-scoped certificates without per-device binding.
 - APNs delivery outcomes are recorded per device (`last_push_at`,
   `last_push_ok_at`, `last_push_error`, consecutive failures). Invalid tokens
   (`BadDeviceToken`, `Unregistered`, HTTP 410) are surfaced as "device must
@@ -57,6 +85,69 @@ architecture notes in the porting plan.
   commands, declaration changes, certificate issue/revocation and lifecycle
   timestamps. It is computed from existing tables; a dedicated event table is a
   later optimisation.
+- The global SCEP CA private key is sealed at rest with AES-256-GCM keyed from
+  `AUTH_SECRET` in the existing JSON column (`{ "v": 1, "sealed": "..." }`).
+  Legacy plaintext rows are sealed on first read; a missing secret, wrong secret
+  or tampered value fails closed instead of regenerating the CA. The same
+  storage applies to the filesystem gateway (`scep-ca.json`) and the whitelabel
+  D1 example. Rotating `AUTH_SECRET` now makes the CA key unreadable, so re-seal
+  before rotating (see [self-hosting](./self-hosting#rotating-auth_secret)).
+- Outbound calls have deadlines and bounded retries: APNs HTTP/2 connect+request
+  (10s, session destroyed on timeout), mTLS/relay fetches (10s), Microsoft Graph
+  token/read calls (15s per attempt, existing single retry preserved), the push
+  helper (11s backstop) and the Stripe SDK (`timeout: 15s`,
+  `maxNetworkRetries: 2`). The shared constants live in `@mattrax/net`.
+- Every API response carries `x-request-id` (a valid caller-supplied id is
+  propagated, otherwise a UUID is generated). One structured JSON log line per
+  request records method, path (no query string), status, duration, tenant id
+  from the URL and the Effect error tag. Bodies, cookies, tokens and email
+  addresses are never logged; uncaught errors are logged once with a redacted
+  message. Successful health/readiness probes are not logged.
+- `GET /api/ready` runs a cheap `select 1` through the Db layer with a 2s
+  timeout and returns 200/503 plus the package version and Cloudflare version
+  id. `GET /api/health` remains the dependency-free liveness response.
+- Rate limits apply to auth POSTs, `/api/v1/enrollment/*`,
+  `/api/v1/billing/webhook`, `/scim/*` and `/mdm/*` (SCEP separately). A 429
+  has a stable JSON body and `Retry-After`.
+  Cloudflare's Rate Limiting binding is used for auth and enrollment when the
+  deployment supplies a namespace; otherwise a per-isolate fallback applies.
+- APNs fan-out is bounded (12 in flight, chunked) and returns per-batch
+  succeeded/failed/skipped device ids. One undecryptable key or failed delivery
+  no longer aborts the rest of the group. Bulk group/policy/application deletes
+  and re-syncs fan out with the same bound and collect per-item results. The
+  public API success shapes are unchanged, so the push summary is available to
+  server-side callers (and logged as a single batch warning); exposing it to
+  clients needs a future schema change or a job id from Queues.
+- Entra directory sync takes a tenant-scoped lock on `entra_directory_sync`
+  (`status = running`) with a 15-minute stale takeover, applies each Graph page
+  in its own transaction, and persists each resource class's delta cursor as
+  soon as it completes. A failure records `lastError`, sets `status = error`
+  and leaves the previous cursor usable.
+- Tenant owners can export a versioned JSON bundle
+  (`GET /v1/tenants/:tenantId/export`) and import it as a new tenant
+  (`POST /v1/tenants/import`). The bundle carries profile/branding, groups,
+  policies/configuration, application metadata, enrollment settings and
+  pre-registrations; it excludes credentials, token hashes, private keys and R2
+  bytes. Import re-maps ids, derives a free slug and runs in one transaction;
+  members, devices, audit history and SCEP certificates are not imported.
+  [Self-hosting](./self-hosting#backups) now documents the MySQL/R2/secrets
+  backup and restore order, key-rotation caveats and bundle limits.
+
+## Observability and rate limiting: exact gaps
+
+- **The edge limiter is optional.** Cloudflare Rate Limiting namespaces are
+  account resources, so the build only adds `RATE_LIMITER_AUTH` /
+  `RATE_LIMITER_ENROLLMENT` when `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE` and
+  `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE` are set. Without them every isolate
+  keeps its own in-memory counters: the effective limit is
+  `configured limit × live isolates`, and counters reset on deploy/eviction.
+  MDM/SCIM/billing/SCEP buckets always use that fallback today.
+- **Logs are structured JSON on stdout.** They are queryable in Workers Logs /
+  Logpush, but there is no cross-request error tracker (Sentry-style grouping,
+  alerting or release correlation) yet.
+- **Readiness does not cancel the underlying query.** The 2s timeout returns
+  503, but the driver call may finish in the background; there is no
+  request-scoped abort in the current MySQL client.
 
 ## Remaining production work
 
@@ -68,15 +159,11 @@ architecture notes in the porting plan.
   signup, Pub/Sub handling and policy push are not mounted. Requires a Google
   Cloud project and a managed Android device. Until then Android must stay
   explicitly unavailable.
-- **Tenant-scoped Windows enrollment.** Cloud Windows is deployment-wide until
-  the discovery URL/token carries a tenant. Federated Entra enrollment is not
-  implemented.
-- **Apple per-device SCEP revocation.** Apple identities are tenant-scoped, not
-  device-scoped, so per-device revocation currently applies to Windows only.
-  Bind the issued certificate fingerprint to the device at check-in.
-- **Global SCEP CA protection.** The CA private key is stored unencrypted in
-  MySQL. Seal it with the application secret or a KMS key and document backup,
-  rotation and recovery.
+- **Federated Entra enrollment.** Tenant-scoped Windows enrollment is done:
+  discovery, policy and enrollment resolve the tenant from a signed URL token,
+  and WSTEP tokens are tenant-bound. Remaining gap: Autopilot/federated Entra
+  enrollment (device-token-based, no user-entered discovery URL) is not
+  implemented. A real Windows device has not yet been validated end to end.
 - **Stripe billing enforcement.** There is no webhook consumer and no
   subscription writes, so plans/seats are not enforced. Add a signature-verified
   webhook, subscription upsert and user-facing Stripe errors.
@@ -91,24 +178,36 @@ architecture notes in the porting plan.
 - **Generic SAML SSO and IdP group → role mapping.** Entra OIDC is supported;
   Okta/Google/OneLogin need SAML.
 - **Scheduled/background work for large fleets.** Device policy/group pushes
-  are still sequential in the request; move them to Queues (or at least bounded
-  concurrency + `waitUntil`) and track retries.
-- **Entra directory sync at scale.** Run as a background job with a lock,
-  per-page transactions and incremental delta advancement.
+  now use bounded concurrency (12 in flight, chunked) and collect per-device
+  outcomes, so one failure no longer aborts the batch. They are still synchronous
+  with the request; move large fan-outs to Queues (or `waitUntil` where a job id
+  can be returned) and track retries.
+- **Entra directory sync at scale.** A tenant lock with stale takeover, per-page
+  transactions, incremental delta cursors and `lastError` reporting are in
+  place. Running the sync as a background job (rather than holding the HTTP
+  request open) and scheduling it automatically remain.
+
 - **Tenant branding.** Use `organization.logo` and a branding profile in the
   enrollment page, emails, Apple profile and DDM management declaration.
 - **Policy conflict precedence and exclusions.** Assignments are additive; add
   priority, include/exclude scope and an effective-policy preview for a device.
-- **Backups and tenant export/import.** Document and automate MySQL + R2
-  backup/restore, and add a tenant export bundle.
-- **Observability and abuse protection.** Add structured request logs, error
-  tracking, dependency readiness checks and shared rate limiting for
-  auth/SCEP/MDM/enrollment endpoints.
+- **Scheduled backup automation.** MySQL + R2 backup/restore, `AUTH_SECRET`,
+  APNs and SCEP CA handling, restore order and tenant export/import limits are
+  documented in [self-hosting](./self-hosting#backups), and owners can download
+  or import a tenant bundle. What remains is automation: scheduled dumps and
+  object mirroring, retention/encryption policy, a restore drill and alerting
+  on backup failure.
+- **Observability and abuse protection.** Structured request logs, request ids,
+  readiness checks and multi-bucket rate limiting are in place. Remaining:
+  configure the optional shared edge limiters for every bucket, add an error
+  tracker/alerting, and cover auth/enrollment with a distributed limiter even on
+  deployments without Cloudflare Rate Limiting namespaces.
 - **Credential expiry notifications.** Daily maintenance records an audit event
   per tenant/threshold, but no email is sent. Wire the audit event to the
   owner/admin mailbox once delivery dedupe is centralized.
-- **Outbound timeouts and idempotency.** Add `AbortSignal.timeout` to APNs,
-  Graph, Stripe and relay calls; make webhook/command delivery retry-safe.
+- **Outbound timeouts and idempotency.** APNs, Graph, Stripe and relay calls now
+  have deadlines and bounded retries; make webhook/command delivery idempotent
+  so a retried request cannot double-apply a policy or command.
 
 ### P2 — product polish
 

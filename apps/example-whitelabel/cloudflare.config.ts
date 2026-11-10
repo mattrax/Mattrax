@@ -14,6 +14,11 @@ const worker = {
   env: {
     ORIGIN: bindings.text("http://localhost:9051"),
     AUTH_SECRET: bindings.secret(),
+    /** Optional white-label identity used in generated enrollment profiles. */
+    BRAND_NAME: bindings.text("Mattrax"),
+    BRAND_LOGO_URL: bindings.text(""),
+    SUPPORT_EMAIL: bindings.text("hello@mattrax.app"),
+    BRAND_COLOR: bindings.text("#1c1917"),
     /** Required: webhook authentication fails closed when this is unset. */
     WEBHOOK_SECRET: bindings.secret(),
     APNS_CERT: bindings.secret(),

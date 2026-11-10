@@ -1,7 +1,17 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { authClient } from "~/lib/auth";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 
 export default function AccountPage() {
@@ -170,15 +180,41 @@ export default function AccountPage() {
   const [tokenName, setTokenName] = createSignal("");
   const [newToken, setNewToken] = createSignal<string | null>(null);
   const [tokenError, setTokenError] = createSignal<string | null>(null);
+  const [tokenOpen, setTokenOpen] = createSignal(false);
+  const [tokenScope, setTokenScope] = createSignal<"read" | "write">("write");
+  const [tokenExpiry, setTokenExpiry] = createSignal("never");
+  const [tokenTenantId, setTokenTenantId] = createSignal("");
+  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
+  const tenants = () => me.data?.tenants ?? [];
+  const tenantLabel = (tenantId?: string | null) =>
+    tenantId
+      ? (tenants().find((tenant) => tenant.id === tenantId)?.displayName ??
+        tenants().find((tenant) => tenant.id === tenantId)?.name ??
+        "Unknown tenant")
+      : "All tenants";
+  const scopeLabel = (scopes?: string[]) =>
+    !scopes || scopes.includes("write") ? "Read & write" : "Read only";
+
+  const tokenExpiresAt = () => {
+    const days = Number(tokenExpiry());
+    if (!Number.isFinite(days) || days <= 0) return null;
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  };
 
   const handleTokenCreate = async (e: SubmitEvent) => {
     e.preventDefault();
     setTokenError(null);
     setNewToken(null);
     try {
-      const result = await authClient.createApiToken({ name: tokenName() });
+      const result = await authClient.createApiToken({
+        name: tokenName(),
+        expiresAt: tokenExpiresAt(),
+        scopes: tokenScope() === "read" ? ["read"] : ["read", "write"],
+        tenantId: tokenTenantId() || null,
+      });
       setNewToken(result.token);
       setTokenName("");
+      setTokenOpen(false);
       await refetchTokens();
     } catch (error) {
       setTokenError(errorMessage(error));
@@ -464,51 +500,142 @@ export default function AccountPage() {
       </Show>
 
       <section class="rounded-xl border border-border bg-card p-6">
-        <h2 class="text-sm font-semibold mb-1">API tokens</h2>
-        <p class="text-sm text-muted-foreground mb-4">
-          Create account-based tokens for CLI and API access. Tokens inherit your tenant
-          memberships.
-        </p>
-        <form onSubmit={handleTokenCreate} class="flex gap-3 items-end mb-4">
-          <div class="flex-1 space-y-1.5">
-            <label for="token-name" class="text-xs font-medium text-stone-700">
-              Token name
-            </label>
-            <input
-              id="token-name"
-              required
-              value={tokenName()}
-              onInput={(e) => setTokenName(e.currentTarget.value)}
-              class={inputClass}
-              placeholder="Work laptop CLI"
-            />
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold mb-1">API tokens</h2>
+            <p class="text-sm text-muted-foreground">
+              Create tokens for CLI and API access. Scope a token to read-only or to a single tenant
+              to limit what it can reach.
+            </p>
           </div>
           <button
-            type="submit"
+            type="button"
+            onClick={() => {
+              setTokenError(null);
+              setTokenOpen(true);
+            }}
             class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 transition-colors whitespace-nowrap"
           >
             Create token
           </button>
-        </form>
+        </div>
+
+        <Dialog open={tokenOpen()} onOpenChange={setTokenOpen}>
+          <DialogContent class="max-w-md rounded-xl bg-white p-6">
+            <DialogHeader>
+              <DialogTitle>Create API token</DialogTitle>
+              <DialogDescription class="mt-1 text-sm text-stone-500">
+                The token inherits your permissions. Read-only tokens can view data but cannot
+                change it; a tenant-bound token is rejected for every other tenant.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleTokenCreate} class="mt-4 space-y-3">
+              <div class="space-y-1.5">
+                <label for="token-name" class="text-xs font-medium text-stone-700">
+                  Token name
+                </label>
+                <input
+                  id="token-name"
+                  required
+                  value={tokenName()}
+                  onInput={(e) => setTokenName(e.currentTarget.value)}
+                  class={inputClass}
+                  placeholder="Work laptop CLI"
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label for="token-scope" class="text-xs font-medium text-stone-700">
+                  Access
+                </label>
+                <select
+                  id="token-scope"
+                  class={inputClass}
+                  value={tokenScope()}
+                  onChange={(e) => setTokenScope(e.currentTarget.value as "read" | "write")}
+                >
+                  <option value="read">Read only</option>
+                  <option value="write">Read &amp; write</option>
+                </select>
+              </div>
+              <div class="space-y-1.5">
+                <label for="token-tenant" class="text-xs font-medium text-stone-700">
+                  Tenant
+                </label>
+                <select
+                  id="token-tenant"
+                  class={inputClass}
+                  value={tokenTenantId()}
+                  onChange={(e) => setTokenTenantId(e.currentTarget.value)}
+                >
+                  <option value="">All tenants I belong to</option>
+                  <For each={tenants()}>
+                    {(tenant) => (
+                      <option value={tenant.id}>{tenant.displayName ?? tenant.name}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+              <div class="space-y-1.5">
+                <label for="token-expiry" class="text-xs font-medium text-stone-700">
+                  Expiry
+                </label>
+                <select
+                  id="token-expiry"
+                  class={inputClass}
+                  value={tokenExpiry()}
+                  onChange={(e) => setTokenExpiry(e.currentTarget.value)}
+                >
+                  <option value="never">Never</option>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="365">1 year</option>
+                </select>
+              </div>
+              <Show when={tokenError()}>
+                {(msg) => <p class="text-sm text-red-600">{msg()}</p>}
+              </Show>
+              <DialogFooter class="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTokenOpen(false)}
+                  class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
+                >
+                  Create token
+                </button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <Show when={newToken()}>
           {(token) => (
-            <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div class="mt-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <p class="font-medium">Copy this token now. It will not be shown again.</p>
               <code class="mt-2 block break-all rounded bg-white p-2 text-xs">{token()}</code>
             </div>
           )}
         </Show>
         <Show when={tokenError()}>{(msg) => <p class="mb-3 text-sm text-red-600">{msg()}</p>}</Show>
-        <div class="space-y-2">
+        <div class="mt-4 space-y-2">
           <For each={tokens()?.tokens ?? []}>
             {(token) => (
               <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
                 <div>
                   <p class="font-medium text-stone-900">{token.name}</p>
                   <p class="text-xs text-muted-foreground">
-                    {token.tokenPrefix}... · Created{" "}
-                    {new Date(token.createdAt).toLocaleDateString()} · Last used{" "}
+                    {scopeLabel(token.scopes)} · {tenantLabel(token.tenantId)} · {token.tokenPrefix}
+                    ... · Created {new Date(token.createdAt).toLocaleDateString()} · Last used{" "}
                     {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleDateString() : "never"}
+                    <Show when={token.expiresAt}>
+                      {" "}
+                      · Expires {new Date(token.expiresAt!).toLocaleDateString()}
+                    </Show>
                   </p>
                   <Show when={token.revokedAt}>
                     <p class="text-xs text-red-600">Revoked</p>

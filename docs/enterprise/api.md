@@ -27,7 +27,9 @@ Two mechanisms are accepted:
 | API token      | `Authorization: Bearer mtx_...` |
 
 Create a token from **Account → API tokens** or with `POST /api/v1/account/api-tokens`.
-Tokens are account-scoped; tenant membership checks still apply to every tenant route.
+Tokens can be read-only and/or bound to a single tenant; tenant membership and role
+checks still apply to every tenant route. Tokens created before scoping existed behave as
+read/write tokens for all the owner's tenants.
 
 ```bash
 export MATTRAX_URL=https://mdm.example.com
@@ -103,6 +105,33 @@ curl -s -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/sync" \
 Sync accepts an array of ids and sends APNs pushes to the affected Apple devices when a
 push transport is configured. Declarations themselves are computed on demand when a
 device asks for declaration items; devices also converge at their next check-in.
+
+## Tenant export and import
+
+Tenant owners can download a versioned JSON bundle and import it as a new tenant.
+The bundle contains profile/branding, groups, policies and configuration,
+application metadata, enrollment settings and pre-registrations. It never contains
+APNs/SCEP private keys, token hashes, passwords/sessions or R2 object bytes.
+
+```bash
+# Export (owner only). Add ?includeAudit=true to include recent audit entries.
+curl -s "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/export" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -o tenant-bundle.json
+
+# Import as a new tenant owned by the token's user.
+curl -s -X POST "$MATTRAX_URL/api/v1/tenants/import" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H 'content-type: application/json' \
+  --data-binary @tenant-bundle.json
+```
+
+The import response reports the new `tenantId`, the derived `slug` and counts for
+groups, policies, applications and pre-registrations. Members, devices, audit
+history and SCEP certificates are not imported. Bundles are capped at 8 MB; if the
+exported slug is taken the server appends `-2`, `-3`, and so on. See
+[Self-hosting → Backups](../self-hosting#backups) for the full database/R2 backup
+and restore checklist.
 
 ## Errors
 

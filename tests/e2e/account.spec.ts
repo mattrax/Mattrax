@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("account", () => {
   test("updates the profile and manages API tokens", async ({ page }) => {
@@ -20,10 +20,18 @@ test.describe("account", () => {
       )
       .toBe("Renamed User");
 
-    await page.locator("#token-name").fill("E2E token");
-    await page.getByRole("button", { name: /create token/i }).click();
+    await page
+      .getByRole("button", { name: /create token/i })
+      .first()
+      .click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("#token-name").fill("E2E token");
+    await dialog.locator("#token-scope").selectOption("write");
+    await dialog.locator("#token-expiry").selectOption("90");
+    await dialog.getByRole("button", { name: /create token/i }).click();
     await expect(page.getByText("Copy this token now")).toBeVisible();
     await expect(page.getByText("E2E token").first()).toBeVisible();
+    await expect(page.getByText(/Read & write · All tenants/)).toBeVisible();
 
     const tokens = page.locator("section").filter({ hasText: "API tokens" });
     await tokens
@@ -31,6 +39,44 @@ test.describe("account", () => {
       .first()
       .click();
     await expect(tokens.getByText("Revoked").first()).toBeVisible();
+  });
+
+  test("creates a read-only tenant-bound token and enforces its limits", async ({
+    page,
+    request,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Scoped Token Tenant");
+    const other = await createTenant(page, "Scoped Other Tenant");
+    await gotoHydrated(page, "/account");
+
+    await page
+      .getByRole("button", { name: /create token/i })
+      .first()
+      .click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("#token-name").fill("Read only tenant token");
+    await dialog.locator("#token-scope").selectOption("read");
+    await dialog.locator("#token-tenant").selectOption(tenant.id);
+    await dialog.locator("#token-expiry").selectOption("never");
+    await dialog.getByRole("button", { name: /create token/i }).click();
+
+    const code = page.locator("code").filter({ hasText: /^mtx_/ }).first();
+    const token = (await code.textContent())?.trim();
+    expect(token).toMatch(/^mtx_/);
+    await expect(page.getByText(/Read only · Scoped Token Tenant/)).toBeVisible();
+
+    const headers = { authorization: `Bearer ${token}` };
+    const read = await request.get(`/api/v1/tenants/${tenant.id}/devices`, { headers });
+    expect(read.status()).toBe(200);
+
+    const write = await request.post(`/api/v1/tenants/${tenant.id}/policies`, {
+      headers: { ...headers, "content-type": "application/json" },
+      data: { name: "Should be rejected" },
+    });
+    expect(write.status()).toBe(403);
+
+    const crossTenant = await request.get(`/api/v1/tenants/${other.id}/devices`, { headers });
+    expect(crossTenant.status()).toBe(404);
   });
 });
 

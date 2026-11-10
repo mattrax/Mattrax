@@ -96,6 +96,7 @@ describe("Apple enrollment profile (Fleet parity)", () => {
       topic: "topic",
       organizationId: "org",
       organizationName: "Acme",
+      supportEmail: "help@acme.test",
       challenge: "challenge",
       displayName: "Acme Device Enrollment",
       identifier: "app.acme.enrollment",
@@ -104,8 +105,37 @@ describe("Apple enrollment profile (Fleet parity)", () => {
     expect(profile.PayloadDisplayName).toBe("Acme Device Enrollment");
     expect(profile.PayloadIdentifier).toBe("app.acme.enrollment");
     expect(profile.PayloadOrganization).toBe("Acme");
+    expect(profile.PayloadDescription).toBe(
+      "Enrollment profile for Acme. Contact help@acme.test for support.",
+    );
     expect((profile.PayloadContent[0]!.PayloadContent as Record<string, unknown>).URL).toBe(
       "https://mdm.example.com/mdm/apple/scep",
     );
+  });
+
+  it("keeps stable identifiers when only the branding changes", () => {
+    const base = {
+      origin: "https://mdm.example.com",
+      topic: "topic",
+      organizationId: "org",
+      challenge: "challenge",
+    };
+    const first = buildAppleEnrollmentProfile({ ...base, organizationName: "Acme" });
+    const rebranded = buildAppleEnrollmentProfile({
+      ...base,
+      organizationName: "Acme Corp",
+      supportEmail: "help@acme.test",
+    });
+
+    expect(rebranded.PayloadIdentifier).toBe(first.PayloadIdentifier);
+    expect(rebranded.PayloadUUID).toBe(first.PayloadUUID);
+    expect(rebranded.PayloadContent.map((payload) => payload.PayloadUUID)).toEqual(
+      first.PayloadContent.map((payload) => payload.PayloadUUID),
+    );
+    expect(rebranded.PayloadContent.map((payload) => payload.PayloadIdentifier)).toEqual(
+      first.PayloadContent.map((payload) => payload.PayloadIdentifier),
+    );
+    expect(rebranded.PayloadDisplayName).toBe("Acme Corp Enrollment");
+    expect(rebranded.PayloadOrganization).toBe("Acme Corp");
   });
 });
