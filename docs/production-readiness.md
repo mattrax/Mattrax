@@ -144,6 +144,26 @@ architecture notes in the porting plan.
   [Self-hosting](./self-hosting#backups) now documents the MySQL/R2/secrets
   backup and restore order, key-rotation caveats and bundle limits.
 
+- Stripe billing is wired: `POST /api/v1/billing/webhook` verifies signatures,
+  syncs subscription created/updated/deleted and invoice events, maps Stripe
+  failures to `EnterpriseStripeError`, and returns a clear unconfigured state
+  instead of a 500. Plan/seat enforcement still needs a pricing catalogue.
+- RBAC adds the `auditor` read-only tenant role. Account API tokens can be
+  read-only or read/write and optionally bound to one tenant; tenant data
+  access enforces both the token scope and the user's role.
+- Audit search/export and system lifecycle events are implemented (see above).
+- Tenant branding drives the public enrollment page, Apple profile, DDM
+  organization declaration, invitation emails and whitelabel/self-host configs.
+- Policy assignments support priority, per-group/device include/exclude modes and
+  a device effective-policy preview shared by Apple and Windows delivery.
+- Outbound customer webhooks are implemented with HMAC signatures, event
+  filtering, SSL/private-address guards, delivery history and bounded retries.
+- Credential-expiry alerts now email enabled tenant owners/admins once per
+  threshold per UTC day through the Cloud `EMAIL` binding.
+- The global SCEP CA is sealed at rest and tenant-scoped Windows enrollment,
+  Apple per-device SCEP binding, FileVault recovery-key escrow and installed
+  software inventory are implemented.
+
 ## Observability and rate limiting: exact gaps
 
 - **The edge limiter is optional.** Cloudflare Rate Limiting namespaces are
@@ -170,56 +190,52 @@ architecture notes in the porting plan.
   signup, Pub/Sub handling and policy push are not mounted. Requires a Google
   Cloud project and a managed Android device. Until then Android must stay
   explicitly unavailable.
-- **Federated Entra enrollment.** Tenant-scoped Windows enrollment is done:
-  discovery, policy and enrollment resolve the tenant from a signed URL token,
-  and WSTEP tokens are tenant-bound. Remaining gap: Autopilot/federated Entra
-  enrollment (device-token-based, no user-entered discovery URL) is not
-  implemented. A real Windows device has not yet been validated end to end.
-- **Stripe billing enforcement.** There is no webhook consumer and no
-  subscription writes, so plans/seats are not enforced. Add a signature-verified
-  webhook, subscription upsert and user-facing Stripe errors.
+- **Federated Entra enrollment / Autopilot.** Tenant-scoped Windows enrollment is
+  done (signed discovery token, tenant-bound WSTEP token, certificate
+  revocation). Remaining gap: device-token-based Autopilot/federated Entra
+  enrollment, and end-to-end validation on a real Windows device.
+- **Billing plan/seat enforcement.** Stripe signature-verified webhook ingestion,
+  subscription upsert, optional billing configuration and mapped Stripe errors
+  are implemented. There is still no plan/seat limit catalogue or enforcement
+  against device/tenant counts — that requires a product pricing decision.
 
 ### P1 — operational and enterprise requirements
 
-- **Audit log filtering/export/retention UI.** Backend retention exists; add
-  query params, pagination, CSV/JSON export and system-actor events.
-- **RBAC and scoped API tokens.** Current roles are owner/admin/member;
-  tokens are account-wide. Add read-only/auditor roles, per-resource
-  permissions and tenant/scoped tokens.
 - **Generic SAML SSO and IdP group → role mapping.** Entra OIDC is supported;
   Okta/Google/OneLogin need SAML.
-- **Scheduled/background work for large fleets.** Device policy/group pushes
-  now use bounded concurrency (12 in flight, chunked) and collect per-device
-  outcomes, so one failure no longer aborts the batch. They are still synchronous
-  with the request; move large fan-outs to Queues (or `waitUntil` where a job id
-  can be returned) and track retries.
-- **Entra directory sync at scale.** A tenant lock with stale takeover, per-page
-  transactions, incremental delta cursors and `lastError` reporting are in
-  place. Running the sync as a background job (rather than holding the HTTP
-  request open) and scheduling it automatically remain.
-
-- **Tenant branding.** Use `organization.logo` and a branding profile in the
-  enrollment page, emails, Apple profile and DDM management declaration.
-- **Policy conflict precedence and exclusions.** Assignments are additive; add
-  priority, include/exclude scope and an effective-policy preview for a device.
+- **MFA for administrators.** TOTP/passkey support is not wired into the auth
+  layer. `@yielded/auth` ships the primitives, but tenant/member enforcement and
+  recovery-code persistence still need implementation.
+- **Scheduled/background work for large fleets.** Bounded concurrency (12 in
+  flight, chunked) and per-device outcomes are in place. Large fan-outs are still
+  synchronous with the request; move them to Queues (or `waitUntil` with a job
+  id) and track retries.
+- **Entra directory sync background scheduling.** Locking, stale takeover,
+  per-page transactions, incremental cursors and `lastError` are in place.
+  Running the sync as a scheduled background job remains.
 - **Scheduled backup automation.** MySQL + R2 backup/restore, `AUTH_SECRET`,
   APNs and SCEP CA handling, restore order and tenant export/import limits are
   documented in [self-hosting](./self-hosting#backups), and owners can download
-  or import a tenant bundle. What remains is automation: scheduled dumps and
-  object mirroring, retention/encryption policy, a restore drill and alerting
-  on backup failure.
+  or import a tenant bundle. Remaining: scheduled dumps/object mirroring,
+  retention/encryption policy, restore drills and backup-failure alerting.
 - **Observability and abuse protection.** Structured request logs, request ids,
   readiness checks and multi-bucket rate limiting are in place. Remaining:
   configure the optional shared edge limiters for every bucket, add an error
   tracker/alerting, and cover auth/enrollment with a distributed limiter even on
   deployments without Cloudflare Rate Limiting namespaces.
-- **Outbound timeouts and idempotency.** APNs, Graph, Stripe and relay calls now
-  have deadlines and bounded retries; make webhook/command delivery idempotent
-  so a retried request cannot double-apply a policy or command.
+- **Outbound idempotency.** APNs, Graph, Stripe and relay calls have deadlines
+  and bounded retries; webhook deliveries are signed and retried. Command/policy
+  delivery still needs an end-to-end idempotency key so a retried request cannot
+  double-apply a mutation.
+- **Real-device validation.** Apple `SecurityInfo`/FileVault escrow and
+  `InstalledApplicationList` software inventory are fixture-tested; they still
+  need a real supervised Mac. Windows tenant-scoped WSTEP and Apple per-device
+  SCEP binding also need real-device validation.
 
 ### P2 — product polish
 
-- Outbound customer webhooks for enrollment/compliance events.
 - Android QR/deep-link enrollment once AMAPI delivery lands.
 - Split or serve the large Windows policy catalogue without shipping 17 MB.
-- CSV formula-injection policy and export truncation signalling.
+- Surface push/bulk job summaries to clients through a job id/Queue response.
+- Move health/push/software inventory aggregation from application-side scans to
+  indexed/materialised SQL at very large fleet sizes.
