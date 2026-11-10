@@ -12,5 +12,26 @@ export { makeAppAuth } from "@mattrax/enterprise-domain";
 export type { AppAuthService, AuthLiveOptions } from "./auth.js";
 export { makeEnterpriseAuthLive } from "./enterpriseAuth.js";
 export type { EnterpriseAuthOptions } from "./enterpriseAuth.js";
+export {
+  detectEnrollmentPlatform,
+  evaluateEnrollmentAttempt,
+  ENROLLMENT_ATTEMPT_OUTCOMES,
+  ENROLLMENT_ATTEMPT_PLATFORMS,
+} from "./enrollmentAttempts.js";
+export type {
+  EnrollmentAttemptEvaluation,
+  EnrollmentAttemptOutcome,
+  EnrollmentAttemptPlatform,
+} from "./enrollmentAttempts.js";
 export { runMaintenance } from "./maintenance.js";
 export type { MaintenanceOptions, MaintenanceResult } from "./maintenance.js";
+export {
+  CREDENTIAL_CRITICAL_DAYS,
+  CREDENTIAL_WARNING_DAYS,
+  credentialLevel,
+  daysUntilExpiry,
+  loadCredentialHealth,
+  parseCertificateNotAfter,
+  summarizeDeviceCertificates,
+} from "./credentialHealth.js";
+export type { CredentialHealth } from "./credentialHealth.js";

@@ -1,27 +1,22 @@
 import { Context, Effect, Layer } from "effect";
 import { ScepError } from "./schema.js";
 import { ScepRepository } from "./repository.js";
-import { generateCaKeyPair, exportPrivateKeyJwk, importPrivateKeyJwk } from "./crypto.js";
+import {
+  generateCaKeyPair,
+  exportPrivateKeyJwk,
+  importPrivateKeyJwk,
+  randomCertificateSerial,
+} from "./crypto.js";
 import {
   parseScepPkcsReq,
   createDeviceCertificate,
   createCaCertificate,
   buildScepCertRep,
   buildScepCertFailure,
+  certificateSerialHex,
   certToPem,
   pemToCert,
 } from "./pkcs7.js";
-
-const certificateSerialHex = (certificate: {
-  serialNumber: { valueBlock: { valueHexView?: Uint8Array; valueHex?: ArrayBuffer } };
-}): string => {
-  const view = certificate.serialNumber.valueBlock.valueHexView;
-  const buffer =
-    view ?? new Uint8Array(certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0));
-  return Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .replace(/^0+(?=.)/, "");
-};
 
 const SCEP_CAPS = "Renewal\nSCEPStandard\nSHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
 
@@ -157,7 +152,7 @@ export const ScepService = Layer.effect(
         // Fleet and common SCEP clients.
         const notBefore = new Date(Date.now() - 10 * 60 * 1000);
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
-        const serial = Math.floor(Math.random() * 0x7fffffff);
+        const serial = randomCertificateSerial();
 
         const publicKey = yield* Effect.tryPromise({
           try: () => req.csr.getPublicKey(),

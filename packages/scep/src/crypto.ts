@@ -52,6 +52,22 @@ export const sha256 = (data: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError>
     catch: (cause) => new ScepError({ message: "Failed to hash data", cause }),
   });
 
+/**
+ * A cryptographically-random X.509 serial number.
+ *
+ * 128 bits with the top bit cleared, so the DER INTEGER is always positive and
+ * the serial cannot alias the CA's small fixed serial. This replaces the old
+ * 31-bit `Math.random()` serials, where an accidental collision was plausible
+ * and a collision could overwrite another identity's issuance record.
+ */
+export const randomCertificateSerial = (): ArrayBuffer => {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[0] = bytes[0]! & 0x7f;
+  // X.509 serials must be positive and non-zero.
+  if (bytes.every((byte) => byte === 0)) bytes[bytes.length - 1] = 1;
+  return bytes.buffer;
+};
+
 export const arrayBufferToBase64 = arrayBufferToBase64Raw;
 export const base64ToArrayBuffer = base64ToArrayBufferRaw;
 export const pemEncode = pemEncodeRaw;

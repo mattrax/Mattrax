@@ -14,6 +14,7 @@ import {
   UsersRound,
 } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type { CredentialInfo } from "~/lib/enterprise";
 
 export default function TenantOverviewPage() {
   const params = useParams();
@@ -47,6 +48,42 @@ export default function TenantOverviewPage() {
     queryKey: enterpriseKeys.apns(tenantId()),
     queryFn: () => enterprise.getApns(tenantId()),
   }));
+  const credentials = useQuery(() => ({
+    queryKey: enterpriseKeys.credentialHealth(tenantId()),
+    queryFn: () => enterprise.getCredentialHealth(tenantId()),
+  }));
+
+  const credentialEntries = (): Array<{ label: string; info: CredentialInfo }> => {
+    const data = credentials.data;
+    if (!data) return [];
+    return [
+      { label: "APNs certificate", info: data.apns },
+      { label: "SCEP CA certificate", info: data.scepCa },
+    ];
+  };
+
+  const credentialBadgeClass = (level: CredentialInfo["level"]) => {
+    switch (level) {
+      case "ok":
+        return "border-green-200 bg-green-50 text-green-700";
+      case "warning":
+        return "border-amber-200 bg-amber-50 text-amber-800";
+      case "critical":
+      case "expired":
+        return "border-red-200 bg-red-50 text-red-700";
+      default:
+        return "border-stone-200 bg-stone-50 text-stone-600";
+    }
+  };
+
+  const credentialDays = (info: CredentialInfo) => {
+    if (!info.configured) return "Not configured";
+    if (info.daysLeft == null) return "Expiry unknown";
+    if (info.level === "expired")
+      return info.daysLeft === 0 ? "Expired" : `Expired ${Math.abs(info.daysLeft)}d ago`;
+    if (info.daysLeft === 0) return "Expires today";
+    return `${info.daysLeft} day${info.daysLeft === 1 ? "" : "s"} left`;
+  };
 
   const stats = () => [
     {
@@ -75,31 +112,32 @@ export default function TenantOverviewPage() {
       {
         label: "Healthy",
         value: counts?.healthy ?? 0,
-        href: `/t/${tenantId()}/devices`,
+        href: `/t/${tenantId()}/devices?health=healthy`,
         class: "border-green-200 bg-green-50/60 text-green-800",
       },
       {
         label: "Attention",
         value: counts?.attention ?? 0,
-        href: `/t/${tenantId()}/devices`,
+        href: `/t/${tenantId()}/devices?health=attention`,
         class: "border-amber-200 bg-amber-50/60 text-amber-900",
       },
       {
         label: "Critical",
         value: counts?.critical ?? 0,
-        href: `/t/${tenantId()}/devices`,
+        href: `/t/${tenantId()}/devices?health=critical`,
         class: "border-red-200 bg-red-50/60 text-red-800",
       },
       {
         label: "Stale (7d)",
         value: counts?.stale ?? 0,
-        href: `/t/${tenantId()}/devices?staleDays=7`,
+        // The health summary derives staleness with the same 7-day threshold.
+        href: `/t/${tenantId()}/devices?health=stale`,
         class: "border-stone-200 bg-stone-50 text-stone-700",
       },
       {
         label: "Unknown",
         value: counts?.unknown ?? 0,
-        href: `/t/${tenantId()}/devices`,
+        href: `/t/${tenantId()}/devices?health=unknown`,
         class: "border-stone-200 bg-stone-50 text-stone-700",
       },
     ];
@@ -152,8 +190,8 @@ export default function TenantOverviewPage() {
           <div>
             <h2 class="text-sm font-semibold text-stone-900">Device health</h2>
             <p class="mt-1 text-sm text-muted-foreground">
-              Compliance rollup from enrollment, check-in freshness, declarations, storage, and
-              identity state.
+              Compliance rollup from enrollment, check-in freshness, declaration health, encryption
+              and battery posture, and identity state.
             </p>
           </div>
           <Button size="sm" variant="ghost" onClick={() => navigate(`/t/${tenantId()}/devices`)}>
@@ -249,6 +287,78 @@ export default function TenantOverviewPage() {
           </div>
         </section>
       </div>
+
+      <section class="rounded-xl border bg-card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-semibold text-stone-900">Credentials</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Apple push and SCEP signing certificates, plus device identity expiry.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigate(`/t/${tenantId()}/settings/management`)}
+          >
+            Manage credentials
+          </Button>
+        </div>
+        <Show
+          when={credentials.data}
+          fallback={
+            <Show
+              when={credentials.isError}
+              fallback={<p class="mt-3 text-sm text-muted-foreground">Loading credentials…</p>}
+            >
+              <QueryError
+                error={credentials.error}
+                class="mt-3"
+                onRetry={() => void credentials.refetch()}
+              />
+            </Show>
+          }
+        >
+          <ul class="mt-4 divide-y rounded-lg border">
+            <For each={credentialEntries()}>
+              {(entry) => (
+                <li class="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                  <span class="font-medium text-stone-900">{entry.label}</span>
+                  <span class="flex items-center gap-2 text-xs">
+                    <Show when={entry.info.expiresAt}>
+                      <span class="text-muted-foreground">
+                        expires{" "}
+                        {new Date(entry.info.expiresAt!).toLocaleDateString(undefined, {
+                          dateStyle: "medium",
+                        })}
+                      </span>
+                    </Show>
+                    <span
+                      class={`rounded-full border px-2 py-0.5 ${credentialBadgeClass(entry.info.level)}`}
+                    >
+                      {credentialDays(entry.info)}
+                    </span>
+                  </span>
+                </li>
+              )}
+            </For>
+            <li class="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+              <span class="font-medium text-stone-900">Device identity certificates</span>
+              <span class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                  {credentials.data!.deviceCertificates.expiringSoon} expiring in 30d
+                </span>
+                <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700">
+                  {credentials.data!.deviceCertificates.expired} expired
+                </span>
+                <span class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
+                  {credentials.data!.deviceCertificates.revoked} revoked
+                </span>
+              </span>
+            </li>
+          </ul>
+        </Show>
+      </section>
 
       <section class="rounded-xl border bg-card">
         <div class="flex items-center justify-between border-b px-5 py-4">

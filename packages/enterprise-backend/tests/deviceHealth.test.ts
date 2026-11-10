@@ -150,6 +150,69 @@ describe("deriveDeviceHealth", () => {
     expect(critical.reasons.map((reason) => reason.code)).toContain("disk_critical");
   });
 
+  it("flags FileVault only on macOS devices", () => {
+    const mac = deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(1),
+      now,
+      proto: "apple",
+      model: "MacBook Pro",
+      osEdition: "macOS",
+      fileVaultEnabled: false,
+    });
+    expect(mac.level).toBe("attention");
+    expect(mac.reasons).toContainEqual(
+      expect.objectContaining({ code: "filevault_disabled", severity: "warning" }),
+    );
+
+    const ios = deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(1),
+      now,
+      proto: "apple",
+      model: "iPhone 15",
+      osEdition: "iOS",
+      fileVaultEnabled: false,
+    });
+    expect(ios.level).toBe("healthy");
+
+    const encrypted = deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(1),
+      now,
+      proto: "apple",
+      model: "MacBook Pro",
+      osEdition: "macOS",
+      fileVaultEnabled: true,
+    });
+    expect(encrypted.level).toBe("healthy");
+  });
+
+  it("warns when the battery needs service", () => {
+    const service = deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(1),
+      now,
+      proto: "apple",
+      model: "MacBook Air",
+      osEdition: "macOS",
+      batteryHealth: "Service Recommended",
+    });
+    expect(service.level).toBe("attention");
+    expect(service.reasons).toContainEqual(
+      expect.objectContaining({ code: "battery_service", severity: "warning" }),
+    );
+
+    const good = deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(1),
+      now,
+      proto: "apple",
+      batteryHealth: "Good",
+    });
+    expect(good.level).toBe("healthy");
+  });
+
   it("reports unknown when the enrollment status is missing or unrecognised", () => {
     expect(deriveDeviceHealth({ lastSeenAt: daysAgo(1), now }).level).toBe("unknown");
     expect(deriveDeviceHealth({ status: "mystery", lastSeenAt: daysAgo(1), now }).level).toBe(

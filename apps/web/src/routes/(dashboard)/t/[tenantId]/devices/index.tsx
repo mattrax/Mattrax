@@ -13,7 +13,12 @@ import {
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
-import { enterprise, enterpriseKeys, type DeviceRow } from "~/lib/enterprise";
+import {
+  enterprise,
+  enterpriseKeys,
+  type DeviceHealthFilter,
+  type DeviceRow,
+} from "~/lib/enterprise";
 
 const PAGE_SIZE = 50;
 
@@ -26,20 +31,44 @@ const rowGroups = (row: DeviceRow) =>
 export default function DevicesPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const requestedStale =
-    searchParams.staleDays === "7" ||
-    searchParams.staleDays === "30" ||
-    searchParams.staleDays === "90"
-      ? searchParams.staleDays
-      : "";
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [q, setQ] = createSignal("");
-  const [debouncedQ, setDebouncedQ] = createSignal("");
-  const [status, setStatus] = createSignal<DeviceRow["status"] | "">("");
-  const [proto, setProto] = createSignal<DeviceRow["proto"] | "">("");
-  const [groupId, setGroupId] = createSignal("");
-  const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(requestedStale);
+  const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const initialStatus = (): DeviceRow["status"] | "" => {
+    const value = param(searchParams.status);
+    return value === "enrolling" ||
+      value === "enrolled" ||
+      value === "unenrolling" ||
+      value === "unenrolled"
+      ? value
+      : "";
+  };
+  const initialProto = (): DeviceRow["proto"] | "" => {
+    const value = param(searchParams.proto);
+    return value === "apple" || value === "win" || value === "android" ? value : "";
+  };
+  const initialStale = (): "" | "7" | "30" | "90" => {
+    const value = param(searchParams.staleDays);
+    return value === "7" || value === "30" || value === "90" ? value : "";
+  };
+  const initialHealth = (): DeviceHealthFilter | "" => {
+    const value = param(searchParams.health);
+    return value === "healthy" ||
+      value === "attention" ||
+      value === "critical" ||
+      value === "unknown" ||
+      value === "stale"
+      ? value
+      : "";
+  };
+
+  const [q, setQ] = createSignal(param(searchParams.q) ?? "");
+  const [debouncedQ, setDebouncedQ] = createSignal(param(searchParams.q) ?? "");
+  const [status, setStatus] = createSignal<DeviceRow["status"] | "">(initialStatus());
+  const [proto, setProto] = createSignal<DeviceRow["proto"] | "">(initialProto());
+  const [groupId, setGroupId] = createSignal(param(searchParams.groupId) ?? "");
+  const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
+  const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [sort, setSort] = createSignal<MdmSortState>({ id: "name", dir: "asc" });
   const [page, setPage] = createSignal(0);
   const [exporting, setExporting] = createSignal(false);
@@ -59,12 +88,80 @@ export default function DevicesPage() {
     },
   );
 
+  // Mirror the active filters into the URL so reload, back/forward and shared
+  // links reproduce the same view. `replace` avoids a history entry per change.
+  // Skip the initial run: the signals were seeded from the URL, so rewriting it
+  // would start a redundant navigation (and delay other settled work).
+  let urlInitialised = false;
+  createEffect(
+    () => ({
+      q: debouncedQ(),
+      status: status(),
+      proto: proto(),
+      groupId: groupId(),
+      staleDays: staleDays(),
+      health: health(),
+    }),
+    (state) => {
+      if (!urlInitialised) {
+        urlInitialised = true;
+        return;
+      }
+      const next: Record<string, string> = {};
+      if (state.q) next.q = state.q;
+      if (state.status) next.status = state.status;
+      if (state.proto) next.proto = state.proto;
+      if (state.groupId) next.groupId = state.groupId;
+      if (state.staleDays) next.staleDays = state.staleDays;
+      if (state.health) next.health = state.health;
+      setSearchParams(next, { replace: true });
+    },
+  );
+  // Keep the controls in sync when the URL changes from back/forward or a link.
+  // Comparisons happen in the tracking scope; the effect only writes signals.
+  createEffect(
+    () => {
+      const urlQ = param(searchParams.q) ?? "";
+      const urlStatus = initialStatus();
+      const urlProto = initialProto();
+      const urlGroup = param(searchParams.groupId) ?? "";
+      const urlStale = initialStale();
+      const urlHealth = initialHealth();
+      return {
+        q: urlQ,
+        qChanged: urlQ !== q(),
+        status: urlStatus,
+        statusChanged: urlStatus !== status(),
+        proto: urlProto,
+        protoChanged: urlProto !== proto(),
+        groupId: urlGroup,
+        groupChanged: urlGroup !== groupId(),
+        staleDays: urlStale,
+        staleChanged: urlStale !== staleDays(),
+        health: urlHealth,
+        healthChanged: urlHealth !== health(),
+      };
+    },
+    (state) => {
+      if (state.qChanged) {
+        setQ(state.q);
+        setDebouncedQ(state.q);
+      }
+      if (state.statusChanged) setStatus(state.status);
+      if (state.protoChanged) setProto(state.proto);
+      if (state.groupChanged) setGroupId(state.groupId);
+      if (state.staleChanged) setStaleDays(state.staleDays);
+      if (state.healthChanged) setHealth(state.health);
+    },
+  );
+
   const filters = () => ({
     q: debouncedQ() || undefined,
     status: status() || undefined,
     proto: proto() || undefined,
     groupId: groupId() || undefined,
     staleDays: staleDays() ? Number(staleDays()) : undefined,
+    health: health() || undefined,
     sort: (sort()?.id ?? "name") as "name" | "lastSeenAt" | "enrolledAt" | "status",
     direction: sort()?.dir ?? ("asc" as const),
   });
@@ -99,7 +196,8 @@ export default function DevicesPage() {
       if (page > last) setPage(last);
     },
   );
-  const hasFilters = () => Boolean(debouncedQ() || status() || proto() || groupId() || staleDays());
+  const hasFilters = () =>
+    Boolean(debouncedQ() || status() || proto() || groupId() || staleDays() || health());
   const clearFilters = () => {
     setQ("");
     setDebouncedQ("");
@@ -107,7 +205,11 @@ export default function DevicesPage() {
     setProto("");
     setGroupId("");
     setStaleDays("");
+    setHealth("");
     setPage(0);
+    // Write immediately as well as through the mirror effect so clearing is
+    // reflected even if a signal happened to already hold an empty value.
+    setSearchParams({}, { replace: true });
   };
 
   const exportCsv = async () => {
@@ -209,6 +311,22 @@ export default function DevicesPage() {
               {groups.data?.rows.map((group) => (
                 <option value={group.id}>{group.name}</option>
               ))}
+            </select>
+            <select
+              class={selectClass}
+              aria-label="Filter by health"
+              value={health()}
+              onChange={(event) => {
+                setHealth(event.currentTarget.value as DeviceHealthFilter | "");
+                setPage(0);
+              }}
+            >
+              <option value="">Any health</option>
+              <option value="healthy">Healthy</option>
+              <option value="attention">Attention</option>
+              <option value="critical">Critical</option>
+              <option value="stale">Stale (7d)</option>
+              <option value="unknown">Unknown</option>
             </select>
             <select
               class={selectClass}

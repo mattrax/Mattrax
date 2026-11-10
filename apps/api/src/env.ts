@@ -40,7 +40,10 @@ const ApiEnvSchema = Schema.Struct({
    * `ORIGIN` is loopback, or when `DEV_MAILBOX_ALLOW_REMOTE=true` is also set.
    */
   DEV_MAILBOX: Schema.optional(nonEmptyString),
-  /** Explicit opt-in for exposing the debug mailbox on a non-loopback origin. */
+  /**
+   * Explicit opt-in for exposing the debug mailbox on a non-loopback origin.
+   * Only honoured together with a non-empty `DEV_MAILBOX_SECRET`.
+   */
   DEV_MAILBOX_ALLOW_REMOTE: Schema.optional(nonEmptyString),
   /** Optional shared secret required in `x-dev-mailbox-secret`. */
   DEV_MAILBOX_SECRET: Schema.optional(nonEmptyString),

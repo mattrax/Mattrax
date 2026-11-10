@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -18,6 +18,10 @@ export default function EnrollmentSettingsPage() {
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(params.tenantId),
     queryFn: () => enterprise.getApns(params.tenantId),
+  }));
+  const attempts = useQuery(() => ({
+    queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
+    queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
   }));
 
   const [edit, setEdit] = createSignal(false);
@@ -210,9 +214,99 @@ export default function EnrollmentSettingsPage() {
           </Show>
         </CardContent>
       </Card>
+
+      <Card class="xl:col-span-2">
+        <CardHeader>
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle>Enrollment activity</CardTitle>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Recent visits to this tenant's enrollment link. Retained for 30 days.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void attempts.refetch()}
+              disabled={attempts.isFetching}
+            >
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Show
+            when={(attempts.data?.attempts.length ?? 0) > 0}
+            fallback={
+              <p class="text-sm text-muted-foreground">
+                {attempts.isPending
+                  ? "Loading enrollment activity…"
+                  : "No enrollment attempts recorded yet."}
+              </p>
+            }
+          >
+            <ul class="divide-y rounded-lg border">
+              <For each={attempts.data?.attempts ?? []}>
+                {(attempt) => (
+                  <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                    <span
+                      class={`rounded-full border px-2 py-0.5 text-xs font-medium ${outcomeClass(attempt.outcome)}`}
+                    >
+                      {outcomeLabel(attempt.outcome)}
+                    </span>
+                    <span class="font-medium text-stone-800">
+                      {platformLabel(attempt.platform)}
+                    </span>
+                    <span class="text-muted-foreground">{attempt.detail ?? "—"}</span>
+                    <span class="ml-auto whitespace-nowrap text-xs text-muted-foreground">
+                      {formatAttemptTime(attempt.createdAt)}
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <ErrorText error={attempts.error} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
+const outcomeStyles: Record<string, string> = {
+  ok: "border-green-200 bg-green-50 text-green-700",
+  bad_code: "border-amber-200 bg-amber-50 text-amber-800",
+  disabled: "border-stone-200 bg-stone-50 text-stone-600",
+  limit: "border-amber-200 bg-amber-50 text-amber-800",
+  no_apns: "border-red-200 bg-red-50 text-red-700",
+  scep_error: "border-red-200 bg-red-50 text-red-700",
+  other: "border-stone-200 bg-stone-50 text-stone-600",
+};
+
+const outcomeLabels: Record<string, string> = {
+  ok: "Success",
+  bad_code: "Bad password",
+  disabled: "Disabled",
+  limit: "Device limit",
+  no_apns: "APNs missing",
+  scep_error: "SCEP error",
+  other: "Other",
+};
+
+const outcomeClass = (outcome: string) => outcomeStyles[outcome] ?? outcomeStyles.other;
+const outcomeLabel = (outcome: string) => outcomeLabels[outcome] ?? outcome;
+const platformLabel = (platform: string) =>
+  platform === "apple"
+    ? "Apple"
+    : platform === "win"
+      ? "Windows"
+      : platform === "android"
+        ? "Android"
+        : "Unknown device";
+const formatAttemptTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
 
 function ReadinessRow(props: { label: string; value: string; active: boolean }) {
   return (

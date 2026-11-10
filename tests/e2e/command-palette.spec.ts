@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, createTenant } from "./helpers";
+import { api, bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("command palette", () => {
   test("opens with Cmd+K, navigates, and remembers entities", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Palette Tenant");
     await createTenant(page, "Palette Extra");
 
-    await page.goto(`/t/${tenant.id}/devices`, { waitUntil: "networkidle" });
-    await page.waitForTimeout(500);
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    // The global shortcut is registered from `onSettled`, which runs after the
+    // first router transition settles — slightly after the hydration flag.
+    await page.waitForTimeout(1000);
     await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
     const input = page.locator('input[placeholder*="Search devices"]');
     await expect(input).toBeVisible();
@@ -16,8 +18,16 @@ test.describe("command palette", () => {
     await page.getByRole("button", { name: /Tenant settings/i }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/settings`));
 
+    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Quarterly Ops" }),
+    });
     await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
     await expect(input).toBeVisible();
+    await input.fill("Quarterly");
+    // Entity results come from the server search endpoint after the debounce.
+    await expect(page.getByRole("button", { name: /Quarterly Ops/i })).toBeVisible();
+
     await page.keyboard.press("Escape");
     await expect(input).toBeHidden();
   });

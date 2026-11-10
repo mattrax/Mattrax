@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   Laptop,
@@ -39,25 +39,36 @@ export function CommandPalette() {
   const params = useParams();
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
+  const [debouncedQuery, setDebouncedQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
   const [recents, setRecents] = createSignal(readRecents());
   const tenantId = () => params.tenantId;
   const base = () => (tenantId() ? `/t/${tenantId()}` : "");
+  const SEARCH_LIMIT = 30;
 
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "device"),
-    queryFn: () => enterprise.list(tenantId(), "device"),
-    enabled: open() && Boolean(tenantId()),
-  }));
-  const groups = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "group"),
-    queryFn: () => enterprise.list(tenantId(), "group"),
-    enabled: open() && Boolean(tenantId()),
-  }));
-  const policies = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "policy"),
-    queryFn: () => enterprise.list(tenantId(), "policy"),
-    enabled: open() && Boolean(tenantId()),
+  const [truncated, setTruncated] = createSignal(false);
+  // Debounce in the input handler (not an effect) so the palette's global
+  // shortcut setup is not delayed by derived work.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const updateQuery = (value: string) => {
+    setQuery(value);
+    setActive(0);
+    setTruncated(false);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setDebouncedQuery(value.trim()), 200);
+  };
+  onCleanup(() => clearTimeout(searchTimer));
+  const results = useQuery(() => ({
+    queryKey: enterpriseKeys.search(tenantId(), debouncedQuery(), SEARCH_LIMIT),
+    queryFn: async () => {
+      const result = await enterprise.search(tenantId(), {
+        q: debouncedQuery(),
+        limit: SEARCH_LIMIT,
+      });
+      setTruncated((result.rows?.length ?? 0) >= SEARCH_LIMIT);
+      return result;
+    },
+    enabled: open() && Boolean(tenantId()) && debouncedQuery().length > 0,
   }));
 
   const navigation = createMemo<Item[]>(() => [
@@ -110,38 +121,43 @@ export function CommandPalette() {
     { id: "nav-account", label: "Account", group: "Navigation", href: "/account", icon: Settings },
   ]);
 
-  const items = createMemo<Item[]>(() => {
-    const term = query().trim().toLowerCase();
-    const all: Item[] = [...navigation()];
-    if (tenantId()) {
-      for (const row of devices.data?.rows ?? [])
-        all.push({
+  const serverItems = createMemo<Item[]>(() => {
+    const id = tenantId();
+    // Reading `.data` before the query settles is a pending async read in this
+    // Solid version and would abort the palette subtree.
+    if (!id || results.status !== "success") return [];
+    return (results.data?.rows ?? []).map((row) => {
+      if ("proto" in row)
+        return {
           id: `device-${row.id}`,
           label: row.name,
           hint: [row.serial, row.model].filter(Boolean).join(" · ") || row.id,
           group: "Devices",
-          href: `/t/${tenantId()}/devices/${row.id}`,
+          href: `/t/${id}/devices/${row.id}`,
           icon: Laptop,
-        });
-      for (const row of groups.data?.rows ?? [])
-        all.push({
+        };
+      if ("devicesCount" in row)
+        return {
           id: `group-${row.id}`,
           label: row.name,
           hint: `${row.devicesCount ?? 0} devices`,
           group: "Groups",
-          href: `/t/${tenantId()}/groups/${row.id}`,
+          href: `/t/${id}/groups/${row.id}`,
           icon: UsersRound,
-        });
-      for (const row of policies.data?.rows ?? [])
-        all.push({
-          id: `policy-${row.id}`,
-          label: row.name,
-          hint: "Policy",
-          group: "Policies",
-          href: `/t/${tenantId()}/policies/${row.id}`,
-          icon: ShieldCheck,
-        });
-    }
+        };
+      return {
+        id: `policy-${row.id}`,
+        label: row.name,
+        hint: "Policy",
+        group: "Policies",
+        href: `/t/${id}/policies/${row.id}`,
+        icon: ShieldCheck,
+      };
+    });
+  });
+
+  const items = createMemo<Item[]>(() => {
+    const term = query().trim().toLowerCase();
     if (!term) {
       const recentItems = recents().map((item) => ({
         ...item,
@@ -152,11 +168,12 @@ export function CommandPalette() {
             : ShieldCheck) as Item["icon"],
       }));
       const seen = new Set(recentItems.map((item) => item.id));
-      return [...recentItems, ...all.filter((item) => !seen.has(item.id))];
+      return [...recentItems, ...navigation().filter((item) => !seen.has(item.id))];
     }
-    return all.filter(
+    const navMatches = navigation().filter(
       (item) => item.label.toLowerCase().includes(term) || item.hint?.toLowerCase().includes(term),
     );
+    return [...navMatches, ...serverItems()];
   });
 
   const grouped = createMemo(() => {
@@ -184,6 +201,8 @@ export function CommandPalette() {
     remember(item);
     setOpen(false);
     setQuery("");
+    setDebouncedQuery("");
+    setTruncated(false);
     navigate(item.href);
   };
 
@@ -247,10 +266,7 @@ export function CommandPalette() {
             <input
               ref={input}
               value={query()}
-              onInput={(event) => {
-                setQuery(event.currentTarget.value);
-                setActive(0);
-              }}
+              onInput={(event) => updateQuery(event.currentTarget.value)}
               placeholder="Search devices, groups, policies, or pages…"
               class="flex-1 bg-transparent text-sm outline-none"
             />
@@ -310,7 +326,9 @@ export function CommandPalette() {
           </div>
           <div class="flex items-center justify-between border-t px-4 py-2 text-[11px] text-muted-foreground">
             <span>↑↓ navigate · ↵ open</span>
-            <span>⌘K to toggle</span>
+            <Show when={truncated()} fallback={<span>⌘K to toggle</span>}>
+              <span>Showing first {SEARCH_LIMIT} matches</span>
+            </Show>
           </div>
         </div>
       </div>

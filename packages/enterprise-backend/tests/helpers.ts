@@ -56,20 +56,44 @@ const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
   if (!query) return true;
   let index = 0;
-  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(=|in|is null)(?:\s*\((.*?)\))?/gi;
+  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
+  const comparable = (value: unknown): any => {
+    if (value instanceof Date) return value.getTime();
+    // Drizzle serialises `datetime` parameters as SQL strings rather than Date
+    // objects, so normalise date-looking strings before relational compares.
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+      const parsed = Date.parse(value.replace(" ", "T") + "Z");
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return value;
+  };
   for (const match of query.sql.matchAll(regex)) {
     const column = camel(match[2]);
     const key = match[1] ? `${match[1]}.${column}` : column;
     const actual = key in row ? row[key] : (row[column] ?? row[match[2]]);
-    if (match[3].toLowerCase() === "is null") {
+    const operator = match[3].toLowerCase();
+    if (operator === "is null") {
       if (actual != null) return false;
-    } else if (match[3].toLowerCase() === "in") {
+    } else if (operator === "in") {
       const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
       const values = query.params.slice(index, index + count);
       index += count;
       if (!values.includes(actual)) return false;
-    } else if (actual !== query.params[index++]) {
-      return false;
+    } else if (operator === "=") {
+      if (actual !== query.params[index++]) return false;
+    } else {
+      const expected = query.params[index++];
+      const left = comparable(actual) as number | string;
+      const right = comparable(expected) as number | string;
+      const passes =
+        operator === "<"
+          ? left < right
+          : operator === "<="
+            ? left <= right
+            : operator === ">"
+              ? left > right
+              : left >= right;
+      if (!passes) return false;
     }
   }
   return true;
@@ -198,6 +222,13 @@ class SelectBuilder {
 
   [Symbol.iterator]() {
     return Effect.sync(() => this.execute())[Symbol.iterator]();
+  }
+
+  /** Allow `select(...).pipe(Effect.mapError(...))`, as Drizzle's builder does. */
+  pipe(...operators: Array<(value: any) => any>) {
+    let value: any = Effect.sync(() => this.execute());
+    for (const operator of operators) value = operator(value);
+    return value;
   }
 
   private joinRows() {

@@ -50,13 +50,15 @@ export const timingSafeStringEqual = (left: string, right: string) => {
 export type DevMailboxConfig = {
   readonly DEV_MAILBOX?: string;
   readonly DEV_MAILBOX_ALLOW_REMOTE?: string;
+  readonly DEV_MAILBOX_SECRET?: string;
 };
 
 /**
  * The debug mailbox captures live verification/reset links, so it is only
  * available on an explicitly local deployment. `DEV_MAILBOX=true` alone must
  * never enable it in production; a non-loopback origin also requires the
- * separate `DEV_MAILBOX_ALLOW_REMOTE=true` opt-in.
+ * separate `DEV_MAILBOX_ALLOW_REMOTE=true` opt-in **and** a non-empty
+ * `DEV_MAILBOX_SECRET`, otherwise the endpoint would be unauthenticated.
  */
 export const isDevMailboxEnabled = (
   config: DevMailboxConfig,
@@ -64,7 +66,7 @@ export const isDevMailboxEnabled = (
   requestUrl: string,
 ) => {
   if (config.DEV_MAILBOX !== "true") return false;
-  if (config.DEV_MAILBOX_ALLOW_REMOTE === "true") return true;
+  if (config.DEV_MAILBOX_ALLOW_REMOTE === "true") return Boolean(config.DEV_MAILBOX_SECRET?.trim());
   let requestHost: string;
   try {
     requestHost = new URL(requestUrl).hostname;

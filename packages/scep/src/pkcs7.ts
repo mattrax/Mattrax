@@ -819,8 +819,22 @@ export async function createCaCertificate(
   return cert;
 }
 
+/**
+ * Canonical hex form of a certificate serial, used as the issued-certificate
+ * primary key. Leading zero bytes are stripped but the serial is never empty.
+ */
+export function certificateSerialHex(certificate: pkijs.Certificate): string {
+  const buffer =
+    certificate.serialNumber.valueBlock.valueHexView ??
+    new Uint8Array(certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0));
+  return Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .replace(/^0+(?=.)/, "");
+}
+
 export async function createDeviceCertificate(
-  serial: number,
+  /** A small numeric test value or a wide cryptographically-random serial. */
+  serial: number | ArrayBuffer,
   subject: string | Array<{ type: string; value: string }>,
   publicKey: CryptoKey,
   caCert: pkijs.Certificate,
@@ -829,7 +843,10 @@ export async function createDeviceCertificate(
 ): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
-  cert.serialNumber = new asn1js.Integer({ value: serial });
+  cert.serialNumber =
+    typeof serial === "number"
+      ? new asn1js.Integer({ value: serial })
+      : new asn1js.Integer({ valueHex: serial });
 
   cert.issuer = caCert.subject;
 

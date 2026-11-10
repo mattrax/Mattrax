@@ -19,7 +19,10 @@ import type { Stripe } from "@mattrax/effect-stripe";
 import { and, asc, count, desc, eq, inArray, isNull, like, lt, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
-import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
+import {
+  certificateDeviceIdsFor,
+  enterpriseEnrollmentProfile,
+} from "@mattrax/management-backend-enterprise";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { parseMobileconfigPreview } from "./mobileconfig.ts";
@@ -44,7 +47,14 @@ import {
   type DeviceSearchFilters,
 } from "./deviceSearch.ts";
 import { canEnrollDevice } from "./enrollmentLimit.ts";
+import {
+  detectEnrollmentPlatform,
+  evaluateEnrollmentAttempt,
+  type EnrollmentAttemptOutcome,
+  type EnrollmentAttemptPlatform,
+} from "./enrollmentAttempts.ts";
 import { countDeviceHealth, deriveDeviceHealth, normalizeDeviceHealth } from "./deviceHealth.ts";
+import { loadCredentialHealth } from "./credentialHealth.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
@@ -114,6 +124,14 @@ const isEffectStripeClient = (
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const ok = { status: "ok" as const };
+
+/** Render the stored capability JSON for CSV export without losing entries. */
+const capabilityText = (value: unknown): string => {
+  if (value == null) return "";
+  if (Array.isArray(value)) return value.map((entry) => String(entry)).join("; ");
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+};
 
 const headersFromRequest = (request: HttpServerRequest) => {
   const headers = new Headers();
@@ -466,6 +484,11 @@ export const createEnterpriseService = ({
     osBuild: row.osBuild,
     diskTotal: row.diskTotal,
     diskUsed: row.diskUsed,
+    fileVaultEnabled: row.fileVaultEnabled,
+    batteryHealth: row.batteryHealth,
+    capabilities: row.capabilities,
+    modelNumber: row.modelNumber,
+    inventoryUpdatedAt: row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : null,
   });
 
   const deviceDeclarationsFor = (deviceId: string) =>
@@ -474,14 +497,23 @@ export const createEnterpriseService = ({
       .from(schema.deviceDeclaration)
       .where(eq(schema.deviceDeclaration.deviceId, deviceId));
 
-  const deviceCertificatesFor = (organizationId: string, deviceId: string) =>
+  type CertificateDevice = Pick<EnterpriseDevice, "id" | "dmIdentifier">;
+
+  const certificateIdsForDevices = (devices: ReadonlyArray<CertificateDevice>) => [
+    ...new Set(devices.flatMap((device) => certificateDeviceIdsFor(device))),
+  ];
+
+  const deviceCertificatesFor = (organizationId: string, device: CertificateDevice) =>
     db
       .select()
       .from(schema.scepIssuedCertificate)
       .where(
         and(
           eq(schema.scepIssuedCertificate.organizationId, organizationId),
-          eq(schema.scepIssuedCertificate.deviceId, deviceId),
+          // Newly issued rows are keyed by the internal `device.id`; legacy
+          // Windows rows used the DeviceID (`device.dmIdentifier`). Both must
+          // resolve so health and revocation work across upgrades.
+          inArray(schema.scepIssuedCertificate.deviceId, certificateDeviceIdsFor(device)),
         ),
       )
       .orderBy(desc(schema.scepIssuedCertificate.createdAt));
@@ -491,8 +523,12 @@ export const createEnterpriseService = ({
    * Returns the number of certificates that changed state. Tenant scoping is
    * applied in SQL so a crafted device id cannot revoke another tenant's certs.
    */
-  const revokeDeviceCertificates = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+  const revokeDeviceCertificates = (
+    organizationId: string,
+    devices: ReadonlyArray<CertificateDevice>,
+  ) =>
     Effect.gen(function* () {
+      const deviceIds = certificateIdsForDevices(devices);
       if (deviceIds.length === 0) return 0;
       const active = yield* db
         .select({ serial: schema.scepIssuedCertificate.serial })
@@ -500,7 +536,7 @@ export const createEnterpriseService = ({
         .where(
           and(
             eq(schema.scepIssuedCertificate.organizationId, organizationId),
-            inArray(schema.scepIssuedCertificate.deviceId, [...deviceIds]),
+            inArray(schema.scepIssuedCertificate.deviceId, deviceIds),
             isNull(schema.scepIssuedCertificate.revokedAt),
           ),
         );
@@ -512,7 +548,7 @@ export const createEnterpriseService = ({
         .where(
           and(
             eq(schema.scepIssuedCertificate.organizationId, organizationId),
-            inArray(schema.scepIssuedCertificate.deviceId, [...deviceIds]),
+            inArray(schema.scepIssuedCertificate.deviceId, deviceIds),
             isNull(schema.scepIssuedCertificate.revokedAt),
           ),
         );
@@ -520,7 +556,18 @@ export const createEnterpriseService = ({
     });
 
   const rowDeviceHealth = (
-    device: Pick<EnterpriseDevice, "status" | "lastSeenAt" | "diskTotal" | "diskUsed">,
+    device: Pick<
+      EnterpriseDevice,
+      | "status"
+      | "lastSeenAt"
+      | "diskTotal"
+      | "diskUsed"
+      | "proto"
+      | "model"
+      | "osEdition"
+      | "fileVaultEnabled"
+      | "batteryHealth"
+    >,
     declarations: ReadonlyArray<{
       readonly identifier?: string;
       readonly declarationType?: string;
@@ -535,6 +582,11 @@ export const createEnterpriseService = ({
       declarations,
       diskTotal: device.diskTotal,
       diskUsed: device.diskUsed,
+      proto: device.proto,
+      model: device.model,
+      osEdition: device.osEdition,
+      fileVaultEnabled: device.fileVaultEnabled,
+      batteryHealth: device.batteryHealth,
     });
 
   const rowCertificate = (row: typeof schema.scepIssuedCertificate.$inferSelect) => ({
@@ -641,6 +693,49 @@ export const createEnterpriseService = ({
       );
     });
 
+  /**
+   * Append an enrollment diagnostic. Diagnostics must never break enrollment,
+   * so every failure (including a malformed table in a half-migrated
+   * deployment) is swallowed.
+   */
+  const recordEnrollmentAttempt = (input: {
+    readonly organizationId: string;
+    readonly enrollmentId: string;
+    readonly platform: EnrollmentAttemptPlatform;
+    readonly outcome: EnrollmentAttemptOutcome;
+    readonly detail?: string;
+    readonly ip?: string | null;
+    readonly userAgent?: string | null;
+  }) =>
+    Effect.catchCause(
+      Effect.gen(function* () {
+        let ipHash: string | null = null;
+        if (input.ip) {
+          // Salted so the truncated digest cannot be reversed across
+          // deployments that share an address space.
+          const bytes = new TextEncoder().encode(`${authSecret ?? "enrollment"}:${input.ip}`);
+          ipHash = (yield* sha256Hex(
+            bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength,
+            ) as ArrayBuffer,
+          )).slice(0, 32);
+        }
+        yield* db.insert(schema.enrollmentAttempt).values({
+          id: id(),
+          organizationId: input.organizationId,
+          enrollmentId: input.enrollmentId,
+          platform: input.platform,
+          outcome: input.outcome,
+          detail: input.detail?.slice(0, 255) ?? null,
+          ipHash,
+          userAgent: input.userAgent?.slice(0, 255) ?? null,
+          createdAt: now(),
+        });
+      }),
+      () => Effect.void,
+    );
+
   const requireApnsSecret = () =>
     Effect.gen(function* () {
       if (!authSecret)
@@ -695,6 +790,40 @@ export const createEnterpriseService = ({
               .from(schema.groupDevice)
               .where(eq(schema.groupDevice.groupId, filters.groupId)),
           ),
+        );
+      }
+      if (filters.health) {
+        // Health is derived from declarations and inventory fields, not a
+        // stored column. Resolving the matching ids in application code keeps
+        // the filter exactly consistent with the dashboard counts.
+        const devices = yield* db
+          .select()
+          .from(schema.device)
+          .where(eq(schema.device.organizationId, organizationId));
+        const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
+        const declarations = deviceIds.length
+          ? yield* db
+              .select()
+              .from(schema.deviceDeclaration)
+              .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
+          : [];
+        const byDevice = new Map<string, Array<any>>();
+        for (const declaration of declarations) {
+          const list = byDevice.get(declaration.deviceId) ?? [];
+          list.push(declaration);
+          byDevice.set(declaration.deviceId, list);
+        }
+        const matching = devices
+          .filter((device: EnterpriseDevice) => {
+            const health = rowDeviceHealth(device, byDevice.get(device.id) ?? []);
+            return filters.health === "stale" ? health.stale : health.level === filters.health;
+          })
+          .map((device: EnterpriseDevice) => device.id);
+        conditions.push(
+          matching.length > 0
+            ? inArray(schema.device.id, matching)
+            : // A sentinel id keeps the generated SQL valid when nothing matches.
+              eq(schema.device.id, "__no_matching_health__"),
         );
       }
       return and(...conditions);
@@ -1626,7 +1755,15 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
         return ok;
       }),
-    getEnrollment: (enrollmentId, code) =>
+    getEnrollment: (
+      enrollmentId,
+      code,
+      options?: {
+        readonly platform?: string | null;
+        readonly ip?: string | null;
+        readonly userAgent?: string | null;
+      },
+    ) =>
       Effect.gen(function* () {
         const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
           where: { id: enrollmentId },
@@ -1638,8 +1775,23 @@ export const createEnterpriseService = ({
         });
         if (!organization)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
-        if (enrollment.code && enrollment.code !== code)
+
+        const platform = detectEnrollmentPlatform(options?.userAgent, options?.platform);
+        const record = (outcome: EnrollmentAttemptOutcome, detail: string): Effect.Effect<void> =>
+          recordEnrollmentAttempt({
+            organizationId: organization.id,
+            enrollmentId: enrollment.id,
+            platform,
+            outcome,
+            detail,
+            ip: options?.ip,
+            userAgent: options?.userAgent,
+          });
+
+        if (enrollment.code && enrollment.code !== code) {
+          yield* record("bad_code", "The enrollment password did not match");
           return { name: organization.name, authenticated: false as const };
+        }
 
         const apns = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: organization.id },
@@ -1649,35 +1801,68 @@ export const createEnterpriseService = ({
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
         const enabled = canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
-        const challenge = yield* Effect.tryPromise({
-          try: () =>
-            createScepChallenge(enrollment.id, authSecret ?? "", {
-              // Enrollment profiles are shareable links; allow a week before
-              // the challenge goes stale, without a schema migration.
-              ttlSeconds: 7 * 24 * 60 * 60,
+
+        // Only create a SCEP challenge when the Apple branch is actually
+        // usable. A failure is reported as a platform error instead of failing
+        // the whole enrollment page, and is recorded for administrators.
+        let challenge: string | null = null;
+        let appleScepFailed = false;
+        if (enabled && enrollment.enabledApple && apns?.topic) {
+          challenge = yield* Effect.tryPromise({
+            try: () =>
+              createScepChallenge(enrollment.id, authSecret ?? "", {
+                // Enrollment profiles are shareable links; allow a week before
+                // the challenge goes stale, without a schema migration.
+                ttlSeconds: 7 * 24 * 60 * 60,
+              }),
+            catch: (cause) =>
+              new EnterpriseBadRequest({ message: "Could not create the SCEP challenge" }),
+          }).pipe(
+            Effect.match({
+              onFailure: () => {
+                appleScepFailed = true;
+                return null;
+              },
+              onSuccess: (value: string) => value,
             }),
-          catch: (cause) =>
-            new EnterpriseBadRequest({ message: "Could not create the SCEP challenge" }),
+          );
+        }
+
+        const evaluation = evaluateEnrollmentAttempt({
+          platform,
+          limitReached: !enabled,
+          appleEnabled: enrollment.enabledApple,
+          windowsEnabled: enrollment.enabledWindows,
+          androidEnabled: enrollment.enabledAndroid,
+          apnsConfigured: Boolean(apns?.topic),
+          appleScepFailed,
         });
+        yield* record(evaluation.outcome, evaluation.detail);
+
         return {
           name: organization.name,
           authenticated: true as const,
           apple:
             !enabled || !enrollment.enabledApple
               ? { error: "Apple enrollment is disabled! Contact your administrator." }
-              : apns?.topic
-                ? {
-                    profile: yield* serializePlist(
-                      enterpriseEnrollmentProfile({
-                        origin,
-                        topic: apns.topic,
-                        organizationId: organization.id,
-                        organizationName: organization.name,
-                        challenge,
-                      }),
-                    ),
-                  }
-                : { error: "Apple management is not configured! Contact your administrator." },
+              : !apns?.topic
+                ? { error: "Apple management is not configured! Contact your administrator." }
+                : appleScepFailed || !challenge
+                  ? {
+                      error:
+                        "Apple enrollment is temporarily unavailable! Contact your administrator.",
+                    }
+                  : {
+                      profile: yield* serializePlist(
+                        enterpriseEnrollmentProfile({
+                          origin,
+                          topic: apns.topic,
+                          organizationId: organization.id,
+                          organizationName: organization.name,
+                          challenge,
+                        }),
+                      ),
+                    },
           windows:
             !enabled || !enrollment.enabledWindows
               ? { error: "Windows enrollment is disabled! Contact your administrator." }
@@ -1699,6 +1884,28 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const enrollment = yield* getOrCreateEnrollment(ctx.organization.id);
         return rowEnrollment(enrollment);
+      }),
+    listEnrollmentAttempts: (request, tenantId, query = {}) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const requested = Number((query as { limit?: unknown }).limit ?? 50);
+        const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 50, 1), 200);
+        const attempts = yield* db
+          .select()
+          .from(schema.enrollmentAttempt)
+          .where(eq(schema.enrollmentAttempt.organizationId, ctx.organization.id))
+          .orderBy(desc(schema.enrollmentAttempt.createdAt))
+          .limit(limit);
+        return {
+          attempts: attempts.map((attempt: any) => ({
+            id: attempt.id,
+            enrollmentId: attempt.enrollmentId,
+            platform: attempt.platform,
+            outcome: attempt.outcome,
+            detail: attempt.detail,
+            createdAt: iso(attempt.createdAt),
+          })),
+        };
       }),
     patchTenantEnrollment: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -1890,7 +2097,20 @@ export const createEnterpriseService = ({
     deleteDevices: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, ids);
+        // Resolve the rows first: revocation also has to match certificates
+        // recorded against the legacy `dmIdentifier`, not just the row id.
+        const devices = ids.length
+          ? ((yield* db
+              .select()
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.organizationId, ctx.organization.id),
+                  inArray(schema.device.id, [...ids]),
+                ),
+              )) as Array<EnterpriseDevice>)
+          : [];
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, devices);
         if (ids.length > 0)
           yield* db
             .delete(schema.device)
@@ -2120,7 +2340,7 @@ export const createEnterpriseService = ({
         // linked to a device id (the SCEP challenge is tenant-scoped), so this
         // covers Windows/enrolled identities; the explicit revoke action is
         // available for the rest.
-        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [deviceId]);
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device]);
         yield* audit(ctx, "device.unenrolled", "device", deviceId, {
           revokedCertificates: revoked,
         });
@@ -2135,7 +2355,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const declarations = yield* deviceDeclarationsFor(device.id);
-        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device.id);
+        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
         return {
           health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
           declarations: declarations.map(rowDeclaration),
@@ -2167,6 +2387,11 @@ export const createEnterpriseService = ({
         );
         return { counts: countDeviceHealth(summaries) };
       }),
+    getCredentialHealth: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        return yield* loadCredentialHealth(db, ctx.organization.id, now());
+      }),
     revokeDeviceIdentity: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -2175,7 +2400,7 @@ export const createEnterpriseService = ({
         });
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device.id);
+        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
         if (certificates.length === 0)
           return yield* Effect.fail(
             new EnterpriseConflict({
@@ -2183,7 +2408,7 @@ export const createEnterpriseService = ({
                 "No issued identity certificates are recorded for this device. Apple SCEP identities are tenant-scoped, so they cannot be revoked per device.",
             }),
           );
-        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device.id]);
+        const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device]);
         yield* audit(ctx, "device.identity_revoked", "device", device.id, {
           revokedCertificates: revoked,
         });
@@ -3182,17 +3407,21 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
         const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        // Fetch one extra row so truncation is detected without a second count
+        // query; the extra row is never written to the CSV.
         const rows = yield* db
           .select()
           .from(schema.device)
           .where(where)
           .orderBy(...deviceOrder(filters))
-          .limit(DEVICE_EXPORT_MAX_ROWS);
+          .limit(DEVICE_EXPORT_MAX_ROWS + 1);
+        const truncated = rows.length > DEVICE_EXPORT_MAX_ROWS;
+        const exportedRows = truncated ? rows.slice(0, DEVICE_EXPORT_MAX_ROWS) : rows;
         const groups = yield* deviceGroupsFor(
           ctx.organization.id,
-          rows.map((row) => row.id),
+          exportedRows.map((row) => row.id),
         );
-        return toCsv(
+        const csv = toCsv(
           [
             "Name",
             "Serial",
@@ -3204,9 +3433,14 @@ export const createEnterpriseService = ({
             "Last seen",
             "Enrolled at",
             "Asset tag",
+            "Model number",
+            "FileVault",
+            "Battery health",
+            "Capabilities",
+            "Inventory updated",
             "Groups",
           ],
-          rows.map((row) => [
+          exportedRows.map((row) => [
             row.name,
             row.serial,
             row.model,
@@ -3217,9 +3451,19 @@ export const createEnterpriseService = ({
             iso(row.lastSeenAt),
             iso(row.enrolledAt),
             row.assetTag,
+            row.modelNumber,
+            row.fileVaultEnabled === null || row.fileVaultEnabled === undefined
+              ? ""
+              : row.fileVaultEnabled
+                ? "Enabled"
+                : "Disabled",
+            row.batteryHealth,
+            capabilityText(row.capabilities),
+            row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : "",
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
           ]),
         );
+        return { csv, truncated, rowCount: exportedRows.length };
       }),
     getDevice: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -3451,12 +3695,25 @@ export const enterpriseHandlers = (
         service.removeTenantUser(request, params.tenantId, params.memberId),
       ),
     )
-    .handle("getEnrollment", ({ params, query }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.getEnrollment(params.id, query.code)),
+    .handle("getEnrollment", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) => {
+        const headers = request.headers as Record<string, string | undefined>;
+        const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
+        return service.getEnrollment(params.id, query.code, {
+          platform: query.platform,
+          ip: headers["cf-connecting-ip"] ?? forwarded,
+          userAgent: headers["user-agent"],
+        });
+      }),
     )
     .handle("getTenantEnrollment", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getTenantEnrollment(request, params.tenantId),
+      ),
+    )
+    .handle("listEnrollmentAttempts", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listEnrollmentAttempts(request, params.tenantId, query),
       ),
     )
     .handle("patchTenantEnrollment", ({ request, params, payload }) =>
@@ -3495,13 +3752,17 @@ export const enterpriseHandlers = (
     )
     .handleRaw("exportDevices", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        Effect.map(service.exportDevices(request, params.tenantId, query), (csv: string) =>
-          HttpServerResponse.text(csv, {
-            contentType: "text/csv; charset=utf-8",
-            headers: {
-              "Content-Disposition": `attachment; filename="devices-${new Date().toISOString().slice(0, 10)}.csv"`,
-            },
-          }),
+        Effect.map(
+          service.exportDevices(request, params.tenantId, query),
+          (result: { csv: string; truncated: boolean; rowCount: number }) =>
+            HttpServerResponse.text(result.csv, {
+              contentType: "text/csv; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="devices-${new Date().toISOString().slice(0, 10)}.csv"`,
+                ...(result.truncated ? { "X-Export-Truncated": "true" } : {}),
+                "X-Export-Rows": String(result.rowCount),
+              },
+            }),
         ),
       ),
     )
@@ -3553,6 +3814,11 @@ export const enterpriseHandlers = (
     .handle("getDeviceHealthSummary", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDeviceHealthSummary(request, params.tenantId),
+      ),
+    )
+    .handle("getCredentialHealth", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getCredentialHealth(request, params.tenantId),
       ),
     )
     .handle("listGroups", ({ request, params }) =>

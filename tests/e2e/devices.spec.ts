@@ -50,7 +50,7 @@ test.describe("device fleet management", () => {
     expect(response.headers()["content-type"]).toContain("text/csv");
     expect(response.headers()["content-disposition"]).toContain("attachment");
     expect(await response.text()).toBe(
-      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Groups\r\n",
+      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Model number,FileVault,Battery health,Capabilities,Inventory updated,Groups\r\n",
     );
 
     // The toolbar action downloads a dated CSV file.
@@ -85,6 +85,21 @@ test.describe("device fleet management", () => {
     await expect(page.getByRole("heading", { name: "Device health", exact: true })).toBeVisible();
     for (const label of ["Healthy", "Attention", "Critical", "Stale (7d)", "Unknown"])
       await expect(page.getByText(label, { exact: true })).toBeVisible();
+
+    // Credential monitoring is tenant-scoped too.
+    const credentials = await api<{
+      apns: { configured: boolean; level: string };
+      scepCa: { configured: boolean; level: string };
+      deviceCertificates: { total: number };
+    }>(page, `/api/v1/tenants/${tenant.id}/credential-health`);
+    expect(credentials.apns).toMatchObject({ configured: false, level: "missing" });
+    expect(credentials.scepCa.level).toMatch(/missing|ok/);
+    expect(credentials.deviceCertificates.total).toBe(0);
+    await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+    const missingCredentials = await page.request.get(
+      "/api/v1/tenants/not-a-real-tenant/credential-health",
+    );
+    expect(missingCredentials.status()).toBe(404);
 
     // A tenant the caller cannot see is rejected rather than leaking counts.
     const missing = await page.request.get("/api/v1/tenants/not-a-real-tenant/device-health");

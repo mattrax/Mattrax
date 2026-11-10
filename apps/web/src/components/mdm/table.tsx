@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Button } from "~/components/ui/button";
 import {
@@ -129,6 +129,22 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     }
     return result;
   });
+
+  /**
+   * Selection is scoped to the visible row set. When a filter, page or search
+   * changes the visible ids, ids that are no longer on screen must not linger
+   * in the action bar. Re-ordering the same ids keeps the selection.
+   */
+  createEffect(
+    () =>
+      rows()
+        .map((row) => row.id)
+        .sort()
+        .join("\u0000"),
+    () => {
+      setSelected({});
+    },
+  );
 
   const selectedRows = createMemo(() => rows().filter((row) => selected()[row.id]));
   const allSelected = () => rows().length > 0 && selectedRows().length === rows().length;

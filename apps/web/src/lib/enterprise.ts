@@ -26,15 +26,23 @@ export type {
   ApnsInfo,
   AuditLogEntry,
   BillingSummary,
+  CredentialHealthResponse,
+  CredentialInfo,
+  CredentialLevel,
+  DeviceCertificateCounts,
   DeviceCertificateInfo,
   DeviceHealth,
   DeviceHealthCounts,
+  DeviceHealthFilter,
   DeviceHealthReason,
   DeviceHealthResponse,
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
   DownloadPolicyApplicationResponse as PolicyApplicationDownload,
+  EnrollmentAttempt,
+  EnrollmentAttemptOutcome,
+  EnrollmentAttemptPlatform,
   EnrollmentResponse,
   Entity,
   GroupNode,
@@ -76,6 +84,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-health", tenantId ?? "", id ?? ""] as const,
   deviceHealthSummary: (tenantId: RouteParam) =>
     ["enterprise", "device-health-summary", tenantId ?? ""] as const,
+  credentialHealth: (tenantId: RouteParam) =>
+    ["enterprise", "credential-health", tenantId ?? ""] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
     ["enterprise", "item", tenantId ?? "", entity, id ?? ""] as const,
   users: (tenantId: RouteParam) => ["enterprise", "tenant-users", tenantId ?? ""] as const,
@@ -84,6 +94,10 @@ export const enterpriseKeys = {
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
+  enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
+    ["enterprise", "enrollment-attempts", tenantId ?? "", limit] as const,
+  search: (tenantId: RouteParam, term: string, limit = 30) =>
+    ["enterprise", "search", tenantId ?? "", term, limit] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
   sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
@@ -205,6 +219,9 @@ export const enterprise = {
         never
       >;
     }),
+  /** Tenant-scoped device/group/policy search used by the command palette. */
+  search: (tenantId: RouteParam, query: { q?: string; limit?: number } = {}) =>
+    endpoint((api) => api.search({ params: { tenantId: required(tenantId, "tenantId") }, query })),
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
@@ -292,6 +309,10 @@ export const enterprise = {
   getDeviceHealthSummary: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getDeviceHealthSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getCredentialHealth: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getCredentialHealth({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
   revokeDeviceIdentity: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
@@ -577,6 +598,13 @@ export const enterprise = {
   resetTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.resetTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listEnrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
+    endpoint((api) =>
+      api.listEnrollmentAttempts({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query: { limit },
+      }),
     ),
   uploadApns: (tenantId: RouteParam, payload: { email: string; cert: string }) =>
     endpoint((api) =>

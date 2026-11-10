@@ -28,8 +28,17 @@ architecture notes in the porting plan.
   Group detail loads only its own devices.
 - `maxDevices = 0` means unlimited, and the enrollment page shows the Windows
   discovery URL and an accurate Android availability state.
-- Device health rolls up enrollment state, last-seen age, declaration failures
-  and disk pressure, with a tenant dashboard summary and device detail card.
+- Device health rolls up enrollment state, last-seen age, declaration failures,
+  FileVault and battery condition, reported disk pressure, and identity state,
+  with a tenant dashboard summary and device detail card.
+- DDM status items are persisted as device inventory (FileVault, battery health,
+  model number, client capabilities, disk usage) with a tolerant parser for
+  nested and flattened keys, exposed through the API, device detail and CSV
+  export.
+- Credential monitoring summarizes APNs and SCEP CA expiry with days-left
+  badges on the tenant dashboard and a `GET /v1/tenants/:tenantId/credential-health`
+  endpoint. Daily maintenance writes one audit event per tenant per expiry
+  threshold (30/7/expired) per day; there is no email delivery yet.
 - SCEP identities can be revoked per device; unenrollment/deletion revokes
   device-scoped certificates and renewal rejects revoked identities.
 
@@ -79,6 +88,9 @@ architecture notes in the porting plan.
 - **Observability and abuse protection.** Add structured request logs, error
   tracking, dependency readiness checks and shared rate limiting for
   auth/SCEP/MDM/enrollment endpoints.
+- **Credential expiry notifications.** Daily maintenance records an audit event
+  per tenant/threshold, but no email is sent. Wire the audit event to the
+  owner/admin mailbox once delivery dedupe is centralized.
 - **Outbound timeouts and idempotency.** Add `AbortSignal.timeout` to APNs,
   Graph, Stripe and relay calls; make webhook/command delivery retry-safe.
 

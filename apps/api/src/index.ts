@@ -234,7 +234,11 @@ const makeAppLayer = (env: Env, request: Request) => {
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
   const devMailbox = isDevMailboxEnabled(
-    env as unknown as { DEV_MAILBOX?: string; DEV_MAILBOX_ALLOW_REMOTE?: string },
+    env as unknown as {
+      DEV_MAILBOX?: string;
+      DEV_MAILBOX_ALLOW_REMOTE?: string;
+      DEV_MAILBOX_SECRET?: string;
+    },
     env.ORIGIN,
     request.url,
   );

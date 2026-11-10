@@ -63,6 +63,34 @@ test.describe("device enrollment", () => {
     await expect(page.getByText(/Android enrollment isn't available yet/i)).toBeVisible();
   });
 
+  test("shows recent enrollment activity with outcome badges", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Activity Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+    await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
+      method: "PATCH",
+      body: JSON.stringify({ code: "secret-code" }),
+    });
+
+    // A wrong password is recorded as a diagnostic before the page redirects.
+    const denied = await api<{ authenticated: boolean }>(
+      page,
+      `/api/v1/enrollment/${enrollment.id}?code=wrong`,
+    );
+    expect(denied.authenticated).toBe(false);
+
+    await gotoHydrated(page, `/t/${tenant.id}/settings/enrollment`);
+    await expect(page.getByText("Enrollment activity")).toBeVisible();
+    await expect(page.getByText("Bad password")).toBeVisible();
+  });
+
+  test("health cards open the matching device filter", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Health Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}`);
+    await page.getByRole("button", { name: /Critical/ }).click();
+    await expect(page).toHaveURL(/health=critical/);
+    await expect(page.getByLabel("Filter by health")).toHaveValue("critical");
+  });
+
   test("saves maxDevices=0 as unlimited", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Unlimited Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/enrollment`);

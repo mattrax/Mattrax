@@ -25,6 +25,12 @@ export type DeviceHealthInput = {
   readonly declarations?: ReadonlyArray<DeviceHealthDeclaration>;
   readonly diskTotal?: string | number | null;
   readonly diskUsed?: string | number | null;
+  /** Device platform (`apple`, `win`, `android`) for platform-specific rules. */
+  readonly proto?: string | null;
+  readonly model?: string | null;
+  readonly osEdition?: string | null;
+  readonly fileVaultEnabled?: boolean | null;
+  readonly batteryHealth?: string | null;
   /** Injectable clock so the derivation stays pure and testable. */
   readonly now?: Date;
   readonly staleAfterDays?: number;
@@ -97,6 +103,32 @@ const declarationName = (declaration: DeviceHealthDeclaration) =>
 
 const ACTIVE_DECLARATION_TYPES = new Set(["configurations", "activations"]);
 const KNOWN_STATUSES = new Set(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
+
+const NON_MAC_OS = /(ios|ipados|tvos|watchos|visionos|android|windows)/i;
+
+/**
+ * FileVault is a macOS feature. Only macOS reports the DDM FileVault status
+ * item, so a non-null value is already a strong signal, but the OS/model check
+ * keeps the rule honest if a client ever reports a default `false`.
+ */
+export const isMacOsDevice = (input: {
+  readonly proto?: string | null;
+  readonly model?: string | null;
+  readonly osEdition?: string | null;
+}): boolean => {
+  const edition = input.osEdition?.trim() ?? "";
+  if (/macos/i.test(edition)) return true;
+  if (NON_MAC_OS.test(edition)) return false;
+  const model = input.model?.trim() ?? "";
+  if (model) return /mac/i.test(model);
+  return input.proto === "apple";
+};
+
+/** Battery conditions that mean the battery needs service or replacement. */
+export const needsBatteryService = (batteryHealth: string | null | undefined): boolean => {
+  if (!batteryHealth) return false;
+  return /(service|replace|poor)/i.test(batteryHealth);
+};
 
 /**
  * Derive a device's compliance/health rollup.
@@ -189,6 +221,22 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
       );
     else if (ratio >= 0.9)
       reasons.push(reason("disk_low", `Storage is running low (${percent}% used)`, "warning"));
+  }
+
+  if (input.fileVaultEnabled === false && isMacOsDevice(input)) {
+    reasons.push(
+      reason("filevault_disabled", "FileVault disk encryption is turned off", "warning"),
+    );
+  }
+
+  if (needsBatteryService(input.batteryHealth)) {
+    reasons.push(
+      reason(
+        "battery_service",
+        `Battery health needs attention: ${input.batteryHealth}`,
+        "warning",
+      ),
+    );
   }
 
   const level: DeviceHealthLevel =

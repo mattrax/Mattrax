@@ -142,7 +142,7 @@ describe("Windows enterprise backend", () => {
 
   it("issues a short-lived policy and a verifiable enrollment token", async () => {
     const { backend } = await setup();
-    const policy = await run(backend.getWindowsEnrollmentPolicy("untrusted-client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
 
     expect(policy.minimalKeyLength).toBe("2048");
     expect(policy.certificateValidityPeriodSeconds).toBe("31536000");
@@ -152,9 +152,31 @@ describe("Windows enterprise backend", () => {
     expect(verification!.subject).toBeTruthy();
   });
 
+  it("rejects forged or expired Mattrax policy tokens but allows opaque first-enrollment credentials", async () => {
+    const { backend } = await setup();
+    // The WSTEP policy request carries an opaque client credential before any
+    // Mattrax token exists; that first-enrollment path must keep working.
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy("opaque-wstep-client-credential")),
+    ).resolves.toMatchObject({ authToken: expect.any(String) });
+
+    // A token in our format that fails verification is not a first enrollment.
+    const forged = await createWindowsEnrollmentToken("subject", "wrong-secret");
+    await expect(run(backend.getWindowsEnrollmentPolicy(forged))).rejects.toMatchObject({
+      _tag: "UnknownDevice",
+    });
+
+    const expired = await createWindowsEnrollmentToken("subject", authSecret, {
+      now: Date.now() - 2 * 60 * 60 * 1000,
+    });
+    await expect(run(backend.getWindowsEnrollmentPolicy(expired))).rejects.toMatchObject({
+      _tag: "UnknownDevice",
+    });
+  });
+
   it("enrolls a CSR, issues a client-auth certificate and creates a device", async () => {
     const { backend, db, ca } = await setup();
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     const csr = await makeCsr();
     const result = await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, csr)));
 
@@ -190,17 +212,34 @@ describe("Windows enterprise backend", () => {
       vendor: "Microsoft",
       dmIdentifier: "device-1",
     });
+
+    // Linkage: the certificate must be recorded against the internal device
+    // row id, not the Windows DeviceID, or revocation/health/renewal miss it.
+    const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
+    expect(certificates).toHaveLength(1);
+    expect(certificates[0]!.deviceId).toBe(devices[0]!.id);
+    expect(certificates[0]!.deviceId).not.toBe(devices[0]!.dmIdentifier);
+    expect(certificates[0]!.organizationId).toBe("org-early");
+
+    // Wide, positive ASN.1 serial from the CSR signer.
+    const serialBytes = certificate.serialNumber.valueBlock.valueHexView;
+    expect(serialBytes.byteLength).toBeGreaterThanOrEqual(8);
+    expect(serialBytes[0]! & 0x80).toBe(0);
   });
 
   it("updates an existing device instead of inserting a duplicate", async () => {
     const { backend, db } = await setup();
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("FIRST"))));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("SECOND"))));
 
     const devices = dbRows(db, tableName(schema.device));
     expect(devices).toHaveLength(1);
     expect(devices[0]!.name).toBe("DESKTOP-TEST");
+    const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
+    expect(certificates).toHaveLength(2);
+    for (const certificate of certificates) expect(certificate.deviceId).toBe(devices[0]!.id);
+    expect(certificates[0]!.serial).not.toBe(certificates[1]!.serial);
   });
 
   it("rejects forged and expired enrollment tokens", async () => {
@@ -241,7 +280,7 @@ describe("Windows enterprise backend", () => {
 
   it("returns no commands for management check-in and updates lastSeenAt", async () => {
     const { backend, db } = await setup();
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
     const old = new Date("2020-01-01T00:00:00Z");
@@ -268,7 +307,7 @@ describe("Windows enterprise backend", () => {
 
   it("requires a matching client certificate when configured", async () => {
     const { backend } = await setup({ requireDeviceIdentity: true });
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
     await expect(
@@ -361,7 +400,7 @@ describe("Windows enterprise backend", () => {
 
   it("pins Windows devices to a configured tenant", async () => {
     const { backend, db } = await setup({ windowsOrganizationId: "org-late" });
-    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
     expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");

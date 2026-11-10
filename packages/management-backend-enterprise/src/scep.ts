@@ -12,6 +12,11 @@ import {
 const isJsonWebKey = (value: unknown): value is JsonWebKey =>
   typeof value === "object" && value !== null;
 
+const databaseError =
+  (message: string) =>
+  (cause: unknown): ScepError =>
+    cause instanceof ScepError ? cause : new ScepError({ message, cause });
+
 const processEnvSecret = (): string | undefined => {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
     ?.env;
@@ -69,6 +74,35 @@ export class ScepRepositoryLive extends ScepRepository {
         };
       });
 
+    /**
+     * Renewal rows may reference the internal `device.id` (new issuance) or the
+     * Windows DeviceID / Apple UDID in `device.dmIdentifier` (legacy issuance).
+     * Try the internal id first so a dmIdentifier that happens to equal another
+     * row's id cannot shadow the intended device.
+     */
+    const findDeviceForCertificate = (organizationId: string, identifier: string) =>
+      Effect.gen(function* () {
+        const [byId] = yield* db
+          .select({ status: schema.device.status })
+          .from(schema.device)
+          .where(
+            and(eq(schema.device.organizationId, organizationId), eq(schema.device.id, identifier)),
+          )
+          .limit(1);
+        if (byId) return byId;
+        const [byDmIdentifier] = yield* db
+          .select({ status: schema.device.status })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, organizationId),
+              eq(schema.device.dmIdentifier, identifier),
+            ),
+          )
+          .limit(1);
+        return byDmIdentifier ?? null;
+      });
+
     return ScepRepository.of({
       getCa: () =>
         Effect.gen(function* () {
@@ -106,31 +140,55 @@ export class ScepRepositoryLive extends ScepRepository {
 
       authenticatePkcsReq,
       recordIssuedCertificate: (certificate) =>
-        db
-          .insert(schema.scepIssuedCertificate)
-          .values({
-            serial: certificate.serial,
-            organizationId: certificate.organizationId,
-            enrollmentId: certificate.enrollmentId ?? null,
-            deviceId: certificate.deviceId ?? null,
-            notAfter: certificate.notAfter,
-            createdAt: new Date(),
-          })
-          .onDuplicateKeyUpdate({
-            set: {
+        Effect.gen(function* () {
+          const [existing] = yield* db
+            .select()
+            .from(schema.scepIssuedCertificate)
+            .where(eq(schema.scepIssuedCertificate.serial, certificate.serial))
+            .limit(1);
+
+          if (!existing) {
+            yield* db.insert(schema.scepIssuedCertificate).values({
+              serial: certificate.serial,
               organizationId: certificate.organizationId,
               enrollmentId: certificate.enrollmentId ?? null,
               deviceId: certificate.deviceId ?? null,
               notAfter: certificate.notAfter,
-              // A reused serial has been reissued, so it is valid again.
-              revokedAt: null,
-            },
-          })
-          .pipe(
-            Effect.mapError(
-              (cause) => new ScepError({ message: "Failed to record certificate", cause }),
-            ),
+              createdAt: new Date(),
+            });
+            return;
+          }
+
+          // A serial is a global primary key, so a duplicate is either a retry
+          // of the same identity or a collision. Only refresh the same identity;
+          // overwriting another tenant/device would make its renewals
+          // authenticate as the wrong identity.
+          const sameDevice = (existing.deviceId ?? null) === (certificate.deviceId ?? null);
+          if (existing.organizationId !== certificate.organizationId || !sameDevice) {
+            return yield* Effect.fail(
+              new ScepError({
+                message:
+                  "SCEP serial number collision: refusing to overwrite another identity's certificate",
+              }),
+            );
+          }
+          yield* db
+            .update(schema.scepIssuedCertificate)
+            .set({
+              enrollmentId: certificate.enrollmentId ?? null,
+              notAfter: certificate.notAfter,
+              // `revokedAt` is intentionally preserved. A duplicate serial is a
+              // replay or collision, not proof that the identity is trusted
+              // again, so it must never silently un-revoke a certificate.
+            })
+            .where(eq(schema.scepIssuedCertificate.serial, certificate.serial));
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof ScepError
+              ? cause
+              : new ScepError({ message: "Failed to record certificate", cause }),
           ),
+        ),
       findIssuedCertificate: (serial) =>
         Effect.gen(function* () {
           const [row] = yield* db
@@ -154,21 +212,11 @@ export class ScepRepositoryLive extends ScepRepository {
             );
           }
           if (row.deviceId) {
-            const [device] = yield* db
-              .select({ status: schema.device.status })
-              .from(schema.device)
-              .where(
-                and(
-                  eq(schema.device.id, row.deviceId),
-                  eq(schema.device.organizationId, row.organizationId),
-                ),
-              )
-              .limit(1)
-              .pipe(
-                Effect.mapError(
-                  (cause) => new ScepError({ message: "Failed to read device", cause }),
-                ),
-              );
+            // New rows store the internal `device.id`; legacy Windows rows
+            // store the DeviceID (`device.dmIdentifier`). Accept both.
+            const device = yield* findDeviceForCertificate(row.organizationId, row.deviceId).pipe(
+              Effect.mapError(databaseError("Failed to read device")),
+            );
             if (!device || device.status !== "enrolled") {
               return yield* Effect.fail(
                 new ScepError({

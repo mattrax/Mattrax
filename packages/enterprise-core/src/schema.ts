@@ -376,6 +376,46 @@ export const auditLog = mysqlTable(
   ],
 );
 
+/**
+ * One diagnostic record per public enrollment-link visit. Attempts are
+ * append-only and short-lived (pruned by maintenance), and never contain the
+ * enrollment password or a raw client IP.
+ */
+export const enrollmentAttempt = mysqlTable(
+  "enrollment_attempt",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * The enrollment row id at the time of the attempt. Deliberately not a
+     * foreign key: resetting an enrollment replaces its primary key, and old
+     * attempts should keep pointing at the identifier that was used.
+     */
+    enrollmentId: id("enrollment_id").notNull(),
+    platform: varchar("platform", {
+      length: 16,
+      enum: ["apple", "win", "android", "unknown"],
+    })
+      .notNull()
+      .default("unknown"),
+    outcome: varchar("outcome", {
+      length: 16,
+      enum: ["ok", "bad_code", "disabled", "limit", "no_apns", "scep_error", "other"],
+    }).notNull(),
+    /** Short, secret-free explanation suitable for the activity list. */
+    detail: shortText("detail"),
+    /** Truncated SHA-256 of the client IP, salted with the deployment secret. */
+    ipHash: varchar("ip_hash", { length: 64 }),
+    userAgent: shortText("user_agent"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("enrollment_attempt_organization_created_idx").on(table.organizationId, table.createdAt),
+  ],
+);
+
 export const enterpriseEnrollment = mysqlTable("enterprise_enrollment", {
   id: id().primaryKey(),
   organizationId: id("organization_id")
@@ -420,6 +460,16 @@ export const device = mysqlTable(
     osBuild: shortText("os_build"),
     diskTotal: shortText("disk_total"),
     diskUsed: shortText("disk_used"),
+    /** FileVault state as reported by the DDM `diskmanagement.filevault.enabled` status item. */
+    fileVaultEnabled: boolean("filevault_enabled"),
+    /** Normalised battery condition from `device.power.battery-health`. */
+    batteryHealth: shortText("battery_health"),
+    /** Client capability list reported by `management.client-capabilities`. */
+    capabilities: json("capabilities"),
+    /** Hardware model number (for example `MLH12LL/A`) from `device.model.number`. */
+    modelNumber: shortText("model_number"),
+    /** When the DDM inventory status items were last ingested. */
+    inventoryUpdatedAt: timestamp("inventory_updated_at"),
     dmIdentifier: shortText("dm_identifier"),
     dmCertHash: shortText("dm_cert_hash"),
     /**

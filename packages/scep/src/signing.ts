@@ -3,6 +3,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
 import { base64ToArrayBuffer, importPrivateKeyJwk } from "@mattrax/crypto";
+import { randomCertificateSerial } from "./crypto.js";
 import { certToPem, createDeviceCertificate, pemToCert } from "./pkcs7.js";
 
 /**
@@ -114,7 +115,7 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
       const extensions = options.deviceId ? [microsoftDeviceIdExtension(options.deviceId)] : [];
 
       const certificate = await createDeviceCertificate(
-        Math.floor(Math.random() * 0x7fffffff),
+        randomCertificateSerial(),
         subject,
         await csr.getPublicKey(),
         caCert,

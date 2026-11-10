@@ -1,6 +1,7 @@
 import { Effect } from "effect";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
 
 export type MaintenanceOptions = {
   /** Injectable clock for tests. Defaults to `new Date()`. */
@@ -12,6 +13,13 @@ export type MaintenanceOptions = {
    * Set to `0` to disable audit retention (entries are kept indefinitely).
    */
   readonly auditRetentionDays?: number;
+  /**
+   * Enrollment-attempt diagnostics older than this many days are deleted.
+   * Defaults to 30. Set to `0` to keep them indefinitely.
+   */
+  readonly enrollmentAttemptRetentionDays?: number;
+  /** Disable credential-expiry alerts (for example in tests). Defaults to true. */
+  readonly credentialAlerts?: boolean;
 };
 
 export type MaintenanceResult = {
@@ -20,9 +28,33 @@ export type MaintenanceResult = {
   readonly expiredAuthProofs: number;
   readonly expiredAuthSessions: number;
   readonly purgedAuditEntries: number;
+  /** Enrollment-attempt diagnostics deleted this run. */
+  readonly purgedEnrollmentAttempts: number;
+  /** Credential expiry audit events written this run. */
+  readonly credentialAlerts: number;
 };
 
 const day = 24 * 60 * 60 * 1000;
+const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
+/** Audit action recorded once per organisation per threshold per day. */
+export const CREDENTIAL_ALERT_ACTION = "credentials.expiry_warning";
+
+export type CredentialAlertThreshold = "expired" | "7d" | "30d";
+
+const alertThreshold = (health: CredentialHealth): CredentialAlertThreshold | null => {
+  const credentials = [health.apns, health.scepCa];
+  if (credentials.some((credential) => credential.level === "expired")) return "expired";
+  if (credentials.some((credential) => credential.level === "critical")) return "7d";
+  if (credentials.some((credential) => credential.level === "warning")) return "30d";
+  return null;
+};
+
+const thresholdFromMetadata = (metadata: unknown): CredentialAlertThreshold | null => {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const value = (metadata as Record<string, unknown>).threshold;
+  return value === "expired" || value === "7d" || value === "30d" ? value : null;
+};
 
 /**
  * Idempotent scheduled maintenance shared by the Cloud Worker cron trigger and
@@ -41,6 +73,7 @@ export const runMaintenance = (
     const now = options.now ?? new Date();
     const staleDeviceDays = options.staleDeviceDays ?? 30;
     const auditRetentionDays = options.auditRetentionDays ?? 365;
+    const enrollmentAttemptRetentionDays = options.enrollmentAttemptRetentionDays ?? 30;
 
     const result: {
       -readonly [K in keyof MaintenanceResult]: MaintenanceResult[K];
@@ -50,6 +83,8 @@ export const runMaintenance = (
       expiredAuthProofs: 0,
       expiredAuthSessions: 0,
       purgedAuditEntries: 0,
+      purgedEnrollmentAttempts: 0,
+      credentialAlerts: 0,
     };
 
     // 1. Expire pending invitations whose acceptance window has closed.
@@ -125,6 +160,74 @@ export const runMaintenance = (
       if (staleAudit.length > 0) {
         yield* db.delete(s.auditLog).where(lt(s.auditLog.createdAt, auditCutoff));
         result.purgedAuditEntries = staleAudit.length;
+      }
+    }
+
+    // 5. Enrollment-attempt diagnostics are only useful for a short window.
+    if (enrollmentAttemptRetentionDays > 0) {
+      const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);
+      const staleAttempts = yield* db
+        .select({ id: s.enrollmentAttempt.id })
+        .from(s.enrollmentAttempt)
+        .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
+      if (staleAttempts.length > 0) {
+        yield* db
+          .delete(s.enrollmentAttempt)
+          .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
+        result.purgedEnrollmentAttempts = staleAttempts.length;
+      }
+    }
+
+    // 6. Credential expiry warnings. APNs and SCEP CA expiries are otherwise
+    //    only visible on one settings page, so write one audit event per
+    //    organisation per threshold per day. The audit trail itself is the
+    //    dedupe store, which avoids a dedicated alert table.
+    if (options.credentialAlerts !== false) {
+      const alertCutoff = new Date(now.getTime() - day);
+      const existingAlerts = (yield* db
+        .select()
+        .from(s.auditLog)
+        .where(
+          and(
+            eq(s.auditLog.action, CREDENTIAL_ALERT_ACTION),
+            gte(s.auditLog.createdAt, alertCutoff),
+          ),
+        )) as Array<{
+        organizationId: string;
+        metadata: unknown;
+        createdAt: Date;
+      }>;
+      const alerted = new Set<string>();
+      for (const entry of existingAlerts) {
+        const createdAt =
+          entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt);
+        if (Number.isNaN(createdAt.getTime()) || createdAt < alertCutoff) continue;
+        const threshold = thresholdFromMetadata(entry.metadata);
+        if (threshold) alerted.add(`${entry.organizationId}:${threshold}`);
+      }
+
+      const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
+      for (const organization of organizations) {
+        const health = yield* loadCredentialHealth(db, organization.id, now);
+        const threshold = alertThreshold(health);
+        if (!threshold || alerted.has(`${organization.id}:${threshold}`)) continue;
+        yield* db.insert(s.auditLog).values({
+          id: id(),
+          organizationId: organization.id,
+          actorUserId: null,
+          actorEmail: null,
+          action: CREDENTIAL_ALERT_ACTION,
+          targetType: "organization",
+          targetId: organization.id,
+          metadata: {
+            threshold,
+            apns: health.apns,
+            scepCa: health.scepCa,
+            deviceCertificates: health.deviceCertificates,
+          },
+          createdAt: now,
+        });
+        result.credentialAlerts += 1;
       }
     }
 

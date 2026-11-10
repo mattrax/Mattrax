@@ -40,6 +40,10 @@ export default function DeviceDetailPage() {
     null,
   );
   const [confirmName, setConfirmName] = createSignal("");
+  const closeConfirm = () => {
+    setConfirmName("");
+    setConfirmAction(null);
+  };
   createEffect(
     () => row()?.id,
     () => {
@@ -98,37 +102,83 @@ export default function DeviceDetailPage() {
       await invalidate();
     },
   }));
+  // Destructive actions close the confirm dialog only after success; on error
+  // the dialog stays open so its `ErrorText` is visible.
   const unenroll = useMutation(() => ({
     mutationFn: () => enterprise.deviceUnenroll(params.tenantId, params.deviceId),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      closeConfirm();
+    },
   }));
   const revokeIdentity = useMutation(() => ({
     mutationFn: () => enterprise.revokeDeviceIdentity(params.tenantId, params.deviceId),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      closeConfirm();
+    },
   }));
   const remove = useMutation(() => ({
     mutationFn: () =>
       enterprise.deleteDevices(params.tenantId, params.deviceId ? [params.deviceId] : []),
     onSuccess: async () => {
       await invalidate();
+      closeConfirm();
       navigate(`/t/${params.tenantId}/devices`);
     },
   }));
-  const fields = () => [
-    ["Management name", row()?.name],
-    ["Device name", row()?.physicalName],
-    ["Vendor", row()?.vendor],
-    ["Model", row()?.model],
-    ["Model identifier", row()?.modelIdentifier],
-    ["Serial", row()?.serial],
-    ["OS", row()?.osEdition],
-    ["Version", row()?.osVersion],
-    ["Build", row()?.osBuild],
-    ["Disk total", row()?.diskTotal],
-    ["Disk used", row()?.diskUsed],
-    ["Enrolled", formatDate(row()?.enrolledAt)],
-    ["Last seen", formatDate(row()?.lastSeenAt)],
-  ];
+  const fields = () =>
+    [
+      ["Management name", row()?.name],
+      ["Device name", row()?.physicalName],
+      ["Vendor", row()?.vendor],
+      ["Model", row()?.model],
+      ["Model identifier", row()?.modelIdentifier],
+      ["Model number", row()?.modelNumber],
+      ["Serial", row()?.serial],
+      ["OS", row()?.osEdition],
+      ["Version", row()?.osVersion],
+      ["Build", row()?.osBuild],
+      ["Disk total", row()?.diskTotal],
+      ["Disk used", row()?.diskUsed],
+      ["Enrolled", formatDate(row()?.enrolledAt)],
+      ["Last seen", formatDate(row()?.lastSeenAt)],
+    ].filter(([key, value]) => !String(key).startsWith("Disk") || Boolean(value));
+
+  const fileVaultLabel = () => {
+    const value = row()?.fileVaultEnabled;
+    if (value === null || value === undefined) return "Not reported";
+    return value ? "Enabled" : "Disabled";
+  };
+  const capabilityLabels = () => {
+    const value = row()?.capabilities;
+    if (value == null) return [];
+    if (Array.isArray(value)) return value.map((entry) => String(entry));
+    if (typeof value === "string") return [value];
+    return [JSON.stringify(value)];
+  };
+  const certificateDays = (notAfter: string) => {
+    const expires = new Date(notAfter);
+    if (Number.isNaN(expires.getTime())) return null;
+    return Math.ceil((expires.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  };
+  const certificateExpiryClass = (notAfter: string, revoked: boolean) => {
+    if (revoked) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
+    const days = certificateDays(notAfter);
+    if (days === null) return "rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5";
+    if (days <= 0) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
+    if (days <= 7) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
+    if (days <= 30)
+      return "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800";
+    return "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-green-700";
+  };
+  const certificateDaysLabel = (notAfter: string) => {
+    const expires = new Date(notAfter);
+    if (Number.isNaN(expires.getTime())) return "expiry unknown";
+    const days = Math.ceil((expires.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    if (expires.getTime() <= Date.now()) return `expired ${Math.abs(days)}d ago`;
+    return `${days}d left`;
+  };
   const declarationIssues = () =>
     (health.data?.declarations ?? []).filter((declaration) => {
       const valid = declaration.valid.trim().toLowerCase();
@@ -169,6 +219,18 @@ export default function DeviceDetailPage() {
       : confirmAction() === "revoke"
         ? "Revoke identity"
         : "Unenroll device";
+  const confirmPending = () => unenroll.isPending || remove.isPending || revokeIdentity.isPending;
+  /**
+   * Each mutation's `onSuccess` closes the dialog. Failures leave it open and
+   * the dialog's `ErrorText` renders the mutation error.
+   */
+  const confirmDestructive = () => {
+    const action = confirmAction();
+    if (!action) return;
+    if (action === "delete") remove.mutate();
+    else if (action === "revoke") revokeIdentity.mutate();
+    else unenroll.mutate();
+  };
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
       <PageHeader
@@ -340,8 +402,20 @@ export default function DeviceDetailPage() {
                       {(certificate) => (
                         <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-xs">
                           <span class="font-mono">{certificate.serial}</span>
-                          <span class="text-muted-foreground">
-                            expires {formatDate(certificate.notAfter)}
+                          <span class="flex items-center gap-2">
+                            <span class="text-muted-foreground">
+                              expires {formatDate(certificate.notAfter)}
+                            </span>
+                            <span
+                              class={certificateExpiryClass(
+                                certificate.notAfter,
+                                Boolean(certificate.revokedAt),
+                              )}
+                            >
+                              {certificate.revokedAt
+                                ? "revoked"
+                                : certificateDaysLabel(certificate.notAfter)}
+                            </span>
                           </span>
                           <span
                             class={
@@ -360,6 +434,72 @@ export default function DeviceDetailPage() {
                   </ul>
                 </Show>
               </div>
+            </Show>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Security & inventory</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <dl class="grid gap-3 text-sm sm:grid-cols-2">
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">FileVault</dt>
+                <dd>
+                  <span
+                    class={
+                      row()?.fileVaultEnabled === true
+                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
+                        : row()?.fileVaultEnabled === false
+                          ? "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
+                          : "rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs text-stone-600"
+                    }
+                  >
+                    {fileVaultLabel()}
+                  </span>
+                </dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">Battery health</dt>
+                <dd>{row()?.batteryHealth ?? "Not reported"}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">Model number</dt>
+                <dd>{row()?.modelNumber ?? "Not reported"}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">Inventory updated</dt>
+                <dd>{formatDate(row()?.inventoryUpdatedAt)}</dd>
+              </div>
+            </dl>
+            <div>
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Client capabilities
+              </p>
+              <Show
+                when={capabilityLabels().length > 0}
+                fallback={
+                  <p class="mt-1 text-sm text-muted-foreground">
+                    No capabilities have been reported yet.
+                  </p>
+                }
+              >
+                <div class="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-auto">
+                  <For each={capabilityLabels()}>
+                    {(capability) => (
+                      <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
+                        {capability}
+                      </span>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+            <Show when={!row()?.inventoryUpdatedAt}>
+              <p class="text-xs text-muted-foreground">
+                Security and inventory values are filled in the next time the device reports its DDM
+                status items.
+              </p>
             </Show>
           </CardContent>
         </Card>
@@ -556,21 +696,15 @@ export default function DeviceDetailPage() {
           <Input value={confirmName()} onInput={(e) => setConfirmName(e.currentTarget.value)} />
           <ErrorText error={unenroll.error || remove.error || revokeIdentity.error} />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmAction(null)}>
+            <Button variant="outline" onClick={closeConfirm}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              disabled={confirmName() !== row()?.name}
-              onClick={() => {
-                if (confirmAction() === "delete") remove.mutate();
-                else if (confirmAction() === "revoke") revokeIdentity.mutate();
-                else unenroll.mutate();
-                setConfirmName("");
-                setConfirmAction(null);
-              }}
+              disabled={confirmName() !== row()?.name || confirmPending()}
+              onClick={confirmDestructive}
             >
-              {confirmLabel()}
+              {confirmPending() ? "Working…" : confirmLabel()}
             </Button>
           </DialogFooter>
         </DialogContent>

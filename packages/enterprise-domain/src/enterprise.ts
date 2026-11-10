@@ -341,6 +341,14 @@ export const DeviceRow = Schema.Struct({
   osBuild: Schema.optional(NullableString),
   diskTotal: Schema.optional(NullableString),
   diskUsed: Schema.optional(NullableString),
+  /** FileVault state reported by the DDM inventory status items. */
+  fileVaultEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** Normalised battery condition (for example `Good`, `Service Recommended`). */
+  batteryHealth: Schema.optional(NullableString),
+  /** Raw client capability list reported by `management.client-capabilities`. */
+  capabilities: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  modelNumber: Schema.optional(NullableString),
+  inventoryUpdatedAt: Schema.optional(NullableString),
 });
 export type DeviceRow = typeof DeviceRow.Type;
 
@@ -415,6 +423,45 @@ export const DeviceHealthCounts = Schema.Struct({
 export type DeviceHealthCounts = typeof DeviceHealthCounts.Type;
 export const DeviceHealthSummaryResponse = Schema.Struct({ counts: DeviceHealthCounts });
 export type DeviceHealthSummaryResponse = typeof DeviceHealthSummaryResponse.Type;
+
+/**
+ * Tenant credential rollup. `missing` means the credential has not been
+ * configured; `unknown` means it exists but its expiry could not be parsed.
+ */
+export const CredentialLevel = Schema.Literals([
+  "ok",
+  "warning",
+  "critical",
+  "expired",
+  "missing",
+  "unknown",
+]);
+export type CredentialLevel = typeof CredentialLevel.Type;
+
+export const CredentialInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  expiresAt: Schema.optional(NullableString),
+  /** Whole days until expiry; zero or negative once expired. Null when unparseable. */
+  daysLeft: Schema.optional(Schema.NullOr(Schema.Number)),
+  level: CredentialLevel,
+});
+export type CredentialInfo = typeof CredentialInfo.Type;
+
+export const DeviceCertificateCounts = Schema.Struct({
+  total: Schema.Number,
+  /** Active certificates expiring within 30 days. */
+  expiringSoon: Schema.Number,
+  expired: Schema.Number,
+  revoked: Schema.Number,
+});
+export type DeviceCertificateCounts = typeof DeviceCertificateCounts.Type;
+
+export const CredentialHealthResponse = Schema.Struct({
+  apns: CredentialInfo,
+  scepCa: CredentialInfo,
+  deviceCertificates: DeviceCertificateCounts,
+});
+export type CredentialHealthResponse = typeof CredentialHealthResponse.Type;
 
 export const DeviceIdentityRevokeResponse = Schema.Struct({
   status: Schema.Literal("ok"),
@@ -706,6 +753,15 @@ export type DeviceSearchSort = typeof DeviceSearchSort.Type;
 export const SortDirection = Schema.Literals(["asc", "desc"]);
 export type SortDirection = typeof SortDirection.Type;
 
+export const DeviceHealthFilter = Schema.Literals([
+  "healthy",
+  "attention",
+  "critical",
+  "unknown",
+  "stale",
+]);
+export type DeviceHealthFilter = typeof DeviceHealthFilter.Type;
+
 /**
  * Server-side device list filters. Every field is optional; the backend applies
  * a bounded default page size and treats an empty query as "all devices".
@@ -721,6 +777,8 @@ export const DeviceSearchQuery = Schema.Struct({
   notSeenSince: Schema.optional(Schema.String),
   /** Shorthand for `notSeenSince = now - staleDays`; 0 or omitted disables it. */
   staleDays: Schema.optional(Schema.Number),
+  /** Only devices whose derived health rollup matches this level. */
+  health: Schema.optional(DeviceHealthFilter),
   limit: Schema.optional(Schema.Number),
   offset: Schema.optional(Schema.Number),
   sort: Schema.optional(DeviceSearchSort),
@@ -781,7 +839,44 @@ export const EnrollmentResponse = Schema.Union([
 ]);
 export type EnrollmentResponse = typeof EnrollmentResponse.Type;
 
-export const EnrollmentQuery = { code: Schema.optional(Schema.String) };
+export const EnrollmentQuery = {
+  code: Schema.optional(Schema.String),
+  /**
+   * The platform the device is enrolling. Optional because the endpoint
+   * returns every platform; when omitted the server infers it from the
+   * User-Agent for diagnostics.
+   */
+  platform: Schema.optional(Schema.Literals(["apple", "win", "android"])),
+};
+
+export const EnrollmentAttemptPlatform = Schema.Literals(["apple", "win", "android", "unknown"]);
+export type EnrollmentAttemptPlatform = typeof EnrollmentAttemptPlatform.Type;
+
+export const EnrollmentAttemptOutcome = Schema.Literals([
+  "ok",
+  "bad_code",
+  "disabled",
+  "limit",
+  "no_apns",
+  "scep_error",
+  "other",
+]);
+export type EnrollmentAttemptOutcome = typeof EnrollmentAttemptOutcome.Type;
+
+export const EnrollmentAttempt = Schema.Struct({
+  id: Schema.String,
+  enrollmentId: Schema.String,
+  platform: EnrollmentAttemptPlatform,
+  outcome: EnrollmentAttemptOutcome,
+  detail: Schema.optional(NullableString),
+  createdAt: Schema.String,
+});
+export type EnrollmentAttempt = typeof EnrollmentAttempt.Type;
+
+export const EnrollmentAttemptsResponse = Schema.Struct({
+  attempts: Schema.Array(EnrollmentAttempt),
+});
+export type EnrollmentAttemptsResponse = typeof EnrollmentAttemptsResponse.Type;
 
 export const TenantEnrollmentInfo = Schema.Struct({
   id: Schema.String,
@@ -1127,6 +1222,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("listEnrollmentAttempts", "/v1/tenants/:tenantId/enrollment/attempts", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: Schema.Struct({ limit: Schema.optional(Schema.Number) }),
+      success: EnrollmentAttemptsResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.patch("patchTenantEnrollment", "/v1/tenants/:tenantId/enrollment", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
@@ -1276,6 +1379,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: DeviceHealthSummaryResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getCredentialHealth", "/v1/tenants/:tenantId/credential-health", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: CredentialHealthResponse,
     }),
   )
   .add(

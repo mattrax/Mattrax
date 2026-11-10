@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
@@ -15,7 +15,8 @@ import {
   type DdmTokens,
   type ManagementManifest,
 } from "@mattrax/management-backend";
-import { makeWindowsBackend } from "./windows.ts";
+import { certificateDeviceIdsFor, makeWindowsBackend } from "./windows.ts";
+import { parseDeviceInventory } from "./inventory.ts";
 import {
   buildAssetContent,
   buildAssetDeclaration,
@@ -57,6 +58,8 @@ const DEVICE_INFORMATION_STATUS_ITEMS = [
   "device.operating-system.version",
   "device.power.battery-health",
   "diskmanagement.filevault.enabled",
+  "diskmanagement.storage.available",
+  "diskmanagement.storage.total",
   "management.client-capabilities",
   "management.declarations",
 ];
@@ -276,32 +279,37 @@ const updateInventoryFromStatus = (
   Effect.gen(function* () {
     if (!statusItems || typeof statusItems !== "object") return;
     const root = statusItems as Record<string, unknown>;
-    const valueAt = (path: string): unknown => {
-      const parts = path.split(".");
-      let current: unknown = root;
-      for (const part of parts) {
-        current = record(current)?.[part];
-        if (current === undefined) break;
-      }
-      return current ?? root[path];
-    };
-    const text = (path: string) => {
-      const value = valueAt(path);
-      return typeof value === "string" ? value : undefined;
-    };
+    const inventory = parseDeviceInventory(root);
     const update: Record<string, unknown> = { lastSeenAt: now() };
-    const serial = text("device.identifier.serial-number");
-    const model = text("device.model.marketing-name");
-    const modelIdentifier = text("device.model.identifier");
-    const osEdition = text("device.operating-system.marketing-name");
-    const osVersion = text("device.operating-system.version");
-    const osBuild = text("device.operating-system.build-version");
-    if (serial) update.serial = serial;
-    if (model) update.model = model;
-    if (modelIdentifier) update.modelIdentifier = modelIdentifier;
-    if (osEdition) update.osEdition = osEdition;
-    if (osVersion) update.osVersion = osVersion;
-    if (osBuild) update.osBuild = osBuild;
+    if (inventory.serial) update.serial = inventory.serial;
+    if (inventory.model) update.model = inventory.model;
+    if (inventory.modelIdentifier) update.modelIdentifier = inventory.modelIdentifier;
+    if (inventory.modelNumber) update.modelNumber = inventory.modelNumber;
+    if (inventory.osEdition) update.osEdition = inventory.osEdition;
+    if (inventory.osVersion) update.osVersion = inventory.osVersion;
+    if (inventory.osBuild) update.osBuild = inventory.osBuild;
+    if (inventory.fileVaultEnabled !== undefined)
+      update.fileVaultEnabled = inventory.fileVaultEnabled;
+    if (inventory.batteryHealth) update.batteryHealth = inventory.batteryHealth;
+    if (inventory.capabilities !== undefined) update.capabilities = inventory.capabilities;
+    if (inventory.diskTotal) update.diskTotal = inventory.diskTotal;
+    if (inventory.diskUsed) update.diskUsed = inventory.diskUsed;
+    // Only stamp the inventory clock when at least one subscribed item was
+    // actually understood, so a malformed/empty report cannot make a stale
+    // device look freshly inventoried.
+    const hasInventory =
+      inventory.serial !== undefined ||
+      inventory.model !== undefined ||
+      inventory.modelIdentifier !== undefined ||
+      inventory.modelNumber !== undefined ||
+      inventory.osEdition !== undefined ||
+      inventory.osVersion !== undefined ||
+      inventory.osBuild !== undefined ||
+      inventory.fileVaultEnabled !== undefined ||
+      inventory.batteryHealth !== undefined ||
+      inventory.capabilities !== undefined ||
+      inventory.diskTotal !== undefined;
+    if (hasInventory) update.inventoryUpdatedAt = now();
     const db = yield* Db;
     yield* db.update(s.device).set(update).where(eq(s.device.id, deviceId));
 
@@ -610,7 +618,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .set({ revokedAt: now() })
                   .where(
                     and(
-                      eq(s.scepIssuedCertificate.deviceId, device.id),
+                      inArray(s.scepIssuedCertificate.deviceId, certificateDeviceIdsFor(device)),
                       eq(s.scepIssuedCertificate.organizationId, device.organizationId),
                       isNull(s.scepIssuedCertificate.revokedAt),
                     ),
@@ -1058,3 +1066,11 @@ export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
 export { ScepRepositoryLive } from "./scep.ts";
 export * from "./policy.ts";
 export * from "./windows.ts";
+export {
+  parseDeviceInventory,
+  normalizeBatteryHealth,
+  normalizeBoolean,
+  normalizeCapabilities,
+  statusItemValue,
+  type DeviceInventory,
+} from "./inventory.ts";

@@ -1,0 +1,74 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const migrationsDir = join(import.meta.dirname, "..", "migrations");
+
+const migrationNames = () =>
+  readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+const readMigration = (name: string) =>
+  readFileSync(join(migrationsDir, name, "migration.sql"), "utf8");
+
+const readSnapshot = (name: string) =>
+  JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8")) as {
+    ddl: Array<Record<string, any>>;
+  };
+
+const DEVICE_INVENTORY_COLUMNS = [
+  "filevault_enabled",
+  "battery_health",
+  "capabilities",
+  "model_number",
+  "inventory_updated_at",
+] as const;
+
+describe("device inventory migration", () => {
+  const names = migrationNames();
+  const inventoryMigrations = names.filter((name) =>
+    readMigration(name).includes("`filevault_enabled`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(inventoryMigrations).toHaveLength(1);
+  });
+
+  it("adds every inventory column to the device table", () => {
+    const sql = readMigration(inventoryMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `device`");
+    for (const column of DEVICE_INVENTORY_COLUMNS) expect(sql).toContain(`\`${column}\``);
+    expect(sql).not.toContain("NOT NULL");
+  });
+
+  it("ships a snapshot with nullable columns of the expected types", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "device")
+        .map((entry) => [entry.name, entry]),
+    );
+    const expected: Record<(typeof DEVICE_INVENTORY_COLUMNS)[number], string> = {
+      filevault_enabled: "boolean",
+      battery_health: "varchar(255)",
+      capabilities: "json",
+      model_number: "varchar(255)",
+      inventory_updated_at: "datetime(3)",
+    };
+    for (const [column, type] of Object.entries(expected)) {
+      const entry = columns.get(column);
+      expect(entry, `missing snapshot column ${column}`).toBeDefined();
+      expect(entry!.type).toBe(type);
+      expect(entry!.notNull).toBe(false);
+    }
+  });
+
+  it("does not leave the device inventory columns in a later migration", () => {
+    const [inventoryMigration] = inventoryMigrations;
+    for (const name of names.filter((candidate) => candidate > inventoryMigration!))
+      for (const column of DEVICE_INVENTORY_COLUMNS)
+        expect(readMigration(name)).not.toContain(`\`${column}\``);
+  });
+});

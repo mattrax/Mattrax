@@ -17,6 +17,8 @@ export const DEVICE_EXPORT_MAX_ROWS = 10_000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+export type DeviceHealthFilter = "healthy" | "attention" | "critical" | "unknown" | "stale";
+
 export type DeviceSearchFilters = {
   readonly q?: string;
   readonly status?: DeviceStatusValue;
@@ -24,6 +26,8 @@ export type DeviceSearchFilters = {
   readonly groupId?: string;
   /** Only devices whose `lastSeenAt` is strictly before this instant. */
   readonly notSeenBefore?: Date;
+  /** Only devices whose derived health rollup matches this level. */
+  readonly health?: DeviceHealthFilter;
   readonly limit: number;
   readonly offset: number;
   readonly sort: DeviceSearchSort;
@@ -71,8 +75,9 @@ export const normalizeDeviceSearchQuery = (
   }
   if (staleDays !== undefined && staleDays > 0) {
     const cutoff = new Date(now.getTime() - staleDays * MS_PER_DAY);
-    // When both are provided the more recent cutoff is the stricter filter.
-    if (!notSeenBefore || cutoff > notSeenBefore) notSeenBefore = cutoff;
+    // `lastSeenAt < cutoff`: an earlier cutoff matches fewer devices, so with
+    // both filters the earlier one is the stricter constraint.
+    if (!notSeenBefore || cutoff < notSeenBefore) notSeenBefore = cutoff;
   }
 
   return {
@@ -81,6 +86,7 @@ export const normalizeDeviceSearchQuery = (
     proto: query.proto,
     groupId: optionalText(query.groupId),
     notSeenBefore,
+    health: query.health,
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),
     sort: query.sort ?? "name",
@@ -89,10 +95,16 @@ export const normalizeDeviceSearchQuery = (
 };
 
 const CSV_SPECIAL = /[",\r\n]/;
+/**
+ * Leading characters Excel/Sheets interpret as a formula (or as a way to break
+ * out of a cell). Prefixing with an apostrophe keeps the value literal.
+ */
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
 /** Escape a single RFC 4180 field, doubling embedded quotes. */
 export const csvEscape = (value: unknown) => {
-  const text = value == null ? "" : String(value);
+  const raw = value == null ? "" : String(value);
+  const text = CSV_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
   return CSV_SPECIAL.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 };
 

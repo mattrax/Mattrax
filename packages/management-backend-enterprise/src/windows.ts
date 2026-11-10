@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { and, asc, eq, lt } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { schema as s, type Db } from "@mattrax/enterprise-core";
-import { signScepCsr } from "@mattrax/scep";
+import { certificateSerialHex, signScepCsr } from "@mattrax/scep";
 import {
   InternalServerError,
   UnknownDevice,
@@ -45,6 +45,20 @@ const timingSafeEqual = (left: string, right: string): boolean => {
   let difference = 0;
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
   return difference === 0;
+};
+
+/**
+ * Whether a value has the shape of our `<subject>.<issuedAt>.<hmac>` token.
+ * Used to distinguish a forged/expired Mattrax token from the opaque client
+ * credential Windows sends on the first WSTEP policy request.
+ */
+const isWindowsEnrollmentTokenShaped = (token: string): boolean => {
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  const [subject, issuedAt, signature] = parts;
+  return Boolean(
+    subject && /^\d+$/.test(issuedAt ?? "") && /^[A-Za-z0-9_-]+$/.test(signature ?? ""),
+  );
 };
 
 export type WindowsEnrollmentTokenOptions = {
@@ -114,6 +128,25 @@ export const verifyWindowsEnrollmentToken = (
     return { subject, issuedAt };
   })();
 
+/**
+ * Identity values a SCEP certificate row may carry for a device.
+ *
+ * Certificates issued by {@link makeWindowsBackend} used to store the Windows
+ * `DeviceID` (the device's `dmIdentifier`) instead of the internal `device.id`.
+ * Revocation and renewal must honour both so legacy rows keep working after the
+ * linkage fix.
+ */
+export const certificateDeviceIdsFor = (device: {
+  readonly id: string;
+  readonly dmIdentifier?: string | null;
+}): string[] => {
+  const ids = new Set<string>();
+  if (device.id) ids.add(device.id);
+  const dmIdentifier = device.dmIdentifier?.trim();
+  if (dmIdentifier) ids.add(dmIdentifier);
+  return [...ids];
+};
+
 export type WindowsBackendOptions = {
   readonly db: Db["Service"];
   readonly origin: string;
@@ -167,14 +200,17 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
       return device ?? null;
     });
 
+  const newDeviceId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
   const insertDevice = (input: {
+    readonly id: string;
     readonly organizationId: string;
     readonly deviceId: string;
     readonly name: string;
     readonly timestamp: Date;
   }) =>
     db.insert(s.device).values({
-      id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+      id: input.id,
       organizationId: input.organizationId,
       proto: "win",
       status: "enrolled",
@@ -205,15 +241,25 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
     getWindowsEnrollmentPolicy: (
       authToken: string,
-    ): Effect.Effect<WindowsEnrollmentPolicy, InternalServerError> =>
+    ): Effect.Effect<WindowsEnrollmentPolicy, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const secret = yield* requireSecret();
         yield* resolveOrganizationId();
         // A device may retry the policy call; keep the subject stable when it
         // presents one of our own still-valid tokens.
-        const existing = yield* Effect.promise(() =>
-          verifyWindowsEnrollmentToken(authToken, secret, { ttlSeconds }),
-        );
+        const presentedToken = authToken.trim();
+        const existing = presentedToken
+          ? yield* Effect.promise(() =>
+              verifyWindowsEnrollmentToken(presentedToken, secret, { ttlSeconds }),
+            )
+          : null;
+        // First enrollment legitimately arrives without a token (or with an
+        // opaque WSTEP client credential we cannot verify). A token in *our*
+        // format that does not verify, however, is a forged or expired
+        // Mattrax token: fail closed rather than silently downgrading it to a
+        // fresh enrollment credential.
+        if (isWindowsEnrollmentTokenShaped(presentedToken) && !existing)
+          return yield* Effect.fail(new UnknownDevice());
         const subject = existing?.subject ?? crypto.randomUUID();
         const issued = yield* Effect.promise(() =>
           createWindowsEnrollmentToken(subject, secret, { ttlSeconds }),
@@ -224,7 +270,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           renewalPeriodSeconds: "15552000",
           authToken: issued,
         };
-      }).pipe(Effect.mapError(internal)),
+      }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
 
     windowsEnroll: (
       request: WindowsEnrollmentRequest,
@@ -244,8 +290,13 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           .where(eq(s.enterpriseEnrollment.organizationId, organizationId))
           .limit(1);
         if (!enrollment?.enabledWindows) return yield* Effect.fail(new UnknownDevice());
+
+        // Resolve the existing device (by Windows DeviceID) before enforcing the
+        // tenant device cap: re-enrolling an existing device must not fail just
+        // because the tenant is at its limit.
+        const existing = yield* findDevice(organizationId, deviceIdentifier);
         // `maxDevices === 0` means unlimited for the tenant.
-        if (enrollment.maxDevices > 0) {
+        if (!existing && enrollment.maxDevices > 0) {
           const windowsDevices = yield* db
             .select({ id: s.device.id })
             .from(s.device)
@@ -261,36 +312,23 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         }
 
         const timestamp = new Date();
+        const notAfter = new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000);
         const signed = yield* signScepCsr({
           csr: request.csr,
           caCertPem: ca.certPem,
           caPrivateKeyJwk: ca.privateKeyJwk as JsonWebKey,
           notBefore: timestamp,
-          notAfter: new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000),
+          notAfter,
           deviceId: deviceIdentifier,
           organizationalUnit: organizationId,
         }).pipe(Effect.mapError(internal));
 
-        const serial = Array.from(
-          signed.certificate.serialNumber.valueBlock.valueHexView ??
-            new Uint8Array(
-              signed.certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0),
-            ),
-          (byte) => byte.toString(16).padStart(2, "0"),
-        )
-          .join("")
-          .replace(/^0+(?=.)/, "");
-        yield* db.insert(s.scepIssuedCertificate).values({
-          serial,
-          organizationId,
-          enrollmentId: null,
-          deviceId: deviceIdentifier,
-          notAfter: new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000),
-          createdAt: timestamp,
-        });
-
+        // `device.id` is the internal row id used by revocation, health and
+        // renewal. `deviceIdentifier` (the Windows DeviceID) stays in
+        // `dmIdentifier` for check-in discovery. Recording the certificate
+        // against the DeviceID here is what previously made revocation inert.
+        const deviceRowId = existing?.id ?? newDeviceId();
         const name = request.deviceName?.trim() || deviceIdentifier;
-        const existing = yield* findDevice(organizationId, deviceIdentifier);
         if (existing) {
           yield* db
             .update(s.device)
@@ -304,7 +342,60 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             })
             .where(eq(s.device.id, existing.id));
         } else {
-          yield* insertDevice({ organizationId, deviceId: deviceIdentifier, name, timestamp });
+          yield* insertDevice({
+            id: deviceRowId,
+            organizationId,
+            deviceId: deviceIdentifier,
+            name,
+            timestamp,
+          });
+        }
+
+        const serial = certificateSerialHex(signed.certificate);
+        const [recorded] = yield* db
+          .select({
+            serial: s.scepIssuedCertificate.serial,
+            organizationId: s.scepIssuedCertificate.organizationId,
+            deviceId: s.scepIssuedCertificate.deviceId,
+          })
+          .from(s.scepIssuedCertificate)
+          .where(eq(s.scepIssuedCertificate.serial, serial))
+          .limit(1);
+        if (recorded) {
+          // Serial collisions are now ~2^-127, but a stale row could still
+          // exist. Reuse it only for the same tenant *and* device; never let a
+          // colliding serial overwrite another identity (which would make its
+          // renewals authenticate as the wrong tenant/device).
+          const sameIdentity =
+            recorded.organizationId === organizationId &&
+            (recorded.deviceId === deviceRowId || recorded.deviceId === deviceIdentifier);
+          if (!sameIdentity) return yield* Effect.fail(internal());
+          yield* db
+            .update(s.scepIssuedCertificate)
+            .set({
+              // Migrate legacy DeviceID-keyed rows to the internal id as we go.
+              deviceId: deviceRowId,
+              enrollmentId: null,
+              notAfter,
+              createdAt: timestamp,
+              // Deliberately do not clear `revokedAt`: a duplicate serial is a
+              // replay/collision, and must never silently un-revoke an identity.
+            })
+            .where(
+              and(
+                eq(s.scepIssuedCertificate.serial, serial),
+                eq(s.scepIssuedCertificate.organizationId, organizationId),
+              ),
+            );
+        } else {
+          yield* db.insert(s.scepIssuedCertificate).values({
+            serial,
+            organizationId,
+            enrollmentId: null,
+            deviceId: deviceRowId,
+            notAfter,
+            createdAt: timestamp,
+          });
         }
 
         return {
@@ -492,6 +583,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               .where(eq(s.device.id, device.id));
           } else {
             yield* insertDevice({
+              id: newDeviceId(),
               organizationId,
               deviceId,
               name: deviceId,

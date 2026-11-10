@@ -58,13 +58,14 @@ describe("normalizeDeviceSearchQuery", () => {
     expect(normalizeDeviceSearchQuery({ staleDays: 0 }, now).notSeenBefore).toBeUndefined();
   });
 
-  it("uses the stricter cutoff when both are provided", () => {
+  it("uses the stricter (earlier) cutoff when both are provided", () => {
+    // `lastSeenAt < cutoff`: 2026-11-03 matches fewer devices than 2026-11-09.
     expect(
       normalizeDeviceSearchQuery(
         { staleDays: 7, notSeenSince: "2026-11-09T00:00:00.000Z" },
         now,
       ).notSeenBefore?.toISOString(),
-    ).toBe("2026-11-09T00:00:00.000Z");
+    ).toBe("2026-11-03T12:00:00.000Z");
   });
 
   it("rejects an invalid timestamp and negative staleDays", () => {
@@ -102,6 +103,22 @@ describe("csv", () => {
     expect(csvEscape('He said "hi"')).toBe('"He said ""hi"""');
     expect(csvEscape("line one\nline two")).toBe('"line one\nline two"');
     expect(csvEscape("windows\r\nline")).toBe('"windows\r\nline"');
+  });
+
+  it("neutralises spreadsheet formula prefixes", () => {
+    for (const value of ["=1+1", "+1", "-2", "@SUM(A1)", "\tpayload"])
+      expect(csvEscape(value)).toBe(`'${value}`);
+    // CR also forces RFC 4180 quoting.
+    expect(csvEscape("\rpayload")).toBe('"\'\rpayload"');
+    // A formula-looking value that also needs quoting keeps both protections.
+    expect(csvEscape('=HYPERLINK("x")')).toBe('"\'=HYPERLINK(""x"")"');
+  });
+
+  it("passes the health filter through", () => {
+    expect(
+      normalizeDeviceSearchQuery({ health: "critical" }, new Date("2026-11-10T12:00:00.000Z"))
+        .health,
+    ).toBe("critical");
   });
 
   it("writes CRLF rows with a trailing newline", () => {

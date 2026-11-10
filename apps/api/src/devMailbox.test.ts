@@ -48,10 +48,28 @@ describe("debug mailbox gating", () => {
     ).toBe(false);
   });
 
-  it("requires the explicit remote opt-in", () => {
+  it("requires a secret for the explicit remote opt-in", () => {
     expect(
       isDevMailboxEnabled(
         { DEV_MAILBOX: "true", DEV_MAILBOX_ALLOW_REMOTE: "true" },
+        "https://staging.example.com",
+        "https://staging.example.com/api/debug/emails",
+      ),
+    ).toBe(false);
+    expect(
+      isDevMailboxEnabled(
+        { DEV_MAILBOX: "true", DEV_MAILBOX_ALLOW_REMOTE: "true", DEV_MAILBOX_SECRET: "   " },
+        "https://staging.example.com",
+        "https://staging.example.com/api/debug/emails",
+      ),
+    ).toBe(false);
+    expect(
+      isDevMailboxEnabled(
+        {
+          DEV_MAILBOX: "true",
+          DEV_MAILBOX_ALLOW_REMOTE: "true",
+          DEV_MAILBOX_SECRET: "shared-secret",
+        },
         "https://staging.example.com",
         "https://staging.example.com/api/debug/emails",
       ),
