@@ -19,7 +19,12 @@ export default function ApplicationsPage() {
         title="Applications"
         description="Catalogue installers and assign them to groups or devices."
         actions={
-          <LinkButton href={`/t/${params.tenantId}/applications/new`}>Add application</LinkButton>
+          <div class="flex items-center gap-2">
+            <LinkButton variant="outline" href={`/t/${params.tenantId}/software`}>
+              Software inventory
+            </LinkButton>
+            <LinkButton href={`/t/${params.tenantId}/applications/new`}>Add application</LinkButton>
+          </div>
         }
       />
       <MdmTable<ApplicationRow>

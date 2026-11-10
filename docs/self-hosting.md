@@ -196,6 +196,11 @@ server and is sealed with `AUTH_SECRET`.
 The gateway is the `mttx` CLI in `apps/mttx`. It terminates Apple MDM and SCEP traffic and
 calls your management backend over HTTP. It does not schedule pushes or store devices.
 
+The gateway does not run the Enterprise maintenance job and does not send credential-expiry
+email. Credential-expiry notifications are a Cloud feature of the `apps/api` scheduled
+handler; whitelabel operators must monitor the APNs certificate and SCEP CA expiry in their
+own tooling.
+
 ### Run from source
 
 ```bash

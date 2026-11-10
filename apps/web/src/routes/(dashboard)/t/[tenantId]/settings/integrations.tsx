@@ -1,0 +1,515 @@
+import { useParams } from "@solidjs/router";
+import { isServer } from "@solidjs/web";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { createMemo, createSignal, For, Show } from "solid-js";
+import {
+  WEBHOOK_EVENT_LABELS,
+  WEBHOOK_EVENT_TYPES,
+  webhookUrlProblem,
+  type WebhookEndpointInfo,
+  type WebhookEventType,
+  type WebhookTestResponse,
+} from "@mattrax/enterprise-domain";
+import { ErrorText, Field, QueryError } from "~/components/mdm/common";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
+import { errorMessage } from "~/lib/errors";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+
+/**
+ * Settings → Integrations: outbound event webhooks.
+ *
+ * The signing secret is only in the browser for the moment it is created or
+ * rotated; every later list only shows its last four characters.
+ */
+export default function IntegrationsSettingsPage() {
+  const params = useParams();
+  const qc = useQueryClient();
+  const webhooks = useQuery(() => enterpriseQueries.webhooks(params.tenantId));
+  const tenant = useQuery(() => ({
+    ...enterpriseQueries.tenant(params.tenantId),
+    enabled: Boolean(params.tenantId) && !isServer,
+  }));
+
+  const [editorOpen, setEditorOpen] = createSignal(false);
+  const [editing, setEditing] = createSignal<WebhookEndpointInfo | null>(null);
+  const [url, setUrl] = createSignal("");
+  const [description, setDescription] = createSignal("");
+  const [events, setEvents] = createSignal<WebhookEventType[]>(Array.from(WEBHOOK_EVENT_TYPES));
+  /** An empty event list subscribes to every event, including future ones. */
+  const [allEvents, setAllEvents] = createSignal(true);
+  const [enabled, setEnabled] = createSignal(true);
+  const [formError, setFormError] = createSignal<unknown>();
+
+  const [secret, setSecret] = createSignal<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = createSignal<WebhookEndpointInfo | null>(null);
+  const [rotateTarget, setRotateTarget] = createSignal<WebhookEndpointInfo | null>(null);
+  const [testResults, setTestResults] = createSignal<Record<string, WebhookTestResponse>>({});
+  const [testingId, setTestingId] = createSignal<string | null>(null);
+  const [rotateError, setRotateError] = createSignal<unknown>();
+
+  const canManage = () => {
+    // The tenant query is browser-only. During SSR we render the read-only
+    // shell and let hydration reveal the controls, so an unauthenticated
+    // server render cannot throw out of a Show accessor.
+    if (isServer) return false;
+    const role = tenant.data?.role ?? "";
+    return role.split(",").some((item) => item === "owner" || item === "admin");
+  };
+  const urlProblem = createMemo(() => (url().trim() ? webhookUrlProblem(url()) : null));
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: enterpriseKeys.webhooks(params.tenantId) });
+
+  const toggleEvent = (event: WebhookEventType) =>
+    setEvents((current) =>
+      current.includes(event) ? current.filter((item) => item !== event) : [...current, event],
+    );
+  const toggleAllEvents = (all: boolean) => {
+    setAllEvents(all);
+    // Switching from "all" to a subset starts from every current event so the
+    // administrator only has to untick the ones they do not want.
+    if (!all && events().length === 0) setEvents(Array.from(WEBHOOK_EVENT_TYPES));
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setUrl("");
+    setDescription("");
+    setEvents(Array.from(WEBHOOK_EVENT_TYPES));
+    setAllEvents(true);
+    setEnabled(true);
+    setFormError(undefined);
+    setEditorOpen(true);
+  };
+  const openEdit = (endpoint: WebhookEndpointInfo) => {
+    setEditing(endpoint);
+    setUrl(endpoint.url);
+    setDescription(endpoint.description ?? "");
+    setAllEvents(endpoint.events.length === 0);
+    setEvents(
+      endpoint.events.length > 0 ? Array.from(endpoint.events) : Array.from(WEBHOOK_EVENT_TYPES),
+    );
+    setEnabled(endpoint.enabled);
+    setFormError(undefined);
+    setEditorOpen(true);
+  };
+
+  const save = useMutation(() => ({
+    mutationFn: async () => {
+      const payload = {
+        url: url().trim(),
+        description: description().trim() || null,
+        // An empty list means "all events", including events added later.
+        events: allEvents() ? [] : events(),
+        enabled: enabled(),
+      };
+      const current = editing();
+      if (current) return enterprise.patchWebhook(params.tenantId, current.id, payload);
+      return enterprise.createWebhook(params.tenantId, payload);
+    },
+    onSuccess: async (result) => {
+      await invalidate();
+      setEditorOpen(false);
+      if ("secret" in result) setSecret(result.secret);
+    },
+    onError: (error) => setFormError(error),
+  }));
+
+  const remove = useMutation(() => ({
+    mutationFn: (endpoint: WebhookEndpointInfo) =>
+      enterprise.deleteWebhook(params.tenantId, endpoint.id),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      await invalidate();
+    },
+  }));
+
+  const rotate = useMutation(() => ({
+    mutationFn: (endpoint: WebhookEndpointInfo) =>
+      enterprise.rotateWebhookSecret(params.tenantId, endpoint.id),
+    onSuccess: async (result) => {
+      setRotateTarget(null);
+      setRotateError(undefined);
+      setSecret(result.secret);
+      await invalidate();
+    },
+    onError: (error) => setRotateError(error),
+  }));
+
+  const test = async (endpoint: WebhookEndpointInfo) => {
+    setTestingId(endpoint.id);
+    try {
+      const result = await enterprise.testWebhook(params.tenantId, endpoint.id);
+      setTestResults((current) => ({ ...current, [endpoint.id]: result }));
+      await invalidate();
+    } catch (error) {
+      setTestResults((current) => ({
+        ...current,
+        [endpoint.id]: {
+          status: "failed",
+          responseStatus: null,
+          error: errorMessage(error, "Could not send the test delivery"),
+          durationMs: 0,
+        },
+      }));
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  return (
+    <div class="grid gap-6">
+      <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
+
+      <Card>
+        <CardHeader class="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle>Outbound webhooks</CardTitle>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Send device lifecycle and enrollment events to your own HTTPS endpoint. Every delivery
+              is signed with HMAC-SHA256.
+            </p>
+          </div>
+          <Show when={canManage()}>
+            <Button onClick={openCreate}>
+              <Plus class="size-4" />
+              Add endpoint
+            </Button>
+          </Show>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <Show when={!canManage() && tenant.data}>
+            <p class="rounded-lg border bg-stone-50 p-3 text-sm text-muted-foreground">
+              Only a tenant owner or admin can manage webhook endpoints.
+            </p>
+          </Show>
+
+          <Show
+            when={(webhooks.data?.endpoints.length ?? 0) > 0}
+            fallback={
+              <div class="rounded-xl border border-dashed p-8 text-center">
+                <p class="text-sm font-medium">No webhook endpoints yet</p>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  Add an endpoint to receive signed device and enrollment events.
+                </p>
+              </div>
+            }
+          >
+            <For each={webhooks.data?.endpoints ?? []}>
+              {(endpoint) => (
+                <div class="rounded-xl border p-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0 space-y-1">
+                      <p class="break-all font-mono text-sm">{endpoint.url}</p>
+                      <Show when={endpoint.description}>
+                        <p class="text-sm text-muted-foreground">{endpoint.description}</p>
+                      </Show>
+                      <div class="flex flex-wrap items-center gap-2 pt-1">
+                        <Badge variant={endpoint.enabled ? "default" : "outline"}>
+                          {endpoint.enabled ? "Enabled" : "Disabled"}
+                        </Badge>
+                        <Show when={endpoint.secretPrefix}>
+                          <span class="text-xs text-muted-foreground">
+                            Signing secret ····{endpoint.secretPrefix}
+                          </span>
+                        </Show>
+                        <Show when={endpoint.lastDeliveryAt}>
+                          <span class="text-xs text-muted-foreground">
+                            Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()} ·{" "}
+                            {endpoint.lastDeliveryStatus ?? "unknown"}
+                          </span>
+                        </Show>
+                      </div>
+                    </div>
+                    <Show when={canManage()}>
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={testingId() === endpoint.id}
+                          onClick={() => void test(endpoint)}
+                        >
+                          {testingId() === endpoint.id ? "Sending…" : "Send test"}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => openEdit(endpoint)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setRotateError(undefined);
+                            setRotateTarget(endpoint);
+                          }}
+                        >
+                          <RotateCcw class="size-3.5" />
+                          Rotate secret
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setDeleteTarget(endpoint)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </Show>
+                  </div>
+
+                  <div class="mt-3 flex flex-wrap gap-1.5">
+                    <For
+                      each={
+                        endpoint.events.length > 0
+                          ? endpoint.events
+                          : (Array.from(WEBHOOK_EVENT_TYPES) as WebhookEventType[])
+                      }
+                    >
+                      {(event) => (
+                        <span class="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+                          {WEBHOOK_EVENT_LABELS[event]}
+                        </span>
+                      )}
+                    </For>
+                  </div>
+
+                  <Show when={endpoint.consecutiveFailures > 0}>
+                    <p class="mt-3 flex items-start gap-2 text-xs text-amber-700">
+                      <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
+                      {endpoint.consecutiveFailures} consecutive failed delivery
+                      {endpoint.consecutiveFailures === 1 ? "" : "ies"}. We retry failed deliveries
+                      automatically.
+                    </p>
+                  </Show>
+
+                  <Show when={testResults()[endpoint.id]}>
+                    {(result) => (
+                      <div
+                        class={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                          result().status === "succeeded"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-red-200 bg-red-50 text-red-700"
+                        }`}
+                      >
+                        <Show
+                          when={result().status === "succeeded"}
+                          fallback={<CircleAlert class="mt-0.5 size-3.5 shrink-0" />}
+                        >
+                          <CheckCircle2 class="mt-0.5 size-3.5 shrink-0" />
+                        </Show>
+                        <span>
+                          {result().status === "succeeded"
+                            ? `Test delivered (HTTP ${result().responseStatus ?? "2xx"}) in ${result().durationMs}ms`
+                            : `Test failed: ${result().error ?? "unknown error"}`}
+                        </span>
+                      </div>
+                    )}
+                  </Show>
+                </div>
+              )}
+            </For>
+          </Show>
+
+          <p class="text-xs text-muted-foreground">
+            Deliveries are retried automatically after a failure and delivery history is removed
+            after 30 days. Endpoints must be public HTTPS URLs; localhost and private addresses are
+            rejected.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editing() ? "Edit webhook endpoint" : "Add webhook endpoint"}
+            </DialogTitle>
+            <DialogDescription>
+              Events are delivered as JSON with an HMAC-SHA256 signature over the timestamp and raw
+              body.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            class="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!urlProblem()) save.mutate();
+            }}
+          >
+            <Field label="Endpoint URL" hint="Must be a public HTTPS URL.">
+              <Input
+                value={url()}
+                placeholder="https://hooks.example.com/mattrax"
+                onInput={(event) => setUrl(event.currentTarget.value)}
+                required
+              />
+              <Show when={urlProblem()}>
+                <p class="text-xs text-red-600">{urlProblem()}</p>
+              </Show>
+            </Field>
+            <Field label="Description" hint="Optional note for your team.">
+              <Input
+                value={description()}
+                maxlength={500}
+                onInput={(event) => setDescription(event.currentTarget.value)}
+              />
+            </Field>
+            <div class="space-y-2">
+              <p class="text-sm font-medium">Events</p>
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allEvents()}
+                  onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
+                />
+                Deliver all events, including future events
+              </label>
+              <div
+                class={
+                  allEvents() ? "grid gap-2 opacity-50 sm:grid-cols-2" : "grid gap-2 sm:grid-cols-2"
+                }
+              >
+                <For each={WEBHOOK_EVENT_TYPES}>
+                  {(event) => (
+                    <label class="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        class="mt-0.5"
+                        checked={allEvents() || events().includes(event)}
+                        disabled={allEvents()}
+                        onChange={() => toggleEvent(event)}
+                      />
+                      <span>
+                        <span class="font-medium">{WEBHOOK_EVENT_LABELS[event]}</span>
+                        <span class="block font-mono text-[11px] text-muted-foreground">
+                          {event}
+                        </span>
+                      </span>
+                    </label>
+                  )}
+                </For>
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={enabled()}
+                onChange={(event) => setEnabled(event.currentTarget.checked)}
+              />
+              Endpoint is enabled
+            </label>
+            <ErrorText error={formError() ?? save.error} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditorOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={save.isPending || Boolean(urlProblem())}>
+                {save.isPending ? "Saving…" : editing() ? "Save changes" : "Add endpoint"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(secret())} onOpenChange={(open) => !open && setSecret(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Signing secret</DialogTitle>
+            <DialogDescription>
+              Copy this secret now. It is only shown once; rotate it later if it is lost.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="flex gap-2">
+            <Input value={secret() ?? ""} readonly class="font-mono text-xs" />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void navigator.clipboard?.writeText(secret() ?? "")}
+            >
+              Copy
+            </Button>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            Verify deliveries with the <code>X-Mattrax-Signature</code> header: HMAC-SHA256 over{" "}
+            <code>timestamp + "." + rawBody</code>.
+          </p>
+          <DialogFooter>
+            <Button onClick={() => setSecret(null)}>I have copied it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget())}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this webhook endpoint?</DialogTitle>
+            <DialogDescription>
+              Deliveries stop immediately and delivery history is removed. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <p class="break-all font-mono text-sm">{deleteTarget()?.url}</p>
+          <ErrorText error={remove.error} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={remove.isPending}
+              onClick={() => {
+                const target = deleteTarget();
+                if (target) remove.mutate(target);
+              }}
+            >
+              Delete endpoint
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(rotateTarget())}
+        onOpenChange={(open) => !open && setRotateTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rotate signing secret?</DialogTitle>
+            <DialogDescription>
+              The old secret stops working immediately. Deliveries already queued for retry will be
+              signed with the new secret.
+            </DialogDescription>
+          </DialogHeader>
+          <ErrorText error={rotateError()} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRotateTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={rotate.isPending}
+              onClick={() => {
+                const target = rotateTarget();
+                if (target) rotate.mutate(target);
+              }}
+            >
+              {rotate.isPending ? "Rotating…" : "Rotate secret"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

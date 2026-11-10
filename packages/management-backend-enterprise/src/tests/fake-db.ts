@@ -47,24 +47,44 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+const comparable = (value: unknown): any => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const parsed = Date.parse(value.replace(" ", "T") + "Z");
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return value;
+};
+
 const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
   if (!query) return true;
   let index = 0;
-  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(=|in|is null)(?:\s*\((.*?)\))?/gi;
+  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
   for (const match of query.sql.matchAll(regex)) {
     const column = camel(match[2]!);
     const key = match[1] ? `${match[1]}.${column}` : column;
     const actual = key in row ? row[key] : (row[column] ?? row[match[2]!]);
-    if (match[3]!.toLowerCase() === "is null") {
+    const operator = match[3]!.toLowerCase();
+    if (operator === "is null") {
       if (actual != null) return false;
-    } else if (match[3]!.toLowerCase() === "in") {
+    } else if (operator === "in") {
       const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
       const values = query.params.slice(index, index + count);
       index += count;
       if (!values.includes(actual)) return false;
-    } else if (actual !== query.params[index++]) {
-      return false;
+    } else {
+      const expected = query.params[index++];
+      if (operator === "=") {
+        if (actual !== expected) return false;
+        continue;
+      }
+      const left = comparable(actual);
+      const right = comparable(expected);
+      if (operator === "<" && !(left < right)) return false;
+      if (operator === "<=" && !(left <= right)) return false;
+      if (operator === ">" && !(left > right)) return false;
+      if (operator === ">=" && !(left >= right)) return false;
     }
   }
   return true;
@@ -223,6 +243,30 @@ class UpdateBuilder {
   }
 }
 
+class DeleteBuilder {
+  constructor(
+    private readonly rows: () => Row[],
+    private readonly table: string,
+  ) {}
+
+  where(condition: any) {
+    const rows = this.rows();
+    for (let index = rows.length - 1; index >= 0; index--) {
+      const row = rows[index]!;
+      if (row.__table === this.table && matches(condition, row)) rows.splice(index, 1);
+    }
+    return Effect.succeed([]);
+  }
+
+  then(resolve: (value: Row[]) => void) {
+    resolve([]);
+  }
+
+  [Symbol.iterator]() {
+    return Effect.succeed([])[Symbol.iterator]();
+  }
+}
+
 export const makeDb = (initial: Partial<Store> = {}) => {
   const store: Store = {};
   const ensure = (table: string) => (store[table] ??= []);
@@ -237,6 +281,7 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     store,
     insert: (table: any) => new InsertBuilder(() => ensure(tableName(table)), tableName(table)),
     update: (table: any) => new UpdateBuilder(() => ensure(tableName(table)), tableName(table)),
+    delete: (table: any) => new DeleteBuilder(() => ensure(tableName(table)), tableName(table)),
     select: (fields?: Record<string, any>) =>
       new SelectBuilder(() => Object.values(store).flat(), fields),
   };

@@ -50,8 +50,30 @@ export type {
   EnrollmentAttemptOutcome,
   EnrollmentAttemptPlatform,
 } from "./enrollmentAttempts.js";
-export { runMaintenance } from "./maintenance.js";
-export type { MaintenanceOptions, MaintenanceResult } from "./maintenance.js";
+export { runMaintenance, loadCredentialAlertRecipients } from "./maintenance.js";
+export type {
+  CredentialAlertRecipient,
+  CredentialExpiryNotification,
+  CredentialExpiryNotifier,
+  MaintenanceOptions,
+  MaintenanceResult,
+} from "./maintenance.js";
+export {
+  WEBHOOK_DELIVERY_RETENTION_DAYS,
+  WEBHOOK_DELIVERY_TIMEOUT_MS,
+  WEBHOOK_MAX_RETRY_ATTEMPTS,
+  generateWebhookSecret,
+  pruneWebhookDeliveries,
+  retryFailedWebhookDeliveries,
+  sendTestWebhook,
+  signWebhookDelivery,
+  verifyWebhookSignature,
+} from "@mattrax/management-backend-enterprise";
+export type {
+  WebhookDeliveryOutcome,
+  WebhookRetryOptions,
+  WebhookRetryResult,
+} from "@mattrax/management-backend-enterprise";
 export {
   CREDENTIAL_CRITICAL_DAYS,
   CREDENTIAL_WARNING_DAYS,

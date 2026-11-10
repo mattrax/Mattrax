@@ -35,7 +35,10 @@ import {
   resolveTenantBranding,
   validateTenantBranding,
   dynamicGroupRulesProblem,
+  WEBHOOK_EVENT_TYPES,
+  webhookUrlProblem,
   type DynamicGroupRules,
+  type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
@@ -45,12 +48,19 @@ import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
   certificateDeviceIdsFor,
   createWindowsTenantToken,
+  dispatchWebhookEvent,
   enterpriseEnrollmentProfile,
+  generateWebhookSecret,
   previewDynamicGroup,
   resolveEffectivePolicyForDevice,
+  sendTestWebhook,
   syncDynamicGroup,
   syncDynamicGroupsForDevice,
+  toWebhookEndpointInfo,
+  webhookEventForAuditAction,
+  webhookSecretPrefix,
   windowsTenantTokenExpiresAt,
+  type WebhookEndpointRow,
 } from "@mattrax/management-backend-enterprise";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
@@ -145,6 +155,10 @@ export type EnterpriseHandlersConfig = {
   readonly cloudAppleVendorKey?: string;
   /** Push transport. Defaults to a no-op transport when omitted (tests). */
   readonly apns?: ApnsService.Service;
+  /** Injected fetch for outbound webhook deliveries (tests). */
+  readonly webhookFetch?: typeof globalThis.fetch;
+  /** Per-attempt webhook delivery deadline. Defaults to 5s. */
+  readonly webhookTimeoutMs?: number;
   /** Transactional email binding. Invitations are logged when omitted. */
   readonly email?: {
     send(message: {
@@ -412,11 +426,24 @@ export const createEnterpriseService = ({
   email,
   azureGraph,
   azureClientId,
+  webhookFetch,
+  webhookTimeoutMs,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
   const auth = authService;
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
-  const applePush = makeApplePush({ db, schema, apns, authSecret });
+  const applePush = makeApplePush({
+    db,
+    schema,
+    apns,
+    authSecret,
+    ...(webhookFetch ? { webhookFetch } : {}),
+  });
+  const webhookOptions = {
+    ...(authSecret ? { authSecret } : {}),
+    ...(webhookFetch ? { fetch: webhookFetch } : {}),
+    ...(webhookTimeoutMs !== undefined ? { timeoutMs: webhookTimeoutMs } : {}),
+  };
   const stripe = stripeClient
     ? isEffectStripeClient(stripeClient)
       ? stripeClient
@@ -519,16 +546,164 @@ export const createEnterpriseService = ({
     targetId: string | null = null,
     metadata?: unknown,
   ) =>
-    db.insert(schema.auditLog).values({
-      id: id(),
-      organizationId: ctx.organization.id,
-      actorUserId: ctx.user.id,
-      actorEmail: ctx.user.email,
-      action,
-      targetType,
-      targetId,
-      metadata: metadata === undefined ? null : (metadata as object),
-      createdAt: now(),
+    Effect.gen(function* () {
+      yield* db.insert(schema.auditLog).values({
+        id: id(),
+        organizationId: ctx.organization.id,
+        actorUserId: ctx.user.id,
+        actorEmail: ctx.user.email,
+        action,
+        targetType,
+        targetId,
+        metadata: metadata === undefined ? null : (metadata as object),
+        createdAt: now(),
+      });
+      // A small set of administrator actions are also customer-facing. Device
+      // lifecycle events are mostly emitted from the protocol path; deletion
+      // only exists here.
+      const webhookEvent = webhookEventForAuditAction(action);
+      if (!webhookEvent) return;
+      const context =
+        typeof metadata === "object" && metadata !== null
+          ? (metadata as Record<string, unknown>)
+          : metadata === undefined
+            ? {}
+            : { metadata };
+      yield* dispatchWebhookEvent(
+        db,
+        {
+          organizationId: ctx.organization.id,
+          type: webhookEvent,
+          data: { ...context, targetType, targetId },
+        },
+        webhookOptions,
+      );
+    });
+
+  const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
+  const normalizeWebhookEvents = (events: ReadonlyArray<string>): string[] => [
+    ...new Set(events.filter((event) => WEBHOOK_EVENTS.has(event))),
+  ];
+
+  const webhookDescription = (value: string | null | undefined): string | null => {
+    const trimmed = value?.trim();
+    if (!trimmed) return null;
+    if (trimmed.length > 500)
+      throw new EnterpriseBadRequest({ message: "Description must be 500 characters or fewer" });
+    return trimmed;
+  };
+
+  const requireWebhookUrl = (url: string): string => {
+    const problem = webhookUrlProblem(url);
+    if (problem) throw new EnterpriseBadRequest({ message: problem });
+    return url.trim();
+  };
+
+  const requireWebhookSigning = (): string => {
+    if (!authSecret)
+      throw new EnterpriseBadRequest({
+        message: "Webhook signing is not configured on this deployment",
+      });
+    return authSecret;
+  };
+
+  const loadWebhookEndpoint = (organizationId: string, webhookId: string) =>
+    Effect.gen(function* () {
+      const endpoint = (yield* db.query.webhookEndpoint.findFirst({
+        where: { id: webhookId, organizationId },
+      })) as WebhookEndpointRow | undefined;
+      if (!endpoint)
+        return yield* Effect.fail(
+          new EnterpriseNotFound({ message: "Webhook endpoint not found" }),
+        );
+      return endpoint;
+    });
+
+  const insertWebhookEndpoint = (input: {
+    readonly organizationId: string;
+    readonly url: string;
+    readonly description: string | null;
+    readonly events: string[];
+    readonly enabled: boolean;
+  }) =>
+    Effect.gen(function* () {
+      const signingSecret = yield* Effect.try({
+        try: () => requireWebhookSigning(),
+        catch: (cause) =>
+          cause instanceof EnterpriseBadRequest
+            ? cause
+            : new EnterpriseBadRequest({ message: "Webhook signing is not configured" }),
+      });
+      const secret = generateWebhookSecret();
+      const sealed = yield* Effect.tryPromise({
+        try: () => sealSecret(signingSecret, secret),
+        catch: () =>
+          new EnterpriseBadRequest({ message: "Could not encrypt the webhook signing secret" }),
+      });
+      const webhookId = id();
+      const timestamp = now();
+      yield* db.insert(schema.webhookEndpoint).values({
+        id: webhookId,
+        organizationId: input.organizationId,
+        url: input.url,
+        secret: sealed,
+        secretPrefix: webhookSecretPrefix(secret),
+        description: input.description,
+        eventFilters: input.events,
+        enabled: input.enabled,
+        lastDeliveryAt: null,
+        lastDeliveryStatus: null,
+        consecutiveFailures: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      const endpoint = (yield* db.query.webhookEndpoint.findFirst({
+        where: { id: webhookId, organizationId: input.organizationId },
+      })) as WebhookEndpointRow;
+      return { endpoint, secret };
+    });
+
+  /**
+   * Report a partial/total APNs wake-up failure for a policy change as
+   * `policy.deployment_failed`. The customer-facing policy write still
+   * succeeds; devices converge on their next poll.
+   */
+  const reportPolicyDeliveryFailure = (
+    organizationId: string,
+    context: Record<string, unknown>,
+    result: {
+      readonly requested: number;
+      readonly failed: ReadonlyArray<{ readonly deviceId: string }>;
+    },
+  ) =>
+    // A deployment with no push transport is not a policy deployment failure;
+    // devices still converge on their next poll.
+    apns.available && result.failed.length > 0
+      ? dispatchWebhookEvent(
+          db,
+          {
+            organizationId,
+            type: "policy.deployment_failed",
+            data: {
+              ...context,
+              requested: result.requested,
+              failed: result.failed.length,
+              devices: result.failed.slice(0, 25).map((failure) => failure.deviceId),
+            },
+          },
+          webhookOptions,
+        )
+      : Effect.void;
+
+  const pushPolicyDevices = (
+    organizationId: string,
+    policyId: string,
+    deviceIds: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const result = yield* applePush.pushAppleDevices(deviceIds);
+      yield* reportPolicyDeliveryFailure(organizationId, { policyId }, result);
+      return result;
     });
 
   const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
@@ -753,10 +928,29 @@ export const createEnterpriseService = ({
     diskTotal: row.diskTotal,
     diskUsed: row.diskUsed,
     fileVaultEnabled: row.fileVaultEnabled,
+    fileVaultStatus:
+      row.fileVaultEnabled === null || row.fileVaultEnabled === undefined
+        ? null
+        : row.fileVaultEnabled
+          ? ("enabled" as const)
+          : ("disabled" as const),
     batteryHealth: row.batteryHealth,
     capabilities: row.capabilities,
     modelNumber: row.modelNumber,
     inventoryUpdatedAt: row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : null,
+    applicationsUpdatedAt: row.applicationsUpdatedAt ? iso(row.applicationsUpdatedAt) : null,
+  });
+
+  const rowDeviceApplication = (row: typeof schema.deviceApplication.$inferSelect) => ({
+    bundleId: row.bundleId,
+    name: row.name,
+    version: row.version,
+    shortVersion: row.shortVersion,
+    bundleSize: row.bundleSize,
+    dynamicSize: row.dynamicSize,
+    hasUpdateAvailable: row.hasUpdateAvailable,
+    isManaged: row.isManaged,
+    lastReportedAt: iso(row.lastReportedAt),
   });
 
   const deviceDeclarationsFor = (deviceId: string) =>
@@ -1055,6 +1249,24 @@ export const createEnterpriseService = ({
           userAgent: input.userAgent?.slice(0, 255) ?? null,
           createdAt: timestamp,
         });
+        // Only failed attempts are customer-actionable. Dedupe above already
+        // stops a page-refresh loop from producing a delivery per request.
+        if (input.outcome !== "ok")
+          yield* dispatchWebhookEvent(
+            db,
+            {
+              organizationId: input.organizationId,
+              type: "enrollment.attempt_failed",
+              occurredAt: timestamp,
+              data: {
+                enrollmentId: input.enrollmentId,
+                platform: input.platform,
+                outcome: input.outcome,
+                detail: input.detail?.slice(0, 255) ?? null,
+              },
+            },
+            webhookOptions,
+          );
       }),
       () => Effect.void,
     );
@@ -2772,6 +2984,158 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "scim.token_revoked", "scim_token", tokenId);
         return ok;
       }),
+    listWebhookEndpoints: (request, tenantId) =>
+      Effect.gen(function* () {
+        // Delivery health is operationally sensitive, so even the list is
+        // owner/admin-only rather than available to read-only members.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const rows = (yield* db
+          .select()
+          .from(schema.webhookEndpoint)
+          .where(eq(schema.webhookEndpoint.organizationId, ctx.organization.id))
+          .orderBy(asc(schema.webhookEndpoint.createdAt))) as WebhookEndpointRow[];
+        return { endpoints: rows.map(toWebhookEndpointInfo) };
+      }),
+    createWebhookEndpoint: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          url: string;
+          description?: string | null;
+          events: ReadonlyArray<string>;
+          enabled?: boolean;
+        };
+        const validated = yield* Effect.try({
+          try: () => ({
+            url: requireWebhookUrl(body.url),
+            description: webhookDescription(body.description),
+          }),
+          catch: (cause) =>
+            cause instanceof EnterpriseBadRequest
+              ? cause
+              : new EnterpriseBadRequest({ message: "Invalid webhook endpoint" }),
+        });
+        const { endpoint, secret } = yield* insertWebhookEndpoint({
+          organizationId: ctx.organization.id,
+          url: validated.url,
+          description: validated.description,
+          events: normalizeWebhookEvents(body.events),
+          enabled: body.enabled ?? true,
+        });
+        yield* audit(ctx, "webhook.created", "webhook_endpoint", endpoint.id, {
+          url: endpoint.url,
+          events: endpoint.eventFilters ?? [],
+        });
+        return { endpoint: toWebhookEndpointInfo(endpoint), secret };
+      }),
+    patchWebhookEndpoint: (request, tenantId, webhookId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          url?: string;
+          description?: string | null;
+          events?: ReadonlyArray<string>;
+          enabled?: boolean;
+        };
+        const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+        const validated = yield* Effect.try({
+          try: () => ({
+            url: body.url === undefined ? undefined : requireWebhookUrl(body.url),
+            description:
+              body.description === undefined ? undefined : webhookDescription(body.description),
+          }),
+          catch: (cause) =>
+            cause instanceof EnterpriseBadRequest
+              ? cause
+              : new EnterpriseBadRequest({ message: "Invalid webhook endpoint" }),
+        });
+        const update: Record<string, unknown> = { updatedAt: now() };
+        if (validated.url !== undefined) update.url = validated.url;
+        if (validated.description !== undefined) update.description = validated.description;
+        if (body.events !== undefined) update.eventFilters = normalizeWebhookEvents(body.events);
+        if (body.enabled !== undefined) update.enabled = body.enabled;
+        yield* db
+          .update(schema.webhookEndpoint)
+          .set(update)
+          .where(
+            and(
+              eq(schema.webhookEndpoint.id, existing.id),
+              eq(schema.webhookEndpoint.organizationId, ctx.organization.id),
+            ),
+          );
+        const updated = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+        yield* audit(ctx, "webhook.updated", "webhook_endpoint", updated.id, {
+          fields: Object.keys(update).filter((field) => field !== "updatedAt"),
+        });
+        return toWebhookEndpointInfo(updated);
+      }),
+    deleteWebhookEndpoint: (request, tenantId, webhookId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+        yield* db
+          .delete(schema.webhookEndpoint)
+          .where(
+            and(
+              eq(schema.webhookEndpoint.id, existing.id),
+              eq(schema.webhookEndpoint.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(ctx, "webhook.deleted", "webhook_endpoint", existing.id, {
+          url: existing.url,
+        });
+        return ok;
+      }),
+    rotateWebhookSecret: (request, tenantId, webhookId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+        const signingSecret = yield* Effect.try({
+          try: () => requireWebhookSigning(),
+          catch: (cause) =>
+            cause instanceof EnterpriseBadRequest
+              ? cause
+              : new EnterpriseBadRequest({ message: "Webhook signing is not configured" }),
+        });
+        const secret = generateWebhookSecret();
+        const sealed = yield* Effect.tryPromise({
+          try: () => sealSecret(signingSecret, secret),
+          catch: () =>
+            new EnterpriseBadRequest({ message: "Could not encrypt the webhook signing secret" }),
+        });
+        yield* db
+          .update(schema.webhookEndpoint)
+          .set({
+            secret: sealed,
+            secretPrefix: webhookSecretPrefix(secret),
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.webhookEndpoint.id, existing.id),
+              eq(schema.webhookEndpoint.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(ctx, "webhook.secret_rotated", "webhook_endpoint", existing.id);
+        return { secret };
+      }),
+    testWebhookEndpoint: (request, tenantId, webhookId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+        const outcome = yield* sendTestWebhook(db as never, existing, webhookOptions);
+        yield* audit(ctx, "webhook.tested", "webhook_endpoint", existing.id, {
+          status: outcome.status,
+          responseStatus: outcome.responseStatus,
+        });
+        const response: WebhookTestResponse = {
+          status: outcome.status,
+          responseStatus: outcome.responseStatus,
+          error: outcome.error,
+          durationMs: outcome.durationMs,
+        };
+        return response;
+      }),
     listAuditLog: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -3825,6 +4189,28 @@ export const createEnterpriseService = ({
                   return { requestType: "ShutdownDevice", payload: {} };
                 case "clear-passcode":
                   return { requestType: "ClearPasscode", payload: { UnlockToken: "__STORED__" } };
+                case "collect-security-info":
+                  // SecurityInfo takes no query payload; the response always
+                  // carries FileVault and bootstrap-token escrow state.
+                  return { requestType: "SecurityInfo", payload: {} };
+                case "refresh-applications":
+                  return {
+                    requestType: "InstalledApplicationList",
+                    payload: {
+                      // Request the fields the inventory table persists. The
+                      // identifier is always included by the device.
+                      Items: [
+                        "Identifier",
+                        "Name",
+                        "Version",
+                        "ShortVersion",
+                        "BundleSize",
+                        "DynamicSize",
+                        "HasUpdateAvailable",
+                      ],
+                      ManagedAppsOnly: false,
+                    },
+                  };
                 case "install-app":
                   if (body.manifestUrl)
                     return {
@@ -4507,7 +4893,8 @@ export const createEnterpriseService = ({
           .filter((row) => !row.deleted)
           .map((row) => ({ id: row.id, reason: row.reason }));
         const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
-        yield* applePush.pushAppleDevices(affectedDevices);
+        const pushed = yield* applePush.pushAppleDevices(affectedDevices);
+        yield* reportPolicyDeliveryFailure(ctx.organization.id, { policyIds: deleted }, pushed);
         yield* audit(ctx, "policy.deleted", "policy", null, { ids: [...deleted] });
         return { deleted, failed };
       }),
@@ -4561,7 +4948,7 @@ export const createEnterpriseService = ({
           }
         }
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
-        yield* applePush.pushAppleDevices(affectedDevices);
+        yield* pushPolicyDevices(ctx.organization.id, policyId, affectedDevices);
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body),
           configurations: Object.keys(body.configurations ?? {}),
@@ -4773,7 +5160,7 @@ export const createEnterpriseService = ({
               ),
             ),
           );
-        yield* applePush.pushAppleDevices([
+        yield* pushPolicyDevices(ctx.organization.id, policyId, [
           ...assign.map((assignment) => assignment.id),
           ...unassign.map((assignment) => assignment.id),
         ]);
@@ -5220,7 +5607,12 @@ export const createEnterpriseService = ({
             }),
           { concurrency: 10 },
         );
-        yield* applePush.pushAppleDevices(affected.flat());
+        const pushed = yield* applePush.pushAppleDevices(affected.flat());
+        yield* reportPolicyDeliveryFailure(
+          tenantId,
+          { policyIds: [...(ids as ReadonlyArray<string>)] },
+          pushed,
+        );
         return ok;
       }),
     duplicatePolicy: (request, tenantId, policyId, payload) =>
@@ -5422,7 +5814,204 @@ export const createEnterpriseService = ({
         });
         if (!row)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-        return rowDevice(row);
+        const secrets = yield* db
+          .select({
+            kind: schema.deviceSecret.kind,
+            updatedAt: schema.deviceSecret.updatedAt,
+            rotatedAt: schema.deviceSecret.rotatedAt,
+          })
+          .from(schema.deviceSecret)
+          .where(
+            and(
+              eq(schema.deviceSecret.deviceId, row.id),
+              eq(schema.deviceSecret.organizationId, ctx.organization.id),
+            ),
+          );
+        const recoveryKey = secrets.find((secret) => secret.kind === "filevault_recovery_key");
+        const bootstrapToken = secrets.find((secret) => secret.kind === "bootstrap_token");
+        const [apple] = yield* db
+          .select({ bootstrapTokenEscrowed: schema.deviceApple.bootstrapTokenEscrowed })
+          .from(schema.deviceApple)
+          .where(eq(schema.deviceApple.deviceId, row.id))
+          .limit(1);
+        // Presence metadata only — the sealed value never leaves the backend.
+        return {
+          ...rowDevice(row),
+          recoveryKeyEscrowed: Boolean(recoveryKey),
+          bootstrapTokenEscrowed: apple?.bootstrapTokenEscrowed ?? Boolean(bootstrapToken),
+          recoveryKeyUpdatedAt: recoveryKey ? iso(recoveryKey.updatedAt) : null,
+          recoveryKeyRotatedAt: recoveryKey?.rotatedAt ? iso(recoveryKey.rotatedAt) : null,
+          bootstrapTokenUpdatedAt: bootstrapToken ? iso(bootstrapToken.updatedAt) : null,
+        };
+      }),
+    listDeviceApplications: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const applications = yield* db
+          .select()
+          .from(schema.deviceApplication)
+          .where(
+            and(
+              eq(schema.deviceApplication.deviceId, device.id),
+              eq(schema.deviceApplication.organizationId, ctx.organization.id),
+            ),
+          );
+        return {
+          applications: applications
+            .map(rowDeviceApplication)
+            .sort((left, right) =>
+              (left.name ?? left.bundleId).localeCompare(right.name ?? right.bundleId),
+            ),
+        };
+      }),
+    getDeviceRecoveryKey: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        // Reading a recovery key is a privileged action: the same role check as
+        // writes (owner/admin) applies, and every reveal is audited.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Recovery key escrow is not configured on this deployment",
+            }),
+          );
+        const [secret] = yield* db
+          .select()
+          .from(schema.deviceSecret)
+          .where(
+            and(
+              eq(schema.deviceSecret.deviceId, device.id),
+              eq(schema.deviceSecret.organizationId, ctx.organization.id),
+              eq(schema.deviceSecret.kind, "filevault_recovery_key"),
+            ),
+          )
+          .limit(1);
+        if (!secret)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message: "No FileVault recovery key has been escrowed for this device",
+            }),
+          );
+        const recoveryKey = yield* Effect.tryPromise({
+          try: () => openSecret(authSecret, secret.sealedValue),
+          catch: () =>
+            new EnterpriseBadRequest({
+              message: "The escrowed recovery key could not be decrypted",
+            }),
+        });
+        yield* audit(ctx, "device.recovery_key_viewed", "device", device.id, {
+          kind: "filevault_recovery_key",
+        });
+        return {
+          recoveryKey,
+          updatedAt: iso(secret.updatedAt),
+          rotatedAt: secret.rotatedAt ? iso(secret.rotatedAt) : null,
+        };
+      }),
+    getApplicationInventory: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const filters = (query ?? {}) as {
+          q?: string;
+          managed?: string;
+          updates?: string;
+          limit?: number;
+          offset?: number;
+        };
+        const term = filters.q?.trim().toLowerCase() ?? "";
+        const managed =
+          filters.managed === "managed"
+            ? true
+            : filters.managed === "unmanaged"
+              ? false
+              : undefined;
+        const updatesOnly = filters.updates === "available";
+        const limit = Math.min(Math.max(Math.trunc(Number(filters.limit ?? 100)) || 100, 1), 500);
+        const offset = Math.max(Math.trunc(Number(filters.offset ?? 0)) || 0, 0);
+
+        const rows = yield* db
+          .select()
+          .from(schema.deviceApplication)
+          .where(eq(schema.deviceApplication.organizationId, ctx.organization.id));
+
+        type InventoryGroup = {
+          bundleId: string;
+          name: string | null;
+          version: string | null;
+          shortVersion: string | null;
+          bundleSize: number | null;
+          dynamicSize: number | null;
+          hasUpdateAvailable: boolean;
+          isManaged: boolean;
+          lastReportedAt: Date;
+          devices: Set<string>;
+        };
+        const groups = new Map<string, InventoryGroup>();
+        for (const row of rows) {
+          const group = groups.get(row.bundleId) ?? {
+            bundleId: row.bundleId,
+            name: row.name,
+            version: row.version,
+            shortVersion: row.shortVersion,
+            bundleSize: row.bundleSize,
+            dynamicSize: row.dynamicSize,
+            hasUpdateAvailable: false,
+            isManaged: false,
+            lastReportedAt: row.lastReportedAt,
+            devices: new Set<string>(),
+          };
+          group.name ??= row.name;
+          group.version ??= row.version;
+          group.shortVersion ??= row.shortVersion;
+          group.bundleSize ??= row.bundleSize;
+          group.dynamicSize ??= row.dynamicSize;
+          group.hasUpdateAvailable ||= row.hasUpdateAvailable;
+          group.isManaged ||= row.isManaged;
+          if (row.lastReportedAt > group.lastReportedAt) group.lastReportedAt = row.lastReportedAt;
+          group.devices.add(row.deviceId);
+          groups.set(row.bundleId, group);
+        }
+
+        const matches = [...groups.values()]
+          .filter((group) => {
+            if (term) {
+              const haystack = `${group.name ?? ""} ${group.bundleId}`.toLowerCase();
+              if (!haystack.includes(term)) return false;
+            }
+            if (managed !== undefined && group.isManaged !== managed) return false;
+            if (updatesOnly && !group.hasUpdateAvailable) return false;
+            return true;
+          })
+          .sort((left, right) =>
+            (left.name ?? left.bundleId).localeCompare(right.name ?? right.bundleId),
+          );
+
+        return {
+          total: matches.length,
+          applications: matches.slice(offset, offset + limit).map((group) => ({
+            id: group.bundleId,
+            bundleId: group.bundleId,
+            name: group.name,
+            version: group.version,
+            shortVersion: group.shortVersion,
+            bundleSize: group.bundleSize,
+            dynamicSize: group.dynamicSize,
+            hasUpdateAvailable: group.hasUpdateAvailable,
+            isManaged: group.isManaged,
+            lastReportedAt: iso(group.lastReportedAt),
+            deviceCount: group.devices.size,
+          })),
+        };
       }),
     getDeviceEffectivePolicy: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -5710,6 +6299,36 @@ export const enterpriseHandlers = (
         service.revokeScimToken(request, params.tenantId, params.tokenId),
       ),
     )
+    .handle("listWebhookEndpoints", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listWebhookEndpoints(request, params.tenantId),
+      ),
+    )
+    .handle("createWebhookEndpoint", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createWebhookEndpoint(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchWebhookEndpoint", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchWebhookEndpoint(request, params.tenantId, params.webhookId, payload),
+      ),
+    )
+    .handle("deleteWebhookEndpoint", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteWebhookEndpoint(request, params.tenantId, params.webhookId),
+      ),
+    )
+    .handle("rotateWebhookSecret", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.rotateWebhookSecret(request, params.tenantId, params.webhookId),
+      ),
+    )
+    .handle("testWebhookEndpoint", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.testWebhookEndpoint(request, params.tenantId, params.webhookId),
+      ),
+    )
     .handle("listAuditLog", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listAuditLog(request, params.tenantId),
@@ -5869,6 +6488,16 @@ export const enterpriseHandlers = (
         service.getDevice(request, params.tenantId, params.id),
       ),
     )
+    .handle("listDeviceApplications", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceApplications(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceRecoveryKey", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceRecoveryKey(request, params.tenantId, params.id),
+      ),
+    )
     .handle("getDeviceEffectivePolicy", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDeviceEffectivePolicy(request, params.tenantId, params.id),
@@ -6000,6 +6629,11 @@ export const enterpriseHandlers = (
     .handle("listApplications", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listApplications(request, params.tenantId),
+      ),
+    )
+    .handle("getApplicationInventory", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getApplicationInventory(request, params.tenantId, query),
       ),
     )
     .handle("getApplication", ({ request, params }) =>

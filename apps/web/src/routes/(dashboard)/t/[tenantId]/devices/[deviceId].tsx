@@ -26,6 +26,7 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
+  type DeviceApplication,
   type DeviceRow,
   type EffectivePolicyResponse,
 } from "~/lib/enterprise";
@@ -80,6 +81,12 @@ export default function DeviceDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
     });
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.deviceApplications(params.tenantId, params.deviceId),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.applicationInventory(params.tenantId),
+    });
   };
   const save = useMutation(() => ({
     mutationFn: () =>
@@ -109,17 +116,38 @@ export default function DeviceDetailPage() {
   const effectivePolicy = useQuery(() =>
     enterpriseQueries.deviceEffectivePolicy(params.tenantId, params.deviceId),
   );
+  const applications = useQuery(() =>
+    enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
+  );
   const resolved = () => effectivePolicy.data as EffectivePolicyResponse | undefined;
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
+  const [recoveryDialogOpen, setRecoveryDialogOpen] = createSignal(false);
+  const [recoveryKey, setRecoveryKey] = createSignal<string | null>(null);
+  const [recoveryCopied, setRecoveryCopied] = createSignal(false);
   const command = useMutation(() => ({
     mutationFn: (payload: {
-      action: "lock" | "wipe" | "restart" | "shutdown" | "clear-passcode" | "install-app";
+      action:
+        | "lock"
+        | "wipe"
+        | "restart"
+        | "shutdown"
+        | "clear-passcode"
+        | "install-app"
+        | "collect-security-info"
+        | "refresh-applications";
       manifestUrl?: string;
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
     onSuccess: async (result) => {
       setLockPin(result.pin ?? null);
       await invalidate();
+    },
+  }));
+  const revealRecoveryKey = useMutation(() => ({
+    mutationFn: () => enterprise.getDeviceRecoveryKey(params.tenantId, params.deviceId),
+    onSuccess: (result) => {
+      setRecoveryKey(result.recoveryKey);
+      setRecoveryCopied(false);
     },
   }));
   // Destructive actions close the confirm dialog only after success; on error
@@ -166,10 +194,43 @@ export default function DeviceDetailPage() {
     ].filter(([key, value]) => !String(key).startsWith("Disk") || Boolean(value));
 
   const fileVaultLabel = () => {
+    const status = row()?.fileVaultStatus;
+    if (status === "enabled") return "Enabled";
+    if (status === "disabled") return "Disabled";
+    if (status === "unknown") return "Unknown";
     const value = row()?.fileVaultEnabled;
     if (value === null || value === undefined) return "Not reported";
     return value ? "Enabled" : "Disabled";
   };
+  const formatBytes = (value?: number | null) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+    if (value < 1024) return `${value} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let amount = value / 1024;
+    let unit = 0;
+    while (amount >= 1024 && unit < units.length - 1) {
+      amount /= 1024;
+      unit++;
+    }
+    return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
+  };
+  const copyRecoveryKey = async () => {
+    const key = recoveryKey();
+    if (!key) return;
+    try {
+      await navigator.clipboard.writeText(key);
+      setRecoveryCopied(true);
+    } catch {
+      // Clipboard permissions can be denied; the key stays selectable.
+      setRecoveryCopied(false);
+    }
+  };
+  const openRecoveryDialog = () => {
+    setRecoveryKey(null);
+    setRecoveryCopied(false);
+    setRecoveryDialogOpen(true);
+  };
+  const appNames = () => (applications.data?.applications ?? []) as DeviceApplication[];
   const capabilityLabels = () => {
     const value = row()?.capabilities;
     if (value == null) return [];
@@ -550,7 +611,19 @@ export default function DeviceDetailPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Security & inventory</CardTitle>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>Security & inventory</CardTitle>
+              <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={command.isPending}
+                  onClick={() => command.mutate({ action: "collect-security-info" })}
+                >
+                  Collect security info
+                </Button>
+              </Show>
+            </div>
           </CardHeader>
           <CardContent class="space-y-4">
             <dl class="grid gap-3 text-sm sm:grid-cols-2">
@@ -559,9 +632,9 @@ export default function DeviceDetailPage() {
                 <dd>
                   <span
                     class={
-                      row()?.fileVaultEnabled === true
+                      row()?.fileVaultStatus === "enabled"
                         ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
-                        : row()?.fileVaultEnabled === false
+                        : row()?.fileVaultStatus === "disabled"
                           ? "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
                           : "rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs text-stone-600"
                     }
@@ -569,6 +642,43 @@ export default function DeviceDetailPage() {
                     {fileVaultLabel()}
                   </span>
                 </dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">FileVault recovery key</dt>
+                <dd class="flex items-center gap-2">
+                  <span
+                    class={
+                      row()?.recoveryKeyEscrowed
+                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
+                        : "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
+                    }
+                  >
+                    {row()?.recoveryKeyEscrowed ? "Escrowed" : "Not escrowed"}
+                  </span>
+                  <Show when={row()?.recoveryKeyEscrowed}>
+                    <Button variant="outline" size="sm" onClick={openRecoveryDialog}>
+                      Reveal
+                    </Button>
+                  </Show>
+                </dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">Bootstrap token</dt>
+                <dd>
+                  <span
+                    class={
+                      row()?.bootstrapTokenEscrowed
+                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
+                        : "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
+                    }
+                  >
+                    {row()?.bootstrapTokenEscrowed ? "Escrowed" : "Not escrowed"}
+                  </span>
+                </dd>
+              </div>
+              <div class="flex items-center justify-between gap-2 border-b pb-2">
+                <dt class="text-muted-foreground">Recovery key updated</dt>
+                <dd>{formatDate(row()?.recoveryKeyUpdatedAt)}</dd>
               </div>
               <div class="flex items-center justify-between gap-2 border-b pb-2">
                 <dt class="text-muted-foreground">Battery health</dt>
@@ -583,6 +693,20 @@ export default function DeviceDetailPage() {
                 <dd>{formatDate(row()?.inventoryUpdatedAt)}</dd>
               </div>
             </dl>
+            <Show when={row()?.proto === "apple" && !row()?.recoveryKeyEscrowed}>
+              <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>No FileVault recovery key is escrowed.</strong> If FileVault is enabled and
+                the Mac is lost, the disk cannot be unlocked with a Mattrax-held key. Collect
+                security info after FileVault has been enabled on the device.
+              </p>
+            </Show>
+            <Show when={row()?.proto === "apple" && !row()?.bootstrapTokenEscrowed}>
+              <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>No bootstrap token is escrowed.</strong> Secure-token operations such as
+                granting a user a Secure Token or authorising some software updates may prompt for
+                an administrator.
+              </p>
+            </Show>
             <div>
               <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Client capabilities
@@ -611,6 +735,89 @@ export default function DeviceDetailPage() {
                 Security and inventory values are filled in the next time the device reports its DDM
                 status items.
               </p>
+            </Show>
+            <ErrorText error={command.error} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>Software</CardTitle>
+              <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={command.isPending}
+                  onClick={() => command.mutate({ action: "refresh-applications" })}
+                >
+                  Refresh applications
+                </Button>
+              </Show>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            <Show
+              when={applications.data}
+              fallback={
+                <Show
+                  when={applications.isError}
+                  fallback={<p class="text-sm text-muted-foreground">Loading software…</p>}
+                >
+                  <QueryError
+                    error={applications.error}
+                    onRetry={() => void applications.refetch()}
+                  />
+                </Show>
+              }
+            >
+              <Show
+                when={appNames().length > 0}
+                fallback={
+                  <p class="text-sm text-muted-foreground">
+                    No installed applications have been reported. Run refresh applications to
+                    collect the inventory from this device.
+                  </p>
+                }
+              >
+                <p class="text-xs text-muted-foreground">
+                  {appNames().length} applications reported · updated{" "}
+                  {formatDate(row()?.applicationsUpdatedAt)}
+                </p>
+                <ul class="max-h-96 divide-y overflow-auto rounded-lg border">
+                  <For each={appNames()}>
+                    {(application) => (
+                      <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-sm">
+                        <span class="min-w-0">
+                          <span class="block truncate font-medium">
+                            {application.name ?? application.bundleId}
+                          </span>
+                          <span class="block truncate font-mono text-xs text-muted-foreground">
+                            {application.bundleId}
+                          </span>
+                        </span>
+                        <span class="flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
+                          <span class="text-muted-foreground">
+                            {application.version ?? application.shortVersion ?? "—"}
+                          </span>
+                          <span class="text-muted-foreground">
+                            {formatBytes(application.bundleSize)}
+                          </span>
+                          <Show when={application.isManaged}>
+                            <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">
+                              Managed
+                            </span>
+                          </Show>
+                          <Show when={application.hasUpdateAvailable}>
+                            <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                              Update available
+                            </span>
+                          </Show>
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
             </Show>
           </CardContent>
         </Card>
@@ -998,6 +1205,74 @@ export default function DeviceDetailPage() {
               {confirmPending() ? "Working…" : confirmLabel()}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={recoveryDialogOpen()}
+        onOpenChange={(open) => {
+          setRecoveryDialogOpen(open);
+          if (!open) {
+            setRecoveryKey(null);
+            setRecoveryCopied(false);
+          }
+        }}
+      >
+        <DialogContent class="max-w-lg rounded-xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>Reveal FileVault recovery key</DialogTitle>
+            <DialogDescription>
+              This key can unlock the encrypted disk on this device. Viewing it is recorded in the
+              tenant audit log. Do not store it in insecure places.
+            </DialogDescription>
+          </DialogHeader>
+          <Show
+            when={recoveryKey()}
+            fallback={
+              <>
+                <p class="text-sm text-muted-foreground">
+                  Mattrax will decrypt the escrowed key for <strong>{row()?.name}</strong>.
+                </p>
+                <ErrorText error={revealRecoveryKey.error} />
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRecoveryDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={revealRecoveryKey.isPending}
+                    onClick={() => revealRecoveryKey.mutate()}
+                  >
+                    {revealRecoveryKey.isPending ? "Decrypting…" : "Reveal key"}
+                  </Button>
+                </DialogFooter>
+              </>
+            }
+          >
+            {(key) => (
+              <>
+                <div class="flex items-start gap-2">
+                  <code class="min-w-0 flex-1 break-all rounded-lg border bg-muted/40 p-3 font-mono text-sm">
+                    {key()}
+                  </code>
+                  <Button variant="outline" size="sm" onClick={() => void copyRecoveryKey()}>
+                    {recoveryCopied() ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Last received {formatDate(row()?.recoveryKeyUpdatedAt)}
+                  <Show when={row()?.recoveryKeyRotatedAt}>
+                    {" "}
+                    · rotated {formatDate(row()?.recoveryKeyRotatedAt)}
+                  </Show>
+                </p>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRecoveryDialogOpen(false)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </Show>
         </DialogContent>
       </Dialog>
     </div>

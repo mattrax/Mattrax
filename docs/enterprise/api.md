@@ -57,6 +57,46 @@ curl -s "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/policies" \
 
 The policy detail endpoint returns the policy's `configurations` map.
 
+## Device security and software inventory
+
+Apple devices can escrow FileVault recovery keys and report their installed applications.
+Both are populated from MDM command results and are tenant-scoped.
+
+```bash
+# Queue the Apple SecurityInfo command on the device's next check-in
+curl -s -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"action":"collect-security-info"}'
+
+# Queue a full InstalledApplicationList refresh
+curl -s -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"action":"refresh-applications"}'
+
+# Device software inventory
+curl -s "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/applications" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+
+# Tenant-wide software inventory, grouped by bundle identifier
+curl -s "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/inventory?q=safari&managed=managed" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+```
+
+Device detail responses expose `recoveryKeyEscrowed`, `fileVaultStatus` and
+`bootstrapTokenEscrowed` as presence metadata only. Reading the decrypted FileVault key is a
+privileged, audited action (`owner`/`admin` only) and is never included in list responses:
+
+```bash
+curl -s "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/recovery-key" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+```
+
+Escrowed values are sealed with the deployment `AUTH_SECRET` before storage. The recovery-key
+response includes the raw escrowed payload; when the device returns a CMS-wrapped personal
+recovery key, decrypting it with the FileVault escrow certificate remains an operator step.
+
 ## Create and assign a policy
 
 ```bash

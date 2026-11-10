@@ -7,6 +7,7 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
+  type ApplicationInventoryQuery,
   type AuditSearchQuery,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
@@ -25,10 +26,14 @@ import {
   type TenantEnrollmentInfo,
   type TenantImportRequest,
   type TenantInfo,
+  type WebhookEndpointInfo,
   type WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
 
 export type {
+  ApplicationInventoryQuery,
+  ApplicationInventoryResponse,
+  ApplicationInventoryRow,
   ApplicationNode,
   ApplicationRow,
   ApnsInfo,
@@ -41,8 +46,11 @@ export type {
   CredentialLevel,
   DeviceActivityEntry,
   DeviceActivityKind,
+  DeviceApplication,
+  DeviceApplicationsResponse,
   DeviceCertificateCounts,
   DeviceCertificateInfo,
+  DeviceFileVaultStatus,
   DeviceHealth,
   DeviceHealthCounts,
   DeviceHealthFilter,
@@ -58,6 +66,7 @@ export type {
   DevicePushHealthCounts,
   DevicePushHealthResponse,
   DevicePushInfo,
+  DeviceRecoveryKeyResponse,
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
@@ -91,6 +100,8 @@ export type {
   TenantInvitation,
   TenantUser,
   UserInfo,
+  WebhookEndpointInfo,
+  WebhookTestResponse,
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
 
@@ -138,8 +149,15 @@ export const enterpriseKeys = {
   auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
     ["enterprise", "audit-search", tenantId ?? "", query] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
+  webhooks: (tenantId: RouteParam) => ["enterprise", "webhooks", tenantId ?? ""] as const,
   sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
   applications: (tenantId: RouteParam) => ["enterprise", "applications", tenantId ?? ""] as const,
+  applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
+    ["enterprise", "application-inventory", tenantId ?? "", query] as const,
+  deviceApplications: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-applications", tenantId ?? "", id ?? ""] as const,
+  deviceRecoveryKey: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-recovery-key", tenantId ?? "", id ?? ""] as const,
   application: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "application", tenantId ?? "", id ?? ""] as const,
   policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
@@ -372,7 +390,16 @@ export const enterprise = {
     tenantId: RouteParam,
     id: RouteParam,
     payload: {
-      action?: "sync" | "lock" | "wipe" | "restart" | "shutdown" | "clear-passcode" | "install-app";
+      action?:
+        | "sync"
+        | "lock"
+        | "wipe"
+        | "restart"
+        | "shutdown"
+        | "clear-passcode"
+        | "install-app"
+        | "collect-security-info"
+        | "refresh-applications";
       manifestUrl?: string;
       iTunesStoreId?: number;
     } = { action: "sync" },
@@ -387,6 +414,25 @@ export const enterprise = {
     endpoint((api) =>
       api.deviceUnenroll({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  listDeviceApplications: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceApplications({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceRecoveryKey: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceRecoveryKey({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getApplicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
+    endpoint((api) =>
+      api.getApplicationInventory({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
       }),
     ),
   getDeviceHealth: (tenantId: RouteParam, id: RouteParam) =>
@@ -756,6 +802,71 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId"), tokenId },
       }),
     ),
+  listWebhooks: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listWebhookEndpoints({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createWebhook: (
+    tenantId: RouteParam,
+    payload: {
+      url: string;
+      description?: string | null;
+      events: WebhookEndpointInfo["events"];
+      enabled?: boolean;
+    },
+  ) =>
+    endpoint((api) =>
+      api.createWebhookEndpoint({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  patchWebhook: (
+    tenantId: RouteParam,
+    webhookId: RouteParam,
+    payload: Partial<{
+      url: string;
+      description: string | null;
+      events: WebhookEndpointInfo["events"];
+      enabled: boolean;
+    }>,
+  ) =>
+    endpoint((api) =>
+      api.patchWebhookEndpoint({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+        },
+        payload,
+      }),
+    ),
+  deleteWebhook: (tenantId: RouteParam, webhookId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteWebhookEndpoint({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+        },
+      }),
+    ),
+  rotateWebhookSecret: (tenantId: RouteParam, webhookId: RouteParam) =>
+    endpoint((api) =>
+      api.rotateWebhookSecret({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+        },
+      }),
+    ),
+  testWebhook: (tenantId: RouteParam, webhookId: RouteParam) =>
+    endpoint((api) =>
+      api.testWebhookEndpoint({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+        },
+      }),
+    ),
   listAuditLog: (tenantId: RouteParam) =>
     endpoint((api) => api.listAuditLog({ params: { tenantId: required(tenantId, "tenantId") } })),
   searchAuditLog: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
@@ -847,6 +958,24 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listApplications(tenantId),
       enabled: Boolean(tenantId) && !isServer,
     }),
+  applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.applicationInventory(tenantId, query),
+      queryFn: () => enterprise.getApplicationInventory(tenantId, query),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  deviceApplications: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceApplications(tenantId, id),
+      queryFn: () => enterprise.listDeviceApplications(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  deviceRecoveryKey: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceRecoveryKey(tenantId, id),
+      queryFn: () => enterprise.getDeviceRecoveryKey(tenantId, id),
+      enabled: false,
+    }),
   application: (tenantId: RouteParam, id: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.application(tenantId, id),
@@ -882,6 +1011,12 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.scim(tenantId),
       queryFn: () => enterprise.listScimTokens(tenantId),
       enabled: Boolean(tenantId),
+    }),
+  webhooks: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.webhooks(tenantId),
+      queryFn: () => enterprise.listWebhooks(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
     }),
   auditLog: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

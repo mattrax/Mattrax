@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { generateCaKeyPair, pemEncode } from "@mattrax/crypto";
@@ -13,7 +13,7 @@ import {
   parseCertificateNotAfter,
   summarizeDeviceCertificates,
 } from "../src/credentialHealth.js";
-import { runMaintenance } from "../src/maintenance.js";
+import { runMaintenance, type CredentialExpiryNotifier } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
@@ -151,37 +151,37 @@ describe("summarizeDeviceCertificates", () => {
   });
 });
 
-describe("loadCredentialHealth", () => {
-  const build = async () => {
-    const db = makeDb();
-    db.store.organization.push({ id: "org-a" }, { id: "org-b" });
-    db.store.apple_push_certificate.push({
-      organizationId: "org-a",
-      email: "a@example.com",
-      topic: "com.apple.mgmt.External.a",
-      certPem: await makeCertificate(daysFromNow(10)),
-      updatedAt: now,
-    });
-    db.store.apple_push_certificate.push({
-      organizationId: "org-b",
-      email: "b@example.com",
-      topic: "com.apple.mgmt.External.b",
-      certPem: await makeCertificate(daysFromNow(90)),
-      updatedAt: now,
-    });
-    db.store.scep_ca.push({
-      id: 1,
-      certPem: await makeCertificate(daysFromNow(5)),
-      createdAt: now,
-    });
-    db.store.scep_issued_certificate.push(
-      { serial: "a-1", organizationId: "org-a", notAfter: daysFromNow(20), createdAt: now },
-      { serial: "a-2", organizationId: "org-a", notAfter: daysFromNow(-1), createdAt: now },
-      { serial: "b-1", organizationId: "org-b", notAfter: daysFromNow(200), createdAt: now },
-    );
-    return db;
-  };
+const build = async () => {
+  const db = makeDb();
+  db.store.organization.push({ id: "org-a", name: "Acme A" }, { id: "org-b", name: "Acme B" });
+  db.store.apple_push_certificate.push({
+    organizationId: "org-a",
+    email: "a@example.com",
+    topic: "com.apple.mgmt.External.a",
+    certPem: await makeCertificate(daysFromNow(10)),
+    updatedAt: now,
+  });
+  db.store.apple_push_certificate.push({
+    organizationId: "org-b",
+    email: "b@example.com",
+    topic: "com.apple.mgmt.External.b",
+    certPem: await makeCertificate(daysFromNow(90)),
+    updatedAt: now,
+  });
+  db.store.scep_ca.push({
+    id: 1,
+    certPem: await makeCertificate(daysFromNow(5)),
+    createdAt: now,
+  });
+  db.store.scep_issued_certificate.push(
+    { serial: "a-1", organizationId: "org-a", notAfter: daysFromNow(20), createdAt: now },
+    { serial: "a-2", organizationId: "org-a", notAfter: daysFromNow(-1), createdAt: now },
+    { serial: "b-1", organizationId: "org-b", notAfter: daysFromNow(200), createdAt: now },
+  );
+  return db;
+};
 
+describe("loadCredentialHealth", () => {
   it("scopes APNs and identity counts to the tenant", async () => {
     const db = await build();
     const a = await runEffect(loadCredentialHealth(db as any, "org-a", now));
@@ -278,5 +278,98 @@ describe("loadCredentialHealth", () => {
         .filter((row) => row.action === "credentials.expiry_warning")
         .map((row) => row.metadata.day),
     ).toEqual(["2026-11-10", "2026-11-10", "2026-11-11", "2026-11-11"]);
+  });
+});
+
+describe("credential expiry notifications", () => {
+  const withRecipients = async () => {
+    const db = await build();
+    db.store.user.push(
+      { id: "u-owner", name: "Alice", email: "alice@example.com", disabled: false },
+      { id: "u-admin", name: "Bob", email: "bob@example.com", disabled: false },
+      { id: "u-member", name: "Carol", email: "carol@example.com", disabled: false },
+      { id: "u-disabled", name: "Dave", email: "dave@example.com", disabled: true },
+    );
+    db.store.member.push(
+      { id: "m-owner", organizationId: "org-a", userId: "u-owner", role: "owner" },
+      { id: "m-admin", organizationId: "org-a", userId: "u-admin", role: "admin" },
+      { id: "m-member", organizationId: "org-a", userId: "u-member", role: "member" },
+      { id: "m-disabled", organizationId: "org-a", userId: "u-disabled", role: "owner" },
+      { id: "m-other", organizationId: "org-b", userId: "u-member", role: "admin" },
+    );
+    return db;
+  };
+
+  const run = (
+    db: ReturnType<typeof makeDb>,
+    notifyCredentialExpiry?: CredentialExpiryNotifier,
+    at: Date = now,
+  ) =>
+    runEffect(
+      runMaintenance({
+        now: at,
+        auditRetentionDays: 0,
+        ...(notifyCredentialExpiry ? { notifyCredentialExpiry } : {}),
+      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+    );
+
+  it("notifies once per new alert with enabled owner/admin recipients only", async () => {
+    const db = await withRecipients();
+    const notifications: Array<{
+      organizationId: string;
+      organizationName: string;
+      threshold: string;
+      recipients: Array<{ email: string }>;
+    }> = [];
+    const notify = vi.fn((notification: any) =>
+      Effect.sync(() => {
+        notifications.push(notification);
+      }),
+    );
+
+    const first = await run(db, notify);
+    expect(first.credentialAlerts).toBe(2);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notifications.map((item) => item.organizationId)).toEqual(["org-a", "org-b"]);
+
+    const orgA = notifications.find((item) => item.organizationId === "org-a")!;
+    expect(orgA.organizationName).toBe("Acme A");
+    expect(orgA.threshold).toBe("7d");
+    // Member and disabled-owner accounts are excluded; results are stable.
+    expect(orgA.recipients.map((recipient) => recipient.email)).toEqual([
+      "alice@example.com",
+      "bob@example.com",
+    ]);
+
+    const orgB = notifications.find((item) => item.organizationId === "org-b")!;
+    expect(orgB.recipients.map((recipient) => recipient.email)).toEqual(["carol@example.com"]);
+
+    // A second run on the same UTC day is deduped by the audit trail, so no
+    // duplicate email is sent.
+    const second = await run(db, notify);
+    expect(second.credentialAlerts).toBe(0);
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps maintenance running when the notifier fails or throws", async () => {
+    const db = await withRecipients();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failed = await run(db, () => Effect.fail(new Error("smtp unavailable")));
+      expect(failed.credentialAlerts).toBe(2);
+
+      // Next day, a synchronously throwing notifier must be isolated too.
+      const thrown = await run(
+        db,
+        (() => {
+          throw new Error("transport crashed");
+        }) as any,
+        new Date(now.getTime() + DAY),
+      );
+      expect(thrown.credentialAlerts).toBe(2);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 });

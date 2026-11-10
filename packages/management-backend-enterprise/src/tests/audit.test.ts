@@ -160,21 +160,25 @@ describe("system audit device lifecycle", () => {
 
   it("records declaration failures only when the state changes", async () => {
     const { db, backend } = setup();
+    // Compliance transitions also produce audit rows, so assertions here stay
+    // scoped to declaration failures.
+    const declarationRows = () =>
+      auditRows(db).filter((row) => row.action === "device.declaration_invalid");
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
-    expect(auditRows(db)).toHaveLength(1);
-    expect(auditRows(db)[0]).toMatchObject({
+    expect(declarationRows()).toHaveLength(1);
+    expect(declarationRows()[0]).toMatchObject({
       action: "device.declaration_invalid",
       targetId: "device-1",
       metadata: { identifier: "decl-1", valid: "invalid", previousValid: null },
     });
 
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("valid")));
-    expect(auditRows(db)).toHaveLength(1);
+    expect(declarationRows()).toHaveLength(1);
 
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
-    expect(auditRows(db)).toHaveLength(2);
-    expect(auditRows(db)[1]!.metadata).toMatchObject({
+    expect(declarationRows()).toHaveLength(2);
+    expect(declarationRows()[1]!.metadata).toMatchObject({
       previousValid: "valid",
       valid: "invalid",
     });

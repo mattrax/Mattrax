@@ -69,6 +69,7 @@ function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
       groups: "Groups",
       policies: "Policies",
       applications: "Applications",
+      software: "Software",
       enrollment: "Enrollment",
       settings: "Settings",
     };
@@ -164,6 +165,13 @@ export default function DashboardLayout(props: ParentProps) {
       label: "Applications",
       icon: Boxes,
       active: location.pathname.includes("/applications"),
+      disabled: !hasTenant(),
+    },
+    {
+      href: `${tenantBase()}/software`,
+      label: "Software",
+      icon: Boxes,
+      active: location.pathname.includes("/software"),
       disabled: !hasTenant(),
     },
     {

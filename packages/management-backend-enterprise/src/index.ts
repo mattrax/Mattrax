@@ -1,9 +1,9 @@
 import { Effect, Layer } from "effect";
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
-import { resolveTenantBranding } from "@mattrax/enterprise-domain";
+import { deriveDeviceHealth, resolveTenantBranding } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
-import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
+import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
 import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
 import {
   InternalServerError,
@@ -19,6 +19,8 @@ import {
 import { certificateDeviceIdsFor, makeWindowsBackend } from "./windows.ts";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import { parseDeviceInventory } from "./inventory.ts";
+import { parseSecurityInfo } from "./securityInfo.ts";
+import { parseInstalledApplications } from "./applications.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
 import {
@@ -340,11 +342,66 @@ const updateInventoryFromStatus = (
   deviceId: string,
   organizationId: string,
   statusItems: unknown,
+  options: { readonly authSecret?: string } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     if (!statusItems || typeof statusItems !== "object") return;
+    const db = yield* Db;
     const root = statusItems as Record<string, unknown>;
     const inventory = parseDeviceInventory(root);
+
+    // Compliance is derived, not stored. Capture the rollup before the write
+    // so a level transition can be audited (and mirrored to webhooks) even
+    // when it comes from inventory rather than declaration validity.
+    const [deviceBefore] = (yield* db
+      .select()
+      .from(s.device)
+      .where(eq(s.device.id, deviceId))
+      .limit(1)) as Array<typeof s.device.$inferSelect>;
+    const declarationsBefore = (yield* db
+      .select()
+      .from(s.deviceDeclaration)
+      .where(eq(s.deviceDeclaration.deviceId, deviceId))) as Array<
+      typeof s.deviceDeclaration.$inferSelect
+    >;
+    const healthInput = (
+      device: typeof s.device.$inferSelect,
+      declarations: ReadonlyArray<typeof s.deviceDeclaration.$inferSelect>,
+    ) => ({
+      status: device.status,
+      lastSeenAt: device.lastSeenAt,
+      declarations,
+      diskTotal: device.diskTotal,
+      diskUsed: device.diskUsed,
+      proto: device.proto,
+      model: device.model,
+      osEdition: device.osEdition,
+      fileVaultEnabled: device.fileVaultEnabled,
+      batteryHealth: device.batteryHealth,
+    });
+    const previousHealth = deviceBefore
+      ? deriveDeviceHealth(healthInput(deviceBefore, declarationsBefore))
+      : null;
+    const auditComplianceChange = (
+      next: ReturnType<typeof deriveDeviceHealth>,
+    ): Effect.Effect<void, unknown, never> =>
+      previousHealth && previousHealth.level !== next.level
+        ? writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.complianceChanged,
+              targetType: "device",
+              targetId: deviceId,
+              metadata: {
+                from: previousHealth.level,
+                to: next.level,
+                reasons: next.reasons.map((reason) => reason.code).slice(0, 10),
+              },
+            },
+            { authSecret: options.authSecret },
+          )
+        : Effect.void;
     const update: Record<string, unknown> = { lastSeenAt: now() };
     if (inventory.serial) update.serial = inventory.serial;
     if (inventory.model) update.model = inventory.model;
@@ -376,23 +433,28 @@ const updateInventoryFromStatus = (
       inventory.capabilities !== undefined ||
       inventory.diskTotal !== undefined;
     if (hasInventory) update.inventoryUpdatedAt = now();
-    const db = yield* Db;
     yield* db.update(s.device).set(update).where(eq(s.device.id, deviceId));
 
     // Apple sends status items as a nested path tree; some clients flatten the
     // keys. Accept both shapes.
     const declarations =
       record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
-    if (!declarations) return;
+    if (!declarations) {
+      // Inventory-only report: the compliance rollup may still have moved
+      // (storage, battery, FileVault), so compare it before returning.
+      if (deviceBefore)
+        yield* auditComplianceChange(
+          deriveDeviceHealth(
+            healthInput({ ...deviceBefore, ...update } as typeof deviceBefore, declarationsBefore),
+          ),
+        );
+      return;
+    }
     const timestamp = now();
-    // Status reports arrive on every check-in. Read the previous declaration
-    // states first so audit events are emitted only on a failure transition.
-    const existingDeclarations = yield* db
-      .select()
-      .from(s.deviceDeclaration)
-      .where(eq(s.deviceDeclaration.deviceId, deviceId));
+    // Status reports arrive on every check-in. The previous declaration states
+    // were read before the write so audit events fire only on a transition.
     const previousValid = new Map<string, string>();
-    for (const row of existingDeclarations) previousValid.set(row.identifier, row.valid);
+    for (const row of declarationsBefore) previousValid.set(row.identifier, row.valid);
     const transitions: Array<{
       identifier: string;
       declarationType: string;
@@ -442,18 +504,206 @@ const updateInventoryFromStatus = (
       }
     }
     for (const transition of transitions)
-      yield* writeSystemAudit(db, {
-        organizationId,
-        action: SYSTEM_AUDIT_ACTIONS.declarationInvalid,
-        targetType: "device",
-        targetId: deviceId,
-        metadata: {
-          identifier: transition.identifier,
-          declarationType: transition.declarationType,
-          previousValid: transition.previousValid,
-          valid: transition.valid,
+      yield* writeSystemAudit(
+        db,
+        {
+          organizationId,
+          action: SYSTEM_AUDIT_ACTIONS.declarationInvalid,
+          targetType: "device",
+          targetId: deviceId,
+          metadata: {
+            identifier: transition.identifier,
+            declarationType: transition.declarationType,
+            previousValid: transition.previousValid,
+            valid: transition.valid,
+          },
         },
+        { authSecret: options.authSecret },
+      );
+
+    if (deviceBefore) {
+      const declarationsAfter = (yield* db
+        .select()
+        .from(s.deviceDeclaration)
+        .where(eq(s.deviceDeclaration.deviceId, deviceId))) as Array<
+        typeof s.deviceDeclaration.$inferSelect
+      >;
+      yield* auditComplianceChange(
+        deriveDeviceHealth(
+          healthInput({ ...deviceBefore, ...update } as typeof deviceBefore, declarationsAfter),
+        ),
+      );
+    }
+  });
+
+/**
+ * Seal and upsert one escrowed device secret. Re-reporting the same value only
+ * refreshes `updatedAt`; `rotatedAt` moves when the plaintext changes.
+ */
+const writeDeviceSecret = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  kind: "filevault_recovery_key" | "bootstrap_token",
+  plaintext: string,
+  authSecret: string | undefined,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    if (!authSecret) {
+      // Never write a plaintext secret as a fallback.
+      yield* Effect.logWarning(
+        `Cannot escrow ${kind}: the deployment has no AUTH_SECRET configured`,
+      );
+      return;
+    }
+    const db = yield* Db;
+    const [existing] = yield* db
+      .select()
+      .from(s.deviceSecret)
+      .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)))
+      .limit(1);
+    const sealed = yield* Effect.tryPromise({
+      try: () => sealSecret(authSecret, plaintext),
+      catch: internal,
+    });
+    const timestamp = now();
+    if (!existing) {
+      yield* db.insert(s.deviceSecret).values({
+        deviceId: device.id,
+        organizationId: device.organizationId,
+        kind,
+        sealedValue: sealed,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        rotatedAt: timestamp,
       });
+      return;
+    }
+    // Compare without logging either value; a malformed/old seal is treated as
+    // a rotation so the fresh value replaces it.
+    const unchanged = yield* Effect.promise(() =>
+      openSecret(authSecret, existing.sealedValue)
+        .then((value) => value === plaintext)
+        .catch(() => false),
+    );
+    yield* db
+      .update(s.deviceSecret)
+      .set({
+        sealedValue: sealed,
+        updatedAt: timestamp,
+        ...(unchanged ? {} : { rotatedAt: timestamp }),
+      })
+      .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)));
+  });
+
+/**
+ * Apply a `SecurityInfo` command result. The recovery key is sealed before it
+ * reaches storage and is never logged.
+ */
+const applySecurityInfo = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  queryResponses: unknown,
+  options: { readonly authSecret?: string },
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const report = parseSecurityInfo(queryResponses);
+    if (!report) return;
+    const db = yield* Db;
+    const timestamp = now();
+    if (report.fileVaultStatus !== undefined) {
+      yield* db
+        .update(s.device)
+        .set({
+          fileVaultEnabled:
+            report.fileVaultStatus === "unknown" ? null : report.fileVaultStatus === "enabled",
+          lastSeenAt: timestamp,
+        })
+        .where(eq(s.device.id, device.id));
+    }
+    if (report.recoveryKey !== undefined)
+      yield* writeDeviceSecret(
+        device,
+        "filevault_recovery_key",
+        report.recoveryKey,
+        options.authSecret,
+      );
+    if (report.bootstrapTokenEscrowed !== undefined)
+      yield* db
+        .update(s.deviceApple)
+        .set({ bootstrapTokenEscrowed: report.bootstrapTokenEscrowed })
+        .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
+ * Replace the device's installed-application inventory with the latest full
+ * report. An empty report clears every row; a missing report is ignored.
+ */
+const applyInstalledApplications = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  queryResponses: unknown,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const applications = parseInstalledApplications(queryResponses);
+    if (applications === undefined) return;
+    const db = yield* Db;
+    const timestamp = now();
+    const existing = (yield* db
+      .select()
+      .from(s.deviceApplication)
+      .where(eq(s.deviceApplication.deviceId, device.id))) as Array<
+      typeof s.deviceApplication.$inferSelect
+    >;
+    const byBundle = new Map(existing.map((row) => [row.bundleId, row]));
+    for (const application of applications) {
+      const current = byBundle.get(application.bundleId);
+      if (!current) {
+        yield* db.insert(s.deviceApplication).values({
+          deviceId: device.id,
+          organizationId: device.organizationId,
+          bundleId: application.bundleId,
+          name: application.name ?? null,
+          version: application.version ?? null,
+          shortVersion: application.shortVersion ?? null,
+          bundleSize: application.bundleSize ?? null,
+          dynamicSize: application.dynamicSize ?? null,
+          hasUpdateAvailable: application.hasUpdateAvailable,
+          isManaged: application.isManaged,
+          lastReportedAt: timestamp,
+        });
+        continue;
+      }
+      yield* db
+        .update(s.deviceApplication)
+        .set({
+          name: application.name ?? null,
+          version: application.version ?? null,
+          shortVersion: application.shortVersion ?? null,
+          bundleSize: application.bundleSize ?? null,
+          dynamicSize: application.dynamicSize ?? null,
+          hasUpdateAvailable: application.hasUpdateAvailable,
+          isManaged: application.isManaged,
+          lastReportedAt: timestamp,
+        })
+        .where(
+          and(
+            eq(s.deviceApplication.deviceId, device.id),
+            eq(s.deviceApplication.bundleId, application.bundleId),
+          ),
+        );
+    }
+    const reported = new Set(applications.map((application) => application.bundleId));
+    const stale = existing.filter((row) => !reported.has(row.bundleId)).map((row) => row.bundleId);
+    if (stale.length > 0)
+      yield* db
+        .delete(s.deviceApplication)
+        .where(
+          and(
+            eq(s.deviceApplication.deviceId, device.id),
+            inArray(s.deviceApplication.bundleId, stale),
+          ),
+        );
+    yield* db
+      .update(s.device)
+      .set({ applicationsUpdatedAt: timestamp, lastSeenAt: timestamp })
+      .where(eq(s.device.id, device.id));
   });
 
 export class ManagementBackendEnterpriseLive extends ManagementBackend {
@@ -752,17 +1002,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ status: "enrolled", lastSeenAt: now() })
                     .where(eq(s.device.id, device.id));
-                  yield* writeSystemAudit(db, {
-                    organizationId: device.organizationId,
-                    action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
-                    targetType: "device",
-                    targetId: device.id,
-                    metadata: {
-                      platform: "apple",
-                      serial: device.serial ?? null,
-                      model: device.model ?? null,
+                  yield* writeSystemAudit(
+                    db,
+                    {
+                      organizationId: device.organizationId,
+                      action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
+                      targetType: "device",
+                      targetId: device.id,
+                      metadata: {
+                        platform: "apple",
+                        serial: device.serial ?? null,
+                        model: device.model ?? null,
+                      },
                     },
-                  });
+                    { authSecret },
+                  );
                   yield* pushEnrolledDevice(device.id, device.organizationId);
                   yield* syncDeviceGroups(device.organizationId, device.id);
                 }
@@ -770,9 +1024,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               }
 
               if (event._tag === "BootstrapToken") {
+                // Keep the plaintext column for pre-sealing rows only. New
+                // tokens are sealed in `device_secret` and the clear copy is
+                // cleared, so the escrowed secret has one at-rest location.
+                yield* writeDeviceSecret(device, "bootstrap_token", event.token, authSecret);
                 yield* db
                   .update(s.deviceApple)
-                  .set({ bootstrapToken: event.token })
+                  .set({
+                    bootstrapToken: authSecret ? null : event.token,
+                    bootstrapTokenEscrowed: true,
+                  })
                   .where(eq(s.deviceApple.deviceId, device.id));
                 yield* db
                   .update(s.device)
@@ -804,13 +1065,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .set({ status: "unenrolled", lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
                 if (device.status !== "unenrolled")
-                  yield* writeSystemAudit(db, {
-                    organizationId: device.organizationId,
-                    action: SYSTEM_AUDIT_ACTIONS.deviceCheckedOut,
-                    targetType: "device",
-                    targetId: device.id,
-                    metadata: { platform: "apple", previousStatus: device.status },
-                  });
+                  yield* writeSystemAudit(
+                    db,
+                    {
+                      organizationId: device.organizationId,
+                      action: SYSTEM_AUDIT_ACTIONS.deviceCheckedOut,
+                      targetType: "device",
+                      targetId: device.id,
+                      metadata: { platform: "apple", previousStatus: device.status },
+                    },
+                    { authSecret },
+                  );
                 yield* db
                   .update(s.deviceApple)
                   .set({
@@ -875,20 +1140,29 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // first transition into failed/not-now is audited, and the
                 // detail text (which may echo device data) is not stored.
                 if (command && commandFailureTransition(command.status, nextStatus))
-                  yield* writeSystemAudit(db, {
-                    organizationId: device.organizationId,
-                    action:
-                      nextStatus === "failed"
-                        ? SYSTEM_AUDIT_ACTIONS.commandFailed
-                        : SYSTEM_AUDIT_ACTIONS.commandNotNow,
-                    targetType: "device_command",
-                    targetId: event.commandUUID,
-                    metadata: {
-                      deviceId: device.id,
-                      requestType: command.requestType,
-                      resultStatus: event.status,
+                  yield* writeSystemAudit(
+                    db,
+                    {
+                      organizationId: device.organizationId,
+                      action:
+                        nextStatus === "failed"
+                          ? SYSTEM_AUDIT_ACTIONS.commandFailed
+                          : SYSTEM_AUDIT_ACTIONS.commandNotNow,
+                      targetType: "device_command",
+                      targetId: event.commandUUID,
+                      metadata: {
+                        deviceId: device.id,
+                        requestType: command.requestType,
+                        resultStatus: event.status,
+                      },
                     },
-                  });
+                    { authSecret },
+                  );
+                // SecurityInfo and InstalledApplicationList responses are
+                // attached to the same command result envelope. Persist both
+                // idempotently so retries cannot duplicate rows.
+                yield* applySecurityInfo(device, event.queryResponses, { authSecret });
+                yield* applyInstalledApplications(device, event.queryResponses);
                 yield* db
                   .update(s.device)
                   .set({ lastSeenAt: now() })
@@ -902,6 +1176,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   device.id,
                   device.organizationId,
                   event.statusItems,
+                  { authSecret },
                 );
                 yield* syncDeviceGroups(device.organizationId, device.id);
                 return;
@@ -1012,6 +1287,24 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
+            const [sealed] = yield* db
+              .select({ sealedValue: s.deviceSecret.sealedValue })
+              .from(s.deviceSecret)
+              .where(
+                and(
+                  eq(s.deviceSecret.deviceId, device.id),
+                  eq(s.deviceSecret.kind, "bootstrap_token"),
+                ),
+              )
+              .limit(1);
+            if (sealed && authSecret) {
+              const token = yield* Effect.promise(() =>
+                openSecret(authSecret, sealed.sealedValue).catch(() => null),
+              );
+              if (token) return token;
+            }
+            // Pre-sealing rows kept the token in the clear. Read them until the
+            // device sends `SetBootstrapToken` again.
             const [apple] = yield* db
               .select({ bootstrapToken: s.deviceApple.bootstrapToken })
               .from(s.deviceApple)
@@ -1325,7 +1618,31 @@ export {
   pushInvalidTokenTransition,
   writeSystemAudit,
   type SystemAuditEvent,
+  type SystemAuditOptions,
 } from "./audit.ts";
+export {
+  WEBHOOK_DELIVERY_RETENTION_DAYS,
+  WEBHOOK_DELIVERY_TIMEOUT_MS,
+  WEBHOOK_MAX_RETRY_ATTEMPTS,
+  buildWebhookPayload,
+  dispatchWebhookEvent,
+  generateWebhookSecret,
+  pruneWebhookDeliveries,
+  retryFailedWebhookDeliveries,
+  sendTestWebhook,
+  signWebhookDelivery,
+  toWebhookEndpointInfo,
+  verifyWebhookSignature,
+  webhookEventForAuditAction,
+  webhookSecretPrefix,
+  type WebhookDeliveryOptions,
+  type WebhookDeliveryOutcome,
+  type WebhookEndpointRow,
+  type WebhookEventInput,
+  type WebhookPayload,
+  type WebhookRetryOptions,
+  type WebhookRetryResult,
+} from "./webhooks.ts";
 export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
 export { ScepRepositoryLive } from "./scep.ts";
 export * from "./policy.ts";
@@ -1340,6 +1657,12 @@ export {
   statusItemValue,
   type DeviceInventory,
 } from "./inventory.ts";
+export {
+  parseSecurityInfo,
+  type FileVaultStatus,
+  type SecurityInfoReport,
+} from "./securityInfo.ts";
+export { parseInstalledApplications, type InstalledApplicationReport } from "./applications.ts";
 export {
   syncDynamicGroup,
   syncDynamicGroupsForDevice,

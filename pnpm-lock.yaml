@@ -665,6 +665,9 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      '@mattrax/net':
+        specifier: workspace:*
+        version: link:../net
       '@mattrax/plist':
         specifier: workspace:*
         version: link:../plist

@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
 
 /**
  * Actor recorded on events that are not initiated by a signed-in user. The
@@ -16,6 +17,8 @@ export const SYSTEM_AUDIT_ACTIONS = {
   commandNotNow: "device.command_not_now",
   declarationInvalid: "device.declaration_invalid",
   pushInvalidToken: "device.push_invalid_token",
+  complianceChanged: "device.compliance_changed",
+  deviceUnenrolled: "device.unenrolled",
 } as const;
 
 export type SystemAuditEvent = {
@@ -27,6 +30,18 @@ export type SystemAuditEvent = {
   readonly metadata?: unknown;
 };
 
+/**
+ * Optional outbound webhook context. Audit writes still succeed when no
+ * `AUTH_SECRET` is available (for example audit-only tests): delivery is
+ * simply skipped.
+ */
+export type SystemAuditOptions = {
+  readonly authSecret?: string;
+  readonly webhookFetch?: typeof globalThis.fetch;
+  /** Disable delivery for a specific call site (tests). */
+  readonly webhooks?: boolean;
+};
+
 const id = () => `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`;
 
 /**
@@ -36,7 +51,11 @@ const id = () => `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`;
  * so write errors are logged and swallowed. Callers should still `yield*` the
  * effect when ordering matters for tests/telemetry.
  */
-export const writeSystemAudit = (db: Db["Service"], event: SystemAuditEvent) =>
+export const writeSystemAudit = (
+  db: Db["Service"],
+  event: SystemAuditEvent,
+  options: SystemAuditOptions = {},
+) =>
   Effect.gen(function* () {
     yield* db.insert(s.auditLog).values({
       id: id(),
@@ -49,6 +68,32 @@ export const writeSystemAudit = (db: Db["Service"], event: SystemAuditEvent) =>
       metadata: event.metadata === undefined ? null : (event.metadata as object),
       createdAt: new Date(),
     });
+
+    // Device lifecycle transitions are mirrored to customer webhooks. Only
+    // mapped actions are delivered; dispatch swallows every failure so audit
+    // writes and device protocol requests keep working when an endpoint is
+    // down or the deployment has no signing secret.
+    const webhookEvent = webhookEventForAuditAction(event.action);
+    if (!webhookEvent || !options.authSecret || options.webhooks === false) return;
+    const metadata =
+      typeof event.metadata === "object" && event.metadata !== null
+        ? (event.metadata as Record<string, unknown>)
+        : event.metadata === undefined
+          ? {}
+          : { metadata: event.metadata };
+    yield* dispatchWebhookEvent(
+      db,
+      {
+        organizationId: event.organizationId,
+        type: webhookEvent,
+        data: {
+          ...metadata,
+          targetType: event.targetType,
+          targetId: event.targetId ?? null,
+        },
+      },
+      { authSecret: options.authSecret, fetch: options.webhookFetch },
+    );
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),

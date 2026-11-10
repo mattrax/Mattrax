@@ -1,6 +1,15 @@
 import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
+import {
+  CreateWebhookEndpointRequest,
+  CreateWebhookEndpointResponse,
+  PatchWebhookEndpointRequest,
+  RotateWebhookSecretResponse,
+  WebhookEndpointInfo,
+  WebhookEndpointsResponse,
+  WebhookTestResponse,
+} from "./webhooks.ts";
 
 const IdParam = { id: Schema.String };
 const TenantParam = { tenantId: Schema.String };
@@ -8,6 +17,7 @@ const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
+const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
@@ -402,6 +412,8 @@ export const UpdateMeRequest = Schema.Struct({
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
 export const DeviceStatus = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
+export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "unknown"]);
+export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
 
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
@@ -430,8 +442,76 @@ export const DeviceRow = Schema.Struct({
   capabilities: Schema.optional(Schema.NullOr(Schema.Unknown)),
   modelNumber: Schema.optional(NullableString),
   inventoryUpdatedAt: Schema.optional(NullableString),
+  /** Normalised FileVault state shared by DDM inventory and SecurityInfo. */
+  fileVaultStatus: Schema.optional(Schema.NullOr(DeviceFileVaultStatus)),
+  /**
+   * Device detail escrow metadata. The recovery key and bootstrap token are
+   * never included in device payloads; use the recovery-key endpoint to read
+   * the decrypted FileVault key.
+   */
+  recoveryKeyEscrowed: Schema.optional(Schema.Boolean),
+  bootstrapTokenEscrowed: Schema.optional(Schema.Boolean),
+  recoveryKeyUpdatedAt: Schema.optional(NullableString),
+  recoveryKeyRotatedAt: Schema.optional(NullableString),
+  bootstrapTokenUpdatedAt: Schema.optional(NullableString),
+  applicationsUpdatedAt: Schema.optional(NullableString),
 });
 export type DeviceRow = typeof DeviceRow.Type;
+
+/** One installed application reported by a managed device. */
+export const DeviceApplication = Schema.Struct({
+  bundleId: Schema.String,
+  name: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  shortVersion: Schema.optional(NullableString),
+  bundleSize: Schema.optional(Schema.NullOr(Schema.Number)),
+  dynamicSize: Schema.optional(Schema.NullOr(Schema.Number)),
+  hasUpdateAvailable: Schema.Boolean,
+  isManaged: Schema.Boolean,
+  lastReportedAt: Schema.String,
+});
+export type DeviceApplication = typeof DeviceApplication.Type;
+
+export const DeviceApplicationsResponse = Schema.Struct({
+  applications: Schema.Array(DeviceApplication),
+});
+export type DeviceApplicationsResponse = typeof DeviceApplicationsResponse.Type;
+
+/** A tenant-wide software inventory row with its installed-device count. */
+export const ApplicationInventoryRow = Schema.Struct({
+  ...DeviceApplication.fields,
+  /** Stable row key for tables: the bundle identifier. */
+  id: Schema.String,
+  deviceCount: Schema.Number,
+});
+export type ApplicationInventoryRow = typeof ApplicationInventoryRow.Type;
+
+export const ApplicationInventoryQuery = Schema.Struct({
+  /** Matches bundle identifier and display name. */
+  q: Schema.optional(Schema.String),
+  managed: Schema.optional(Schema.Literals(["managed", "unmanaged"])),
+  updates: Schema.optional(Schema.Literals(["available"])),
+  limit: Schema.optional(Schema.Number),
+  offset: Schema.optional(Schema.Number),
+});
+export type ApplicationInventoryQuery = typeof ApplicationInventoryQuery.Type;
+
+export const ApplicationInventoryResponse = Schema.Struct({
+  applications: Schema.Array(ApplicationInventoryRow),
+  /** Total matching bundle identifiers before pagination. */
+  total: Schema.Number,
+});
+export type ApplicationInventoryResponse = typeof ApplicationInventoryResponse.Type;
+
+/** Decrypted FileVault recovery key. Never returned by list/detail endpoints. */
+export const DeviceRecoveryKeyResponse = Schema.Struct({
+  recoveryKey: Schema.String,
+  /** When the escrowed value was last received from the device. */
+  updatedAt: Schema.String,
+  /** When the value last changed. */
+  rotatedAt: Schema.optional(NullableString),
+});
+export type DeviceRecoveryKeyResponse = typeof DeviceRecoveryKeyResponse.Type;
 
 export const DeviceCommandInfo = Schema.Struct({
   id: Schema.String,
@@ -640,6 +720,8 @@ export const DeviceActionRequest = Schema.Struct({
       "shutdown",
       "clear-passcode",
       "install-app",
+      "collect-security-info",
+      "refresh-applications",
     ]),
   ),
   manifestUrl: Schema.optional(Schema.String),
@@ -1739,6 +1821,56 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("listWebhookEndpoints", "/v1/tenants/:tenantId/webhooks", {
+      // Listing reveals delivery health, so it is limited to owner/admin just
+      // like the mutations.
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: WebhookEndpointsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createWebhookEndpoint", "/v1/tenants/:tenantId/webhooks", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: CreateWebhookEndpointRequest,
+      success: CreateWebhookEndpointResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchWebhookEndpoint", "/v1/tenants/:tenantId/webhooks/:webhookId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantWebhookParam,
+      payload: PatchWebhookEndpointRequest,
+      success: WebhookEndpointInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteWebhookEndpoint", "/v1/tenants/:tenantId/webhooks/:webhookId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantWebhookParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "rotateWebhookSecret",
+      "/v1/tenants/:tenantId/webhooks/:webhookId/rotate-secret",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantWebhookParam,
+        success: RotateWebhookSecretResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("testWebhookEndpoint", "/v1/tenants/:tenantId/webhooks/:webhookId/test", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantWebhookParam,
+      success: WebhookTestResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -1905,6 +2037,27 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
       success: DeviceRow,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "listDeviceApplications",
+      "/v1/tenants/:tenantId/devices/:id/applications",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantIdParam,
+        success: DeviceApplicationsResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("getDeviceRecoveryKey", "/v1/tenants/:tenantId/devices/:id/recovery-key", {
+      // Revealing a recovery key is a privileged, audited read. `write`
+      // restricts the endpoint to owners/admins while still requiring the
+      // caller to prove tenant membership.
+      error: EnterpriseTenantWriteErrors,
+      params: TenantIdParam,
+      success: DeviceRecoveryKeyResponse,
     }),
   )
   .add(
@@ -2202,6 +2355,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: ApplicationListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getApplicationInventory", "/v1/tenants/:tenantId/applications/inventory", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: ApplicationInventoryQuery,
+      success: ApplicationInventoryResponse,
     }),
   )
   .add(

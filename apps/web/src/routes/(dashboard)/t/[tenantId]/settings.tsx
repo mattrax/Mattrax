@@ -9,6 +9,7 @@ const tabs = [
   { id: "identity", label: "Identity" },
   { id: "enrollment", label: "Enrollment" },
   { id: "management", label: "Management" },
+  { id: "integrations", label: "Integrations" },
   { id: "audit", label: "Audit log" },
   { id: "billing", label: "Billing" },
 ];

@@ -110,6 +110,8 @@ export type ApplePushOptions = {
   readonly pushConcurrency?: number;
   /** Items scheduled together; defaults to twice the concurrency. */
   readonly pushChunkSize?: number;
+  /** Injected fetch used by outbound webhook deliveries (tests). */
+  readonly webhookFetch?: typeof globalThis.fetch;
 };
 
 /** Per-device outcome of a fan-out. `skipped` means nothing was pushable. */
@@ -141,6 +143,7 @@ export const makeApplePush = ({
   pushTimeoutMs,
   pushConcurrency = 12,
   pushChunkSize,
+  webhookFetch,
 }: ApplePushOptions) => {
   const backstopMs = pushTimeoutMs ?? APNS_PUSH_BACKSTOP_MS;
   const concurrency = Math.max(1, Math.floor(pushConcurrency));
@@ -197,13 +200,17 @@ export const makeApplePush = ({
       // A dead token stays dead until the device re-enrols. Audit only the
       // transition so every subsequent failed push does not create an event.
       if (pushInvalidTokenTransition(apple.lastPushErrorCode, errorCode))
-        yield* writeSystemAudit(db, {
-          organizationId,
-          action: SYSTEM_AUDIT_ACTIONS.pushInvalidToken,
-          targetType: "device",
-          targetId: deviceId,
-          metadata: { previousCode: apple.lastPushErrorCode ?? null },
-        });
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.pushInvalidToken,
+            targetType: "device",
+            targetId: deviceId,
+            metadata: { previousCode: apple.lastPushErrorCode ?? null },
+          },
+          { authSecret, webhookFetch },
+        );
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning(

@@ -4,6 +4,7 @@ import { AuthDefinition } from "@mattrax/enterprise-domain";
 import type { DynamicGroupRules } from "@mattrax/enterprise-domain";
 import { defineRelations } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   datetime,
   index,
@@ -392,6 +393,72 @@ export const auditLog = mysqlTable(
 );
 
 /**
+ * Customer-managed outbound webhook endpoint. The signing secret is sealed
+ * with the deployment `AUTH_SECRET`; only a display prefix is stored in the
+ * clear. `eventFilters` is a JSON array of event names and an empty array
+ * means "all events".
+ */
+export const webhookEndpoint = mysqlTable(
+  "webhook_endpoint",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    /** AES-256-GCM sealed signing secret; never returned by read endpoints. */
+    secret: text("secret").notNull(),
+    secretPrefix: shortText("secret_prefix"),
+    description: text("description"),
+    eventFilters: json("event_filters").$type<string[]>(),
+    enabled: boolean("enabled").notNull().default(true),
+    lastDeliveryAt: timestamp("last_delivery_at"),
+    lastDeliveryStatus: varchar("last_delivery_status", {
+      length: 16,
+      enum: ["succeeded", "failed"],
+    }),
+    /** Consecutive failed deliveries; reset to zero on a success. */
+    consecutiveFailures: int("consecutive_failures").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("webhook_endpoint_organization_idx").on(table.organizationId, table.createdAt)],
+);
+
+/**
+ * One row per webhook delivery attempt. Rows are retained for 30 days by daily
+ * maintenance; failed rows may be retried a bounded number of times.
+ */
+export const webhookDelivery = mysqlTable(
+  "webhook_delivery",
+  {
+    id: id().primaryKey(),
+    endpointId: id("endpoint_id")
+      .notNull()
+      .references(() => webhookEndpoint.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Event type (`device.enrolled`, `webhook.test`, ...). */
+    event: shortText("event").notNull(),
+    eventId: shortText("event_id"),
+    /** Full event payload so maintenance can retry without re-deriving it. */
+    payload: json("payload"),
+    status: varchar("status", { length: 16, enum: ["succeeded", "failed"] }).notNull(),
+    attempt: int("attempt").notNull().default(1),
+    responseStatus: int("response_status"),
+    /** Truncated, secret-free description of the last failure. */
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("webhook_delivery_endpoint_created_idx").on(table.endpointId, table.createdAt),
+    index("webhook_delivery_organization_created_idx").on(table.organizationId, table.createdAt),
+    index("webhook_delivery_status_attempt_idx").on(table.status, table.attempt),
+  ],
+);
+
+/**
  * One diagnostic record per public enrollment-link visit. Attempts are
  * append-only and short-lived (pruned by maintenance), and never contain the
  * enrollment password or a raw client IP.
@@ -485,6 +552,8 @@ export const device = mysqlTable(
     modelNumber: shortText("model_number"),
     /** When the DDM inventory status items were last ingested. */
     inventoryUpdatedAt: timestamp("inventory_updated_at"),
+    /** When the installed-application inventory was last refreshed. */
+    applicationsUpdatedAt: timestamp("applications_updated_at"),
     dmIdentifier: shortText("dm_identifier"),
     dmCertHash: shortText("dm_cert_hash"),
     /**
@@ -541,6 +610,12 @@ export const deviceApple = mysqlTable("device_apple", {
   topic: shortText("topic"),
   unlockToken: text("unlock_token"),
   bootstrapToken: text("bootstrap_token"),
+  /**
+   * Whether the last `SecurityInfo` response (or `SetBootstrapToken` event)
+   * reported the bootstrap token as escrowed. The token itself is sealed in
+   * `device_secret`; this column is display-only state.
+   */
+  bootstrapTokenEscrowed: boolean("bootstrap_token_escrowed"),
   configured: boolean("configured").notNull().default(false),
   deviceToken: shortText("device_token"),
   tokenUpdatedAt: timestamp("token_updated_at"),
@@ -561,6 +636,69 @@ export const deviceApple = mysqlTable("device_apple", {
   /** Failures since the last successful delivery; reset to zero on success. */
   consecutivePushFailures: int("consecutive_push_failures").notNull().default(0),
 });
+
+/**
+ * Device secrets escrowed from a managed device. Values are sealed with the
+ * deployment `AUTH_SECRET` (AES-GCM); plaintext never reaches the database and
+ * list/detail responses only expose presence metadata.
+ */
+export const deviceSecret = mysqlTable(
+  "device_secret",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: varchar("kind", {
+      length: 32,
+      enum: ["filevault_recovery_key", "bootstrap_token"],
+    }).notNull(),
+    /** AES-256-GCM sealed value produced by `sealSecret`. */
+    sealedValue: text("sealed_value").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    /** When the escrowed value last changed (not merely re-reported). */
+    rotatedAt: timestamp("rotated_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.kind] }),
+    index("device_secret_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * Last reported installed-application inventory for a managed device. Each
+ * refresh replaces the device's full list, so rows not reported again are
+ * removed rather than left to look installed forever.
+ */
+export const deviceApplication = mysqlTable(
+  "device_application",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    bundleId: shortText("bundle_id").notNull(),
+    name: shortText("name"),
+    version: shortText("version"),
+    shortVersion: shortText("short_version"),
+    /** Byte counts can exceed a signed 32-bit integer (for example Xcode). */
+    bundleSize: bigint("bundle_size", { mode: "number" }),
+    dynamicSize: bigint("dynamic_size", { mode: "number" }),
+    hasUpdateAvailable: boolean("has_update_available").notNull().default(false),
+    isManaged: boolean("is_managed").notNull().default(false),
+    lastReportedAt: timestamp("last_reported_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.bundleId] }),
+    index("device_application_organization_idx").on(table.organizationId),
+    index("device_application_bundle_idx").on(table.organizationId, table.bundleId),
+  ],
+);
 
 export const applePushCertificate = mysqlTable("apple_push_certificate", {
   organizationId: id("organization_id")
@@ -910,6 +1048,8 @@ export const relations = defineRelations(
     subscription,
     accountApiToken,
     auditLog,
+    webhookEndpoint,
+    webhookDelivery,
     ssoConfig,
     ssoDomain,
     entraDirectorySync,
@@ -924,6 +1064,8 @@ export const relations = defineRelations(
     deviceDeclaration,
     deviceApple,
     deviceAppleUser,
+    deviceSecret,
+    deviceApplication,
     applePushCertificate,
     applePushKey,
     enterpriseGroup,
@@ -950,6 +1092,14 @@ export const relations = defineRelations(
     organization: {
       members: r.many.member({ from: r.organization.id, to: r.member.organizationId }),
       invitations: r.many.invitation({ from: r.organization.id, to: r.invitation.organizationId }),
+      webhookEndpoints: r.many.webhookEndpoint({
+        from: r.organization.id,
+        to: r.webhookEndpoint.organizationId,
+      }),
+      webhookDeliveries: r.many.webhookDelivery({
+        from: r.organization.id,
+        to: r.webhookDelivery.organizationId,
+      }),
       enrollment: r.one.enterpriseEnrollment({
         from: r.organization.id,
         to: r.enterpriseEnrollment.organizationId,
@@ -980,6 +1130,14 @@ export const relations = defineRelations(
       deviceUsage: r.many.organizationDeviceUsage({
         from: r.organization.id,
         to: r.organizationDeviceUsage.organizationId,
+      }),
+      deviceSecrets: r.many.deviceSecret({
+        from: r.organization.id,
+        to: r.deviceSecret.organizationId,
+      }),
+      deviceApplications: r.many.deviceApplication({
+        from: r.organization.id,
+        to: r.deviceApplication.organizationId,
       }),
     },
     member: {
@@ -1015,6 +1173,26 @@ export const relations = defineRelations(
     accountApiToken: {
       user: r.one.user({ from: r.accountApiToken.userId, to: r.user.id }),
     },
+    webhookEndpoint: {
+      organization: r.one.organization({
+        from: r.webhookEndpoint.organizationId,
+        to: r.organization.id,
+      }),
+      deliveries: r.many.webhookDelivery({
+        from: r.webhookEndpoint.id,
+        to: r.webhookDelivery.endpointId,
+      }),
+    },
+    webhookDelivery: {
+      endpoint: r.one.webhookEndpoint({
+        from: r.webhookDelivery.endpointId,
+        to: r.webhookEndpoint.id,
+      }),
+      organization: r.one.organization({
+        from: r.webhookDelivery.organizationId,
+        to: r.organization.id,
+      }),
+    },
     enterpriseEnrollment: {
       organization: r.one.organization({
         from: r.enterpriseEnrollment.organizationId,
@@ -1025,6 +1203,25 @@ export const relations = defineRelations(
       organization: r.one.organization({ from: r.device.organizationId, to: r.organization.id }),
       apple: r.one.deviceApple({ from: r.device.id, to: r.deviceApple.deviceId }),
       groups: r.many.groupDevice({ from: r.device.id, to: r.groupDevice.deviceId }),
+      secrets: r.many.deviceSecret({ from: r.device.id, to: r.deviceSecret.deviceId }),
+      applications: r.many.deviceApplication({
+        from: r.device.id,
+        to: r.deviceApplication.deviceId,
+      }),
+    },
+    deviceSecret: {
+      device: r.one.device({ from: r.deviceSecret.deviceId, to: r.device.id }),
+      organization: r.one.organization({
+        from: r.deviceSecret.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    deviceApplication: {
+      device: r.one.device({ from: r.deviceApplication.deviceId, to: r.device.id }),
+      organization: r.one.organization({
+        from: r.deviceApplication.organizationId,
+        to: r.organization.id,
+      }),
     },
     devicePreRegistration: {
       organization: r.one.organization({

@@ -62,10 +62,21 @@ architecture notes in the porting plan.
   model number, client capabilities, disk usage) with a tolerant parser for
   nested and flattened keys, exposed through the API, device detail and CSV
   export.
+- Apple `SecurityInfo` results escrow the FileVault recovery key and bootstrap
+  token in `device_secret`, sealed with `AUTH_SECRET`; device detail exposes
+  escrow presence only and the reveal endpoint requires owner/admin and writes
+  `device.recovery_key_viewed` to the audit log. `InstalledApplicationList`
+  results replace `device_application` rows on every refresh, and the tenant
+  Software page exposes search, managed/update filters and per-app device
+  counts. Real-device validation of both commands is still outstanding.
 - Credential monitoring summarizes APNs and SCEP CA expiry with days-left
   badges on the tenant dashboard and a `GET /v1/tenants/:tenantId/credential-health`
   endpoint. Daily maintenance writes one audit event per tenant per expiry
-  threshold (30/7/expired) per day; there is no email delivery yet.
+  threshold (30/7/expired) per day, and emails the tenant's enabled owner/admin
+  users once for each new alert (deduped by the audit event). Delivery uses the
+  Cloud `EMAIL` binding from `hello@mattrax.cloud` and is best-effort: a missing
+  binding or provider failure is logged and never fails maintenance. There is no
+  per-user opt-out, no retry queue and no self-hosted (`mttx`) delivery yet.
 - SCEP identities can be revoked per device; unenrollment/deletion revokes
   device-scoped certificates and renewal rejects revoked identities. Apple
   certificates are bound to the internal device on Authenticate/TokenUpdate
@@ -202,9 +213,6 @@ architecture notes in the porting plan.
   configure the optional shared edge limiters for every bucket, add an error
   tracker/alerting, and cover auth/enrollment with a distributed limiter even on
   deployments without Cloudflare Rate Limiting namespaces.
-- **Credential expiry notifications.** Daily maintenance records an audit event
-  per tenant/threshold, but no email is sent. Wire the audit event to the
-  owner/admin mailbox once delivery dedupe is centralized.
 - **Outbound timeouts and idempotency.** APNs, Graph, Stripe and relay calls now
   have deadlines and bounded retries; make webhook/command delivery idempotent
   so a retried request cannot double-apply a policy or command.

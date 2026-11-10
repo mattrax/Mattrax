@@ -18,6 +18,7 @@ import {
   makeSsoStrategy,
   makeEnterpriseAuthLive,
   sessionCookie,
+  type CredentialExpiryNotification,
 } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { PlatformServiceLive, platformHandlers } from "@mattrax/platform-backend";
@@ -57,6 +58,7 @@ import {
 } from "./observability.js";
 import { makeRateLimiter, rateLimitResponse, type RateLimitBindingLike } from "./rateLimit.js";
 import { checkReadiness } from "./readiness.js";
+import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
 const rateLimiter = makeRateLimiter();
 
@@ -521,9 +523,46 @@ export default {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
     };
+    // Delivery is best-effort: a missing binding or a provider rejection is
+    // logged by maintenance and never fails the scheduled run.
+    const notifyCredentialExpiry = (notification: CredentialExpiryNotification) =>
+      Effect.tryPromise({
+        try: async () => {
+          const email = env.EMAIL;
+          if (!email) {
+            console.warn(
+              "Credential expiry email skipped: EMAIL binding is not configured",
+              notification.organizationId,
+              notification.threshold,
+            );
+            return;
+          }
+          if (notification.recipients.length === 0) {
+            console.warn(
+              "Credential expiry email skipped: no owner/admin recipients",
+              notification.organizationId,
+              notification.threshold,
+            );
+            return;
+          }
+          const message = credentialExpiryEmail(notification, { origin: apiEnv.ORIGIN });
+          await email.send({
+            to: notification.recipients.map((recipient) => recipient.email),
+            from: { name: "Mattrax", email: CREDENTIAL_EMAIL_FROM },
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+          });
+        },
+        catch: (cause) => cause,
+      });
     const maintenance = runMaintenance({
       staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
       auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
+      // Outbound webhook retries need the same secret used to seal endpoint
+      // secrets; retention/pruning runs regardless.
+      webhookAuthSecret: apiEnv.AUTH_SECRET,
+      notifyCredentialExpiry,
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
     ctx.waitUntil(

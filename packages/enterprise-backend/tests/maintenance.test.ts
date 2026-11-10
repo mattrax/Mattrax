@@ -1,6 +1,7 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
+import { sealSecret } from "@mattrax/crypto";
 import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -141,5 +142,93 @@ describe("maintenance dynamic groups", () => {
       }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
     );
     expect(result.dynamicGroupsEvaluated).toBe(0);
+  });
+});
+
+describe("maintenance webhook deliveries", () => {
+  const endpoint = async (overrides: Record<string, unknown> = {}) => ({
+    id: "wh-1",
+    organizationId: "org-1",
+    url: "https://hooks.example.com/mattrax",
+    secret: await sealSecret("maintenance-secret", "whsec_test_secret"),
+    secretPrefix: "cret",
+    description: null,
+    eventFilters: [],
+    enabled: true,
+    lastDeliveryAt: null,
+    lastDeliveryStatus: null,
+    consecutiveFailures: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  it("prunes delivery rows older than 30 days", async () => {
+    const db = makeDb();
+    const row = (id: string, ageDays: number) => ({
+      id,
+      endpointId: "wh-1",
+      organizationId: "org-1",
+      event: "device.enrolled",
+      eventId: `evt_${id}`,
+      payload: { id: `evt_${id}`, type: "device.enrolled", organizationId: "org-1", data: {} },
+      status: "succeeded",
+      attempt: 1,
+      responseStatus: 200,
+      error: null,
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+    });
+    db.store.webhook_delivery.push(row("old", 31), row("boundary", 30), row("fresh", 2));
+
+    const result = await run(db);
+    expect(result.purgedWebhookDeliveries).toBe(1);
+    expect(db.store.webhook_delivery.map((item) => item.id).sort()).toEqual(["boundary", "fresh"]);
+  });
+
+  it("retries a recent failed delivery with the sealed secret", async () => {
+    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const db = makeDb();
+    db.store.webhook_endpoint.push(await endpoint());
+    db.store.webhook_delivery.push({
+      id: "whd-1",
+      endpointId: "wh-1",
+      organizationId: "org-1",
+      event: "device.enrolled",
+      eventId: "evt_1",
+      payload: {
+        id: "evt_1",
+        type: "device.enrolled",
+        occurredAt: now.toISOString(),
+        organizationId: "org-1",
+        data: {},
+      },
+      status: "failed",
+      attempt: 1,
+      responseStatus: 500,
+      error: "Endpoint responded with HTTP 500",
+      createdAt: new Date(now.getTime() - 60_000),
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        dynamicGroups: false,
+        webhookAuthSecret: "maintenance-secret",
+        webhookFetch: fetch,
+      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+    );
+
+    expect(result.webhookRetries).toBe(1);
+    expect(result.webhookRetrySucceeded).toBe(1);
+    expect(result.webhookRetryFailed).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(db.store.webhook_delivery[0]).toMatchObject({
+      status: "succeeded",
+      attempt: 2,
+      responseStatus: 200,
+      error: null,
+    });
   });
 });
