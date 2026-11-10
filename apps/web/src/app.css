@@ -130,6 +130,37 @@
   }
 }
 
+/*
+ * The policy designer is a full-height workspace. Constrain the dashboard
+ * inset to the viewport while it is mounted so the editor panes scroll
+ * internally instead of the page growing with the catalogue.
+ */
+main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
+  height: 100svh;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Dense setting rows go two-column only when the editor itself is wide
+   enough, not when the whole viewport happens to be. */
+.designer-fields {
+  container-type: inline-size;
+}
+
+@container (min-width: 34rem) {
+  .designer-field {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.5rem;
+    padding-inline: 1.25rem;
+  }
+
+  .designer-field-control {
+    width: 252px;
+  }
+}
+
 @utility no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

@@ -60,6 +60,61 @@ export function Check(props: IconProps) {
   );
 }
 
+export function ChevronDown(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
+export function ArrowLeft(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </Icon>
+  );
+}
+
+export function RotateCcw(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.8 9.8 0 0 0-6.7 2.7L3 8" />
+      <path d="M3 3v5h5" />
+    </Icon>
+  );
+}
+
+export function TriangleAlert(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  );
+}
+
+export function Info(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </Icon>
+  );
+}
+
+export function PanelRight(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
+    </Icon>
+  );
+}
+
 export function ChevronRight(props: IconProps) {
   return (
     <Icon {...props}>

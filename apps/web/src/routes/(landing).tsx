@@ -5,11 +5,20 @@ import { UserDropdown } from "~/components/user-dropdown";
 import { authClient } from "~/lib/auth";
 
 export default function Layout(props: ParentProps) {
+  const location = useLocation();
   return (
-    <div class="min-h-screen bg-stone-50 text-stone-900 font-sans flex flex-col">
+    <div
+      class={`flex min-h-screen flex-col bg-stone-50 font-sans text-stone-900 ${
+        location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
+      }`}
+    >
       <TopNavigation />
       {props.children}
-      <Footer />
+      {/* The designer is a full-height workspace; a footer would create a
+          second page-level scrollbar around it. */}
+      <Show when={location.pathname !== "/designer"}>
+        <Footer />
+      </Show>
     </div>
   );
 }

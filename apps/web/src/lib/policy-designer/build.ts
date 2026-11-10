@@ -75,17 +75,207 @@ const payloadValues = (selection: Selection): Record<string, unknown> => {
   );
 };
 
+/**
+ * Some catalogue entries declare a scalar default for a structured setting
+ * (for example `0` on an array). Treat those as "no default" rather than
+ * seeding a draft with a value that cannot be serialized.
+ */
+const enumDomainKind = (property: Property): "boolean" | "number" | "string" => {
+  const values = property.enum?.map((option) => option.value) ?? [];
+  if (values.length > 0 && values.every((value) => value === "true" || value === "false"))
+    return "boolean";
+  if (
+    values.length > 0 &&
+    values.every((value) => value.trim() !== "" && Number.isFinite(Number(value)))
+  )
+    return "number";
+  return "string";
+};
+
+/** Normalise an enum default to the type the control will store. */
+const coerceEnumValue = (property: Property, value: unknown): unknown => {
+  if (!property.enum) return value;
+  const kind = enumDomainKind(property);
+  if (kind === "boolean") {
+    if (value === true || value === "true") return true;
+    if (value === false || value === "false") return false;
+    return value;
+  }
+  if (kind === "number") {
+    const number = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(number) ? number : value;
+  }
+  return value;
+};
+
+export const catalogDefault = (property: Property): unknown => {
+  const value = property.defaultValue;
+  if (value === undefined || value === null) return undefined;
+  if (property.enum) return coerceEnumValue(property, value);
+  switch (property.type) {
+    case "array":
+      return Array.isArray(value) ? value : undefined;
+    case "dictionary":
+      return isPlainObject(value) ? value : undefined;
+    case "data":
+      return typeof value === "string" ? value : undefined;
+    case "boolean":
+      return property.enum || typeof value === "boolean" ? value : undefined;
+    case "integer":
+    case "real": {
+      if (property.enum) return value;
+      const number = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(number) ? number : undefined;
+    }
+    default:
+      return value;
+  }
+};
+
 export const defaultValues = (collection: Collection): Record<string, unknown> =>
   Object.fromEntries(
     collectionProperties(collection)
-      .filter(
-        (property) =>
-          property.defaultValue !== undefined &&
-          property.defaultValue !== null &&
-          !isEnvelope(property),
-      )
-      .map((property) => [valueKey(property, collection.platform), property.defaultValue]),
+      .filter((property) => !isEnvelope(property))
+      .map((property) => [valueKey(property, collection.platform), catalogDefault(property)])
+      .filter(([, value]) => value !== undefined),
   );
+
+/**
+ * Compare drafts and catalogue defaults without depending on object key order.
+ * Dates are normalized because date properties round-trip through JSON strings.
+ */
+export const sameValue = (left: unknown, right: unknown): boolean => {
+  const normalize = (value: unknown): string => {
+    if (value instanceof Date) return `date:${value.toISOString()}`;
+    if (Array.isArray(value)) return `[${value.map(normalize).join(",")}]`;
+    if (typeof value === "object" && value !== null)
+      return `{${Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map(
+          (key) => `${JSON.stringify(key)}:${normalize((value as Record<string, unknown>)[key])}`,
+        )
+        .join(",")}}`;
+    return JSON.stringify(value) ?? "undefined";
+  };
+  return normalize(left) === normalize(right);
+};
+
+/** A value is configured when the payload will contain it. */
+export const isConfiguredValue = (value: unknown) => value !== undefined && value !== null;
+
+/** A value is changed when it differs from the catalogue default (including unset). */
+export const isChangedValue = (property: Property, value: unknown) =>
+  !sameValue(value, catalogDefault(property));
+
+export type ValidationSeverity = "error" | "warning";
+
+export type ValidationIssue = {
+  readonly severity: ValidationSeverity;
+  readonly collectionId: string;
+  readonly collectionName: string;
+  readonly propertyKey: string;
+  readonly propertyName: string;
+  readonly message: string;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Validate a draft before it is saved or exported. Missing required values are
+ * warnings: shipped baselines intentionally leave some required envelope
+ * values to the platform at apply time. Structurally invalid values are errors
+ * and block the action because they cannot be serialized safely.
+ */
+export const validateDraft = (draft: Draft): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [];
+  for (const selection of draft.selections) {
+    for (const property of collectionProperties(selection)) {
+      if (isEnvelope(property)) continue;
+      const key = valueKey(property, draft.platform);
+      const value = selection.values[key];
+      const add = (severity: ValidationSeverity, message: string) =>
+        issues.push({
+          severity,
+          collectionId: selection.collectionId,
+          collectionName: selection.name,
+          propertyKey: key,
+          propertyName: property.name,
+          message,
+        });
+
+      if (value === undefined || value === null || value === "") {
+        if (property.required) add("warning", "Required value is missing.");
+        continue;
+      }
+
+      // Catalogue defaults are not user input. Some ship below `min` or in a
+      // looser JSON type than the control stores; do not block a policy the
+      // user never edited.
+      if (sameValue(value, catalogDefault(property))) continue;
+
+      const enumProperty = Boolean(property.enum);
+      if (property.type === "array") {
+        if (!Array.isArray(value)) add("error", "Expected a list of values.");
+        continue;
+      }
+      if (property.type === "dictionary") {
+        if (!isPlainObject(value)) add("error", "Expected a dictionary (JSON object).");
+        continue;
+      }
+      if (property.type === "data") {
+        if (typeof value !== "string") {
+          add("error", "Expected a base64-encoded string.");
+        } else if (value.trim() !== "" && !BASE64.test(value.replace(/\s/g, ""))) {
+          add("warning", "This value does not look like base64 data.");
+        }
+        continue;
+      }
+      if (property.type === "boolean" && !enumProperty) {
+        if (typeof value !== "boolean") add("error", "Expected On or Off.");
+        continue;
+      }
+      if ((property.type === "integer" || property.type === "real") && !enumProperty) {
+        const number = typeof value === "number" ? value : Number(value);
+        if (!Number.isFinite(number)) {
+          add("error", `Expected a ${property.type === "integer" ? "whole number" : "number"}.`);
+          continue;
+        }
+        if (property.min !== undefined && number < property.min)
+          add("error", `Must be at least ${property.min}.`);
+        else if (property.max !== undefined && number > property.max)
+          add("error", `Must be at most ${property.max}.`);
+        continue;
+      }
+      if (property.type === "string" && property.pattern && typeof value === "string") {
+        try {
+          if (!new RegExp(property.pattern).test(value))
+            add("error", `Does not match the required format (${property.pattern}).`);
+        } catch {
+          // A malformed catalogue pattern is not the user's problem.
+        }
+      }
+    }
+  }
+  if (
+    draft.platform === "windows" &&
+    draft.selections.length > 0 &&
+    buildWindowsNodes(draft).length === 0
+  ) {
+    const first = draft.selections[0]!;
+    issues.push({
+      severity: "error",
+      collectionId: first.collectionId,
+      collectionName: first.name,
+      propertyKey: "",
+      propertyName: first.name,
+      message: "This collection has no applicable Windows settings; add a setting or remove it.",
+    });
+  }
+  return issues;
+};
 
 const applePayloadValues = (selection: Selection) => {
   const values = payloadValues(selection);
@@ -147,10 +337,27 @@ export const buildDeclarations = (draft: Draft) =>
       };
     });
 
+/** Older drafts stored enum defaults as strings; normalise before SyncML. */
+const normalizeEnumValue = (property: Property, value: unknown) => {
+  if (!property.enum) return value;
+  const kind = enumDomainKind(property);
+  if (kind === "boolean") {
+    if (value === true || value === "true") return true;
+    if (value === false || value === "false") return false;
+    return value;
+  }
+  if (kind === "number") {
+    const number = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(number) ? number : value;
+  }
+  return value;
+};
+
 const windowsFormat = (property: Property, value: unknown) => {
   if (typeof value === "boolean") return "int";
   if (typeof value === "number") return Number.isInteger(value) ? "int" : "chr";
   if (property.type === "integer" || property.type === "boolean") return "int";
+  if (property.enum && enumDomainKind(property) !== "string") return "int";
   if (property.type === "data") return "b64";
   return "chr";
 };
@@ -171,8 +378,9 @@ export const buildWindowsNodes = (draft: Draft) => {
   const nodes = new Map<string, { omaUri: string; value: unknown; format: string }>();
   for (const selection of draft.selections) {
     for (const property of collectionProperties(selection)) {
-      const value = selection.values[valueKey(property, "windows")];
-      if (value === undefined || value === null) continue;
+      const rawValue = selection.values[valueKey(property, "windows")];
+      if (rawValue === undefined || rawValue === null) continue;
+      const value = normalizeEnumValue(property, rawValue);
       const omaUri =
         property.address ??
         `./Device/Vendor/MSFT/Policy/Config/${selection.identifier}/${property.key}`;
@@ -303,8 +511,13 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       };
     }
 
+    const declarationCounts = new Map<string, number>();
     declarations.forEach((selection, index) => {
-      configurations[declarationConfigKind(selection.identifier, index)] = {
+      // Key by identifier, not array position: reordering or removing one
+      // declaration must not rename every other configuration.
+      const duplicate = declarationCounts.get(selection.identifier) ?? 0;
+      declarationCounts.set(selection.identifier, duplicate + 1);
+      configurations[declarationConfigKind(selection.identifier, duplicate)] = {
         kind: selection.identifier,
         configuration: payloadValues(selection),
         designer: true,
