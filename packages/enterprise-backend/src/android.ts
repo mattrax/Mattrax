@@ -10,7 +10,12 @@ import {
   verifyPubSubOidcToken,
   type AndroidPolicyConfiguration,
 } from "@mattrax/dm-android";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import {
+  deviceLimitForOrganization,
+  schema,
+  type EnterpriseDb,
+  type PlanLimitsConfig,
+} from "@mattrax/enterprise-core";
 import {
   resolveEffectivePolicyForDevice,
   syncDynamicGroupsForDevice,
@@ -699,6 +704,7 @@ type UpsertAndroidDeviceResult = {
   readonly deviceId: string;
   readonly created: boolean;
   readonly previousStatus?: string;
+  readonly limitReached?: boolean;
 };
 
 const upsertAndroidDevice = (input: {
@@ -706,6 +712,7 @@ const upsertAndroidDevice = (input: {
   readonly organizationId: string;
   readonly enterpriseName: string;
   readonly resource: AndroidDeviceResource;
+  readonly planLimits?: PlanLimitsConfig;
 }): Effect.Effect<UpsertAndroidDeviceResult, unknown> =>
   Effect.gen(function* () {
     const existingMapping = yield* input.db.query.androidDevice.findFirst({
@@ -733,6 +740,15 @@ const upsertAndroidDevice = (input: {
     const serial =
       serialMatch && existingDevice?.id !== serialMatch.id ? null : (input.resource.serial ?? null);
 
+    if (!existingDevice && input.planLimits) {
+      const limit = yield* deviceLimitForOrganization({
+        db: input.db,
+        organizationId: input.organizationId,
+        config: input.planLimits,
+      });
+      if (limit.limit !== null && (limit.used ?? 0) >= limit.limit)
+        return { deviceId: "", created: false, limitReached: true };
+    }
     const deviceId = existingDevice?.id ?? id();
     const timestamp = now();
     const status = androidDeviceStatus(input.resource.state);
@@ -1063,6 +1079,7 @@ type ApplyNotificationInput = {
   readonly enterprise: AndroidEnterpriseRow;
   readonly notificationType: string;
   readonly data: unknown;
+  readonly planLimits?: PlanLimitsConfig;
 };
 
 type ApplyNotificationResult = {
@@ -1092,7 +1109,10 @@ const applyDeviceNotification = (
       organizationId,
       enterpriseName,
       resource,
+      planLimits: input.planLimits,
     });
+    if (device.limitReached)
+      return { status: "ignored" as const, reason: "tenant device limit reached" };
     yield* syncDynamicGroupsForDevice(input.db, organizationId, device.deviceId, {
       now: now(),
     }).pipe(Effect.catch(() => Effect.void));
@@ -1242,6 +1262,7 @@ export const handleAndroidPubSub = (input: {
   readonly body: unknown;
   readonly fetch?: typeof globalThis.fetch;
   readonly now?: () => number;
+  readonly planLimits?: PlanLimitsConfig;
 }): Effect.Effect<AndroidPubSubResult, AndroidDeliveryError, AndroidManagement> =>
   Effect.gen(function* () {
     const config = input.config;
@@ -1311,6 +1332,7 @@ export const handleAndroidPubSub = (input: {
       enterprise,
       notificationType,
       data: push.data,
+      ...(input.planLimits ? { planLimits: input.planLimits } : {}),
     };
     const result: ApplyNotificationResult =
       notificationType === "ENROLLMENT" || notificationType === "STATUS_REPORT"

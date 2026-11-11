@@ -1,5 +1,5 @@
 import { Effect, Layer, Option } from "effect";
-import { Db, Env, R2, schema } from "@mattrax/enterprise-core";
+import { Db, Env, R2, schema, type PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   EnterpriseAuth,
   EnterpriseService as EnterpriseServiceTag,
@@ -17,6 +17,8 @@ export type EnterpriseServiceOptions = {
   readonly azureClientId?: string;
   /** Google Android Enterprise delivery config; omit when unconfigured. */
   readonly android?: AndroidDeliveryConfig;
+  /** Deployment plan catalogue; omit for unlimited plans. */
+  readonly planLimits?: PlanLimitsConfig;
   readonly email?: {
     send(message: {
       to: string;
@@ -69,6 +71,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           cloudAppleVendorKey: env.cloudAppleVendorKey,
           apns,
           android: options.android,
+          planLimits: options.planLimits,
           email: options.email,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,

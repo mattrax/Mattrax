@@ -179,7 +179,14 @@ architecture notes in the porting plan.
 - Stripe billing is wired: `POST /api/v1/billing/webhook` verifies signatures,
   syncs subscription created/updated/deleted and invoice events, maps Stripe
   failures to `EnterpriseStripeError`, and returns a clear unconfigured state
-  instead of a 500. Plan/seat enforcement still needs a pricing catalogue.
+  instead of a 500. Plan/seat enforcement is configurable through the optional
+  `MATTRAX_PLAN_LIMITS` JSON secret (see
+  [Self-hosting → Plan and seat limits](./self-hosting#plan-and-seat-limits)).
+  Limits apply to public enrollment readiness, Apple `Authenticate`, Windows
+  enrollment, Android enrollment-token issuance, pre-registration imports and
+  tenant creation. Existing devices over a lowered limit stay manageable; the
+  billing page shows usage against limits and an over-limit warning. Without the
+  secret, all plans remain unlimited.
 - RBAC adds the `auditor` read-only tenant role. Account API tokens can be
   read-only or read/write and optionally bound to one tenant; tenant data
   access enforces both the token scope and the user's role.
@@ -249,8 +256,12 @@ architecture notes in the porting plan.
   enrollment, and end-to-end validation on a real Windows device.
 - **Billing plan/seat enforcement.** Stripe signature-verified webhook ingestion,
   subscription upsert, optional billing configuration and mapped Stripe errors
-  are implemented. There is still no plan/seat limit catalogue or enforcement
-  against device/tenant counts — that requires a product pricing decision.
+  are implemented. `MATTRAX_PLAN_LIMITS` now supplies the plan catalogue and the
+  API enforces device limits at every enrollment entry point plus tenant
+  creation. Remaining gap: Android devices reported by Google Pub/Sub after an
+  enrollment token was issued are synced without a second device-cap check
+  (token issuance is gated); add the same check in the Pub/Sub sync path if
+  operators need a hard fleet-wide cap.
 
 ### P1 — operational and enterprise requirements
 

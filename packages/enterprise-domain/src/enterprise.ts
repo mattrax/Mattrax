@@ -160,6 +160,7 @@ const EnterpriseTenantImportErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),
 ] as const;
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
@@ -262,9 +263,22 @@ export const TenantBranding = Schema.Struct({
 export type TenantBranding = typeof TenantBranding.Type;
 
 export const BillingSummary = Schema.Struct({
+  /** Effective plan name, including the configured default when unsubscribed. */
   plan: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
   billableDevices: Schema.Number,
+  /** Device allowance for this plan; `null` means unlimited. */
+  deviceLimit: Schema.NullOr(Schema.Number),
+  /** Tenant allowance for the account; `null` means unlimited. */
+  tenantLimit: Schema.NullOr(Schema.Number),
+  /** Every device row for this tenant, regardless of status. */
+  devicesUsed: Schema.Number,
+  /** Tenants owned by the current account. */
+  tenantsUsed: Schema.Number,
+  overDeviceLimit: Schema.Boolean,
+  overTenantLimit: Schema.Boolean,
+  /** False when the deployment has no `MATTRAX_PLAN_LIMITS` catalogue. */
+  limitsConfigured: Schema.Boolean,
   subscriptionId: Schema.optional(NullableString),
   periodEnd: Schema.optional(NullableString),
   cancelAtPeriodEnd: Schema.Boolean,
@@ -1581,6 +1595,17 @@ export const WindowsEnrollment = Schema.Union([
 ]);
 export type WindowsEnrollment = typeof WindowsEnrollment.Type;
 
+/** Deployment plan device allowance shown on the public enrollment page. */
+export const EnrollmentDeviceLimit = Schema.Struct({
+  reached: Schema.Boolean,
+  plan: Schema.String,
+  /** Omitted when the plan is unlimited. */
+  limit: Schema.optional(Schema.Number),
+  /** Omitted when the plan is unlimited. */
+  used: Schema.optional(Schema.Number),
+});
+export type EnrollmentDeviceLimit = typeof EnrollmentDeviceLimit.Type;
+
 export const EnrollmentResponse = Schema.Union([
   Schema.Struct({
     name: Schema.String,
@@ -1595,6 +1620,7 @@ export const EnrollmentResponse = Schema.Union([
     windows: WindowsEnrollment,
     android: AndroidEnrollment,
     assetTag: Schema.Boolean,
+    deviceLimit: Schema.optional(EnrollmentDeviceLimit),
   }),
 ]);
 export type EnrollmentResponse = typeof EnrollmentResponse.Type;
@@ -1828,7 +1854,9 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.post("createTenant", "/v1/tenants", {
       error: [
         ...EnterpriseAuthRequiredErrors,
+        ...EnterpriseDbErrors,
         EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
       ],
       payload: CreateTenantRequest,
       success: IdResponse,

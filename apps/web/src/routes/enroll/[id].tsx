@@ -14,6 +14,7 @@ import {
   type PlatformEnrollment,
   type WindowsEnrollment,
 } from "~/lib/enterprise";
+import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 
 export default function EnrollPage() {
   const params = useParams();
@@ -37,6 +38,10 @@ export default function EnrollPage() {
   const brandName = () => branding()?.displayName ?? "Mattrax";
   const brandColor = () => branding()?.brandColor ?? DEFAULT_BRAND_COLOR;
   const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
+  const deviceLimit = () => {
+    const data = enrollment.data;
+    return data?.authenticated === true ? data.deviceLimit : undefined;
+  };
 
   return (
     <main class="min-h-svh bg-stone-950 px-4 py-10 text-stone-950">
@@ -93,6 +98,16 @@ export default function EnrollPage() {
             </Show>
 
             <Show when={enrollment.data?.authenticated === true}>
+              <Show when={deviceLimit()}>
+                {(deviceLimit) => (
+                  <Show when={deviceLimit().reached}>
+                    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      <p class="font-medium">{DEVICE_LIMIT_REACHED_TITLE}</p>
+                      <p class="mt-1">{deviceLimitReachedMessage(deviceLimit().limit)}</p>
+                    </div>
+                  </Show>
+                )}
+              </Show>
               <EnrollmentOptions
                 enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>}
                 id={params.id}

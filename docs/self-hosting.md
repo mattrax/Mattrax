@@ -62,29 +62,30 @@ the placeholder `e.mattrax.app` to the hostname you control.
 
 Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 
-| Secret                                    | Required | Purpose                                                         |
-| ----------------------------------------- | -------- | --------------------------------------------------------------- |
-| `ORIGIN`                                  | Yes      | Canonical public origin used in enrollment profiles and emails. |
-| `AUTH_SECRET`                             | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.      |
-| `AUTH_RESET_URL`                          | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`. |
-| `TRUSTED_ORIGINS`                         | No       | Extra comma-separated browser origins for split-origin setups.  |
-| `STRIPE_SECRET_KEY`                       | Yes      | Stripe API key.                                                 |
-| `STRIPE_WEBHOOK_SECRET`                   | Yes      | Stripe webhook verification secret.                             |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID`          | Yes      | Stripe price used for per-device billing.                       |
-| `CLOUD_APPLE_VENDOR_CERT`                 | No       | Apple MDM vendor certificate used to sign APNs CSRs.            |
-| `CLOUD_APPLE_VENDOR_KEY`                  | No       | Vendor private key paired with the certificate.                 |
-| `AZURE_CLIENT_ID`                         | No       | Entra ID app client ID for tenant SSO.                          |
-| `AZURE_CLIENT_SECRET`                     | No       | Entra ID app client secret for tenant SSO.                      |
-| `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` | No       | Full Google service-account JSON for Android Enterprise.        |
-| `ANDROID_MANAGEMENT_PROJECT_ID`           | No       | Google Cloud project; defaults to the service account project.  |
-| `ANDROID_MANAGEMENT_PUBSUB_TOPIC`         | No       | `projects/{project}/topics/{topic}` for Android notifications.  |
-| `ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION`  | No       | Push subscription receiving Android notifications.              |
-| `ANDROID_MANAGEMENT_PUBSUB_AUDIENCE`      | No       | OIDC audience; defaults to `<ORIGIN>/api/v1/android/pubsub`.    |
-| `ANDROID_MANAGEMENT_PUBSUB_JWKS_URI`      | No       | Optional JWKS override for tests/non-Google setups.             |
-| `SENTRY_DSN`                              | No       | Sentry-compatible DSN for uncaught/5xx error events.            |
-| `SENTRY_ENVIRONMENT`                      | No       | Sentry environment tag (for example `production`).              |
-| `SENTRY_SAMPLE_RATE`                      | No       | Fraction of eligible errors to send, `0`–`1`. Default `1`.      |
-| `SENTRY_MAX_EVENTS_PER_MINUTE`            | No       | Per-isolate event cap. Default `20`.                            |
+| Secret                                    | Required | Purpose                                                             |
+| ----------------------------------------- | -------- | ------------------------------------------------------------------- |
+| `ORIGIN`                                  | Yes      | Canonical public origin used in enrollment profiles and emails.     |
+| `AUTH_SECRET`                             | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.          |
+| `AUTH_RESET_URL`                          | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`.     |
+| `TRUSTED_ORIGINS`                         | No       | Extra comma-separated browser origins for split-origin setups.      |
+| `STRIPE_SECRET_KEY`                       | Yes      | Stripe API key.                                                     |
+| `STRIPE_WEBHOOK_SECRET`                   | Yes      | Stripe webhook verification secret.                                 |
+| `STRIPE_DEVICE_MONTHLY_PRICE_ID`          | Yes      | Stripe price used for per-device billing.                           |
+| `MATTRAX_PLAN_LIMITS`                     | No       | JSON plan catalogue for device/tenant limits. Unlimited when unset. |
+| `CLOUD_APPLE_VENDOR_CERT`                 | No       | Apple MDM vendor certificate used to sign APNs CSRs.                |
+| `CLOUD_APPLE_VENDOR_KEY`                  | No       | Vendor private key paired with the certificate.                     |
+| `AZURE_CLIENT_ID`                         | No       | Entra ID app client ID for tenant SSO.                              |
+| `AZURE_CLIENT_SECRET`                     | No       | Entra ID app client secret for tenant SSO.                          |
+| `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` | No       | Full Google service-account JSON for Android Enterprise.            |
+| `ANDROID_MANAGEMENT_PROJECT_ID`           | No       | Google Cloud project; defaults to the service account project.      |
+| `ANDROID_MANAGEMENT_PUBSUB_TOPIC`         | No       | `projects/{project}/topics/{topic}` for Android notifications.      |
+| `ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION`  | No       | Push subscription receiving Android notifications.                  |
+| `ANDROID_MANAGEMENT_PUBSUB_AUDIENCE`      | No       | OIDC audience; defaults to `<ORIGIN>/api/v1/android/pubsub`.        |
+| `ANDROID_MANAGEMENT_PUBSUB_JWKS_URI`      | No       | Optional JWKS override for tests/non-Google setups.                 |
+| `SENTRY_DSN`                              | No       | Sentry-compatible DSN for uncaught/5xx error events.                |
+| `SENTRY_ENVIRONMENT`                      | No       | Sentry environment tag (for example `production`).                  |
+| `SENTRY_SAMPLE_RATE`                      | No       | Fraction of eligible errors to send, `0`–`1`. Default `1`.          |
+| `SENTRY_MAX_EVENTS_PER_MINUTE`            | No       | Per-isolate event cap. Default `20`.                                |
 
 ```bash
 cf auth login
@@ -110,6 +111,57 @@ openssl rand -base64 32
 If `CLOUD_APPLE_VENDOR_CERT` and `CLOUD_APPLE_VENDOR_KEY` are omitted, tenants can still
 upload a manually signed APNs certificate. They cannot use the one-click vendor-signed
 CSR flow.
+
+### Plan and seat limits
+
+Plan/seat enforcement is deployment configuration, not a hard-coded pricing decision.
+Set the optional `MATTRAX_PLAN_LIMITS` secret to a JSON object mapping each Stripe plan
+name to device and tenant limits:
+
+```json
+{
+  "free": { "devices": 50, "tenants": 1 },
+  "device": { "devices": null, "tenants": null }
+}
+```
+
+```bash
+cf workers secrets update MATTRAX_PLAN_LIMITS \
+  --worker mattrax-api --type secret_text \
+  --text '{"free":{"devices":50,"tenants":1},"device":{"devices":null,"tenants":null}}'
+```
+
+The nested form is also accepted when a default plan is needed for tenants without a
+subscription:
+
+```json
+{
+  "defaultPlan": "free",
+  "plans": {
+    "free": { "devices": 50, "tenants": 1 },
+    "device": { "devices": null, "tenants": null }
+  }
+}
+```
+
+- A missing limit or `null` means unlimited. `0` means the plan allows none.
+- The plan comes from the `subscription` row written by the Stripe webhook. A tenant
+  with no subscription, or with a `canceled`, `incomplete_expired` or `unpaid`
+  subscription, uses `defaultPlan` (`free` unless configured).
+- An unknown plan name is treated as unlimited, so a newly added Stripe price cannot
+  lock out an existing customer before the catalogue is updated.
+- The limit is checked when a device enrolls (public enrollment readiness, Apple
+  `Authenticate`, Windows enrollment and Android enrollment-token issuance) and when
+  pre-registrations are imported. Existing devices are never deleted: a tenant over a
+  newly lowered limit keeps every device and can still manage, rename and unenroll them.
+- Tenant creation is limited per account, counting tenants where the user is an owner.
+  The account uses the most permissive plan among the tenants it already owns.
+- Invalid JSON, negative or non-integer limits fail safe to unlimited and log a warning
+  at startup. The Worker does not crash.
+- Billing (`GET /v1/tenants/:tenantId/billing`) reports `plan`, `status`, `deviceLimit`,
+  `tenantLimit`, `devicesUsed`, `tenantsUsed`, `overDeviceLimit` and `overTenantLimit`.
+
+Omitting the secret preserves the previous behaviour: every plan is unlimited.
 
 ### Microsoft Entra ID single sign-on
 

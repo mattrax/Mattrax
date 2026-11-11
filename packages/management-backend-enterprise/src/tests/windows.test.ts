@@ -16,7 +16,7 @@ import {
   windowsTenantTokenExpiresAt,
 } from "../windows.js";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
-import { schema } from "@mattrax/enterprise-core";
+import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
@@ -85,6 +85,9 @@ const setup = async (
     windowsOrganizationId?: string | null;
     requireDeviceIdentity?: boolean;
     tenantTokenTtlSeconds?: number;
+    planLimits?: ReturnType<typeof parsePlanLimits>;
+    subscription?: Record<string, unknown>;
+    devices?: Array<Record<string, unknown>>;
   } = {},
 ) => {
   const ca = await makeCa();
@@ -100,6 +103,10 @@ const setup = async (
       enrollmentRow("org-late"),
       enrollmentRow("org-early"),
     ],
+    ...(overrides.subscription
+      ? { [tableName(schema.subscription)]: [overrides.subscription] }
+      : {}),
+    ...(overrides.devices ? { [tableName(schema.device)]: overrides.devices } : {}),
   });
   const backend = makeWindowsBackend({
     db: db as any,
@@ -111,6 +118,7 @@ const setup = async (
         : (overrides.windowsOrganizationId ?? "org-early"),
     requireDeviceIdentity: overrides.requireDeviceIdentity,
     tenantTokenTtlSeconds: overrides.tenantTokenTtlSeconds,
+    planLimits: overrides.planLimits,
   });
   return { ca, db, backend };
 };
@@ -236,6 +244,74 @@ describe("Windows enterprise backend", () => {
     const serialBytes = certificate.serialNumber.valueBlock.valueHexView;
     expect(serialBytes.byteLength).toBeGreaterThanOrEqual(8);
     expect(serialBytes[0]! & 0x80).toBe(0);
+  });
+
+  it("rejects a new Windows device when the plan device limit is reached", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db } = await setup({
+      planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
+      subscription: {
+        id: "sub-1",
+        plan: "free",
+        referenceId: "org-early",
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "EXISTING",
+          dmIdentifier: "device-existing",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    const csr = await makeCsr();
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, csr, "device-1"))),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+  });
+
+  it("allows re-enrolling an existing Windows device above the plan limit", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db } = await setup({
+      planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
+      subscription: {
+        id: "sub-1",
+        plan: "free",
+        referenceId: "org-early",
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      },
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "EXISTING",
+          dmIdentifier: "device-existing",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    const csr = await makeCsr();
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, csr, "device-existing"))),
+    ).resolves.toMatchObject({ deviceId: "device-existing" });
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
   });
 
   it("updates an existing device instead of inserting a duplicate", async () => {

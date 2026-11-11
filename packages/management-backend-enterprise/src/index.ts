@@ -1,6 +1,11 @@
 import { Effect, Layer } from "effect";
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
-import { Db, schema as s } from "@mattrax/enterprise-core";
+import {
+  Db,
+  deviceLimitForOrganization,
+  schema as s,
+  type PlanLimitsConfig,
+} from "@mattrax/enterprise-core";
 import { deriveDeviceHealth, resolveTenantBranding } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
@@ -722,6 +727,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly windowsOrganizationId?: string;
     readonly requireWindowsDeviceIdentity?: boolean;
     readonly requireAppleDeviceIdentity?: boolean;
+    /** Deployment plan catalogue; omitted means unlimited plans. */
+    readonly planLimits?: PlanLimitsConfig;
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret } = options;
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
@@ -848,6 +855,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         .limit(1)
                     : [];
                 const existing = existingByUdid ?? existingBySerial;
+                // New devices must fit the deployment plan. Re-authenticating
+                // an existing device (or reclaiming a pre-registered serial)
+                // is always allowed, so a lowered limit never strands devices
+                // that are already managed.
+                if (!existing) {
+                  const planStatus = yield* deviceLimitForOrganization({
+                    db,
+                    organizationId,
+                    config: options.planLimits,
+                  }).pipe(Effect.mapError(() => new InternalServerError()));
+                  if (planStatus.reached) return yield* Effect.fail(new UnknownDevice());
+                }
                 const identityFingerprint = scope.identityCertificateFingerprintSha256;
                 // Only an unenrolled slot may be reclaimed by a new identity.
                 // Overwriting an enrolled device from a different certificate
@@ -1564,6 +1583,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         authSecret,
         windowsOrganizationId: options.windowsOrganizationId,
         requireDeviceIdentity: options.requireWindowsDeviceIdentity,
+        planLimits: options.planLimits,
       }),
     });
   };
@@ -1576,6 +1596,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly windowsOrganizationId?: string;
       readonly requireWindowsDeviceIdentity?: boolean;
       readonly requireAppleDeviceIdentity?: boolean;
+      readonly planLimits?: PlanLimitsConfig;
     },
   ) =>
     Layer.effect(

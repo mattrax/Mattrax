@@ -3,7 +3,12 @@ import { and, asc, eq, lt } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
-import { schema as s, type Db } from "@mattrax/enterprise-core";
+import {
+  deviceLimitForOrganization,
+  schema as s,
+  type Db,
+  type PlanLimitsConfig,
+} from "@mattrax/enterprise-core";
 import { certificateSerialHex, openCaPrivateKey, signScepCsr } from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import {
@@ -333,6 +338,8 @@ export type WindowsBackendOptions = {
   readonly tenantTokenTtlSeconds?: number;
   /** Require a verified client certificate on SyncML check-in. */
   readonly requireDeviceIdentity?: boolean;
+  /** Deployment plan catalogue; omitted means unlimited plans. */
+  readonly planLimits?: PlanLimitsConfig;
 };
 
 type WindowsBackend = Pick<
@@ -657,6 +664,16 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             .limit(enrollment.maxDevices);
           if (windowsDevices.length >= enrollment.maxDevices)
             return yield* Effect.fail(new UnknownDevice());
+        }
+        // The deployment plan limit applies to all platforms. Re-enrolling an
+        // existing device is always allowed.
+        if (!existing) {
+          const planStatus = yield* deviceLimitForOrganization({
+            db,
+            organizationId,
+            config: options.planLimits,
+          }).pipe(Effect.mapError(() => new InternalServerError()));
+          if (planStatus.reached) return yield* Effect.fail(new UnknownDevice());
         }
 
         const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);

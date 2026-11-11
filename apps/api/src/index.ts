@@ -34,7 +34,7 @@ import {
   ManagementBackendEnterpriseLive,
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
-import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
+import { Db, Env as CoreEnv, R2, parsePlanLimits } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
@@ -68,6 +68,14 @@ import { checkReadiness } from "./readiness.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
 const rateLimiter = makeRateLimiter();
+
+/**
+ * Plan limits are deployment configuration, not product pricing. A malformed
+ * secret is logged and treated as "unlimited" so a bad deploy cannot crash the
+ * Worker or lock customers out.
+ */
+const planLimits = parsePlanLimits(apiEnv.MATTRAX_PLAN_LIMITS);
+for (const warning of planLimits.warnings) console.warn(warning);
 
 /**
  * Error tracking is optional and per-isolate: the tracker (and therefore its
@@ -359,6 +367,7 @@ const makeAppLayer = (env: Env, request: Request) => {
     windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
     requireWindowsDeviceIdentity: true,
     requireAppleDeviceIdentity: true,
+    planLimits,
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
@@ -375,7 +384,12 @@ const makeAppLayer = (env: Env, request: Request) => {
     : Layer.empty;
 
   const servicesLayer = Layer.mergeAll(
-    EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID, android: androidConfig }).pipe(
+    EnterpriseService({
+      email,
+      azureClientId: env.AZURE_CLIENT_ID,
+      android: androidConfig,
+      planLimits,
+    }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(stripeLayer),
@@ -435,6 +449,7 @@ const makeAppLayer = (env: Env, request: Request) => {
       origin: env.ORIGIN,
       authSecret: env.AUTH_SECRET,
       config: androidConfig,
+      planLimits,
     }).pipe(Layer.provide(HttpServer.layerServices)),
   );
 

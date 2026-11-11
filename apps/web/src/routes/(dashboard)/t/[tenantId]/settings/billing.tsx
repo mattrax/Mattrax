@@ -1,10 +1,17 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery } from "@tanstack/solid-query";
+import { Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import {
+  PLAN_LIMIT_REACHED_BODY,
+  PLAN_LIMIT_REACHED_TITLE,
+  UNLIMITED_PLAN_NOTICE,
+  formatPlanUsage,
+} from "~/lib/plan-limits";
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
@@ -25,6 +32,7 @@ export default function BillingSettingsPage() {
     },
   }));
   const configured = () => billing.data?.configured !== false;
+  const overLimit = () => Boolean(billing.data?.overDeviceLimit || billing.data?.overTenantLimit);
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
@@ -37,6 +45,12 @@ export default function BillingSettingsPage() {
         <div class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm xl:col-span-2">
           Billing is not configured for this deployment. An administrator must set the Stripe
           environment variables before a plan can be purchased or managed.
+        </div>
+      )}
+      {overLimit() && (
+        <div class="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm xl:col-span-2">
+          <p class="font-medium">{PLAN_LIMIT_REACHED_TITLE}</p>
+          <p class="mt-1">{PLAN_LIMIT_REACHED_BODY}</p>
         </div>
       )}
       <Card>
@@ -59,6 +73,18 @@ export default function BillingSettingsPage() {
           <div class="flex items-center justify-between">
             <span class="text-muted-foreground">Billable devices</span>
             <span class="font-medium">{billing.data?.billableDevices ?? 0}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">Devices</span>
+            <span class="font-medium">
+              {formatPlanUsage(billing.data?.devicesUsed, billing.data?.deviceLimit)}
+            </span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">Tenants</span>
+            <span class="font-medium">
+              {formatPlanUsage(billing.data?.tenantsUsed, billing.data?.tenantLimit)}
+            </span>
           </div>
           <div class="flex items-center justify-between">
             <span class="text-muted-foreground">Current period ends</span>
@@ -89,9 +115,14 @@ export default function BillingSettingsPage() {
         <CardHeader>
           <CardTitle>Usage</CardTitle>
         </CardHeader>
-        <CardContent class="text-sm text-muted-foreground">
-          Billing is based on enrolled devices. Devices that check out stop counting toward the next
-          billing period. Usage reporting and invoices are managed in Stripe.
+        <CardContent class="space-y-2 text-sm text-muted-foreground">
+          <p>
+            Billing is based on enrolled devices. Devices that check out stop counting toward the
+            next billing period. Usage reporting and invoices are managed in Stripe.
+          </p>
+          <Show when={billing.data && !billing.data.limitsConfigured}>
+            <p>{UNLIMITED_PLAN_NOTICE}</p>
+          </Show>
         </CardContent>
       </Card>
     </div>

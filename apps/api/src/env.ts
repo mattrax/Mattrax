@@ -19,6 +19,11 @@ const ApiEnvSchema = Schema.Struct({
   STRIPE_SECRET_KEY: Schema.optional(nonEmptyString),
   STRIPE_WEBHOOK_SECRET: Schema.optional(nonEmptyString),
   STRIPE_DEVICE_MONTHLY_PRICE_ID: Schema.optional(nonEmptyString),
+  /**
+   * Optional JSON plan catalogue mapping plan names to device/tenant limits.
+   * Missing or `null` limits are unlimited. Parsed defensively at startup.
+   */
+  MATTRAX_PLAN_LIMITS: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_CERT: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
   /** Hosted Cloud push relay. When set, APNs pushes go through the relay. */
@@ -106,6 +111,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(
     (cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID,
   ),
+  MATTRAX_PLAN_LIMITS: emptyStringAsUndefined((cfEnv as any).MATTRAX_PLAN_LIMITS),
   CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_CERT),
   CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_KEY),
   APNS_RELAY_URL: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_URL),

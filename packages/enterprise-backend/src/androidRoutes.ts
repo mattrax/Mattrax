@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { Db } from "@mattrax/enterprise-core";
+import { Db, type PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   AndroidDeliveryError,
   completeAndroidSignup,
@@ -14,6 +14,7 @@ export type AndroidRoutesOptions = {
   readonly origin: string;
   readonly authSecret?: string;
   readonly config?: AndroidDeliveryConfig;
+  readonly planLimits?: PlanLimitsConfig;
 };
 
 const statusFor = (kind: AndroidDeliveryError["kind"]): number => {
@@ -86,6 +87,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
         config: options.config,
         authSecret: options.authSecret,
         origin: options.origin,
+        planLimits: options.planLimits,
         authorization: typeof authorization === "string" ? authorization : undefined,
         body,
       });

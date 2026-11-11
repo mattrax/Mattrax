@@ -50,6 +50,8 @@ export const apiWorker = {
     STRIPE_SECRET_KEY: bindings.secret(),
     STRIPE_WEBHOOK_SECRET: bindings.secret(),
     STRIPE_DEVICE_MONTHLY_PRICE_ID: bindings.secret(),
+    /** Optional JSON plan catalogue; absent means unlimited plans. */
+    MATTRAX_PLAN_LIMITS: bindings.secret(),
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     APNS_RELAY_URL: bindings.secret(),

@@ -37,6 +37,12 @@ import {
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
+import {
+  countOrganizationDevices,
+  deviceLimitForOrganization,
+  tenantLimitForAccount,
+  type PlanLimitsConfig,
+} from "@mattrax/enterprise-core";
 import { and, asc, count, desc, eq, gt, gte, inArray, isNull, like, lt, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
@@ -177,6 +183,11 @@ export type EnterpriseHandlersConfig = {
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Per-attempt webhook delivery deadline. Defaults to 5s. */
   readonly webhookTimeoutMs?: number;
+  /**
+   * Deployment plan catalogue parsed from `MATTRAX_PLAN_LIMITS`. Omit it (or
+   * leave it unconfigured) to keep every plan unlimited.
+   */
+  readonly planLimits?: PlanLimitsConfig;
   /** Transactional email binding. Invitations are logged when omitted. */
   readonly email?: {
     send(message: {
@@ -454,6 +465,7 @@ export const createEnterpriseService = ({
   azureClientId,
   webhookFetch,
   webhookTimeoutMs,
+  planLimits,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
   const auth = authService;
@@ -955,7 +967,12 @@ export const createEnterpriseService = ({
       return group;
     });
 
-  const billingSummary = (organizationId: string) =>
+  /**
+   * Plan and usage for a tenant. The subscription row is authoritative for the
+   * plan name; enforcement falls back to the configured default when the
+   * subscription is absent or lapsed.
+   */
+  const billingSummary = (organizationId: string, userId: string) =>
     Effect.gen(function* () {
       const [subscription] = yield* db
         .select()
@@ -971,15 +988,56 @@ export const createEnterpriseService = ({
             eq(schema.device.status, "enrolled"),
           ),
         );
+      const planLimitDbError = () =>
+        new EnterpriseDbError({ message: "Could not check plan limits" });
+      const devicesUsed = yield* countOrganizationDevices(db, organizationId).pipe(
+        Effect.mapError(planLimitDbError),
+      );
+      const deviceStatus = yield* deviceLimitForOrganization({
+        db,
+        organizationId,
+        config: planLimits,
+      }).pipe(Effect.mapError(planLimitDbError));
+      const tenantStatus = yield* tenantLimitForAccount({
+        db,
+        userId,
+        config: planLimits,
+      }).pipe(Effect.mapError(planLimitDbError));
       return {
-        plan: subscription?.plan,
+        plan: deviceStatus.plan,
         status: subscription?.status,
         billableDevices: devices?.value ?? 0,
+        deviceLimit: deviceStatus.limit,
+        tenantLimit: tenantStatus.limit,
+        devicesUsed,
+        tenantsUsed: tenantStatus.used,
+        overDeviceLimit: deviceStatus.overLimit,
+        overTenantLimit: tenantStatus.overLimit,
+        limitsConfigured: Boolean(planLimits?.configured),
         subscriptionId: subscription?.stripeSubscriptionId ?? null,
         periodEnd: subscription?.periodEnd ? iso(subscription.periodEnd) : null,
         cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
         configured: billingConfigured,
       };
+    });
+
+  const PLAN_DEVICE_LIMIT_MESSAGE =
+    "The device limit for this plan has been reached. Contact your administrator to upgrade.";
+
+  /** Reject tenant creation when the account's plan does not allow another. */
+  const assertTenantCreationAllowed = (userId: string) =>
+    Effect.gen(function* () {
+      const status = yield* tenantLimitForAccount({ db, userId, config: planLimits }).pipe(
+        Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
+      );
+      if (!status.reached) return;
+      return yield* Effect.fail(
+        new EnterpriseForbidden({
+          message: `Your plan allows ${status.limit ?? 0} tenant${
+            status.limit === 1 ? "" : "s"
+          }. Upgrade your plan or delete a tenant before creating another.`,
+        }),
+      );
     });
 
   const rowDevice = (row: EnterpriseDevice) => ({
@@ -1759,6 +1817,7 @@ export const createEnterpriseService = ({
           brandColor?: string | null;
           metadata?: Record<string, unknown>;
         };
+        yield* assertTenantCreationAllowed(user.id);
         const existing = yield* db.query.organization.findFirst({
           where: { slug: body.slug },
         });
@@ -2201,6 +2260,8 @@ export const createEnterpriseService = ({
               }),
             );
         }
+
+        yield* assertTenantCreationAllowed(user.id);
 
         const timestamp = now();
         const tenantId = id();
@@ -3358,7 +3419,19 @@ export const createEnterpriseService = ({
           .select({ value: count() })
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
-        const enabled = canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
+        const tenantLimitReached = !canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
+        // The deployment plan limit is independent of the tenant's own
+        // `maxDevices` setting: whichever is lower wins. Existing devices stay
+        // manageable; only new enrollments are blocked.
+        const planStatus = yield* deviceLimitForOrganization({
+          db,
+          organizationId: organization.id,
+          config: planLimits,
+        }).pipe(
+          Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
+        );
+        const planLimitReached = planStatus.reached;
+        const enabled = !tenantLimitReached && !planLimitReached;
         const androidRow = androidConfigured()
           ? yield* loadAndroidEnterprise(db, organization.id)
           : undefined;
@@ -3425,8 +3498,15 @@ export const createEnterpriseService = ({
           name: organization.name,
           branding,
           authenticated: true as const,
-          apple:
-            !enabled || !enrollment.enabledApple
+          deviceLimit: {
+            reached: planLimitReached,
+            plan: planStatus.plan,
+            ...(planStatus.limit !== null ? { limit: planStatus.limit } : {}),
+            ...(planStatus.used !== null ? { used: planStatus.used } : {}),
+          },
+          apple: planLimitReached
+            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
+            : !enabled || !enrollment.enabledApple
               ? { error: "Apple enrollment is disabled! Contact your administrator." }
               : !apns?.topic
                 ? { error: "Apple management is not configured! Contact your administrator." }
@@ -3447,8 +3527,9 @@ export const createEnterpriseService = ({
                         }),
                       ),
                     },
-          windows:
-            !enabled || !enrollment.enabledWindows
+          windows: planLimitReached
+            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
+            : !enabled || !enrollment.enabledWindows
               ? { error: "Windows enrollment is disabled! Contact your administrator." }
               : !windowsToken
                 ? {
@@ -3460,8 +3541,9 @@ export const createEnterpriseService = ({
                     tenantScoped: true as const,
                     ...(windowsExpiry ? { expiresAt: windowsExpiry.toISOString() } : {}),
                   },
-          android:
-            !enabled || !enrollment.enabledAndroid
+          android: planLimitReached
+            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
+            : !enabled || !enrollment.enabledAndroid
               ? { error: "Android enrollment is disabled! Contact your administrator." }
               : !androidConfigured()
                 ? {
@@ -3938,6 +4020,33 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Import at most 1000 devices at a time." }),
           );
 
+        // Pre-registrations reserve device slots before a device enrolls. When
+        // the deployment plan caps devices, reject new serials once the
+        // remaining capacity is used, while still allowing existing rows to be
+        // updated.
+        const planStatus = yield* deviceLimitForOrganization({
+          db,
+          organizationId: ctx.organization.id,
+          config: planLimits,
+        }).pipe(
+          Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
+        );
+        const existingPreRegistrations = (yield* db
+          .select({ id: schema.devicePreRegistration.id })
+          .from(schema.devicePreRegistration)
+          .where(
+            and(
+              eq(schema.devicePreRegistration.organizationId, ctx.organization.id),
+              // A consumed row already corresponds to a device row and must
+              // not keep reserving a second seat.
+              isNull(schema.devicePreRegistration.consumedDeviceId),
+            ),
+          )).length;
+        let remainingCapacity =
+          planStatus.limit === null
+            ? Number.POSITIVE_INFINITY
+            : Math.max(0, planStatus.limit - (planStatus.used ?? 0) - existingPreRegistrations);
+
         const groups = (yield* db
           .select()
           .from(schema.enterpriseGroup)
@@ -4027,6 +4136,14 @@ export const createEnterpriseService = ({
                 );
               return { serial, status: "updated" as const, id: existing.id };
             }
+
+            if (remainingCapacity <= 0)
+              return {
+                serial,
+                status: "error" as const,
+                error: PLAN_DEVICE_LIMIT_MESSAGE,
+              };
+            remainingCapacity -= 1;
 
             const registrationId = id();
             yield* db.insert(schema.devicePreRegistration).values({
@@ -6192,7 +6309,7 @@ export const createEnterpriseService = ({
     billing: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
-        return yield* billingSummary(ctx.organization.id);
+        return yield* billingSummary(ctx.organization.id, ctx.user.id);
       }),
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { schema } from "@mattrax/enterprise-core";
+import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
@@ -34,17 +34,54 @@ const issuedCertificate = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const setup = (certificates: Array<ReturnType<typeof issuedCertificate>> = []) => {
+const setup = (
+  certificates: Array<ReturnType<typeof issuedCertificate>> = [],
+  options: {
+    planLimits?: ReturnType<typeof parsePlanLimits>;
+    subscription?: Record<string, unknown>;
+    devices?: Array<Record<string, unknown>>;
+  } = {},
+) => {
   const db = makeDb({
     [tableName(schema.organization)]: [
       organization("org-1", "first"),
       organization("org-2", "second"),
     ],
     [tableName(schema.scepIssuedCertificate)]: certificates,
+    ...(options.subscription ? { [tableName(schema.subscription)]: [options.subscription] } : {}),
+    ...(options.devices ? { [tableName(schema.device)]: options.devices } : {}),
   });
-  const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+  const backend = ManagementBackendEnterpriseLive.make({
+    db: db as any,
+    origin,
+    authSecret,
+    planLimits: options.planLimits,
+  });
   return { db, backend };
 };
+
+const planLimits = (devices: number | null) =>
+  parsePlanLimits(JSON.stringify({ free: { devices } }));
+
+const subscription = {
+  id: "sub-1",
+  plan: "free",
+  referenceId: "org-1",
+  status: "active",
+  createdAt: now,
+  updatedAt: now,
+};
+
+const deviceRow = (id: string, udid: string) => ({
+  id,
+  organizationId: "org-1",
+  proto: "apple",
+  status: "enrolled",
+  name: id,
+  dmIdentifier: udid,
+  enrolledAt: now,
+  lastSeenAt: now,
+});
 
 const scope = (overrides: Record<string, unknown> = {}) => ({
   _tag: "device" as const,
@@ -148,5 +185,42 @@ describe("Apple per-device SCEP identity binding", () => {
 
     expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
     expect(certificateRows(db)[0]).toMatchObject({ deviceId: null });
+  });
+
+  it("rejects a new device when the plan device limit is reached", async () => {
+    const { db, backend } = setup([issuedCertificate()], {
+      planLimits: planLimits(1),
+      subscription,
+      devices: [deviceRow("existing", "udid-existing")],
+    });
+
+    await expect(
+      run(backend.appleDeviceEvent(scope({ udid: "udid-new" }), authenticate())),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+  });
+
+  it("allows re-authentication of an existing device above the plan limit", async () => {
+    const { db, backend } = setup([issuedCertificate()], {
+      planLimits: planLimits(1),
+      subscription,
+      devices: [deviceRow("existing", "udid-1")],
+    });
+
+    await run(backend.appleDeviceEvent(scope(), authenticate()));
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+    expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
+      id: "existing",
+      dmIdentifier: "udid-1",
+    });
+  });
+
+  it("does not enforce limits when the catalogue is absent", async () => {
+    const { db, backend } = setup([issuedCertificate()], {
+      devices: [deviceRow("existing", "udid-existing")],
+    });
+
+    await run(backend.appleDeviceEvent(scope(), authenticate()));
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(2);
   });
 });
