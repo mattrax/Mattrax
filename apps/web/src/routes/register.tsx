@@ -11,15 +11,17 @@ export default function RegisterPage() {
   const [confirm, setConfirm] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+  const [existingAccount, setExistingAccount] = createSignal<string | null>(null);
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
     setError(null);
+    setExistingAccount(null);
     if (password() !== confirm()) {
       setError("Passwords do not match");
       return;
     }
-    if (password().length < 12) {
+    if (password().length < 15) {
       setError("Choose a password of at least 15 characters");
       return;
     }
@@ -35,6 +37,11 @@ export default function RegisterPage() {
 
     if (result.error) {
       setError(result.error.message ?? "Could not create account");
+      return;
+    }
+
+    if (result.data?.status === "existing-account") {
+      setExistingAccount(result.data.email);
       return;
     }
 
@@ -126,6 +133,28 @@ export default function RegisterPage() {
           </p>
 
           <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+
+          <Show when={existingAccount()}>
+            {(email) => (
+              <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                <p class="font-medium">An account already exists for {email()}.</p>
+                <p class="mt-1 text-amber-800">
+                  Sign in with your existing password, or reset it if you've forgotten it.
+                </p>
+                <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                  <a
+                    href={`/login?email=${encodeURIComponent(email())}`}
+                    class="font-medium underline underline-offset-2"
+                  >
+                    Sign in
+                  </a>
+                  <a href="/forgot-password" class="font-medium underline underline-offset-2">
+                    Reset your password
+                  </a>
+                </div>
+              </div>
+            )}
+          </Show>
 
           <button
             type="submit"

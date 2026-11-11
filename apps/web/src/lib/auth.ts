@@ -227,25 +227,44 @@ export const authClient = {
       }),
   },
   signUp: {
+    /**
+     * Registration deliberately reports success for an identifier that already
+     * exists so the endpoint cannot be used to enumerate accounts. Nothing is
+     * written in that case, so the follow-up sign-in is where the conflict
+     * surfaces: the new password is not attached to the existing account. That
+     * is reported as `existingAccount` rather than a credential failure, which
+     * would wrongly tell the user their password is wrong.
+     */
     email: (payload: { name: string; email: string; password: string }) =>
-      result(async () => {
-        await request("/register", {
-          method: "POST",
-          body: authBody({
-            requestId: crypto.randomUUID(),
-            email: payload.email,
-            newPassword: payload.password,
-            registration: { name: payload.name },
-          }),
-        });
-        const completion = await request<unknown>("/signIn", {
-          method: "POST",
-          body: authBody({ email: payload.email, password: payload.password }),
-        });
-        const state = completionState(completion);
-        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
-        return state;
-      }),
+      result(
+        async (): Promise<
+          { status: "signed-in" } | { status: "existing-account"; email: string }
+        > => {
+          await request("/register", {
+            method: "POST",
+            body: authBody({
+              requestId: crypto.randomUUID(),
+              email: payload.email,
+              newPassword: payload.password,
+              registration: { name: payload.name },
+            }),
+          });
+          try {
+            const completion = await request<unknown>("/signIn", {
+              method: "POST",
+              body: authBody({ email: payload.email, password: payload.password }),
+            });
+            const state = completionState(completion);
+            if (!state.user && !state.pending)
+              throw new Error("Additional authentication is required");
+            return { status: "signed-in" };
+          } catch (error) {
+            if ((error as { _tag?: string })._tag === "PasswordRejected")
+              return { status: "existing-account", email: payload.email };
+            throw error;
+          }
+        },
+      ),
   },
   ssoSignIn: (token: string) =>
     result(async () => {

@@ -7,7 +7,10 @@ import { Eye, EyeOff } from "~/components/ui/icons";
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [email, setEmail] = createSignal("");
+  const initialEmail = Array.isArray(searchParams.email)
+    ? searchParams.email[0]
+    : searchParams.email;
+  const [email, setEmail] = createSignal(initialEmail ?? "");
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
