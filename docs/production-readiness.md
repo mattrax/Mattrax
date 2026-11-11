@@ -73,8 +73,8 @@ architecture notes in the porting plan.
   phishing-resistant, user-verified possession factor: it satisfies MFA on its
   own, works for passwordless/SSO accounts, and completes a pending password,
   email-code or SSO sign-in. Accounts with a passkey or an authenticator are on
-  the MFA requirement, and `user.passkey_enabled` is maintained by database
-  triggers so sign-in policy cannot drift from credential state. Adding or
+  the MFA requirement, and `user.passkey_enabled` is maintained by the auth
+  lifecycle hook so sign-in policy follows credential state. Adding or
   removing a key requires a recent step-up; removal invalidates other sessions
   and refuses to leave the account without a usable sign-in method.
 - A tenant can require MFA for its owners and admins

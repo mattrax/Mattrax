@@ -510,9 +510,8 @@ DELETE FROM auth_passkeyFlows WHERE JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.conte
 UPDATE `user` SET passkey_enabled = false, auth_revision = UUID() WHERE id = :user_id;
 ```
 
-The `auth_passkey_factor_*` triggers recompute `passkey_enabled` when the
-credential rows change, but bump `auth_revision` explicitly so existing sessions
-are rejected. This is a break-glass operation: audit it, confirm the requester's
+The application mirrors `passkey_enabled` when credential rows change, but bump
+`auth_revision` explicitly so existing sessions are rejected. This is a break-glass operation: audit it, confirm the requester's
 identity, and have the user re-enrol a factor immediately. Passkeys do not
 require a password, so passwordless and SSO-only accounts can enrol one; an
 authenticator app still needs a password because the code is only the possession
