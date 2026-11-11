@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createSignal, Show } from "solid-js";
+import { createSignal, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { Eye, EyeOff } from "~/components/ui/icons";
@@ -7,9 +7,12 @@ import { Eye, EyeOff } from "~/components/ui/icons";
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const initialEmail = Array.isArray(searchParams.email)
-    ? searchParams.email[0]
-    : searchParams.email;
+  // A one-off seed for the field, not a reactive dependency: read it outside
+  // tracking so the component does not warn about an untracked reactive read.
+  const initialEmail = untrack(() => {
+    const value = searchParams.email;
+    return Array.isArray(value) ? value[0] : value;
+  });
   const [email, setEmail] = createSignal(initialEmail ?? "");
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
