@@ -387,8 +387,8 @@ function Developer() {
   return (
     <section id="developers" class="relative overflow-hidden bg-stone-950">
       <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_80%_0%,rgba(120,113,108,0.25),transparent_70%)]" />
-      <div class="mx-auto grid max-w-7xl gap-14 px-6 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-28">
-        <div>
+      <div class="mx-auto grid min-w-0 max-w-7xl gap-14 px-6 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-28">
+        <div class="min-w-0">
           <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-stone-500">
             For builders
           </p>
@@ -434,7 +434,7 @@ function Developer() {
           </div>
         </div>
 
-        <div class="relative">
+        <div class="relative min-w-0">
           <div class="absolute -inset-4 rounded-3xl bg-stone-800/20 blur-2xl" />
           <div class="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-900 shadow-2xl">
             <div class="flex items-center justify-between border-b border-stone-800 px-5 py-3">
@@ -447,7 +447,7 @@ function Developer() {
                 TypeScript
               </span>
             </div>
-            <pre class="overflow-x-auto p-5 text-[12.5px] leading-6 text-stone-300 sm:p-6">
+            <pre class="max-w-full overflow-x-auto p-5 text-[12.5px] leading-6 text-stone-300 sm:p-6">
               <code>
                 <span class="text-stone-500">{"// Implement one contract, own the product."}</span>
                 {"\n"}
