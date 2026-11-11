@@ -200,6 +200,49 @@ describe("scoped API token migration", () => {
   });
 });
 
+describe("MFA migration", () => {
+  const names = migrationNames();
+  const mfaMigrations = names.filter((name) =>
+    readMigration(name).includes("CREATE TABLE `auth_totp_factor`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(mfaMigrations).toHaveLength(1);
+  });
+
+  it("adds the factor table and subject/tenant flags", () => {
+    const sql = readMigration(mfaMigrations[0]!);
+    expect(sql).toContain("`scope` varchar(191) PRIMARY KEY");
+    expect(sql).toContain("`state` text NOT NULL");
+    expect(sql).toContain("`version` text NOT NULL");
+    expect(sql).toContain("ALTER TABLE `user` ADD `totp_enabled`");
+    expect(sql).toContain("ALTER TABLE `sso_config` ADD `require_mfa`");
+  });
+
+  it("ships a snapshot with the new columns", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns")
+        .map((entry) => [`${entry.table}.${entry.name}`, entry]),
+    );
+    expect(columns.get("user.totp_enabled")).toMatchObject({
+      type: "boolean",
+      notNull: true,
+      default: "false",
+    });
+    expect(columns.get("sso_config.require_mfa")).toMatchObject({
+      type: "boolean",
+      notNull: true,
+      default: "false",
+    });
+    expect(columns.get("auth_totp_factor.scope")).toMatchObject({
+      type: "varchar(191)",
+      notNull: true,
+    });
+  });
+});
+
 describe("dynamic groups migration", () => {
   const names = migrationNames();
   const dynamicMigrations = names.filter((name) =>

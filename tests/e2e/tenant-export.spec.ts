@@ -61,3 +61,42 @@ test.describe("tenant export and import", () => {
     await expect(page.getByText("Tenant profile")).toBeVisible();
   });
 });
+
+test.describe("tenant backups", () => {
+  test("runs a manual backup, lists it and downloads an authenticated bundle", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Backup Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+    await expect(page.getByText("Automatic tenant backups")).toBeVisible();
+
+    await page.getByRole("button", { name: "Back up now" }).click();
+    await expect(page.getByText(/Last backup:/)).toBeVisible({ timeout: 30_000 });
+
+    let succeeded: { id: string } | undefined;
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`/api/v1/tenants/${tenant.id}/backups`);
+          if (!response.ok()) return undefined;
+          const body = (await response.json()) as {
+            backups: Array<{ id: string; status: string; trigger: string }>;
+          };
+          succeeded = body.backups.find(
+            (run) => run.status === "succeeded" && run.trigger === "manual",
+          );
+          return succeeded?.id;
+        },
+        { timeout: 30_000 },
+      )
+      .toBeTruthy();
+
+    const download = await page.request.get(
+      `/api/v1/tenants/${tenant.id}/backups/${succeeded!.id}/download`,
+    );
+    expect(download.ok()).toBe(true);
+    expect(download.headers()["cache-control"]).toBe("no-store");
+    expect(download.headers()["content-disposition"]).toContain("attachment");
+    const bundle = (await download.json()) as { version: number; tenant: { slug: string } };
+    expect(bundle.version).toBe(1);
+    expect(bundle.tenant.slug).toBe(tenant.slug);
+  });
+});

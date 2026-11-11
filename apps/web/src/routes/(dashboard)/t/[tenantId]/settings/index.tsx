@@ -111,6 +111,61 @@ export default function GeneralSettingsPage() {
   }));
 
   const isOwner = () => (tenant.data?.role ?? "").split(",").includes("owner");
+  // Non-owners get a 403 from the API and the card stays hidden; avoiding an
+  // `enabled` gate keeps query options out of a pending tenant-query read.
+  const backups = useQuery(() => ({
+    queryKey: enterpriseKeys.backups(params.tenantId),
+    queryFn: () => enterprise.listTenantBackups(params.tenantId),
+    // Non-owners get a 403; do not retry it three times on every visit.
+    retry: false,
+  }));
+  const [backupDownloadError, setBackupDownloadError] = createSignal<unknown>(null);
+  const backupNow = useMutation(() => ({
+    mutationFn: () => enterprise.runTenantBackup(params.tenantId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.backups(params.tenantId) });
+    },
+  }));
+  // Plain functions, not memos: a memo created in the component body would
+  // eagerly read the query's pending async value and suspend the whole page.
+  const latestBackup = () => backups.data?.backups?.[0];
+  const backupWarning = () => {
+    const latest = latestBackup();
+    if (!latest) return "No backup has run yet.";
+    if (latest.status === "failed")
+      return "The most recent backup failed. Retry it or check the error below.";
+    if (latest.status === "running") return "A backup is currently running.";
+    const age = Date.now() - new Date(latest.startedAt).getTime();
+    if (Number.isFinite(age) && age > 48 * 60 * 60 * 1000)
+      return "The most recent successful backup is more than two days old.";
+    return null;
+  };
+  const formatBackupSize = (bytes: number | null | undefined) => {
+    if (bytes == null) return "—";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  const downloadBackup = async (id: string) => {
+    setBackupDownloadError(null);
+    try {
+      const response = await fetch(
+        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/backups/${encodeURIComponent(
+          id,
+        )}/download`,
+        { credentials: "include" },
+      );
+      if (!response.ok)
+        throw new Error((await response.text()) || `Download failed (${response.status})`);
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename =
+        /filename="([^"]+)"/.exec(disposition)?.[1] ??
+        `tenant-${tenant.data?.slug ?? params.tenantId ?? "backup"}-backup.json`;
+      download(await response.text(), filename);
+    } catch (error) {
+      setBackupDownloadError(error);
+    }
+  };
   const download = (body: string, filename: string) => {
     const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
     const link = document.createElement("a");
@@ -406,7 +461,7 @@ export default function GeneralSettingsPage() {
             </Show>
             <ErrorText error={exportError()} />
           </div>
-          <div class="space-y-3">
+          <div class="space-y-3" id="restore">
             <p class="text-sm font-medium">Import tenant</p>
             <p class="text-sm text-muted-foreground">
               Create a new tenant owned by you from a previously exported bundle. Internal ids are
@@ -421,6 +476,134 @@ export default function GeneralSettingsPage() {
               Import tenant
             </Button>
           </div>
+          <Show when={isOwner()}>
+            <div class="space-y-3 lg:col-span-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm font-medium">Automatic tenant backups</p>
+                <Button
+                  variant="outline"
+                  onClick={() => backupNow.mutate()}
+                  disabled={!isOwner() || backupNow.isPending}
+                >
+                  {backupNow.isPending ? "Backing up…" : "Back up now"}
+                </Button>
+              </div>
+              <p class="text-sm text-muted-foreground">
+                A JSON bundle is written to private object storage every day and after manual runs.
+                Bundles use the same shape as the export above: credentials, private keys, token
+                hashes and object bytes are never included. Downloads are authenticated and go
+                through the API; the R2 object is never public. Restore by downloading a backup and
+                importing it as a new tenant below.
+              </p>
+              <Show when={backups.isError || backupNow.isError}>
+                <ErrorText error={backups.error ?? backupNow.error} />
+              </Show>
+              <Show when={backupDownloadError()}>{(error) => <ErrorText error={error()} />}</Show>
+              <Show when={latestBackup()}>
+                {(latest) => (
+                  <div class="rounded-lg border bg-stone-50 p-3 text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        Last backup:{" "}
+                        <span class="font-medium">
+                          {latest().status === "succeeded" ? "Succeeded" : latest().status}
+                        </span>{" "}
+                        <span class="text-muted-foreground">
+                          {new Date(latest().startedAt).toLocaleString()}
+                        </span>
+                      </span>
+                      <Show when={latest().status === "succeeded"}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void downloadBackup(latest().id)}
+                        >
+                          Download
+                        </Button>
+                      </Show>
+                    </div>
+                    <Show when={latest().error}>
+                      <p class="mt-1 text-xs text-red-600">{latest().error}</p>
+                    </Show>
+                  </div>
+                )}
+              </Show>
+              <Show when={backupWarning()}>
+                {(warning) => (
+                  <p
+                    class={
+                      latestBackup()?.status === "failed"
+                        ? "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                        : "rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                    }
+                  >
+                    {warning()}
+                  </p>
+                )}
+              </Show>
+              <Show when={(backups.data?.backups ?? []).length > 0}>
+                <div class="overflow-hidden rounded-lg border">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-stone-50 text-muted-foreground">
+                      <tr>
+                        <th class="px-3 py-2 font-medium">Started</th>
+                        <th class="px-3 py-2 font-medium">Trigger</th>
+                        <th class="px-3 py-2 font-medium">Status</th>
+                        <th class="px-3 py-2 font-medium">Size</th>
+                        <th class="px-3 py-2 font-medium" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
+                        <tr class="border-t">
+                          <td class="px-3 py-2">{new Date(run.startedAt).toLocaleString()}</td>
+                          <td class="px-3 py-2 capitalize">{run.trigger}</td>
+                          <td class="px-3 py-2">
+                            <span
+                              class={
+                                run.status === "succeeded"
+                                  ? "text-emerald-700"
+                                  : run.status === "failed"
+                                    ? "text-red-700"
+                                    : "text-amber-700"
+                              }
+                            >
+                              {run.status}
+                            </span>
+                            <Show when={run.error}>
+                              <span class="ml-1 text-red-600" title={run.error ?? ""}>
+                                ({run.error?.slice(0, 60)})
+                              </span>
+                            </Show>
+                          </td>
+                          <td class="px-3 py-2">{formatBackupSize(run.sizeBytes)}</td>
+                          <td class="px-3 py-2 text-right">
+                            <Show when={run.status === "succeeded"}>
+                              <button
+                                type="button"
+                                class="underline"
+                                onClick={() => void downloadBackup(run.id)}
+                              >
+                                Download
+                              </button>
+                            </Show>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Show>
+              <p class="text-xs text-muted-foreground">
+                Backups older than the configured retention window are deleted automatically. Need
+                to restore?{" "}
+                <a class="underline" href="#restore">
+                  Import a bundle
+                </a>
+                .
+              </p>
+            </div>
+          </Show>
         </CardContent>
       </Card>
 

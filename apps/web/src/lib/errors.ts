@@ -58,6 +58,14 @@ const TAGS: Record<string, Mapping> = {
     message: "Billing is temporarily unavailable. Try again shortly.",
     variant: "server",
   },
+  EnterpriseNotConfigured: {
+    message: "This feature is not configured for this deployment.",
+    variant: "server",
+  },
+  EnterpriseUpstreamError: {
+    message: "The provider is temporarily unavailable. Try again shortly.",
+    variant: "server",
+  },
   EnterpriseR2FileNotFound: {
     message: "That file is no longer available.",
     variant: "not-found",
@@ -243,7 +251,13 @@ export const errorPresentation = (
       serverMessage &&
       !GENERIC_SERVER_MESSAGES.has(serverMessage) &&
       !isTechnical(serverMessage) &&
-      ["EnterpriseBadRequest", "EnterpriseNotFound", "EnterpriseForbidden"].includes(tag);
+      [
+        "EnterpriseBadRequest",
+        "EnterpriseNotFound",
+        "EnterpriseForbidden",
+        "EnterpriseNotConfigured",
+        "EnterpriseUpstreamError",
+      ].includes(tag);
     return {
       title: TITLES[mapped.variant],
       message: canUseServerMessage ? serverMessage : mapped.message,

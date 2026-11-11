@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   PolicyMergeError,
   androidPolicyHash,
+  androidPolicyIdForHash,
   canonicalPolicyJson,
+  compileAndroidPolicy,
+  compileAndroidPolicyWithHash,
   mergeAndroidPolicies,
 } from "../src/index.js";
 
@@ -116,5 +119,49 @@ describe("androidPolicyHash", () => {
     ]);
     const reordered = { screenCaptureDisabled: true, cameraDisabled: true };
     await expect(androidPolicyHash(merged)).resolves.toBe(await androidPolicyHash(reordered));
+  });
+});
+
+describe("compileAndroidPolicy", () => {
+  it("unwraps designer configurations and ignores other platforms", () => {
+    const policy = compileAndroidPolicy([
+      { kind: "mttx.apple.custom.designer", data: { content: "ignored" } },
+      {
+        kind: "mttx.android.policy.designer",
+        data: { policy: { cameraDisabled: true }, draft: { name: "draft" } },
+      },
+      {
+        kind: "mttx.android.policy.handwritten",
+        data: { screenCaptureDisabled: true },
+      },
+    ]);
+    expect(policy).toEqual({ cameraDisabled: true, screenCaptureDisabled: true });
+    expect(policy).not.toHaveProperty("draft");
+    expect(policy).not.toHaveProperty("policy");
+  });
+
+  it("returns an empty policy when no Android configuration exists", () => {
+    expect(compileAndroidPolicy([])).toEqual({});
+    expect(compileAndroidPolicy([{ kind: "mttx.windows.custom.x", data: {} }])).toEqual({});
+  });
+
+  it("rejects read-only Google resource fields", () => {
+    expect(() =>
+      compileAndroidPolicy([
+        { kind: "mttx.android.policy.designer", data: { policy: { name: "enterprises/x" } } },
+      ]),
+    ).toThrow(PolicyMergeError);
+  });
+
+  it("renders stable policy ids and hashes", async () => {
+    const first = await compileAndroidPolicyWithHash([
+      { kind: "mttx.android.policy.a", data: { cameraDisabled: true } },
+    ]);
+    const second = await compileAndroidPolicyWithHash([
+      { kind: "mttx.android.policy.b", data: { cameraDisabled: true } },
+    ]);
+    expect(first.hash).toBe(second.hash);
+    expect(androidPolicyIdForHash(first.hash)).toMatch(/^mattrax-[a-z0-9]+$/);
+    expect(androidPolicyIdForHash(first.hash).length).toBeLessThanOrEqual(32);
   });
 });

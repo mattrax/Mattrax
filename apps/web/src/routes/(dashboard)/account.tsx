@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
+import { AccountSecurity } from "~/components/account-security";
 import {
   Dialog,
   DialogContent,
@@ -428,6 +429,13 @@ export default function AccountPage() {
           </div>
         </form>
       </section>
+
+      <AccountSecurity
+        mfaEnabled={me.data?.user.mfaEnabled ?? false}
+        mfaRequired={me.data?.user.mfaRequired ?? false}
+        hasPassword={me.data?.user.hasPassword ?? true}
+        email={user()?.email ?? ""}
+      />
 
       <section class="rounded-xl border border-red-200 bg-card p-6">
         <h2 class="text-sm font-semibold text-red-700 mb-1">Delete account</h2>

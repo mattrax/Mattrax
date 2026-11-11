@@ -28,6 +28,21 @@ const ApiEnvSchema = Schema.Struct({
   AZURE_CLIENT_ID: Schema.optional(nonEmptyString),
   AZURE_CLIENT_SECRET: Schema.optional(nonEmptyString),
   /**
+   * Google service-account JSON (the full key file, as a single string) used
+   * for Android Management API delivery. The private key is never persisted.
+   */
+  ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: Schema.optional(Schema.String),
+  /** Google Cloud project; defaults to the service account's `project_id`. */
+  ANDROID_MANAGEMENT_PROJECT_ID: Schema.optional(nonEmptyString),
+  /** `projects/{project}/topics/{topic}` configured on the enterprise. */
+  ANDROID_MANAGEMENT_PUBSUB_TOPIC: Schema.optional(nonEmptyString),
+  /** `projects/{project}/subscriptions/{subscription}` receiving pushes. */
+  ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: Schema.optional(nonEmptyString),
+  /** OIDC audience on the Pub/Sub push subscription; defaults to the callback URL. */
+  ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: Schema.optional(nonEmptyString),
+  /** Optional JWKS override for non-Google test deployments. */
+  ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: Schema.optional(nonEmptyString),
+  /**
    * Extra browser origins allowed to call the auth API, comma separated. The
    * canonical `ORIGIN` is always trusted; this is for local development and
    * split-origin whitelabel deployments.
@@ -58,6 +73,21 @@ const ApiEnvSchema = Schema.Struct({
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
   MAINTENANCE_AUDIT_RETENTION_DAYS: Schema.optional(nonEmptyString),
+  /** Scheduled tenant backups: days to keep non-pinned runs; `0` keeps forever. */
+  MAINTENANCE_BACKUP_RETENTION_DAYS: Schema.optional(nonEmptyString),
+  /** Scheduled tenant backups: tenants backed up concurrently (default 4). */
+  MAINTENANCE_BACKUP_CONCURRENCY: Schema.optional(nonEmptyString),
+  /**
+   * Optional Sentry-compatible DSN for uncaught/5xx error events. Without it
+   * error tracking is disabled and only the structured request log is written.
+   */
+  SENTRY_DSN: Schema.optional(nonEmptyString),
+  /** Sentry environment tag, e.g. `production` or `staging`. */
+  SENTRY_ENVIRONMENT: Schema.optional(nonEmptyString),
+  /** Fraction of eligible errors to report, 0..1. Defaults to 1. */
+  SENTRY_SAMPLE_RATE: Schema.optional(nonEmptyString),
+  /** Maximum Sentry events per isolate per minute. Defaults to 20. */
+  SENTRY_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
 });
 
 const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
@@ -80,6 +110,24 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   APNS_RELAY_SECRET: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_SECRET),
   AZURE_CLIENT_ID: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_ID),
   AZURE_CLIENT_SECRET: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_SECRET),
+  ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON,
+  ),
+  ANDROID_MANAGEMENT_PROJECT_ID: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_PROJECT_ID,
+  ),
+  ANDROID_MANAGEMENT_PUBSUB_TOPIC: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_TOPIC,
+  ),
+  ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION,
+  ),
+  ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_AUDIENCE,
+  ),
+  ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: emptyStringAsUndefined(
+    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_JWKS_URI,
+  ),
   TRUSTED_ORIGINS: emptyStringAsUndefined((cfEnv as any).TRUSTED_ORIGINS),
   AUTH_RESET_URL: emptyStringAsUndefined((cfEnv as any).AUTH_RESET_URL),
   DEV_MAILBOX: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX),
@@ -92,4 +140,14 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(
     (cfEnv as any).MAINTENANCE_AUDIT_RETENTION_DAYS,
   ),
+  MAINTENANCE_BACKUP_RETENTION_DAYS: emptyStringAsUndefined(
+    (cfEnv as any).MAINTENANCE_BACKUP_RETENTION_DAYS,
+  ),
+  MAINTENANCE_BACKUP_CONCURRENCY: emptyStringAsUndefined(
+    (cfEnv as any).MAINTENANCE_BACKUP_CONCURRENCY,
+  ),
+  SENTRY_DSN: emptyStringAsUndefined((cfEnv as any).SENTRY_DSN),
+  SENTRY_ENVIRONMENT: emptyStringAsUndefined((cfEnv as any).SENTRY_ENVIRONMENT),
+  SENTRY_SAMPLE_RATE: emptyStringAsUndefined((cfEnv as any).SENTRY_SAMPLE_RATE),
+  SENTRY_MAX_EVENTS_PER_MINUTE: emptyStringAsUndefined((cfEnv as any).SENTRY_MAX_EVENTS_PER_MINUTE),
 });

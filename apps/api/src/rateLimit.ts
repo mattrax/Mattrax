@@ -33,6 +33,14 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/completeEmailCode",
   "/api/v1/ssoSignIn",
   "/api/v1/verifyEmail",
+  "/api/v1/verifyTotpPending",
+  "/api/v1/recoverTotpPending",
+  "/api/v1/beginTotpEnrollment",
+  "/api/v1/confirmTotpEnrollment",
+  "/api/v1/disableTotp",
+  "/api/v1/regenerateTotpRecoveryCodes",
+  "/api/v1/changePassword",
+  "/api/v1/completeReset",
 ]);
 
 /**
@@ -53,6 +61,11 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   // Stripe already signs every delivery; this is only a coarse flood guard.
   if (pathname === "/api/v1/billing/webhook")
     return { bucket: "billing", limit: 600, windowSeconds: 60 };
+
+  // Google Pub/Sub is signature-verified, but an unauthenticated caller can
+  // still force JWKS fetches and JSON parsing.
+  if (pathname === "/api/v1/android/pubsub")
+    return { bucket: "mdm", limit: 600, windowSeconds: 60 };
 
   if (pathname.startsWith("/scim/")) return { bucket: "scim", limit: 600, windowSeconds: 60 };
 
@@ -75,6 +88,25 @@ export type RateLimitBindingLike = {
 };
 
 export type RateLimitBindings = Partial<Record<RateLimitBucket, RateLimitBindingLike>>;
+
+/**
+ * Read the optional Cloudflare Rate Limiting bindings from the Worker env.
+ * Every bucket has its own binding name; any missing binding (or a
+ * deployment that did not configure a namespace) simply falls back to the
+ * per-isolate limiter for that bucket.
+ */
+export const rateLimitBindingsFromEnv = (env: unknown): RateLimitBindings => {
+  const candidate = env as Record<string, unknown>;
+  const binding = (name: string) => candidate[name] as RateLimitBindingLike | undefined;
+  return {
+    auth: binding("RATE_LIMITER_AUTH"),
+    enrollment: binding("RATE_LIMITER_ENROLLMENT"),
+    mdm: binding("RATE_LIMITER_MDM"),
+    scim: binding("RATE_LIMITER_SCIM"),
+    billing: binding("RATE_LIMITER_BILLING"),
+    scep: binding("RATE_LIMITER_SCEP"),
+  };
+};
 
 export type RateLimitOutcome = {
   readonly limited: boolean;

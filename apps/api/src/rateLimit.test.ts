@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clientKey,
   makeRateLimiter,
+  rateLimitBindingsFromEnv,
   rateLimitResponse,
   rateLimitRuleFor,
   type RateLimitBindings,
@@ -119,6 +120,58 @@ describe("shared limiter bindings", () => {
     expect(outcome.limited).toBe(false);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("local fallback");
+  });
+});
+
+describe("rate limit bindings from env", () => {
+  it("maps every bucket binding and leaves unconfigured buckets undefined", () => {
+    const limiter = { limit: async () => ({ success: true }) };
+    const bindings = rateLimitBindingsFromEnv({
+      RATE_LIMITER_AUTH: limiter,
+      RATE_LIMITER_ENROLLMENT: limiter,
+      RATE_LIMITER_MDM: limiter,
+      RATE_LIMITER_SCIM: limiter,
+      RATE_LIMITER_BILLING: limiter,
+      RATE_LIMITER_SCEP: limiter,
+    });
+    expect(Object.keys(bindings).sort()).toEqual([
+      "auth",
+      "billing",
+      "enrollment",
+      "mdm",
+      "scep",
+      "scim",
+    ]);
+    expect(rateLimitBindingsFromEnv({ RATE_LIMITER_AUTH: limiter })).toEqual({ auth: limiter });
+    // Unknown keys are ignored rather than leaking into the bucket map.
+    expect(rateLimitBindingsFromEnv({ RATE_LIMITER_OTHER: limiter })).toEqual({});
+  });
+
+  it("selects the matching bucket binding for MDM, SCIM, billing and SCEP", async () => {
+    const seen: string[] = [];
+    const bindingFor = (bucket: string) => ({
+      limit: async ({ key }: { key: string }) => {
+        seen.push(`${bucket}:${key}`);
+        return { success: true };
+      },
+    });
+    const bindings: RateLimitBindings = {
+      mdm: bindingFor("mdm"),
+      scim: bindingFor("scim"),
+      billing: bindingFor("billing"),
+      scep: bindingFor("scep"),
+    };
+    const limiter = makeRateLimiter();
+    await limiter.check(request("/mdm/apple/mdm", { method: "PUT" }), bindings);
+    await limiter.check(request("/scim/v2/org/Users"), bindings);
+    await limiter.check(request("/api/v1/billing/webhook", { method: "POST" }), bindings);
+    await limiter.check(request("/mdm/apple/scep"), bindings);
+    expect(seen).toEqual([
+      "mdm:mdm:local",
+      "scim:scim:local",
+      "billing:billing:local",
+      "scep:scep:local",
+    ]);
   });
 });
 

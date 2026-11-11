@@ -133,3 +133,80 @@ export async function androidPolicyHash(policy: Record<string, unknown>): Promis
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
+
+/** True for tenant configuration kinds that contribute to an AMAPI policy. */
+export const isAndroidPolicyKind = (kind: string): boolean => /^mttx\.android\.policy\./.test(kind);
+
+export type AndroidPolicyConfiguration = {
+  readonly kind: string;
+  readonly data: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Extract the Google policy document from one stored configuration.
+ *
+ * The designer stores `{ policy, draft }`; hand-written configurations may be
+ * the policy object itself. `draft` is editor state and must never reach
+ * Google.
+ */
+function policyFromConfiguration(
+  configuration: AndroidPolicyConfiguration,
+): Record<string, unknown> {
+  const data = configuration.data;
+  if (!isRecord(data))
+    throw new PolicyMergeError({
+      message: `"${configuration.kind}" must be an object`,
+      path: configuration.kind,
+    });
+  if (data["policy"] !== undefined) {
+    if (!isRecord(data["policy"]))
+      throw new PolicyMergeError({
+        message: `"${configuration.kind}.policy" must be an object`,
+        path: `${configuration.kind}.policy`,
+      });
+    return data["policy"];
+  }
+  const policy = { ...data };
+  delete policy["draft"];
+  return policy;
+}
+
+/**
+ * Compile every `mttx.android.policy*` configuration into one deterministic
+ * AMAPI policy. Non-Android configuration kinds are ignored, so the same
+ * resolved policy set used for Apple/Windows can be passed in.
+ */
+export function compileAndroidPolicy(
+  configurations: ReadonlyArray<AndroidPolicyConfiguration>,
+): Record<string, unknown> {
+  const policies = configurations
+    .filter((configuration) => isAndroidPolicyKind(configuration.kind))
+    .map(policyFromConfiguration);
+  return mergeAndroidPolicies(policies);
+}
+
+/**
+ * Stable AMAPI policy id derived from the compiled policy hash.
+ *
+ * Policy ids accept letters, digits, hyphens and underscores; starting with a
+ * letter also satisfies stricter Google-side validation.
+ */
+export function androidPolicyIdForHash(hash: string): string {
+  const suffix = hash
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 24);
+  return `mattrax-${suffix || "default"}`;
+}
+
+/** Compile and hash in one step; the hash identifies the policy id. */
+export async function compileAndroidPolicyWithHash(
+  configurations: ReadonlyArray<AndroidPolicyConfiguration>,
+): Promise<{ policy: Record<string, unknown>; hash: string }> {
+  const policy = compileAndroidPolicy(configurations);
+  return { policy, hash: await androidPolicyHash(policy) };
+}

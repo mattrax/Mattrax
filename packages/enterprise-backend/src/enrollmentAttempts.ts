@@ -60,6 +60,8 @@ export type EnrollmentAttemptContext = {
   readonly appleEnabled: boolean;
   readonly windowsEnabled: boolean;
   readonly androidEnabled: boolean;
+  /** True when the deployment and tenant can issue Android enrollment tokens. */
+  readonly androidAvailable?: boolean;
   readonly apnsConfigured: boolean;
   /** True when a SCEP challenge was needed but could not be created. */
   readonly appleScepFailed?: boolean;
@@ -92,7 +94,12 @@ export const evaluateEnrollmentAttempt = (
     case "android":
       if (!context.androidEnabled)
         return { outcome: "disabled", detail: "Android enrollment is disabled" };
-      return { outcome: "other", detail: "Android enrollment is not available yet" };
+      if (context.androidAvailable === false)
+        return {
+          outcome: "other",
+          detail: "Android Enterprise is not connected for this tenant",
+        };
+      return { outcome: "ok", detail: "Android enrollment token issued" };
     case "unknown":
       if (!context.appleEnabled && !context.windowsEnabled && !context.androidEnabled)
         return { outcome: "disabled", detail: "All enrollment platforms are disabled" };

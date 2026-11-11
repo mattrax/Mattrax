@@ -58,6 +58,11 @@ export type MaintenanceOptions = {
    * Defaults to 30. Set to `0` to keep them indefinitely.
    */
   readonly enrollmentAttemptRetentionDays?: number;
+  /**
+   * Android Pub/Sub idempotency records older than this many days are deleted.
+   * Defaults to 30. Set to `0` to keep them indefinitely.
+   */
+  readonly androidPubSubRetentionDays?: number;
   /** Disable credential-expiry alerts (for example in tests). Defaults to true. */
   readonly credentialAlerts?: boolean;
   /**
@@ -91,6 +96,8 @@ export type MaintenanceResult = {
   readonly purgedAuditEntries: number;
   /** Enrollment-attempt diagnostics deleted this run. */
   readonly purgedEnrollmentAttempts: number;
+  /** Android Pub/Sub idempotency records deleted this run. */
+  readonly purgedAndroidPubSubMessages: number;
   /** Credential expiry audit events written this run. */
   readonly credentialAlerts: number;
   /** Dynamic groups whose materialised membership was recomputed. */
@@ -211,6 +218,7 @@ export const runMaintenance = (
     const staleDeviceDays = options.staleDeviceDays ?? 30;
     const auditRetentionDays = options.auditRetentionDays ?? 365;
     const enrollmentAttemptRetentionDays = options.enrollmentAttemptRetentionDays ?? 30;
+    const androidPubSubRetentionDays = options.androidPubSubRetentionDays ?? 30;
     const webhookDeliveryRetentionDays = options.webhookDeliveryRetentionDays ?? 30;
 
     const result: {
@@ -222,6 +230,7 @@ export const runMaintenance = (
       expiredAuthSessions: 0,
       purgedAuditEntries: 0,
       purgedEnrollmentAttempts: 0,
+      purgedAndroidPubSubMessages: 0,
       credentialAlerts: 0,
       dynamicGroupsEvaluated: 0,
       purgedWebhookDeliveries: 0,
@@ -347,6 +356,22 @@ export const runMaintenance = (
           .delete(s.enrollmentAttempt)
           .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
         result.purgedEnrollmentAttempts = staleAttempts.length;
+      }
+    }
+
+    // 5b. Android Pub/Sub deliveries are deduped by message id; the ledger
+    //     only needs to outlive Pub/Sub's redelivery window.
+    if (androidPubSubRetentionDays > 0) {
+      const androidCutoff = new Date(now.getTime() - androidPubSubRetentionDays * day);
+      const staleMessages = yield* db
+        .select({ messageId: s.androidPubSubMessage.messageId })
+        .from(s.androidPubSubMessage)
+        .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
+      if (staleMessages.length > 0) {
+        yield* db
+          .delete(s.androidPubSubMessage)
+          .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
+        result.purgedAndroidPubSubMessages = staleMessages.length;
       }
     }
 

@@ -41,6 +41,7 @@ export default function IdentitySettingsPage() {
   const [azureTenantId, setAzureTenantId] = createSignal("");
   const [ssoEnabled, setSsoEnabled] = createSignal(false);
   const [autoProvision, setAutoProvision] = createSignal(true);
+  const [requireMfa, setRequireMfa] = createSignal(false);
   let ssoSeeded = false;
   createEffect(
     () => sso.data,
@@ -50,6 +51,7 @@ export default function IdentitySettingsPage() {
       setAzureTenantId(config.azureTenantId ?? "");
       setSsoEnabled(config.enabled);
       setAutoProvision(config.autoProvision);
+      setRequireMfa(config.requireMfa);
     },
   );
   const saveSso = useMutation(() => ({
@@ -58,6 +60,7 @@ export default function IdentitySettingsPage() {
         enabled: ssoEnabled(),
         azureTenantId: azureTenantId().trim() || null,
         autoProvision: autoProvision(),
+        requireMfa: requireMfa(),
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
@@ -233,6 +236,20 @@ export default function IdentitySettingsPage() {
                 type="checkbox"
                 checked={autoProvision()}
                 onChange={(event) => setAutoProvision(event.currentTarget.checked)}
+              />
+            </label>
+            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
+              <span>
+                <strong class="block">Require MFA for owners and admins</strong>
+                <span class="text-muted-foreground">
+                  Owners and admins must enroll an authenticator app before they can access this
+                  workspace. Members can still view it.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={requireMfa()}
+                onChange={(event) => setRequireMfa(event.currentTarget.checked)}
               />
             </label>
             <div class="flex flex-wrap gap-2">

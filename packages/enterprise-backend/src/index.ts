@@ -30,6 +30,38 @@ export type {
 export { makeApplePush } from "./push.js";
 export type { ApplePush, ApplePushOptions } from "./push.js";
 export { EnterpriseService } from "./service.js";
+export {
+  ANDROID_NOTIFICATION_TYPES,
+  ANDROID_PUBSUB_RETENTION_DAYS,
+  AndroidDeliveryError,
+  DEFAULT_ANDROID_POLICY_ID,
+  androidCommandForAction,
+  androidEnterpriseInfo,
+  completeAndroidSignup,
+  createAndroidEnrollmentToken,
+  createAndroidSignup,
+  describeAndroidError,
+  handleAndroidPubSub,
+  isAndroidConfigured,
+  issueAndroidCommand,
+  loadAndroidEnterprise,
+  pruneAndroidPubSubMessages,
+  setAndroidEnabled,
+  syncAndroidPoliciesForTenant,
+} from "./android.js";
+export type {
+  AndroidDeliveryConfig,
+  AndroidDeliveryErrorKind,
+  AndroidEnrollmentTokenResult,
+  AndroidEnterpriseInfoResult,
+  AndroidEnterpriseRow,
+  AndroidPubSubResult,
+  AndroidServiceAccount,
+  AndroidSignupOrganization,
+  AndroidSyncResult,
+} from "./android.js";
+export { androidRoutes } from "./androidRoutes.js";
+export type { AndroidRoutesOptions } from "./androidRoutes.js";
 export { scimRoutes } from "./scim.js";
 export { makeSsoStrategy } from "./sso.js";
 export { signToken, verifyToken } from "./tokens.js";
@@ -58,6 +90,29 @@ export type {
   MaintenanceOptions,
   MaintenanceResult,
 } from "./maintenance.js";
+export {
+  BACKUP_CONCURRENCY,
+  BACKUP_ERROR_MAX_LENGTH,
+  BACKUP_RUN_RETENTION_DAYS,
+  backupObjectKey,
+  describeBackupError,
+  listTenantBackups,
+  pruneBackups,
+  runScheduledBackups,
+  runTenantBackup,
+} from "./backup.js";
+export type {
+  BackupActor,
+  BackupRetention,
+  BackupStatus,
+  BackupTrigger,
+  PruneBackupsResult,
+  RunTenantBackupOptions,
+  ScheduledBackupsResult,
+  TenantBackupResult,
+} from "./backup.js";
+export { buildTenantExport } from "./tenantExport.js";
+export type { TenantExportBundle } from "./tenantExport.js";
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
   WEBHOOK_DELIVERY_TIMEOUT_MS,

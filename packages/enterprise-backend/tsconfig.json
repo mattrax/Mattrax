@@ -23,6 +23,7 @@
     { "path": "../enterprise-domain" },
     { "path": "../enterprise-core" },
     { "path": "../apns" },
+    { "path": "../dm-android" },
     { "path": "../management-backend" },
     { "path": "../management-backend-enterprise" },
     { "path": "../plist" },

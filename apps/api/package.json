@@ -19,6 +19,7 @@
     "@mattrax/apns": "workspace:*",
     "@mattrax/azure-graph": "workspace:*",
     "@mattrax/azure-oidc": "workspace:*",
+    "@mattrax/dm-android": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",

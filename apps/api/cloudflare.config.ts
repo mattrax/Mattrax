@@ -9,9 +9,15 @@ import type { InferEnv, UnwrapConfig } from "cf/config";
  *
  *   MATTRAX_RATE_LIMIT_AUTH_NAMESPACE=<namespace id>
  *   MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE=<namespace id>
+ *   MATTRAX_RATE_LIMIT_MDM_NAMESPACE=<namespace id>
+ *   MATTRAX_RATE_LIMIT_SCIM_NAMESPACE=<namespace id>
+ *   MATTRAX_RATE_LIMIT_BILLING_NAMESPACE=<namespace id>
+ *   MATTRAX_RATE_LIMIT_SCEP_NAMESPACE=<namespace id>
+ *
+ * Each bucket can use its own namespace; reusing one namespace across buckets
+ * is fine because the limiter key is prefixed with the bucket name.
  */
-const rateLimitAuthNamespace = process.env.MATTRAX_RATE_LIMIT_AUTH_NAMESPACE;
-const rateLimitEnrollmentNamespace = process.env.MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE;
+const rateLimitNamespace = (name: string) => process.env[`MATTRAX_RATE_LIMIT_${name}_NAMESPACE`];
 
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
@@ -45,6 +51,13 @@ export const apiWorker = {
     APNS_RELAY_SECRET: bindings.secret(),
     AZURE_CLIENT_ID: bindings.secret(),
     AZURE_CLIENT_SECRET: bindings.secret(),
+    /** Google Android Management API service account and Pub/Sub delivery. */
+    ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: bindings.secret(),
+    ANDROID_MANAGEMENT_PROJECT_ID: bindings.secret(),
+    ANDROID_MANAGEMENT_PUBSUB_TOPIC: bindings.secret(),
+    ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: bindings.secret(),
+    ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: bindings.secret(),
+    ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: bindings.secret(),
     /** Local-only mailbox flag. Never set in production. */
     DEV_MAILBOX: bindings.secret(),
     DEV_MAILBOX_ALLOW_REMOTE: bindings.secret(),
@@ -53,23 +66,64 @@ export const apiWorker = {
     MAINTENANCE_STALE_DEVICE_DAYS: bindings.text("30"),
     /** Audit-log retention in days; `0` keeps audit entries indefinitely. */
     MAINTENANCE_AUDIT_RETENTION_DAYS: bindings.text("365"),
+    /** Tenant backup retention in days; `0` keeps runs indefinitely. */
+    MAINTENANCE_BACKUP_RETENTION_DAYS: bindings.text("30"),
+    /** Tenants backed up concurrently by the daily job. */
+    MAINTENANCE_BACKUP_CONCURRENCY: bindings.text("4"),
+    /** Optional Sentry-compatible error tracking. */
+    SENTRY_DSN: bindings.secret(),
+    SENTRY_ENVIRONMENT: bindings.secret(),
+    SENTRY_SAMPLE_RATE: bindings.secret(),
+    SENTRY_MAX_EVENTS_PER_MINUTE: bindings.secret(),
     /** Deployed version id used by `/api/ready`. */
     CF_VERSION_METADATA: bindings.versionMetadata(),
     // Shared edge limiters, only present when the deployment supplies a
     // namespace id. Without them the API keeps its per-isolate fallback.
-    ...(rateLimitAuthNamespace
+    ...(rateLimitNamespace("AUTH")
       ? {
           RATE_LIMITER_AUTH: bindings.rateLimit({
-            namespace: rateLimitAuthNamespace,
+            namespace: rateLimitNamespace("AUTH")!,
             simple: { limit: 120, period: 60 },
           }),
         }
       : {}),
-    ...(rateLimitEnrollmentNamespace
+    ...(rateLimitNamespace("ENROLLMENT")
       ? {
           RATE_LIMITER_ENROLLMENT: bindings.rateLimit({
-            namespace: rateLimitEnrollmentNamespace,
+            namespace: rateLimitNamespace("ENROLLMENT")!,
             simple: { limit: 600, period: 60 },
+          }),
+        }
+      : {}),
+    ...(rateLimitNamespace("MDM")
+      ? {
+          RATE_LIMITER_MDM: bindings.rateLimit({
+            namespace: rateLimitNamespace("MDM")!,
+            simple: { limit: 600, period: 60 },
+          }),
+        }
+      : {}),
+    ...(rateLimitNamespace("SCIM")
+      ? {
+          RATE_LIMITER_SCIM: bindings.rateLimit({
+            namespace: rateLimitNamespace("SCIM")!,
+            simple: { limit: 600, period: 60 },
+          }),
+        }
+      : {}),
+    ...(rateLimitNamespace("BILLING")
+      ? {
+          RATE_LIMITER_BILLING: bindings.rateLimit({
+            namespace: rateLimitNamespace("BILLING")!,
+            simple: { limit: 600, period: 60 },
+          }),
+        }
+      : {}),
+    ...(rateLimitNamespace("SCEP")
+      ? {
+          RATE_LIMITER_SCEP: bindings.rateLimit({
+            namespace: rateLimitNamespace("SCEP")!,
+            simple: { limit: 300, period: 60 },
           }),
         }
       : {}),

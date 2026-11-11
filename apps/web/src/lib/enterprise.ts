@@ -7,6 +7,10 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
+  type AndroidEnrollment,
+  type AndroidEnterpriseInfo,
+  type AndroidSignupResponse,
+  type AndroidSyncResponse,
   type ApplicationInventoryQuery,
   type AuditSearchQuery,
   type DevicePreRegistrationImportRequest,
@@ -31,6 +35,10 @@ import {
 } from "@mattrax/enterprise-domain";
 
 export type {
+  AndroidEnrollment,
+  AndroidEnterpriseInfo,
+  AndroidSignupResponse,
+  AndroidSyncResponse,
   ApplicationInventoryQuery,
   ApplicationInventoryResponse,
   ApplicationInventoryRow,
@@ -42,6 +50,8 @@ export type {
   AuditSearchResponse,
   BillingSummary,
   CredentialHealthResponse,
+  BackupRunInfo,
+  TenantBackupsResponse,
   CredentialInfo,
   CredentialLevel,
   DeviceActivityEntry,
@@ -117,6 +127,7 @@ export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", tenantId ?? ""] as const,
+  backups: (tenantId: RouteParam) => ["enterprise", "backups", tenantId ?? ""] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", tenantId ?? "", entity, group ?? ""] as const,
   deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
@@ -137,6 +148,7 @@ export const enterpriseKeys = {
   invitations: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
+  android: (tenantId: RouteParam) => ["enterprise", "android", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
@@ -253,6 +265,16 @@ export const enterprise = {
     ),
   /** Creates a new tenant owned by the caller from an exported bundle. */
   importTenant: (payload: TenantImportRequest) => endpoint((api) => api.importTenant({ payload })),
+  /** Runs a manual backup now and records the attempt. */
+  runTenantBackup: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.runTenantBackup({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  /** Recent scheduled/manual backup runs, newest first. */
+  listTenantBackups: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listTenantBackups({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   getTenant: (tenantId: RouteParam) =>
     endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
   patchTenant: (
@@ -745,6 +767,22 @@ export const enterprise = {
     endpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
   getApns: (tenantId: RouteParam) =>
     endpoint((api) => api.getApns({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getTenantAndroid: (tenantId: RouteParam): EndpointPromise<AndroidEnterpriseInfo, unknown> =>
+    endpoint((api) =>
+      api.getTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchTenantAndroid: (tenantId: RouteParam, payload: { enabled?: boolean }) =>
+    endpoint((api) =>
+      api.patchTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  createAndroidSignup: (tenantId: RouteParam): EndpointPromise<AndroidSignupResponse, unknown> =>
+    endpoint((api) =>
+      api.createAndroidSignup({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  syncTenantAndroid: (tenantId: RouteParam): EndpointPromise<AndroidSyncResponse, unknown> =>
+    endpoint((api) =>
+      api.syncTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   getTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -785,7 +823,12 @@ export const enterprise = {
     endpoint((api) => api.getSsoConfig({ params: { tenantId: required(tenantId, "tenantId") } })),
   patchSsoConfig: (
     tenantId: RouteParam,
-    payload: { enabled?: boolean; azureTenantId?: string | null; autoProvision?: boolean },
+    payload: {
+      enabled?: boolean;
+      azureTenantId?: string | null;
+      autoProvision?: boolean;
+      requireMfa?: boolean;
+    },
   ) =>
     endpoint((api) =>
       api.patchSsoConfig({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -1040,6 +1083,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.apns(tenantId),
       queryFn: () => enterprise.getApns(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  android: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.android(tenantId),
+      queryFn: () => enterprise.getTenantAndroid(tenantId),
       enabled: Boolean(tenantId),
     }),
   billing: (tenantId: RouteParam) =>

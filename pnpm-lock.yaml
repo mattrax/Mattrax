@@ -115,6 +115,9 @@ importers:
       '@mattrax/azure-oidc':
         specifier: workspace:*
         version: link:../../packages/azure-oidc
+      '@mattrax/dm-android':
+        specifier: workspace:*
+        version: link:../../packages/dm-android
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
@@ -553,6 +556,9 @@ importers:
       '@mattrax/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@mattrax/dm-android':
+        specifier: workspace:*
+        version: link:../dm-android
       '@mattrax/effect-stripe':
         specifier: workspace:*
         version: link:../effect-stripe
@@ -574,6 +580,9 @@ importers:
       '@yielded/auth':
         specifier: 'catalog:'
         version: 0.1.0-beta.47(effect@4.1.2)
+      '@yielded/auth-persistence-drizzle':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.47(patch_hash=fcf3f32cc72fa134edb304a09a77e7f7484e09151e9108157eccc79d8f10b65d)(@effect/sql-mysql2@4.1.2(@types/node@26.6.6)(effect@4.1.2))(@effect/sql-pg@4.1.2(effect@4.1.2))(drizzle-orm@1.0.0-rc.5(@effect/sql-mysql2@4.1.2(@types/node@26.6.6)(effect@4.1.2))(@effect/sql-pg@4.1.2(effect@4.1.2))(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.9.0)(effect@4.1.2)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)(valibot@1.4.0(typescript@7.0.2))(zod@4.6.7))(effect@4.1.2)
       '@yielded/auth-platform-workerd':
         specifier: 'catalog:'
         version: 0.1.0-beta.47(effect@4.1.2)

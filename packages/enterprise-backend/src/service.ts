@@ -8,12 +8,15 @@ import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
 import { createEnterpriseService } from "./enterpriseHandlers.ts";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
+import type { AndroidDeliveryConfig } from "./android.ts";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
 export type EnterpriseServiceOptions = {
   readonly azureGraph?: AzureGraphService;
   readonly azureClientId?: string;
+  /** Google Android Enterprise delivery config; omit when unconfigured. */
+  readonly android?: AndroidDeliveryConfig;
   readonly email?: {
     send(message: {
       to: string;
@@ -65,6 +68,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           cloudAppleVendorCert: env.cloudAppleVendorCert,
           cloudAppleVendorKey: env.cloudAppleVendorKey,
           apns,
+          android: options.android,
           email: options.email,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,

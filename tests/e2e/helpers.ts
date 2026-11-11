@@ -1,6 +1,37 @@
 import { expect, type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
 
 export const PASSWORD = "Correct-Horse-Battery-Staple-123!";
+
+/** RFC 6238 SHA-1, six digits, thirty-second steps. */
+export function totpCode(secret: string, offset = 0) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const character of secret.toUpperCase().replace(/=+$/, ""))
+    bits += alphabet.indexOf(character).toString(2).padStart(5, "0");
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index++)
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  const step = Math.floor(Date.now() / 30_000) + offset;
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(step));
+  const mac = createHmac("sha1", bytes).update(counter).digest();
+  const start = mac[mac.length - 1]! & 15;
+  const binary =
+    ((mac[start]! & 127) << 24) |
+    (mac[start + 1]! << 16) |
+    (mac[start + 2]! << 8) |
+    mac[start + 3]!;
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+/** Wait until the current thirty-second step changes, then return its code. */
+export async function freshTotpCode(secret: string) {
+  const step = Math.floor(Date.now() / 30_000);
+  while (Math.floor(Date.now() / 30_000) === step)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  return totpCode(secret);
+}
 
 export function uniqueEmail(prefix = "e2e") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -46,7 +77,9 @@ export async function register(page: Page, options: { name?: string; email?: str
   if (!response) throw new Error("Registration request was never sent");
   if (!response.ok())
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
-  await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+  // A cold dev server compiles the dashboard route on the first navigation,
+  // which can take longer than the default test timeout.
+  await page.waitForURL(/\/dashboard/, { timeout: 45_000 });
   await verifyEmail(page, email);
   return { email, password: PASSWORD };
 }
@@ -80,7 +113,7 @@ export async function signIn(page: Page, email: string, password = PASSWORD) {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
-  await page.waitForURL(/\/dashboard|\/t\//);
+  await page.waitForURL(/\/dashboard|\/t\//, { timeout: 45_000 });
 }
 
 export async function createTenant(page: Page, name: string) {

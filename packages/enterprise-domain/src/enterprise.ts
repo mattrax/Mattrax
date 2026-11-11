@@ -89,6 +89,20 @@ export class EnterpriseR2InternalError extends Schema.TaggedError<EnterpriseR2In
     message: Schema.String,
   },
 ) {}
+/** The deployment has no Google Android Management credentials. */
+export class EnterpriseNotConfigured extends Schema.TaggedError<EnterpriseNotConfigured>()(
+  "EnterpriseNotConfigured",
+  {
+    message: Schema.String,
+  },
+) {}
+/** Google rejected an Android Management request. */
+export class EnterpriseUpstreamError extends Schema.TaggedError<EnterpriseUpstreamError>()(
+  "EnterpriseUpstreamError",
+  {
+    message: Schema.String,
+  },
+) {}
 
 const EnterpriseAuthRequiredErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
@@ -98,6 +112,8 @@ const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+  // Tenant policy can deny reads, for example when MFA enrollment is required.
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
 /** Read endpoints that validate user input (filters, cursors) can return 400. */
 const EnterpriseTenantValidatedReadErrors = [
@@ -135,6 +151,11 @@ const EnterpriseTenantExportErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
+const EnterpriseTenantBackupDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
 const EnterpriseTenantImportErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -144,6 +165,16 @@ const EnterpriseTenantImportErrors = [
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
+const EnterpriseAndroidReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseAndroidErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
@@ -172,6 +203,16 @@ export const UserInfo = Schema.Struct({
   email: Schema.String,
   emailVerified: Schema.Boolean,
   image: Schema.optional(NullableString),
+  /** Whether an authenticator app is enrolled for this account. */
+  mfaEnabled: Schema.Boolean,
+  /** Whether one of the user's owner/admin tenants requires MFA. */
+  mfaRequired: Schema.Boolean,
+  /**
+   * Whether the account has a password credential. Passwordless/SSO-only
+   * accounts cannot satisfy the knowledge factor MFA requires, so enrollment
+   * must be blocked until they set a password.
+   */
+  hasPassword: Schema.Boolean,
 });
 export type UserInfo = typeof UserInfo.Type;
 
@@ -297,11 +338,14 @@ export const SsoConfigResponse = Schema.Struct({
   enabled: Schema.Boolean,
   azureTenantId: Schema.optional(NullableString),
   autoProvision: Schema.Boolean,
+  /** Require owners and admins to enroll an authenticator before tenant access. */
+  requireMfa: Schema.Boolean,
 });
 export const PatchSsoConfigRequest = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   azureTenantId: Schema.optional(NullableString),
   autoProvision: Schema.optional(Schema.Boolean),
+  requireMfa: Schema.optional(Schema.Boolean),
 });
 
 export const EntraDomainInfo = Schema.Struct({
@@ -1056,6 +1100,27 @@ export const TenantExportQuery = Schema.Struct({
 });
 export type TenantExportQuery = typeof TenantExportQuery.Type;
 
+/** One scheduled or manual tenant backup attempt. */
+export const BackupRunInfo = Schema.Struct({
+  id: Schema.String,
+  status: Schema.Literals(["running", "succeeded", "failed"]),
+  trigger: Schema.Literals(["scheduled", "manual"]),
+  retention: Schema.Literals(["default", "pinned"]),
+  /** R2 object key. It is never a public URL; downloads go through the API. */
+  r2Key: Schema.optional(NullableString),
+  sizeBytes: Schema.optional(Schema.NullOr(Schema.Number)),
+  startedAt: Schema.String,
+  completedAt: Schema.optional(NullableString),
+  /** Truncated, secret-free failure description. */
+  error: Schema.optional(NullableString),
+});
+export type BackupRunInfo = typeof BackupRunInfo.Type;
+
+export const TenantBackupsResponse = Schema.Struct({
+  backups: Schema.Array(BackupRunInfo),
+});
+export type TenantBackupsResponse = typeof TenantBackupsResponse.Type;
+
 /**
  * An imported bundle. Arrays are optional so a trimmed or hand-edited bundle
  * still validates; unsupported versions are rejected by the handler.
@@ -1419,6 +1484,81 @@ export const PlatformEnrollment = Schema.Union([
 ]);
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
+/** Android Enterprise signup/delivery state exposed to administrators. */
+export const AndroidEnterpriseStatus = Schema.Literals(["pending", "active", "error", "disabled"]);
+export type AndroidEnterpriseStatus = typeof AndroidEnterpriseStatus.Type;
+
+/**
+ * Tenant-facing Android Enterprise configuration.
+ *
+ * `configured` describes the deployment (Google credentials are present);
+ * `status` describes this tenant's signup. An endpoint that needs Google access
+ * fails with `EnterpriseNotConfigured` when `configured` is false.
+ */
+export const AndroidEnterpriseInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  status: AndroidEnterpriseStatus,
+  /** `enterprises/{enterpriseId}` once signup completes. */
+  enterpriseName: Schema.optional(NullableString),
+  pubsubTopic: Schema.optional(NullableString),
+  pubsubSubscription: Schema.optional(NullableString),
+  serviceAccountEmail: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+  /** Android devices known to this tenant and linked to the enterprise. */
+  deviceCount: Schema.Number,
+  /** True when the public enrollment page can issue an enrollment token. */
+  available: Schema.Boolean,
+  createdAt: Schema.optional(NullableString),
+  updatedAt: Schema.optional(NullableString),
+});
+export type AndroidEnterpriseInfo = typeof AndroidEnterpriseInfo.Type;
+
+/** Starts the Google-hosted Android Enterprise signup flow. */
+export const AndroidSignupResponse = Schema.Struct({ url: Schema.String });
+export type AndroidSignupResponse = typeof AndroidSignupResponse.Type;
+
+export const PatchTenantAndroidRequest = Schema.Struct({
+  /**
+   * `false` disables Android delivery for the tenant without deleting the
+   * Google enterprise. `true` re-enables an existing enterprise, or returns to
+   * pending if signup never completed.
+   */
+  enabled: Schema.optional(Schema.Boolean),
+});
+export type PatchTenantAndroidRequest = typeof PatchTenantAndroidRequest.Type;
+
+/**
+ * Public enrollment details for an Android device.
+ *
+ * Google returns an enrollment token plus a QR payload. There is no documented
+ * universal deep link for AMAPI enrollment: consumers scan the QR code from the
+ * setup wizard, or enter `afw#setup` and then the token value manually.
+ */
+export const AndroidEnrollment = Schema.Union([
+  Schema.Struct({ error: Schema.String }),
+  Schema.Struct({
+    /** JSON string to encode as a QR code. */
+    qrCode: Schema.optional(NullableString),
+    /** Manual token value used after `afw#setup`. */
+    enrollmentToken: Schema.String,
+    policyName: Schema.optional(NullableString),
+    expiresAt: Schema.optional(NullableString),
+  }),
+  /** No enterprise is connected; the page shows setup instructions. */
+  Schema.Literal("unavailable"),
+]);
+export type AndroidEnrollment = typeof AndroidEnrollment.Type;
+
+/** Result of an explicit Android policy sync. */
+export const AndroidSyncResponse = Schema.Struct({
+  devices: Schema.Number,
+  updated: Schema.Number,
+  skipped: Schema.Number,
+  failed: Schema.Number,
+});
+export type AndroidSyncResponse = typeof AndroidSyncResponse.Type;
+
 /**
  * Windows enrollment is driven by a tenant-scoped discovery URL
  * (`/mdm/windows/discovery?tenant=<signed token>`). The token identifies the
@@ -1448,7 +1588,7 @@ export const EnrollmentResponse = Schema.Union([
     authenticated: Schema.Literal(true),
     apple: PlatformEnrollment,
     windows: WindowsEnrollment,
-    android: PlatformEnrollment,
+    android: AndroidEnrollment,
     assetTag: Schema.Boolean,
   }),
 ]);
@@ -1515,6 +1655,10 @@ export const TenantEnrollmentInfo = Schema.Struct({
    */
   windowsDiscoveryUrl: Schema.optional(Schema.String),
   windowsDiscoveryExpiresAt: Schema.optional(Schema.String),
+  /** True when this tenant can issue Android enrollment tokens right now. */
+  androidAvailable: Schema.optional(Schema.Boolean),
+  /** `enterprises/{enterpriseId}` when Android Enterprise is connected. */
+  androidEnterpriseName: Schema.optional(NullableString),
 });
 export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
@@ -1707,6 +1851,29 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantImportErrors,
       payload: TenantImportRequest,
       success: TenantImportResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("runTenantBackup", "/v1/tenants/:tenantId/backups", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: BackupRunInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listTenantBackups", "/v1/tenants/:tenantId/backups", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: TenantBackupsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("downloadTenantBackup", "/v1/tenants/:tenantId/backups/:id/download", {
+      error: EnterpriseTenantBackupDownloadErrors,
+      params: TenantIdParam,
+      success: Schema.String.pipe(
+        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
+      ),
     }),
   )
   .add(
@@ -1996,6 +2163,35 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       payload: UploadApnsRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantAndroid", "/v1/tenants/:tenantId/android", {
+      error: EnterpriseAndroidReadErrors,
+      params: TenantParam,
+      success: AndroidEnterpriseInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchTenantAndroid", "/v1/tenants/:tenantId/android", {
+      error: EnterpriseAndroidErrors,
+      params: TenantParam,
+      payload: PatchTenantAndroidRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createAndroidSignup", "/v1/tenants/:tenantId/android/signup", {
+      error: EnterpriseAndroidErrors,
+      params: TenantParam,
+      success: AndroidSignupResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("syncTenantAndroid", "/v1/tenants/:tenantId/android/sync", {
+      error: EnterpriseAndroidErrors,
+      params: TenantParam,
+      success: AndroidSyncResponse,
     }),
   )
   .add(

@@ -1,11 +1,13 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
+import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 
 export default function SsoCompletePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = createSignal<string | null>(null);
+  const [mfaPending, setMfaPending] = createSignal(false);
 
   onSettled(() => {
     const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
@@ -19,6 +21,10 @@ export default function SsoCompletePage() {
         setError(result.error.message ?? "Single sign-on failed.");
         return;
       }
+      if (result.data?.pending) {
+        setMfaPending(true);
+        return;
+      }
       navigate("/dashboard", { replace: true });
     })();
   });
@@ -29,17 +35,26 @@ export default function SsoCompletePage() {
         <a href="/" class="mb-6 inline-flex items-center gap-2">
           <span class="font-semibold tracking-tight text-lg">Mattrax</span>
         </a>
-        <h1 class="text-xl font-semibold text-stone-900">
-          {error() ? "Sign-in failed" : "Signing you in"}
-        </h1>
-        <p class="mt-2 text-sm text-stone-500">{error() ?? "Finishing single sign-on…"}</p>
-        <Show when={error()}>
-          <a
-            href="/login"
-            class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
-          >
-            Back to sign in
-          </a>
+        <Show
+          when={!mfaPending()}
+          fallback={
+            <div class="text-left">
+              <MfaPending onComplete={() => navigate("/dashboard", { replace: true })} />
+            </div>
+          }
+        >
+          <h1 class="text-xl font-semibold text-stone-900">
+            {error() ? "Sign-in failed" : "Signing you in"}
+          </h1>
+          <p class="mt-2 text-sm text-stone-500">{error() ?? "Finishing single sign-on…"}</p>
+          <Show when={error()}>
+            <a
+              href="/login"
+              class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+            >
+              Back to sign in
+            </a>
+          </Show>
         </Show>
       </div>
     </div>

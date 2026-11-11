@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Redacted } from "effect";
+import { Context, Effect, Exit, Layer, Redacted } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { waitUntil } from "cloudflare:workers";
@@ -12,7 +12,9 @@ import {
   enterpriseHandlers,
   billingWebhookRoutes,
   runMaintenance,
+  runScheduledBackups,
   scimRoutes,
+  androidRoutes,
   makeAppAuth,
   makeAuthLive,
   makeSsoStrategy,
@@ -36,6 +38,7 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
+import { androidDeliveryConfig, androidManagementLayer } from "./android.js";
 import { ssoRoutes } from "./sso.js";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
@@ -56,24 +59,40 @@ import {
   tenantIdFromPath,
   withRequestId,
 } from "./observability.js";
-import { makeRateLimiter, rateLimitResponse, type RateLimitBindingLike } from "./rateLimit.js";
+import { makeRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
+import { createErrorTracker, shouldReportError, type ErrorTracker } from "./errorTracking.js";
 import { checkReadiness } from "./readiness.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
 const rateLimiter = makeRateLimiter();
 
 /**
+ * Error tracking is optional and per-isolate: the tracker (and therefore its
+ * sampling and per-minute cap) is rebuilt only when the deployment changes.
+ */
+let errorTracker: ErrorTracker | undefined;
+let errorTrackerDeployment: string | null | undefined;
+const errorTrackerFor = (env: Env): ErrorTracker => {
+  const deployment = deploymentId(env);
+  if (!errorTracker || errorTrackerDeployment !== deployment) {
+    errorTracker = createErrorTracker({
+      dsn: apiEnv.SENTRY_DSN,
+      environment: apiEnv.SENTRY_ENVIRONMENT,
+      release: version,
+      deploymentId: deployment,
+      sampleRate: Number(apiEnv.SENTRY_SAMPLE_RATE ?? "1"),
+      maxEventsPerMinute: Number(apiEnv.SENTRY_MAX_EVENTS_PER_MINUTE ?? "20"),
+    });
+    errorTrackerDeployment = deployment;
+  }
+  return errorTracker;
+};
+
+/**
  * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
  * without one use the per-isolate fallback.
  */
-const rateLimitBindings = (env: Env) => {
-  const candidate = env as unknown as Record<string, unknown>;
-  const binding = (name: string) => candidate[name] as RateLimitBindingLike | undefined;
-  return {
-    auth: binding("RATE_LIMITER_AUTH"),
-    enrollment: binding("RATE_LIMITER_ENROLLMENT"),
-  };
-};
+const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
   sso: makeSsoStrategy(),
@@ -173,7 +192,16 @@ const databaseLayer = (env: Env) =>
     disablePreparedStatements: true,
   });
 
+const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
+  head: (key) => env.STORAGE.head(key),
+  get: (key) => env.STORAGE.get(key),
+  put: (key, value, options) => env.STORAGE.put(key, value, options),
+  delete: (keys) => env.STORAGE.delete(typeof keys === "string" ? keys : [...keys]),
+  list: (options) => env.STORAGE.list(options as any),
+});
+
 const makeAppLayer = (env: Env, request: Request) => {
+  const androidConfig = androidDeliveryConfig();
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
@@ -248,13 +276,7 @@ const makeAppLayer = (env: Env, request: Request) => {
     }),
   );
 
-  const storageBucket: Parameters<typeof R2.layer>[0] = {
-    head: (key) => env.STORAGE.head(key),
-    get: (key) => env.STORAGE.get(key),
-    put: (key, value, options) => env.STORAGE.put(key, value, options),
-    delete: (keys) => env.STORAGE.delete(typeof keys === "string" ? keys : [...keys]),
-    list: () => env.STORAGE.list(),
-  };
+  const storageBucket: Parameters<typeof R2.layer>[0] = storageBucketFor(env);
 
   const appleTrustLayer = Layer.effect(
     AppleMdmTrust,
@@ -300,7 +322,7 @@ const makeAppLayer = (env: Env, request: Request) => {
     : Layer.empty;
 
   const servicesLayer = Layer.mergeAll(
-    EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID }).pipe(
+    EnterpriseService({ email, azureClientId: env.AZURE_CLIENT_ID, android: androidConfig }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(stripeLayer),
@@ -328,6 +350,7 @@ const makeAppLayer = (env: Env, request: Request) => {
       cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
     }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
     AzureOidcLive().pipe(Layer.provide(FetchHttpClient.layer)),
+    androidManagementLayer(androidConfig),
   );
 
   const appWithDevRoutes = Layer.mergeAll(
@@ -355,6 +378,11 @@ const makeAppLayer = (env: Env, request: Request) => {
           }).pipe(Layer.provide(HttpServer.layerServices)),
         ]
       : []),
+    androidRoutes({
+      origin: env.ORIGIN,
+      authSecret: env.AUTH_SECRET,
+      config: androidConfig,
+    }).pipe(Layer.provide(HttpServer.layerServices)),
   );
 
   return appWithDevRoutes.pipe(
@@ -408,12 +436,12 @@ const describeError = (cause: unknown): string => {
   const text = error ? `${error.name}: ${error.message}` : String(cause);
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted]")
+    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, 500);
 };
 
 export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const requestId = resolveRequestId(request);
     const startedAt = Date.now();
     const pathname = new URL(request.url).pathname;
@@ -505,6 +533,24 @@ export default {
       });
     }
 
+    // Sentry-style tracking is opt-in via SENTRY_DSN. Only uncaught failures
+    // and 5xx responses are eligible; the tracker also samples and caps the
+    // per-isolate rate so an outage cannot flood the provider.
+    if (shouldReportError(response.status, uncaught !== undefined)) {
+      const tracker = errorTrackerFor(env);
+      if (tracker.enabled)
+        ctx.waitUntil(
+          tracker.capture({
+            requestId,
+            method: request.method,
+            path: pathname,
+            status: response.status,
+            ...(errorTag ? { errorTag } : {}),
+            ...(uncaught !== undefined ? { error: uncaught } : {}),
+          }),
+        );
+    }
+
     return withRequestId(response, requestId);
   },
 
@@ -522,6 +568,11 @@ export default {
       if (value === undefined) return undefined;
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    };
+    const parsePositive = (value: string | undefined) => {
+      if (value === undefined) return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
     };
     // Delivery is best-effort: a missing binding or a provider rejection is
     // logged by maintenance and never fails the scheduled run.
@@ -556,19 +607,45 @@ export default {
         },
         catch: (cause) => cause,
       });
-    const maintenance = runMaintenance({
-      staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
-      auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
-      // Outbound webhook retries need the same secret used to seal endpoint
-      // secrets; retention/pruning runs regardless.
-      webhookAuthSecret: apiEnv.AUTH_SECRET,
-      notifyCredentialExpiry,
+
+    const storage = storageBucketFor(env);
+    const daily = Effect.gen(function* () {
+      const db = yield* Db;
+      // Maintenance is allowed to fail without skipping backups: a broken
+      // retention query must not leave the fleet without a recent bundle.
+      const maintenance = yield* Effect.exit(
+        runMaintenance({
+          staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+          auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
+          // Outbound webhook retries need the same secret used to seal endpoint
+          // secrets; retention/pruning runs regardless.
+          webhookAuthSecret: apiEnv.AUTH_SECRET,
+          notifyCredentialExpiry,
+        }),
+      );
+      if (Exit.isFailure(maintenance))
+        console.error("Scheduled maintenance failed", maintenance.cause);
+      else console.log("Scheduled maintenance complete", maintenance.value);
+
+      // Tenant backups run after maintenance, bounded and failure-isolated per
+      // tenant. `MAINTENANCE_BACKUP_RETENTION_DAYS=0` keeps runs indefinitely.
+      const backups = yield* Effect.exit(
+        runScheduledBackups(db, storage, {
+          retentionDays: parseDays(apiEnv.MAINTENANCE_BACKUP_RETENTION_DAYS),
+          concurrency: parsePositive(apiEnv.MAINTENANCE_BACKUP_CONCURRENCY),
+        }),
+      );
+      return { maintenance, backups };
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
     ctx.waitUntil(
-      Effect.runPromise(maintenance).then(
-        (result) => console.log("Scheduled maintenance complete", result),
-        (cause) => console.error("Scheduled maintenance failed", cause),
+      Effect.runPromise(daily).then(
+        ({ backups }) => {
+          if (Exit.isFailure(backups))
+            console.error("Scheduled tenant backups failed", backups.cause);
+          else console.log("Scheduled tenant backups complete", backups.value);
+        },
+        (cause) => console.error("Scheduled daily job failed", cause),
       ),
     );
   },

@@ -3,7 +3,7 @@ import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
 import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
 import type { StrategyDefinition } from "@yielded/auth/Auth";
-import { Db, authCredentials, authRequirement, schema } from "@mattrax/enterprise-core";
+import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
 import { SsoRejected, type AuthClaims } from "@mattrax/enterprise-domain";
 import { verifyToken } from "./tokens.ts";
 
@@ -134,7 +134,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             };
             const prepared = yield* services.completion.prepare({
               evidence,
-              requirement: authRequirement,
+              requirement: authRequirementForSubject(user),
               claims: applicationClaims,
             });
             const result = yield* prepared.read;

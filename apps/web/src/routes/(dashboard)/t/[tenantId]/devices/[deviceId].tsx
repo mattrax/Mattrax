@@ -965,7 +965,8 @@ export default function DeviceDetailPage() {
           </Card>
           <Show
             when={
-              (row()?.proto === "apple" || row()?.proto === "win") && row()?.status === "enrolled"
+              (row()?.proto === "apple" || row()?.proto === "win" || row()?.proto === "android") &&
+              row()?.status === "enrolled"
             }
           >
             <Card>
@@ -974,10 +975,12 @@ export default function DeviceDetailPage() {
               </CardHeader>
               <CardContent class="space-y-3">
                 <p class="text-sm text-muted-foreground">
-                  Commands are queued and delivered on the device's next check-in.
+                  {row()?.proto === "android"
+                    ? "Commands are sent to the device through Android Management."
+                    : "Commands are queued and delivered on the device's next check-in."}
                 </p>
                 <div class="grid grid-cols-2 gap-2">
-                  <Show when={row()?.proto === "apple"}>
+                  <Show when={row()?.proto === "apple" || row()?.proto === "android"}>
                     <Button
                       variant="outline"
                       disabled={command.isPending}

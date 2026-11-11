@@ -8,8 +8,31 @@ import {
   Proofs,
   Schema as AuthSchema,
   Sessions,
+  Totp,
+  TotpContract,
 } from "@yielded/auth";
 import { Schema } from "effect";
+
+/** Stable TOTP module namespace. It is also the persistence scope for secrets. */
+export const TOTP_MODULE_ID = "mattrax/auth/totp";
+
+/**
+ * TOTP policy. Recovery codes and enrollment material stay visible long enough
+ * for a person to write them down, and management actions require a current
+ * code plus a recent sign-in.
+ */
+export const TOTP_POLICY = {
+  issuer: "Mattrax",
+  enrollmentLifetimeMillis: 10 * 60 * 1000,
+  revealLifetimeMillis: 5 * 60 * 1000,
+  clockSkewSteps: 1,
+  attemptLimit: 5,
+  attemptWindowMillis: 5 * 60 * 1000,
+  maximumEvidenceAgeMillis: 5 * 60 * 1000,
+  allowRecoveryCodeForPending: true,
+  lostFactorRecovery: "deny",
+  requireImmediateInvalidation: true,
+} as const;
 
 /**
  * Public session claims. Authoritative user and organization data is still read
@@ -21,6 +44,44 @@ export const AuthClaims = Schema.Struct({
   emailVerified: Schema.Boolean,
 });
 export type AuthClaims = typeof AuthClaims.Type;
+
+const AUTH_REQUIREMENT_MAX_AGE_MILLIS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Assurance required to complete sign-in. Without MFA a single knowledge or
+ * possession factor is enough. With MFA the session needs both the password and
+ * a current authenticator code; email codes and SSO assertions are possession
+ * only, so they cannot replace a factor.
+ */
+export const authenticationRequirement = (
+  mfaEnabled: boolean,
+): Sessions.AuthenticationRequirement => ({
+  alternatives: mfaEnabled
+    ? [
+        {
+          factors: ["knowledge", "possession"],
+          userVerified: false,
+          phishingResistant: false,
+          minimumCredentials: 2,
+        },
+      ]
+    : [
+        {
+          factors: ["knowledge"],
+          userVerified: false,
+          phishingResistant: false,
+          minimumCredentials: 1,
+        },
+        {
+          // Passwordless email-code sign-in proves possession of the mailbox.
+          factors: ["possession"],
+          userVerified: false,
+          phishingResistant: false,
+          minimumCredentials: 1,
+        },
+      ],
+  maximumAgeMillis: AUTH_REQUIREMENT_MAX_AGE_MILLIS,
+});
 
 export const Registration = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
@@ -83,119 +144,169 @@ const RegisterInput = Schema.Struct({
 export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
   basePath: "/api/v1",
   claims: AuthClaims,
-  actions: (sessions) => ({
-    signIn: AuthContract.passwordSignIn(sessions, { strategy: "password" }),
+  actions: (sessions) => {
+    const totp = TotpContract.make(TOTP_MODULE_ID, {
+      Session: sessions.Session,
+      CompletionResult: sessions.CompletionResult,
+    });
 
-    register: AuthContract.action({
-      payload: RegisterInput,
-      success: Schema.TaggedStruct("RegistrationAccepted", {}),
-      error: PasswordFailure,
-      mode: "mutation",
-      replay: "idempotent",
-      strategy: "password",
-    }),
+    return {
+      signIn: AuthContract.passwordSignIn(sessions, { strategy: "password" }),
 
-    requestReset: AuthContract.action({
-      payload: Schema.Struct({
-        flowId: Sessions.AuthenticationFlowId,
-        email,
-        requestId: Proofs.ProofRequestId,
-        locale: Schema.String,
+      register: AuthContract.action({
+        payload: RegisterInput,
+        success: Schema.TaggedStruct("RegistrationAccepted", {}),
+        error: PasswordFailure,
+        mode: "mutation",
+        replay: "idempotent",
+        strategy: "password",
       }),
-      success: Proofs.ProofRequestReceipt,
-      error: PasswordFailure,
-      mode: "mutation",
-      replay: "non-idempotent",
-      strategy: "password",
-    }),
 
-    completeReset: AuthContract.action({
-      payload: Schema.Struct({
-        flowId: Sessions.AuthenticationFlowId,
-        email,
-        commandId: Password.PasswordCommandId,
-        newPassword: password,
-        reference: Proofs.ProofReference,
-        secret,
+      requestReset: AuthContract.action({
+        payload: Schema.Struct({
+          flowId: Sessions.AuthenticationFlowId,
+          email,
+          requestId: Proofs.ProofRequestId,
+          locale: Schema.String,
+        }),
+        success: Proofs.ProofRequestReceipt,
+        error: PasswordFailure,
+        mode: "mutation",
+        replay: "non-idempotent",
+        strategy: "password",
       }),
-      success: mutationResult,
-      error: PasswordFailure,
-      mode: "mutation",
-      replay: "single-use",
-      credentials: true,
-      strategy: "password",
-    }),
 
-    beginEmailSignIn: AuthContract.action({
-      payload: Schema.Struct({ flowId: Operations.RequestBindingFlowId }),
-      success: Operations.RequestBindingPublic,
-      error: EmailCodeFailure,
-      mode: "mutation",
-      credentials: true,
-      replay: "non-idempotent",
-      method: "beginSignIn",
-      strategy: "email",
-    }),
-
-    requestEmailCode: AuthContract.action({
-      payload: RequestEmailCodeInput,
-      success: Proofs.ProofRequestReceipt,
-      error: EmailCodeFailure,
-      mode: "mutation",
-      replay: "non-idempotent",
-      method: "signIn",
-      strategy: "email",
-      requestFields: { requestBinding: "request-binding" },
-    }),
-
-    completeEmailCode: AuthContract.action({
-      payload: CompleteEmailCodeInput,
-      success: Schema.Struct({
-        completion: sessions.CompletionResult,
-        returnTarget: Email.SafeReturnTarget,
+      completeReset: AuthContract.action({
+        payload: Schema.Struct({
+          flowId: Sessions.AuthenticationFlowId,
+          email,
+          commandId: Password.PasswordCommandId,
+          newPassword: password,
+          reference: Proofs.ProofReference,
+          secret,
+        }),
+        success: mutationResult,
+        error: PasswordFailure,
+        mode: "mutation",
+        replay: "single-use",
+        credentials: true,
+        strategy: "password",
       }),
-      error: EmailCodeFailure,
-      mode: "mutation",
-      credentials: true,
-      replay: "single-use",
-      method: "completeSignIn",
-      strategy: "email",
-      requestFields: { requestBinding: "request-binding" },
-      subject: {
-        fromSuccess: (value) =>
-          value.completion._tag === "Authenticated"
-            ? value.completion.session.subjectId
-            : undefined,
-        sessionFromSuccess: (value) =>
-          value.completion._tag === "Authenticated" ? value.completion.session : undefined,
-      },
-    }),
 
-    ssoSignIn: AuthContract.action({
-      payload: Schema.Struct({ token: Schema.String }),
-      success: sessions.CompletionResult,
-      error: SsoRejected,
-      mode: "mutation",
-      credentials: true,
-      replay: "single-use",
-      method: "signIn",
-      strategy: "sso",
-    }),
-
-    changePassword: AuthContract.action({
-      payload: Schema.Struct({
-        commandId: Password.PasswordCommandId,
-        currentPassword: Schema.optionalKey(password),
-        newPassword: password,
+      beginEmailSignIn: AuthContract.action({
+        payload: Schema.Struct({ flowId: Operations.RequestBindingFlowId }),
+        success: Operations.RequestBindingPublic,
+        error: EmailCodeFailure,
+        mode: "mutation",
+        credentials: true,
+        replay: "non-idempotent",
+        method: "beginSignIn",
+        strategy: "email",
       }),
-      success: mutationResult,
-      error: PasswordFailure,
-      mode: "mutation",
-      replay: "non-idempotent",
-      credentials: true,
-      strategy: "password",
-    }),
-  }),
+
+      requestEmailCode: AuthContract.action({
+        payload: RequestEmailCodeInput,
+        success: Proofs.ProofRequestReceipt,
+        error: EmailCodeFailure,
+        mode: "mutation",
+        replay: "non-idempotent",
+        method: "signIn",
+        strategy: "email",
+        requestFields: { requestBinding: "request-binding" },
+      }),
+
+      completeEmailCode: AuthContract.action({
+        payload: CompleteEmailCodeInput,
+        success: Schema.Struct({
+          completion: sessions.CompletionResult,
+          returnTarget: Email.SafeReturnTarget,
+        }),
+        error: EmailCodeFailure,
+        mode: "mutation",
+        credentials: true,
+        replay: "single-use",
+        method: "completeSignIn",
+        strategy: "email",
+        requestFields: { requestBinding: "request-binding" },
+        subject: {
+          fromSuccess: (value) =>
+            value.completion._tag === "Authenticated"
+              ? value.completion.session.subjectId
+              : undefined,
+          sessionFromSuccess: (value) =>
+            value.completion._tag === "Authenticated" ? value.completion.session : undefined,
+        },
+      }),
+
+      ssoSignIn: AuthContract.action({
+        payload: Schema.Struct({ token: Schema.String }),
+        success: sessions.CompletionResult,
+        error: SsoRejected,
+        mode: "mutation",
+        credentials: true,
+        replay: "single-use",
+        method: "signIn",
+        strategy: "sso",
+      }),
+
+      changePassword: AuthContract.action({
+        payload: Schema.Struct({
+          commandId: Password.PasswordCommandId,
+          currentPassword: Schema.optionalKey(password),
+          newPassword: password,
+        }),
+        success: mutationResult,
+        error: PasswordFailure,
+        mode: "mutation",
+        replay: "non-idempotent",
+        credentials: true,
+        strategy: "password",
+      }),
+
+      beginTotpEnrollment: AuthContract.fromOperation(totp.operations.Begin, {
+        method: "beginEnrollment",
+        strategy: "totp",
+      }),
+
+      confirmTotpEnrollment: AuthContract.fromOperation(totp.operations.Confirm, {
+        method: "confirmEnrollment",
+        strategy: "totp",
+      }),
+
+      disableTotp: AuthContract.fromOperation(totp.operations.Disable, {
+        method: "disable",
+        strategy: "totp",
+      }),
+
+      regenerateTotpRecoveryCodes: AuthContract.fromOperation(totp.operations.Regenerate, {
+        method: "regenerateRecoveryCodes",
+        strategy: "totp",
+      }),
+
+      verifyTotpPending: AuthContract.fromOperation(totp.operations.VerifyPending, {
+        method: "verifyPending",
+        strategy: "totp",
+        requestFields: { pendingCredential: "pending-proof" },
+      }),
+
+      recoverTotpPending: AuthContract.fromOperation(totp.operations.RecoverPending, {
+        method: "recoverPending",
+        strategy: "totp",
+        requestFields: { pendingCredential: "pending-proof" },
+      }),
+    };
+  },
+});
+
+/**
+ * Session policy shared by the auth definition and the server Layers. Pending
+ * MFA is configured separately in the server layer so password, email and SSO
+ * sign-in can all return `PendingAuthentication`.
+ */
+export const appSessionConfiguration = Sessions.stateful({
+  maxAge: "30 days",
+  idleTimeout: "30 days",
+  renewAfter: "1 day",
 });
 
 /**
@@ -203,6 +314,11 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
  * page for password-reset links; it defaults to the canonical origin. Keeping
  * it separate lets local HTTP development run with the production reset URL
  * (the proof library refuses non-HTTPS landing pages).
+ *
+ * Sessions are deliberately not passed here: when any strategy completes
+ * authentication the library only enables pending MFA when the application
+ * supplies its own `completionLayer` with a pending lifetime. The server layer
+ * provides both the strategy and completion layers from `appSessionConfiguration`.
  */
 export const makeAppAuth = (
   origin: string,
@@ -210,20 +326,21 @@ export const makeAppAuth = (
   extraStrategies: Record<string, any> = {},
 ): any =>
   Auth.make(AuthApi, {
-    sessions: Sessions.stateful({
-      maxAge: "30 days",
-      idleTimeout: "30 days",
-      renewAfter: "1 day",
-    }),
     strategies: {
       password: Password.make({
         registration: Registration,
         reset: Password.resetLink({ url: resetUrl ?? `${origin}/reset-password` }),
       }),
       email: Email.makeCode({ digits: 6 }),
+      totp: Totp.make(TOTP_POLICY),
       ...extraStrategies,
     },
     defaultStrategy: "password",
   });
 
-export const AuthDefinition = makeAppAuth("https://mattrax.invalid");
+export const AuthDefinition = Object.freeze({
+  ...makeAppAuth("https://mattrax.invalid"),
+  // Persistence roles are selected from the session mode even though the
+  // runtime layers are supplied by the server.
+  sessionMode: "stateful" as const,
+});

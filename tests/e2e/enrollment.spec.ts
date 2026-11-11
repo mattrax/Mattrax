@@ -54,7 +54,7 @@ test.describe("device enrollment", () => {
     );
     const details = await api<{
       windows: { discoveryUrl: string; tenantScoped: boolean; expiresAt?: string };
-      android: string;
+      android: { error: string } | string;
     }>(page, `/api/v1/enrollment/${enrollment.id}`);
     const otherDetails = await api<{
       windows: { discoveryUrl: string; tenantScoped: boolean };
@@ -65,7 +65,9 @@ test.describe("device enrollment", () => {
     expect(details.windows.expiresAt).toBeTruthy();
     // The token is tenant-specific: two tenants never share a URL.
     expect(otherDetails.windows.discoveryUrl).not.toBe(details.windows.discoveryUrl);
-    expect(details.android).toBe("unavailable");
+    expect(details.android).toMatchObject({
+      error: expect.stringMatching(/Android Enterprise is not configured/i),
+    });
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await page.getByRole("button", { name: /^Windows$/ }).click();
@@ -79,7 +81,7 @@ test.describe("device enrollment", () => {
     await expect(page.getByRole("button", { name: /^Copied$/ })).toBeVisible();
 
     await page.getByRole("button", { name: /^Android$/ }).click();
-    await expect(page.getByText(/Android enrollment isn't available yet/i)).toBeVisible();
+    await expect(page.getByText(/Android Enterprise is not configured/i)).toBeVisible();
   });
 
   test("deletes a tenant after its enrollment link has been visited", async ({ page }) => {

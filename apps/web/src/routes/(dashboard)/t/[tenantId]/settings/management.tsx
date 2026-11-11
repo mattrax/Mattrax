@@ -11,6 +11,7 @@ import {
   CircleAlert,
   CheckCircle2,
   Download,
+  RotateCcw,
   Smartphone,
   MonitorSmartphone,
 } from "~/components/ui/icons";
@@ -23,6 +24,24 @@ export default function ManagementSettingsPage() {
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(params.tenantId),
     queryFn: () => enterprise.getApns(params.tenantId),
+  }));
+  const android = useQuery(() => ({
+    queryKey: enterpriseKeys.android(params.tenantId),
+    queryFn: () => enterprise.getTenantAndroid(params.tenantId),
+  }));
+  const connectAndroid = useMutation(() => ({
+    mutationFn: () => enterprise.createAndroidSignup(params.tenantId),
+    onSuccess: (result) => {
+      window.location.href = result.url;
+    },
+  }));
+  const syncAndroid = useMutation(() => ({
+    mutationFn: () => enterprise.syncTenantAndroid(params.tenantId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
+  }));
+  const toggleAndroid = useMutation(() => ({
+    mutationFn: (enabled: boolean) => enterprise.patchTenantAndroid(params.tenantId, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
   }));
   const [email, setEmail] = createSignal("");
   const [cert, setCert] = createSignal("");
@@ -78,7 +97,14 @@ export default function ManagementSettingsPage() {
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
-      <QueryError class="xl:col-span-2" error={apns.error} onRetry={() => void apns.refetch()} />
+      <QueryError
+        class="xl:col-span-2"
+        error={apns.error ?? android.error}
+        onRetry={() => {
+          void apns.refetch();
+          void android.refetch();
+        }}
+      />
       <Card class="xl:col-span-2">
         <CardHeader>
           <CardTitle>Apple push notifications</CardTitle>
@@ -227,15 +253,100 @@ export default function ManagementSettingsPage() {
         </CardHeader>
         <CardContent class="flex items-start gap-3 text-sm">
           <Smartphone class="mt-0.5 size-4 text-muted-foreground" />
-          <div>
-            <p class="font-medium">Android Enterprise</p>
-            <p class="mt-1 text-muted-foreground">
-              Android enrollment is not available yet. The production reference also leaves it
-              disabled.
-            </p>
-            <Badge variant="secondary" class="mt-3">
-              Coming soon
-            </Badge>
+          <div class="min-w-0 flex-1 space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="font-medium">Android Enterprise</p>
+              <Show when={android.data}>
+                {(data) => (
+                  <Badge
+                    variant={data().status === "active" ? "default" : "outline"}
+                    class="capitalize"
+                  >
+                    {!data().configured ? "Not configured" : data().status}
+                  </Badge>
+                )}
+              </Show>
+            </div>
+            <Show when={android.data} fallback={<p class="text-muted-foreground">Loading…</p>}>
+              {(data) => (
+                <>
+                  <Show when={!data().configured}>
+                    <p class="text-muted-foreground">
+                      Android Enterprise is not configured for this deployment. Set{" "}
+                      <span class="font-mono text-xs">ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON</span>{" "}
+                      and restart the API. Android enrollment stays unavailable until then.
+                    </p>
+                  </Show>
+                  <Show when={data().configured && !data().enterpriseName}>
+                    <p class="text-muted-foreground">
+                      Connect a Google Cloud project so Mattrax can create an Android enterprise,
+                      push policies and receive enrollment notifications. Google hosts the signup
+                      flow; you return here automatically.
+                    </p>
+                    <Button
+                      onClick={() => connectAndroid.mutate()}
+                      disabled={connectAndroid.isPending}
+                    >
+                      {connectAndroid.isPending ? "Opening Google…" : "Connect Android Enterprise"}
+                    </Button>
+                  </Show>
+                  <Show when={data().configured && data().enterpriseName}>
+                    <div class="space-y-1 text-muted-foreground">
+                      <p class="break-all font-mono text-xs text-stone-700">
+                        {data().enterpriseName}
+                      </p>
+                      <Show when={data().pubsubTopic}>
+                        <p class="break-all text-xs">Topic: {data().pubsubTopic}</p>
+                      </Show>
+                      <Show when={data().pubsubSubscription}>
+                        <p class="break-all text-xs">Subscription: {data().pubsubSubscription}</p>
+                      </Show>
+                      <p class="text-xs">
+                        {data().deviceCount} Android device
+                        {data().deviceCount === 1 ? "" : "s"} linked
+                        {data().lastSyncedAt
+                          ? ` · last sync ${new Date(data().lastSyncedAt!).toLocaleString()}`
+                          : " · not synced yet"}
+                      </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <Show when={data().status !== "active"}>
+                        <Button
+                          variant="outline"
+                          onClick={() => toggleAndroid.mutate(true)}
+                          disabled={toggleAndroid.isPending}
+                        >
+                          Enable Android delivery
+                        </Button>
+                      </Show>
+                      <Show when={data().status === "active"}>
+                        <Button
+                          variant="outline"
+                          onClick={() => syncAndroid.mutate()}
+                          disabled={syncAndroid.isPending}
+                        >
+                          <RotateCcw class="size-4" />
+                          {syncAndroid.isPending ? "Syncing…" : "Sync policies"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => toggleAndroid.mutate(false)}
+                          disabled={toggleAndroid.isPending}
+                        >
+                          Disable
+                        </Button>
+                      </Show>
+                    </div>
+                  </Show>
+                  <Show when={data().lastError}>
+                    <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                      {data().lastError}
+                    </p>
+                  </Show>
+                </>
+              )}
+            </Show>
+            <ErrorText error={connectAndroid.error ?? syncAndroid.error ?? toggleAndroid.error} />
           </div>
         </CardContent>
       </Card>

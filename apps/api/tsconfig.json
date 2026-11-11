@@ -44,6 +44,9 @@
       "path": "../../packages/dm-apple"
     },
     {
+      "path": "../../packages/dm-android"
+    },
+    {
       "path": "../../packages/dm-windows"
     },
     {

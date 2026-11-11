@@ -62,19 +62,29 @@ the placeholder `e.mattrax.app` to the hostname you control.
 
 Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 
-| Secret                           | Required | Purpose                                                         |
-| -------------------------------- | -------- | --------------------------------------------------------------- |
-| `ORIGIN`                         | Yes      | Canonical public origin used in enrollment profiles and emails. |
-| `AUTH_SECRET`                    | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.      |
-| `AUTH_RESET_URL`                 | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`. |
-| `TRUSTED_ORIGINS`                | No       | Extra comma-separated browser origins for split-origin setups.  |
-| `STRIPE_SECRET_KEY`              | Yes      | Stripe API key.                                                 |
-| `STRIPE_WEBHOOK_SECRET`          | Yes      | Stripe webhook verification secret.                             |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Yes      | Stripe price used for per-device billing.                       |
-| `CLOUD_APPLE_VENDOR_CERT`        | No       | Apple MDM vendor certificate used to sign APNs CSRs.            |
-| `CLOUD_APPLE_VENDOR_KEY`         | No       | Vendor private key paired with the certificate.                 |
-| `AZURE_CLIENT_ID`                | No       | Entra ID app client ID for tenant SSO.                          |
-| `AZURE_CLIENT_SECRET`            | No       | Entra ID app client secret for tenant SSO.                      |
+| Secret                                    | Required | Purpose                                                         |
+| ----------------------------------------- | -------- | --------------------------------------------------------------- |
+| `ORIGIN`                                  | Yes      | Canonical public origin used in enrollment profiles and emails. |
+| `AUTH_SECRET`                             | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.      |
+| `AUTH_RESET_URL`                          | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`. |
+| `TRUSTED_ORIGINS`                         | No       | Extra comma-separated browser origins for split-origin setups.  |
+| `STRIPE_SECRET_KEY`                       | Yes      | Stripe API key.                                                 |
+| `STRIPE_WEBHOOK_SECRET`                   | Yes      | Stripe webhook verification secret.                             |
+| `STRIPE_DEVICE_MONTHLY_PRICE_ID`          | Yes      | Stripe price used for per-device billing.                       |
+| `CLOUD_APPLE_VENDOR_CERT`                 | No       | Apple MDM vendor certificate used to sign APNs CSRs.            |
+| `CLOUD_APPLE_VENDOR_KEY`                  | No       | Vendor private key paired with the certificate.                 |
+| `AZURE_CLIENT_ID`                         | No       | Entra ID app client ID for tenant SSO.                          |
+| `AZURE_CLIENT_SECRET`                     | No       | Entra ID app client secret for tenant SSO.                      |
+| `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` | No       | Full Google service-account JSON for Android Enterprise.        |
+| `ANDROID_MANAGEMENT_PROJECT_ID`           | No       | Google Cloud project; defaults to the service account project.  |
+| `ANDROID_MANAGEMENT_PUBSUB_TOPIC`         | No       | `projects/{project}/topics/{topic}` for Android notifications.  |
+| `ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION`  | No       | Push subscription receiving Android notifications.              |
+| `ANDROID_MANAGEMENT_PUBSUB_AUDIENCE`      | No       | OIDC audience; defaults to `<ORIGIN>/api/v1/android/pubsub`.    |
+| `ANDROID_MANAGEMENT_PUBSUB_JWKS_URI`      | No       | Optional JWKS override for tests/non-Google setups.             |
+| `SENTRY_DSN`                              | No       | Sentry-compatible DSN for uncaught/5xx error events.            |
+| `SENTRY_ENVIRONMENT`                      | No       | Sentry environment tag (for example `production`).              |
+| `SENTRY_SAMPLE_RATE`                      | No       | Fraction of eligible errors to send, `0`–`1`. Default `1`.      |
+| `SENTRY_MAX_EVENTS_PER_MINUTE`            | No       | Per-isolate event cap. Default `20`.                            |
 
 ```bash
 cf auth login
@@ -112,6 +122,28 @@ there or from the login page's work-email SSO form.
 SCIM provisioning uses the same identity provider independently. Users can be
 auto-provisioned on first SSO sign-in; disable **Create members on first
 sign-in** if membership must come from invitations only.
+
+### Android Enterprise
+
+Android delivery is optional. Create a Google Cloud service account with the
+Android Management API enabled, grant it the Android Management user role, and
+create a Pub/Sub topic plus a push subscription whose endpoint is
+`<ORIGIN>/api/v1/android/pubsub`. Configure the subscription with an OIDC
+service account token whose audience matches
+`ANDROID_MANAGEMENT_PUBSUB_AUDIENCE` (or the default endpoint URL). Set
+`ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` to the full key-file JSON; the private
+key is used in memory only and is never written to the database. The topic and
+subscription must already exist; the callback records their names and Google
+uses the topic for enrollment/status/command notifications. Without the service
+account secret every Android endpoint returns a clear `EnterpriseNotConfigured`
+error and the dashboard keeps Android unavailable.
+
+After deploying, open **Settings → Management → Android** and use **Connect
+Android Enterprise**. Google hosts the signup; the callback stores the
+enterprise name, ensures the starting policy exists, and marks the tenant
+active. Real-device validation (signup, Pub/Sub, enrollment QR/token, policy
+and command convergence) is still required before relying on Android in
+production.
 
 ### 4. Apply migrations
 
@@ -163,13 +195,28 @@ proxied by the public web Worker.
   (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: strict-origin-when-cross-origin` and HSTS on HTTPS responses. No
   extra configuration is required.
-- **Scheduled maintenance.** `apps/api/cloudflare.config.ts` registers a daily cron
-  (`17 3 * * *`). It expires invitations, marks devices stale after 30 days without a
-  check-in, removes expired auth proofs/sessions and applies 365-day audit retention.
-  Override with `MAINTENANCE_STALE_DEVICE_DAYS` and
-  `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the latter to `0` to keep audit entries
-  indefinitely). The same `runMaintenance` function is exported from
-  `@mattrax/enterprise-backend` for external schedulers.
+- **Scheduled maintenance and backups.** `apps/api/cloudflare.config.ts` registers a
+  daily cron (`17 3 * * *`). It expires invitations, marks devices stale after 30 days
+  without a check-in, removes expired auth proofs/sessions, applies 365-day audit
+  retention, then backs up every tenant (see [Scheduled tenant
+  backups](#scheduled-tenant-backups)). Override with
+  `MAINTENANCE_STALE_DEVICE_DAYS`, `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the latter
+  to `0` to keep audit entries indefinitely), `MAINTENANCE_BACKUP_RETENTION_DAYS` and
+  `MAINTENANCE_BACKUP_CONCURRENCY`. The same `runMaintenance` and
+  `runScheduledBackups` functions are exported from `@mattrax/enterprise-backend` for
+  external schedulers.
+- **Edge rate limits.** Cloudflare Rate Limiting namespaces are optional per bucket. At
+  build time, set any of `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`,
+  `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE`, `MATTRAX_RATE_LIMIT_MDM_NAMESPACE`,
+  `MATTRAX_RATE_LIMIT_SCIM_NAMESPACE`, `MATTRAX_RATE_LIMIT_BILLING_NAMESPACE` or
+  `MATTRAX_RATE_LIMIT_SCEP_NAMESPACE`; the build then exposes the matching
+  `RATE_LIMITER_AUTH`, `RATE_LIMITER_ENROLLMENT`, `RATE_LIMITER_MDM`,
+  `RATE_LIMITER_SCIM`, `RATE_LIMITER_BILLING` and `RATE_LIMITER_SCEP` bindings. A
+  bucket without a binding falls back to per-isolate counters.
+- **Error tracking.** Set `SENTRY_DSN` (plus optional `SENTRY_ENVIRONMENT`,
+  `SENTRY_SAMPLE_RATE`, `SENTRY_MAX_EVENTS_PER_MINUTE`) to send uncaught/5xx events.
+  Payloads contain a redacted message, request id, path, method, status, release and
+  deployment id only; bodies, cookies, query strings, emails and tokens are excluded.
 - **Windows.** Tenant-scoped discovery URLs work without extra configuration. Each
   enrollment link carries a signed tenant token that expires; reload the enrollment page
   for a fresh one. `WINDOWS_ORGANIZATION_ID` is optional and only keeps the old
@@ -387,11 +434,35 @@ sudo install -m 0755 apps/mttx/dist/mttx /opt/mattrax-gateway/mttx
 sudo systemctl restart mattrax-gateway
 ```
 
+## MFA lockout recovery
+
+If an administrator loses both their authenticator and recovery codes, another
+owner can reset the factor from the database after verifying the account:
+
+```sql
+-- Replace :user_id with the account id. Bumps the auth revision so every
+-- existing session is invalidated.
+DELETE FROM auth_totp_factor WHERE scope = :user_id;
+UPDATE `user` SET totp_enabled = false, auth_revision = UUID() WHERE id = :user_id;
+```
+
+This is a break-glass operation: audit it, confirm the requester's identity, and
+have the user re-enrol MFA immediately. Accounts without a password credential
+cannot enrol MFA (password + authenticator are required together); set a
+password first.
+
 ## Backups
 
-Nothing in this repository schedules backups today. Treat the following as the
-minimum production checklist and wire it into your platform's scheduler, with
-restore drills at least quarterly.
+The API Worker now runs a daily application-level tenant backup after
+maintenance: each tenant is exported to `backups/<organizationId>/<timestamp>.json`
+in the `STORAGE` R2 bucket, bounded to four tenants at a time, and the result is
+recorded in `backup_run`. Owners can see the latest status and download retained
+bundles from **Tenant settings → General → Data and backups**, or run a backup
+immediately there. This is a per-tenant safety net, not a database backup: it
+cannot restore members, devices, audit history or SCEP certificates, and it does
+not back up `AUTH_SECRET`. Keep the infrastructure backup below as the primary
+recovery mechanism, and treat the following as the minimum production checklist
+with restore drills at least quarterly.
 
 ### What to back up
 
@@ -411,6 +482,32 @@ restore drills at least quarterly.
 
 Never store the backup of `AUTH_SECRET` in the same bucket as the database dump:
 a leaked dump plus secret is equivalent to full tenant compromise.
+
+### Scheduled tenant backups
+
+The daily Cron Trigger (`17 3 * * *`) runs maintenance first, then backs up every
+tenant with concurrency 4. Each run writes the same versioned bundle as the
+export endpoint, so it excludes APNs/SCEP private keys, token hashes, passwords,
+sessions and R2 object bytes. Failures are recorded per tenant and do not stop
+the rest of the sweep; the settings card warns when the latest run failed or the
+last success is more than two days old.
+
+| Variable                            | Default | Meaning                                                                   |
+| ----------------------------------- | ------- | ------------------------------------------------------------------------- |
+| `MAINTENANCE_BACKUP_RETENTION_DAYS` | `30`    | Delete non-pinned runs and R2 objects older than this. `0` keeps forever. |
+| `MAINTENANCE_BACKUP_CONCURRENCY`    | `4`     | Tenants backed up in parallel.                                            |
+
+Manual runs are retained by the same policy. Rows with `retention = pinned` are
+never pruned (there is no API to pin yet; use SQL for a deliberate long-lived
+run). Downloads go through `GET /v1/tenants/:tenantId/backups/:id/download` and
+require an owner session; the R2 keys are private. Restore a downloaded bundle
+through **Import tenant**, which creates a new tenant rather than overwriting an
+existing one.
+
+R2 lifecycle rules are still recommended as a backstop for objects whose row was
+removed manually, and neither this job nor a lifecycle rule provides an
+off-site copy. Mirror the bucket and database to a separate account if regional
+loss is in your recovery objective.
 
 ### MySQL dump and restore
 
@@ -524,9 +621,9 @@ Import behaviour:
 - Bundles are capped at 8 MB and unknown versions or unknown group/policy
   references are rejected. The import is applied in one transaction.
 
-There is no scheduled export or automatic off-site backup yet. Add both if
-export/import is part of your recovery objective rather than an ad-hoc migration
-tool.
+The daily scheduled tenant backup covers ad-hoc restores of tenant configuration.
+It is not a replacement for the database/R2 backup above: keep the infrastructure
+backup and off-site copy for member, device, audit and certificate recovery.
 
 ### Rotating `AUTH_SECRET`
 

@@ -53,6 +53,20 @@ architecture notes in the porting plan.
   `O(devices × dynamic groups)`, including declaration loads for health rules.
 - `maxDevices = 0` means unlimited, and the enrollment page shows the Windows
   discovery URL and an accurate Android availability state.
+- Authenticator-app MFA is available on `/account`. Enrollment shows a QR code
+  and manual key, confirmation returns one-time recovery codes, and management
+  (disable/regenerate) requires the current password plus a current code. TOTP
+  secrets are stored as AES-GCM envelopes keyed from `AUTH_SECRET`; recovery
+  codes are stored only as SHA-256 digests. Password, email-code and Entra SSO
+  sign-in return a pending-MFA result for enrolled accounts, and the session
+  cookie is not issued until the code (or a recovery code) is verified. Password
+  and email-code login for accounts without MFA is unchanged. Enrolled accounts
+  must sign in with password + authenticator: an email code or SSO assertion is
+  possession-only and cannot replace the password factor.
+- A tenant can require MFA for its owners and admins
+  (`sso_config.require_mfa`, exposed under Settings → Identity). Owners/admins
+  without an enrolled authenticator are blocked from that tenant's APIs with a
+  403 and an account-page prompt; members keep read access.
 - Device health rolls up enrollment state, last-seen age, declaration failures,
   FileVault and battery condition, and reported disk pressure, with a tenant
   dashboard summary and device detail card. Identity certificate state is
@@ -120,8 +134,10 @@ architecture notes in the porting plan.
 - Rate limits apply to auth POSTs, `/api/v1/enrollment/*`,
   `/api/v1/billing/webhook`, `/scim/*` and `/mdm/*` (SCEP separately). A 429
   has a stable JSON body and `Retry-After`.
-  Cloudflare's Rate Limiting binding is used for auth and enrollment when the
-  deployment supplies a namespace; otherwise a per-isolate fallback applies.
+  Cloudflare's Rate Limiting binding is used for every bucket when the
+  deployment supplies a namespace (`RATE_LIMITER_AUTH`, `_ENROLLMENT`, `_MDM`,
+  `_SCIM`, `_BILLING`, `_SCEP`); otherwise that bucket uses the per-isolate
+  fallback.
 - APNs fan-out is bounded (12 in flight, chunked) and returns per-batch
   succeeded/failed/skipped device ids. One undecryptable key or failed delivery
   no longer aborts the rest of the group. Bulk group/policy/application deletes
@@ -143,6 +159,16 @@ architecture notes in the porting plan.
   members, devices, audit history and SCEP certificates are not imported.
   [Self-hosting](./self-hosting#backups) now documents the MySQL/R2/secrets
   backup and restore order, key-rotation caveats and bundle limits.
+- Scheduled tenant backups are implemented. The daily maintenance run backs up
+  every tenant after maintenance with bounded concurrency, writes
+  `backups/<organizationId>/<timestamp>.json` to R2, and records each attempt in
+  `backup_run`. Owners can run a backup now, see recent runs and download a
+  retained bundle from **Settings → General → Data and backups**; R2 objects are
+  never public and downloads are authenticated. Runs (scheduled and manual) are
+  pruned after `MAINTENANCE_BACKUP_RETENTION_DAYS` (default 30); `retention =
+  pinned` opts a row out. One tenant failing is recorded and skipped, not fatal
+  to the sweep. This complements, but does not replace, MySQL dumps, R2 object
+  mirroring and an off-site copy of `AUTH_SECRET`.
 
 - Stripe billing is wired: `POST /api/v1/billing/webhook` verifies signatures,
   syncs subscription created/updated/deleted and invoice events, maps Stripe
@@ -166,16 +192,24 @@ architecture notes in the porting plan.
 
 ## Observability and rate limiting: exact gaps
 
-- **The edge limiter is optional.** Cloudflare Rate Limiting namespaces are
-  account resources, so the build only adds `RATE_LIMITER_AUTH` /
-  `RATE_LIMITER_ENROLLMENT` when `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE` and
-  `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE` are set. Without them every isolate
-  keeps its own in-memory counters: the effective limit is
+- **The edge limiter is optional per bucket.** Cloudflare Rate Limiting
+  namespaces are account resources, so the build only adds a limiter binding
+  when its `MATTRAX_RATE_LIMIT_<BUCKET>_NAMESPACE` is set. Supported buckets and
+  env vars are `AUTH`, `ENROLLMENT`, `MDM`, `SCIM`, `BILLING` and `SCEP`
+  (`MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`, `..._ENROLLMENT_NAMESPACE`,
+  `..._MDM_NAMESPACE`, `..._SCIM_NAMESPACE`, `..._BILLING_NAMESPACE`,
+  `..._SCEP_NAMESPACE`), producing `RATE_LIMITER_AUTH`, `..._ENROLLMENT`,
+  `..._MDM`, `..._SCIM`, `..._BILLING` and `..._SCEP`. Without a namespace that
+  bucket keeps its own in-memory counters: the effective limit is
   `configured limit × live isolates`, and counters reset on deploy/eviction.
-  MDM/SCIM/billing/SCEP buckets always use that fallback today.
 - **Logs are structured JSON on stdout.** They are queryable in Workers Logs /
-  Logpush, but there is no cross-request error tracker (Sentry-style grouping,
-  alerting or release correlation) yet.
+  Logpush. Optional Sentry-compatible tracking can be enabled with
+  `SENTRY_DSN`: uncaught errors and 5xx responses send a minimal envelope with a
+  redacted message, request id, path, method, status, release and deployment id.
+  Bodies, cookies, query strings, emails and tokens are never sent. Events are
+  sampled (`SENTRY_SAMPLE_RATE`, default 1) and capped per isolate
+  (`SENTRY_MAX_EVENTS_PER_MINUTE`, default 20). Without a DSN only request logs
+  are written.
 - **Readiness does not cancel the underlying query.** The 2s timeout returns
   503, but the driver call may finish in the background; there is no
   request-scoped abort in the current MySQL client.
@@ -186,10 +220,23 @@ architecture notes in the porting plan.
 
 - **Apple ADE/ABM and VPP.** Zero-touch enrollment and Apps & Books licences are
   not implemented. Requires an ABM account and a supervised device to validate.
-- **Android Enterprise delivery.** The AMAPI client exists, but enterprise
-  signup, Pub/Sub handling and policy push are not mounted. Requires a Google
-  Cloud project and a managed Android device. Until then Android must stay
-  explicitly unavailable.
+- **Android Enterprise delivery.** Enterprise signup, the Google callback,
+  Pub/Sub OIDC verification, enrollment-token/QR issuance, device creation on
+  `ENROLLMENT`/`STATUS_REPORT`, erase/restart/lock commands and
+  `mttx.android.policy*` compilation/push are implemented and fixture-tested.
+  Delivery is mounted in the API Worker and fails closed with
+  `EnterpriseNotConfigured` when `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` is
+  absent; the dashboard keeps Android explicitly unavailable in that case.
+  Service-account JSON is deployment configuration only — the database stores
+  the client email and Google resource names, never the private key. Remaining
+  work is real-device validation against a Google Cloud project and a managed
+  Android device: confirm signup redirects, Pub/Sub OIDC delivery, default
+  policy creation, enrollment-token/QR provisioning, policy convergence and
+  command results on hardware. The Pub/Sub topic and push subscription are
+  operator-provisioned (the API records their configured names but does not
+  call the Pub/Sub Admin API). Google does not document a universal AMAPI
+  deep link, so enrollment uses the token QR payload plus the `afw#setup`
+  manual-token flow.
 - **Federated Entra enrollment / Autopilot.** Tenant-scoped Windows enrollment is
   done (signed discovery token, tenant-bound WSTEP token, certificate
   revocation). Remaining gap: device-token-based Autopilot/federated Entra
@@ -203,9 +250,9 @@ architecture notes in the porting plan.
 
 - **Generic SAML SSO and IdP group → role mapping.** Entra OIDC is supported;
   Okta/Google/OneLogin need SAML.
-- **MFA for administrators.** TOTP/passkey support is not wired into the auth
-  layer. `@yielded/auth` ships the primitives, but tenant/member enforcement and
-  recovery-code persistence still need implementation.
+- **Passkey MFA.** TOTP, recovery codes and owner/admin tenant enforcement are
+  implemented. Passkeys (WebAuthn) and a dedicated step-up prompt for tenant
+  actions are still follow-ups; management currently requires password + TOTP.
 - **Scheduled/background work for large fleets.** Bounded concurrency (12 in
   flight, chunked) and per-device outcomes are in place. Large fan-outs are still
   synchronous with the request; move them to Queues (or `waitUntil` with a job
@@ -213,16 +260,19 @@ architecture notes in the porting plan.
 - **Entra directory sync background scheduling.** Locking, stale takeover,
   per-page transactions, incremental cursors and `lastError` are in place.
   Running the sync as a scheduled background job remains.
-- **Scheduled backup automation.** MySQL + R2 backup/restore, `AUTH_SECRET`,
-  APNs and SCEP CA handling, restore order and tenant export/import limits are
-  documented in [self-hosting](./self-hosting#backups), and owners can download
-  or import a tenant bundle. Remaining: scheduled dumps/object mirroring,
-  retention/encryption policy, restore drills and backup-failure alerting.
+- **Backup off-site copy and drills.** Scheduled per-tenant JSON backups, status
+  tracking, authenticated restore downloads and age-based retention are in
+  place. Remaining: mirror MySQL dumps and R2 objects to an off-site account,
+  keep `AUTH_SECRET` separate from dumps, configure an R2 lifecycle rule as a
+  backstop, and rehearse a full restore (including SCEP/APNs) quarterly. Per-tenant
+  JSON bundles cannot restore members, devices, audit history or SCEP
+  certificates; only a database dump can.
 - **Observability and abuse protection.** Structured request logs, request ids,
-  readiness checks and multi-bucket rate limiting are in place. Remaining:
-  configure the optional shared edge limiters for every bucket, add an error
-  tracker/alerting, and cover auth/enrollment with a distributed limiter even on
-  deployments without Cloudflare Rate Limiting namespaces.
+  readiness checks, all-bucket rate limiting and optional Sentry-compatible
+  error tracking are in place. Remaining: supply the optional shared edge
+  limiter namespaces for every bucket in production, alert on Sentry/5xx rates,
+  and add a circuit breaker for deployments without Cloudflare Rate Limiting
+  namespaces.
 - **Outbound idempotency.** APNs, Graph, Stripe and relay calls have deadlines
   and bounded retries; webhook deliveries are signed and retried. Command/policy
   delivery still needs an end-to-end idempotency key so a retried request cannot
@@ -234,7 +284,9 @@ architecture notes in the porting plan.
 
 ### P2 — product polish
 
-- Android QR/deep-link enrollment once AMAPI delivery lands.
+- Android Enterprise real-device validation (signup, Pub/Sub, QR/token
+  enrollment and policy/command convergence). AMAPI has no documented universal
+  deep link; the UI offers the QR payload and `afw#setup` manual token.
 - Split or serve the large Windows policy catalogue without shipping 17 MB.
 - Surface push/bulk job summaries to clients through a job id/Queue response.
 - Move health/push/software inventory aggregation from application-side scans to

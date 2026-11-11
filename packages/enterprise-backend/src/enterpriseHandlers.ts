@@ -5,11 +5,15 @@ import {
   applicationKey,
   EnterpriseBadRequest,
   EnterpriseConflict,
+  EnterpriseDbError,
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
+  EnterpriseNotConfigured,
+  EnterpriseR2InternalError,
   EnterpriseStripeError,
   EnterpriseTenantHasMembers,
+  EnterpriseUpstreamError,
   EnterpriseService,
   enterpriseApi,
   TENANT_EXPORT_MAX_ROWS,
@@ -18,16 +22,6 @@ import {
   type DevicePreRegistrationImportRow,
   type DevicePreRegistrationImportResponse,
   type EnterpriseAuth,
-  type TenantExportApplication,
-  type TenantExportAuditEntry,
-  type TenantExportCertificate,
-  type TenantExportEnvelope,
-  type TenantExportEnrollment,
-  type TenantExportGroup,
-  type TenantExportMember,
-  type TenantExportPolicy,
-  type TenantExportPreRegistration,
-  type TenantExportProfile,
   type TenantImportRequest,
   type TenantImportResponse,
   policyApplicationKey,
@@ -102,6 +96,18 @@ import {
 } from "./auditLog.ts";
 import { canEnrollDevice } from "./enrollmentLimit.ts";
 import {
+  AndroidDeliveryError,
+  androidEnterpriseInfo,
+  createAndroidEnrollmentToken,
+  createAndroidSignup,
+  isAndroidConfigured,
+  issueAndroidCommand,
+  loadAndroidEnterprise,
+  setAndroidEnabled,
+  syncAndroidPoliciesForTenant,
+  type AndroidDeliveryConfig,
+} from "./android.ts";
+import {
   detectEnrollmentPlatform,
   ENROLLMENT_ATTEMPT_DEDUPE_MS,
   ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT,
@@ -111,6 +117,11 @@ import {
 } from "./enrollmentAttempts.ts";
 import { countDeviceHealth, deriveDeviceHealth, normalizeDeviceHealth } from "./deviceHealth.ts";
 import { loadCredentialHealth } from "./credentialHealth.ts";
+import {
+  listTenantBackups as listTenantBackupRuns,
+  runTenantBackup as runTenantBackupForTenant,
+} from "./backup.ts";
+import { buildTenantExport } from "./tenantExport.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
@@ -155,6 +166,8 @@ export type EnterpriseHandlersConfig = {
   readonly cloudAppleVendorKey?: string;
   /** Push transport. Defaults to a no-op transport when omitted (tests). */
   readonly apns?: ApnsService.Service;
+  /** Google Android Enterprise delivery config; omitted when unconfigured. */
+  readonly android?: AndroidDeliveryConfig;
   /** Injected fetch for outbound webhook deliveries (tests). */
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Per-attempt webhook delivery deadline. Defaults to 5s. */
@@ -288,22 +301,6 @@ const slugBase = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 240);
 
-/**
- * `organization.metadata` is stored as JSON text. A malformed historical value
- * must not make the rest of a bundle unexportable.
- */
-const exportMetadata = (value: string | null | undefined): Record<string, unknown> | null => {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 /** Compact bundle validation helper; mirrors the limits used by write handlers. */
 const importString = (value: unknown, max: number): string | null => {
   if (typeof value !== "string") return null;
@@ -355,6 +352,29 @@ const auditEntry = (entry: {
   actorEmail: entry.actorEmail ?? null,
   metadata: entry.metadata ?? null,
   createdAt: iso(entry.createdAt),
+});
+
+/** Serialise a backup row for the API without exposing anything but metadata. */
+const backupRunInfo = (run: {
+  id: string;
+  status: string;
+  trigger: string;
+  retention: string;
+  r2Key?: string | null;
+  sizeBytes?: number | null;
+  startedAt: Date | number;
+  completedAt?: Date | number | null;
+  error?: string | null;
+}) => ({
+  id: run.id,
+  status: run.status,
+  trigger: run.trigger,
+  retention: run.retention,
+  r2Key: run.r2Key ?? null,
+  sizeBytes: run.sizeBytes ?? null,
+  startedAt: iso(run.startedAt),
+  completedAt: run.completedAt == null ? null : iso(run.completedAt),
+  error: run.error ?? null,
 });
 
 const headersFromRequest = (request: HttpServerRequest) => {
@@ -423,6 +443,7 @@ export const createEnterpriseService = ({
   cloudAppleVendorCert,
   cloudAppleVendorKey,
   apns: apnsService,
+  android: androidConfig,
   email,
   azureGraph,
   azureClientId,
@@ -460,6 +481,39 @@ export const createEnterpriseService = ({
     new EnterpriseStripeError({
       message: "Billing is temporarily unavailable. Try again shortly.",
     });
+
+  /**
+   * Translate an Android delivery failure into the API's stable error tags.
+   * Provider messages are already redacted/truncated by the Android module.
+   */
+  const androidFailure = (error: AndroidDeliveryError) => {
+    switch (error.kind) {
+      case "not_configured":
+        return new EnterpriseNotConfigured({ message: error.message });
+      case "conflict":
+        return new EnterpriseConflict({ message: error.message });
+      case "not_found":
+        return new EnterpriseNotFound({ message: error.message });
+      case "unauthorized":
+      case "invalid_state":
+      case "invalid_payload":
+        return new EnterpriseBadRequest({ message: error.message });
+      case "upstream":
+        return new EnterpriseUpstreamError({ message: error.message });
+    }
+  };
+  const mapAndroidFailure = <A, R>(effect: Effect.Effect<A, AndroidDeliveryError, R>) =>
+    effect.pipe(Effect.mapError(androidFailure));
+
+  const androidConfigured = () => isAndroidConfigured(androidConfig);
+
+  const syncAndroidDevices = (organizationId: string, deviceIds?: ReadonlyArray<string>) =>
+    syncAndroidPoliciesForTenant({
+      db,
+      config: androidConfig,
+      organizationId,
+      ...(deviceIds ? { deviceIds } : {}),
+    }).pipe(Effect.catch(() => Effect.void));
   const r2Layer = R2StorageLive(storage);
 
   const requireTenant = (
@@ -503,6 +557,21 @@ export const createEnterpriseService = ({
       });
       if (!organization)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+
+      // A tenant can require owners and admins to enroll an authenticator.
+      // Members keep read access so they can reach their account page and enroll.
+      if (!user.totpEnabled && canWriteTenant(member.role)) {
+        const sso = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: member.organizationId },
+        });
+        if (sso?.requireMfa)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message:
+                "This workspace requires multi-factor authentication. Enable an authenticator on your account first.",
+            }),
+          );
+      }
 
       return { user, organization, member };
     });
@@ -1545,6 +1614,24 @@ export const createEnterpriseService = ({
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
         const tenants = yield* listTenantInfo(user.id);
+        const memberships = yield* db.query.member.findMany({
+          where: { userId: user.id },
+        });
+        const mfaRequired = yield* Effect.gen(function* () {
+          for (const membership of memberships) {
+            if (!canWriteTenant(membership.role)) continue;
+            const sso = yield* db.query.ssoConfig.findFirst({
+              where: { organizationId: membership.organizationId },
+            });
+            if (sso?.requireMfa) return true;
+          }
+          return false;
+        });
+        const passwordCredential = yield* db
+          .select({ credentialId: schema.authPasswords.credentialId })
+          .from(schema.authPasswords)
+          .where(eq(schema.authPasswords.subjectId, user.id))
+          .limit(1);
         return {
           user: {
             id: user.id,
@@ -1552,6 +1639,9 @@ export const createEnterpriseService = ({
             email: user.email,
             emailVerified: user.emailVerified,
             image: user.image,
+            mfaEnabled: user.totpEnabled,
+            mfaRequired,
+            hasPassword: passwordCredential.length > 0,
           },
           tenants,
         };
@@ -1736,296 +1826,66 @@ export const createEnterpriseService = ({
             new EnterpriseForbidden({ message: "Only a tenant owner can export this tenant" }),
           );
 
-        const organizationId = ctx.organization.id;
-        const members = (yield* db
-          .select()
-          .from(schema.member)
-          .where(eq(schema.member.organizationId, organizationId))) as Array<{
-          userId: string;
-          role: string;
-          createdAt: Date;
-        }>;
-        const userIds = [...new Set(members.map((member) => member.userId))];
-        const users = userIds.length
-          ? ((yield* db
-              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-              .from(schema.user)
-              .where(inArray(schema.user.id, userIds))) as Array<{
-              id: string;
-              name: string;
-              email: string;
-            }>)
-          : [];
-        const usersById = new Map(users.map((user) => [user.id, user]));
-
-        const groups = (yield* db
-          .select()
-          .from(schema.enterpriseGroup)
-          .where(
-            eq(schema.enterpriseGroup.organizationId, organizationId),
-          )) as Array<EnterpriseGroup>;
-        const groupIds = groups.map((group) => group.id);
-        const policies = (yield* db
-          .select()
-          .from(schema.policy)
-          .where(eq(schema.policy.organizationId, organizationId))) as Array<EnterprisePolicy>;
-        const policyIds = policies.map((policy) => policy.id);
-        const applications = (yield* db
-          .select()
-          .from(schema.application)
-          .where(
-            eq(schema.application.organizationId, organizationId),
-          )) as Array<EnterpriseApplication>;
-        const applicationIds = applications.map((application) => application.id);
-
-        const groupDevices = groupIds.length
-          ? ((yield* db
-              .select()
-              .from(schema.groupDevice)
-              .where(inArray(schema.groupDevice.groupId, groupIds))) as Array<{
-              groupId: string;
-              deviceId: string;
-            }>)
-          : [];
-        const deviceIds = [...new Set(groupDevices.map((link) => link.deviceId))];
-        const devices = deviceIds.length
-          ? ((yield* db
-              .select({
-                id: schema.device.id,
-                name: schema.device.name,
-                serial: schema.device.serial,
-              })
-              .from(schema.device)
-              .where(
-                and(
-                  eq(schema.device.organizationId, organizationId),
-                  inArray(schema.device.id, deviceIds),
-                ),
-              )) as Array<{ id: string; name: string; serial: string | null }>)
-          : [];
-        const devicesById = new Map(devices.map((device) => [device.id, device]));
-
-        const groupPolicies = groupIds.length
-          ? ((yield* db
-              .select()
-              .from(schema.groupPolicy)
-              .where(inArray(schema.groupPolicy.groupId, groupIds))) as Array<{
-              groupId: string;
-              policyId: string;
-            }>)
-          : [];
-        const policyKeys = new Set(policyIds);
-        const groupPolicyKeys = new Map<string, string[]>();
-        for (const link of groupPolicies) {
-          if (!policyKeys.has(link.policyId)) continue;
-          groupPolicyKeys.set(link.groupId, [
-            ...(groupPolicyKeys.get(link.groupId) ?? []),
-            link.policyId,
-          ]);
-        }
-
-        const configurations = policyIds.length
-          ? ((yield* db
-              .select()
-              .from(schema.configuration)
-              .where(inArray(schema.configuration.policyId, policyIds))) as Array<{
-              policyId: string;
-              kind: string;
-              data: unknown;
-            }>)
-          : [];
-        const policyConfigurations = new Map<string, Record<string, unknown>>();
-        for (const configuration of configurations) {
-          const current = policyConfigurations.get(configuration.policyId) ?? {};
-          current[configuration.kind] = configuration.data;
-          policyConfigurations.set(configuration.policyId, current);
-        }
-
-        const applicationGroups = applicationIds.length
-          ? ((yield* db
-              .select()
-              .from(schema.applicationGroup)
-              .where(inArray(schema.applicationGroup.applicationId, applicationIds))) as Array<{
-              applicationId: string;
-              groupId: string;
-            }>)
-          : [];
-        const groupKeys = new Set(groupIds);
-        const applicationGroupKeys = new Map<string, string[]>();
-        for (const link of applicationGroups) {
-          if (!groupKeys.has(link.groupId)) continue;
-          applicationGroupKeys.set(link.applicationId, [
-            ...(applicationGroupKeys.get(link.applicationId) ?? []),
-            link.groupId,
-          ]);
-        }
-
-        const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
-          where: { organizationId },
+        return yield* buildTenantExport(db, ctx.organization, {
+          includeAudit: query?.includeAudit === "true" || query?.includeAudit === "1",
         });
-        const preRegistrations = (yield* db
-          .select()
-          .from(schema.devicePreRegistration)
-          .where(eq(schema.devicePreRegistration.organizationId, organizationId))) as Array<{
-          serial: string;
-          name: string | null;
-          assetTag: string | null;
-          notes: string | null;
-          groupId: string | null;
-        }>;
-        const certificates = (yield* db
-          .select()
-          .from(schema.scepIssuedCertificate)
-          .where(eq(schema.scepIssuedCertificate.organizationId, organizationId))) as Array<{
-          serial: string;
-          enrollmentId: string | null;
-          deviceId: string | null;
-          notAfter: Date;
-          revokedAt: Date | null;
-          createdAt: Date;
-        }>;
-
-        let auditLog: TenantExportAuditEntry[] | undefined;
-        let auditTruncated: boolean | undefined;
-        if (query?.includeAudit === "true" || query?.includeAudit === "1") {
-          const rows = (yield* db
-            .select()
-            .from(schema.auditLog)
-            .where(eq(schema.auditLog.organizationId, organizationId))
-            .orderBy(desc(schema.auditLog.createdAt))
-            .limit(TENANT_EXPORT_MAX_ROWS + 1)) as Array<{
-            action: string;
-            targetType: string;
-            targetId: string | null;
-            actorEmail: string | null;
-            metadata: unknown;
-            createdAt: Date;
-          }>;
-          auditTruncated = rows.length > TENANT_EXPORT_MAX_ROWS;
-          auditLog = rows.slice(0, TENANT_EXPORT_MAX_ROWS).map((entry) => ({
-            action: entry.action,
-            targetType: entry.targetType,
-            targetId: entry.targetId,
-            actorEmail: entry.actorEmail,
-            metadata: entry.metadata,
-            createdAt: iso(entry.createdAt),
-          }));
-        }
-
-        const profile: TenantExportProfile = {
-          name: ctx.organization.name,
-          slug: ctx.organization.slug,
-          logo: ctx.organization.logo ?? null,
-          displayName: ctx.organization.displayName ?? null,
-          supportEmail: ctx.organization.supportEmail ?? null,
-          brandColor: ctx.organization.brandColor ?? null,
-          metadata: exportMetadata(ctx.organization.metadata),
-        };
-        const exportedMembers: TenantExportMember[] = members.flatMap((member) => {
-          const user = usersById.get(member.userId);
-          if (!user) return [];
-          return [
-            {
-              email: user.email,
-              name: user.name,
-              role: member.role,
-              createdAt: iso(member.createdAt),
-            },
-          ];
-        });
-        const exportedGroups: TenantExportGroup[] = groups.map((group) => ({
-          key: group.id,
-          name: group.name,
-          notes: group.notes,
-          devices: groupDevices.flatMap((link) => {
-            if (link.groupId !== group.id) return [];
-            const device = devicesById.get(link.deviceId);
-            if (!device) return [];
-            return [{ key: device.id, name: device.name, serial: device.serial }];
-          }),
-          policyKeys: groupPolicyKeys.get(group.id) ?? [],
-        }));
-        const exportedPolicies: TenantExportPolicy[] = policies.map((policy) => ({
-          key: policy.id,
-          name: policy.name,
-          notes: policy.notes,
-          configurations: policyConfigurations.get(policy.id) ?? {},
-        }));
-        const exportedApplications: TenantExportApplication[] = applications.map((application) => ({
-          key: application.id,
-          name: application.name,
-          platform: application.platform,
-          bundleId: application.bundleId,
-          version: application.version,
-          source: application.source,
-          manifestUrl: application.manifestUrl,
-          storeId: application.storeId,
-          fileName: application.fileName,
-          contentType: application.contentType,
-          size: application.size,
-          sha256: application.sha256,
-          r2Key: application.r2Key,
-          notes: application.notes,
-          groupKeys: applicationGroupKeys.get(application.id) ?? [],
-        }));
-        const exportedEnrollment: TenantExportEnrollment | undefined = enrollment
-          ? {
-              code: enrollment.code,
-              enabledApple: enrollment.enabledApple ?? true,
-              enabledWindows: enrollment.enabledWindows ?? true,
-              enabledAndroid: enrollment.enabledAndroid ?? false,
-              enabledAssetTag: enrollment.enabledAssetTag ?? false,
-              maxDevices: enrollment.maxDevices ?? 100,
-            }
-          : undefined;
-        const exportedPreRegistrations: TenantExportPreRegistration[] = preRegistrations.map(
-          (row) => ({
-            serial: row.serial,
-            name: row.name,
-            assetTag: row.assetTag,
-            notes: row.notes,
-            groupKey: row.groupId && groupKeys.has(row.groupId) ? row.groupId : null,
-          }),
-        );
-        const exportedCertificates: TenantExportCertificate[] = certificates.map((row) => ({
-          serial: row.serial,
-          enrollmentId: row.enrollmentId,
-          deviceKey: row.deviceId && devicesById.has(row.deviceId) ? row.deviceId : null,
-          notAfter: iso(row.notAfter),
-          revokedAt: row.revokedAt ? iso(row.revokedAt) : null,
-          createdAt: iso(row.createdAt),
-        }));
-
-        const bundle: TenantExportEnvelope = {
-          version: TENANT_EXPORT_VERSION,
-          exportedAt: new Date().toISOString(),
-          tenant: profile,
-          members: exportedMembers,
-          groups: exportedGroups,
-          policies: exportedPolicies,
-          applications: exportedApplications,
-          ...(exportedEnrollment ? { enrollment: exportedEnrollment } : {}),
-          preRegistrations: exportedPreRegistrations,
-          scepCertificates: exportedCertificates,
-          ...(auditLog ? { auditLog } : {}),
-          ...(auditTruncated !== undefined ? { auditTruncated } : {}),
-        };
-        return {
-          body: JSON.stringify(bundle, null, 2),
-          filename: `tenant-${safeFilename(ctx.organization.slug)}-${new Date()
-            .toISOString()
-            .slice(0, 10)}.json`,
-          version: TENANT_EXPORT_VERSION,
-          counts: {
-            members: exportedMembers.length,
-            groups: exportedGroups.length,
-            policies: exportedPolicies.length,
-            applications: exportedApplications.length,
-            preRegistrations: exportedPreRegistrations.length,
-            certificates: exportedCertificates.length,
-          },
-        };
       }),
+    runTenantBackup: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!hasOwnerRole(ctx.member.role))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only a tenant owner can back up this tenant" }),
+          );
+        const result = yield* runTenantBackupForTenant(db, storage, ctx.organization.id, "manual", {
+          actor: { userId: ctx.user.id, email: ctx.user.email },
+        }).pipe(
+          Effect.mapError(
+            () => new EnterpriseDbError({ message: "Could not record the backup run" }),
+          ),
+        );
+        return backupRunInfo(result);
+      }),
+    listTenantBackups: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!hasOwnerRole(ctx.member.role))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only a tenant owner can view tenant backups" }),
+          );
+        const rows = yield* listTenantBackupRuns(db, ctx.organization.id).pipe(
+          Effect.mapError(() => new EnterpriseDbError({ message: "Could not load backup runs" })),
+        );
+        return { backups: rows.map(backupRunInfo) };
+      }),
+    downloadTenantBackup: (request, tenantId, backupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!hasOwnerRole(ctx.member.role))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only a tenant owner can download tenant backups" }),
+          );
+        // Scoped lookup: an id from another tenant must look missing.
+        const run = yield* db.query.backupRun.findFirst({
+          where: { id: backupId, organizationId: ctx.organization.id },
+        });
+        if (!run || !run.r2Key || run.status !== "succeeded")
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Backup not found or not restorable" }),
+          );
+        const r2 = yield* R2Storage;
+        const object = yield* r2.get(run.r2Key);
+        const content = yield* Effect.tryPromise({
+          try: () => object.text(),
+          catch: () => new EnterpriseR2InternalError({ message: "Could not read the backup" }),
+        });
+        return {
+          content,
+          filename: `tenant-${safeFilename(ctx.organization.slug)}-backup-${iso(
+            run.startedAt,
+          ).slice(0, 10)}.json`,
+        };
+      }).pipe(Effect.provide(r2Layer)),
     importTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
@@ -2843,6 +2703,7 @@ export const createEnterpriseService = ({
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
+          requireMfa: config?.requireMfa ?? false,
         };
       }),
     patchSsoConfig: (request, tenantId, payload) =>
@@ -2852,6 +2713,7 @@ export const createEnterpriseService = ({
           enabled?: boolean;
           azureTenantId?: string | null;
           autoProvision?: boolean;
+          requireMfa?: boolean;
         };
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
@@ -2899,6 +2761,7 @@ export const createEnterpriseService = ({
               ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
               ...(body.azureTenantId !== undefined ? { azureTenantId: body.azureTenantId } : {}),
               ...(body.autoProvision !== undefined ? { autoProvision: body.autoProvision } : {}),
+              ...(body.requireMfa !== undefined ? { requireMfa: body.requireMfa } : {}),
               updatedAt: timestamp,
             })
             .where(eq(schema.ssoConfig.organizationId, ctx.organization.id));
@@ -2908,6 +2771,7 @@ export const createEnterpriseService = ({
             enabled: body.enabled ?? false,
             azureTenantId: body.azureTenantId ?? null,
             autoProvision: body.autoProvision ?? true,
+            requireMfa: body.requireMfa ?? false,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -2922,6 +2786,7 @@ export const createEnterpriseService = ({
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
+          requireMfa: config?.requireMfa ?? false,
         };
       }),
     listScimTokens: (request, tenantId) =>
@@ -3473,6 +3338,13 @@ export const createEnterpriseService = ({
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
         const enabled = canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
+        const androidRow = androidConfigured()
+          ? yield* loadAndroidEnterprise(db, organization.id)
+          : undefined;
+        const androidReady =
+          androidConfigured() &&
+          androidRow?.status === "active" &&
+          Boolean(androidRow.enterpriseName);
 
         // Only create a SCEP challenge when the Apple branch is actually
         // usable. A failure is reported as a platform error instead of failing
@@ -3506,6 +3378,7 @@ export const createEnterpriseService = ({
           appleEnabled: enrollment.enabledApple,
           windowsEnabled: enrollment.enabledWindows,
           androidEnabled: enrollment.enabledAndroid,
+          androidAvailable: androidReady,
           apnsConfigured: Boolean(apns?.topic),
           appleScepFailed,
         });
@@ -3569,7 +3442,35 @@ export const createEnterpriseService = ({
           android:
             !enabled || !enrollment.enabledAndroid
               ? { error: "Android enrollment is disabled! Contact your administrator." }
-              : "unavailable",
+              : !androidConfigured()
+                ? {
+                    error: "Android Enterprise is not configured! Contact your administrator.",
+                  }
+                : !androidReady
+                  ? {
+                      error: "Android Enterprise is not connected! Contact your administrator.",
+                    }
+                  : yield* createAndroidEnrollmentToken({
+                      db,
+                      config: androidConfig,
+                      organizationId: organization.id,
+                    }).pipe(
+                      Effect.map((token) => ({
+                        ...(token.qrCode ? { qrCode: token.qrCode } : {}),
+                        enrollmentToken: token.value,
+                        ...(token.policyName ? { policyName: token.policyName } : {}),
+                        ...(token.expiresAt ? { expiresAt: token.expiresAt } : {}),
+                      })),
+                      Effect.catch(() =>
+                        Effect.gen(function* () {
+                          yield* record("other", "Android enrollment token could not be created");
+                          return {
+                            error:
+                              "Android enrollment is temporarily unavailable! Contact your administrator.",
+                          };
+                        }),
+                      ),
+                    ),
           assetTag: enabled && enrollment.enabledAssetTag,
         };
       }),
@@ -3645,8 +3546,17 @@ export const createEnterpriseService = ({
               }).pipe(Effect.catch(() => Effect.succeed(null)))
             : null;
         const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
+        const androidRow = androidConfigured()
+          ? yield* loadAndroidEnterprise(db, ctx.organization.id)
+          : undefined;
+        const androidAvailable =
+          androidConfigured() &&
+          androidRow?.status === "active" &&
+          Boolean(androidRow.enterpriseName);
         return {
           ...rowEnrollment(enrollment),
+          androidAvailable,
+          androidEnterpriseName: androidRow?.enterpriseName ?? null,
           ...(windowsToken
             ? {
                 windowsDiscoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
@@ -3721,6 +3631,78 @@ export const createEnterpriseService = ({
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
         return { id: newId };
+      }),
+    getTenantAndroid: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        return yield* mapAndroidFailure(
+          androidEnterpriseInfo(db, ctx.organization.id, androidConfig),
+        );
+      }),
+    patchTenantAndroid: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { enabled?: boolean };
+        if (body.enabled !== undefined) {
+          yield* mapAndroidFailure(
+            setAndroidEnabled({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+              enabled: body.enabled,
+            }),
+          );
+          yield* audit(
+            ctx,
+            body.enabled ? "android.enterprise_enabled" : "android.enterprise_disabled",
+            "android_enterprise",
+            ctx.organization.id,
+          );
+        }
+        return ok;
+      }),
+    createAndroidSignup: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const result = yield* mapAndroidFailure(
+          createAndroidSignup({
+            db,
+            config: androidConfig,
+            authSecret,
+            origin,
+            organization: {
+              id: ctx.organization.id,
+              name: ctx.organization.name,
+              displayName: ctx.organization.displayName,
+              supportEmail: ctx.organization.supportEmail,
+            },
+          }),
+        );
+        return result;
+      }),
+    syncTenantAndroid: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!androidConfigured())
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Android Enterprise is not configured for this deployment.",
+            }),
+          );
+        const result = yield* mapAndroidFailure(
+          syncAndroidPoliciesForTenant({
+            db,
+            config: androidConfig,
+            organizationId: ctx.organization.id,
+          }),
+        );
+        yield* audit(ctx, "android.policy_sync", "android_enterprise", ctx.organization.id, {
+          devices: result.devices,
+          updated: result.updated,
+          skipped: result.skipped,
+          failed: result.failed,
+        });
+        return result;
       }),
     getApns: (request, tenantId) =>
       Effect.gen(function* () {
@@ -4144,6 +4126,43 @@ export const createEnterpriseService = ({
         };
         const action = body.action ?? "sync";
         let lockPin: string | undefined;
+        if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
+          yield* mapAndroidFailure(
+            syncAndroidPoliciesForTenant({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+              deviceIds: [device.id],
+            }),
+          );
+          yield* audit(ctx, "device.action", "device", deviceId, {
+            action,
+            platform: "android",
+          });
+          return ok;
+        }
+        if (device.proto === "android" && device.status === "enrolled" && action !== "sync") {
+          const command = yield* mapAndroidFailure(
+            issueAndroidCommand({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+              device: { id: device.id, dmIdentifier: device.dmIdentifier },
+              action,
+            }),
+          );
+          if (!command)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Android supports remote erase, restart and lock",
+              }),
+            );
+          yield* audit(ctx, "device.action", "device", deviceId, {
+            action,
+            platform: "android",
+          });
+          return ok;
+        }
         if (device.status === "enrolled") {
           if (action !== "sync") {
             const windowsCommand =
@@ -4567,6 +4586,11 @@ export const createEnterpriseService = ({
             .values(body.policies.map((policyId) => ({ groupId, policyId })));
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+        if (body.devices?.length || body.policies?.length)
+          yield* syncAndroidDevices(ctx.organization.id, [
+            ...(body.devices ?? []),
+            ...(yield* applePush.deviceIdsInGroups([groupId])),
+          ]);
         yield* audit(ctx, "group.created", "group", groupId, {
           name: body.name,
           kind,
@@ -4608,6 +4632,7 @@ export const createEnterpriseService = ({
         const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         // Devices in a deleted group lose policies and must re-sync.
         yield* applePush.pushAppleDevices(affectedDevices);
+        yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "group.deleted", "group", null, { ids: [...deleted] });
         return { deleted, failed };
       }),
@@ -4762,6 +4787,7 @@ export const createEnterpriseService = ({
         if (assignPolicies.length || unassignPolicies.length)
           affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
         yield* applePush.pushAppleDevices(affectedDevices);
+        yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "group.members_changed", "group", groupId, {
           assignDevices: body.assign?.devices?.length ?? 0,
           unassignDevices: body.unassign?.devices?.length ?? 0,
@@ -4895,6 +4921,7 @@ export const createEnterpriseService = ({
         const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         const pushed = yield* applePush.pushAppleDevices(affectedDevices);
         yield* reportPolicyDeliveryFailure(ctx.organization.id, { policyIds: deleted }, pushed);
+        yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.deleted", "policy", null, { ids: [...deleted] });
         return { deleted, failed };
       }),
@@ -4949,6 +4976,7 @@ export const createEnterpriseService = ({
         }
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
         yield* pushPolicyDevices(ctx.organization.id, policyId, affectedDevices);
+        yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body),
           configurations: Object.keys(body.configurations ?? {}),
@@ -5005,6 +5033,10 @@ export const createEnterpriseService = ({
             );
         yield* snapshotPolicy(ctx, policyId);
         yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
+        yield* syncAndroidDevices(
+          ctx.organization.id,
+          yield* applePush.deviceIdsInPolicies([policyId]),
+        );
         return ok;
       }),
     uploadPolicyApplication: (request, tenantId, policyId, payload) =>
@@ -5161,6 +5193,10 @@ export const createEnterpriseService = ({
             ),
           );
         yield* pushPolicyDevices(ctx.organization.id, policyId, [
+          ...assign.map((assignment) => assignment.id),
+          ...unassign.map((assignment) => assignment.id),
+        ]);
+        yield* syncAndroidDevices(ctx.organization.id, [
           ...assign.map((assignment) => assignment.id),
           ...unassign.map((assignment) => assignment.id),
         ]);
@@ -6239,6 +6275,31 @@ export const enterpriseHandlers = (
         ),
       ),
     )
+    .handle("runTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.runTenantBackup(request, params.tenantId),
+      ),
+    )
+    .handle("listTenantBackups", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listTenantBackups(request, params.tenantId),
+      ),
+    )
+    .handleRaw("downloadTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.downloadTenantBackup(request, params.tenantId, params.id),
+          (result: { content: string; filename: string }) =>
+            HttpServerResponse.text(result.content, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+              },
+            }),
+        ),
+      ),
+    )
     .handle("patchTenant", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchTenant(request, params.tenantId, payload),
@@ -6452,6 +6513,26 @@ export const enterpriseHandlers = (
     .handle("uploadApns", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.uploadApns(request, params.tenantId, payload),
+      ),
+    )
+    .handle("getTenantAndroid", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantAndroid(request, params.tenantId),
+      ),
+    )
+    .handle("patchTenantAndroid", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantAndroid(request, params.tenantId, payload),
+      ),
+    )
+    .handle("createAndroidSignup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createAndroidSignup(request, params.tenantId),
+      ),
+    )
+    .handle("syncTenantAndroid", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncTenantAndroid(request, params.tenantId),
       ),
     )
     .handle("search", ({ request, params, query }) =>

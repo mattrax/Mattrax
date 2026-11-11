@@ -24,6 +24,18 @@ type Session = {
 
 type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } }>;
 
+type PrivateReveal = {
+  kind: "totp-enrollment" | "recovery-codes";
+  revealId: string;
+  expiresAtMillis: number;
+  payload: unknown;
+};
+
+type AuthEnvelope<T> = {
+  value: T;
+  private?: PrivateReveal[];
+};
+
 const resetFlowKey = "mattrax:password-reset";
 const body = (value: unknown) => JSON.stringify(value);
 const authBody = (value: unknown) => body({ payload: value });
@@ -39,7 +51,7 @@ const userFromSession = (session: Session | null | undefined): AuthUser | undefi
       }
     : undefined;
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise<AuthEnvelope<T>> {
   const url = path.startsWith("/v1/") ? `/api${path}` : `/api/v1${path}`;
   const event = isServer ? getRequestEvent() : undefined;
   const headers = new Headers(init.headers);
@@ -60,6 +72,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     | {
         _tag?: string;
         value?: T;
+        private?: PrivateReveal[];
         error?: { _tag?: string; message?: string; reason?: string };
       }
     | undefined;
@@ -78,7 +91,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (data?.error?.reason) error.reason = data.error.reason;
     throw error;
   }
-  return (data && "_tag" in data && data._tag === "Success" ? data.value : data) as T;
+  return {
+    value: (data && "_tag" in data && data._tag === "Success" ? data.value : data) as T,
+    private: data?.private,
+  };
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await requestEnvelope<T>(path, init)).value;
 }
 
 const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
@@ -89,10 +109,17 @@ const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
   }
 };
 
-const completionUser = (completion: unknown): AuthUser | undefined => {
+type CompletionState = { user?: AuthUser; pending?: boolean };
+
+const completionState = (completion: unknown): CompletionState => {
   const value = completion as { _tag?: string; session?: Session } | undefined;
-  return value?._tag === "Authenticated" ? userFromSession(value.session) : undefined;
+  if (value?._tag === "Authenticated") return { user: userFromSession(value.session) };
+  if (value?._tag === "PendingAuthentication") return { pending: true };
+  throw new Error("Authentication did not complete");
 };
+
+const revealOf = <T>(envelope: AuthEnvelope<unknown>, kind: PrivateReveal["kind"]): T | undefined =>
+  envelope.private?.find((item) => item.kind === kind)?.payload as T | undefined;
 
 export const authClient = {
   useSession: () => {
@@ -135,9 +162,9 @@ export const authClient = {
           method: "POST",
           body: authBody(payload),
         });
-        const user = completionUser(completion);
-        if (!user) throw new Error("Additional authentication is required");
-        return { user };
+        const state = completionState(completion);
+        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+        return state;
       }),
   },
   emailCode: {
@@ -182,9 +209,9 @@ export const authClient = {
             secret: payload.code,
           }),
         });
-        const user = completionUser(response.completion);
-        if (!user) throw new Error("Additional authentication is required");
-        return { user };
+        const state = completionState(response.completion);
+        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+        return state;
       }),
   },
   signUp: {
@@ -203,9 +230,9 @@ export const authClient = {
           method: "POST",
           body: authBody({ email: payload.email, password: payload.password }),
         });
-        const user = completionUser(completion);
-        if (!user) throw new Error("Additional authentication is required");
-        return { user };
+        const state = completionState(completion);
+        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+        return state;
       }),
   },
   ssoSignIn: (token: string) =>
@@ -214,15 +241,76 @@ export const authClient = {
         method: "POST",
         body: authBody({ token }),
       });
-      const user = completionUser(completion);
-      if (!user) throw new Error("Additional authentication is required");
-      return { user };
+      const state = completionState(completion);
+      if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+      return state;
     }),
   signOut: (_options?: unknown) =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });
       return { status: "ok" as const };
     }),
+  verifyTotpPending: (code: string) =>
+    result(async () => {
+      const completion = await request<unknown>("/verifyTotpPending", {
+        method: "POST",
+        body: authBody({ code }),
+      });
+      return completionState(completion);
+    }),
+  recoverTotpPending: (code: string) =>
+    result(async () => {
+      const completion = await request<unknown>("/recoverTotpPending", {
+        method: "POST",
+        body: authBody({ code }),
+      });
+      return completionState(completion);
+    }),
+  beginTotpEnrollment: (accountName: string) =>
+    result(async () => {
+      const envelope = await requestEnvelope<{ enrollmentId: string; expiresAtMillis: number }>(
+        "/beginTotpEnrollment",
+        {
+          method: "POST",
+          body: authBody({ commandId: crypto.randomUUID(), accountName }),
+        },
+      );
+      const reveal = revealOf<{ manualKey: string; uri: string }>(envelope, "totp-enrollment");
+      if (!reveal) throw new Error("The authenticator enrollment details were not returned");
+      return { ...envelope.value, ...reveal };
+    }),
+  confirmTotpEnrollment: (payload: { enrollmentId: string; code: string }) =>
+    result(async () => {
+      const envelope = await requestEnvelope<{
+        enabled: boolean;
+        invalidation: unknown;
+      }>("/confirmTotpEnrollment", {
+        method: "POST",
+        body: authBody({ commandId: crypto.randomUUID(), ...payload }),
+      });
+      return {
+        ...envelope.value,
+        recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
+      };
+    }),
+  regenerateTotpRecoveryCodes: (proof: { password: string; code: string }) =>
+    result(async () => {
+      const envelope = await requestEnvelope<{ enabled: true }>("/regenerateTotpRecoveryCodes", {
+        method: "POST",
+        body: authBody({ commandId: crypto.randomUUID(), actionProof: JSON.stringify(proof) }),
+      });
+      return {
+        ...envelope.value,
+        recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
+      };
+    }),
+  disableTotp: (proof: { password: string; code: string }) =>
+    result(() =>
+      request<{ enabled: boolean; invalidation: unknown }>("/disableTotp", {
+        method: "POST",
+        body: authBody({ commandId: crypto.randomUUID(), actionProof: JSON.stringify(proof) }),
+      }),
+    ),
   updateUser: (payload: { name?: string; image?: string | null }) =>
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>

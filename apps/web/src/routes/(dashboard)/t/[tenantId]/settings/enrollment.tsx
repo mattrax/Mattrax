@@ -20,6 +20,10 @@ export default function EnrollmentSettingsPage() {
     queryKey: enterpriseKeys.apns(params.tenantId),
     queryFn: () => enterprise.getApns(params.tenantId),
   }));
+  const androidEnterprise = useQuery(() => ({
+    queryKey: enterpriseKeys.android(params.tenantId),
+    queryFn: () => enterprise.getTenantAndroid(params.tenantId),
+  }));
   const attempts = useQuery(() => ({
     queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
     queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
@@ -119,6 +123,16 @@ export default function EnrollmentSettingsPage() {
           <Show when={!enabled()}>
             <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               Enrollment is currently disabled. Enable at least one platform below.
+            </p>
+          </Show>
+          <Show when={android() && enrollment.data && !enrollment.data.androidAvailable}>
+            <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Android enrollment is enabled but Android Enterprise is{" "}
+              {androidEnterprise.data?.configured
+                ? "not connected"
+                : "not configured for this deployment"}
+              . Open Settings → Management to finish setup. The public enrollment page explains this
+              to devices.
             </p>
           </Show>
         </CardContent>

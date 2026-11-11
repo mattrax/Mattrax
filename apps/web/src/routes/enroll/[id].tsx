@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import {
   enterprise,
+  type AndroidEnrollment,
   type EnrollmentResponse,
   type PlatformEnrollment,
   type WindowsEnrollment,
@@ -127,9 +128,10 @@ export default function EnrollPage() {
 
 type Platform = "apple" | "windows" | "android";
 
-const isAvailable = (value: PlatformEnrollment | WindowsEnrollment) =>
+const isAvailable = (value: PlatformEnrollment | WindowsEnrollment | AndroidEnrollment) =>
   value === "available" ||
-  (typeof value === "object" && ("profile" in value || "discoveryUrl" in value));
+  (typeof value === "object" &&
+    ("profile" in value || "discoveryUrl" in value || "enrollmentToken" in value));
 
 function EnrollmentOptions(props: {
   id: string | undefined;
@@ -284,15 +286,72 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
   );
 }
 
-function AndroidPane(props: { id: string | undefined; android: PlatformEnrollment }) {
+function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment }) {
   if (typeof props.android === "object" && "error" in props.android)
     return <p class="text-center text-sm text-red-600">{props.android.error}</p>;
+  if (typeof props.android !== "object" || !("enrollmentToken" in props.android))
+    return (
+      <div class="space-y-3 text-center text-sm text-muted-foreground">
+        <p>
+          Android enrollment is not connected yet. Ask your administrator to connect Android
+          Enterprise before enrolling this device.
+        </p>
+      </div>
+    );
+  const [copied, setCopied] = createSignal(false);
+  const android = props.android;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(android.enrollmentToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied; the input is selectable as a fallback.
+    }
+  };
   return (
-    <div class="space-y-3 text-center text-sm text-muted-foreground">
-      <p>
-        Android enrollment isn't available yet. Ask your administrator for an Apple or Windows
-        device.
-      </p>
+    <div class="space-y-4">
+      <Show when={android.qrCode}>
+        {(qrCode) => (
+          <div class="flex flex-col items-center gap-2">
+            <QrCode value={qrCode()} label="Android enrollment QR code" />
+            <p class="text-center text-xs text-muted-foreground">
+              Scan this code from the Android setup wizard.
+            </p>
+          </div>
+        )}
+      </Show>
+      <div class="space-y-2">
+        <p class="text-sm font-medium text-stone-800">Enrollment token</p>
+        <div class="flex gap-2">
+          <Input
+            readonly
+            value={android.enrollmentToken}
+            onClick={(event) => event.currentTarget.select()}
+          />
+          <Button variant="outline" onClick={copy}>
+            {copied() ? "Copied" : "Copy"}
+          </Button>
+        </div>
+        <Show when={android.expiresAt}>
+          {(expiresAt) => (
+            <p class="text-xs text-muted-foreground">
+              This token expires {new Date(expiresAt()).toLocaleString()}.
+            </p>
+          )}
+        </Show>
+      </div>
+      <ol class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+        <li>Turn on a new or factory-reset Android device and connect it to Wi-Fi.</li>
+        <li>
+          On the welcome screen, tap six times to open the QR scanner and scan the code above.
+        </li>
+        <li>
+          If you cannot scan, choose to sign in with a Google account, enter{" "}
+          <span class="font-mono">afw#setup</span>, then enter the enrollment token.
+        </li>
+        <li>Follow the prompts to finish provisioning. The device appears in Mattrax shortly.</li>
+      </ol>
     </div>
   );
 }
