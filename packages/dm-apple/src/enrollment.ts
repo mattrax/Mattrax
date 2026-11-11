@@ -22,6 +22,8 @@ export type AppleEnrollmentProfileOptions = {
   readonly challenge: string;
   readonly displayName?: string;
   readonly identifier?: string;
+  /** Stable ADE profile UUID; defaults to the shared enrollment profile UUID. */
+  readonly profileUuid?: string;
 };
 
 export type AppleEnrollmentProfile = {
@@ -45,7 +47,7 @@ export const buildAppleEnrollmentProfile = (
   // payload instead of installing a second management profile.
   const scepUuid = "6D7C9A0E-1B2F-4C3D-8E4A-5F6B7C8D9E0F";
   const mdmUuid = "A1B2C3D4-E5F6-4789-9ABC-DEF012345678";
-  const profileUuid = "F0E1D2C3-B4A5-4968-8776-655443322110";
+  const profileUuid = options.profileUuid ?? "F0E1D2C3-B4A5-4968-8776-655443322110";
   const displayName = options.displayName ?? `${options.organizationName} Enrollment`;
 
   return {

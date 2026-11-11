@@ -275,6 +275,7 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
       // Clipboard access can be denied; the input is selectable as a fallback.
     }
   };
+  const autopilot = props.windows.autopilot;
   return (
     <div class="space-y-3">
       <p class="text-sm text-muted-foreground">
@@ -293,6 +294,24 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
           : " after a short period"}
         ; reload this page to generate a fresh one.
       </p>
+      <Show when={autopilot?.configured}>
+        <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+          <p class="font-medium">Autopilot is configured for this tenant</p>
+          <p class="mt-1">
+            Register the device hardware hash in Settings → Management, assign an Autopilot
+            deployment profile, then reset the device. Autopilot will use this tenant's enrollment
+            endpoint during OOBE.
+          </p>
+          <Show when={autopilot?.federated}>
+            <p class="mt-1">
+              Entra federated sign-in is enabled for realm{" "}
+              <span class="font-mono">{autopilot?.realm}</span>. The device must obtain an Entra
+              token for this tenant; Mattrax validates its issuer, audience, tenant and signature
+              before issuing an MDM certificate.
+            </p>
+          </Show>
+        </div>
+      </Show>
       <p class="text-sm text-muted-foreground">
         On the device, open Settings &gt; Accounts &gt; Access work or school &gt; Connect and use
         the URL above. Reopen this page if the device reports that the enrollment link has expired.

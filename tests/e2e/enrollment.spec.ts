@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapTenant, createTenant, gotoHydrated, stepUpGrant } from "./helpers";
 
 test.describe("device enrollment", () => {
   test("renders the public enrollment page and hides disabled platforms", async ({ page }) => {
@@ -93,8 +93,12 @@ test.describe("device enrollment", () => {
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await expect(page.locator('[data-slot="card-title"]').first()).toContainText(/enroll in/i);
 
+    const grant = await stepUpGrant(page, "tenant-delete");
     await expect(
-      api<{ status: string }>(page, `/api/v1/tenants/${tenant.id}`, { method: "DELETE" }),
+      api<{ status: string }>(page, `/api/v1/tenants/${tenant.id}`, {
+        method: "DELETE",
+        headers: { "x-mattrax-step-up": grant },
+      }),
     ).resolves.toEqual({ status: "ok" });
     const removed = await page.request.get(`/api/v1/tenants/${tenant.id}/devices/search`);
     expect(removed.status()).toBe(404);

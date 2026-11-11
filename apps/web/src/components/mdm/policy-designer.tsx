@@ -47,14 +47,19 @@ import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 import {
   collectionProperties,
+  loadCollection,
   loadManifest,
-  loadPlatform,
+  loadPlatformIndex,
+  loadSearchIndex,
   resetPlatformCache,
+  searchIndexProperties,
   type CatalogManifest,
   type Collection,
-  type PlatformData,
+  type CollectionSummary,
   type PlatformId,
+  type PlatformIndex,
   type Property,
+  type SearchIndex,
   typeLabel,
 } from "~/lib/policy-designer/catalog";
 import {
@@ -75,6 +80,9 @@ import { cn } from "~/lib/utils";
 
 const keyOf = (collection: { id: string; name: string }) => `${collection.id}#${collection.name}`;
 
+/** Selections store `${collection.id}#${collection.name}`; loaders need just the id. */
+const collectionIdOf = (selectionId: string) => selectionId.split("#")[0] ?? selectionId;
+
 const safeId = (value: string) => value.replace(/[^A-Za-z0-9_-]+/g, "-");
 
 /** DOM ids include platform, scope and the serialized value key, as requested. */
@@ -91,7 +99,11 @@ const sectionLabel = (property: Property) => {
 };
 
 /** The catalogue ships without groups on some platforms; keep discovery useful. */
-const collectionGroup = (collection: Collection) => {
+const collectionGroup = (collection: {
+  platform: PlatformId;
+  kind: Collection["kind"];
+  group?: string;
+}) => {
   if (collection.group?.trim()) return collection.group.trim();
   if (collection.platform === "apple")
     return collection.kind === "declaration" ? "DDM declarations" : "Configuration profiles";
@@ -205,8 +217,20 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [activeKey, setActiveKey] = createSignal<string | null>(null);
   const [manifest, setManifest] = createSignal<CatalogManifest | null>(null);
   const [manifestError, setManifestError] = createSignal<string | null>(null);
-  const [catalogs, setCatalogs] = createSignal<Partial<Record<PlatformId, PlatformData>>>({});
-  const [catalogErrors, setCatalogErrors] = createSignal<Partial<Record<PlatformId, string>>>({});
+  const [indexes, setIndexes] = createSignal<Partial<Record<PlatformId, PlatformIndex>>>({});
+  const [indexErrors, setIndexErrors] = createSignal<Partial<Record<PlatformId, string>>>({});
+  // Windows collections arrive one file at a time; the cache is keyed by
+  // `${platform}:${collectionId}` so a loaded collection stays available when
+  // the user switches platforms and comes back.
+  const [collections, setCollections] = createSignal<Record<string, Collection>>({});
+  const [collectionErrors, setCollectionErrors] = createSignal<Record<string, string>>({});
+  const [loadingCollections, setLoadingCollections] = createSignal<Record<string, boolean>>({});
+  const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
+    {},
+  );
+  const [searchIndexErrors, setSearchIndexErrors] = createSignal<
+    Partial<Record<PlatformId, string>>
+  >({});
   const [selectionMap, setSelectionMap] = createSignal<Record<PlatformId, Selection[]>>({
     apple: [],
     android: [],
@@ -259,29 +283,75 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     }),
   );
 
-  const data = () => catalogs()[platform()] ?? null;
-  const catalogError = () => catalogErrors()[platform()] ?? null;
-  // A platform is loading until its catalogue has arrived or failed.
+  const data = () => indexes()[platform()] ?? null;
+  const catalogError = () => indexErrors()[platform()] ?? null;
+  // A platform is loading until its index has arrived or failed.
   const loading = () => !data() && !catalogError();
+
+  const collectionCacheKey = (target: PlatformId, collectionId: string) =>
+    `${target}:${collectionId}`;
+
+  /**
+   * Load one collection's properties, remembering in-flight and failed loads.
+   * Untracked so calling it from an effect does not subscribe the effect to the
+   * collection cache.
+   */
+  const ensureCollection = (collectionId: string, target?: PlatformId) =>
+    untrack(() => {
+      const targetPlatform = target ?? platform();
+      const cacheKey = collectionCacheKey(targetPlatform, collectionId);
+      if (collections()[cacheKey] || loadingCollections()[cacheKey]) return;
+      setLoadingCollections((current) => ({ ...current, [cacheKey]: true }));
+      setCollectionErrors((current) => {
+        if (!(cacheKey in current)) return current;
+        const next = { ...current };
+        delete next[cacheKey];
+        return next;
+      });
+      void loadCollection(targetPlatform, collectionId)
+        .then((collection) => setCollections((current) => ({ ...current, [cacheKey]: collection })))
+        .catch((error) =>
+          setCollectionErrors((current) => ({ ...current, [cacheKey]: errorMessage(error) })),
+        )
+        .finally(() =>
+          setLoadingCollections((current) => {
+            const next = { ...current };
+            delete next[cacheKey];
+            return next;
+          }),
+        );
+    });
+
+  // A saved draft stores its properties, but loading the catalogue entry keeps
+  // counts, search matches and reset actions working without opening each one.
+  const ensureDraftCollections = (target: PlatformId) =>
+    untrack(() => {
+      for (const selection of selectionMap()[target] ?? [])
+        ensureCollection(collectionIdOf(selection.collectionId), target);
+    });
 
   const beginLoad = (target: PlatformId, force = false) => {
     if (force) resetPlatformCache(target);
-    setCatalogErrors((current) => {
+    setIndexErrors((current) => {
       const next = { ...current };
       delete next[target];
       return next;
     });
-    if (!force && catalogs()[target]) return;
+    if (!force && indexes()[target]) {
+      ensureDraftCollections(target);
+      return;
+    }
     const id = ++requestId;
     requestIds.set(target, id);
-    void loadPlatform(target)
+    void loadPlatformIndex(target)
       .then((value) => {
         if (requestIds.get(target) !== id) return;
-        setCatalogs((current) => ({ ...current, [target]: value }));
+        setIndexes((current) => ({ ...current, [target]: value }));
+        ensureDraftCollections(target);
       })
       .catch((error) => {
         if (requestIds.get(target) !== id) return;
-        setCatalogErrors((current) => ({ ...current, [target]: errorMessage(error) }));
+        setIndexErrors((current) => ({ ...current, [target]: errorMessage(error) }));
       });
   };
 
@@ -291,7 +361,26 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       void loadManifest()
         .then(setManifest)
         .catch((error) => setManifestError(errorMessage(error)));
-    beginLoad(platform(), true);
+    const target = platform();
+    setIndexes((current) => {
+      const next = { ...current };
+      delete next[target];
+      return next;
+    });
+    setSearchIndexes((current) => {
+      const next = { ...current };
+      delete next[target];
+      return next;
+    });
+    setSearchIndexErrors((current) => {
+      const next = { ...current };
+      delete next[target];
+      return next;
+    });
+    setCollections({});
+    setCollectionErrors({});
+    setLoadingCollections({});
+    beginLoad(target, true);
   };
 
   const applyPlatform = (next: PlatformId, discard: boolean) => {
@@ -408,12 +497,39 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       if (
         value.active &&
         value.data.collections.some((collection) => keyOf(collection) === value.active)
-      )
+      ) {
+        ensureCollection(collectionIdOf(value.active));
         return;
+      }
       const first = value.selections[0];
       setActiveKey(first ? first.collectionId : null);
+      if (first) ensureCollection(collectionIdOf(first.collectionId));
     },
   );
+
+  // Property search needs the per-property text, which Windows ships separately.
+  // Fetch it on the first non-empty query (never on page load) and keep it for
+  // the rest of the session.
+  createEffect(
+    () => ({ platform: platform(), term: query().trim() }),
+    (value) => {
+      if (!value.term) return;
+      untrack(() => {
+        if (searchIndexes()[value.platform] || searchIndexErrors()[value.platform]) return;
+        void loadSearchIndex(value.platform)
+          .then((index) => setSearchIndexes((current) => ({ ...current, [value.platform]: index })))
+          .catch((error) =>
+            setSearchIndexErrors((current) => ({
+              ...current,
+              [value.platform]: errorMessage(error),
+            })),
+          );
+      });
+    },
+  );
+
+  const searchIndexLoading = () =>
+    query().trim() !== "" && !searchIndexes()[platform()] && !searchIndexErrors()[platform()];
 
   const searchEntries = createMemo(() => {
     const term = query().trim().toLowerCase();
@@ -421,18 +537,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     if (!term || !current) return null;
     const tokens = term.split(/\s+/).filter(Boolean);
     const matches = (text: string) => tokens.every((token) => text.includes(token));
-    const entries = new Map<string, { collection: Collection; matchKeys: Set<string> }>();
+    const searchIndex = searchIndexes()[platform()];
+    const propertyMatches = searchIndex ? searchIndexProperties(searchIndex, term) : null;
+    const entries = new Map<string, { collection: CollectionSummary; matchKeys: Set<string> }>();
     for (const collection of current.collections) {
       if (collection.platform !== platform()) continue;
       const collectionMatches = matches(
         `${collection.name} ${collection.identifier} ${collection.group ?? ""}`.toLowerCase(),
       );
-      const matchKeys = new Set<string>();
-      for (const property of collectionProperties(collection)) {
-        const text =
-          `${property.name} ${property.key} ${property.address ?? ""} ${property.description ?? ""}`.toLowerCase();
-        if (matches(text)) matchKeys.add(valueKey(property, platform()));
-      }
+      const matchKeys = new Set(propertyMatches?.get(collection.id) ?? []);
       if (!collectionMatches && matchKeys.size === 0) continue;
       entries.set(keyOf(collection), { collection, matchKeys });
     }
@@ -458,7 +571,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   });
 
   const browseGroups = createMemo(() => {
-    const groups = new Map<string, Array<{ collection: Collection; matchCount: number }>>();
+    const groups = new Map<string, Array<{ collection: CollectionSummary; matchCount: number }>>();
     for (const item of browseItems()) {
       const label = collectionGroup(item.collection);
       const list = groups.get(label) ?? [];
@@ -508,10 +621,26 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     },
   );
 
-  const active = createMemo<Collection | undefined>(() => {
+  const activeSummary = createMemo<CollectionSummary | undefined>(() => {
     const key = activeKey();
     return key ? data()?.collections.find((collection) => keyOf(collection) === key) : undefined;
   });
+  const activeCollection = createMemo<Collection | undefined>(() => {
+    const key = activeKey();
+    return key ? collections()[collectionCacheKey(platform(), collectionIdOf(key))] : undefined;
+  });
+  const activeCollectionLoading = () => {
+    const key = activeKey();
+    return key
+      ? Boolean(loadingCollections()[collectionCacheKey(platform(), collectionIdOf(key))])
+      : false;
+  };
+  const activeCollectionError = () => {
+    const key = activeKey();
+    return key
+      ? collectionErrors()[collectionCacheKey(platform(), collectionIdOf(key))]
+      : undefined;
+  };
   const selected = createMemo(
     () => new Set(selections().map((selection) => selection.collectionId)),
   );
@@ -663,9 +792,34 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return true;
   };
 
-  const addByKey = (key: string) => {
-    const collection = data()?.collections.find((item) => keyOf(item) === key);
-    return collection ? addCollection(collection) : false;
+  const addByKey = async (key: string, target: PlatformId = platform()) => {
+    const id = collectionIdOf(key);
+    const cacheKey = collectionCacheKey(target, id);
+    let collection = collections()[cacheKey];
+    if (!collection) {
+      try {
+        collection = await loadCollection(target, id);
+      } catch (error) {
+        setNotice(`Could not load ${key}: ${errorMessage(error)}`);
+        return false;
+      }
+      setCollections((current) => ({ ...current, [cacheKey]: collection }));
+    }
+    if (target !== platform()) return false;
+    return addCollection(collection);
+  };
+
+  /** Add the collection open in the editor, loading it first if necessary. */
+  const addActiveCollection = () => {
+    const loaded = activeCollection();
+    if (loaded) {
+      addCollection(loaded);
+      return;
+    }
+    const key = activeKey();
+    if (!key) return;
+    setLiveMessage(`Loading ${activeSummary()?.name ?? "settings"}…`);
+    void addByKey(key);
   };
 
   const focusEditor = () =>
@@ -743,12 +897,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   };
 
   const applyTemplate = (keys: string[]) => {
-    const added = keys.filter((key) => addByKey(key)).length;
-    setNotice(
-      added === keys.length
-        ? "Template applied. Tune the settings, then export or save."
-        : `Applied ${added} of ${keys.length} collections; the rest were not in this catalogue.`,
-    );
+    const target = platform();
+    void (async () => {
+      let added = 0;
+      for (const key of keys) if (await addByKey(key, target)) added += 1;
+      if (target !== platform()) return;
+      setNotice(
+        added === keys.length
+          ? "Template applied. Tune the settings, then export or save."
+          : `Applied ${added} of ${keys.length} collections; the rest were not in this catalogue.`,
+      );
+    })();
   };
 
   const download = () => {
@@ -842,6 +1001,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const selectCollection = (key: string) => {
     setActiveKey(key);
+    ensureCollection(collectionIdOf(key));
     setMobileView("editor");
     setFilterQuery("");
     setFilterMode("all");
@@ -858,13 +1018,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setFilterMode("all");
     setActiveKey(issue.collectionId);
     setMobileView("editor");
-    const collection = data()?.collections.find((item) => keyOf(item) === issue.collectionId);
-    const property = collection
-      ? collectionProperties(collection).find(
-          (item) => valueKey(item, platform()) === issue.propertyKey,
-        )
-      : undefined;
-    if (property && collection) {
+    ensureCollection(collectionIdOf(issue.collectionId));
+    // Selections carry their own properties, so the section can be revealed
+    // without waiting for the catalogue entry to load.
+    const selection = selections().find((item) => item.collectionId === issue.collectionId);
+    const property = selection?.properties.find(
+      (item) => valueKey(item, platform()) === issue.propertyKey,
+    );
+    if (property) {
       const key = `${issue.collectionId}:${sectionLabel(property)}`;
       setCollapsedSections((current) => ({ ...current, [key]: false }));
     }
@@ -1302,8 +1463,21 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
               <p class="text-[11px] text-stone-600" aria-live="polite">
-                {data() ? resultLabel() : loadingLabel()}
+                {!data()
+                  ? loadingLabel()
+                  : searchIndexLoading()
+                    ? "Searching settings…"
+                    : resultLabel()}
               </p>
+              <Show when={searchIndexErrors()[platform()]}>
+                <button
+                  type="button"
+                  onClick={retryCatalogue}
+                  class="shrink-0 text-[10px] text-red-700 underline underline-offset-2"
+                >
+                  Search unavailable · Retry
+                </button>
+              </Show>
               <Show when={deprecatedCount() > 0}>
                 <label class="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-stone-600">
                   <input
@@ -1440,7 +1614,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     when={browseItems().length > 0}
                     fallback={
                       <p class="px-3 pb-3 text-[11px] text-stone-600">
-                        No settings match that search.
+                        {searchIndexLoading()
+                          ? "Searching settings…"
+                          : "No settings match that search."}
                       </p>
                     }
                   >
@@ -1556,7 +1732,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           aria-label="Collection editor"
         >
           <Show
-            when={active()}
+            when={activeSummary()}
             fallback={
               <div class="mx-auto w-full max-w-xl px-5 py-8">
                 <h2 class="text-base font-semibold tracking-tight text-stone-900">
@@ -1638,13 +1814,21 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       <p class="mt-0.5 truncate font-mono text-[11px] text-stone-600">
                         {collection().identifier}
                         <Show when={collection().minOs}> · {collection().minOs}+</Show>
+                        <Show when={activeCollectionLoading()}>
+                          <span class="text-stone-500"> · Loading settings…</span>
+                        </Show>
                       </p>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
                       <Show
                         when={activeSelection()}
                         fallback={
-                          <Button size="sm" onClick={() => addCollection(collection())}>
+                          <Button
+                            size="sm"
+                            onClick={addActiveCollection}
+                            disabled={Boolean(activeCollectionError())}
+                            title={activeCollectionError()}
+                          >
                             <Plus class="mr-1 size-3.5" /> Add to policy
                           </Button>
                         }
@@ -1735,21 +1919,39 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     fallback={
                       <div class="mx-auto w-full max-w-2xl px-5 py-6">
                         <p class="text-[13px] leading-relaxed text-stone-600">
-                          {collection().description ||
-                            "This collection is not part of your policy yet."}
+                          {activeCollection()?.description ||
+                            (activeCollectionLoading()
+                              ? "Loading this collection from the catalogue…"
+                              : "This collection is not part of your policy yet.")}
                         </p>
-                        <p class="mt-3 rounded-lg border border-dashed border-stone-300 px-3 py-2.5 text-[12px] text-stone-600">
-                          Add it to the policy to configure{" "}
-                          {collection()
-                            .properties.filter((property) => property.category !== "Envelope")
-                            .length.toLocaleString()}{" "}
-                          {collection().properties.filter(
-                            (property) => property.category !== "Envelope",
-                          ).length === 1
-                            ? "setting"
-                            : "settings"}
-                          .
-                        </p>
+                        <Show when={activeCollectionError()}>
+                          {(error) => (
+                            <p role="alert" class="mt-2 text-xs text-red-700">
+                              {error()}{" "}
+                              <button
+                                type="button"
+                                class="underline underline-offset-2"
+                                onClick={() => ensureCollection(collectionIdOf(activeKey() ?? ""))}
+                              >
+                                Retry
+                              </button>
+                            </p>
+                          )}
+                        </Show>
+                        <Show when={activeCollection()}>
+                          {(loaded) => {
+                            const settings = () =>
+                              loaded().properties.filter(
+                                (property) => property.category !== "Envelope",
+                              ).length;
+                            return (
+                              <p class="mt-3 rounded-lg border border-dashed border-stone-300 px-3 py-2.5 text-[12px] text-stone-600">
+                                Add it to the policy to configure {settings().toLocaleString()}{" "}
+                                {settings() === 1 ? "setting" : "settings"}.
+                              </p>
+                            );
+                          }}
+                        </Show>
                       </div>
                     }
                   >

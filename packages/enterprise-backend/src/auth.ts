@@ -1,7 +1,19 @@
-import { Auth, Email, EmailDelivery, Hooks, Password, Proofs, Sessions, Totp } from "@yielded/auth";
+import {
+  Auth,
+  Email,
+  EmailDelivery,
+  Hooks,
+  Passkey,
+  Password,
+  Proofs,
+  Sessions,
+  Totp,
+} from "@yielded/auth";
+import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
 import {
   appSessionConfiguration,
   makeAppAuth,
+  PASSKEY_MODULE_ID,
   TOTP_MODULE_ID,
   type AuthClaims,
 } from "@mattrax/enterprise-domain";
@@ -11,15 +23,88 @@ import {
   authRequirement,
   authStorage,
   AuthPersistenceConfig,
+  schema,
   totpMapping,
 } from "@mattrax/enterprise-core";
 import { DateTime } from "effect";
 import { Effect, Layer, Redacted } from "effect";
 import { SecureRandom } from "effect/crypto";
+import { and, eq } from "drizzle-orm";
 import { provisionEmailCredential } from "./emailCredential.ts";
+import { makeStepUpServiceLive, verifyStepUpGrant } from "./stepUp.ts";
 import { signToken } from "./tokens.ts";
 
 export const sessionCookie = "__Host-mattrax_session";
+
+/** Short-lived step-up grant. Bound to the session, account and action set. */
+export const stepUpCookie = "__Host-mattrax_stepup";
+
+/** In-flight WebAuthn step-up challenge binding. */
+export const stepUpFlowCookie = "__Host-mattrax_stepup_flow";
+
+/**
+ * Derive the WebAuthn relying-party profile from the deployment origin. The
+ * origin is the only source of truth: there is no per-request or client-supplied
+ * RP id. Origins that cannot host WebAuthn (an IP literal, or an origin whose
+ * host is not a registrable domain) fall back to an unusable sentinel so auth
+ * still boots while passkeys fail closed.
+ */
+export const passkeyProfile = (
+  origin: string | undefined,
+  trustedOrigins: ReadonlyArray<string> = [],
+) => {
+  const fallback = {
+    id: "passkeys.invalid",
+    name: "Mattrax",
+    origins: ["https://passkeys.invalid"],
+    developmentLocalhost: false,
+  } as const;
+
+  if (!origin) return fallback;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return fallback;
+  }
+
+  const hostname = parsed.hostname;
+  const developmentLocalhost = hostname === "localhost";
+  const validHostname =
+    developmentLocalhost ||
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(hostname);
+  if (!validHostname) return fallback;
+  if (!developmentLocalhost && parsed.protocol !== "https:") return fallback;
+
+  const origins = new Set<string>([parsed.origin]);
+  for (const candidate of trustedOrigins) {
+    let other: URL;
+    try {
+      other = new URL(candidate);
+    } catch {
+      continue;
+    }
+    const sameSite =
+      other.hostname === hostname ||
+      (!developmentLocalhost && other.hostname.endsWith(`.${hostname}`));
+    const schemeOk = developmentLocalhost
+      ? other.protocol === "https:" ||
+        (other.hostname === "localhost" && other.protocol === "http:")
+      : other.protocol === "https:";
+    // A different registrable domain cannot share this RP id, so it is ignored
+    // rather than silently weakening the allowlist.
+    if (sameSite && schemeOk && other.origin === other.href.replace(/\/$/, ""))
+      origins.add(other.origin);
+  }
+
+  return {
+    id: hostname,
+    name: "Mattrax",
+    origins: [...origins],
+    developmentLocalhost,
+  } as const;
+};
 
 /** Application-owned AES-256 key material for TOTP secret envelopes. */
 export const deriveTotpSecretKey = async (authSecret: string) =>
@@ -51,6 +136,8 @@ export type AuthLiveOptions = {
   readonly authSecret?: string;
   /** Canonical public origin used in verification links. */
   readonly origin?: string;
+  /** Extra browser origins that may share the WebAuthn relying party. */
+  readonly trustedOrigins?: ReadonlyArray<string>;
 };
 
 export const makeAuthLive = ({
@@ -61,6 +148,7 @@ export const makeAuthLive = ({
   emailFrom,
   authSecret,
   origin,
+  trustedOrigins,
 }: AuthLiveOptions) => {
   const ClaimsLive = Layer.effect(
     appAuth.strategies.password.SessionClaims,
@@ -138,10 +226,45 @@ export const makeAuthLive = ({
     Hooks.LifecycleHooks,
     Effect.gen(function* () {
       const db = yield* Db;
+
+      /**
+       * Mirror passkey ownership onto `user.passkey_enabled` so the sign-in
+       * requirement (which only sees the subject row) accepts a passkey as an
+       * MFA factor. The credential row is committed before this hook runs; a
+       * database trigger keeps the column correct even if this update fails.
+       */
+      const syncPasskeyFactor = (subjectId: string) =>
+        Effect.gen(function* () {
+          const remaining = yield* db
+            .select({ credentialId: schema.authPasskeyCredentials.credentialId })
+            .from(schema.authPasskeyCredentials)
+            .where(
+              and(
+                eq(schema.authPasskeyCredentials.subjectId, subjectId),
+                eq(schema.authPasskeyCredentials.active, true),
+              ),
+            )
+            .limit(1)
+            .pipe(Effect.catch(() => Effect.succeed([])));
+          yield* db
+            .update(schema.user)
+            .set({ passkeyEnabled: remaining.length > 0 })
+            .where(eq(schema.user.id, subjectId))
+            .pipe(Effect.catch(() => Effect.void));
+        });
+
       return Hooks.LifecycleHooks.of({
         before: () => Effect.void,
         after: (event) =>
           Effect.gen(function* () {
+            if (event.snapshot.action === "credential-change" && event.snapshot.subjectId) {
+              const operation = event.snapshot.operation;
+              if (
+                operation === `${PASSKEY_MODULE_ID}/passkey/enrollment` ||
+                operation === `${PASSKEY_MODULE_ID}/passkey/remove`
+              )
+                yield* syncPasskeyFactor(event.snapshot.subjectId);
+            }
             if (
               (event.snapshot.action === "registration" || event.snapshot.action === "sign-in") &&
               event.snapshot.subjectId
@@ -260,6 +383,101 @@ export const makeAuthLive = ({
   const EmailClaimsLive = Layer.effect(
     appAuth.strategies.email.SessionClaims,
     Effect.succeed({ resolve: ({ subjectId }: { subjectId: string }) => resolveClaims(subjectId) }),
+  );
+
+  /**
+   * Relying-party configuration is deployment configuration. `origin` is the
+   * canonical public origin; `trustedOrigins` may add same-site origins. The
+   * verifier and every passkey strategy read this same layer, so a challenge
+   * issued by one facet is always verified against the same RP id.
+   */
+  const PasskeyConfigLive = Passkey.PasskeyConfig.layer(passkeyProfile(origin, trustedOrigins));
+
+  const PasskeyProtocolLive = PasskeyServer.layer.pipe(Layer.provide(PasskeyConfigLive));
+
+  const PasskeyClaimsLive = Layer.effect(
+    appAuth.strategies.passkey.SessionClaims,
+    Effect.succeed({ resolve: ({ subjectId }: { subjectId: string }) => resolveClaims(subjectId) }),
+  );
+
+  /**
+   * Passkey enrollment and removal require independent, recent action
+   * evidence. The handler gates both behind a step-up grant; this owner turns
+   * the session's recorded proofs into the evidence the library re-assesses
+   * under the subject lock.
+   */
+  const PasskeyActionEvidenceLive = Layer.effect(
+    Passkey.PasskeyActionEvidence,
+    Effect.gen(function* () {
+      const db = yield* Db;
+
+      return Passkey.PasskeyActionEvidence.of({
+        verify: ({ invocation, challenge, proof }) =>
+          Effect.gen(function* () {
+            if (invocation._tag !== "Authenticated")
+              return yield* Passkey.PasskeyActionRequired.make({});
+            if (invocation.subjectId !== challenge.revision.subjectId)
+              return yield* Passkey.PasskeyActionRequired.make({});
+
+            const user = yield* db.query.user
+              .findFirst({ where: { id: invocation.subjectId } })
+              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+            if (!user || user.disabled) return yield* Passkey.PasskeyActionRequired.make({});
+
+            const firstCredential = challenge.revision.credentials[0]?.credentialId;
+            if (firstCredential === undefined) return yield* Passkey.PasskeyActionRequired.make({});
+
+            // A step-up grant proves recent possession even when the session's
+            // own sign-in is older than the management freshness window. It is
+            // bound to this account, session and the enroll/remove action.
+            const action = challenge.action === "remove" ? "passkey-remove" : "passkey-enroll";
+            const steppedUp =
+              proof !== undefined && invocation.sessionId !== undefined && authSecret !== undefined
+                ? yield* verifyStepUpGrant(authSecret, Redacted.value(proof), {
+                    subjectId: invocation.subjectId,
+                    sessionId: invocation.sessionId,
+                    action,
+                  })
+                : false;
+            const verifiedAt = steppedUp ? yield* DateTime.now : undefined;
+
+            const assurance = invocation.assurance;
+            const proofs = (assurance.evidence ?? []).map((item) => ({
+              method: item.method,
+              credentialId:
+                challenge.revision.credentials[item.credentialOrdinal ?? 0]?.credentialId ??
+                firstCredential,
+              factors: [...item.factors],
+              userVerified: item.userVerified,
+              phishingResistant: item.phishingResistant,
+              verifiedAt: verifiedAt ?? item.verifiedAt,
+            }));
+            if (proofs.length === 0)
+              proofs.push({
+                method: assurance.method,
+                credentialId: firstCredential,
+                factors: [...assurance.factors],
+                userVerified: false,
+                phishingResistant: false,
+                verifiedAt: verifiedAt ?? assurance.authenticatedAt,
+              });
+
+            return {
+              evidence: Sessions.AuthenticationEvidence.make({
+                revision: challenge.revision,
+                flowId: Sessions.AuthenticationFlowId.make(challenge.flowId),
+                bindingDigest: challenge.bindingDigest,
+                proofs: proofs as any,
+              }),
+              // Re-assess against the baseline assurance, not the current
+              // account requirement: adding a passkey flips the account to
+              // MFA, which the session that enrolled it cannot retroactively
+              // satisfy. Freshness (and the step-up grant) carry the strength.
+              requirement: authRequirement,
+            };
+          }),
+      });
+    }),
   );
 
   const EmailReturnTargetsLive = Email.EmailReturnTargets.exactRoutes([
@@ -513,6 +731,10 @@ export const makeAuthLive = ({
     Layer.provide(Password.PasswordAttemptLimiter.layer),
     Layer.provide(EmailClaimsLive),
     Layer.provide(EmailReturnTargetsLive),
+    Layer.provide(PasskeyConfigLive),
+    Layer.provide(PasskeyProtocolLive),
+    Layer.provide(PasskeyClaimsLive),
+    Layer.provide(PasskeyActionEvidenceLive),
     Layer.provide(cryptoLayer),
   );
 
@@ -547,7 +769,21 @@ export const makeAuthLive = ({
           ),
         );
 
-  return proofSchedulerLayer
-    ? withRequestBinding.pipe(Layer.provide(proofSchedulerLayer))
-    : withRequestBinding;
+  /**
+   * Step-up factor verification shares the auth runtime's private storage
+   * services. It is merged into this layer's output so tenant/account handlers
+   * can require recent proof without reaching into auth internals.
+   */
+  const stepUpLayer = makeStepUpServiceLive({ appAuth, authSecret }).pipe(
+    Layer.provide(TotpLive),
+    Layer.provide(PersistenceLive),
+    Layer.provide(PasskeyConfigLive),
+    Layer.provide(PasskeyProtocolLive),
+    Layer.provide(LifecycleHooksLive),
+    Layer.provide(cryptoLayer),
+  );
+
+  const combined = Layer.merge(withRequestBinding, stepUpLayer);
+
+  return proofSchedulerLayer ? combined.pipe(Layer.provide(proofSchedulerLayer)) : combined;
 };

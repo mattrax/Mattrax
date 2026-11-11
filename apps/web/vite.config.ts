@@ -107,6 +107,11 @@ export default defineConfig({
                 "effect",
                 "@yielded/auth",
                 "@yielded/auth/EmailDelivery",
+                // Keep the WebAuthn verifier in the same module graph as
+                // `@yielded/auth`: its `PasskeyProtocol` service is an Effect
+                // Context key, and a second prebundled copy never satisfies it.
+                "@yielded/auth-simplewebauthn",
+                "@yielded/auth-simplewebauthn/Server",
                 "@mattrax/enterprise-domain",
                 "@mattrax/plist",
                 "@mattrax/dm-apple",

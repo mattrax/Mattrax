@@ -432,6 +432,8 @@ export default function AccountPage() {
 
       <AccountSecurity
         mfaEnabled={me.data?.user.mfaEnabled ?? false}
+        totpEnabled={me.data?.user.totpEnabled ?? false}
+        passkeyEnabled={me.data?.user.passkeyEnabled ?? false}
         mfaRequired={me.data?.user.mfaRequired ?? false}
         hasPassword={me.data?.user.hasPassword ?? false}
         email={user()?.email ?? ""}

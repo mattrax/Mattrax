@@ -1,14 +1,25 @@
 import { and, eq } from "drizzle-orm";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, Option, Redacted } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseForbidden,
   EnterpriseUnauthorized,
+  STEP_UP_WINDOW_MILLIS,
+  StepUpRequired,
+  StepUpService,
+  StepUpUnavailable,
+  type StepUpAction,
 } from "@mattrax/enterprise-domain";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { sessionCookie, type AppAuthService } from "./auth.ts";
 import { provisionEmailCredential } from "./emailCredential.ts";
+import {
+  signStepUpFlow,
+  signStepUpGrant,
+  verifyAnyStepUpFlow,
+  verifyStepUpGrant,
+} from "./stepUp.ts";
 import { signToken, verifyToken } from "./tokens.ts";
 
 type HeadersRecord = Record<string, string | string[] | undefined>;
@@ -131,6 +142,24 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
     Effect.gen(function* () {
       const db = yield* Db;
       const auth = yield* options.appAuth;
+      // The real auth runtime always provides step-up. A stub that omits it
+      // (tests, or an embedding that only uses bearer tokens) fails closed for
+      // every interactive factor instead of skipping the check.
+      const stepUpOption = yield* Effect.serviceOption(StepUpService);
+      const stepUp: StepUpService["Service"] = Option.isSome(stepUpOption)
+        ? stepUpOption.value
+        : {
+            methods: () => Effect.succeed({ password: false, totp: false, passkey: false }),
+            verifyPassword: () => Effect.succeed(false),
+            verifyTotp: () => Effect.succeed(false),
+            beginPasskey: () =>
+              Effect.fail(
+                new StepUpUnavailable({
+                  message: "Step-up is not available on this deployment",
+                }),
+              ),
+            completePasskey: () => Effect.succeed(false),
+          };
       const { origin, authSecret, email } = options;
 
       const resolveSession = (request: Request) =>
@@ -183,6 +212,166 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           return { tokens: rows.map(tokenInfo) };
         });
 
+      /**
+       * Browser sessions must prove recent possession for sensitive actions.
+       * Bearer tokens are exempt: they are already an explicitly issued,
+       * scoped credential, and a CLI cannot complete an interactive ceremony.
+       */
+      const requireStepUp = (
+        requestLike: Request | { headers: HeadersRecord },
+        action: StepUpAction,
+      ) =>
+        Effect.gen(function* () {
+          const request = requestFrom(requestLike);
+          const resolved = yield* requireUser(request);
+          if (resolved.apiToken) return resolved;
+          const sessionId = resolved.session?.sessionId as string | undefined;
+          const grant = request.headers.get("x-mattrax-step-up");
+          if (grant && sessionId) {
+            const valid = yield* verifyStepUpGrant(authSecret, grant, {
+              subjectId: resolved.user.id,
+              sessionId,
+              action,
+            });
+            if (valid) return resolved;
+          }
+          const methods = yield* stepUp.methods(resolved.user.id);
+          return yield* Effect.fail(
+            new StepUpRequired({
+              message: "Confirm this action with your password, authenticator or passkey.",
+              action,
+              methods: (Object.entries(methods) as Array<[string, boolean]>)
+                .filter(([, enabled]) => enabled)
+                .map(([name]) => name as "password" | "totp" | "passkey"),
+            }),
+          );
+        });
+
+      const grant = (
+        user: { readonly id: string; readonly email: string },
+        sessionId: string,
+        action: StepUpAction,
+        method: "password" | "totp" | "passkey",
+      ) =>
+        Effect.gen(function* () {
+          const expiresAtMillis = Date.now() + STEP_UP_WINDOW_MILLIS;
+          const token = yield* signStepUpGrant(authSecret, {
+            subjectId: user.id,
+            email: user.email,
+            sessionId,
+            action,
+            expiresAtMillis,
+          });
+          return { grant: token, expiresAtMillis, method };
+        });
+
+      const stepUpMethods = (requestLike: Request | { headers: HeadersRecord }) =>
+        Effect.gen(function* () {
+          const { user } = yield* requireUser(requestFrom(requestLike));
+          return yield* stepUp.methods(user.id);
+        });
+
+      /** Require a real session (not a bearer token) for interactive step-up. */
+      const stepUpSession = (request: Request) =>
+        Effect.gen(function* () {
+          const resolved = yield* requireUser(request);
+          const sessionId = resolved.session?.sessionId as string | undefined;
+          if (!sessionId)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Step-up is only available for browser sessions",
+              }),
+            );
+          return { user: resolved.user, sessionId };
+        });
+
+      const stepUpPassword = (request: Request, body: { password: string; action: StepUpAction }) =>
+        Effect.gen(function* () {
+          const { user, sessionId } = yield* stepUpSession(request);
+          const verified = yield* stepUp.verifyPassword(user.id, body.password);
+          if (!verified) {
+            const error = yield* invalidStepUp(user.id, body.action);
+            return yield* Effect.fail(error);
+          }
+          return yield* grant(user, sessionId, body.action, "password");
+        });
+
+      const stepUpTotp = (request: Request, body: { code: string; action: StepUpAction }) =>
+        Effect.gen(function* () {
+          const { user, sessionId } = yield* stepUpSession(request);
+          const verified = yield* stepUp.verifyTotp(user.id, body.code);
+          if (!verified) {
+            const error = yield* invalidStepUp(user.id, body.action);
+            return yield* Effect.fail(error);
+          }
+          return yield* grant(user, sessionId, body.action, "totp");
+        });
+
+      const beginStepUpPasskey = (request: Request, body: { action: StepUpAction }) =>
+        Effect.gen(function* () {
+          const { user, sessionId } = yield* stepUpSession(request);
+          const started = yield* stepUp.beginPasskey(user.id);
+          const stepUpToken = yield* signStepUpFlow(authSecret, {
+            subjectId: user.id,
+            email: user.email,
+            sessionId,
+            action: body.action,
+            flowId: started.flowId,
+            requestBindingVerifier: started.requestBindingVerifier,
+            requestBindingExpiresAtMillis: started.requestBindingExpiresAtMillis,
+          });
+          return {
+            stepUpToken,
+            expiresAtMillis: started.expiresAtMillis,
+            options: started.options,
+          };
+        });
+
+      const completeStepUpPasskey = (
+        request: Request,
+        body: { stepUpToken: string; response: string },
+      ) =>
+        Effect.gen(function* () {
+          const { user, sessionId } = yield* stepUpSession(request);
+          // The action is carried inside the signed flow token, so a caller
+          // cannot complete one action's ceremony to authorise another.
+          const bound = yield* verifyAnyStepUpFlow(authSecret, body.stepUpToken, {
+            subjectId: user.id,
+            sessionId,
+          });
+          if (!bound)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "This confirmation expired. Start again.",
+              }),
+            );
+          const verified = yield* stepUp.completePasskey({
+            subjectId: user.id,
+            flowId: bound.flowId,
+            requestBindingVerifier: bound.requestBindingVerifier,
+            requestBindingExpiresAtMillis: bound.requestBindingExpiresAtMillis,
+            response: body.response,
+          });
+          if (!verified) {
+            const error = yield* invalidStepUp(user.id, bound.action);
+            return yield* Effect.fail(error);
+          }
+          return yield* grant(user, sessionId, bound.action, "passkey");
+        });
+
+      /** Reject a bad factor without revealing which accounts have one. */
+      const invalidStepUp = (subjectId: string, action: StepUpAction) =>
+        Effect.gen(function* () {
+          const methods = yield* stepUp.methods(subjectId);
+          return new StepUpRequired({
+            message: "That confirmation was not accepted. Try again.",
+            action,
+            methods: (Object.entries(methods) as Array<[string, boolean]>)
+              .filter(([, enabled]) => enabled)
+              .map(([name]) => name as "password" | "totp" | "passkey"),
+          });
+        });
+
       const createApiToken = (
         request: Request,
         body: {
@@ -193,7 +382,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         },
       ) =>
         Effect.gen(function* () {
-          const { user, apiToken } = yield* requireUser(request);
+          const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
           const name = body.name?.trim();
           if (!name)
             return yield* Effect.fail(
@@ -273,7 +462,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       const revokeApiToken = (request: Request, tokenId: string) =>
         Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
+          const { user } = yield* requireStepUp(request, "api-token-revoke");
           yield* db
             .update(schema.accountApiToken)
             .set({ revokedAt: new Date(), updatedAt: new Date() })
@@ -433,6 +622,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       return EnterpriseAuth.of({
         requireUser,
+        requireStepUp,
+        stepUpMethods,
+        stepUpPassword,
+        stepUpTotp,
+        beginStepUpPasskey,
+        completeStepUpPasskey,
         listApiTokens,
         createApiToken,
         revokeApiToken,

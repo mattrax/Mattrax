@@ -172,3 +172,54 @@ export async function api<T = unknown>(page: Page, path: string, init?: RequestI
     { path, init },
   );
 }
+
+/**
+ * Complete the step-up dialog for a sensitive action. The password factor is
+ * always available to accounts created by `register`, and the grant is cached
+ * for subsequent actions in the same session.
+ */
+export async function confirmStepUp(page: Page, password = PASSWORD) {
+  const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await dialog.locator("#step-up-password").fill(password);
+  await dialog.getByRole("button", { name: /^confirm$/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+}
+
+/**
+ * Obtain a step-up grant directly for API-driven tests that bypass the UI.
+ * `action` must match the sensitive endpoint's StepUpAction.
+ */
+export async function stepUpGrant(
+  page: Page,
+  action: string,
+  password = PASSWORD,
+): Promise<string> {
+  const response = await page.request.post("/api/v1/account/step-up/password", {
+    data: { password, action },
+    headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+  });
+  if (!response.ok())
+    throw new Error(`Step-up failed (${response.status()}): ${await response.text()}`);
+  return ((await response.json()) as { grant: string }).grant;
+}
+
+/**
+ * Install a CTAP2 virtual authenticator on the page target. WebAuthn then runs
+ * entirely in software, so passkey tests do not need a hardware key.
+ */
+export async function installVirtualAuthenticator(page: Page) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("WebAuthn.enable");
+  const { authenticatorId } = await client.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  return { client, authenticatorId };
+}

@@ -88,6 +88,8 @@ const setup = async (
     planLimits?: ReturnType<typeof parsePlanLimits>;
     subscription?: Record<string, unknown>;
     devices?: Array<Record<string, unknown>>;
+    ssoConfig?: Array<Record<string, unknown>>;
+    federated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
   } = {},
 ) => {
   const ca = await makeCa();
@@ -107,6 +109,7 @@ const setup = async (
       ? { [tableName(schema.subscription)]: [overrides.subscription] }
       : {}),
     ...(overrides.devices ? { [tableName(schema.device)]: overrides.devices } : {}),
+    ...(overrides.ssoConfig ? { [tableName(schema.ssoConfig)]: overrides.ssoConfig } : {}),
   });
   const backend = makeWindowsBackend({
     db: db as any,
@@ -119,6 +122,7 @@ const setup = async (
     requireDeviceIdentity: overrides.requireDeviceIdentity,
     tenantTokenTtlSeconds: overrides.tenantTokenTtlSeconds,
     planLimits: overrides.planLimits,
+    ...(overrides.federated ? { federated: overrides.federated } : {}),
   });
   return { ca, db, backend };
 };
@@ -131,6 +135,86 @@ const enrollmentRequest = (authToken: string, csr: string, deviceId = "device-1"
   enrollmentType: "Full",
   context: { DeviceID: deviceId, DeviceName: "DESKTOP-TEST" },
   mdmOrigin,
+});
+
+const federatedTenantId = "11111111-1111-1111-1111-111111111111";
+const federatedAudience = "22222222-2222-2222-2222-222222222222";
+
+const base64Url = (value: Uint8Array | string): string => {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+};
+
+const makeFederatedSigner = async () => {
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+  const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+  return {
+    privateKey: pair.privateKey,
+    jwks: {
+      keys: [
+        {
+          kty: "RSA",
+          kid: "federated-test-key",
+          use: "sig",
+          alg: "RS256",
+          n: publicJwk.n!,
+          e: publicJwk.e!,
+        },
+      ],
+    },
+  };
+};
+
+const makeFederatedToken = async (
+  signer: Awaited<ReturnType<typeof makeFederatedSigner>>,
+  overrides: Record<string, unknown> = {},
+) => {
+  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "federated-test-key" }));
+  const now = Math.floor(Date.now() / 1000);
+  const payload = base64Url(
+    JSON.stringify({
+      iss: `https://login.microsoftonline.com/${federatedTenantId}/v2.0`,
+      aud: federatedAudience,
+      tid: federatedTenantId,
+      sub: "federated-subject",
+      oid: "federated-device-object",
+      upn: "device@contoso.com",
+      exp: now + 3_600,
+      nbf: now - 10,
+      iat: now - 10,
+      ...overrides,
+    }),
+  );
+  const signingInput = `${header}.${payload}`;
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      { name: "RSASSA-PKCS1-v1_5" },
+      signer.privateKey,
+      new TextEncoder().encode(signingInput),
+    ),
+  );
+  return `${signingInput}.${base64Url(signature)}`;
+};
+
+const federatedSsoConfig = (organizationId: string) => ({
+  organizationId,
+  enabled: true,
+  azureTenantId: federatedTenantId,
+  autoProvision: true,
+  requireMfa: false,
+  createdAt: new Date("2024-01-01T00:00:00Z"),
+  updatedAt: new Date("2024-01-01T00:00:00Z"),
 });
 
 describe("Windows enterprise backend", () => {
@@ -720,6 +804,138 @@ describe("Windows identity lifecycle", () => {
         ),
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("Windows federated Entra enrollment", () => {
+  const setupFederated = async () => {
+    const signer = await makeFederatedSigner();
+    const setupResult = await setup({
+      ssoConfig: [federatedSsoConfig("org-early")],
+      federated: {
+        enabled: true,
+        audience: federatedAudience,
+        jwks: signer.jwks,
+      },
+    });
+    return { ...setupResult, signer };
+  };
+
+  it("advertises Federated with a tenant-specific auth service URL", async () => {
+    const { backend } = await setupFederated();
+    const token = await createWindowsTenantToken("org-early", authSecret);
+    const response = await run(
+      backend.windowsDiscovery({
+        requestVersion: "5.0",
+        deviceType: "CIMClient_Windows",
+        applicationVersion: "10.0",
+        osEdition: 48,
+        authPolicies: ["Federated"],
+        tenantToken: token,
+        mdmOrigin,
+      }),
+    );
+
+    expect(response.authPolicy).toBe("Federated");
+    expect(response.authServiceUrl).toContain(federatedTenantId);
+    expect(response.authServiceUrl).toContain("/wsfed");
+    expect(response.enrollmentPolicyServiceUrl).toContain("/mdm/windows/policy?tenant=");
+  });
+
+  it("keeps OnPremise when the client does not offer Federated", async () => {
+    const { backend } = await setupFederated();
+    const token = await createWindowsTenantToken("org-early", authSecret);
+    const response = await run(
+      backend.windowsDiscovery({
+        requestVersion: "5.0",
+        deviceType: "CIMClient_Windows",
+        applicationVersion: "10.0",
+        osEdition: 48,
+        authPolicies: ["OnPremise"],
+        tenantToken: token,
+        mdmOrigin,
+      }),
+    );
+
+    expect(response.authPolicy).toBe("OnPremise");
+    expect(response.authServiceUrl).toBeUndefined();
+  });
+
+  it("keeps OnPremise policy/enroll working for a federated-configured tenant", async () => {
+    const { backend } = await setupFederated();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken }));
+    expect(policy.authToken).toBeTruthy();
+
+    const enrolled = await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(policy.authToken, await makeCsr("ONPREM-HOST")),
+        tenantToken,
+      }),
+    );
+    expect(enrolled.signedCertificate).toContain("BEGIN CERTIFICATE");
+  });
+
+  it("fails closed when a federated-mode tenant token is used without a JWT", async () => {
+    const { backend } = await setupFederated();
+    const federatedToken = await createWindowsTenantToken("org-early", authSecret, {
+      federated: true,
+    });
+
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy("", { tenantToken: federatedToken })),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+  });
+
+  it("validates the Entra token before issuing a WSTEP policy token", async () => {
+    const { backend, signer } = await setupFederated();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const jwt = await makeFederatedToken(signer);
+    const policy = await run(backend.getWindowsEnrollmentPolicy(jwt, { tenantToken }));
+
+    expect(policy.authToken).toBeTruthy();
+    expect(policy.authToken.split(".")).toHaveLength(3);
+  });
+
+  it("fails closed for a token with an invalid signature", async () => {
+    const { backend } = await setupFederated();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const otherSigner = await makeFederatedSigner();
+    const jwt = await makeFederatedToken(otherSigner);
+
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(jwt, { tenantToken })),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+  });
+
+  it("fails closed when the token tenant does not match the enrollment tenant", async () => {
+    const { backend, signer } = await setupFederated();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const jwt = await makeFederatedToken(signer, {
+      tid: "33333333-3333-3333-3333-333333333333",
+      iss: "https://login.microsoftonline.com/33333333-3333-3333-3333-333333333333/v2.0",
+    });
+
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(jwt, { tenantToken })),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+  });
+
+  it("enrolls a device with a valid federated token", async () => {
+    const { backend, signer, db } = await setupFederated();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const jwt = await makeFederatedToken(signer);
+    const result = await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(jwt, await makeCsr("FEDERATED-HOST")),
+        tenantToken,
+      }),
+    );
+
+    expect(result.deviceId).toBe("device-1");
+    expect(result.signedCertificate).toContain("BEGIN CERTIFICATE");
+    const devices = dbRows(db, tableName(schema.device));
+    expect(devices.some((device) => device.dmIdentifier === "device-1")).toBe(true);
   });
 });
 

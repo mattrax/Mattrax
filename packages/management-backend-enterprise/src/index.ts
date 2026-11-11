@@ -729,6 +729,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly requireAppleDeviceIdentity?: boolean;
     /** Deployment plan catalogue; omitted means unlimited plans. */
     readonly planLimits?: PlanLimitsConfig;
+    /** Federated Entra WSTEP options; omitted disables Federated discovery. */
+    readonly windowsFederated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret } = options;
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
@@ -1584,6 +1586,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         windowsOrganizationId: options.windowsOrganizationId,
         requireDeviceIdentity: options.requireWindowsDeviceIdentity,
         planLimits: options.planLimits,
+        ...(options.windowsFederated ? { federated: options.windowsFederated } : {}),
       }),
     });
   };
@@ -1597,6 +1600,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly requireWindowsDeviceIdentity?: boolean;
       readonly requireAppleDeviceIdentity?: boolean;
       readonly planLimits?: PlanLimitsConfig;
+      readonly windowsFederated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
     },
   ) =>
     Layer.effect(
@@ -1617,6 +1621,7 @@ export const enterpriseEnrollmentProfile = (config: {
   challenge?: string;
   displayName?: string;
   identifier?: string;
+  profileUuid?: string;
 }) =>
   buildAppleEnrollmentProfile({
     origin: config.origin,
@@ -1627,6 +1632,7 @@ export const enterpriseEnrollmentProfile = (config: {
     challenge: config.challenge ?? crypto.randomUUID(),
     displayName: config.displayName,
     identifier: config.identifier,
+    profileUuid: config.profileUuid,
   });
 
 export const policyHash = jsonHash;
@@ -1670,6 +1676,7 @@ export * from "./policy.ts";
 export * from "./policyResolution.ts";
 export { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 export * from "./windows.ts";
+export * from "./federated.ts";
 export {
   parseDeviceInventory,
   normalizeBatteryHealth,

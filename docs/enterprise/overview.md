@@ -221,7 +221,52 @@ WSTEP token is bound to that tenant. Each tenant therefore has a distinct Window
 a token for one tenant is rejected by another tenant's endpoints. Tokens expire, so a
 device that was offline for longer than the link lifetime must be given a fresh URL from
 the enrollment page. `WINDOWS_ORGANIZATION_ID` is only a legacy single-tenant fallback.
-Federated Entra enrollment is still missing.
+
+### Windows Autopilot
+
+When Microsoft Graph credentials (`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`) and a
+tenant Entra id are configured, **Settings → Management → Windows Autopilot**
+imports hardware hashes, syncs `windowsAutopilotDeviceIdentities`, creates
+deployment profiles and assigns a profile to an Entra group. Graph is the source
+of truth; `autopilot_device` and `autopilot_profile` are tenant-scoped caches.
+Device rows are linked to `device` by normalised serial, so the device detail
+page can show Autopilot profile/enrollment state once the device checks in.
+
+| Endpoint                                                              | Access      |
+| --------------------------------------------------------------------- | ----------- |
+| `GET /api/v1/tenants/:tenantId/autopilot`                             | Read        |
+| `GET /api/v1/tenants/:tenantId/autopilot/devices`                     | Read        |
+| `POST /api/v1/tenants/:tenantId/autopilot/import`                     | Owner/admin |
+| `POST /api/v1/tenants/:tenantId/autopilot/sync`                       | Owner/admin |
+| `DELETE /api/v1/tenants/:tenantId/autopilot/devices/:serial`          | Owner/admin |
+| `GET /api/v1/tenants/:tenantId/autopilot/profiles`                    | Read        |
+| `POST /api/v1/tenants/:tenantId/autopilot/profiles`                   | Owner/admin |
+| `PATCH /api/v1/tenants/:tenantId/autopilot/profiles/:profileId`       | Owner/admin |
+| `POST /api/v1/tenants/:tenantId/autopilot/profiles/:profileId/assign` | Owner/admin |
+
+Required Graph application permissions are
+`DeviceManagementServiceConfig.ReadWrite.All`,
+`DeviceManagementManagedDevices.Read.All`, `Group.Read.All` and
+`Directory.Read.All`. Imports are capped at 500 rows / 1 MB and fail before any
+local write if Graph rejects them. Hardware hashes are never returned by list
+APIs. See [Production readiness](../production-readiness#windows-autopilot-and-federated-entra-enrollment)
+for the full permission, security and real-device checklist.
+
+### Federated Entra enrollment
+
+Windows discovery chooses `AuthPolicy: Federated` only when the client offered
+it, the tenant has an Entra id and `WINDOWS_FEDERATED_AUDIENCE` (or
+`AZURE_CLIENT_ID`) is configured. Discovery returns the tenant-specific Entra
+STS URL (`https://login.microsoftonline.com/<tenantId>/wsfed`, overrideable) and
+mints a federated-mode tenant token (`mttxw2`). Policy and enrollment then
+require an Entra JWT and validate its signature against the tenant JWKS, issuer,
+`tid`, audience, `exp` and `nbf`. A token for another tenant, an invalid
+signature, or an opaque credential in a federated flow fails closed with
+`UnknownDevice`.
+
+OnPremise discovery and enrollment are unchanged for the same tenant: a v1
+tenant token keeps using the signed WSTEP flow. The federated handshake is
+fixture-tested; real Entra/Windows validation remains a preview gap.
 
 ## Device pre-registration
 
@@ -379,6 +424,52 @@ Remaining limitations:
 - Hosted Cloud requires an APNs relay for multi-tenant push (see
   [APNs and push](../self-hosting#apns-and-push)).
 - Without a push transport, devices still converge by polling at check-in.
+
+## Apple Business Manager and Apps and Books
+
+Mattrax integrates the current Apple Business/School Manager API (OAuth 2) and
+the Apps and Books v2 API. Both are tenant-scoped; credentials are sealed with
+`AUTH_SECRET` and are never returned by the API.
+
+| Setting         | Endpoint                                                        | Purpose                                                                          |
+| --------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| ABM status      | `GET /api/v1/tenants/:tenantId/abm`                             | Status, Apple org, token expiry, MDM server/profile ids, device counts           |
+| ABM token       | `PUT /api/v1/tenants/:tenantId/abm/token`                       | Upload the API private key + Client ID/Key ID, a JSON bundle, or a legacy `.p7m` |
+| ABM sync        | `POST /api/v1/tenants/:tenantId/abm/sync`                       | Upsert ABM devices and mark removed serials                                      |
+| ABM devices     | `GET /api/v1/tenants/:tenantId/abm/devices`                     | Pre-enrollment inventory and assignment state                                    |
+| ABM assign      | `POST /api/v1/tenants/:tenantId/abm/devices/:serial/assign`     | Assign a device to the tenant's ABM MDM service                                  |
+| ADE profile URL | `GET /api/v1/tenants/:tenantId/abm/devices/:serial/profile-url` | Short-lived signed `.mobileconfig` link                                          |
+| VPP status      | `GET /api/v1/tenants/:tenantId/vpp`                             | Token/org/expiry and licence totals                                              |
+| VPP token       | `PUT /api/v1/tenants/:tenantId/vpp/token`                       | Upload the `.vpptoken` content token                                             |
+| VPP sync        | `POST /api/v1/tenants/:tenantId/vpp/sync`                       | Sync asset/licence counts                                                        |
+| VPP assets      | `GET /api/v1/tenants/:tenantId/vpp/assets`                      | Per-asset total/available/assigned counts                                        |
+| VPP install     | `POST /api/v1/tenants/:tenantId/vpp/assets/:adamId/install`     | Assign a licence and queue `InstallApplication`                                  |
+| VPP release     | `POST /api/v1/tenants/:tenantId/vpp/assets/:adamId/release`     | Return a revocable licence                                                       |
+
+The ABM API account is created in Apple Business Manager → Settings → API. Upload
+the downloaded private key (unencrypted PKCS#8 EC P-256) with the Client ID and
+Key ID; Mattrax validates the key, exchanges an ES256 client assertion for a
+bearer token, and stores only a sealed credential envelope. A legacy `.p7m` DEP
+token is accepted and displayed but not used for sync — the current API is
+OAuth. See [Production readiness](../production-readiness#apple-business-manager-abm-ade-and-apps-books-vpp)
+for the setup, security notes and real-device checklist.
+
+ABM sync pages through `orgDevices`, upserts by `(tenant, serial)`, links a
+matching enrolled device, and marks devices Apple no longer returns as
+`REMOVED`. Assignment creates or reuses a device management service and posts an
+`ASSIGN_DEVICES` activity. The ADE profile endpoint serves the existing
+SCEP/MDM payloads with a stable profile UUID; automatic delivery inside the ADE
+`Authenticate` response is not wired yet (documented gap).
+
+Apps and Books uses the content token as a bearer token against
+`https://vpp.itunes.apple.com/mdm`. Sync records asset counts and enriches names
+from the tenant catalogue/ABM app list. Installing a store app consumes a
+device licence (`POST /v2/assets/associate`) and queues a VPP
+`InstallApplication`; association is asynchronous, so local state records the
+Apple event id and never claims installation before the device reports it.
+Store-app installs fail closed when a VPP token is present but inactive or has
+no available licence, rather than falling back to a user-account App Store
+install.
 
 ## Related pages
 

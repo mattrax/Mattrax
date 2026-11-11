@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { EnterpriseAuth } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
+import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -73,17 +74,33 @@ const bearer = (token: string) =>
     headers: { authorization: `Bearer ${token}` },
   });
 
-const session = () =>
+const session = (grant?: string) =>
   new Request(`${origin}/api/v1/account/api-tokens`, {
-    headers: { cookie: "__Host-mattrax_session=test" },
+    headers: {
+      cookie: "__Host-mattrax_session=test",
+      ...(grant ? { "x-mattrax-step-up": grant } : {}),
+    },
   });
+
+/** Mint a grant for a browser session, as the step-up endpoints would. */
+const grantFor = (action: "api-token-create" | "api-token-revoke") =>
+  Effect.runPromise(
+    signStepUpGrant(authSecret, {
+      subjectId: "user-1",
+      email: "owner@example.com",
+      sessionId: "session-1",
+      action,
+      expiresAtMillis: Date.now() + 60_000,
+    }),
+  );
 
 describe("enterprise API tokens", () => {
   it("creates read-only and tenant-bound tokens and lists their scope", async () => {
     const { db, run } = makeContext(seedUserAndTenant());
+    const grant = await grantFor("api-token-create");
 
     const created = await run((auth) =>
-      auth.createApiToken(session(), {
+      auth.createApiToken(session(grant), {
         name: "Auditor CLI",
         scopes: ["read"],
         tenantId: "tenant-1",
@@ -113,9 +130,10 @@ describe("enterprise API tokens", () => {
 
   it("defaults omitted scopes to read/write and omits the tenant", async () => {
     const { db, run } = makeContext(seedUserAndTenant());
+    const grant = await grantFor("api-token-create");
 
     const created = await run((auth) =>
-      auth.createApiToken(session(), { name: "Legacy-compatible" }),
+      auth.createApiToken(session(grant), { name: "Legacy-compatible" }),
     );
     expect(created.item.scopes).toEqual(["read", "write"]);
     expect(created.item.tenantId).toBeNull();
@@ -126,17 +144,18 @@ describe("enterprise API tokens", () => {
 
     // `write` implies `read`, matching the documented read-and-write scope.
     const writeOnly = await run((auth) =>
-      auth.createApiToken(session(), { name: "Write", scopes: ["write"] }),
+      auth.createApiToken(session(grant), { name: "Write", scopes: ["write"] }),
     );
     expect(writeOnly.item.scopes).toEqual(["read", "write"]);
   });
 
   it("rejects tenant bindings the user does not belong to and invalid scopes", async () => {
     const { run } = makeContext(seedUserAndTenant());
+    const grant = await grantFor("api-token-create");
 
     await expect(
       run((auth) =>
-        auth.createApiToken(session(), {
+        auth.createApiToken(session(grant), {
           name: "Other tenant",
           scopes: ["read"],
           tenantId: "tenant-2",
@@ -145,12 +164,12 @@ describe("enterprise API tokens", () => {
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
 
     await expect(
-      run((auth) => auth.createApiToken(session(), { name: "Empty", scopes: [] })),
+      run((auth) => auth.createApiToken(session(grant), { name: "Empty", scopes: [] })),
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
 
     await expect(
       run((auth) =>
-        auth.createApiToken(session(), {
+        auth.createApiToken(session(grant), {
           name: "Unknown",
           scopes: ["admin" as any],
         }),

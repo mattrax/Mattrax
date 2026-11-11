@@ -76,6 +76,7 @@ export default defineConfig({
         text: "Project",
         items: [
           { text: "Architecture and porting", link: "/porting-plan" },
+          { text: "Policy catalogue", link: "/policy-catalogue" },
           { text: "Production readiness", link: "/production-readiness" },
           { text: "Testing", link: "/testing" },
         ],

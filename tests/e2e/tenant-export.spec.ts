@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
 
 test.describe("tenant export and import", () => {
   test("downloads a bundle and imports it as a new tenant", async ({ page }) => {
@@ -89,8 +89,10 @@ test.describe("tenant backups", () => {
       )
       .toBeTruthy();
 
+    const grant = await stepUpGrant(page, "backup-download");
     const download = await page.request.get(
       `/api/v1/tenants/${tenant.id}/backups/${succeeded!.id}/download`,
+      { headers: { "x-mattrax-step-up": grant } },
     );
     expect(download.ok()).toBe(true);
     expect(download.headers()["cache-control"]).toBe("no-store");

@@ -74,6 +74,13 @@ const ApiEnvSchema = Schema.Struct({
    * `/mdm/windows/*` discovery URL.
    */
   WINDOWS_ORGANIZATION_ID: Schema.optional(nonEmptyString),
+  /**
+   * Audience accepted on federated Entra WSTEP tokens. Defaults to
+   * `AZURE_CLIENT_ID`; set it explicitly when the Windows enrollment app is a
+   * different registration. Federated discovery stays disabled when neither is
+   * set.
+   */
+  WINDOWS_FEDERATED_AUDIENCE: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
@@ -142,6 +149,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   DEV_MAILBOX_ALLOW_REMOTE: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_ALLOW_REMOTE),
   DEV_MAILBOX_SECRET: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_SECRET),
   WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined((cfEnv as any).WINDOWS_ORGANIZATION_ID),
+  WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined((cfEnv as any).WINDOWS_FEDERATED_AUDIENCE),
   MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(
     (cfEnv as any).MAINTENANCE_STALE_DEVICE_DAYS,
   ),

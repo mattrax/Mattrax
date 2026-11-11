@@ -87,6 +87,9 @@ export default function DeviceDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.applicationInventory(params.tenantId),
     });
+    await queryClient.invalidateQueries({
+      queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
+    });
   };
   const save = useMutation(() => ({
     mutationFn: () =>
@@ -119,6 +122,26 @@ export default function DeviceDetailPage() {
   const applications = useQuery(() =>
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
+  const abmDevice = useQuery(() =>
+    enterpriseQueries.abmDevice(
+      params.tenantId,
+      row()?.proto === "apple" ? (row()?.serial ?? undefined) : undefined,
+    ),
+  );
+  const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
+  const assignAbm = useMutation(() => ({
+    mutationFn: () => enterprise.assignAbmDevice(params.tenantId, row()!.serial!),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
+      });
+      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) });
+    },
+  }));
+  const adeProfile = useMutation(() => ({
+    mutationFn: () => enterprise.getAbmDeviceProfileUrl(params.tenantId, row()!.serial!),
+    onSuccess: (result) => setAdeUrl(result.url),
+  }));
   const resolved = () => effectivePolicy.data as EffectivePolicyResponse | undefined;
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
@@ -821,6 +844,86 @@ export default function DeviceDetailPage() {
             </Show>
           </CardContent>
         </Card>
+        <Show when={row()?.proto === "apple" && row()?.serial}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Apple Business Manager</CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3 text-sm">
+              <Show
+                when={abmDevice.data}
+                fallback={
+                  <p class="text-muted-foreground">
+                    This serial is not in the tenant's Apple Business Manager inventory. Upload an
+                    ABM credential and sync devices in Settings → Management.
+                  </p>
+                }
+              >
+                {(abm) => (
+                  <>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="rounded-full border px-2 py-0.5 text-xs capitalize">
+                        {abm().enrollmentState.toLowerCase()}
+                      </span>
+                      <span class="rounded-full border px-2 py-0.5 text-xs capitalize">
+                        profile {abm().profileStatus}
+                      </span>
+                      <Show when={abm().deviceFamily}>
+                        <span class="text-xs text-muted-foreground">{abm().deviceFamily}</span>
+                      </Show>
+                      <Show when={abm().os}>
+                        <span class="text-xs text-muted-foreground">{abm().os}</span>
+                      </Show>
+                    </div>
+                    <Show when={abm().assignedProfileUuid}>
+                      <p class="break-all font-mono text-xs text-muted-foreground">
+                        ADE profile {abm().assignedProfileUuid}
+                      </p>
+                    </Show>
+                    <Show when={abm().assignedServerId}>
+                      <p class="break-all font-mono text-xs text-muted-foreground">
+                        MDM server {abm().assignedServerId}
+                      </p>
+                    </Show>
+                    <p class="text-xs text-muted-foreground">
+                      Last ABM update {formatDate(abm().lastSeenAt)}
+                    </p>
+                    <div class="flex flex-wrap gap-2">
+                      <Show when={abm().enrollmentState !== "ASSIGNED"}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={assignAbm.isPending}
+                          onClick={() => assignAbm.mutate()}
+                        >
+                          {assignAbm.isPending ? "Assigning…" : "Assign to Mattrax"}
+                        </Button>
+                      </Show>
+                      <Show when={abm().enrollmentState === "ASSIGNED"}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={adeProfile.isPending}
+                          onClick={() => adeProfile.mutate()}
+                        >
+                          {adeProfile.isPending ? "Creating link…" : "Get ADE profile link"}
+                        </Button>
+                      </Show>
+                    </div>
+                    <Show when={adeUrl()}>
+                      {(url) => (
+                        <p class="break-all rounded-lg border bg-muted/40 p-2 font-mono text-xs">
+                          {url()}
+                        </p>
+                      )}
+                    </Show>
+                    <ErrorText error={assignAbm.error ?? adeProfile.error} />
+                  </>
+                )}
+              </Show>
+            </CardContent>
+          </Card>
+        </Show>
         <div class="grid gap-6 lg:grid-cols-[1fr_360px]">
           <Card>
             <CardHeader>
@@ -843,6 +946,51 @@ export default function DeviceDetailPage() {
               </dl>
             </CardContent>
           </Card>
+          <Show when={row()?.autopilot}>
+            {(autopilot) => (
+              <Card class="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Windows Autopilot</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl class="grid gap-3 text-sm sm:grid-cols-2">
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Autopilot serial</dt>
+                      <dd class="font-mono text-xs">{autopilot().serial}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Group tag</dt>
+                      <dd>{autopilot().groupTag ?? "None"}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Profile state</dt>
+                      <dd>{autopilot().profileStatus}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Enrollment state</dt>
+                      <dd>{autopilot().enrollmentState}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Entra device id</dt>
+                      <dd class="break-all font-mono text-xs">
+                        {autopilot().azureAdDeviceId ?? "Not joined yet"}
+                      </dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b pb-2">
+                      <dt class="text-muted-foreground">Last Autopilot sync</dt>
+                      <dd>
+                        {autopilot().lastSyncedAt ? formatDate(autopilot().lastSyncedAt!) : "Never"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p class="mt-3 text-xs text-muted-foreground">
+                    Autopilot profile and enrollment state are read from Microsoft Graph. Manage
+                    imports and profiles in Settings → Management.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </Show>
           <Card class="lg:col-span-2">
             <CardHeader>
               <div class="flex items-center justify-between gap-2">

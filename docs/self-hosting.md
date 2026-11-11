@@ -64,10 +64,10 @@ Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 
 | Secret                                    | Required | Purpose                                                             |
 | ----------------------------------------- | -------- | ------------------------------------------------------------------- |
-| `ORIGIN`                                  | Yes      | Canonical public origin used in enrollment profiles and emails.     |
+| `ORIGIN`                                  | Yes      | Canonical public origin; also the WebAuthn RP id/origin.            |
 | `AUTH_SECRET`                             | Yes      | Signs sessions, seals APNs and SCEP CA keys. Back this up.          |
 | `AUTH_RESET_URL`                          | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`.     |
-| `TRUSTED_ORIGINS`                         | No       | Extra comma-separated browser origins for split-origin setups.      |
+| `TRUSTED_ORIGINS`                         | No       | Extra same-site browser origins (and WebAuthn origins).             |
 | `STRIPE_SECRET_KEY`                       | Yes      | Stripe API key.                                                     |
 | `STRIPE_WEBHOOK_SECRET`                   | Yes      | Stripe webhook verification secret.                                 |
 | `STRIPE_DEVICE_MONTHLY_PRICE_ID`          | Yes      | Stripe price used for per-device billing.                           |
@@ -500,10 +500,50 @@ DELETE FROM auth_totp_factor
 UPDATE `user` SET totp_enabled = false, auth_revision = UUID() WHERE id = :user_id;
 ```
 
-This is a break-glass operation: audit it, confirm the requester's identity, and
-have the user re-enrol MFA immediately. Accounts without a password credential
-cannot enrol MFA (password + authenticator are required together); set a
-password first.
+To remove every passkey for an account (for example when the device is lost and
+no other factor is enrolled):
+
+```sql
+-- Deactivate rather than delete so the audit trail and counters remain.
+UPDATE auth_passkeyCredentials SET active = false WHERE subject_id = :user_id;
+DELETE FROM auth_passkeyFlows WHERE JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.context.target.revision.subjectId')) = :user_id;
+UPDATE `user` SET passkey_enabled = false, auth_revision = UUID() WHERE id = :user_id;
+```
+
+The `auth_passkey_factor_*` triggers recompute `passkey_enabled` when the
+credential rows change, but bump `auth_revision` explicitly so existing sessions
+are rejected. This is a break-glass operation: audit it, confirm the requester's
+identity, and have the user re-enrol a factor immediately. Passkeys do not
+require a password, so passwordless and SSO-only accounts can enrol one; an
+authenticator app still needs a password because the code is only the possession
+half of that factor pair.
+
+## Passkeys and step-up
+
+Passkeys use the deployment origin as the WebAuthn relying party. Set `ORIGIN`
+to the exact public dashboard origin (`https://mattrax.example.com`); the RP id
+is its hostname and the allowed origins are `ORIGIN` plus any `TRUSTED_ORIGINS`
+that share that host or a subdomain of it. A different registrable domain cannot
+share the RP id and is ignored. Local development (`http://localhost:…`) is
+accepted as `localhost` with WebAuthn's development flag. If `ORIGIN` is an IP
+literal or a non-HTTPS host, passkeys fail closed with an unusable sentinel
+profile while the rest of auth keeps working.
+
+Consequences for operators:
+
+- Changing `ORIGIN` (or the RP id) invalidates existing passkeys. Users must
+  re-enrol; there is no way to migrate a credential to another RP id.
+- The origin must serve the dashboard over HTTPS in production. Reverse proxies
+  must forward the original host; the server does not trust `X-Forwarded-*` for
+  RP identity.
+- Sensitive actions (tenant deletion, API token changes, backup download,
+  recovery-key reveal, billing portal, SSO/MFA policy changes) require a recent
+  step-up. The server issues a five-minute grant bound to the session and action
+  after a password, authenticator code or passkey confirmation. Clearing browser
+  storage or signing out drops the grant; users simply confirm again.
+- Bearer API tokens are exempt from the interactive step-up because a CLI cannot
+  complete a WebAuthn or TOTP ceremony. Treat a `write` token as equivalent to a
+  signed-in administrator for those actions.
 
 ## Backups
 

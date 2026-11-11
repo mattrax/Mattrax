@@ -9,14 +9,22 @@ import { StripeService } from "@mattrax/effect-stripe";
 import { createEnterpriseService } from "./enterpriseHandlers.ts";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "./android.ts";
+import type { AppleApiConfig } from "./appleBusinessManager.ts";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
 export type EnterpriseServiceOptions = {
   readonly azureGraph?: AzureGraphService;
   readonly azureClientId?: string;
+  /** Federated WSTEP configuration shown in Settings → Management. */
+  readonly windowsFederated?: {
+    readonly audience?: string;
+    readonly authServiceUrl?: (tenantId: string) => string;
+  };
   /** Google Android Enterprise delivery config; omit when unconfigured. */
   readonly android?: AndroidDeliveryConfig;
+  /** ABM/VPP client overrides; omit to use the real Apple endpoints. */
+  readonly appleApi?: AppleApiConfig;
   /** Deployment plan catalogue; omit for unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
   readonly email?: {
@@ -71,10 +79,12 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           cloudAppleVendorKey: env.cloudAppleVendorKey,
           apns,
           android: options.android,
+          appleApi: options.appleApi,
           planLimits: options.planLimits,
           email: options.email,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,
+          windowsFederated: options.windowsFederated,
         }),
       );
     }),

@@ -25,3 +25,4 @@ export {
 export { EnterpriseAuth, EnterpriseService } from "./service.ts";
 export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
 export * from "./auth.ts";
+export * from "./stepUp.ts";

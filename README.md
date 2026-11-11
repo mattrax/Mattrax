@@ -41,17 +41,24 @@ at the production reset page during local development because the auth library
 refuses non-HTTPS reset links. To run the dev server over HTTPS instead, run
 `pnpm dev:cert` and `DEV_HTTPS=1 pnpm web dev`, then set `ORIGIN=https://localhost:9050`.
 
-| Command            | Description                                     |
-| ------------------ | ----------------------------------------------- |
-| `pnpm test`        | Run the Vitest suites.                          |
-| `pnpm test:e2e`    | Run the Playwright browser tests over CDP.      |
-| `pnpm typecheck`   | Typecheck the workspace.                        |
-| `pnpm format`      | Run formatting and linting through Vite Plus.   |
-| `pnpm doc`         | Start the documentation site locally.           |
-| `pnpm doc:build`   | Build the documentation site.                   |
-| `pnpm web dev`     | Run only the web app (and its API Worker).      |
-| `pnpm api dev`     | Run only the API app.                           |
-| `pnpm mserver dev` | Run only the whitelabel/self-hosted server app. |
+| Command              | Description                                      |
+| -------------------- | ------------------------------------------------ |
+| `pnpm test`          | Run the Vitest suites.                           |
+| `pnpm test:e2e`      | Run the Playwright browser tests over CDP.       |
+| `pnpm typecheck`     | Typecheck the workspace.                         |
+| `pnpm format`        | Run formatting and linting through Vite Plus.    |
+| `pnpm doc`           | Start the documentation site locally.            |
+| `pnpm doc:build`     | Build the documentation site.                    |
+| `pnpm web dev`       | Run only the web app (and its API Worker).       |
+| `pnpm api dev`       | Run only the API app.                            |
+| `pnpm mserver dev`   | Run only the whitelabel/self-hosted server app.  |
+| `pnpm catalog:split` | Rebuild the split Windows policy catalogue.      |
+| `pnpm catalog:check` | Verify the committed catalogue split is current. |
+
+The Windows policy catalogue is served incrementally from
+`apps/web/public/catalog/windows/`; the source file stays at
+`data/catalog/windows.json`. See [docs/policy-catalogue.md](docs/policy-catalogue.md)
+for the file layout and regeneration steps.
 
 The browser suite drives a real Chrome via CDP by default. Set
 `E2E_BASE_URL` to test an already-running deployment, or `E2E_CHANNEL=bundled`

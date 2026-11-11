@@ -63,10 +63,35 @@ architecture notes in the porting plan.
   and email-code login for accounts without MFA is unchanged. Enrolled accounts
   must sign in with password + authenticator: an email code or SSO assertion is
   possession-only and cannot replace the password factor.
+- Passkeys (WebAuthn) are available on `/account` alongside authenticator apps.
+  The relying party is derived from `ORIGIN` (never from request input): the RP
+  id is the origin host and the allowlist is `ORIGIN` plus same-site
+  `TRUSTED_ORIGINS`. Registration, assertion verification, sign counters and
+  replay protection are owned by `@yielded/auth` with the maintained
+  SimpleWebAuthn verifier; credentials are stored in `auth_passkeyCredentials`
+  and in-flight challenges in `auth_passkeyFlows`. A passkey is a
+  phishing-resistant, user-verified possession factor: it satisfies MFA on its
+  own, works for passwordless/SSO accounts, and completes a pending password,
+  email-code or SSO sign-in. Accounts with a passkey or an authenticator are on
+  the MFA requirement, and `user.passkey_enabled` is maintained by database
+  triggers so sign-in policy cannot drift from credential state. Adding or
+  removing a key requires a recent step-up; removal invalidates other sessions
+  and refuses to leave the account without a usable sign-in method.
 - A tenant can require MFA for its owners and admins
   (`sso_config.require_mfa`, exposed under Settings → Identity). Owners/admins
-  without an enrolled authenticator are blocked from that tenant's APIs with a
-  403 and an account-page prompt; members keep read access.
+  with neither an authenticator nor a passkey are blocked from that tenant's
+  APIs with a 403 and an account-page prompt; members keep read access.
+- Sensitive actions require a recent step-up: tenant deletion, API token
+  creation/revocation, backup download, FileVault recovery-key reveal, billing
+  portal access and SSO/MFA policy changes. The browser confirms with a
+  password, authenticator code or passkey; the server issues a five-minute
+  grant bound to the account, session and action, and the action retries with
+  `x-mattrax-step-up`. Missing or expired grants return a typed
+  `StepUpRequired` 403 carrying the action and available factors. Bearer tokens
+  are exempt because they are already an explicitly issued, scoped credential.
+  TOTP disable/regenerate additionally require the current password plus a
+  current code. See `docs/self-hosting.md` for RP/origin requirements and
+  lockout recovery.
 - Device health rolls up enrollment state, last-seen age, declaration failures,
   FileVault and battery condition, and reported disk pressure, with a tenant
   dashboard summary and device detail card. Identity certificate state is
@@ -203,6 +228,209 @@ architecture notes in the porting plan.
   Apple per-device SCEP binding, FileVault recovery-key escrow and installed
   software inventory are implemented.
 
+## Apple Business Manager (ABM/ADE) and Apps & Books (VPP)
+
+Mattrax implements the current Apple Business/School Manager OAuth API and the
+Apps and Books v2 API. Credentials are tenant-scoped and sealed with
+`AUTH_SECRET`; every endpoint fails closed when a tenant has no valid credential
+or when Apple rejects it.
+
+### Credentials and endpoints
+
+- **ABM API account.** In Apple Business Manager → Settings → API, create an
+  API account with device/device-management-service permissions, download the
+  private key (`.pem`), and copy the **Client ID** and **Key ID**. Upload the
+  PEM plus both ids under **Settings → Management → Apple Business Manager**.
+  Mattrax accepts a JSON bundle too. The key must be an unencrypted PKCS#8
+  EC P-256 key (`-----BEGIN PRIVATE KEY-----`); convert Apple's `.p12` with
+  `openssl pkcs12 -in key.p12 -nocerts -nodes | openssl pkcs8 -topk8 -nocrypt`.
+- **Legacy DEP token.** A `.p7m` server token is parsed, validated and stored so
+  an administrator can see its organization/expiry, but it is **not** used for
+  sync. The current API is OAuth; create an API account and replace the token.
+  Sync reports this migration explicitly instead of failing silently.
+- **OAuth flow.** Mattrax builds an ES256 client assertion
+  (`aud=https://account.apple.com/auth/oauth2/v2/token`, `iss`/`sub` = Team/Client
+  ID, `kid` = Key ID, 5-minute expiry, unique `jti`), exchanges it at
+  `https://account.apple.com/auth/oauth2/token` with
+  `grant_type=client_credentials`, and uses the one-hour bearer token against
+  `https://api-business.apple.com/v1` (or `api-school.apple.com` for
+  `school.api`). Tokens are never persisted.
+- **Apps and Books content token.** Download the `.vpptoken` from Apple Business
+  Manager → Apps and Books and upload it under **Settings → Management → Apps
+  and Books**. The content token is a base64 JSON object (`token`, `expDate`,
+  `orgName`); Mattrax validates its structure/expiry, seals it, and sends the
+  whole value as the bearer token to `https://vpp.itunes.apple.com/mdm`.
+
+### Sync, assignment and licensing
+
+- `POST /v1/tenants/:tenantId/abm/sync` pages through `GET /v1/orgDevices`,
+  upserts `abm_device` by `(organizationId, serial)`, links a matching enrolled
+  `device` row, and marks local serials that Apple no longer returns as
+  `REMOVED`. The sync is bounded to 5,000 devices.
+- `POST /v1/tenants/:tenantId/abm/devices/:serial/assign` finds or creates a
+  device management service (`POST /v1/mdmServers`, using the tenant's APNs
+  certificate) and assigns the device with `POST /v1/orgDeviceActivities`
+  (`ASSIGN_DEVICES`). It records the MDM server id and activity id.
+- `GET /v1/tenants/:tenantId/abm/devices/:serial/profile-url` returns a
+  short-lived, HMAC-signed, tenant/serial/profile-bound ADE `.mobileconfig` URL.
+  `GET /v1/abm/ade/:token` is the public profile endpoint; it re-checks that the
+  device is still assigned to the tenant and that the profile revision matches.
+  The mobileconfig reuses the existing SCEP and `com.apple.mdm` payloads with an
+  ADE-specific display name/identifier and a stable profile UUID.
+- **Known ABM gap.** Apple's current API assigns devices to a management service;
+  it does not expose a per-device "ADE profile UUID" assignment. Mattrax tracks
+  its own stable profile UUID and serves the profile URL, but automatic delivery
+  of that profile inside the ADE `Authenticate` check-in response is **not yet
+  wired** — the existing MDM check-in still returns an empty `Authenticate`
+  response. Validate this path against a real ABM-assigned Mac/iOS device before
+  claiming zero-touch enrollment.
+- `POST /v1/tenants/:tenantId/vpp/sync` pages through `GET /v2/assets` and
+  upserts licence counts. Names/bundle ids are enriched from the tenant
+  catalogue and, when an ABM credential is available, `GET /v1/apps`; otherwise
+  the row falls back to `App <adamId>`.
+- `POST /v1/tenants/:tenantId/vpp/assets/:adamId/install` (and the existing
+  application install path for a store app) consumes one device licence with
+  `POST /v2/assets/associate`, records the event id/state in
+  `device_vpp_assignment`, then queues `InstallApplication` with
+  `Options.PurchaseMethod = 1` (VPP). Association is asynchronous: the queued
+  command and local state do not claim the app installed until the device
+  reports it. `POST .../release` uses `POST /v2/assets/disassociate` for
+  revocable licences and returns the local count.
+- When an Apps and Books token is present, store-app installs fail closed if the
+  token is inactive or no licence pool exists. They never silently fall back to
+  a user-account App Store install. Without a VPP token the existing direct
+  install path is unchanged.
+
+### Security and tenant isolation
+
+- ABM and VPP tokens are stored only as AES-256-GCM envelopes keyed from
+  `AUTH_SECRET` (`apple_business_manager.encrypted_token`,
+  `vpp_token.encrypted_token`). List/detail responses expose status, org,
+  expiry and counts only; the sealed value and private key never leave the API.
+- Every read/write resolves the tenant from the authenticated membership and
+  includes `organizationId` in the query. A tenant-bound API token cannot read
+  another tenant's ABM/VPP state. Deleting a tenant cascades its credential,
+  device and licence rows.
+- Outbound Apple calls use `@mattrax/net` `fetchWithTimeout` (15s default) and
+  an injectable fetch for tests. Apple error bodies are truncated and redacted
+  before being stored in `lastError`.
+- The ADE profile endpoint is public only because a device cannot present a
+  dashboard cookie. Its token is HMAC-signed, expires (7 days by default),
+  binds tenant + serial + profile UUID, and is rejected after the device is
+  unassigned/removed.
+
+### Real-ABM validation checklist
+
+1. Create an ABM API account with device and device-management-service
+   permissions; upload the PKCS#8 key + Client ID/Key ID. Confirm the status
+   becomes **active** and a bad key produces a clear 400.
+2. Assign at least one Mac/iPad to the Mattrax MDM server in ABM (or use
+   **Assign to Mattrax** on the device page), run **Sync devices**, and confirm
+   the serial appears with the correct model/family/state.
+3. Confirm a device removed from ABM becomes **removed** after sync and that a
+   second tenant's inventory is untouched.
+4. Generate an ADE profile URL and verify the `.mobileconfig` contains the
+   tenant APNs topic, SCEP challenge and `com.apple.mdm` payload. Then confirm
+   whether the device actually receives it during Setup Assistant (the known
+   gap above).
+5. Upload a `.vpptoken`, sync, and confirm asset totals match ABM. Install a
+   purchased app on an assigned Apple device; verify the licence count drops by
+   one, the assignment row records the Apple event id, and the device reports
+   the app. Return the licence and verify the count recovers (revocable assets).
+6. Rotate `AUTH_SECRET` only after re-uploading ABM/VPP credentials; a rotated
+   secret makes existing envelopes unreadable by design.
+
+## Windows Autopilot and federated Entra enrollment
+
+Tenant administrators use **Settings → Management → Windows Autopilot** to
+import hardware hashes, sync device identities, create deployment profiles and
+assign a profile to an Entra group. The public enrollment page explains the
+Autopilot/Entra flow when the tenant has a profile and Graph is configured.
+
+### Setup
+
+1. Register an Entra application and grant the **application** permissions
+   below with admin consent. `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET` enable the
+   Graph client; the same client id is the default federated token audience.
+2. In the tenant, connect Entra ID under **Settings → Identity** so the tenant
+   has an `azureTenantId`. Autopilot and federated discovery fail closed without
+   it.
+3. Set `WINDOWS_FEDERATED_AUDIENCE` only when Windows enrollment uses a
+   different app registration from SSO. Without either value, discovery never
+   advertises `Federated`.
+4. Import the Autopilot CSV (`Device Serial Number`, `Hardware Hash`, optional
+   `Group Tag`) or headerless `serial,hash` rows. Graph is called before any
+   local row is written, and imports are capped at 500 rows / 1 MB per request.
+5. Create a deployment profile (user-driven, self-deploying or
+   pre-provisioned), then assign it to an Entra group. Autopilot assigns devices
+   to profiles through groups; the API stores the assignment but does not
+   enumerate group membership.
+
+### Required Microsoft Graph permissions
+
+| Permission                                    | Type        | Used for                                                                                     |
+| --------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| `DeviceManagementServiceConfig.ReadWrite.All` | Application | Import/list/delete Autopilot device identities and create/update/assign deployment profiles. |
+| `DeviceManagementManagedDevices.Read.All`     | Application | Read Autopilot device state and Entra device ids during sync.                                |
+| `Group.Read.All`                              | Application | Validate/read assignment targets (the API only stores the group id; Graph enforces it).      |
+| `Directory.Read.All`                          | Application | Existing Entra directory sync and tenant/domain discovery.                                   |
+
+The app must be consented in every tenant whose devices it manages. A 403 from
+Graph is surfaced as `ConsentRequired` and the dashboard asks the operator to
+grant admin consent.
+
+### Security model
+
+- Every Autopilot query is scoped by `organizationId`; Graph calls use the
+  tenant's own `azureTenantId` from `sso_config`. A tenant can never import,
+  list, assign or delete another tenant's devices.
+- Hardware hashes are stored only as imported (they are device fingerprints,
+  not secrets) and are never returned by list/detail APIs. Graph errors are
+  mapped to typed API errors; a failed Graph import leaves no local rows.
+- The WSTEP tenant token remains HMAC-signed with `AUTH_SECRET`. Discovery mints
+  a **federated-mode** token (`mttxw2`) only when the client offered
+  `Federated`, the tenant has an Entra id and an audience is configured. Policy
+  and enrollment then require a JWT whose signature, issuer, `tid`, audience,
+  `exp` and `nbf` all validate against the tenant's Entra JWKS.
+- OnPremise enrollment is unchanged: a v1 tenant token (or the legacy pin)
+  continues to use the signed WSTEP token flow. Federated tokens are never
+  accepted for a different tenant, and an invalid/missing JWT fails closed with
+  `UnknownDevice`.
+- Deleting an Autopilot identity removes it from Graph first; a Graph failure
+  keeps the local row so the operation can be retried.
+
+### Real-Entra/device validation checklist
+
+- [ ] Grant the permissions above and confirm `getAutopilotSettings` reports
+      `configured: true` and the admin-consent URL works.
+- [ ] Import a real Autopilot CSV and confirm Graph returns identities and the
+      device list shows serial/model/status.
+- [ ] Create each deployment mode, assign a profile to a real Entra group and
+      confirm Graph shows the assignment.
+- [ ] Reset a registered device and complete Autopilot OOBE with Entra join;
+      confirm the device appears in Mattrax and links by serial.
+- [ ] With `WINDOWS_FEDERATED_AUDIENCE` set, confirm discovery returns
+      `AuthPolicy: Federated` and the Entra STS URL for the tenant.
+- [ ] Confirm policy/enroll reject an expired, wrong-issuer, wrong-audience,
+      wrong-tenant and tampered token, and accept a fresh device/user token.
+- [ ] Confirm OnPremise enrollment still works for the same tenant after
+      federated discovery is enabled.
+- [ ] Verify profile status/enrollment state converges after sync and that
+      deleting an imported identity removes it from Graph.
+
+### Known gaps
+
+- The exact federated WSTEP handshake was not exercised against Entra/Windows
+  hardware. The validator and discovery/token routing are fixture-tested; the
+  `AuthenticationServiceUrl` defaults to Entra's WS-Federation endpoint and can
+  be overridden with `windowsFederated.authServiceUrl`.
+- `enableDevicePreparation` is sent to Graph as `enableWhiteGlove`; the newer
+  `windowsAutopilotDevicePreparationPolicy` resource is not modelled.
+- Autopilot profile assignment is group-based only. Per-device assignment and
+  group membership enumeration are not implemented.
+- Hardware-hash imports are sequential (one Graph request per row) to respect
+  throttling; very large imports should be split into batches of 500.
+
 ## Observability and rate limiting: exact gaps
 
 - **The edge limiter is optional per bucket.** Cloudflare Rate Limiting
@@ -231,8 +459,12 @@ architecture notes in the porting plan.
 
 ### P0 — required before selling to a real fleet
 
-- **Apple ADE/ABM and VPP.** Zero-touch enrollment and Apps & Books licences are
-  not implemented. Requires an ABM account and a supervised device to validate.
+- **Apple ADE/ABM and VPP.** OAuth credential upload/validation, ABM device
+  sync, MDM-service assignment, signed ADE profile URLs, Apps and Books licence
+  sync/assignment/release and VPP app installs are implemented and
+  fixture-tested. Remaining: real-ABM/device validation of zero-touch delivery
+  (the profile is not yet returned inside the ADE `Authenticate` response; see
+  the checklist above). Requires an ABM account and a supervised device.
 - **Android Enterprise delivery.** Enterprise signup, the Google callback,
   Pub/Sub OIDC verification, enrollment-token/QR issuance, device creation on
   `ENROLLMENT`/`STATUS_REPORT`, erase/restart/lock commands and
@@ -250,10 +482,13 @@ architecture notes in the porting plan.
   call the Pub/Sub Admin API). Google does not document a universal AMAPI
   deep link, so enrollment uses the token QR payload plus the `afw#setup`
   manual-token flow.
-- **Federated Entra enrollment / Autopilot.** Tenant-scoped Windows enrollment is
-  done (signed discovery token, tenant-bound WSTEP token, certificate
-  revocation). Remaining gap: device-token-based Autopilot/federated Entra
-  enrollment, and end-to-end validation on a real Windows device.
+- **Federated Entra enrollment / Autopilot.** Tenant-scoped Windows enrollment
+  (signed discovery token, tenant-bound WSTEP token, certificate revocation) is
+  joined by Autopilot hardware-hash import, Graph device sync/profile
+  assignment and typed federated WSTEP token validation. The federated path is
+  fixture-tested, but the exact Entra device-token handshake and Autopilot OOBE
+  still need validation against a real Entra tenant and Windows hardware; see
+  the checklist below. Until then, treat Federated discovery as preview.
 - **Billing plan/seat enforcement.** Stripe signature-verified webhook ingestion,
   subscription upsert, optional billing configuration and mapped Stripe errors
   are implemented. `MATTRAX_PLAN_LIMITS` now supplies the plan catalogue and the
@@ -267,9 +502,11 @@ architecture notes in the porting plan.
 
 - **Generic SAML SSO and IdP group → role mapping.** Entra OIDC is supported;
   Okta/Google/OneLogin need SAML.
-- **Passkey MFA.** TOTP, recovery codes and owner/admin tenant enforcement are
-  implemented. Passkeys (WebAuthn) and a dedicated step-up prompt for tenant
-  actions are still follow-ups; management currently requires password + TOTP.
+- **Passkey MFA.** TOTP, recovery codes, passkeys (WebAuthn) and owner/admin
+  tenant enforcement are implemented, including a step-up prompt for sensitive
+  actions. Remaining polish: conditional UI (passkey autofill) on the login
+  field, renaming keys from the account page, and a break-glass CLI for
+  operators who lose every factor.
 - **Scheduled/background work for large fleets.** Bounded concurrency (12 in
   flight, chunked) and per-device outcomes are in place. Large fan-outs are still
   synchronous with the request; move them to Queues (or `waitUntil` with a job

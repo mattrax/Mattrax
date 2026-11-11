@@ -24,6 +24,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { withStepUp } from "~/lib/step-up";
 
 export default function GeneralSettingsPage() {
   const params = useParams();
@@ -149,12 +150,26 @@ export default function GeneralSettingsPage() {
   const downloadBackup = async (id: string) => {
     setBackupDownloadError(null);
     try {
-      const response = await fetch(
-        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/backups/${encodeURIComponent(
-          id,
-        )}/download`,
-        { credentials: "include" },
-      );
+      const response = await withStepUp("backup-download", async (grant) => {
+        const result = await fetch(
+          `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/backups/${encodeURIComponent(
+            id,
+          )}/download`,
+          {
+            credentials: "include",
+            ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
+          },
+        );
+        if (result.status === 403) {
+          const body = (await result.json().catch(() => null)) as {
+            _tag?: string;
+            action?: string;
+            methods?: string[];
+          } | null;
+          if (body?._tag === "StepUpRequired") throw body;
+        }
+        return result;
+      });
       if (!response.ok)
         throw new Error((await response.text()) || `Download failed (${response.status})`);
       const disposition = response.headers.get("Content-Disposition") ?? "";

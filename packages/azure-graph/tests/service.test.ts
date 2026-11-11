@@ -457,3 +457,199 @@ describe("AzureGraph outbound timeouts", () => {
     expect(result).toEqual([contosoDomain]);
   });
 });
+
+const autopilotDevice = {
+  id: "autopilot-1",
+  serialNumber: "ABC123",
+  hardwareIdentifier: "aGFzaA==",
+  groupTag: "Engineering",
+  model: "Surface Laptop",
+  manufacturer: "Microsoft",
+  azureADDeviceId: "entra-device-1",
+  enrollmentState: "enrolled",
+  deploymentProfileAssignmentStatus: "assignedInSync",
+  deploymentProfileAssignedDateTime: "2026-01-01T00:00:00Z",
+  lastContactedDateTime: "2026-01-02T00:00:00Z",
+};
+
+describe("AzureGraph Autopilot", () => {
+  it("imports hardware hashes with the documented Graph request shape", async () => {
+    const requests: Array<{ url: string; method?: string; body?: unknown; auth?: string }> = [];
+
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        return yield* graph.importAutopilotDevices(tenantId, [
+          {
+            serialNumber: "ABC123",
+            hardwareIdentifier: "aGFzaA==",
+            groupTag: "Engineering",
+          },
+        ]);
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        requests.push({
+          url,
+          method: init?.method,
+          body: JSON.parse(bodyText(init)),
+          auth: header(init, "authorization"),
+        });
+        return json(autopilotDevice);
+      },
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(decodeURIComponent(requests[0]!.url)).toContain(
+      "/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities",
+    );
+    expect(requests[0]!.method).toBe("POST");
+    expect(requests[0]!.auth).toBe("Bearer graph-token");
+    expect(requests[0]!.body).toMatchObject({
+      "@odata.type": "#microsoft.graph.importedWindowsAutopilotDeviceIdentity",
+      serialNumber: "ABC123",
+      hardwareIdentifier: "aGFzaA==",
+      groupTag: "Engineering",
+    });
+    expect(result[0]).toMatchObject({
+      id: "autopilot-1",
+      serialNumber: "ABC123",
+      profileStatus: "assigned",
+      enrollmentState: "enrolled",
+      azureAdDeviceId: "entra-device-1",
+    });
+  });
+
+  it("accepts a collection-shaped import response", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        return yield* graph.importAutopilotDevices(tenantId, [
+          { serialNumber: "ABC123", hardwareIdentifier: "aGFzaA==" },
+        ]);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({ value: [autopilotDevice] })),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.serialNumber).toBe("ABC123");
+  });
+
+  it("lists device identities across nextLinks", async () => {
+    const nextLink =
+      "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$skiptoken=2";
+    const urls: string[] = [];
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        const first = yield* graph.listAutopilotDevices(tenantId);
+        const second = yield* graph.listAutopilotDevices(tenantId, first.nextLink!);
+        return { first, second };
+      }),
+      (url) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        urls.push(url);
+        return url === nextLink
+          ? json({ value: [{ ...autopilotDevice, id: "autopilot-2", serialNumber: "DEF456" }] })
+          : json({ value: [autopilotDevice], "@odata.nextLink": nextLink });
+      },
+    );
+
+    expect(decodeURIComponent(urls[0]!)).toContain(
+      "/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$top=100",
+    );
+    expect(result.first.items).toHaveLength(1);
+    expect(result.first.nextLink).toBe(nextLink);
+    expect(result.second.items[0]?.serialNumber).toBe("DEF456");
+    expect(result.second.nextLink).toBeNull();
+  });
+
+  it("creates, updates and assigns deployment profiles", async () => {
+    const requests: Array<{ url: string; method?: string; body?: any }> = [];
+
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        const created = yield* graph.createAutopilotProfile(tenantId, {
+          displayName: "Standard",
+          deploymentMode: "userDriven",
+          joinType: "azureADJoin",
+          deviceNameTemplate: "DESKTOP-%SERIAL%",
+          enableDevicePreparation: true,
+        });
+        const updated = yield* graph.updateAutopilotProfile(tenantId, created.id, {
+          displayName: "Standard v2",
+          deploymentMode: "selfDeploying",
+          joinType: "azureADJoinUsingDeviceAuth",
+          enableDevicePreparation: false,
+        });
+        yield* graph.assignAutopilotProfile(tenantId, created.id, "group-1");
+        return { created, updated };
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        requests.push({ url, method: init?.method, body: JSON.parse(bodyText(init)) });
+        if (url.endsWith("/assign")) return new Response(null, { status: 204 });
+        return json({
+          id: "profile-1",
+          displayName: requests.at(-1)?.body.displayName,
+          deploymentMode: requests.at(-1)?.body.deploymentMode,
+          joinType: requests.at(-1)?.body.joinType,
+          deviceNameTemplate: requests.at(-1)?.body.deviceNameTemplate,
+          enableWhiteGlove: requests.at(-1)?.body.enableWhiteGlove,
+        });
+      },
+    );
+
+    expect(decodeURIComponent(requests[0]!.url)).toContain(
+      "/v1.0/deviceManagement/windowsAutopilotDeploymentProfiles",
+    );
+    expect(requests[0]!.method).toBe("POST");
+    expect(requests[0]!.body).toMatchObject({
+      "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfile",
+      displayName: "Standard",
+      deploymentMode: "userDriven",
+      joinType: "azureADJoin",
+      enableWhiteGlove: true,
+    });
+    expect(requests[1]!.method).toBe("PATCH");
+    expect(requests[1]!.body).toMatchObject({ displayName: "Standard v2" });
+    expect(requests[1]!.body["@odata.type"]).toBeUndefined();
+    expect(requests[2]!.url).toContain("/profile-1/assign");
+    expect(requests[2]!.body).toMatchObject({
+      "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfileAssignment",
+      target: {
+        "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+        groupId: "group-1",
+      },
+    });
+    expect(result.created.id).toBe("profile-1");
+    expect(result.updated.id).toBe("profile-1");
+  });
+
+  it("deletes a device identity and maps 404 to NotFound", async () => {
+    let method: string | undefined;
+    await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        yield* graph.deleteAutopilotDevice(tenantId, "autopilot-1");
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        method = init?.method;
+        return new Response(null, { status: 204 });
+      },
+    );
+    expect(method).toBe("DELETE");
+
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+          yield* graph.deleteAutopilotDevice(tenantId, "missing");
+        }),
+        (url) => (isTokenRequest(url) ? tokenResponse() : json({ error: "not found" }, 404)),
+      ),
+    ).rejects.toMatchObject({ _tag: "NotFound", status: 404 });
+  });
+});

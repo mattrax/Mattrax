@@ -26,6 +26,11 @@ export type EnterpriseDevicePolicy = typeof schema.devicePolicy.$inferSelect;
 export type EnterpriseBackupRun = typeof schema.backupRun.$inferSelect;
 export type EnterpriseApplePushCertificate = typeof schema.applePushCertificate.$inferSelect;
 export type EnterpriseApplePushKey = typeof schema.applePushKey.$inferSelect;
+export type EnterpriseAppleBusinessManager = typeof schema.appleBusinessManager.$inferSelect;
+export type EnterpriseAbmDevice = typeof schema.abmDevice.$inferSelect;
+export type EnterpriseVppToken = typeof schema.vppToken.$inferSelect;
+export type EnterpriseVppAsset = typeof schema.vppAsset.$inferSelect;
+export type EnterpriseDeviceVppAssignment = typeof schema.deviceVppAssignment.$inferSelect;
 
 /** Used by tests to construct a schema-aware in-memory database. */
 export const createEnterpriseSchema = (): EnterpriseSchema => schema;

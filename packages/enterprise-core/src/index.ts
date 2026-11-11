@@ -4,6 +4,8 @@ export {
   authCredentials,
   authEmailCredentials,
   authIdentifiers,
+  authPasskeyCredentials,
+  authPasskeyFlows,
   authPasswords,
   authPending,
   authProofs,
@@ -13,6 +15,7 @@ export {
   authSessions,
   authStorage,
   authTotpFactors,
+  hasMfaFactor,
   totpMapping,
 } from "./schema.ts";
 export { Db, type EnterpriseDb } from "./db.ts";

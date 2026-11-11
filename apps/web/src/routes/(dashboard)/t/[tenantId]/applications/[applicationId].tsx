@@ -29,6 +29,8 @@ export default function ApplicationDetailPage() {
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
   }));
+  const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
+  const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
   const row = () => app.data as ApplicationNode | undefined;
   const [name, setName] = createSignal("");
   const [bundleId, setBundleId] = createSignal("");
@@ -138,6 +140,9 @@ export default function ApplicationDetailPage() {
   const platform = () => row()?.platform;
   const canInstall = createMemo(() => platform() === "apple");
   const assignedCount = () => groupIds().size + deviceIds().size;
+  const vppAsset = createMemo(() =>
+    (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
+  );
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
@@ -159,7 +164,11 @@ export default function ApplicationDetailPage() {
               }
               onClick={() => install.mutate()}
             >
-              {install.isPending ? "Queueing…" : "Install on assigned devices"}
+              {install.isPending
+                ? "Queueing…"
+                : vppAsset()
+                  ? "Install via VPP on assigned devices"
+                  : "Install on assigned devices"}
             </Button>
           </>
         }
@@ -194,6 +203,36 @@ export default function ApplicationDetailPage() {
                       )}
                     </Show>
                   </div>
+                  <Show when={vppAsset()}>
+                    {(asset) => (
+                      <div class="rounded-lg border bg-stone-50 p-3 text-sm">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">VPP</Badge>
+                          <span class="font-medium">{asset().name}</span>
+                          <Show when={asset().bundleId}>
+                            <span class="font-mono text-xs text-stone-400">{asset().bundleId}</span>
+                          </Show>
+                        </div>
+                        <p class="mt-1 text-xs text-stone-500">
+                          {asset().availableLicenses} of {asset().totalLicenses} licence
+                          {asset().totalLicenses === 1 ? "" : "s"} available ·{" "}
+                          {asset().assignedLicenses} assigned
+                        </p>
+                        <Show when={asset().availableLicenses === 0}>
+                          <p class="mt-1 text-xs text-amber-700">
+                            No licences are available. Installs will be skipped until a licence is
+                            returned or purchased.
+                          </p>
+                        </Show>
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={vpp.data?.configured && !vppAsset()}>
+                    <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                      Apps and Books is configured, but no licence pool exists for this App Store
+                      ID. Sync Apps and Books from Settings → Management before installing.
+                    </p>
+                  </Show>
                   <Field label="Name">
                     <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} />
                   </Field>

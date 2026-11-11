@@ -12,6 +12,15 @@ import {
 import { certificateSerialHex, openCaPrivateKey, signScepCsr } from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import {
+  federatedAuthServiceUrl,
+  isFederatedTokenShaped,
+  unverifiedFederatedTenantId,
+  validateFederatedEntraToken,
+  type FederatedEntraClaims,
+  type FederatedJsonWebKeySet,
+  type FederatedTokenValidation,
+} from "./federated.ts";
+import {
   InternalServerError,
   UnknownDevice,
   type ManagementBackend,
@@ -170,7 +179,10 @@ const fromBase64Url = (value: string): string | null => {
 
 /** Prefix that marks a tenant-scoped Windows enrollment token. */
 const TENANT_TOKEN_PREFIX = "mttxw1";
+/** Prefix for a tenant token whose discovery chose the Federated auth policy. */
+const FEDERATED_TENANT_TOKEN_PREFIX = "mttxw2";
 const TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v1";
+const FEDERATED_TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v2:federated";
 /** Prefix that binds the organization into a WSTEP enrollment token subject. */
 const ENROLLMENT_SUBJECT_PREFIX = "mttxw1:";
 
@@ -186,12 +198,19 @@ export type WindowsTenantTokenOptions = {
   readonly ttlSeconds?: number;
   /** Injectable clock in milliseconds, for tests. */
   readonly now?: number;
+  /**
+   * Mint a token for a discovery flow that chose `AuthPolicy: Federated`.
+   * Policy/enroll then require a verifiable Entra JWT for this tenant.
+   */
+  readonly federated?: boolean;
 };
 
 export type WindowsTenantTokenVerification = {
   readonly organizationId: string;
   readonly issuedAt: number;
   readonly expiresAt: number;
+  /** True when discovery selected the Federated auth policy. */
+  readonly federated: boolean;
 };
 
 export type WindowsTenantTokenEvaluation = {
@@ -201,8 +220,13 @@ export type WindowsTenantTokenEvaluation = {
   readonly expired: boolean;
 };
 
-const tenantTokenMessage = (organizationId: string, issuedAt: number, expiresAt: number) =>
-  `${TENANT_TOKEN_CONTEXT}.${organizationId}.${issuedAt}.${expiresAt}`;
+const tenantTokenMessage = (
+  organizationId: string,
+  issuedAt: number,
+  expiresAt: number,
+  federated: boolean,
+) =>
+  `${federated ? FEDERATED_TENANT_TOKEN_CONTEXT : TENANT_TOKEN_CONTEXT}.${organizationId}.${issuedAt}.${expiresAt}`;
 
 /**
  * Stateless tenant enrollment token.
@@ -222,12 +246,13 @@ export const createWindowsTenantToken = (
     if (!authSecret) throw new Error("Windows tenant token requires a secret");
     const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
     const expiresAt = issuedAt + (options.ttlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS);
+    const federated = options.federated === true;
     const signature = await hmac(
       authSecret,
-      tenantTokenMessage(organizationId, issuedAt, expiresAt),
+      tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
     );
     return [
-      TENANT_TOKEN_PREFIX,
+      federated ? FEDERATED_TENANT_TOKEN_PREFIX : TENANT_TOKEN_PREFIX,
       toBase64Url(encoder.encode(organizationId)),
       issuedAt,
       expiresAt,
@@ -245,8 +270,9 @@ export const verifyWindowsTenantTokenDetailed = async (
   const parts = token.split(".");
   if (parts.length !== 5) return invalid;
   const [prefix, encodedOrganization, issuedAtRaw, expiresAtRaw, signature] = parts;
+  const federated = prefix === FEDERATED_TENANT_TOKEN_PREFIX;
   if (
-    prefix !== TENANT_TOKEN_PREFIX ||
+    (!federated && prefix !== TENANT_TOKEN_PREFIX) ||
     !encodedOrganization ||
     !issuedAtRaw ||
     !expiresAtRaw ||
@@ -259,7 +285,10 @@ export const verifyWindowsTenantTokenDetailed = async (
   if (!organizationId || !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return invalid;
   if (expiresAt <= issuedAt) return invalid;
 
-  const expected = await hmac(authSecret, tenantTokenMessage(organizationId, issuedAt, expiresAt));
+  const expected = await hmac(
+    authSecret,
+    tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
+  );
   if (!timingSafeEqual(expected, signature)) return invalid;
 
   const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
@@ -267,7 +296,7 @@ export const verifyWindowsTenantTokenDetailed = async (
   // Allow a little clock skew for freshly issued tokens.
   if (issuedAt > nowSeconds + 300) return invalid;
 
-  return { verification: { organizationId, issuedAt, expiresAt }, expired: false };
+  return { verification: { organizationId, issuedAt, expiresAt, federated }, expired: false };
 };
 
 export const verifyWindowsTenantToken = (
@@ -340,6 +369,28 @@ export type WindowsBackendOptions = {
   readonly requireDeviceIdentity?: boolean;
   /** Deployment plan catalogue; omitted means unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
+  /**
+   * Federated Entra WSTEP support. Disabled unless an audience is supplied.
+   * Discovery advertises `Federated` only for tenants with an Entra tenant id
+   * and when the client offered it; policy/enroll then validate the Entra JWT
+   * against that tenant's issuer and JWKS.
+   */
+  readonly federated?: {
+    readonly enabled?: boolean;
+    /** Accepted token audience(s); normally the Mattrax app registration id. */
+    readonly audience?: string | ReadonlyArray<string>;
+    /** Optional `wtrealm` for the tenant-specific WS-Federation URL. */
+    readonly clientId?: string;
+    /** Override the default `https://login.microsoftonline.com/<tid>/wsfed`. */
+    readonly authServiceUrl?: (tenantId: string) => string;
+    /** Injected JWKS (tests). */
+    readonly jwks?: FederatedJsonWebKeySet;
+    readonly jwksUri?: (tenantId: string) => string;
+    readonly fetch?: typeof globalThis.fetch;
+    /** Injectable clock in milliseconds (tests). */
+    readonly now?: number;
+    readonly clockToleranceSeconds?: number;
+  };
 };
 
 type WindowsBackend = Pick<
@@ -429,6 +480,88 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         verifyWindowsTenantTokenDetailed(trimmed, secret, { ttlSeconds: tenantTokenTtlSeconds }),
       );
     });
+
+  const federated = options.federated;
+  const federatedAudience = federated?.audience;
+  const federatedEnabled = Boolean(
+    federated &&
+    federated.enabled !== false &&
+    federatedAudience &&
+    (typeof federatedAudience === "string"
+      ? federatedAudience.trim()
+      : federatedAudience.length > 0),
+  );
+
+  const tenantAzureTenantId = (organizationId: string): Effect.Effect<string | null, unknown> =>
+    Effect.gen(function* () {
+      const [config] = yield* db
+        .select({ azureTenantId: s.ssoConfig.azureTenantId })
+        .from(s.ssoConfig)
+        .where(eq(s.ssoConfig.organizationId, organizationId))
+        .limit(1);
+      return config?.azureTenantId?.trim() || null;
+    });
+
+  const organizationForAzureTenant = (
+    azureTenantId: string,
+  ): Effect.Effect<string | null, unknown> =>
+    Effect.gen(function* () {
+      const [config] = yield* db
+        .select({ organizationId: s.ssoConfig.organizationId })
+        .from(s.ssoConfig)
+        .where(eq(s.ssoConfig.azureTenantId, azureTenantId))
+        .limit(1);
+      return config?.organizationId ?? null;
+    });
+
+  const validateFederatedToken = (
+    token: string,
+    azureTenantId: string,
+  ): Effect.Effect<FederatedTokenValidation, never> =>
+    Effect.promise(() =>
+      validateFederatedEntraToken({
+        token,
+        tenantId: azureTenantId,
+        audience: federatedAudience!,
+        ...(federated?.jwks ? { jwks: federated.jwks } : {}),
+        ...(federated?.jwksUri ? { jwksUri: federated.jwksUri(azureTenantId) } : {}),
+        ...(federated?.fetch ? { fetch: federated.fetch } : {}),
+        ...(federated?.now !== undefined ? { now: federated.now } : {}),
+        ...(federated?.clockToleranceSeconds !== undefined
+          ? { clockToleranceSeconds: federated.clockToleranceSeconds }
+          : {}),
+      }),
+    );
+
+  /**
+   * Resolve a tenant from an Entra token, then validate the token against that
+   * tenant. A token for a tenant without SSO configuration, or whose `tid` is
+   * not the configured Entra tenant, is rejected.
+   */
+  const resolveFederatedOrganization = (
+    token: string,
+    expectedOrganizationId?: string | null,
+  ): Effect.Effect<
+    { readonly organizationId: string; readonly claims: FederatedEntraClaims },
+    UnknownDevice | InternalServerError
+  > =>
+    Effect.gen(function* () {
+      if (!federatedEnabled) return yield* Effect.fail(new UnknownDevice());
+      const unverifiedTenant = unverifiedFederatedTenantId(token);
+      if (!unverifiedTenant) return yield* Effect.fail(new UnknownDevice());
+      const organizationId =
+        expectedOrganizationId ?? (yield* organizationForAzureTenant(unverifiedTenant));
+      if (!organizationId) return yield* Effect.fail(new UnknownDevice());
+      const azureTenantId = yield* tenantAzureTenantId(organizationId);
+      if (!azureTenantId) return yield* Effect.fail(new UnknownDevice());
+      // The signed tenant token (when present) pins the organization; the
+      // token's own tenant must still match that organization's Entra tenant.
+      if (azureTenantId.toLowerCase() !== unverifiedTenant.toLowerCase())
+        return yield* Effect.fail(new UnknownDevice());
+      const validation = yield* validateFederatedToken(token, azureTenantId);
+      if (!validation.ok) return yield* Effect.fail(new UnknownDevice());
+      return { organizationId, claims: validation.claims };
+    }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
 
   /**
    * Resolve the owning organization from, in order: the signed tenant token,
@@ -557,14 +690,43 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
       request: WindowsDiscoveryRequest,
     ): Effect.Effect<WindowsDiscoveryResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
-        yield* resolveOrganization({ tenantToken: request.tenantToken });
-        const query = tenantQuery(request.tenantToken);
+        const organizationId = yield* resolveOrganization({ tenantToken: request.tenantToken });
+        const offeredFederated = request.authPolicies.some(
+          (policy) => policy.trim().toLowerCase() === "federated",
+        );
+        const azureTenantId = federatedEnabled
+          ? yield* tenantAzureTenantId(organizationId).pipe(Effect.mapError(() => internal()))
+          : null;
+        if (federatedEnabled && offeredFederated && azureTenantId) {
+          // Mint a federated-mode tenant token so policy/enroll can enforce
+          // Entra token validation without guessing from the request shape.
+          const secret = yield* requireSecret();
+          const federatedToken = yield* Effect.promise(() =>
+            createWindowsTenantToken(organizationId, secret, {
+              federated: true,
+              ttlSeconds: tenantTokenTtlSeconds,
+            }),
+          );
+          const query = tenantQuery(federatedToken);
+          return {
+            authPolicy: "Federated",
+            // MS-MDE2 enrollment version supported by the WSTEP implementation.
+            enrollmentVersion: "4.0",
+            enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy${query}`,
+            enrollmentServiceUrl: `${origin}/mdm/windows/enroll${query}`,
+            authServiceUrl:
+              federated?.authServiceUrl?.(azureTenantId) ??
+              federatedAuthServiceUrl(azureTenantId, {
+                ...(federated?.clientId ? { clientId: federated.clientId } : {}),
+              }),
+          };
+        }
         return {
           authPolicy: "OnPremise",
           // MS-MDE2 enrollment version supported by the WSTEP implementation.
           enrollmentVersion: "4.0",
-          enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy${query}`,
-          enrollmentServiceUrl: `${origin}/mdm/windows/enroll${query}`,
+          enrollmentPolicyServiceUrl: `${origin}/mdm/windows/policy${tenantQuery(request.tenantToken)}`,
+          enrollmentServiceUrl: `${origin}/mdm/windows/enroll${tenantQuery(request.tenantToken)}`,
         };
       }),
 
@@ -574,12 +736,33 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     ): Effect.Effect<WindowsEnrollmentPolicy, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const secret = yield* requireSecret();
-        const organizationId = yield* resolveOrganization({
-          tenantToken: context.tenantToken,
-        });
         // A device may retry the policy call; keep the subject stable when it
         // presents one of our own still-valid tokens.
         const presentedToken = authToken.trim();
+        const tenantEvaluation = yield* evaluateTenantToken(context.tenantToken);
+        const presentedJwt = isFederatedTokenShaped(presentedToken);
+        // Discovery mints a federated-mode tenant token; a JWT also selects
+        // federated validation when the deployment supports it. OnPremise
+        // discovery keeps working even when federated is configured.
+        const federatedFlow =
+          tenantEvaluation.verification?.federated === true || (federatedEnabled && presentedJwt);
+        let organizationId: string;
+        if (federatedFlow) {
+          // Federated policy requests must carry a verifiable Entra token.
+          // There is deliberately no fallback to an opaque client credential.
+          if (!presentedJwt) return yield* Effect.fail(new UnknownDevice());
+          const expectedOrganizationId = context.tenantToken?.trim()
+            ? yield* resolveOrganization({ tenantToken: context.tenantToken })
+            : null;
+          organizationId = (yield* resolveFederatedOrganization(
+            presentedToken,
+            expectedOrganizationId,
+          )).organizationId;
+        } else {
+          organizationId = yield* resolveOrganization({
+            tenantToken: context.tenantToken,
+          });
+        }
         const evaluated = presentedToken
           ? yield* Effect.promise(() =>
               verifyWindowsEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
@@ -627,23 +810,47 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     ): Effect.Effect<WindowsEnrollmentResult, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const secret = yield* requireSecret();
-        const verification = yield* Effect.promise(() =>
-          verifyWindowsEnrollmentToken(request.authToken, secret, { ttlSeconds }),
-        );
-        if (!verification) return yield* Effect.fail(new UnknownDevice());
-
-        const deviceIdentifier = request.deviceId?.trim() || verification.subject;
-        const organizationId = yield* resolveOrganization({
-          tenantToken: request.tenantToken,
-        });
-        const boundOrganizationId = organizationFromWindowsEnrollmentSubject(verification.subject);
-        // The WSTEP token is minted per tenant. URL token and WSTEP token must
-        // agree; an unbound legacy token is only accepted for the legacy
-        // deployment-wide pin, never alongside a tenant token.
-        if (boundOrganizationId && boundOrganizationId !== organizationId)
-          return yield* Effect.fail(new UnknownDevice());
-        if (!boundOrganizationId && request.tenantToken?.trim())
-          return yield* Effect.fail(new UnknownDevice());
+        const presentedToken = request.authToken.trim();
+        const tenantEvaluation = yield* evaluateTenantToken(request.tenantToken);
+        const presentedJwt = isFederatedTokenShaped(presentedToken);
+        const federatedFlow =
+          tenantEvaluation.verification?.federated === true || (federatedEnabled && presentedJwt);
+        let organizationId: string;
+        let deviceIdentifier: string;
+        if (federatedFlow) {
+          // The device presented an Entra token instead of (or after) our
+          // WSTEP token. Validate it against the tenant's issuer and JWKS.
+          if (!presentedJwt) return yield* Effect.fail(new UnknownDevice());
+          const expectedOrganizationId = request.tenantToken?.trim()
+            ? yield* resolveOrganization({ tenantToken: request.tenantToken })
+            : null;
+          const resolved = yield* resolveFederatedOrganization(
+            presentedToken,
+            expectedOrganizationId,
+          );
+          organizationId = resolved.organizationId;
+          deviceIdentifier =
+            request.deviceId?.trim() || resolved.claims.objectId || resolved.claims.subject;
+        } else {
+          const verification = yield* Effect.promise(() =>
+            verifyWindowsEnrollmentToken(presentedToken, secret, { ttlSeconds }),
+          );
+          if (!verification) return yield* Effect.fail(new UnknownDevice());
+          deviceIdentifier = request.deviceId?.trim() || verification.subject;
+          organizationId = yield* resolveOrganization({
+            tenantToken: request.tenantToken,
+          });
+          const boundOrganizationId = organizationFromWindowsEnrollmentSubject(
+            verification.subject,
+          );
+          // The WSTEP token is minted per tenant. URL token and WSTEP token must
+          // agree; an unbound legacy token is only accepted for the legacy
+          // deployment-wide pin, never alongside a tenant token.
+          if (boundOrganizationId && boundOrganizationId !== organizationId)
+            return yield* Effect.fail(new UnknownDevice());
+          if (!boundOrganizationId && request.tenantToken?.trim())
+            return yield* Effect.fail(new UnknownDevice());
+        }
         const [enrollment] = yield* db
           .select()
           .from(s.enterpriseEnrollment)

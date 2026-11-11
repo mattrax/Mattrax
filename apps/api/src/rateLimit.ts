@@ -56,6 +56,10 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname))
     return { bucket: "auth", limit: 120, windowSeconds: 60 };
 
+  // Passkey ceremonies and step-up factor verification are credential checks.
+  if (request.method === "POST" && (pathname.includes("/passkey") || pathname.includes("/step-up")))
+    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+
   if (pathname.startsWith("/api/v1/enrollment/"))
     return { bucket: "enrollment", limit: 600, windowSeconds: 60 };
 

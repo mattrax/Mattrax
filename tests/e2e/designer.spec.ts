@@ -134,6 +134,72 @@ test.describe("policy designer", () => {
     expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
   });
 
+  test("loads the Windows catalogue incrementally", async ({ page }) => {
+    const requested: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith("/catalog/")) requested.push(url.pathname);
+    });
+
+    await gotoHydrated(page, "/designer");
+    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Browse only needs the small index; the old single file is gone and the
+    // property search text is not fetched until the user searches.
+    expect(requested).toContain("/catalog/windows/index.json");
+    expect(requested).not.toContain("/catalog/windows.json");
+    expect(requested).not.toContain("/catalog/windows/search.json");
+
+    await page.getByPlaceholder("Search settings…").fill("cortana");
+    await expect(page.getByText(/matching setting/).first()).toBeVisible({ timeout: 20_000 });
+    expect(requested).toContain("/catalog/windows/search.json");
+  });
+
+  test("opens a Windows collection from a property search result", async ({ page }) => {
+    await gotoHydrated(page, "/designer");
+    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByPlaceholder("Search settings…").fill("AllowCortanaAboveLock");
+    const result = page.getByRole("button", { name: /Above Lock/ }).first();
+    await expect(result).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("1 matching setting", { exact: true }).first()).toBeVisible();
+    await result.click();
+
+    // The collection file loads on demand and its settings become editable.
+    await expect(page.getByRole("heading", { name: "Above Lock", exact: true })).toBeVisible();
+    await expect(page.getByText("Add it to the policy to configure 3 settings.")).toBeVisible();
+    await page.getByRole("button", { name: /^Add to policy$/ }).click();
+    await expect(
+      page.getByRole("button", { name: "Remove Above Lock from policy", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Allow Cortana Above Lock").first()).toBeVisible({
+      timeout: 20_000,
+    });
+  });
+
+  test("filters Android settings with the property search index", async ({ page }) => {
+    await gotoHydrated(page, "/designer");
+    await page.getByRole("button", { name: "Android", exact: true }).click();
+    await page.getByRole("button", { name: /Android baseline/i }).click();
+    await expect(page.getByRole("button", { name: "Remove Policy from policy" })).toBeVisible();
+
+    await page.getByPlaceholder("Search settings…").fill("camera");
+    await expect(page.getByText(/Showing \d+ settings? matching/)).toBeVisible({
+      timeout: 20_000,
+    });
+    // The search index stores property keys on Android (not OMA addresses), so
+    // matched settings must still render.
+    await expect(page.getByRole("group", { name: "Camera Disabled" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Camera Access" })).toBeVisible();
+    await expect(page.getByText("No settings match this filter.")).toHaveCount(0);
+  });
+
   test("saves a Windows baseline with only applicable OMA-URIs", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Windows Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);

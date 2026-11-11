@@ -15,7 +15,7 @@ export type ErrorPresentation = {
 };
 
 const TAG_PATTERN =
-  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe)[A-Za-z0-9_]*$/;
+  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe|StepUp)[A-Za-z0-9_]*$/;
 
 const TITLES: Record<ErrorVariant, string> = {
   auth: "Sign in required",
@@ -166,6 +166,14 @@ const TAGS: Record<string, Mapping> = {
     message: "Sign-in was blocked by a security policy.",
     variant: "permission",
   },
+  StepUpRequired: {
+    message: "Confirm your identity to continue.",
+    variant: "auth",
+  },
+  StepUpUnavailable: {
+    message: "That confirmation method isn't available. Choose another way to confirm.",
+    variant: "validation",
+  },
   SsoRejected: {
     message: "Single sign-on was rejected. Try again or contact your administrator.",
     variant: "auth",
@@ -210,10 +218,47 @@ export const errorTag = (error: unknown): string | undefined => {
     return TAG_PATTERN.test(error.trim()) ? error.trim() : undefined;
   }
   if (!isRecord(error)) return undefined;
-  const tag = error._tag;
-  if (typeof tag === "string") return tag;
   const nested = error.error;
+  const outer = error._tag;
+  // Envelopes (`{ _tag: "Failure", error: {…} }`) and transport wrappers carry
+  // the domain tag one level down.
+  if (
+    isRecord(nested) &&
+    typeof nested._tag === "string" &&
+    (outer === "Failure" ||
+      outer === "Success" ||
+      outer === "HttpClientError" ||
+      outer === undefined)
+  )
+    return nested._tag;
+  if (typeof outer === "string" && outer !== "Failure" && outer !== "Success") return outer;
   if (isRecord(nested) && typeof nested._tag === "string") return nested._tag;
+  return undefined;
+};
+
+/**
+ * Read a field from a typed API failure. Effect's HTTP client wraps the decoded
+ * body in `error`, and some transports only carry the serialized message.
+ */
+export const errorField = (error: unknown, key: string): unknown => {
+  if (!isRecord(error)) {
+    if (typeof error === "string") {
+      const parsed = parseJson(error);
+      return isRecord(parsed) ? parsed[key] : undefined;
+    }
+    return undefined;
+  }
+  if (key in error) return error[key];
+  const nested = error.error;
+  if (isRecord(nested) && key in nested) return nested[key];
+  const message = error.message;
+  if (typeof message === "string") {
+    const parsed = parseJson(message);
+    if (isRecord(parsed)) {
+      if (key in parsed) return parsed[key];
+      if (isRecord(parsed.error) && key in parsed.error) return parsed.error[key];
+    }
+  }
   return undefined;
 };
 

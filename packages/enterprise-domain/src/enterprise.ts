@@ -2,6 +2,14 @@ import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 import {
+  STEP_UP_ACTIONS,
+  StepUpGrantResponse,
+  StepUpMethods,
+  StepUpPasskeyStarted,
+  StepUpRequired,
+  StepUpUnavailable,
+} from "./stepUp.ts";
+import {
   CreateWebhookEndpointRequest,
   CreateWebhookEndpointResponse,
   PatchWebhookEndpointRequest,
@@ -18,6 +26,8 @@ const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.St
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
+const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
+const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
@@ -176,6 +186,16 @@ const EnterpriseAndroidErrors = [
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+const EnterpriseAppleReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseAppleWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
@@ -183,6 +203,24 @@ const EnterpriseAccountErrors = [
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
+/** Sensitive account/tenant actions also require a recent step-up. */
+const EnterpriseStepUpRequired = [StepUpRequired.pipe(HttpApiSchema.status(403))] as const;
+const EnterpriseAutopilotReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseAutopilotWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseStepUpErrors = [...EnterpriseAccountErrors, ...EnterpriseStepUpRequired] as const;
+const EnterpriseStepUpFactorErrors = [
+  ...EnterpriseStepUpErrors,
+  StepUpUnavailable.pipe(HttpApiSchema.status(400)),
+] as const;
+const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 const EnterprisePublicEmailErrors = [
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
@@ -197,6 +235,11 @@ const EnterprisePublicEnrollmentProfileErrors = [
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
+const EnterprisePublicAdeProfileErrors = [
+  ...EnterprisePublicEnrollmentProfileErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
 
 export const UserInfo = Schema.Struct({
   id: Schema.String,
@@ -204,8 +247,12 @@ export const UserInfo = Schema.Struct({
   email: Schema.String,
   emailVerified: Schema.Boolean,
   image: Schema.optional(NullableString),
-  /** Whether an authenticator app is enrolled for this account. */
+  /** Whether an authenticator app or a passkey is enrolled for this account. */
   mfaEnabled: Schema.Boolean,
+  /** Whether an authenticator app is enrolled for this account. */
+  totpEnabled: Schema.Boolean,
+  /** Whether at least one active passkey is enrolled for this account. */
+  passkeyEnabled: Schema.Boolean,
   /** Whether one of the user's owner/admin tenants requires MFA. */
   mfaRequired: Schema.Boolean,
   /**
@@ -397,6 +444,159 @@ export const EntraDirectorySyncResult = Schema.Struct({
   domains: Schema.Number,
 });
 
+export const AutopilotProfileStatus = Schema.Literals([
+  "unknown",
+  "assigned",
+  "applying",
+  "succeeded",
+  "failed",
+]);
+export type AutopilotProfileStatus = typeof AutopilotProfileStatus.Type;
+
+export const AutopilotEnrollmentState = Schema.Literals([
+  "unknown",
+  "notEnrolled",
+  "enrolled",
+  "pendingReset",
+  "failed",
+  "blocked",
+]);
+export type AutopilotEnrollmentState = typeof AutopilotEnrollmentState.Type;
+
+export const AutopilotDeploymentMode = Schema.Literals([
+  "userDriven",
+  "selfDeploying",
+  "preProvisioned",
+]);
+export type AutopilotDeploymentMode = typeof AutopilotDeploymentMode.Type;
+
+export const AutopilotJoinType = Schema.Literals([
+  "azureADJoin",
+  "azureADJoinUsingDeviceAuth",
+  "hybridAzureADJoin",
+]);
+export type AutopilotJoinType = typeof AutopilotJoinType.Type;
+
+/** A cached Windows Autopilot device. The hardware hash is never returned. */
+export const AutopilotDeviceInfo = Schema.Struct({
+  serial: Schema.String,
+  graphId: Schema.optional(NullableString),
+  azureAdDeviceId: Schema.optional(NullableString),
+  groupTag: Schema.optional(NullableString),
+  model: Schema.optional(NullableString),
+  manufacturer: Schema.optional(NullableString),
+  profileStatus: AutopilotProfileStatus,
+  enrollmentState: AutopilotEnrollmentState,
+  /** Local Autopilot profile row id when assigned. */
+  profileId: Schema.optional(NullableString),
+  /** Enrolled `device` row id, once the device checks in. */
+  deviceId: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+});
+export type AutopilotDeviceInfo = typeof AutopilotDeviceInfo.Type;
+
+export const AutopilotDevicesResponse = Schema.Struct({
+  devices: Schema.Array(AutopilotDeviceInfo),
+});
+export type AutopilotDevicesResponse = typeof AutopilotDevicesResponse.Type;
+
+export const AutopilotImportRequest = Schema.Struct({
+  /** CSV/headerless text copied from the Autopilot device export. */
+  content: Schema.String,
+  /** `csv` and `text` are accepted; parsing is identical. */
+  format: Schema.optional(Schema.Literals(["csv", "text"])),
+  maxRows: Schema.optional(Schema.Number),
+});
+export type AutopilotImportRequest = typeof AutopilotImportRequest.Type;
+
+export const AutopilotImportResponse = Schema.Struct({
+  imported: Schema.Number,
+  skipped: Schema.Number,
+  truncated: Schema.Boolean,
+  errors: Schema.Array(Schema.String),
+  devices: Schema.Array(AutopilotDeviceInfo),
+});
+export type AutopilotImportResponse = typeof AutopilotImportResponse.Type;
+
+export const AutopilotSyncResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  synced: Schema.Number,
+  linked: Schema.Number,
+  pages: Schema.Number,
+});
+export type AutopilotSyncResponse = typeof AutopilotSyncResponse.Type;
+
+export const AutopilotProfileInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(NullableString),
+  deploymentMode: AutopilotDeploymentMode,
+  joinType: AutopilotJoinType,
+  deviceNameTemplate: Schema.optional(NullableString),
+  locale: Schema.optional(NullableString),
+  timezone: Schema.optional(NullableString),
+  enableDevicePreparation: Schema.Boolean,
+  assignedGroupId: Schema.optional(NullableString),
+  graphProfileId: Schema.optional(NullableString),
+  status: Schema.Literals(["draft", "active", "error"]),
+  lastError: Schema.optional(NullableString),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type AutopilotProfileInfo = typeof AutopilotProfileInfo.Type;
+
+export const AutopilotProfilesResponse = Schema.Struct({
+  profiles: Schema.Array(AutopilotProfileInfo),
+});
+export type AutopilotProfilesResponse = typeof AutopilotProfilesResponse.Type;
+
+const AutopilotProfileFields = {
+  name: Schema.String,
+  description: Schema.optional(NullableString),
+  deploymentMode: Schema.optional(AutopilotDeploymentMode),
+  joinType: Schema.optional(AutopilotJoinType),
+  deviceNameTemplate: Schema.optional(NullableString),
+  locale: Schema.optional(NullableString),
+  timezone: Schema.optional(NullableString),
+  enableDevicePreparation: Schema.optional(Schema.Boolean),
+  assignedGroupId: Schema.optional(NullableString),
+} as const;
+
+export const CreateAutopilotProfileRequest = Schema.Struct(AutopilotProfileFields);
+export type CreateAutopilotProfileRequest = typeof CreateAutopilotProfileRequest.Type;
+
+export const UpdateAutopilotProfileRequest = Schema.Struct({
+  ...AutopilotProfileFields,
+  name: Schema.optional(Schema.String),
+});
+export type UpdateAutopilotProfileRequest = typeof UpdateAutopilotProfileRequest.Type;
+
+export const AssignAutopilotProfileRequest = Schema.Struct({
+  /** Entra group object id targeted by the Graph assignment. */
+  groupId: Schema.String,
+});
+export type AssignAutopilotProfileRequest = typeof AssignAutopilotProfileRequest.Type;
+
+/** Graph/Autopilot configuration shown in Settings → Management. */
+export const AutopilotSettingsResponse = Schema.Struct({
+  /** True when both Graph credentials and a tenant Entra id are configured. */
+  configured: Schema.Boolean,
+  graphConfigured: Schema.Boolean,
+  azureTenantId: Schema.optional(NullableString),
+  consentUrl: Schema.optional(NullableString),
+  deviceCount: Schema.Number,
+  linkedDeviceCount: Schema.Number,
+  profileCount: Schema.Number,
+  lastSyncedAt: Schema.optional(NullableString),
+  /** Federated WSTEP enrollment state for this tenant. */
+  federatedEnrollment: Schema.Struct({
+    enabled: Schema.Boolean,
+    realm: Schema.optional(NullableString),
+    authServiceUrl: Schema.optional(NullableString),
+  }),
+});
+export type AutopilotSettingsResponse = typeof AutopilotSettingsResponse.Type;
+
 export const ScimTokenInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -518,6 +718,8 @@ export const DeviceRow = Schema.Struct({
   recoveryKeyRotatedAt: Schema.optional(NullableString),
   bootstrapTokenUpdatedAt: Schema.optional(NullableString),
   applicationsUpdatedAt: Schema.optional(NullableString),
+  /** Windows Autopilot state when the device is also known to Autopilot. */
+  autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
 });
 export type DeviceRow = typeof DeviceRow.Type;
 
@@ -1578,6 +1780,195 @@ export const AndroidSyncResponse = Schema.Struct({
 });
 export type AndroidSyncResponse = typeof AndroidSyncResponse.Type;
 
+/** Apple Business Manager credential/sync state for one tenant. */
+export const AppleBusinessManagerStatus = Schema.Literals(["unconfigured", "active", "error"]);
+export type AppleBusinessManagerStatus = typeof AppleBusinessManagerStatus.Type;
+
+export const AppleBusinessManagerInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  status: AppleBusinessManagerStatus,
+  /** `abm_api` for the current OAuth API account; `legacy_dep` for a `.p7m` token. */
+  credentialType: Schema.optional(NullableString),
+  appleOrgId: Schema.optional(NullableString),
+  appleOrgName: Schema.optional(NullableString),
+  tokenExpiresAt: Schema.optional(NullableString),
+  /** ABM device management service used for automatic assignment. */
+  mdmServerId: Schema.optional(NullableString),
+  /** Stable ADE enrollment profile UUID for this tenant. */
+  profileUuid: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  deviceCount: Schema.Number,
+  assignedCount: Schema.Number,
+  createdAt: Schema.optional(NullableString),
+  updatedAt: Schema.optional(NullableString),
+});
+export type AppleBusinessManagerInfo = typeof AppleBusinessManagerInfo.Type;
+
+/**
+ * Upload an ABM API private key (`.pem`) with its Client ID/Key ID, a JSON
+ * credential bundle, or a legacy `.p7m` DEP server token. `content` may be raw
+ * text or base64; binary `.p7m` uploads should set `encoding = "base64"`.
+ */
+export const UploadAppleBusinessManagerTokenRequest = Schema.Struct({
+  content: Schema.String,
+  encoding: Schema.optional(Schema.Literals(["text", "base64"])),
+  fileName: Schema.optional(Schema.String),
+  clientId: Schema.optional(Schema.String),
+  keyId: Schema.optional(Schema.String),
+  teamId: Schema.optional(Schema.String),
+  orgId: Schema.optional(Schema.String),
+  orgName: Schema.optional(Schema.String),
+  scope: Schema.optional(Schema.Literals(["business.api", "school.api"])),
+});
+export type UploadAppleBusinessManagerTokenRequest =
+  typeof UploadAppleBusinessManagerTokenRequest.Type;
+
+export const AppleBusinessManagerSyncResponse = Schema.Struct({
+  devices: Schema.Number,
+  assigned: Schema.Number,
+  unassigned: Schema.Number,
+  removed: Schema.Number,
+  lastSyncedAt: Schema.String,
+});
+export type AppleBusinessManagerSyncResponse = typeof AppleBusinessManagerSyncResponse.Type;
+
+export const AbmDeviceInfo = Schema.Struct({
+  serial: Schema.String,
+  model: Schema.optional(NullableString),
+  deviceFamily: Schema.optional(NullableString),
+  os: Schema.optional(NullableString),
+  profileStatus: Schema.String,
+  assignedProfileUuid: Schema.optional(NullableString),
+  enrollmentState: Schema.String,
+  assignedServerId: Schema.optional(NullableString),
+  lastSeenAt: Schema.optional(NullableString),
+  updatedAt: Schema.String,
+});
+export type AbmDeviceInfo = typeof AbmDeviceInfo.Type;
+
+export const AbmDevicesResponse = Schema.Struct({ devices: Schema.Array(AbmDeviceInfo) });
+export type AbmDevicesResponse = typeof AbmDevicesResponse.Type;
+
+export const AbmAssignDeviceResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  serial: Schema.String,
+  mdmServerId: Schema.String,
+  activityId: Schema.optional(NullableString),
+});
+export type AbmAssignDeviceResponse = typeof AbmAssignDeviceResponse.Type;
+
+export const AbmProfileUrlResponse = Schema.Struct({
+  serial: Schema.String,
+  profileUuid: Schema.String,
+  url: Schema.String,
+  expiresAt: Schema.String,
+});
+export type AbmProfileUrlResponse = typeof AbmProfileUrlResponse.Type;
+
+/** Apple Apps and Books (VPP) token/licence state for one tenant. */
+export const VppStatus = Schema.Literals(["unconfigured", "active", "error"]);
+export type VppStatus = typeof VppStatus.Type;
+
+export const VppInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  status: VppStatus,
+  appleOrgId: Schema.optional(NullableString),
+  tokenExpiresAt: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  assets: Schema.Number,
+  totalLicenses: Schema.Number,
+  availableLicenses: Schema.Number,
+  assignedLicenses: Schema.Number,
+  createdAt: Schema.optional(NullableString),
+  updatedAt: Schema.optional(NullableString),
+});
+export type VppInfo = typeof VppInfo.Type;
+
+export const UploadVppTokenRequest = Schema.Struct({
+  content: Schema.String,
+  encoding: Schema.optional(Schema.Literals(["text", "base64"])),
+  fileName: Schema.optional(Schema.String),
+});
+export type UploadVppTokenRequest = typeof UploadVppTokenRequest.Type;
+
+export const VppSyncResponse = Schema.Struct({
+  assets: Schema.Number,
+  totalLicenses: Schema.Number,
+  availableLicenses: Schema.Number,
+  assignedLicenses: Schema.Number,
+  lastSyncedAt: Schema.String,
+});
+export type VppSyncResponse = typeof VppSyncResponse.Type;
+
+export const VppAssetInfo = Schema.Struct({
+  adamId: Schema.String,
+  name: Schema.String,
+  bundleId: Schema.optional(NullableString),
+  totalLicenses: Schema.Number,
+  availableLicenses: Schema.Number,
+  assignedLicenses: Schema.Number,
+  retiredLicenses: Schema.Number,
+  pricingParam: Schema.optional(NullableString),
+  deviceAssignable: Schema.Boolean,
+  revocable: Schema.Boolean,
+  productType: Schema.optional(NullableString),
+  supportedPlatforms: Schema.optional(Schema.Array(Schema.String)),
+  lastSyncedAt: Schema.optional(NullableString),
+});
+export type VppAssetInfo = typeof VppAssetInfo.Type;
+
+export const VppAssetsResponse = Schema.Struct({ assets: Schema.Array(VppAssetInfo) });
+export type VppAssetsResponse = typeof VppAssetsResponse.Type;
+
+export const VppInstallRequest = Schema.Struct({
+  /** Device ids (not serials) to install on. */
+  devices: Schema.optional(Schema.Array(Schema.String)),
+  /** Group ids whose devices should receive the app. */
+  groups: Schema.optional(Schema.Array(Schema.String)),
+});
+export type VppInstallRequest = typeof VppInstallRequest.Type;
+
+export const VppInstallResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  assigned: Schema.Number,
+  queued: Schema.Number,
+  skipped: Schema.Number,
+  failed: Schema.Number,
+  message: Schema.optional(Schema.String),
+});
+export type VppInstallResponse = typeof VppInstallResponse.Type;
+
+export const VppReleaseRequest = Schema.Struct({
+  devices: Schema.Array(Schema.String),
+});
+export type VppReleaseRequest = typeof VppReleaseRequest.Type;
+
+export const VppReleaseResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  released: Schema.Number,
+  failed: Schema.Number,
+  message: Schema.optional(Schema.String),
+});
+export type VppReleaseResponse = typeof VppReleaseResponse.Type;
+
+export const VppAssignmentInfo = Schema.Struct({
+  deviceId: Schema.String,
+  serial: Schema.String,
+  adamId: Schema.String,
+  state: Schema.String,
+  eventId: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  updatedAt: Schema.String,
+});
+export type VppAssignmentInfo = typeof VppAssignmentInfo.Type;
+
+export const VppAssignmentsResponse = Schema.Struct({
+  assignments: Schema.Array(VppAssignmentInfo),
+});
+export type VppAssignmentsResponse = typeof VppAssignmentsResponse.Type;
+
 /**
  * Windows enrollment is driven by a tenant-scoped discovery URL
  * (`/mdm/windows/discovery?tenant=<signed token>`). The token identifies the
@@ -1591,6 +1982,15 @@ export const WindowsEnrollment = Schema.Union([
     discoveryUrl: Schema.String,
     tenantScoped: Schema.Literal(true),
     expiresAt: Schema.optional(Schema.String),
+    /** Autopilot/Entra state so the public page can explain the flow. */
+    autopilot: Schema.optional(
+      Schema.Struct({
+        configured: Schema.Boolean,
+        federated: Schema.Boolean,
+        authServiceUrl: Schema.optional(NullableString),
+        realm: Schema.optional(NullableString),
+      }),
+    ),
   }),
 ]);
 export type WindowsEnrollment = typeof WindowsEnrollment.Type;
@@ -1799,15 +2199,62 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", {
+    HttpApiEndpoint.get("stepUpMethods", "/v1/account/step-up", {
       error: EnterpriseAuthRequiredErrors,
+      success: StepUpMethods,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("stepUpPassword", "/v1/account/step-up/password", {
+      error: EnterpriseStepUpErrors,
+      payload: Schema.Struct({ password: Schema.String, action: StepUpActionSchema }),
+      success: StepUpGrantResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("stepUpTotp", "/v1/account/step-up/totp", {
+      error: EnterpriseStepUpErrors,
+      payload: Schema.Struct({ code: Schema.String, action: StepUpActionSchema }),
+      success: StepUpGrantResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("beginStepUpPasskey", "/v1/account/step-up/passkey/begin", {
+      error: EnterpriseStepUpFactorErrors,
+      payload: Schema.Struct({ action: StepUpActionSchema }),
+      success: StepUpPasskeyStarted,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("completeStepUpPasskey", "/v1/account/step-up/passkey/complete", {
+      error: EnterpriseStepUpFactorErrors,
+      payload: Schema.Struct({ stepUpToken: Schema.String, response: Schema.String }),
+      success: StepUpGrantResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("removeAccountPasskey", "/v1/account/passkeys/:credentialId", {
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        ...EnterpriseDbErrors,
+        EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        ...EnterpriseStepUpRequired,
+      ],
+      params: { credentialId: Schema.String },
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", {
+      error: EnterpriseStepUpErrors,
       payload: CreateApiTokenRequest,
       success: CreateApiTokenResponse,
     }),
   )
   .add(
     HttpApiEndpoint.delete("revokeApiToken", "/v1/account/api-tokens/:tokenId", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseStepUpErrors,
       params: ApiTokenParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -1902,7 +2349,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("downloadTenantBackup", "/v1/tenants/:tenantId/backups/:id/download", {
-      error: EnterpriseTenantBackupDownloadErrors,
+      error: [...EnterpriseTenantBackupDownloadErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
       success: Schema.String.pipe(
         HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
@@ -1919,7 +2366,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", {
-      error: EnterpriseTenantDeleteErrors,
+      error: [...EnterpriseTenantDeleteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -1933,7 +2380,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchSsoConfig", "/v1/tenants/:tenantId/sso", {
-      error: EnterpriseSsoErrors,
+      error: [...EnterpriseSsoErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: PatchSsoConfigRequest,
       success: SsoConfigResponse,
@@ -1974,6 +2421,85 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       success: EntraDomainsResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get("getAutopilotSettings", "/v1/tenants/:tenantId/autopilot", {
+      error: EnterpriseAutopilotReadErrors,
+      params: TenantParam,
+      success: AutopilotSettingsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listAutopilotDevices", "/v1/tenants/:tenantId/autopilot/devices", {
+      error: EnterpriseAutopilotReadErrors,
+      params: TenantParam,
+      success: AutopilotDevicesResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("importAutopilotDevices", "/v1/tenants/:tenantId/autopilot/import", {
+      error: EnterpriseAutopilotWriteErrors,
+      params: TenantParam,
+      payload: AutopilotImportRequest,
+      success: AutopilotImportResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("syncAutopilotDevices", "/v1/tenants/:tenantId/autopilot/sync", {
+      error: EnterpriseAutopilotWriteErrors,
+      params: TenantParam,
+      success: AutopilotSyncResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteAutopilotDevice",
+      "/v1/tenants/:tenantId/autopilot/devices/:serial",
+      {
+        error: EnterpriseAutopilotWriteErrors,
+        params: TenantAutopilotDeviceParam,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("listAutopilotProfiles", "/v1/tenants/:tenantId/autopilot/profiles", {
+      error: EnterpriseAutopilotReadErrors,
+      params: TenantParam,
+      success: AutopilotProfilesResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createAutopilotProfile", "/v1/tenants/:tenantId/autopilot/profiles", {
+      error: EnterpriseAutopilotWriteErrors,
+      params: TenantParam,
+      payload: CreateAutopilotProfileRequest,
+      success: AutopilotProfileInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "updateAutopilotProfile",
+      "/v1/tenants/:tenantId/autopilot/profiles/:profileId",
+      {
+        error: EnterpriseAutopilotWriteErrors,
+        params: TenantAutopilotProfileParam,
+        payload: UpdateAutopilotProfileRequest,
+        success: AutopilotProfileInfo,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "assignAutopilotProfile",
+      "/v1/tenants/:tenantId/autopilot/profiles/:profileId/assign",
+      {
+        error: EnterpriseAutopilotWriteErrors,
+        params: TenantAutopilotProfileParam,
+        payload: AssignAutopilotProfileRequest,
+        success: AutopilotProfileInfo,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get("listScimTokens", "/v1/tenants/:tenantId/scim-tokens", {
@@ -2147,6 +2673,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getAdeEnrollmentProfile", "/v1/abm/ade/:token", {
+      error: EnterprisePublicAdeProfileErrors,
+      params: { token: Schema.String },
+      success: AppleEnrollmentProfileResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("getTenantEnrollment", "/v1/tenants/:tenantId/enrollment", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -2228,6 +2761,130 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getAppleBusinessManager", "/v1/tenants/:tenantId/abm", {
+      error: EnterpriseAppleReadErrors,
+      params: TenantParam,
+      success: AppleBusinessManagerInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("uploadAppleBusinessManagerToken", "/v1/tenants/:tenantId/abm/token", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      payload: UploadAppleBusinessManagerTokenRequest,
+      success: AppleBusinessManagerInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteAppleBusinessManagerToken", "/v1/tenants/:tenantId/abm/token", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("syncAppleBusinessManager", "/v1/tenants/:tenantId/abm/sync", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      success: AppleBusinessManagerSyncResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listAbmDevices", "/v1/tenants/:tenantId/abm/devices", {
+      error: EnterpriseAppleReadErrors,
+      params: TenantParam,
+      success: AbmDevicesResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getAbmDevice", "/v1/tenants/:tenantId/abm/devices/:serial", {
+      error: EnterpriseAppleReadErrors,
+      params: { tenantId: Schema.String, serial: Schema.String },
+      success: AbmDeviceInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "assignAppleBusinessManagerDevice",
+      "/v1/tenants/:tenantId/abm/devices/:serial/assign",
+      {
+        error: EnterpriseAppleWriteErrors,
+        params: { tenantId: Schema.String, serial: Schema.String },
+        success: AbmAssignDeviceResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getAbmDeviceProfileUrl",
+      "/v1/tenants/:tenantId/abm/devices/:serial/profile-url",
+      {
+        error: EnterpriseAppleWriteErrors,
+        params: { tenantId: Schema.String, serial: Schema.String },
+        success: AbmProfileUrlResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("getVpp", "/v1/tenants/:tenantId/vpp", {
+      error: EnterpriseAppleReadErrors,
+      params: TenantParam,
+      success: VppInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("uploadVppToken", "/v1/tenants/:tenantId/vpp/token", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      payload: UploadVppTokenRequest,
+      success: VppInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteVppToken", "/v1/tenants/:tenantId/vpp/token", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("syncVpp", "/v1/tenants/:tenantId/vpp/sync", {
+      error: EnterpriseAppleWriteErrors,
+      params: TenantParam,
+      success: VppSyncResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listVppAssets", "/v1/tenants/:tenantId/vpp/assets", {
+      error: EnterpriseAppleReadErrors,
+      params: TenantParam,
+      success: VppAssetsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listVppAssignments", "/v1/tenants/:tenantId/vpp/assignments", {
+      error: EnterpriseAppleReadErrors,
+      params: TenantParam,
+      success: VppAssignmentsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("installVppAsset", "/v1/tenants/:tenantId/vpp/assets/:adamId/install", {
+      error: EnterpriseAppleWriteErrors,
+      params: { tenantId: Schema.String, adamId: Schema.String },
+      payload: VppInstallRequest,
+      success: VppInstallResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("releaseVppAsset", "/v1/tenants/:tenantId/vpp/assets/:adamId/release", {
+      error: EnterpriseAppleWriteErrors,
+      params: { tenantId: Schema.String, adamId: Schema.String },
+      payload: VppReleaseRequest,
+      success: VppReleaseResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("search", "/v1/tenants/:tenantId/search", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -2284,7 +2941,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       // Revealing a recovery key is a privileged, audited read. `write`
       // restricts the endpoint to owners/admins while still requiring the
       // caller to prove tenant membership.
-      error: EnterpriseTenantWriteErrors,
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
       success: DeviceRecoveryKeyResponse,
     }),
@@ -2364,7 +3021,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", {
-      error: EnterpriseTenantWriteErrors,
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
       payload: DeviceActionRequest,
       success: DeviceActionResponse,
@@ -2733,7 +3390,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", {
-      error: EnterpriseBillingPortalErrors,
+      error: [...EnterpriseBillingPortalErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: BillingPortalRequest,
       success: BillingPortalResponse,

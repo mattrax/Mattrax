@@ -40,6 +40,7 @@ const makeContext = (planLimits = planConfig()) => {
     createApiToken: () => Effect.die("not used"),
     revokeApiToken: () => Effect.succeed({ status: "ok" }),
     requestEmailChange: () => Effect.succeed({ status: "ok" }),
+    requireStepUp: () => Effect.void,
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
   };
 

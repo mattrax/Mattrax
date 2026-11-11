@@ -23,6 +23,34 @@ export class EnterpriseAuth extends Context.Service<
     readonly requireUser: (
       requestLike: Request | { readonly headers: HeadersRecord },
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    /**
+     * Resolve the caller and require a step-up grant for one action. Browser
+     * sessions must present `x-mattrax-step-up`; bearer tokens are exempt
+     * because they are already an explicitly issued, scoped credential.
+     */
+    readonly requireStepUp: (
+      requestLike: Request | { readonly headers: HeadersRecord },
+      action: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly stepUpMethods: (
+      requestLike: Request | { readonly headers: HeadersRecord },
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly stepUpPassword: (
+      request: Request,
+      payload: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly stepUpTotp: (
+      request: Request,
+      payload: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly beginStepUpPasskey: (
+      request: Request,
+      payload: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly completeStepUpPasskey: (
+      request: Request,
+      payload: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly listApiTokens: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly createApiToken: (
       request: Request,

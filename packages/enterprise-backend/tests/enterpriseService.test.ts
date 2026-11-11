@@ -135,6 +135,7 @@ const makeContext = async (
     revokeApiToken: () => Effect.succeed({ status: "ok" }),
     requestEmailChange: () => Effect.succeed({ status: "ok" }),
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
+    requireStepUp: () => Effect.void,
   };
 
   const service = createEnterpriseService({
@@ -2991,5 +2992,63 @@ describe("audit search and export", () => {
       action: "tenant.created",
       actorEmail: "owner@example.com",
     });
+  });
+});
+
+describe("Autopilot service configuration", () => {
+  it("reports Graph/federated state and fails closed when unconfigured", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const settings = await runEffect(service.getAutopilotSettings(request(headers), tenant.id));
+    expect(settings).toMatchObject({
+      configured: false,
+      graphConfigured: false,
+      azureTenantId: null,
+      deviceCount: 0,
+      profileCount: 0,
+      federatedEnrollment: { enabled: false },
+    });
+
+    await expect(
+      runEffect(
+        service.importAutopilotDevices(request(headers), tenant.id, {
+          content: "ABC123,aGFzaA==",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+
+    await expect(
+      runEffect(
+        service.createAutopilotProfile(request(headers), tenant.id, {
+          name: "Standard",
+          deploymentMode: "userDriven",
+          joinType: "azureADJoin",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+
+    await expect(
+      runEffect(service.syncAutopilotDevices(request(headers), tenant.id)),
+    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+  });
+
+  it("rejects an invalid profile before checking Graph configuration", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(
+        service.createAutopilotProfile(request(headers), tenant.id, {
+          name: "Hybrid",
+          deploymentMode: "selfDeploying",
+          joinType: "hybridAzureADJoin",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
   });
 });

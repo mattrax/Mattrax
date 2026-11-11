@@ -56,7 +56,7 @@ test.describe("authenticator MFA", () => {
     // Disabling requires the password and a fresh authenticator code.
     await gotoHydrated(page, "/account");
     const enabledCard = page.locator("section", { hasText: "Multi-factor authentication" });
-    await expect(enabledCard.getByText(/authenticator app enabled/i)).toBeVisible();
+    await expect(enabledCard.getByText(/regenerate recovery codes/i)).toBeVisible();
 
     const regenerateForm = enabledCard.locator("form", {
       hasText: /regenerate recovery codes/i,
@@ -95,14 +95,29 @@ test.describe("authenticator MFA", () => {
       return ((await response.json()) as { id: string }).id;
     });
 
-    const enable = await page.evaluate(async (id) => {
-      const response = await fetch(`/api/v1/tenants/${id}/sso`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ requireMfa: true }),
-      });
-      return { status: response.status, body: await response.text() };
-    }, tenantId);
+    const enable = await page.evaluate(
+      async ({ id, password }) => {
+        // Sensitive policy changes need a recent step-up grant.
+        const stepUp = await fetch("/api/v1/account/step-up/password", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
+          body: JSON.stringify({ password, action: "sso-policy" }),
+        });
+        if (!stepUp.ok) return { status: stepUp.status, body: await stepUp.text() };
+        const { grant } = (await stepUp.json()) as { grant: string };
+        const response = await fetch(`/api/v1/tenants/${id}/sso`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+            "x-effect-auth-csrf": "1",
+            "x-mattrax-step-up": grant,
+          },
+          body: JSON.stringify({ requireMfa: true }),
+        });
+        return { status: response.status, body: await response.text() };
+      },
+      { id: tenantId, password: PASSWORD },
+    );
     expect(enable.status).toBe(400);
     expect(enable.body).toContain("Enable an authenticator app");
 

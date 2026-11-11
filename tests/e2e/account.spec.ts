@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
+import { bootstrapTenant, confirmStepUp, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("account", () => {
   test("updates the profile and manages API tokens", async ({ page }) => {
@@ -29,6 +29,7 @@ test.describe("account", () => {
     await dialog.locator("#token-scope").selectOption("write");
     await dialog.locator("#token-expiry").selectOption("90");
     await dialog.getByRole("button", { name: /create token/i }).click();
+    await confirmStepUp(page);
     await expect(page.getByText("Copy this token now")).toBeVisible();
     await expect(page.getByText("E2E token").first()).toBeVisible();
     await expect(page.getByText(/Read & write · All tenants/)).toBeVisible();
@@ -38,6 +39,7 @@ test.describe("account", () => {
       .getByRole("button", { name: /revoke/i })
       .first()
       .click();
+    await confirmStepUp(page);
     await expect(tokens.getByText("Revoked").first()).toBeVisible();
   });
 
@@ -59,6 +61,7 @@ test.describe("account", () => {
     await dialog.locator("#token-tenant").selectOption(tenant.id);
     await dialog.locator("#token-expiry").selectOption("never");
     await dialog.getByRole("button", { name: /create token/i }).click();
+    await confirmStepUp(page);
 
     const code = page.locator("code").filter({ hasText: /^mtx_/ }).first();
     const token = (await code.textContent())?.trim();

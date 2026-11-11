@@ -4,6 +4,8 @@ import {
   AuthContract,
   Email,
   Operations,
+  Passkey,
+  PasskeyContract,
   Password,
   Proofs,
   Schema as AuthSchema,
@@ -15,6 +17,44 @@ import { Schema } from "effect";
 
 /** Stable TOTP module namespace. It is also the persistence scope for secrets. */
 export const TOTP_MODULE_ID = "mattrax/auth/totp";
+
+/**
+ * Stable passkey module namespace. Sign-in, pending, step-up and management
+ * share it so one credential list serves every ceremony; the library scopes
+ * in-flight challenges by module id and flow id.
+ */
+export const PASSKEY_MODULE_ID = "mattrax/auth/passkey";
+
+/**
+ * The profile created by `PasskeyConfig.layer({ id, name, origins })`. The RP
+ * id and origin allowlist are deployment configuration, never request input.
+ */
+export const PASSKEY_PROFILE_ID = "default";
+
+/**
+ * Ceremony policy. Challenges live for five minutes, matching the admission
+ * window used by the rest of the auth surface.
+ */
+export const PASSKEY_POLICY = {
+  lifetimeMillis: 5 * 60 * 1000,
+} as const;
+
+/**
+ * Passkey management policy. Enrollment and removal require evidence from the
+ * last five minutes (the app also gates both behind a step-up), removal
+ * invalidates other sessions immediately, and one account may hold ten keys.
+ */
+export const PASSKEY_MANAGEMENT_POLICY = {
+  maximumCredentials: 10,
+  maximumEvidenceAgeMillis: 5 * 60 * 1000,
+  requireImmediateInvalidation: true,
+} as const;
+
+/**
+ * Longest window a step-up grant is valid for. Sensitive actions require a
+ * grant no older than this, bound to the session that created it.
+ */
+export const STEP_UP_WINDOW_MILLIS = 5 * 60 * 1000;
 
 /**
  * TOTP policy. Recovery codes and enrollment material stay visible long enough
@@ -49,9 +89,10 @@ const AUTH_REQUIREMENT_MAX_AGE_MILLIS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Assurance required to complete sign-in. Without MFA a single knowledge or
- * possession factor is enough. With MFA the session needs both the password and
- * a current authenticator code; email codes and SSO assertions are possession
- * only, so they cannot replace a factor.
+ * possession factor is enough. With MFA the session needs either the password
+ * plus a current authenticator code, or a phishing-resistant passkey whose
+ * user was verified by the authenticator. Email codes and SSO assertions are
+ * possession only, so they cannot replace a factor.
  */
 export const authenticationRequirement = (
   mfaEnabled: boolean,
@@ -63,6 +104,16 @@ export const authenticationRequirement = (
           userVerified: false,
           phishingResistant: false,
           minimumCredentials: 2,
+        },
+        {
+          // A passkey is possession plus a user-verified, phishing-resistant
+          // ceremony, so it satisfies MFA on its own. TOTP and email codes do
+          // not meet `userVerified`/`phishingResistant`, so they still need the
+          // knowledge factor above.
+          factors: ["possession"],
+          userVerified: true,
+          phishingResistant: true,
+          minimumCredentials: 1,
         },
       ]
     : [
@@ -149,6 +200,19 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
       Session: sessions.Session,
       CompletionResult: sessions.CompletionResult,
     });
+    const passkey = PasskeyContract.make(PASSKEY_MODULE_ID, {
+      Session: sessions.Session,
+      CompletionResult: sessions.CompletionResult,
+    });
+    const passkeyManagement = PasskeyContract.makeManagement(PASSKEY_MODULE_ID);
+
+    /**
+     * Private credentials injected by the HTTP boundary from their cookies.
+     * They never appear in a public payload or a success value.
+     */
+    const passkeyCredential = Schema.RedactedFromValue(
+      Schema.NonEmptyString.check(Schema.isMaxLength(16384)),
+    );
 
     return {
       signIn: AuthContract.passwordSignIn(sessions, { strategy: "password" }),
@@ -294,6 +358,130 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
         strategy: "totp",
         requestFields: { pendingCredential: "pending-proof" },
       }),
+
+      // ---- Passkeys -------------------------------------------------------
+      // Sign-in is a discoverable-credential ceremony: begin returns WebAuthn
+      // options, complete verifies the assertion and issues the session.
+      beginPasskeySignIn: AuthContract.fromOperation(passkey.operations.Begin, {
+        method: "signIn",
+        strategy: "passkey",
+      }),
+
+      completePasskeySignIn: AuthContract.fromOperation(passkey.operations.Complete, {
+        method: "completeSignIn",
+        strategy: "passkey",
+        requestFields: { bindingCredential: "request-binding" },
+        subject: {
+          fromSuccess: (value) =>
+            value._tag === "Authenticated" ? value.session.subjectId : undefined,
+          sessionFromSuccess: (value) =>
+            value._tag === "Authenticated" ? value.session : undefined,
+        },
+      }),
+
+      // The possession factor for a pending password/email/SSO sign-in.
+      beginPasskeyPending: AuthContract.action({
+        payload: Schema.Struct({
+          ...Passkey.PasskeyBegin.fields,
+          pendingCredential: passkeyCredential,
+        }),
+        success: Passkey.PasskeyAuthenticationStarted,
+        error: Passkey.PasskeyFailure,
+        mode: "mutation",
+        replay: "single-use",
+        credentials: true,
+        method: "beginPending",
+        strategy: "passkeyPending",
+        requestFields: { pendingCredential: "pending-proof" },
+      }),
+
+      completePasskeyPending: AuthContract.action({
+        payload: Schema.Struct({
+          flowId: Operations.RequestBindingFlowId,
+          bindingCredential: passkeyCredential,
+          response: Passkey.PasskeyAssertion,
+          pendingCredential: passkeyCredential,
+        }),
+        success: sessions.CompletionResult,
+        error: Passkey.PasskeyFailure,
+        mode: "mutation",
+        replay: "single-use",
+        credentials: true,
+        method: "completePending",
+        strategy: "passkeyPending",
+        requestFields: {
+          bindingCredential: "request-binding",
+          pendingCredential: "pending-proof",
+        },
+        subject: {
+          fromSuccess: (value) =>
+            value._tag === "Authenticated" ? value.session.subjectId : undefined,
+          sessionFromSuccess: (value) =>
+            value._tag === "Authenticated" ? value.session : undefined,
+        },
+      }),
+
+      // Step-up ceremonies. The app also issues a short-lived grant cookie so
+      // non-auth handlers can require recent proof; see `stepUp.ts`.
+      beginPasskeyStepUp: AuthContract.action({
+        payload: Schema.Struct({
+          ...Passkey.PasskeyBegin.fields,
+          stepUpCredential: passkeyCredential,
+        }),
+        success: Passkey.PasskeyAuthenticationStarted,
+        error: Passkey.PasskeyFailure,
+        mode: "mutation",
+        replay: "single-use",
+        credentials: true,
+        method: "beginStepUp",
+        strategy: "passkeyStepUp",
+        requestFields: { stepUpCredential: "session-step-up" },
+      }),
+
+      completePasskeyStepUp: AuthContract.action({
+        payload: Schema.Struct({
+          flowId: Operations.RequestBindingFlowId,
+          bindingCredential: passkeyCredential,
+          response: Passkey.PasskeyAssertion,
+          stepUpCredential: passkeyCredential,
+          sourceCredential: passkeyCredential,
+        }),
+        success: sessions.Session,
+        error: Passkey.PasskeyFailure,
+        mode: "mutation",
+        replay: "single-use",
+        credentials: true,
+        method: "completeStepUp",
+        strategy: "passkeyStepUp",
+        requestFields: {
+          bindingCredential: "request-binding",
+          stepUpCredential: "session-step-up",
+          sourceCredential: "session",
+        },
+      }),
+
+      // Account security: enroll, list, rename and remove this account's keys.
+      beginPasskeyEnrollment: AuthContract.fromOperation(passkeyManagement.operations.Begin, {
+        method: "enrollPasskey",
+        strategy: "passkeyManagement",
+      }),
+
+      completePasskeyEnrollment: AuthContract.fromOperation(passkeyManagement.operations.Complete, {
+        method: "completePasskeyEnrollment",
+        strategy: "passkeyManagement",
+        requestFields: { bindingCredential: "request-binding" },
+      }),
+
+      listPasskeys: AuthContract.fromOperation(passkeyManagement.operations.List, {
+        method: "listPasskeys",
+        strategy: "passkeyManagement",
+        mode: "query",
+      }),
+
+      renamePasskey: AuthContract.fromOperation(passkeyManagement.operations.Rename, {
+        method: "renamePasskey",
+        strategy: "passkeyManagement",
+      }),
     };
   },
 });
@@ -333,6 +521,26 @@ export const makeAppAuth = (
       }),
       email: Email.makeCode({ digits: 6 }),
       totp: Totp.make(TOTP_POLICY),
+      // One namespace, four facets. Sign-in, pending MFA, step-up and account
+      // management each need their own strategy entry because the auth API
+      // dispatches by method name, but they share credentials and challenges.
+      passkey: Passkey.make({
+        namespace: PASSKEY_MODULE_ID,
+        policy: PASSKEY_POLICY,
+      }),
+      passkeyManagement: Passkey.makeManagement({
+        namespace: PASSKEY_MODULE_ID,
+        policy: PASSKEY_POLICY,
+        management: PASSKEY_MANAGEMENT_POLICY,
+      }),
+      passkeyPending: Passkey.makePending({
+        namespace: PASSKEY_MODULE_ID,
+        policy: PASSKEY_POLICY,
+      }),
+      passkeyStepUp: Passkey.makeStepUp({
+        namespace: PASSKEY_MODULE_ID,
+        policy: PASSKEY_POLICY,
+      }),
       ...extraStrategies,
     },
     defaultStrategy: "password",

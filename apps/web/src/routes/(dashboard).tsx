@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, type ParentProps, Show } from "solid-js";
 import { CommandPalette } from "~/components/command-palette";
+import { StepUpDialog } from "~/components/step-up-dialog";
 import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
 import {
   Boxes,
@@ -398,6 +399,7 @@ export default function DashboardLayout(props: ParentProps) {
         {props.children}
       </SidebarInset>
       <CommandPalette />
+      <StepUpDialog />
     </SidebarProvider>
   );
 }

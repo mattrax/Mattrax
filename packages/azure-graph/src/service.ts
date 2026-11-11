@@ -2,14 +2,25 @@ import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
 import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
+  GraphAutopilotDeviceResponse,
+  GraphAutopilotDevicesResponse,
+  GraphAutopilotImportResponse,
+  GraphAutopilotProfileResponse,
+  GraphAutopilotProfilesResponse,
   GraphDomainsResponse,
   GraphGroupDeltaResponse,
   GraphUserDeltaResponse,
+  graphAutopilotDeviceFromWire,
+  graphAutopilotProfileFromWire,
   graphGroupFromWire,
   graphUserFromWire,
+  importedAutopilotDevices,
+  type GraphAutopilotDevice,
+  type GraphAutopilotProfile,
   type GraphDeltaPage,
   type GraphDomain,
   type GraphGroup,
+  type GraphPage,
   type GraphUser,
 } from "./schema.js";
 
@@ -35,6 +46,13 @@ export class AzureGraphThrottled extends Data.TaggedError("Throttled")<{
   body?: string;
 }> {}
 
+/** 404 from Graph: the object is absent (or belongs to another tenant). */
+export class AzureGraphNotFound extends Data.TaggedError("NotFound")<{
+  message: string;
+  status: number;
+  body?: string;
+}> {}
+
 /** Any other non-success response, including 5xx after the single retry. */
 export class AzureGraphRequestFailed extends Data.TaggedError("RequestFailed")<{
   message: string;
@@ -53,6 +71,7 @@ export type AzureGraphError =
   | AzureGraphUnauthorized
   | AzureGraphConsentRequired
   | AzureGraphThrottled
+  | AzureGraphNotFound
   | AzureGraphRequestFailed
   | AzureGraphInvalidResponse;
 
@@ -80,6 +99,31 @@ export type AzureGraphConfig = {
   readonly timeoutMs?: number;
 };
 
+/** One imported Autopilot identity sent to Graph's bulk import endpoint. */
+export type ImportAutopilotDeviceIdentity = {
+  readonly serialNumber: string;
+  /** Base64 hardware hash (the same value as the CSV import column). */
+  readonly hardwareIdentifier: string;
+  readonly groupTag?: string;
+  readonly orderIdentifier?: string;
+};
+
+/** Settings accepted when creating/updating a Graph Autopilot profile. */
+export type AutopilotDeploymentProfileInput = {
+  readonly displayName: string;
+  readonly description?: string;
+  readonly deploymentMode: "userDriven" | "selfDeploying" | "preProvisioned";
+  readonly joinType: "azureADJoin" | "azureADJoinUsingDeviceAuth" | "hybridAzureADJoin";
+  readonly deviceNameTemplate?: string;
+  readonly locale?: string;
+  /**
+   * Pre-provisioning/device preparation. Sent to Graph as `enableWhiteGlove`;
+   * the Graph `windowsAutopilotDevicePreparationPolicy` API is a separate
+   * resource and is not used here.
+   */
+  readonly enableDevicePreparation?: boolean;
+};
+
 export type AzureGraphService = {
   readonly get: <T>(
     tenantId: string,
@@ -98,6 +142,53 @@ export type AzureGraphService = {
     tenantId: string,
   ) => Effect.Effect<ReadonlyArray<GraphDomain>, AzureGraphError>;
   readonly consentUrl: (tenantId: string) => string;
+
+  /** List `windowsAutopilotDeviceIdentities`, one page at a time. */
+  readonly listAutopilotDevices: (
+    tenantId: string,
+    link?: string,
+  ) => Effect.Effect<GraphPage<GraphAutopilotDevice>, AzureGraphError>;
+  /** Fetch one `windowsAutopilotDeviceIdentities` row. */
+  readonly getAutopilotDevice: (
+    tenantId: string,
+    id: string,
+  ) => Effect.Effect<GraphAutopilotDevice, AzureGraphError>;
+  /**
+   * Import hardware hashes with
+   * `POST /deviceManagement/importedWindowsAutopilotDeviceIdentities`.
+   * Graph accepts one identity per request; the caller passes the batch.
+   */
+  readonly importAutopilotDevices: (
+    tenantId: string,
+    devices: ReadonlyArray<ImportAutopilotDeviceIdentity>,
+  ) => Effect.Effect<ReadonlyArray<GraphAutopilotDevice>, AzureGraphError>;
+  /** Delete an Autopilot device identity from the tenant. */
+  readonly deleteAutopilotDevice: (
+    tenantId: string,
+    id: string,
+  ) => Effect.Effect<void, AzureGraphError>;
+  /** List `windowsAutopilotDeploymentProfiles`, one page at a time. */
+  readonly listAutopilotProfiles: (
+    tenantId: string,
+    link?: string,
+  ) => Effect.Effect<GraphPage<GraphAutopilotProfile>, AzureGraphError>;
+  /** Create a `windowsAutopilotDeploymentProfile`. */
+  readonly createAutopilotProfile: (
+    tenantId: string,
+    input: AutopilotDeploymentProfileInput,
+  ) => Effect.Effect<GraphAutopilotProfile, AzureGraphError>;
+  /** Patch a `windowsAutopilotDeploymentProfile`. */
+  readonly updateAutopilotProfile: (
+    tenantId: string,
+    id: string,
+    input: AutopilotDeploymentProfileInput,
+  ) => Effect.Effect<GraphAutopilotProfile, AzureGraphError>;
+  /** Assign a profile to an Entra group (the Graph assignment model). */
+  readonly assignAutopilotProfile: (
+    tenantId: string,
+    id: string,
+    groupId: string,
+  ) => Effect.Effect<void, AzureGraphError>;
 };
 
 export class AzureGraph extends Context.Service<AzureGraph, AzureGraphService>()("AzureGraph") {}
@@ -361,6 +452,15 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+          if (result.status === 404) {
+            return yield* Effect.fail(
+              new AzureGraphNotFound({
+                message: `Microsoft Graph request to ${label} was not found`,
+                status: result.status,
+                body: result.text,
+              }),
+            );
+          }
           if (result.status === 429) {
             const retry = retryAfter(result.headers);
             return yield* Effect.fail(
@@ -382,6 +482,84 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
             );
           }
 
+          const json = yield* parseJson(result.text, label);
+          return yield* decode(schema, json, label);
+        });
+
+      /**
+       * Send a request that may carry a JSON body. The existing token cache,
+       * per-attempt timeout and single 429/5xx retry are reused so Autopilot
+       * calls behave exactly like directory-sync calls.
+       */
+      const request = <T>(
+        tenantId: string,
+        method: "POST" | "PATCH" | "DELETE",
+        url: string,
+        schema: Schema.Schema<T> | null,
+        body?: unknown,
+      ): Effect.Effect<T, AzureGraphError> =>
+        Effect.gen(function* () {
+          const token = yield* accessToken(tenantId);
+          const result = yield* execute(() => {
+            const base = HttpClientRequest.make(method)(url).pipe(
+              HttpClientRequest.bearerToken(token),
+            );
+            return body === undefined
+              ? base
+              : base.pipe(HttpClientRequest.bodyText(JSON.stringify(body), "application/json"));
+          });
+          const label = labelFor(url);
+
+          if (result.status === 401) {
+            return yield* Effect.fail(
+              new AzureGraphUnauthorized({
+                message: `Microsoft Graph request to ${label} was unauthorized`,
+                status: result.status,
+                body: result.text,
+              }),
+            );
+          }
+          if (result.status === 403) {
+            return yield* Effect.fail(
+              new AzureGraphConsentRequired({
+                message: `Microsoft Graph request to ${label} requires admin consent`,
+                status: result.status,
+                body: result.text,
+              }),
+            );
+          }
+          if (result.status === 404) {
+            return yield* Effect.fail(
+              new AzureGraphNotFound({
+                message: `Microsoft Graph request to ${label} was not found`,
+                status: result.status,
+                body: result.text,
+              }),
+            );
+          }
+          if (result.status === 429) {
+            const retry = retryAfter(result.headers);
+            return yield* Effect.fail(
+              new AzureGraphThrottled({
+                message: `Microsoft Graph request to ${label} was throttled`,
+                status: result.status,
+                ...(retry ? { retryAfterSeconds: retry.seconds } : {}),
+                body: result.text,
+              }),
+            );
+          }
+          if (!isSuccess(result.status)) {
+            return yield* Effect.fail(
+              new AzureGraphRequestFailed({
+                message: `Microsoft Graph request to ${label} returned HTTP ${result.status}`,
+                status: result.status,
+                body: result.text,
+              }),
+            );
+          }
+
+          // DELETE and assignment calls return 204 with no body.
+          if (schema === null) return undefined as T;
           const json = yield* parseJson(result.text, label);
           return yield* decode(schema, json, label);
         });
@@ -446,7 +624,149 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         return url.toString();
       };
 
-      return AzureGraph.of({ get, usersDelta, groupsDelta, domains, consentUrl });
+      const autopilotDeviceBase = `${graphBaseUrl}/deviceManagement/windowsAutopilotDeviceIdentities`;
+      const autopilotImportUrl = `${graphBaseUrl}/deviceManagement/importedWindowsAutopilotDeviceIdentities`;
+      const autopilotProfileBase = `${graphBaseUrl}/deviceManagement/windowsAutopilotDeploymentProfiles`;
+
+      const listAutopilotDevices = (
+        tenantId: string,
+        link?: string,
+      ): Effect.Effect<GraphPage<GraphAutopilotDevice>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const page = yield* get(
+            tenantId,
+            link ?? `${autopilotDeviceBase}?$top=100`,
+            GraphAutopilotDevicesResponse,
+          );
+          return {
+            items: (page.value ?? []).map(graphAutopilotDeviceFromWire),
+            nextLink: page["@odata.nextLink"] ?? null,
+          };
+        });
+
+      const getAutopilotDevice = (
+        tenantId: string,
+        id: string,
+      ): Effect.Effect<GraphAutopilotDevice, AzureGraphError> =>
+        get(
+          tenantId,
+          `${autopilotDeviceBase}/${encodeURIComponent(id)}`,
+          GraphAutopilotDeviceResponse,
+        ).pipe(Effect.map(graphAutopilotDeviceFromWire));
+
+      const importAutopilotDevices = (
+        tenantId: string,
+        devices: ReadonlyArray<ImportAutopilotDeviceIdentity>,
+      ): Effect.Effect<ReadonlyArray<GraphAutopilotDevice>, AzureGraphError> =>
+        Effect.forEach(
+          devices,
+          (device) =>
+            request(tenantId, "POST", autopilotImportUrl, GraphAutopilotImportResponse, {
+              "@odata.type": "#microsoft.graph.importedWindowsAutopilotDeviceIdentity",
+              serialNumber: device.serialNumber,
+              hardwareIdentifier: device.hardwareIdentifier,
+              ...(device.groupTag ? { groupTag: device.groupTag } : {}),
+              ...(device.orderIdentifier ? { orderIdentifier: device.orderIdentifier } : {}),
+            }).pipe(Effect.map(importedAutopilotDevices)),
+          { concurrency: 1 },
+        ).pipe(Effect.map((batches) => batches.flat()));
+
+      const deleteAutopilotDevice = (
+        tenantId: string,
+        id: string,
+      ): Effect.Effect<void, AzureGraphError> =>
+        request<void>(tenantId, "DELETE", `${autopilotDeviceBase}/${encodeURIComponent(id)}`, null);
+
+      const listAutopilotProfiles = (
+        tenantId: string,
+        link?: string,
+      ): Effect.Effect<GraphPage<GraphAutopilotProfile>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const page = yield* get(
+            tenantId,
+            link ?? `${autopilotProfileBase}?$top=100`,
+            GraphAutopilotProfilesResponse,
+          );
+          return {
+            items: (page.value ?? []).map(graphAutopilotProfileFromWire),
+            nextLink: page["@odata.nextLink"] ?? null,
+          };
+        });
+
+      const profileBody = (input: AutopilotDeploymentProfileInput, create: boolean) => ({
+        ...(create ? { "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfile" } : {}),
+        displayName: input.displayName,
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        deploymentMode: input.deploymentMode,
+        joinType: input.joinType,
+        ...(input.deviceNameTemplate !== undefined
+          ? { deviceNameTemplate: input.deviceNameTemplate }
+          : {}),
+        ...(input.locale !== undefined ? { locale: input.locale } : {}),
+        ...(input.enableDevicePreparation !== undefined
+          ? { enableWhiteGlove: input.enableDevicePreparation }
+          : {}),
+      });
+
+      const createAutopilotProfile = (
+        tenantId: string,
+        input: AutopilotDeploymentProfileInput,
+      ): Effect.Effect<GraphAutopilotProfile, AzureGraphError> =>
+        request(
+          tenantId,
+          "POST",
+          autopilotProfileBase,
+          GraphAutopilotProfileResponse,
+          profileBody(input, true),
+        ).pipe(Effect.map(graphAutopilotProfileFromWire));
+
+      const updateAutopilotProfile = (
+        tenantId: string,
+        id: string,
+        input: AutopilotDeploymentProfileInput,
+      ): Effect.Effect<GraphAutopilotProfile, AzureGraphError> =>
+        request(
+          tenantId,
+          "PATCH",
+          `${autopilotProfileBase}/${encodeURIComponent(id)}`,
+          GraphAutopilotProfileResponse,
+          profileBody(input, false),
+        ).pipe(Effect.map(graphAutopilotProfileFromWire));
+
+      const assignAutopilotProfile = (
+        tenantId: string,
+        id: string,
+        groupId: string,
+      ): Effect.Effect<void, AzureGraphError> =>
+        request<void>(
+          tenantId,
+          "POST",
+          `${autopilotProfileBase}/${encodeURIComponent(id)}/assign`,
+          null,
+          {
+            "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfileAssignment",
+            target: {
+              "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+              groupId,
+            },
+          },
+        );
+
+      return AzureGraph.of({
+        get,
+        usersDelta,
+        groupsDelta,
+        domains,
+        consentUrl,
+        listAutopilotDevices,
+        getAutopilotDevice,
+        importAutopilotDevices,
+        deleteAutopilotDevice,
+        listAutopilotProfiles,
+        createAutopilotProfile,
+        updateAutopilotProfile,
+        assignAutopilotProfile,
+      });
     }),
   );
 

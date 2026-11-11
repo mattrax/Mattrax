@@ -3,6 +3,13 @@ import { Effect } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
+import { errorField, errorTag } from "~/lib/errors";
+import {
+  requestStepUp,
+  stepUpGrant,
+  type StepUpAction,
+  type StepUpMethod,
+} from "~/lib/step-up-bus";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
@@ -11,8 +18,21 @@ import {
   type AndroidEnterpriseInfo,
   type AndroidSignupResponse,
   type AndroidSyncResponse,
+  type AbmAssignDeviceResponse,
+  type AbmDeviceInfo,
+  type AbmDevicesResponse,
+  type AbmProfileUrlResponse,
+  type AppleBusinessManagerInfo,
+  type AppleBusinessManagerSyncResponse,
   type ApplicationInventoryQuery,
   type AuditSearchQuery,
+  type AutopilotDeploymentMode,
+  type AutopilotDeviceInfo,
+  type AutopilotImportRequest,
+  type AutopilotJoinType,
+  type AutopilotProfileInfo,
+  type AutopilotSettingsResponse,
+  type CreateAutopilotProfileRequest,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
   type DeviceSearchQuery,
@@ -30,6 +50,14 @@ import {
   type TenantEnrollmentInfo,
   type TenantImportRequest,
   type TenantInfo,
+  type UpdateAutopilotProfileRequest,
+  type VppAssetInfo,
+  type VppAssetsResponse,
+  type VppAssignmentInfo,
+  type VppInfo,
+  type VppInstallResponse,
+  type VppReleaseResponse,
+  type VppSyncResponse,
   type WebhookEndpointInfo,
   type WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
@@ -39,6 +67,12 @@ export type {
   AndroidEnterpriseInfo,
   AndroidSignupResponse,
   AndroidSyncResponse,
+  AbmAssignDeviceResponse,
+  AbmDeviceInfo,
+  AbmDevicesResponse,
+  AbmProfileUrlResponse,
+  AppleBusinessManagerInfo,
+  AppleBusinessManagerSyncResponse,
   ApplicationInventoryQuery,
   ApplicationInventoryResponse,
   ApplicationInventoryRow,
@@ -48,6 +82,14 @@ export type {
   AuditLogEntry,
   AuditSearchQuery,
   AuditSearchResponse,
+  AutopilotDeploymentMode,
+  AutopilotDeviceInfo,
+  AutopilotImportRequest,
+  AutopilotJoinType,
+  AutopilotProfileInfo,
+  AutopilotSettingsResponse,
+  CreateAutopilotProfileRequest,
+  UpdateAutopilotProfileRequest,
   BillingSummary,
   CredentialHealthResponse,
   BackupRunInfo,
@@ -110,6 +152,13 @@ export type {
   TenantInvitation,
   TenantUser,
   UserInfo,
+  VppAssetInfo,
+  VppAssetsResponse,
+  VppAssignmentInfo,
+  VppInfo,
+  VppInstallResponse,
+  VppReleaseResponse,
+  VppSyncResponse,
   WebhookEndpointInfo,
   WebhookTestResponse,
   WindowsEnrollment,
@@ -149,6 +198,14 @@ export const enterpriseKeys = {
     ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
   android: (tenantId: RouteParam) => ["enterprise", "android", tenantId ?? ""] as const,
+  abm: (tenantId: RouteParam) => ["enterprise", "abm", tenantId ?? ""] as const,
+  abmDevices: (tenantId: RouteParam) => ["enterprise", "abm-devices", tenantId ?? ""] as const,
+  abmDevice: (tenantId: RouteParam, serial: RouteParam) =>
+    ["enterprise", "abm-device", tenantId ?? "", serial ?? ""] as const,
+  vpp: (tenantId: RouteParam) => ["enterprise", "vpp", tenantId ?? ""] as const,
+  vppAssets: (tenantId: RouteParam) => ["enterprise", "vpp-assets", tenantId ?? ""] as const,
+  vppAssignments: (tenantId: RouteParam) =>
+    ["enterprise", "vpp-assignments", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
@@ -179,6 +236,11 @@ export const enterpriseKeys = {
   directorySync: (tenantId: RouteParam) =>
     ["enterprise", "directory-sync", tenantId ?? ""] as const,
   domains: (tenantId: RouteParam) => ["enterprise", "domains", tenantId ?? ""] as const,
+  autopilot: (tenantId: RouteParam) => ["enterprise", "autopilot", tenantId ?? ""] as const,
+  autopilotDevices: (tenantId: RouteParam) =>
+    ["enterprise", "autopilot-devices", tenantId ?? ""] as const,
+  autopilotProfiles: (tenantId: RouteParam) =>
+    ["enterprise", "autopilot-profiles", tenantId ?? ""] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -194,33 +256,72 @@ const clientEffect = () => {
   );
 };
 
+type EndpointStepUp =
+  | {
+      /** The action this endpoint requires a recent step-up for. */
+      readonly stepUp: StepUpAction;
+    }
+  | {
+      /** Step-up endpoints must not recurse into the prompt. */
+      readonly stepUp: false;
+    };
+
 function endpoint<A, E>(
   call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
-  const effect = clientEffect().pipe(
-    Effect.flatMap(({ client, event }) => {
-      const cookie = event?.request.headers.get("cookie");
-      const api = client.EnterpriseApi;
-      if (!cookie) return call(api);
-      return call(
-        new Proxy(api, {
-          get(target, property, receiver) {
-            const value = Reflect.get(target, property, receiver);
-            if (typeof value !== "function") return value;
-            return (options: Record<string, unknown> = {}) =>
-              value({
-                ...options,
-                headers: { ...(options.headers as object | undefined), cookie },
-              });
-          },
-        }) as EnterpriseApiClient,
+  const action = options.stepUp === false ? undefined : options.stepUp;
+
+  const attempt = (grant?: string) => {
+    const extraHeaders: Record<string, string> = {
+      ...(grant ? { "x-mattrax-step-up": grant } : {}),
+    };
+    const effect = clientEffect().pipe(
+      Effect.flatMap(({ client, event }) => {
+        const cookie = event?.request.headers.get("cookie");
+        const api = client.EnterpriseApi;
+        const headers = {
+          ...extraHeaders,
+          ...(cookie ? { cookie } : {}),
+        };
+        if (Object.keys(headers).length === 0) return call(api);
+        return call(
+          new Proxy(api, {
+            get(target, property, receiver) {
+              const value = Reflect.get(target, property, receiver);
+              if (typeof value !== "function") return value;
+              return (input: Record<string, unknown> = {}) =>
+                value({
+                  ...input,
+                  headers: { ...headers, ...(input.headers as object | undefined) },
+                });
+            },
+          }) as EnterpriseApiClient,
+        );
+      }),
+    );
+    return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
+  };
+
+  const run = async (): Promise<A> => {
+    try {
+      return await attempt(stepUpGrant(action));
+    } catch (error) {
+      if (errorTag(error) !== "StepUpRequired") throw error;
+      const required =
+        (errorField(error, "action") as StepUpAction | undefined) ??
+        (action as StepUpAction | undefined);
+      if (!required) throw error;
+      const methods = errorField(error, "methods");
+      const grant = await requestStepUp(
+        required,
+        Array.isArray(methods) ? (methods as StepUpMethod[]) : undefined,
       );
-    }),
-  );
-  return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as EndpointPromise<
-    A,
-    E | EnterpriseBadRequest
-  >;
+      return await attempt(grant);
+    }
+  };
+
+  return run() as EndpointPromise<A, E | EnterpriseBadRequest>;
 }
 
 const enterpriseQueryOptions = <
@@ -293,7 +394,9 @@ export const enterprise = {
       api.patchTenant({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
   deleteTenant: (tenantId: RouteParam) =>
-    endpoint((api) => api.deleteTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
+    endpoint((api) => api.deleteTenant({ params: { tenantId: required(tenantId, "tenantId") } }), {
+      stepUp: "tenant-delete",
+    }),
   list: <E extends Entity>(tenantId: RouteParam, entity: E, _group?: string) =>
     endpoint((api) => {
       const params = { tenantId: required(tenantId, "tenantId") };
@@ -445,10 +548,12 @@ export const enterprise = {
       }),
     ),
   getDeviceRecoveryKey: (tenantId: RouteParam, id: RouteParam) =>
-    endpoint((api) =>
-      api.getDeviceRecoveryKey({
-        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
-      }),
+    endpoint(
+      (api) =>
+        api.getDeviceRecoveryKey({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "recovery-key-reveal" },
     ),
   getApplicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
     endpoint((api) =>
@@ -735,6 +840,60 @@ export const enterprise = {
     endpoint((api) =>
       api.refreshEntraDomains({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
+  getAutopilotSettings: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getAutopilotSettings({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listAutopilotDevices: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listAutopilotDevices({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  importAutopilotDevices: (tenantId: RouteParam, payload: AutopilotImportRequest) =>
+    endpoint((api) =>
+      api.importAutopilotDevices({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  syncAutopilotDevices: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.syncAutopilotDevices({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  deleteAutopilotDevice: (tenantId: RouteParam, serial: string) =>
+    endpoint((api) =>
+      api.deleteAutopilotDevice({
+        params: { tenantId: required(tenantId, "tenantId"), serial },
+      }),
+    ),
+  listAutopilotProfiles: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listAutopilotProfiles({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createAutopilotProfile: (tenantId: RouteParam, payload: CreateAutopilotProfileRequest) =>
+    endpoint((api) =>
+      api.createAutopilotProfile({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  updateAutopilotProfile: (
+    tenantId: RouteParam,
+    profileId: string,
+    payload: UpdateAutopilotProfileRequest,
+  ) =>
+    endpoint((api) =>
+      api.updateAutopilotProfile({
+        params: { tenantId: required(tenantId, "tenantId"), profileId },
+        payload,
+      }),
+    ),
+  assignAutopilotProfile: (tenantId: RouteParam, profileId: string, groupId: string) =>
+    endpoint((api) =>
+      api.assignAutopilotProfile({
+        params: { tenantId: required(tenantId, "tenantId"), profileId },
+        payload: { groupId },
+      }),
+    ),
   deletePolicies: (tenantId: RouteParam, ids: string[]) =>
     endpoint((api) =>
       api.deletePolicies({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
@@ -770,6 +929,117 @@ export const enterprise = {
     endpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
   getApns: (tenantId: RouteParam) =>
     endpoint((api) => api.getApns({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getAppleBusinessManager: (
+    tenantId: RouteParam,
+  ): EndpointPromise<AppleBusinessManagerInfo, unknown> =>
+    endpoint((api) =>
+      api.getAppleBusinessManager({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  uploadAppleBusinessManagerToken: (
+    tenantId: RouteParam,
+    payload: {
+      content: string;
+      encoding?: "text" | "base64";
+      fileName?: string;
+      clientId?: string;
+      keyId?: string;
+      teamId?: string;
+      orgId?: string;
+      orgName?: string;
+      scope?: "business.api" | "school.api";
+    },
+  ): EndpointPromise<AppleBusinessManagerInfo, unknown> =>
+    endpoint((api) =>
+      api.uploadAppleBusinessManagerToken({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  deleteAppleBusinessManagerToken: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteAppleBusinessManagerToken({
+        params: { tenantId: required(tenantId, "tenantId") },
+      }),
+    ),
+  syncAppleBusinessManager: (
+    tenantId: RouteParam,
+  ): EndpointPromise<AppleBusinessManagerSyncResponse, unknown> =>
+    endpoint((api) =>
+      api.syncAppleBusinessManager({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listAbmDevices: (tenantId: RouteParam): EndpointPromise<AbmDevicesResponse, unknown> =>
+    endpoint((api) => api.listAbmDevices({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getAbmDevice: (
+    tenantId: RouteParam,
+    serial: RouteParam,
+  ): EndpointPromise<AbmDeviceInfo, unknown> =>
+    endpoint((api) =>
+      api.getAbmDevice({
+        params: { tenantId: required(tenantId, "tenantId"), serial: required(serial, "serial") },
+      }),
+    ),
+  assignAbmDevice: (
+    tenantId: RouteParam,
+    serial: RouteParam,
+  ): EndpointPromise<AbmAssignDeviceResponse, unknown> =>
+    endpoint((api) =>
+      api.assignAppleBusinessManagerDevice({
+        params: { tenantId: required(tenantId, "tenantId"), serial: required(serial, "serial") },
+      }),
+    ),
+  getAbmDeviceProfileUrl: (
+    tenantId: RouteParam,
+    serial: RouteParam,
+  ): EndpointPromise<AbmProfileUrlResponse, unknown> =>
+    endpoint((api) =>
+      api.getAbmDeviceProfileUrl({
+        params: { tenantId: required(tenantId, "tenantId"), serial: required(serial, "serial") },
+      }),
+    ),
+  getVpp: (tenantId: RouteParam): EndpointPromise<VppInfo, unknown> =>
+    endpoint((api) => api.getVpp({ params: { tenantId: required(tenantId, "tenantId") } })),
+  uploadVppToken: (
+    tenantId: RouteParam,
+    payload: { content: string; encoding?: "text" | "base64"; fileName?: string },
+  ): EndpointPromise<VppInfo, unknown> =>
+    endpoint((api) =>
+      api.uploadVppToken({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  deleteVppToken: (tenantId: RouteParam) =>
+    endpoint((api) => api.deleteVppToken({ params: { tenantId: required(tenantId, "tenantId") } })),
+  syncVpp: (tenantId: RouteParam): EndpointPromise<VppSyncResponse, unknown> =>
+    endpoint((api) => api.syncVpp({ params: { tenantId: required(tenantId, "tenantId") } })),
+  listVppAssets: (tenantId: RouteParam): EndpointPromise<VppAssetsResponse, unknown> =>
+    endpoint((api) => api.listVppAssets({ params: { tenantId: required(tenantId, "tenantId") } })),
+  listVppAssignments: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listVppAssignments({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  installVppAsset: (
+    tenantId: RouteParam,
+    adamId: string,
+    payload: { devices?: string[]; groups?: string[] },
+  ): EndpointPromise<VppInstallResponse, unknown> =>
+    endpoint((api) =>
+      api.installVppAsset({
+        params: { tenantId: required(tenantId, "tenantId"), adamId },
+        payload,
+      }),
+    ),
+  releaseVppAsset: (
+    tenantId: RouteParam,
+    adamId: string,
+    payload: { devices: string[] },
+  ): EndpointPromise<VppReleaseResponse, unknown> =>
+    endpoint((api) =>
+      api.releaseVppAsset({
+        params: { tenantId: required(tenantId, "tenantId"), adamId },
+        payload,
+      }),
+    ),
   getTenantAndroid: (tenantId: RouteParam): EndpointPromise<AndroidEnterpriseInfo, unknown> =>
     endpoint((api) =>
       api.getTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -833,8 +1103,10 @@ export const enterprise = {
       requireMfa?: boolean;
     },
   ) =>
-    endpoint((api) =>
-      api.patchSsoConfig({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    endpoint(
+      (api) =>
+        api.patchSsoConfig({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+      { stepUp: "sso-policy" },
     ),
   listScimTokens: (tenantId: RouteParam) =>
     endpoint((api) => api.listScimTokens({ params: { tenantId: required(tenantId, "tenantId") } })),
@@ -962,12 +1234,23 @@ export const enterprise = {
   billing: (tenantId: RouteParam) =>
     endpoint((api) => api.billing({ params: { tenantId: required(tenantId, "tenantId") } })),
   billingPortal: (tenantId: RouteParam, returnUrl: string) =>
-    endpoint((api) =>
-      api.billingPortal({
-        params: { tenantId: required(tenantId, "tenantId") },
-        payload: { returnUrl },
-      }),
+    endpoint(
+      (api) =>
+        api.billingPortal({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload: { returnUrl },
+        }),
+      { stepUp: "billing-portal" },
     ),
+  stepUpMethods: () => endpoint((api) => api.stepUpMethods({})),
+  stepUpPassword: (payload: { password: string; action: StepUpAction }) =>
+    endpoint((api) => api.stepUpPassword({ payload })),
+  stepUpTotp: (payload: { code: string; action: StepUpAction }) =>
+    endpoint((api) => api.stepUpTotp({ payload })),
+  beginStepUpPasskey: (payload: { action: StepUpAction }) =>
+    endpoint((api) => api.beginStepUpPasskey({ payload })),
+  completeStepUpPasskey: (payload: { stepUpToken: string; response: string }) =>
+    endpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
 export const enterpriseQueries = {
@@ -1092,6 +1375,42 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.android(tenantId),
       queryFn: () => enterprise.getTenantAndroid(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  abm: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.abm(tenantId),
+      queryFn: () => enterprise.getAppleBusinessManager(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  abmDevices: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.abmDevices(tenantId),
+      queryFn: () => enterprise.listAbmDevices(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  abmDevice: (tenantId: RouteParam, serial: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.abmDevice(tenantId, serial),
+      queryFn: () => enterprise.getAbmDevice(tenantId, serial),
+      enabled: Boolean(tenantId) && Boolean(serial),
+    }),
+  vpp: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.vpp(tenantId),
+      queryFn: () => enterprise.getVpp(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  vppAssets: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.vppAssets(tenantId),
+      queryFn: () => enterprise.listVppAssets(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  vppAssignments: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.vppAssignments(tenantId),
+      queryFn: () => enterprise.listVppAssignments(tenantId),
       enabled: Boolean(tenantId),
     }),
   billing: (tenantId: RouteParam) =>

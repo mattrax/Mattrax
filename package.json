@@ -8,6 +8,8 @@
     "dev:cert": "node scripts/dev-cert.mjs",
     "db:up": "docker compose up -d mysql",
     "db:migrate": "pnpm api db:migrate",
+    "catalog:split": "node scripts/split-policy-catalog.mjs",
+    "catalog:check": "node scripts/split-policy-catalog.mjs --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "format": "vp fmt && vp lint",

@@ -21,6 +21,23 @@ export default function LoginPage() {
   const [code, setCode] = createSignal("");
   const [ssoEmail, setSsoEmail] = createSignal("");
   const [mfaPending, setMfaPending] = createSignal(false);
+  const [passkeyPending, setPasskeyPending] = createSignal(false);
+
+  const signInWithPasskey = async () => {
+    setError(null);
+    setPasskeyPending(true);
+    const result = await authClient.passkeySignIn();
+    setPasskeyPending(false);
+    if (result.error) {
+      setError(result.error.message ?? "That passkey wasn't accepted");
+      return;
+    }
+    if (result.data?.pending) {
+      setMfaPending(true);
+      return;
+    }
+    navigate(returnTo() ?? "/dashboard", { replace: true });
+  };
 
   const returnTo = () =>
     searchParams.returnTo && Array.isArray(searchParams.returnTo)
@@ -278,6 +295,14 @@ export default function LoginPage() {
                 }}
               >
                 Email me a sign-in code instead
+              </button>
+              <button
+                type="button"
+                class="w-full rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100 disabled:opacity-50 transition-colors"
+                disabled={pending()}
+                onClick={signInWithPasskey}
+              >
+                {passkeyPending() ? "Waiting for your device…" : "Sign in with a passkey"}
               </button>
             </form>
           </Show>

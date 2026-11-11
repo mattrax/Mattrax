@@ -321,6 +321,12 @@ const makeAppLayer = (env: Env, request: Request) => {
     email,
     authSecret: env.AUTH_SECRET,
     origin: env.ORIGIN,
+    // Only same-site origins can share the deployment's WebAuthn relying party;
+    // `passkeyProfile` drops anything that would widen the RP id.
+    trustedOrigins: (apiEnv.TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
   }).pipe(Layer.provide(Db.layer));
 
   const enterpriseAuthLive = makeEnterpriseAuthLive({
@@ -368,6 +374,17 @@ const makeAppLayer = (env: Env, request: Request) => {
     requireWindowsDeviceIdentity: true,
     requireAppleDeviceIdentity: true,
     planLimits,
+    // Federated WSTEP is opt-in: discovery only advertises it when an audience
+    // is configured, and policy/enroll then require a verifiable Entra JWT.
+    ...(apiEnv.WINDOWS_FEDERATED_AUDIENCE || env.AZURE_CLIENT_ID
+      ? {
+          windowsFederated: {
+            enabled: true,
+            audience: apiEnv.WINDOWS_FEDERATED_AUDIENCE ?? env.AZURE_CLIENT_ID!,
+            ...(env.AZURE_CLIENT_ID ? { clientId: env.AZURE_CLIENT_ID } : {}),
+          },
+        }
+      : {}),
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
@@ -387,6 +404,13 @@ const makeAppLayer = (env: Env, request: Request) => {
     EnterpriseService({
       email,
       azureClientId: env.AZURE_CLIENT_ID,
+      ...(apiEnv.WINDOWS_FEDERATED_AUDIENCE || env.AZURE_CLIENT_ID
+        ? {
+            windowsFederated: {
+              audience: apiEnv.WINDOWS_FEDERATED_AUDIENCE ?? env.AZURE_CLIENT_ID!,
+            },
+          }
+        : {}),
       android: androidConfig,
       planLimits,
     }).pipe(

@@ -32,6 +32,20 @@ export type TokenPayload = {
   purpose?: string;
   tenantId?: string;
   nonce?: string;
+  /** Serial number bound into an ADE enrollment-profile link. */
+  serial?: string;
+  /** ADE profile UUID the link was minted for. */
+  profileUuid?: string;
+  /** Session the token is bound to (step-up grants and flow bindings). */
+  sid?: string;
+  /** Step-up action this token authorises. */
+  action?: string;
+  /** Passkey step-up flow id. */
+  flowId?: string;
+  /** Passkey step-up request-binding verifier. */
+  verifier?: string;
+  /** Absolute expiry of the passkey step-up request binding. */
+  requestBindingExpiresAtMillis?: number;
 };
 
 export const verifyToken = (secret: string, token: string) =>

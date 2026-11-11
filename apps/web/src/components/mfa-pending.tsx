@@ -8,7 +8,7 @@ import { errorMessage } from "~/lib/errors";
  * sent to the API.
  */
 export function MfaPending(props: { email?: string; onComplete: () => void }) {
-  const [mode, setMode] = createSignal<"totp" | "recovery">("totp");
+  const [mode, setMode] = createSignal<"totp" | "recovery" | "passkey">("totp");
   const [code, setCode] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
@@ -17,6 +17,16 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
     event.preventDefault();
     setError(null);
     setPending(true);
+    if (mode() === "passkey") {
+      const result = await authClient.passkeyPending();
+      setPending(false);
+      if (result.error) {
+        setError(errorMessage(result.error, "That passkey wasn't accepted"));
+        return;
+      }
+      props.onComplete();
+      return;
+    }
     const result =
       mode() === "totp"
         ? await authClient.verifyTotpPending(code().trim())
@@ -76,31 +86,53 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         >
           Recovery code
         </button>
+        <button
+          type="button"
+          class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
+            mode() === "passkey"
+              ? "bg-stone-900 text-white"
+              : "border border-stone-300 text-stone-700"
+          }`}
+          onClick={() => {
+            setMode("passkey");
+            setCode("");
+            setError(null);
+          }}
+        >
+          Passkey
+        </button>
       </div>
 
       <form onSubmit={submit} class="space-y-3">
-        <div class="space-y-1.5">
-          <label for="mfa-code" class="text-sm font-medium text-stone-700">
-            {mode() === "totp" ? "6-digit code" : "One-time recovery code"}
-          </label>
-          <input
-            id="mfa-code"
-            required
-            autocomplete="one-time-code"
-            inputmode={mode() === "totp" ? "numeric" : "text"}
-            placeholder={mode() === "totp" ? "000000" : "xxxx-xxxx"}
-            value={code()}
-            onInput={(event) => setCode(event.currentTarget.value)}
-            class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-center text-lg tracking-[0.3em] text-stone-900 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
-          />
-        </div>
+        <Show when={mode() !== "passkey"}>
+          <div class="space-y-1.5">
+            <label for="mfa-code" class="text-sm font-medium text-stone-700">
+              {mode() === "totp" ? "6-digit code" : "One-time recovery code"}
+            </label>
+            <input
+              id="mfa-code"
+              required
+              autocomplete="one-time-code"
+              inputmode={mode() === "totp" ? "numeric" : "text"}
+              placeholder={mode() === "totp" ? "000000" : "xxxx-xxxx"}
+              value={code()}
+              onInput={(event) => setCode(event.currentTarget.value)}
+              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-center text-lg tracking-[0.3em] text-stone-900 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+            />
+          </div>
+        </Show>
+        <Show when={mode() === "passkey"}>
+          <p class="text-sm text-stone-600">
+            Use the passkey saved on this device or a nearby device.
+          </p>
+        </Show>
         <Show when={error()}>{(message) => <p class="text-sm text-red-600">{message()}</p>}</Show>
         <button
           type="submit"
           disabled={pending()}
           class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
         >
-          {pending() ? "Verifying…" : "Continue"}
+          {pending() ? "Verifying…" : mode() === "passkey" ? "Use passkey" : "Continue"}
         </button>
       </form>
     </div>

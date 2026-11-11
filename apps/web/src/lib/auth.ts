@@ -2,6 +2,7 @@ import { createSignal, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
 import { errorMessage } from "~/lib/errors";
+import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
 import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
 
 type AuthUser = {
@@ -73,22 +74,33 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
         _tag?: string;
         value?: T;
         private?: PrivateReveal[];
+        message?: string;
+        reason?: string;
+        action?: string;
+        methods?: string[];
         error?: { _tag?: string; message?: string; reason?: string };
       }
     | undefined;
 
   if (data?._tag === "Failure" || !response.ok) {
-    const tag = data?.error?._tag;
+    // Auth actions wrap failures in a `Failure` envelope; the Enterprise API
+    // returns the tagged error directly. Accept both so step-up retries work.
+    const direct = data?._tag !== "Failure" && data?._tag !== "Success" ? data?._tag : undefined;
+    const tag = data?.error?._tag ?? direct;
+    const message = data?.error?.message ?? data?.message;
+    const reason = data?.error?.reason ?? data?.reason;
     const error = new Error(
       errorMessage(
-        { _tag: tag, message: data?.error?.message, reason: data?.error?.reason },
+        { _tag: tag, message, reason },
         response.status === 429
           ? "Too many attempts. Wait a minute and try again."
           : "We couldn't complete that request. Try again.",
       ),
-    ) as Error & { _tag?: string; reason?: string };
+    ) as Error & { _tag?: string; reason?: string; action?: string; methods?: string[] };
     if (tag) error._tag = tag;
-    if (data?.error?.reason) error.reason = data.error.reason;
+    if (reason) error.reason = reason;
+    if (data?.action) error.action = data.action;
+    if (data?.methods) error.methods = data.methods;
     throw error;
   }
   return {
@@ -258,6 +270,143 @@ export const authClient = {
       });
       return completionState(completion);
     }),
+  /**
+   * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
+   * request-binding cookie; only the WebAuthn response travels back.
+   */
+  passkeySignIn: () =>
+    result(async () => {
+      const started = await request<{
+        flowId: string;
+        expiresAtMillis: number;
+        options: unknown;
+      }>("/beginPasskeySignIn", {
+        method: "POST",
+        body: authBody({
+          flowId: crypto.randomUUID(),
+          commandId: crypto.randomUUID(),
+          profileId: "default",
+        }),
+      });
+      let response: unknown;
+      try {
+        const { startAuthentication } = await import("@simplewebauthn/browser");
+        response = await startAuthentication({
+          optionsJSON: started.options as never,
+          useBrowserAutofill: false,
+        });
+      } catch {
+        throw new Error("That passkey wasn't confirmed. Try again or use another method.");
+      }
+      const completion = await request<unknown>("/completePasskeySignIn", {
+        method: "POST",
+        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+      });
+      const state = completionState(completion);
+      if (!state.user && !state.pending) throw new Error("Authentication did not complete");
+      return state;
+    }),
+  /** Complete a pending password/email/SSO sign-in with a passkey. */
+  passkeyPending: () =>
+    result(async () => {
+      const started = await request<{
+        flowId: string;
+        expiresAtMillis: number;
+        options: unknown;
+      }>("/beginPasskeyPending", {
+        method: "POST",
+        body: authBody({
+          flowId: crypto.randomUUID(),
+          commandId: crypto.randomUUID(),
+          profileId: "default",
+        }),
+      });
+      let response: unknown;
+      try {
+        const { startAuthentication } = await import("@simplewebauthn/browser");
+        response = await startAuthentication({
+          optionsJSON: started.options as never,
+          useBrowserAutofill: false,
+        });
+      } catch {
+        throw new Error("That passkey wasn't confirmed. Try again or use a code.");
+      }
+      const completion = await request<unknown>("/completePasskeyPending", {
+        method: "POST",
+        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+      });
+      return completionState(completion);
+    }),
+  listPasskeys: () =>
+    result(() =>
+      request<{
+        credentials: Array<{
+          credentialId: string;
+          name: string;
+          primarySignIn: boolean;
+          createdAtMillis: number;
+          lastUsedAtMillis?: number;
+        }>;
+        cursor?: string;
+      }>("/listPasskeys", { method: "POST", body: authBody({ limit: 64 }) }),
+    ),
+  /**
+   * Add a passkey. The step-up grant doubles as the library's action proof, so
+   * enrollment is authorised by recent possession rather than a bare session.
+   */
+  addPasskey: (name: string) =>
+    result(async () => {
+      const actionProof = await requireStepUpGrant("passkey-enroll");
+      const started = await request<{
+        flowId: string;
+        expiresAtMillis: number;
+        options: unknown;
+      }>("/beginPasskeyEnrollment", {
+        method: "POST",
+        body: authBody({
+          flowId: crypto.randomUUID(),
+          commandId: crypto.randomUUID(),
+          profileId: "default",
+          name,
+          actionProof,
+        }),
+      });
+      let response: unknown;
+      try {
+        const { startRegistration } = await import("@simplewebauthn/browser");
+        response = await startRegistration({ optionsJSON: started.options as never });
+      } catch {
+        throw new Error("That passkey wasn't created. Try again.");
+      }
+      return request<{
+        credential: {
+          credentialId: string;
+          name: string;
+          primarySignIn: boolean;
+          createdAtMillis: number;
+          lastUsedAtMillis?: number;
+        };
+      }>("/completePasskeyEnrollment", {
+        method: "POST",
+        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+      });
+    }),
+  renamePasskey: (payload: { credentialId: string; name: string }) =>
+    result(() =>
+      request<{ credential: { credentialId: string; name: string } }>("/renamePasskey", {
+        method: "POST",
+        body: authBody({ commandId: crypto.randomUUID(), ...payload }),
+      }),
+    ),
+  removePasskey: (credentialId: string) =>
+    result(() =>
+      withStepUp("passkey-remove", (grant) =>
+        request<{ status: "ok" }>(`/v1/account/passkeys/${encodeURIComponent(credentialId)}`, {
+          method: "DELETE",
+          ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
+        }),
+      ),
+    ),
   recoverTotpPending: (code: string) =>
     result(async () => {
       const completion = await request<unknown>("/recoverTotpPending", {
@@ -426,21 +575,32 @@ export const authClient = {
     scopes?: Array<"read" | "write">;
     tenantId?: string | null;
   }) =>
-    request<{
-      token: string;
-      item: {
-        id: string;
-        name: string;
-        tokenPrefix: string;
-        scopes: Array<"read" | "write">;
-        tenantId?: string | null;
-        createdAt: string;
-        updatedAt: string;
-        lastUsedAt?: string | null;
-        expiresAt?: string | null;
-        revokedAt?: string | null;
-      };
-    }>("/v1/account/api-tokens", { method: "POST", body: body(payload) }),
+    withStepUp("api-token-create", (grant) =>
+      request<{
+        token: string;
+        item: {
+          id: string;
+          name: string;
+          tokenPrefix: string;
+          scopes: Array<"read" | "write">;
+          tenantId?: string | null;
+          createdAt: string;
+          updatedAt: string;
+          lastUsedAt?: string | null;
+          expiresAt?: string | null;
+          revokedAt?: string | null;
+        };
+      }>("/v1/account/api-tokens", {
+        method: "POST",
+        body: body(payload),
+        ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
+      }),
+    ),
   revokeApiToken: (tokenId: string) =>
-    request<{ status: "ok" }>(`/v1/account/api-tokens/${tokenId}`, { method: "DELETE" }),
+    withStepUp("api-token-revoke", (grant) =>
+      request<{ status: "ok" }>(`/v1/account/api-tokens/${tokenId}`, {
+        method: "DELETE",
+        ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
+      }),
+    ),
 };

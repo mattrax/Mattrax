@@ -33,6 +33,7 @@ import {
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   type DynamicGroupRules,
+  type StepUpAction,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
@@ -40,10 +41,26 @@ import type { Stripe } from "@mattrax/effect-stripe";
 import {
   countOrganizationDevices,
   deviceLimitForOrganization,
+  hasMfaFactor,
   tenantLimitForAccount,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { and, asc, count, desc, eq, gt, gte, inArray, isNull, like, lt, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  ne,
+  or,
+} from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
@@ -51,6 +68,8 @@ import {
   createWindowsTenantToken,
   dispatchWebhookEvent,
   enterpriseEnrollmentProfile,
+  federatedAuthServiceUrl,
+  federatedRealm,
   generateWebhookSecret,
   previewDynamicGroup,
   resolveEffectivePolicyForDevice,
@@ -63,6 +82,24 @@ import {
   windowsTenantTokenExpiresAt,
   type WebhookEndpointRow,
 } from "@mattrax/management-backend-enterprise";
+import {
+  AUTOPILOT_IMPORT_MAX_BYTES,
+  AUTOPILOT_IMPORT_MAX_ROWS,
+  AutopilotError,
+  assignAutopilotProfile,
+  autopilotDeviceInfo,
+  autopilotProfileInfo,
+  createAutopilotProfile,
+  deleteAutopilotDevice,
+  importAutopilotDevices,
+  listAutopilotProfiles,
+  normalizeAutopilotSerial,
+  parseAutopilotCsv,
+  syncAutopilotDevices,
+  updateAutopilotProfile,
+  validateAutopilotProfileInput,
+  type AutopilotProfileValues,
+} from "./autopilot.ts";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { parseMobileconfigPreview } from "./mobileconfig.ts";
@@ -126,6 +163,31 @@ import {
   type EnrollmentAttemptOutcome,
   type EnrollmentAttemptPlatform,
 } from "./enrollmentAttempts.ts";
+import {
+  AppleBusinessManagerError,
+  appleBusinessManagerInfo,
+  assignAppleBusinessManagerDevice,
+  clearAppleBusinessManagerToken,
+  createAdeProfileToken,
+  loadAppleBusinessManager,
+  makeAbmClient,
+  openAbmCredential,
+  readAdeProfileToken,
+  saveAppleBusinessManagerToken,
+  syncAppleBusinessManagerDevices,
+  type AppleApiConfig,
+} from "./appleBusinessManager.ts";
+import {
+  VppError,
+  assignVppLicence,
+  clearVppToken,
+  findVppAsset,
+  findVppAssetByStoreId,
+  releaseVppLicence,
+  saveVppToken,
+  syncVppAssets,
+  vppInfo,
+} from "./volumePurchase.ts";
 import { countDeviceHealth, deriveDeviceHealth, normalizeDeviceHealth } from "./deviceHealth.ts";
 import { loadCredentialHealth } from "./credentialHealth.ts";
 import {
@@ -168,10 +230,15 @@ export type EnterpriseHandlersConfig = {
   readonly storage: R2Bucket;
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
-  /** Microsoft Graph client used by directory sync (optional). */
+  /** Microsoft Graph client used by directory sync and Autopilot (optional). */
   readonly azureGraph?: AzureGraphService;
   /** Public Entra app client id, exposed only to build the admin consent URL. */
   readonly azureClientId?: string;
+  /** Federated WSTEP state shown in Settings → Management. */
+  readonly windowsFederated?: {
+    readonly audience?: string;
+    readonly authServiceUrl?: (tenantId: string) => string;
+  };
   /** Apple MDM vendor certificate/key used to sign APNs CSRs (optional). */
   readonly cloudAppleVendorCert?: string;
   readonly cloudAppleVendorKey?: string;
@@ -179,6 +246,8 @@ export type EnterpriseHandlersConfig = {
   readonly apns?: ApnsService.Service;
   /** Google Android Enterprise delivery config; omitted when unconfigured. */
   readonly android?: AndroidDeliveryConfig;
+  /** ABM/VPP outbound client overrides (tests use an injected fetch). */
+  readonly appleApi?: AppleApiConfig;
   /** Injected fetch for outbound webhook deliveries (tests). */
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Per-attempt webhook delivery deadline. Defaults to 5s. */
@@ -408,6 +477,13 @@ const headersFromRequest = (request: HttpServerRequest) => {
 const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
   new Request(origin, { headers: headersFromRequest(request) });
 
+/** Require a recent step-up for a sensitive action. */
+const requireStepUp = (
+  auth: { requireStepUp: (...args: any[]) => Effect.Effect<any, any, any> },
+  request: HttpServerRequest,
+  action: StepUpAction,
+) => auth.requireStepUp(request, action);
+
 const iso = (date: Date | number | null | undefined) => {
   if (date == null) return new Date(0).toISOString();
   return (date instanceof Date ? date : new Date(date)).toISOString();
@@ -460,9 +536,11 @@ export const createEnterpriseService = ({
   cloudAppleVendorKey,
   apns: apnsService,
   android: androidConfig,
+  appleApi,
   email,
   azureGraph,
   azureClientId,
+  windowsFederated,
   webhookFetch,
   webhookTimeoutMs,
   planLimits,
@@ -524,6 +602,52 @@ export const createEnterpriseService = ({
 
   const androidConfigured = () => isAndroidConfigured(androidConfig);
 
+  const appleFailure = (error: AppleBusinessManagerError) => {
+    switch (error.kind) {
+      case "not_configured":
+        return new EnterpriseNotConfigured({ message: error.message });
+      case "conflict":
+        return new EnterpriseConflict({ message: error.message });
+      case "not_found":
+        return new EnterpriseNotFound({ message: error.message });
+      case "invalid_token":
+      case "expired":
+      case "unauthorized":
+      case "forbidden":
+      case "invalid_response":
+        return new EnterpriseBadRequest({ message: error.message });
+      case "upstream":
+        return new EnterpriseUpstreamError({ message: error.message });
+    }
+  };
+  const mapAppleFailure = <A, R>(effect: Effect.Effect<A, AppleBusinessManagerError, R>) =>
+    effect.pipe(Effect.mapError(appleFailure));
+
+  const vppFailure = (error: VppError) => {
+    switch (error.kind) {
+      case "not_configured":
+        return new EnterpriseNotConfigured({ message: error.message });
+      case "conflict":
+        return new EnterpriseConflict({ message: error.message });
+      case "not_found":
+        return new EnterpriseNotFound({ message: error.message });
+      case "invalid_token":
+      case "expired":
+      case "unauthorized":
+      case "forbidden":
+      case "no_license":
+      case "invalid_response":
+        return new EnterpriseBadRequest({ message: error.message });
+      case "upstream":
+        return new EnterpriseUpstreamError({ message: error.message });
+    }
+  };
+  const mapVppFailure = <A, R>(effect: Effect.Effect<A, VppError, R>) =>
+    effect.pipe(Effect.mapError(vppFailure));
+
+  const appleServerName = (organization: { name: string; displayName?: string | null }) =>
+    `Mattrax ${organization.displayName ?? organization.name}`.slice(0, 100);
+
   const syncAndroidDevices = (organizationId: string, deviceIds?: ReadonlyArray<string>) =>
     syncAndroidPoliciesForTenant({
       db,
@@ -577,7 +701,7 @@ export const createEnterpriseService = ({
 
       // A tenant can require owners and admins to enroll an authenticator.
       // Members keep read access so they can reach their account page and enroll.
-      if (!user.totpEnabled && canWriteTenant(member.role)) {
+      if (!hasMfaFactor(user) && canWriteTenant(member.role)) {
         const sso = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: member.organizationId },
         });
@@ -922,24 +1046,28 @@ export const createEnterpriseService = ({
 
   const applicationAssignedDeviceIds = (organizationId: string, applicationId: string) =>
     Effect.gen(function* () {
-      const groups = yield* db
-        .select({ groupId: schema.applicationGroup.groupId })
+      const groups = (yield* db
+        .select()
         .from(schema.applicationGroup)
-        .where(eq(schema.applicationGroup.applicationId, applicationId));
-      const direct = yield* db
-        .select({ deviceId: schema.applicationDevice.deviceId })
+        .where(eq(schema.applicationGroup.applicationId, applicationId))) as Array<{
+        groupId: string;
+      }>;
+      const direct = (yield* db
+        .select()
         .from(schema.applicationDevice)
-        .where(eq(schema.applicationDevice.applicationId, applicationId));
+        .where(eq(schema.applicationDevice.applicationId, applicationId))) as Array<{
+        deviceId: string;
+      }>;
       const groupDevices = groups.length
-        ? yield* db
-            .select({ deviceId: schema.groupDevice.deviceId })
+        ? ((yield* db
+            .select()
             .from(schema.groupDevice)
             .where(
               inArray(
                 schema.groupDevice.groupId,
-                groups.map((group: { groupId: string }) => group.groupId),
+                groups.map((group) => group.groupId),
               ),
-            )
+            )) as Array<{ deviceId: string }>)
         : [];
       const ids = new Set<string>([
         ...direct.map((row: { deviceId: string }) => row.deviceId),
@@ -957,6 +1085,14 @@ export const createEnterpriseService = ({
         );
       return devices as Array<EnterpriseDevice>;
     });
+
+  /** InstallApplication payload for a device-assigned VPP licence. */
+  const vppInstallPayload = (adamId: string) => ({
+    iTunesStoreID: Number(adamId),
+    ManagementFlags: 1,
+    InstallAsManaged: true,
+    Options: { PurchaseMethod: 1 },
+  });
 
   const assertTenantGroup = (tenantId: string, groupId: string) =>
     Effect.gen(function* () {
@@ -1084,6 +1220,54 @@ export const createEnterpriseService = ({
     isManaged: row.isManaged,
     lastReportedAt: iso(row.lastReportedAt),
   });
+
+  /** Map Autopilot helper failures onto the public API error contract. */
+  const autopilotApiError = (cause: unknown) => {
+    if (cause instanceof AutopilotError) {
+      if (cause.reason === "not_configured")
+        return new EnterpriseNotConfigured({ message: cause.message });
+      if (cause.reason === "invalid") return new EnterpriseBadRequest({ message: cause.message });
+      return new EnterpriseUpstreamError({ message: cause.message });
+    }
+    return new EnterpriseUpstreamError({ message: String(cause) });
+  };
+
+  /**
+   * Graph credentials plus the tenant's Entra id are both required. Missing
+   * configuration fails closed before any Graph call.
+   */
+  const autopilotContext = (organizationId: string) =>
+    Effect.gen(function* () {
+      if (!azureGraph)
+        return yield* Effect.fail(
+          new EnterpriseNotConfigured({
+            message:
+              "Microsoft Graph is not configured for this deployment. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET.",
+          }),
+        );
+      const [config] = yield* db
+        .select({ azureTenantId: schema.ssoConfig.azureTenantId })
+        .from(schema.ssoConfig)
+        .where(eq(schema.ssoConfig.organizationId, organizationId))
+        .limit(1);
+      const azureTenantId = config?.azureTenantId?.trim();
+      if (!azureTenantId)
+        return yield* Effect.fail(
+          new EnterpriseNotConfigured({
+            message:
+              "Connect Entra ID for this tenant (Settings → Identity) before using Windows Autopilot.",
+          }),
+        );
+      return { graph: azureGraph, azureTenantId };
+    });
+
+  const autopilotDevicesFor = (organizationId: string, limit = 1_000) =>
+    db
+      .select()
+      .from(schema.autopilotDevice)
+      .where(eq(schema.autopilotDevice.organizationId, organizationId))
+      .orderBy(asc(schema.autopilotDevice.serial))
+      .limit(limit);
 
   const deviceDeclarationsFor = (deviceId: string) =>
     db
@@ -1702,7 +1886,9 @@ export const createEnterpriseService = ({
             email: user.email,
             emailVerified: user.emailVerified,
             image: user.image,
-            mfaEnabled: user.totpEnabled,
+            mfaEnabled: hasMfaFactor(user),
+            totpEnabled: user.totpEnabled === true,
+            passkeyEnabled: user.passkeyEnabled === true,
             mfaRequired,
             hasPassword: passwordCredential.length > 0,
           },
@@ -1929,6 +2115,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Only a tenant owner can download tenant backups" }),
           );
+        yield* requireStepUp(auth, request, "backup-download");
         // Scoped lookup: an id from another tenant must look missing.
         const run = yield* db.query.backupRun.findFirst({
           where: { id: backupId, organizationId: ctx.organization.id },
@@ -2516,6 +2703,7 @@ export const createEnterpriseService = ({
     deleteTenant: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "delete");
+        yield* requireStepUp(auth, request, "tenant-delete");
         const count = yield* memberCount(tenantId);
         if (count > 1)
           return yield* Effect.fail(
@@ -2752,6 +2940,282 @@ export const createEnterpriseService = ({
           })),
         };
       }),
+    getAutopilotSettings: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const sso = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const devices = yield* db
+          .select({ value: count() })
+          .from(schema.autopilotDevice)
+          .where(eq(schema.autopilotDevice.organizationId, ctx.organization.id));
+        const linked = yield* db
+          .select({ value: count() })
+          .from(schema.autopilotDevice)
+          .where(
+            and(
+              eq(schema.autopilotDevice.organizationId, ctx.organization.id),
+              isNotNull(schema.autopilotDevice.deviceId),
+            ),
+          );
+        const profiles = yield* db
+          .select({ value: count() })
+          .from(schema.autopilotProfile)
+          .where(eq(schema.autopilotProfile.organizationId, ctx.organization.id));
+        const latest = yield* db
+          .select({ lastSyncedAt: schema.autopilotDevice.lastSyncedAt })
+          .from(schema.autopilotDevice)
+          .where(eq(schema.autopilotDevice.organizationId, ctx.organization.id))
+          .orderBy(desc(schema.autopilotDevice.lastSyncedAt))
+          .limit(1);
+        const azureTenantId = sso?.azureTenantId?.trim() || null;
+        const audience = windowsFederated?.audience ?? azureClientId;
+        const federatedEnabled = Boolean(audience && azureTenantId);
+        const authServiceUrl = federatedEnabled
+          ? (windowsFederated?.authServiceUrl?.(azureTenantId!) ??
+            federatedAuthServiceUrl(azureTenantId!, {
+              ...(azureClientId ? { clientId: azureClientId } : {}),
+            }))
+          : null;
+        return {
+          configured: Boolean(azureGraph && azureTenantId),
+          graphConfigured: Boolean(azureGraph),
+          azureTenantId,
+          consentUrl: azureGraph && azureTenantId ? azureGraph.consentUrl(azureTenantId) : null,
+          deviceCount: Number(devices[0]?.value ?? 0),
+          linkedDeviceCount: Number(linked[0]?.value ?? 0),
+          profileCount: Number(profiles[0]?.value ?? 0),
+          lastSyncedAt: latest[0]?.lastSyncedAt ? iso(latest[0].lastSyncedAt) : null,
+          federatedEnrollment: {
+            enabled: federatedEnabled,
+            realm: federatedEnabled ? federatedRealm(azureTenantId!) : null,
+            authServiceUrl,
+          },
+        };
+      }),
+    listAutopilotDevices: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* autopilotDevicesFor(ctx.organization.id);
+        return { devices: rows.map(autopilotDeviceInfo) };
+      }),
+    importAutopilotDevices: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          content?: string;
+          format?: "csv" | "text";
+          maxRows?: number;
+        };
+        const content = body.content ?? "";
+        if (!content.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Paste at least one serial and hardware hash." }),
+          );
+        if (new TextEncoder().encode(content).length > AUTOPILOT_IMPORT_MAX_BYTES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Autopilot import content must be ${AUTOPILOT_IMPORT_MAX_BYTES} bytes or less.`,
+            }),
+          );
+        const maxRows = body.maxRows ?? AUTOPILOT_IMPORT_MAX_ROWS;
+        if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > AUTOPILOT_IMPORT_MAX_ROWS)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `maxRows must be a whole number between 1 and ${AUTOPILOT_IMPORT_MAX_ROWS}.`,
+            }),
+          );
+        const parsed = parseAutopilotCsv(content, { maxRows });
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const result = yield* importAutopilotDevices({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+          rows: parsed.rows,
+          skipped: parsed.skipped,
+          errors: parsed.errors,
+          truncated: parsed.truncated,
+        }).pipe(Effect.mapError(autopilotApiError));
+        const devices = yield* autopilotDevicesFor(ctx.organization.id);
+        yield* audit(ctx, "autopilot.devices_imported", "autopilot", ctx.organization.id, {
+          imported: result.imported,
+          skipped: result.skipped,
+          errors: result.errors.length,
+        });
+        return { ...result, devices: devices.map(autopilotDeviceInfo) };
+      }),
+    syncAutopilotDevices: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const result = yield* syncAutopilotDevices({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+        }).pipe(Effect.mapError(autopilotApiError));
+        yield* audit(ctx, "autopilot.devices_synced", "autopilot", ctx.organization.id, {
+          synced: result.synced,
+          linked: result.linked,
+        });
+        return { status: "ok" as const, ...result };
+      }),
+    deleteAutopilotDevice: (request, tenantId, serial) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const deleted = yield* deleteAutopilotDevice({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+          serial: String(serial),
+        }).pipe(Effect.mapError(autopilotApiError));
+        if (!deleted)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Autopilot device not found" }),
+          );
+        yield* audit(ctx, "autopilot.device_deleted", "autopilot", ctx.organization.id, {
+          serial: normalizeAutopilotSerial(String(serial)),
+        });
+        return { status: "ok" as const };
+      }),
+    listAutopilotProfiles: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const profiles = yield* listAutopilotProfiles(db, ctx.organization.id).pipe(
+          Effect.mapError(autopilotApiError),
+        );
+        return { profiles: profiles.map(autopilotProfileInfo) };
+      }),
+    createAutopilotProfile: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const validation = validateAutopilotProfileInput(
+          payload as Partial<Record<keyof AutopilotProfileValues, unknown>>,
+        );
+        if (!validation.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const profile = yield* createAutopilotProfile({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+          values: validation.value,
+        }).pipe(Effect.mapError(autopilotApiError));
+        yield* audit(ctx, "autopilot.profile_created", "autopilot", ctx.organization.id, {
+          profileId: profile.id,
+          name: profile.name,
+        });
+        return autopilotProfileInfo(profile);
+      }),
+    updateAutopilotProfile: (request, tenantId, profileId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const [existing] = yield* db
+          .select()
+          .from(schema.autopilotProfile)
+          .where(
+            and(
+              eq(schema.autopilotProfile.id, profileId),
+              eq(schema.autopilotProfile.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+        if (!existing)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Autopilot profile not found" }),
+          );
+        const body = payload as Partial<Record<keyof AutopilotProfileValues, unknown>>;
+        const merged = {
+          name: body.name ?? existing.name,
+          description: body.description !== undefined ? body.description : existing.description,
+          deploymentMode: body.deploymentMode ?? existing.deploymentMode,
+          joinType: body.joinType ?? existing.joinType,
+          deviceNameTemplate:
+            body.deviceNameTemplate !== undefined
+              ? body.deviceNameTemplate
+              : existing.deviceNameTemplate,
+          locale: body.locale !== undefined ? body.locale : existing.locale,
+          timezone: body.timezone !== undefined ? body.timezone : existing.timezone,
+          enableDevicePreparation:
+            body.enableDevicePreparation !== undefined
+              ? body.enableDevicePreparation
+              : existing.enableDevicePreparation,
+          assignedGroupId:
+            body.assignedGroupId !== undefined ? body.assignedGroupId : existing.assignedGroupId,
+        };
+        const validation = validateAutopilotProfileInput(merged);
+        if (!validation.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const profile = yield* updateAutopilotProfile({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+          profileId,
+          values: validation.value,
+        }).pipe(Effect.mapError(autopilotApiError));
+        yield* audit(ctx, "autopilot.profile_updated", "autopilot", ctx.organization.id, {
+          profileId,
+          name: profile.name,
+        });
+        return autopilotProfileInfo(profile);
+      }),
+    assignAutopilotProfile: (request, tenantId, profileId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { groupId?: string };
+        if (!body.groupId?.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "An Entra group id is required." }),
+          );
+        const [existing] = yield* db
+          .select()
+          .from(schema.autopilotProfile)
+          .where(
+            and(
+              eq(schema.autopilotProfile.id, profileId),
+              eq(schema.autopilotProfile.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+        if (!existing)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Autopilot profile not found" }),
+          );
+        const validation = validateAutopilotProfileInput({
+          name: existing.name,
+          description: existing.description,
+          deploymentMode: existing.deploymentMode,
+          joinType: existing.joinType,
+          deviceNameTemplate: existing.deviceNameTemplate,
+          locale: existing.locale,
+          timezone: existing.timezone,
+          enableDevicePreparation: existing.enableDevicePreparation,
+          assignedGroupId: body.groupId,
+        });
+        if (!validation.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+        const profile = yield* assignAutopilotProfile({
+          db,
+          graph,
+          organizationId: ctx.organization.id,
+          azureTenantId,
+          profileId,
+          groupId: body.groupId.trim(),
+        }).pipe(Effect.mapError(autopilotApiError));
+        yield* audit(ctx, "autopilot.profile_assigned", "autopilot", ctx.organization.id, {
+          profileId,
+          groupId: body.groupId.trim(),
+        });
+        return autopilotProfileInfo(profile);
+      }),
     getSsoConfig: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -2768,6 +3232,7 @@ export const createEnterpriseService = ({
     patchSsoConfig: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "sso-policy");
         const body = payload as {
           enabled?: boolean;
           azureTenantId?: string | null;
@@ -2791,7 +3256,7 @@ export const createEnterpriseService = ({
             );
         }
         if (body.requireMfa === true) {
-          if (!ctx.user.totpEnabled)
+          if (!hasMfaFactor(ctx.user))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message:
@@ -2799,12 +3264,16 @@ export const createEnterpriseService = ({
               }),
             );
           const privileged = yield* db
-            .select({ role: schema.member.role, totpEnabled: schema.user.totpEnabled })
+            .select({
+              role: schema.member.role,
+              totpEnabled: schema.user.totpEnabled,
+              passkeyEnabled: schema.user.passkeyEnabled,
+            })
             .from(schema.member)
             .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
             .where(eq(schema.member.organizationId, ctx.organization.id));
           const missing = privileged.filter(
-            (member) => canWriteTenant(member.role) && !member.totpEnabled,
+            (member) => canWriteTenant(member.role) && !hasMfaFactor(member),
           ).length;
           if (missing > 0)
             return yield* Effect.fail(
@@ -3439,6 +3908,24 @@ export const createEnterpriseService = ({
           androidConfigured() &&
           androidRow?.status === "active" &&
           Boolean(androidRow.enterpriseName);
+        const sso = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: organization.id },
+        });
+        const autopilotProfileCount = yield* db
+          .select({ value: count() })
+          .from(schema.autopilotProfile)
+          .where(eq(schema.autopilotProfile.organizationId, organization.id));
+        const autopilotConfigured =
+          Boolean(azureGraph && sso?.azureTenantId) &&
+          Number(autopilotProfileCount[0]?.value ?? 0) > 0;
+        const federatedAudience = windowsFederated?.audience ?? azureClientId;
+        const federatedEnabled = Boolean(federatedAudience && sso?.azureTenantId);
+        const federatedAuthUrl = federatedEnabled
+          ? (windowsFederated?.authServiceUrl?.(sso!.azureTenantId!) ??
+            federatedAuthServiceUrl(sso!.azureTenantId!, {
+              ...(azureClientId ? { clientId: azureClientId } : {}),
+            }))
+          : null;
 
         // Only create a SCEP challenge when the Apple branch is actually
         // usable. A failure is reported as a platform error instead of failing
@@ -3540,6 +4027,12 @@ export const createEnterpriseService = ({
                     discoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
                     tenantScoped: true as const,
                     ...(windowsExpiry ? { expiresAt: windowsExpiry.toISOString() } : {}),
+                    autopilot: {
+                      configured: autopilotConfigured,
+                      federated: federatedEnabled,
+                      authServiceUrl: federatedAuthUrl,
+                      realm: federatedEnabled ? federatedRealm(sso!.azureTenantId!) : null,
+                    },
                   },
           android: planLimitReached
             ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
@@ -3633,6 +4126,88 @@ export const createEnterpriseService = ({
         )}-enrollment.mobileconfig`;
 
         return { plist: result.apple.profile, filename };
+      }),
+    getAdeEnrollmentProfile: (token: string) =>
+      Effect.gen(function* () {
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "AUTH_SECRET is required to serve ADE enrollment profiles.",
+            }),
+          );
+        const signed = yield* mapAppleFailure(readAdeProfileToken({ authSecret, token }));
+        const abm = yield* loadAppleBusinessManager(db, signed.organizationId);
+        if (!abm)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Apple Business Manager is not configured for this tenant.",
+            }),
+          );
+        const device = (yield* db.query.abmDevice.findFirst({
+          where: { organizationId: signed.organizationId, serial: signed.serial },
+        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        if (!device || device.enrollmentState === "REMOVED")
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message: "This ABM device is no longer in the organization.",
+            }),
+          );
+        if (device.enrollmentState !== "ASSIGNED")
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message:
+                "Assign this device to Mattrax in Apple Business Manager before downloading its ADE profile.",
+            }),
+          );
+        if (device.assignedProfileUuid && device.assignedProfileUuid !== signed.profileUuid)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "This ADE profile link is for a different profile revision.",
+            }),
+          );
+        const apns = yield* db.query.applePushCertificate.findFirst({
+          where: { organizationId: signed.organizationId },
+        });
+        if (!apns?.topic)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Apple push notifications are not configured for this tenant.",
+            }),
+          );
+        const organization = yield* db.query.organization.findFirst({
+          where: { id: signed.organizationId },
+        });
+        if (!organization)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found." }));
+        const branding = resolveTenantBranding(organization);
+        // SCEP verifies the challenge against an `enterprise_enrollment` row
+        // and derives the certificate OU from that tenant. Use the tenant's
+        // enrollment id (not an ADE-specific string) so ADE identities resolve.
+        const enrollment = yield* getOrCreateEnrollment(signed.organizationId);
+        const challenge = yield* Effect.tryPromise({
+          try: () =>
+            createScepChallenge(enrollment.id, authSecret!, {
+              ttlSeconds: 7 * 24 * 60 * 60,
+            }),
+          catch: () =>
+            new EnterpriseBadRequest({
+              message: "Could not create the SCEP challenge for the ADE profile.",
+            }),
+        });
+        const plist = yield* serializePlist(
+          enterpriseEnrollmentProfile({
+            origin,
+            topic: apns.topic,
+            organizationId: organization.id,
+            organizationName: branding.displayName,
+            supportEmail: branding.supportEmail,
+            challenge,
+            displayName: `${branding.displayName} Automated Device Enrollment`,
+            identifier: `com.mattrax.ade.${signed.profileUuid}`,
+            profileUuid: signed.profileUuid,
+          }),
+        );
+        return { plist, filename: `${safeFilename(signed.serial)}.mobileconfig` };
       }),
     getTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
@@ -3734,6 +4309,438 @@ export const createEnterpriseService = ({
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
         return { id: newId };
+      }),
+    getAppleBusinessManager: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        return yield* mapAppleFailure(appleBusinessManagerInfo(db, ctx.organization.id));
+      }),
+    uploadAppleBusinessManagerToken: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          content: string;
+          encoding?: "text" | "base64";
+          fileName?: string;
+          clientId?: string;
+          keyId?: string;
+          teamId?: string;
+          orgId?: string;
+          orgName?: string;
+          scope?: "business.api" | "school.api";
+        };
+        const info = yield* mapAppleFailure(
+          saveAppleBusinessManagerToken({
+            db,
+            organizationId: ctx.organization.id,
+            authSecret,
+            upload: body,
+            ...(appleApi ? { config: appleApi } : {}),
+          }),
+        );
+        yield* audit(ctx, "abm.token_uploaded", "apple_business_manager", ctx.organization.id, {
+          credentialType: info.credentialType,
+          fileName: body.fileName,
+        });
+        return info;
+      }),
+    deleteAppleBusinessManagerToken: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* mapAppleFailure(
+          clearAppleBusinessManagerToken({ db, organizationId: ctx.organization.id }),
+        );
+        yield* audit(ctx, "abm.token_deleted", "apple_business_manager", ctx.organization.id);
+        return ok;
+      }),
+    syncAppleBusinessManager: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const result = yield* mapAppleFailure(
+          syncAppleBusinessManagerDevices({
+            db,
+            organizationId: ctx.organization.id,
+            authSecret,
+            ...(appleApi ? { config: appleApi } : {}),
+          }),
+        );
+        yield* audit(ctx, "abm.synced", "apple_business_manager", ctx.organization.id, result);
+        return result;
+      }),
+    listAbmDevices: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* db
+          .select()
+          .from(schema.abmDevice)
+          .where(eq(schema.abmDevice.organizationId, ctx.organization.id));
+        return {
+          devices: rows.map((device: typeof schema.abmDevice.$inferSelect) => ({
+            serial: device.serial,
+            model: device.model,
+            deviceFamily: device.deviceFamily,
+            os: device.os,
+            profileStatus: device.profileStatus,
+            assignedProfileUuid: device.assignedProfileUuid,
+            enrollmentState: device.enrollmentState,
+            assignedServerId: device.assignedServerId,
+            lastSeenAt: iso(device.lastSeenAt),
+            updatedAt: iso(device.updatedAt)!,
+          })),
+        };
+      }),
+    getAbmDevice: (request, tenantId, serial) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = (yield* db.query.abmDevice.findFirst({
+          where: { organizationId: ctx.organization.id, serial },
+        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        if (!device)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "This serial is not in the ABM inventory" }),
+          );
+        return {
+          serial: device.serial,
+          model: device.model,
+          deviceFamily: device.deviceFamily,
+          os: device.os,
+          profileStatus: device.profileStatus,
+          assignedProfileUuid: device.assignedProfileUuid,
+          enrollmentState: device.enrollmentState,
+          assignedServerId: device.assignedServerId,
+          lastSeenAt: iso(device.lastSeenAt),
+          updatedAt: iso(device.updatedAt)!,
+        };
+      }),
+    assignAppleBusinessManagerDevice: (request, tenantId, serial) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const apnsRow = yield* db.query.applePushCertificate.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const result = yield* mapAppleFailure(
+          assignAppleBusinessManagerDevice({
+            db,
+            organizationId: ctx.organization.id,
+            serial,
+            authSecret,
+            serverName: appleServerName(ctx.organization),
+            ...(apnsRow?.certPem ? { certificatePem: apnsRow.certPem } : {}),
+            ...(appleApi ? { config: appleApi } : {}),
+          }),
+        );
+        yield* audit(ctx, "abm.device_assigned", "abm_device", serial, {
+          mdmServerId: result.mdmServerId,
+          activityId: result.activityId,
+        });
+        return { status: "ok" as const, ...result };
+      }),
+    getAbmDeviceProfileUrl: (request, tenantId, serial) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "AUTH_SECRET is required to sign ADE profile links.",
+            }),
+          );
+        const abm = yield* loadAppleBusinessManager(db, ctx.organization.id);
+        if (!abm)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Apple Business Manager is not configured for this tenant.",
+            }),
+          );
+        const device = (yield* db.query.abmDevice.findFirst({
+          where: { organizationId: ctx.organization.id, serial },
+        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        if (!device)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "This serial is not in the ABM inventory" }),
+          );
+        if (device.enrollmentState !== "ASSIGNED" || device.profileStatus === "removed")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Assign this device to Mattrax in Apple Business Manager before generating an ADE profile link.",
+            }),
+          );
+        const profileUuid = device.assignedProfileUuid ?? abm.profileUuid;
+        if (!profileUuid)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "No ADE profile UUID is recorded for this tenant.",
+            }),
+          );
+        const signed = yield* mapAppleFailure(
+          createAdeProfileToken({
+            authSecret,
+            organizationId: ctx.organization.id,
+            serial,
+            profileUuid,
+          }),
+        );
+        yield* audit(ctx, "abm.profile_url_created", "abm_device", serial, {
+          profileUuid,
+        });
+        return {
+          serial,
+          profileUuid,
+          url: `${origin.replace(/\/+$/, "")}/api/v1/abm/ade/${encodeURIComponent(signed.token)}`,
+          expiresAt: signed.expiresAt.toISOString(),
+        };
+      }),
+    getVpp: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        return yield* mapVppFailure(vppInfo(db, ctx.organization.id));
+      }),
+    uploadVppToken: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          content: string;
+          encoding?: "text" | "base64";
+          fileName?: string;
+        };
+        const info = yield* mapVppFailure(
+          saveVppToken({
+            db,
+            organizationId: ctx.organization.id,
+            authSecret,
+            upload: body,
+            ...(appleApi ? { config: appleApi } : {}),
+          }),
+        );
+        yield* audit(ctx, "vpp.token_uploaded", "vpp_token", ctx.organization.id, {
+          fileName: body.fileName,
+        });
+        return info;
+      }),
+    deleteVppToken: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* mapVppFailure(clearVppToken({ db, organizationId: ctx.organization.id }));
+        yield* audit(ctx, "vpp.token_deleted", "vpp_token", ctx.organization.id);
+        return ok;
+      }),
+    syncVpp: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        // Enrich VPP assets with app names/bundle ids when an ABM API
+        // credential is available. Failure here is not fatal: the VPP counts
+        // are still valid and the catalogue fallback supplies a display name.
+        const appMetadata = yield* Effect.gen(function* () {
+          if (!authSecret) return undefined;
+          const abm = yield* loadAppleBusinessManager(db, ctx.organization.id);
+          if (!abm) return undefined;
+          const credential = yield* Effect.tryPromise({
+            try: () => openAbmCredential(authSecret, abm.encryptedToken),
+            catch: () => new Error("ABM credential unavailable"),
+          });
+          if (credential.kind !== "abm_api") return undefined;
+          const client = makeAbmClient(appleApi, credential.scope);
+          const token = yield* Effect.tryPromise(() => client.exchangeAccessToken(credential));
+          const apps = yield* Effect.tryPromise(() => client.listApps(token.accessToken));
+          return new Map(
+            apps.map((app) => [
+              app.id,
+              {
+                ...(app.name ? { name: app.name } : {}),
+                ...(app.bundleId ? { bundleId: app.bundleId } : {}),
+              },
+            ]),
+          );
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+        const result = yield* mapVppFailure(
+          syncVppAssets({
+            db,
+            organizationId: ctx.organization.id,
+            authSecret,
+            ...(appleApi ? { config: appleApi } : {}),
+            ...(appMetadata ? { appMetadata } : {}),
+          }),
+        );
+        yield* audit(ctx, "vpp.synced", "vpp_token", ctx.organization.id, result);
+        return result;
+      }),
+    listVppAssets: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* db
+          .select()
+          .from(schema.vppAsset)
+          .where(eq(schema.vppAsset.organizationId, ctx.organization.id));
+        return {
+          assets: rows.map((asset: typeof schema.vppAsset.$inferSelect) => ({
+            adamId: asset.adamId,
+            name: asset.name,
+            bundleId: asset.bundleId,
+            totalLicenses: asset.totalLicenses,
+            availableLicenses: asset.availableLicenses,
+            assignedLicenses: asset.assignedLicenses,
+            retiredLicenses: asset.retiredLicenses,
+            pricingParam: asset.pricingParam,
+            deviceAssignable: asset.deviceAssignable,
+            revocable: asset.revocable,
+            productType: asset.productType,
+            supportedPlatforms: Array.isArray(asset.supportedPlatforms)
+              ? (asset.supportedPlatforms as string[])
+              : undefined,
+            lastSyncedAt: iso(asset.lastSyncedAt),
+          })),
+        };
+      }),
+    listVppAssignments: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* db
+          .select()
+          .from(schema.deviceVppAssignment)
+          .where(eq(schema.deviceVppAssignment.organizationId, ctx.organization.id));
+        return {
+          assignments: rows.map((assignment: typeof schema.deviceVppAssignment.$inferSelect) => ({
+            deviceId: assignment.deviceId,
+            serial: assignment.serial,
+            adamId: assignment.adamId,
+            state: assignment.state,
+            eventId: assignment.eventId,
+            lastError: assignment.lastError,
+            updatedAt: iso(assignment.updatedAt)!,
+          })),
+        };
+      }),
+    installVppAsset: (request, tenantId, adamId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        if (!/^\d+$/.test(adamId))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "A VPP adamId must be numeric." }),
+          );
+        const body = payload as { devices?: string[]; groups?: string[] };
+        const asset = (yield* findVppAsset(db, ctx.organization.id, adamId)) as
+          | typeof schema.vppAsset.$inferSelect
+          | undefined;
+        if (!asset)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "No VPP licence pool exists for this app" }),
+          );
+        const groupIds = body.groups ?? [];
+        for (const groupId of groupIds) yield* assertTenantGroup(ctx.organization.id, groupId);
+        yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
+        const groupDevices = groupIds.length
+          ? yield* db
+              .select({ deviceId: schema.groupDevice.deviceId })
+              .from(schema.groupDevice)
+              .where(inArray(schema.groupDevice.groupId, groupIds))
+          : [];
+        const ids = new Set<string>([
+          ...(body.devices ?? []),
+          ...groupDevices.map((row) => row.deviceId),
+        ]);
+        if (ids.size === 0)
+          return {
+            status: "ok" as const,
+            assigned: 0,
+            queued: 0,
+            skipped: 0,
+            failed: 0,
+            message: "Select at least one device or group.",
+          };
+        const devices = (yield* db
+          .select()
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              inArray(schema.device.id, [...ids]),
+            ),
+          )) as Array<EnterpriseDevice>;
+        const appleDevices = devices.filter(
+          (device) => device.proto === "apple" && device.status === "enrolled",
+        );
+        const skipped = devices.length - appleDevices.length;
+        let assigned = 0;
+        let failed = 0;
+        const queuedDevices: Array<EnterpriseDevice> = [];
+        for (const device of appleDevices) {
+          const outcome = yield* mapVppFailure(
+            assignVppLicence({
+              db,
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              adamId,
+              authSecret,
+              ...(appleApi ? { config: appleApi } : {}),
+            }),
+          ).pipe(Effect.result);
+          if (outcome._tag === "Failure") {
+            failed++;
+            continue;
+          }
+          assigned++;
+          queuedDevices.push(device);
+        }
+        if (queuedDevices.length > 0) {
+          yield* db.insert(schema.deviceCommand).values(
+            queuedDevices.map((device) => ({
+              id: id(),
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "InstallApplication",
+              payload: vppInstallPayload(adamId),
+              status: "queued",
+              createdAt: now(),
+              updatedAt: now(),
+            })),
+          );
+          yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
+        }
+        yield* audit(ctx, "vpp.install_queued", "vpp_asset", adamId, {
+          assigned,
+          queued: queuedDevices.length,
+          skipped,
+          failed,
+        });
+        return {
+          status: "ok" as const,
+          assigned,
+          queued: queuedDevices.length,
+          skipped,
+          failed,
+          ...(failed > 0
+            ? { message: `${failed} device(s) could not be assigned a VPP licence.` }
+            : {}),
+        };
+      }),
+    releaseVppAsset: (request, tenantId, adamId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { devices: string[] };
+        yield* assertTenantDevices(ctx.organization.id, body.devices);
+        let released = 0;
+        let failed = 0;
+        for (const deviceId of body.devices) {
+          const outcome = yield* mapVppFailure(
+            releaseVppLicence({
+              db,
+              organizationId: ctx.organization.id,
+              deviceId,
+              adamId,
+              authSecret,
+              ...(appleApi ? { config: appleApi } : {}),
+            }),
+          ).pipe(Effect.result);
+          if (outcome._tag === "Failure") failed++;
+          else released++;
+        }
+        yield* audit(ctx, "vpp.licence_released", "vpp_asset", adamId, { released, failed });
+        return {
+          status: "ok" as const,
+          released,
+          failed,
+          ...(failed > 0 ? { message: `${failed} licence(s) could not be returned.` } : {}),
+        };
       }),
     getTenantAndroid: (request, tenantId) =>
       Effect.gen(function* () {
@@ -4263,6 +5270,8 @@ export const createEnterpriseService = ({
           iTunesStoreId?: number;
         };
         const action = body.action ?? "sync";
+        if (!["sync", "collect-security-info", "refresh-applications"].includes(action))
+          yield* requireStepUp(auth, request, "device-command");
         let lockPin: string | undefined;
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
           yield* mapAndroidFailure(
@@ -5658,6 +6667,88 @@ export const createEnterpriseService = ({
             skipped,
             message: "No assigned Apple devices.",
           };
+
+        // When Apps and Books is configured, a store app must consume a VPP
+        // licence. Falling back to a user-account App Store install would
+        // silently bypass the licence pool, so this path fails closed.
+        if (app.source === "store" && app.storeId) {
+          const storeId = app.storeId;
+          const vpp = yield* db.query.vppToken.findFirst({
+            where: { organizationId: ctx.organization.id },
+          });
+          if (vpp) {
+            if (vpp.status !== "active")
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "The Apps and Books token is not active. Re-upload a valid token before installing VPP apps.",
+                }),
+              );
+            const asset = (yield* findVppAssetByStoreId(db, ctx.organization.id, storeId)) as
+              | typeof schema.vppAsset.$inferSelect
+              | undefined;
+            if (!asset)
+              return {
+                status: "ok" as const,
+                queued: 0,
+                skipped: devices.length,
+                message:
+                  "No VPP licence pool exists for this app yet. Sync Apps and Books, then try again.",
+              };
+            let assigned = 0;
+            let failed = 0;
+            const queuedDevices: Array<EnterpriseDevice> = [];
+            for (const device of appleDevices) {
+              const outcome = yield* mapVppFailure(
+                assignVppLicence({
+                  db,
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  adamId: storeId,
+                  authSecret,
+                  ...(appleApi ? { config: appleApi } : {}),
+                }),
+              ).pipe(Effect.result);
+              if (outcome._tag === "Failure") {
+                failed++;
+                continue;
+              }
+              assigned++;
+              queuedDevices.push(device);
+            }
+            if (queuedDevices.length > 0) {
+              yield* db.insert(schema.deviceCommand).values(
+                queuedDevices.map((device) => ({
+                  id: id(),
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  requestType: "InstallApplication",
+                  payload: vppInstallPayload(storeId),
+                  status: "queued",
+                  createdAt: now(),
+                  updatedAt: now(),
+                })),
+              );
+              yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
+            }
+            yield* audit(ctx, "application.install_queued", "application", applicationId, {
+              queued: queuedDevices.length,
+              skipped: skipped + failed,
+              vppAssigned: assigned,
+            });
+            return {
+              status: "ok" as const,
+              queued: queuedDevices.length,
+              skipped: skipped + failed,
+              ...(failed > 0
+                ? {
+                    message: `${failed} device(s) had no available VPP licence and were skipped.`,
+                  }
+                : {}),
+            };
+          }
+        }
+
         const payload =
           app.source === "store"
             ? {
@@ -6008,6 +7099,21 @@ export const createEnterpriseService = ({
           .from(schema.deviceApple)
           .where(eq(schema.deviceApple.deviceId, row.id))
           .limit(1);
+        const [autopilot] = yield* db
+          .select()
+          .from(schema.autopilotDevice)
+          .where(
+            and(
+              eq(schema.autopilotDevice.organizationId, ctx.organization.id),
+              row.serial
+                ? or(
+                    eq(schema.autopilotDevice.deviceId, row.id),
+                    eq(schema.autopilotDevice.serial, normalizeAutopilotSerial(row.serial)),
+                  )!
+                : eq(schema.autopilotDevice.deviceId, row.id),
+            ),
+          )
+          .limit(1);
         // Presence metadata only — the sealed value never leaves the backend.
         return {
           ...rowDevice(row),
@@ -6016,6 +7122,7 @@ export const createEnterpriseService = ({
           recoveryKeyUpdatedAt: recoveryKey ? iso(recoveryKey.updatedAt) : null,
           recoveryKeyRotatedAt: recoveryKey?.rotatedAt ? iso(recoveryKey.rotatedAt) : null,
           bootstrapTokenUpdatedAt: bootstrapToken ? iso(bootstrapToken.updatedAt) : null,
+          autopilot: autopilot ? autopilotDeviceInfo(autopilot) : null,
         };
       }),
     listDeviceApplications: (request, tenantId, deviceId) =>
@@ -6046,13 +7153,15 @@ export const createEnterpriseService = ({
     getDeviceRecoveryKey: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         // Reading a recovery key is a privileged action: the same role check as
-        // writes (owner/admin) applies, and every reveal is audited.
+        // writes (owner/admin) applies, every reveal is audited, and a fresh
+        // step-up is required.
         const ctx = yield* requireTenant(request, tenantId, "write");
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        yield* requireStepUp(auth, request, "recovery-key-reveal");
         if (!authSecret)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -6314,6 +7423,7 @@ export const createEnterpriseService = ({
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "billing-portal");
         if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body = payload as { returnUrl: string };
         const customer = yield* ensureStripeCustomer(ctx.organization);
@@ -6336,6 +7446,114 @@ export const createEnterpriseService = ({
       auth.createApiToken(webRequestFromRequest(request, origin), payload),
     revokeApiToken: (request, tokenId) =>
       auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId),
+    /**
+     * Remove one of the caller's passkeys. The library's own removal path
+     * refuses when the account's current sign-in requirement is MFA and the
+     * passkey is the only MFA factor, even though removing it flips the account
+     * back to single-factor. This owner applies the same safe outcome directly:
+     * deactivate the credential and its shared factor, bump the security
+     * revision (invalidating sessions) and let the trigger recompute
+     * `passkey_enabled`. A step-up grant is required first.
+     */
+    removeAccountPasskey: (request, credentialId) =>
+      Effect.gen(function* () {
+        const { user } = yield* requireStepUp(auth, request, "passkey-remove");
+        const credential = yield* db
+          .select({ credentialId: schema.authPasskeyCredentials.credentialId })
+          .from(schema.authPasskeyCredentials)
+          .where(
+            and(
+              eq(schema.authPasskeyCredentials.credentialId, credentialId),
+              eq(schema.authPasskeyCredentials.subjectId, user.id),
+              eq(schema.authPasskeyCredentials.active, true),
+            ),
+          )
+          .limit(1);
+        if (credential.length === 0)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Passkey not found" }));
+
+        // Never strand the account: another passkey, or a password with an
+        // active email identifier (which also enables email-code sign-in).
+        const otherPasskey = yield* db
+          .select({ credentialId: schema.authPasskeyCredentials.credentialId })
+          .from(schema.authPasskeyCredentials)
+          .where(
+            and(
+              eq(schema.authPasskeyCredentials.subjectId, user.id),
+              eq(schema.authPasskeyCredentials.active, true),
+              ne(schema.authPasskeyCredentials.credentialId, credentialId),
+            ),
+          )
+          .limit(1);
+        const password = yield* db
+          .select({ credentialId: schema.authPasswords.credentialId })
+          .from(schema.authPasswords)
+          .where(eq(schema.authPasswords.subjectId, user.id))
+          .limit(1);
+        const identifier = yield* db
+          .select({ value: schema.authIdentifiers.value })
+          .from(schema.authIdentifiers)
+          .where(
+            and(
+              eq(schema.authIdentifiers.subjectId, user.id),
+              eq(schema.authIdentifiers.namespace, "email"),
+              eq(schema.authIdentifiers.active, true),
+            ),
+          )
+          .limit(1);
+        // A password, another passkey or an active email identifier (which
+        // enables email-code sign-in) keeps the account reachable.
+        if (otherPasskey.length === 0 && password.length === 0 && identifier.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Add another sign-in method before removing this passkey.",
+            }),
+          );
+
+        const revision = id();
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx
+              .update(schema.authPasskeyCredentials)
+              .set({ active: false, credentialRevision: revision })
+              .where(
+                and(
+                  eq(schema.authPasskeyCredentials.subjectId, user.id),
+                  eq(schema.authPasskeyCredentials.credentialId, credentialId),
+                  eq(schema.authPasskeyCredentials.active, true),
+                ),
+              );
+            yield* tx
+              .update(schema.authCredentials)
+              .set({ active: false, revision })
+              .where(
+                and(
+                  eq(schema.authCredentials.credentialId, credentialId),
+                  eq(schema.authCredentials.subjectId, user.id),
+                ),
+              );
+            // A revision change makes every outstanding session stale.
+            yield* tx
+              .update(schema.user)
+              .set({
+                authRevision: revision,
+                passkeyEnabled: otherPasskey.length > 0,
+                updatedAt: now(),
+              })
+              .where(eq(schema.user.id, user.id));
+          }),
+        );
+        return ok;
+      }),
+    stepUpMethods: (request) => auth.stepUpMethods(webRequestFromRequest(request, origin)),
+    stepUpPassword: (request, payload) =>
+      auth.stepUpPassword(webRequestFromRequest(request, origin), payload),
+    stepUpTotp: (request, payload) =>
+      auth.stepUpTotp(webRequestFromRequest(request, origin), payload),
+    beginStepUpPasskey: (request, payload) =>
+      auth.beginStepUpPasskey(webRequestFromRequest(request, origin), payload),
+    completeStepUpPasskey: (request, payload) =>
+      auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   };
 
   return service;
@@ -6366,6 +7584,28 @@ export const enterpriseHandlers = (
     .handle("revokeApiToken", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.revokeApiToken(request, params.tokenId),
+      ),
+    )
+    .handle("removeAccountPasskey", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.removeAccountPasskey(request, params.credentialId),
+      ),
+    )
+    .handle("stepUpMethods", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.stepUpMethods(request)),
+    )
+    .handle("stepUpPassword", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.stepUpPassword(request, payload)),
+    )
+    .handle("stepUpTotp", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.stepUpTotp(request, payload)),
+    )
+    .handle("beginStepUpPasskey", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.beginStepUpPasskey(request, payload)),
+    )
+    .handle("completeStepUpPasskey", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.completeStepUpPasskey(request, payload),
       ),
     )
     .handle("listAccountSessions", ({ request }) =>
@@ -6471,6 +7711,51 @@ export const enterpriseHandlers = (
     .handle("refreshEntraDomains", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.refreshEntraDomains(request, params.tenantId),
+      ),
+    )
+    .handle("getAutopilotSettings", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAutopilotSettings(request, params.tenantId),
+      ),
+    )
+    .handle("listAutopilotDevices", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listAutopilotDevices(request, params.tenantId),
+      ),
+    )
+    .handle("importAutopilotDevices", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.importAutopilotDevices(request, params.tenantId, payload),
+      ),
+    )
+    .handle("syncAutopilotDevices", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncAutopilotDevices(request, params.tenantId),
+      ),
+    )
+    .handle("deleteAutopilotDevice", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteAutopilotDevice(request, params.tenantId, params.serial),
+      ),
+    )
+    .handle("listAutopilotProfiles", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listAutopilotProfiles(request, params.tenantId),
+      ),
+    )
+    .handle("createAutopilotProfile", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createAutopilotProfile(request, params.tenantId, payload),
+      ),
+    )
+    .handle("updateAutopilotProfile", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.updateAutopilotProfile(request, params.tenantId, params.profileId, payload),
+      ),
+    )
+    .handle("assignAutopilotProfile", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.assignAutopilotProfile(request, params.tenantId, params.profileId, payload),
       ),
     )
     .handle("getSsoConfig", ({ request, params }) =>
@@ -6622,6 +7907,14 @@ export const enterpriseHandlers = (
         );
       }),
     )
+    .handleRaw("getAdeEnrollmentProfile", ({ params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.getAdeEnrollmentProfile(params.token),
+          (result: { plist: string; filename: string }) => appleEnrollmentProfileResponse(result),
+        ),
+      ),
+    )
     .handle("getTenantEnrollment", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getTenantEnrollment(request, params.tenantId),
@@ -6671,6 +7964,82 @@ export const enterpriseHandlers = (
     .handle("syncTenantAndroid", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.syncTenantAndroid(request, params.tenantId),
+      ),
+    )
+    .handle("getAppleBusinessManager", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAppleBusinessManager(request, params.tenantId),
+      ),
+    )
+    .handle("uploadAppleBusinessManagerToken", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadAppleBusinessManagerToken(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteAppleBusinessManagerToken", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteAppleBusinessManagerToken(request, params.tenantId),
+      ),
+    )
+    .handle("syncAppleBusinessManager", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncAppleBusinessManager(request, params.tenantId),
+      ),
+    )
+    .handle("listAbmDevices", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listAbmDevices(request, params.tenantId),
+      ),
+    )
+    .handle("getAbmDevice", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAbmDevice(request, params.tenantId, params.serial),
+      ),
+    )
+    .handle("assignAppleBusinessManagerDevice", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.assignAppleBusinessManagerDevice(request, params.tenantId, params.serial),
+      ),
+    )
+    .handle("getAbmDeviceProfileUrl", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAbmDeviceProfileUrl(request, params.tenantId, params.serial),
+      ),
+    )
+    .handle("getVpp", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.getVpp(request, params.tenantId)),
+    )
+    .handle("uploadVppToken", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadVppToken(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteVppToken", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteVppToken(request, params.tenantId),
+      ),
+    )
+    .handle("syncVpp", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.syncVpp(request, params.tenantId)),
+    )
+    .handle("listVppAssets", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listVppAssets(request, params.tenantId),
+      ),
+    )
+    .handle("listVppAssignments", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listVppAssignments(request, params.tenantId),
+      ),
+    )
+    .handle("installVppAsset", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.installVppAsset(request, params.tenantId, params.adamId, payload),
+      ),
+    )
+    .handle("releaseVppAsset", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.releaseVppAsset(request, params.tenantId, params.adamId, payload),
       ),
     )
     .handle("search", ({ request, params, query }) =>

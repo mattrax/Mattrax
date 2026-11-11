@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onSettled, Show } from "solid-js";
 import { QrCode } from "~/components/mdm/qr-code";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
@@ -10,13 +10,26 @@ const primaryButton =
 const secondaryButton =
   "rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 transition-colors";
 
+type PasskeySummary = {
+  credentialId: string;
+  name: string;
+  primarySignIn: boolean;
+  createdAtMillis: number;
+  lastUsedAtMillis?: number;
+};
+
+const formatDate = (millis: number | undefined) =>
+  millis === undefined ? "—" : new Date(millis).toLocaleDateString();
+
 /**
- * Authenticator-app enrollment and recovery-code management. Enrollment and
- * disabling invalidate the current session, so the card finishes by asking the
- * user to sign in again with their new factor.
+ * Account security: authenticator-app enrollment, recovery codes and passkeys.
+ * Both factors satisfy multi-factor sign-in; passkeys are phishing-resistant and
+ * can be used on their own.
  */
 export function AccountSecurity(props: {
   mfaEnabled: boolean;
+  totpEnabled: boolean;
+  passkeyEnabled: boolean;
   mfaRequired: boolean;
   hasPassword: boolean;
   email: string;
@@ -41,6 +54,27 @@ export function AccountSecurity(props: {
   const [regenerateError, setRegenerateError] = createSignal<string | null>(null);
   const [regeneratePending, setRegeneratePending] = createSignal(false);
   const [signedOut, setSignedOut] = createSignal(false);
+
+  const [passkeys, setPasskeys] = createSignal<PasskeySummary[]>([]);
+  const [passkeysLoaded, setPasskeysLoaded] = createSignal(false);
+  const [passkeyName, setPasskeyName] = createSignal("");
+  const [passkeyError, setPasskeyError] = createSignal<string | null>(null);
+  const [passkeyPending, setPasskeyPending] = createSignal(false);
+  const [removingId, setRemovingId] = createSignal<string | null>(null);
+
+  const loadPasskeys = async () => {
+    const result = await authClient.listPasskeys();
+    setPasskeysLoaded(true);
+    if (result.error || !result.data) {
+      setPasskeyError(errorMessage(result.error, "Could not load your passkeys"));
+      return;
+    }
+    setPasskeys(result.data.credentials);
+  };
+
+  onSettled(() => {
+    void loadPasskeys();
+  });
 
   const begin = async () => {
     setEnrollError(null);
@@ -114,6 +148,33 @@ export function AccountSecurity(props: {
     setRecoveryCodes(result.data.recoveryCodes);
   };
 
+  const addPasskey = async (event: SubmitEvent) => {
+    event.preventDefault();
+    setPasskeyError(null);
+    setPasskeyPending(true);
+    const result = await authClient.addPasskey(passkeyName().trim() || "Passkey");
+    setPasskeyPending(false);
+    if (result.error) {
+      setPasskeyError(errorMessage(result.error, "That passkey could not be added."));
+      return;
+    }
+    setPasskeyName("");
+    await loadPasskeys();
+  };
+
+  const removePasskey = async (credentialId: string) => {
+    setPasskeyError(null);
+    setRemovingId(credentialId);
+    const result = await authClient.removePasskey(credentialId);
+    setRemovingId(null);
+    if (result.error) {
+      setPasskeyError(errorMessage(result.error, "That passkey could not be removed."));
+      return;
+    }
+    // Removal invalidates other sessions, including this one.
+    setSignedOut(true);
+  };
+
   const finishSignIn = () => {
     window.location.href = "/login";
   };
@@ -122,14 +183,14 @@ export function AccountSecurity(props: {
     <section class="rounded-xl border border-border bg-card p-6">
       <h2 class="text-sm font-semibold mb-1">Multi-factor authentication</h2>
       <p class="text-sm text-muted-foreground mb-4">
-        Add an authenticator app as a second factor. Once enabled, signing in requires your password
-        and a current code.
+        Protect your account with an authenticator app or a passkey. Either one satisfies
+        multi-factor sign-in; passkeys also let you sign in without a password.
       </p>
 
       <Show when={props.mfaRequired && !props.mfaEnabled}>
         <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          A workspace where you are an owner or admin requires MFA. Enable an authenticator to
-          regain access to its settings.
+          A workspace where you are an owner or admin requires MFA. Add a passkey or enable an
+          authenticator to regain access to its settings.
         </div>
       </Show>
 
@@ -160,170 +221,261 @@ export function AccountSecurity(props: {
         )}
       </Show>
 
-      <Show when={!props.mfaEnabled && !signedOut()}>
+      {/* ---- Passkeys ------------------------------------------------------ */}
+      <div class="space-y-3 border-t pt-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-sm font-medium text-stone-900">Passkeys</p>
+            <p class="text-xs text-muted-foreground">
+              Sign in with Face ID, Touch ID, Windows Hello or a security key. Passkeys are
+              phishing-resistant.
+            </p>
+          </div>
+          <span
+            class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              props.passkeyEnabled ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"
+            }`}
+          >
+            {props.passkeyEnabled ? "Enabled" : "Not set up"}
+          </span>
+        </div>
+
         <Show
-          when={enrollment()}
+          when={passkeysLoaded() && passkeys().length > 0}
           fallback={
-            <div>
-              <Show
-                when={props.hasPassword}
-                fallback={
-                  <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    Set a password for this account before enabling an authenticator app. Password
-                    and authenticator are required together; passwordless or SSO-only accounts
-                    cannot complete MFA sign-in.
-                  </div>
-                }
-              >
-                <button
-                  type="button"
-                  class={primaryButton}
-                  disabled={enrollPending()}
-                  onClick={begin}
-                >
-                  {enrollPending() ? "Starting…" : "Enable authenticator app"}
-                </button>
-              </Show>
-              <Show when={enrollError()}>
-                {(message) => <p class="mt-2 text-sm text-red-600">{message()}</p>}
-              </Show>
-            </div>
+            <p class="text-xs text-muted-foreground">
+              No passkeys yet. Add one to sign in without a password.
+            </p>
           }
         >
-          {(current) => (
-            <div class="space-y-4">
-              <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <QrCode value={current().uri} label="Authenticator setup QR code" />
-                <div class="min-w-0 flex-1 space-y-2 text-sm">
-                  <p class="font-medium text-stone-900">Scan this QR code</p>
-                  <p class="text-muted-foreground">
-                    Use your authenticator app, or enter this setup key manually:
-                  </p>
-                  <code class="block break-all rounded-lg border bg-stone-50 px-3 py-2 font-mono text-xs">
-                    {current().manualKey}
-                  </code>
-                </div>
-              </div>
-              <form onSubmit={confirm} class="space-y-3">
-                <div class="space-y-1.5">
-                  <label for="totp-confirm-code" class="text-xs font-medium text-stone-700">
-                    Enter the 6-digit code from your app
-                  </label>
-                  <input
-                    id="totp-confirm-code"
-                    required
-                    autocomplete="one-time-code"
-                    inputmode="numeric"
-                    placeholder="000000"
-                    value={enrollCode()}
-                    onInput={(event) => setEnrollCode(event.currentTarget.value)}
-                    class={inputClass}
-                  />
-                </div>
-                <Show when={enrollError()}>
-                  {(message) => <p class="text-sm text-red-600">{message()}</p>}
-                </Show>
-                <div class="flex gap-2">
-                  <button type="submit" class={primaryButton} disabled={enrollPending()}>
-                    {enrollPending() ? "Confirming…" : "Confirm and enable"}
-                  </button>
+          <ul class="divide-y rounded-lg border">
+            <For each={passkeys()}>
+              {(item) => (
+                <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <div class="min-w-0">
+                    <p class="truncate font-medium text-stone-900">{item.name}</p>
+                    <p class="text-xs text-muted-foreground">
+                      Added {formatDate(item.createdAtMillis)} · Last used{" "}
+                      {formatDate(item.lastUsedAtMillis)}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    class={secondaryButton}
-                    onClick={() => {
-                      setEnrollment(null);
-                      setEnrollCode("");
-                      setEnrollError(null);
-                    }}
+                    class="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    disabled={removingId() === item.credentialId}
+                    onClick={() => void removePasskey(item.credentialId)}
                   >
-                    Cancel
+                    {removingId() === item.credentialId ? "Removing…" : "Remove"}
                   </button>
-                </div>
-              </form>
-            </div>
-          )}
+                </li>
+              )}
+            </For>
+          </ul>
         </Show>
-      </Show>
 
-      <Show when={props.mfaEnabled && !signedOut()}>
-        <div class="space-y-5">
-          <div class="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            Authenticator app enabled. Recovery codes are active.
+        <form onSubmit={addPasskey} class="flex flex-col gap-2 sm:flex-row">
+          <input
+            class={inputClass}
+            placeholder="Name this passkey (for example, MacBook)"
+            value={passkeyName()}
+            maxlength={128}
+            onInput={(event) => setPasskeyName(event.currentTarget.value)}
+          />
+          <button
+            type="submit"
+            class={`${primaryButton} whitespace-nowrap`}
+            disabled={passkeyPending() || signedOut()}
+          >
+            {passkeyPending() ? "Waiting for your device…" : "Add a passkey"}
+          </button>
+        </form>
+        <p class="text-xs text-muted-foreground">
+          Adding or removing a passkey asks you to confirm your identity first.
+        </p>
+        <Show when={passkeyError()}>
+          {(message) => <p class="text-sm text-red-600">{message()}</p>}
+        </Show>
+      </div>
+
+      {/* ---- Authenticator app --------------------------------------------- */}
+      <div class="mt-5 space-y-3 border-t pt-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-sm font-medium text-stone-900">Authenticator app</p>
+            <p class="text-xs text-muted-foreground">
+              A time-based code from an app such as 1Password or Google Authenticator.
+            </p>
           </div>
-
-          <form onSubmit={regenerate} class="space-y-2">
-            <p class="text-sm font-medium text-stone-900">Regenerate recovery codes</p>
-            <p class="text-xs text-muted-foreground">
-              This replaces every existing recovery code. Enter your current password and an
-              authenticator code to confirm.
-            </p>
-            <input
-              type="password"
-              required
-              autocomplete="current-password"
-              placeholder="Current password"
-              value={regeneratePassword()}
-              onInput={(event) => setRegeneratePassword(event.currentTarget.value)}
-              class={inputClass}
-            />
-            <div class="flex gap-2">
-              <input
-                required
-                autocomplete="one-time-code"
-                inputmode="numeric"
-                placeholder="000000"
-                value={regenerateCode()}
-                onInput={(event) => setRegenerateCode(event.currentTarget.value)}
-                class={inputClass}
-              />
-              <button type="submit" class={secondaryButton} disabled={regeneratePending()}>
-                {regeneratePending() ? "Generating…" : "Regenerate"}
-              </button>
-            </div>
-            <Show when={regenerateError()}>
-              {(message) => <p class="text-sm text-red-600">{message()}</p>}
-            </Show>
-          </form>
-
-          <form onSubmit={disable} class="space-y-2 border-t pt-4">
-            <p class="text-sm font-medium text-red-700">Disable authenticator app</p>
-            <p class="text-xs text-muted-foreground">
-              This removes the second factor and invalidates your sessions. Enter your current
-              password and an authenticator code to confirm.
-            </p>
-            <input
-              type="password"
-              required
-              autocomplete="current-password"
-              placeholder="Current password"
-              value={disablePassword()}
-              onInput={(event) => setDisablePassword(event.currentTarget.value)}
-              class={inputClass}
-            />
-            <div class="flex gap-2">
-              <input
-                required
-                autocomplete="one-time-code"
-                inputmode="numeric"
-                placeholder="000000"
-                value={disableCode()}
-                onInput={(event) => setDisableCode(event.currentTarget.value)}
-                class={inputClass}
-              />
-              <button
-                type="submit"
-                class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-                disabled={disablePending()}
-              >
-                {disablePending() ? "Disabling…" : "Disable"}
-              </button>
-            </div>
-            <Show when={disableError()}>
-              {(message) => <p class="text-sm text-red-600">{message()}</p>}
-            </Show>
-          </form>
+          <span
+            class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              props.totpEnabled ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"
+            }`}
+          >
+            {props.totpEnabled ? "Enabled" : "Not set up"}
+          </span>
         </div>
-      </Show>
+
+        <Show when={!props.totpEnabled && !signedOut()}>
+          <Show
+            when={enrollment()}
+            fallback={
+              <div>
+                <Show
+                  when={props.hasPassword}
+                  fallback={
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      Set a password for this account before enabling an authenticator app. Password
+                      and authenticator are required together; passwordless or SSO-only accounts
+                      should use a passkey instead.
+                    </div>
+                  }
+                >
+                  <button
+                    type="button"
+                    class={primaryButton}
+                    disabled={enrollPending()}
+                    onClick={begin}
+                  >
+                    {enrollPending() ? "Starting…" : "Enable authenticator app"}
+                  </button>
+                </Show>
+                <Show when={enrollError()}>
+                  {(message) => <p class="mt-2 text-sm text-red-600">{message()}</p>}
+                </Show>
+              </div>
+            }
+          >
+            {(current) => (
+              <div class="space-y-4">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+                  <QrCode value={current().uri} label="Authenticator setup QR code" />
+                  <div class="min-w-0 flex-1 space-y-2 text-sm">
+                    <p class="font-medium text-stone-900">Scan this QR code</p>
+                    <p class="text-muted-foreground">
+                      Use your authenticator app, or enter this setup key manually:
+                    </p>
+                    <code class="block break-all rounded-lg border bg-stone-50 px-3 py-2 font-mono text-xs">
+                      {current().manualKey}
+                    </code>
+                  </div>
+                </div>
+                <form onSubmit={confirm} class="space-y-3">
+                  <div class="space-y-1.5">
+                    <label for="totp-confirm-code" class="text-xs font-medium text-stone-700">
+                      Enter the 6-digit code from your app
+                    </label>
+                    <input
+                      id="totp-confirm-code"
+                      required
+                      autocomplete="one-time-code"
+                      inputmode="numeric"
+                      placeholder="000000"
+                      value={enrollCode()}
+                      onInput={(event) => setEnrollCode(event.currentTarget.value)}
+                      class={inputClass}
+                    />
+                  </div>
+                  <Show when={enrollError()}>
+                    {(message) => <p class="text-sm text-red-600">{message()}</p>}
+                  </Show>
+                  <div class="flex gap-2">
+                    <button type="submit" class={primaryButton} disabled={enrollPending()}>
+                      {enrollPending() ? "Confirming…" : "Confirm and enable"}
+                    </button>
+                    <button
+                      type="button"
+                      class={secondaryButton}
+                      onClick={() => {
+                        setEnrollment(null);
+                        setEnrollCode("");
+                        setEnrollError(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </Show>
+        </Show>
+
+        <Show when={props.totpEnabled && !signedOut()}>
+          <div class="space-y-5">
+            <form onSubmit={regenerate} class="space-y-2">
+              <p class="text-sm font-medium text-stone-900">Regenerate recovery codes</p>
+              <p class="text-xs text-muted-foreground">
+                This replaces every existing recovery code. Enter your current password and an
+                authenticator code to confirm.
+              </p>
+              <input
+                type="password"
+                required
+                autocomplete="current-password"
+                placeholder="Current password"
+                value={regeneratePassword()}
+                onInput={(event) => setRegeneratePassword(event.currentTarget.value)}
+                class={inputClass}
+              />
+              <div class="flex gap-2">
+                <input
+                  required
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  placeholder="000000"
+                  value={regenerateCode()}
+                  onInput={(event) => setRegenerateCode(event.currentTarget.value)}
+                  class={inputClass}
+                />
+                <button type="submit" class={secondaryButton} disabled={regeneratePending()}>
+                  {regeneratePending() ? "Generating…" : "Regenerate"}
+                </button>
+              </div>
+              <Show when={regenerateError()}>
+                {(message) => <p class="text-sm text-red-600">{message()}</p>}
+              </Show>
+            </form>
+
+            <form onSubmit={disable} class="space-y-2 border-t pt-4">
+              <p class="text-sm font-medium text-red-700">Disable authenticator app</p>
+              <p class="text-xs text-muted-foreground">
+                This removes the second factor and invalidates your sessions. Enter your current
+                password and an authenticator code to confirm.
+              </p>
+              <input
+                type="password"
+                required
+                autocomplete="current-password"
+                placeholder="Current password"
+                value={disablePassword()}
+                onInput={(event) => setDisablePassword(event.currentTarget.value)}
+                class={inputClass}
+              />
+              <div class="flex gap-2">
+                <input
+                  required
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  placeholder="000000"
+                  value={disableCode()}
+                  onInput={(event) => setDisableCode(event.currentTarget.value)}
+                  class={inputClass}
+                />
+                <button
+                  type="submit"
+                  class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                  disabled={disablePending()}
+                >
+                  {disablePending() ? "Disabling…" : "Disable"}
+                </button>
+              </div>
+              <Show when={disableError()}>
+                {(message) => <p class="text-sm text-red-600">{message()}</p>}
+              </Show>
+            </form>
+          </div>
+        </Show>
+      </div>
     </section>
   );
 }
