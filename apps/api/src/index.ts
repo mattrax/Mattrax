@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { Context, Effect, Exit, Layer, Redacted } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";

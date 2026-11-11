@@ -18,6 +18,7 @@ CREATE TABLE `auth_passkeyCredentials` (
 	`name` text NOT NULL,
 	`created_at` bigint NOT NULL,
 	`last_used_at` bigint,
+	PRIMARY KEY (`credential_id`),
 	CONSTRAINT `auth_passkeyCredentials_key_0` UNIQUE INDEX(`credential_id`),
 	CONSTRAINT `auth_passkeyCredentials_key_1` UNIQUE INDEX(`credential_key`)
 );
@@ -31,6 +32,7 @@ CREATE TABLE `auth_passkeyFlows` (
 	`request_binding_expires_at` bigint NOT NULL,
 	`issued_at` bigint NOT NULL,
 	`expires_at` bigint NOT NULL,
+	PRIMARY KEY (`module_id`, `flow_id`),
 	CONSTRAINT `auth_passkeyFlows_key_0` UNIQUE INDEX(`module_id`,`flow_id`)
 );
 --> statement-breakpoint

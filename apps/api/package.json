@@ -41,6 +41,7 @@
     "fast-plist": "catalog:",
     "mysql2": "catalog:",
     "pkijs": "catalog:",
+    "reflect-metadata": "catalog:",
     "stripe": "^23.1.0"
   },
   "devDependencies": {

@@ -72,6 +72,9 @@ catalogs:
     pkijs:
       specifier: ^4.0.1
       version: 4.0.1
+    reflect-metadata:
+      specifier: ^0.2.2
+      version: 0.2.2
     typescript:
       specifier: ~7.0.2
       version: 7.0.2
@@ -199,6 +202,9 @@ importers:
       pkijs:
         specifier: 'catalog:'
         version: 4.0.1(asn1js@4.0.0)
+      reflect-metadata:
+        specifier: 'catalog:'
+        version: 0.2.2
       stripe:
         specifier: ^23.1.0
         version: 23.1.0(@types/node@26.6.6)
