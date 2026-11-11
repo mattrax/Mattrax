@@ -7,7 +7,7 @@ delegates every product decision to your management backend over HTTP webhooks.
 The gateway implementation lives in the `mttx` CLI (`apps/mttx`) and is packaged as
 `@mattrax/server`.
 
-::: danger The management layer stays separate from the data layer
+:::danger The management layer stays separate from the data layer
 Whitelabel is a protocol gateway, not an Enterprise deployment. It must never import
 `@mattrax/enterprise-*` or use the Enterprise database. It has no tenants, devices,
 groups, policies, billing, dashboard, or API tokens.

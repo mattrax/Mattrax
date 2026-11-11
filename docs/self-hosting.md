@@ -288,7 +288,7 @@ settings → Administrators**.
 ### 7. Configure APNs
 
 Open the tenant's **Settings → Management** page and follow the CSR flow described in the
-[quick start](./quick-start#_1-configure-apns-apple-only). The private key stays on the
+[quick start](./quick-start#1-configure-apns-apple-only). The private key stays on the
 server and is sealed with `AUTH_SECRET`.
 
 ## Whitelabel gateway on a Node server
@@ -371,7 +371,7 @@ ReadWritePaths=/var/lib/mattrax
 WantedBy=multi-user.target
 ```
 
-::: warning Runtime limit
+:::warning Runtime limit
 The current `serve` command shuts down after 24 hours and restarts when the supervisor
 starts it again. Use `Restart=always` (or an equivalent container restart policy) so this
 is a rolling restart rather than an outage. The server also applies a per-process limit

@@ -11,7 +11,7 @@ Worker under `/api`.
 
 The interactive reference is also linked from the docs sidebar as **OpenAPI**.
 
-::: info Whitelabel
+:::info Whitelabel
 The whitelabel gateway has a different surface: `/health`, `/api/openapi.json` for its own
 Apple protocol API, and `/mdm/apple/*`. It does not serve the Enterprise API. See
 [HTTP surface](../whitelabel/endpoints).
@@ -189,5 +189,5 @@ curl -s "$MATTRAX_URL/api/openapi.json" | jq '.info'
 ```
 
 The interactive Scalar UI is served at `/api/docs`. If you self-host Cloud on a different
-origin, update the docs `origin` in `docs/.vitepress/config.ts` or use the `/api/docs`
+origin, update the docs `origin` in `rspress.config.ts` or use the `/api/docs`
 path on your own deployment directly.

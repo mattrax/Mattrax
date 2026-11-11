@@ -17,15 +17,18 @@
     "api": "pnpm --filter @mattrax/api --",
     "mserver": "pnpm --filter @mattrax/server --",
     "web": "pnpm --filter @mattrax/web --",
-    "doc": "vitepress dev docs",
-    "doc:build": "vitepress build docs",
-    "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod"
+    "doc": "rspress dev docs --port 9060",
+    "doc:build": "rspress build docs",
+    "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod",
+    "doc:preview": "rspress preview docs --port 9060"
   },
   "devDependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
     "@playwright/test": "catalog:",
+    "@rspress/core": "catalog:",
+    "@rspress/plugin-llms": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "vitepress": "catalog:",
     "vitest": "^5.1.0"
   },
   "engines": {

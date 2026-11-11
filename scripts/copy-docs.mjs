@@ -16,7 +16,7 @@ if (!version) {
 
 const assets = path.join(outputRoot, version, "workers/default/assets");
 const docs = path.join(assets, "docs");
-const builtDocs = path.resolve(appRoot, "../../docs/.vitepress/dist");
+const builtDocs = path.resolve(appRoot, "../../doc_build");
 
 await rm(docs, { recursive: true, force: true });
 await mkdir(docs, { recursive: true });

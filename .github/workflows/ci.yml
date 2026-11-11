@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Rspress `lastUpdated` reads per-file Git history.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.2

@@ -25,7 +25,7 @@ dist-ssr
 
 # Typescript
 *.tsbuildinfo
-**/.vitepress/cache/
+doc_build/
 
 # System files
 .DS_Store

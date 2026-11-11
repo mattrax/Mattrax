@@ -166,7 +166,7 @@ A device has a protocol, lifecycle status, inventory fields, and editable operat
 Operators can update `name`, `notes`, and `assetTag`. Unenrolment sets an enrolled device
 to `unenrolling`; the protocol-specific removal is completed by the management layer.
 
-::: warning Device actions
+:::warning Device actions
 `POST /api/v1/tenants/:tenantId/devices/:id/action` exists in the contract but currently
 performs no action. Remote lock, wipe and restart are not implemented.
 :::
@@ -451,7 +451,7 @@ the downloaded private key (unencrypted PKCS#8 EC P-256) with the Client ID and
 Key ID; Mattrax validates the key, exchanges an ES256 client assertion for a
 bearer token, and stores only a sealed credential envelope. A legacy `.p7m` DEP
 token is accepted and displayed but not used for sync — the current API is
-OAuth. See [Production readiness](../production-readiness#apple-business-manager-abm-ade-and-apps-books-vpp)
+OAuth. See [Production readiness](../production-readiness#apple-business-manager-abmade-and-apps--books-vpp)
 for the setup, security notes and real-device checklist.
 
 ABM sync pages through `orgDevices`, upserts by `(tenant, serial)`, links a

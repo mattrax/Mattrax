@@ -12,7 +12,7 @@ have not deployed Mattrax yet, start with [Self-hosting](./self-hosting).
 - For Apple devices, an APNs push certificate for the tenant. Without APNs, Apple
   enrollment is blocked.
 
-::: tip Self-hosted gateway?
+:::tip Self-hosted gateway?
 Whitelabel deployments do not have the Enterprise dashboard or enrollment page described
 here. You are responsible for your own product UI and for returning an enrollment profile
 from your management backend. See [Whitelabel](./whitelabel/).
@@ -35,7 +35,7 @@ Mattrax reads the MDM topic from the certificate and stores the private key seal
 `AUTH_SECRET`. Keep `AUTH_SECRET` backed up: losing it makes existing APNs keys
 undecryptable.
 
-::: warning Push delivery in Cloud
+:::warning Push delivery in Cloud
 Apple MDM push certificates are per tenant. A single Cloudflare Worker cannot attach a
 different client certificate per request. Hosted multi-tenant Cloud therefore needs an
 APNs relay (`RelayPushTransport`, HMAC-signed) while self-hosted deployments can use
@@ -81,7 +81,7 @@ Resetting the enrollment link invalidates the old id. Existing devices stay enro
 The profile contains a SCEP payload and an MDM payload. The SCEP identity certificate is
 used for MDM authentication; the MDM payload supplies the APNs topic and check-in URL.
 
-::: info Declarative management
+:::info Declarative management
 Apple policies are delivered through declarative device management (DDM) declarations.
 A device learns about changed declarations on its next check-in. APNs only makes that
 check-in happen sooner.
@@ -184,7 +184,7 @@ To configure a policy without the designer:
    when a transport is configured; otherwise devices apply changes at their next
    check-in.
 
-::: warning Device actions
+:::warning Device actions
 Sync and unenroll are implemented (they push Apple devices and update the device status).
 Remote lock, wipe, restart and app installation are not exposed yet.
 :::
