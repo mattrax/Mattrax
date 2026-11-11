@@ -39,7 +39,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
 /**
  * Header names used by every delivery. The signature header is
  * `t=<unix-seconds>,v1=<hex HMAC-SHA256(secret, "<t>." + rawBody)>`
- * (Stripe-compatible shape). See docs/enterprise/webhooks.md.
+ * (Stripe-compatible shape). See docs/admin/operations.md.
  */
 export const WEBHOOK_SIGNATURE_HEADER = "X-Mattrax-Signature";
 export const WEBHOOK_TIMESTAMP_HEADER = "X-Mattrax-Timestamp";

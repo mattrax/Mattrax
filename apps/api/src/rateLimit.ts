@@ -11,7 +11,7 @@
  *
  * The in-memory layer is intentionally not presented as a global limit: a
  * Worker runs many isolates and each one keeps its own counters. The exact gap
- * is documented in `docs/production-readiness.md`.
+ * is documented in `docs/reference/production-readiness.md`.
  */
 
 export type RateLimitBucket = "auth" | "enrollment" | "mdm" | "scep" | "scim" | "billing";

@@ -27,7 +27,7 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
   return (
     <a
       href={props.href}
-      class={`transition-colors ${props.active ? "text-stone-900 font-medium" : "text-stone-500 hover:text-stone-900"}`}
+      class={`transition-colors ${props.active ? "text-stone-900" : "text-stone-500 hover:text-stone-900"}`}
       target={props.target}
     >
       {props.label}
@@ -37,11 +37,19 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
 
 function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
-    <a href={props.href} class="hover:text-stone-900 transition-colors" target={props.target}>
+    <a href={props.href} class="transition-colors hover:text-stone-900" target={props.target}>
       {props.label}
     </a>
   );
 }
+
+const navigation = [
+  { href: "/#platforms", label: "Platforms" },
+  { href: "/#product", label: "Product" },
+  { href: "/#migration", label: "Migration" },
+  { href: "/#pricing", label: "Pricing" },
+  { href: "/docs/", label: "Docs", target: "_self" },
+];
 
 function TopNavigation() {
   const session = authClient.useSession();
@@ -56,34 +64,36 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 bg-stone-50/95 backdrop-blur-sm border-b border-stone-200">
-      <div class="mx-auto max-w-7xl px-8 flex h-16 items-center justify-between">
-        <a href="/" class="flex items-center gap-2 shrink-0">
-          <span class="font-semibold tracking-tight">Mattrax</span>
+    <header class="sticky top-0 z-50 border-b border-stone-200/80 bg-stone-50/80 backdrop-blur-xl">
+      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 sm:px-8">
+        <a href="/" class="flex shrink-0 items-center gap-2.5">
+          <span class="flex size-7 items-center justify-center rounded-lg bg-stone-950 text-[13px] font-semibold text-stone-50">
+            M
+          </span>
+          <span class="text-[15px] font-semibold tracking-tight">Mattrax</span>
         </a>
 
-        <nav class="hidden md:flex items-center gap-8 text-sm">
-          <NavigationLink href="/#product" label="Product" active={isActive("/#product")} />
-          <NavigationLink
-            href="/#enterprise"
-            label="Enterprise"
-            active={isActive("/#enterprise")}
-          />
-          <NavigationLink href="/#pricing" label="Pricing" active={isActive("/#pricing")} />
-          <NavigationLink href="/designer" label="Policy designer" active={isActive("/designer")} />
-          <NavigationLink href="/docs" label="Docs" target="_self" active={isActive("/docs")} />
+        <nav class="hidden items-center gap-7 text-[13px] md:flex">
+          {navigation.map((item) => (
+            <NavigationLink
+              href={item.href}
+              label={item.label}
+              target={item.target}
+              active={isActive(item.href)}
+            />
+          ))}
         </nav>
 
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex shrink-0 items-center gap-2.5">
           <Show when={!session().isPending && session().data?.user}>
             <Button
               as="a"
               href="/dashboard"
               variant="outline"
               size="sm"
-              class="rounded-full border-stone-300 text-stone-600 hover:bg-stone-100 animate-in fade-in duration-300"
+              class="hidden rounded-full border-stone-300 text-stone-600 hover:bg-stone-100 sm:inline-flex"
             >
-              Dashboard →
+              Dashboard
             </Button>
           </Show>
           <UserDropdown
@@ -93,6 +103,35 @@ function TopNavigation() {
             showDashboardLink
             onSignOut={handleLogout}
           />
+
+          <details class="relative md:hidden">
+            <summary class="flex size-8 cursor-pointer list-none items-center justify-center rounded-full border border-stone-300 text-stone-600 [&::-webkit-details-marker]:hidden">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </summary>
+            <div class="absolute right-0 top-11 w-56 overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl shadow-stone-900/10">
+              {navigation.map((item) => (
+                <a
+                  href={item.href}
+                  target={item.target}
+                  class="block rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          </details>
         </div>
       </div>
     </header>
@@ -101,18 +140,84 @@ function TopNavigation() {
 
 function Footer() {
   return (
-    <footer class="border-t border-stone-200 py-8 px-8">
-      <div class="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-stone-400">
-        <div class="flex items-center gap-2">
-          <span>© 2020 Mattrax Technologies Inc.</span>
+    <footer class="border-t border-stone-200 bg-white">
+      <div class="mx-auto max-w-7xl px-6 py-14 sm:px-8">
+        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+          <div>
+            <a href="/" class="flex items-center gap-2.5">
+              <span class="flex size-7 items-center justify-center rounded-lg bg-stone-950 text-[13px] font-semibold text-stone-50">
+                M
+              </span>
+              <span class="text-[15px] font-semibold tracking-tight">Mattrax</span>
+            </a>
+            <p class="mt-4 max-w-xs text-xs leading-5 text-stone-500">
+              Device management infrastructure for Apple, Windows and Android fleets — hosted,
+              self-hosted or embedded in your product.
+            </p>
+            <p class="mt-5 flex items-center gap-2 text-[11px] text-stone-400">
+              <span class="size-1.5 rounded-full bg-emerald-500" />
+              All systems operational
+            </p>
+          </div>
+
+          <FooterColumn
+            title="Product"
+            links={[
+              { href: "/#platforms", label: "Platforms" },
+              { href: "/#product", label: "Features" },
+              { href: "/#pricing", label: "Pricing" },
+              { href: "/designer", label: "Policy designer" },
+            ]}
+          />
+          <FooterColumn
+            title="Developers"
+            links={[
+              { href: "/docs/", label: "Documentation", target: "_self" },
+              { href: "/docs/api/", label: "REST API", target: "_self" },
+              { href: "/docs/operations/whitelabel/", label: "Whitelabel", target: "_self" },
+              { href: "/docs/migration/", label: "Migration", target: "_self" },
+            ]}
+          />
+          <FooterColumn
+            title="Company"
+            links={[
+              { href: "/privacy", label: "Privacy" },
+              { href: "/terms", label: "Terms" },
+              { href: "mailto:hello@mattrax.app", label: "Support" },
+              {
+                href: "https://github.com/oscartbeaumont/mattraxe",
+                label: "GitHub",
+                target: "_blank",
+              },
+            ]}
+          />
         </div>
-        <div class="flex flex-wrap justify-center gap-6">
-          <FooterLink href="/docs" label="Docs" target="_self" />
-          <FooterLink href="/privacy" label="Privacy" />
-          <FooterLink href="/terms" label="Terms" />
-          <FooterLink href="mailto:hello@mattrax.app" label="Support" />
+
+        <div class="mt-12 flex flex-col gap-3 border-t border-stone-100 pt-6 text-[11px] text-stone-400 sm:flex-row sm:items-center sm:justify-between">
+          <span>© 2020 Mattrax Technologies Inc.</span>
+          <span>Built with Effect, Cloudflare and SolidJS.</span>
         </div>
       </div>
     </footer>
+  );
+}
+
+function FooterColumn(props: {
+  title: string;
+  links: Array<{ href: string; label: string; target?: string }>;
+}) {
+  return (
+    <div>
+      <p class="text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">
+        {props.title}
+      </p>
+      <ul class="mt-4 space-y-2.5 text-xs text-stone-500">
+        {props.links.map((link) => (
+          <li>
+            <FooterLink href={link.href} label={link.label} target={link.target} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

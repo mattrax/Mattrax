@@ -1,52 +1,45 @@
 ---
 pageType: home
 title: Mattrax
-titleSuffix: Open device management
-description: Open device management infrastructure for Apple, Windows and Android fleets.
+titleSuffix: Device management, documented
+description: Run Apple, Windows and Android fleets from one control plane — hosted, self-hosted or whitelabel.
 hero:
   name: Mattrax
-  text: Open device management infrastructure
-  tagline: Manage Apple, Windows and Android fleets from one modern control plane — hosted, enterprise or whitelabel.
+  text: Device management, documented.
+  tagline: Everything you need to run Apple, Windows and Android fleets — from the first enrollment to production operations, migration and the management API.
   image:
-    src: /logo.png
+    src: /mark.svg
     alt: Mattrax
   actions:
     - theme: brand
       text: Quick start
-      link: /quick-start
+      link: /getting-started/quick-start
     - theme: alt
-      text: Self-hosting
-      link: /self-hosting
+      text: What is Mattrax?
+      link: /getting-started/
 features:
-  - title: Apple MDM
-    details: SCEP identity, APNs push, DDM declarations, profiles, FileVault escrow and app inventory.
-    icon: 🍎
-    link: /overview
-  - title: Windows MDM
-    details: Tenant-scoped WSTEP enrollment, SyncML policy delivery, Autopilot import and federated Entra.
-    icon: 🪟
-    link: /overview
-  - title: Android Enterprise
-    details: AMAPI signup, Pub/Sub enrollment, policy delivery and remote commands.
-    icon: 🤖
-    link: /overview
-  - title: Whitelabel
-    details: A protocol gateway you can embed in your own product with a management webhook contract.
-    icon: 🧩
-    link: /whitelabel/
-  - title: Enterprise controls
-    details: Tenant roles, scoped API tokens, SSO, MFA/passkeys, audit export, backups and webhooks.
-    icon: 🛡️
-    link: /enterprise/overview
-  - title: Production runbooks
-    details: Self-hosting, readiness, migrations, real-device validation and the remaining backlog.
-    icon: 🚀
-    link: /production-readiness
+  - title: Apple
+    details: Manual profiles, Apple Business Manager, Apps & Books, APNs, SCEP, DDM declarations, FileVault escrow and inventory.
+    icon: /icons/apple.svg
+    link: /platforms/apple/
+  - title: Windows
+    details: WSTEP enrollment, SyncML policy delivery, Entra ID federation, Autopilot imports and deployment profiles.
+    icon: /icons/windows.svg
+    link: /platforms/windows/
+  - title: Android
+    details: Android Enterprise signup, AMAPI enrollment tokens, Pub/Sub notifications and deterministic policy delivery.
+    icon: /icons/android.svg
+    link: /platforms/android/
+  - title: Operate
+    details: Self-host on Cloudflare, configure secrets, monitor health, upgrade safely and recover from incidents.
+    icon: /icons/wrench.svg
+    link: /operations/self-hosting
+  - title: Build
+    details: A typed REST API, OpenAPI reference, outbound webhooks and the TypeScript whitelabel management contract.
+    icon: /icons/puzzle.svg
+    link: /api/
+  - title: Migrate
+    details: Move from Jamf, Intune, Kandji, Mosyle or Addigy with a coexistence plan and a tested cutover sequence.
+    icon: /icons/truck.svg
+    link: /migration/
 ---
-
-## Start here
-
-- [Quick start](/quick-start) — enroll your first device and apply a policy.
-- [Self-hosting](/self-hosting) — deploy on Cloudflare or run the whitelabel gateway.
-- [Enterprise overview](/enterprise/overview) — tenants, roles, billing, tokens and audit.
-- [Production readiness](/production-readiness) — what is hardened and what still needs real devices.

@@ -57,7 +57,7 @@ refuses non-HTTPS reset links. To run the dev server over HTTPS instead, run
 
 The Windows policy catalogue is served incrementally from
 `apps/web/public/catalog/windows/`; the source file stays at
-`data/catalog/windows.json`. See [docs/policy-catalogue.md](docs/policy-catalogue.md)
+`data/catalog/windows.json`. See [docs/reference/policy-catalogue.md](docs/reference/policy-catalogue.md)
 for the file layout and regeneration steps.
 
 The browser suite drives a real Chrome via CDP by default. Set
