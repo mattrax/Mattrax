@@ -77,6 +77,8 @@ const ApiEnvSchema = Schema.Struct({
   MAINTENANCE_BACKUP_RETENTION_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled tenant backups: tenants backed up concurrently (default 4). */
   MAINTENANCE_BACKUP_CONCURRENCY: Schema.optional(nonEmptyString),
+  /** Scheduled Entra directory sync: tenants synced concurrently (default 2). */
+  MAINTENANCE_ENTRA_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
   /**
    * Optional Sentry-compatible DSN for uncaught/5xx error events. Without it
    * error tracking is disabled and only the structured request log is written.
@@ -145,6 +147,9 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   ),
   MAINTENANCE_BACKUP_CONCURRENCY: emptyStringAsUndefined(
     (cfEnv as any).MAINTENANCE_BACKUP_CONCURRENCY,
+  ),
+  MAINTENANCE_ENTRA_SYNC_CONCURRENCY: emptyStringAsUndefined(
+    (cfEnv as any).MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
   ),
   SENTRY_DSN: emptyStringAsUndefined((cfEnv as any).SENTRY_DSN),
   SENTRY_ENVIRONMENT: emptyStringAsUndefined((cfEnv as any).SENTRY_ENVIRONMENT),

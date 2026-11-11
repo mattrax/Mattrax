@@ -197,6 +197,7 @@ export function verifyPubSubOidcToken(
       jwk = keySet.keys.find((candidate) => candidate.kid === kid);
     }
     if (!jwk) {
+      if (unknownKidCache.size > 1000) unknownKidCache.clear();
       unknownKidCache.set(negativeKey, nowMs + UNKNOWN_KID_NEGATIVE_CACHE_MS);
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signing key not found" }));
     }
@@ -283,4 +284,5 @@ export function bearerToken(header: string | undefined): string | undefined {
 /** Clear the module-level JWKS cache. Tests only. */
 export function clearJwksCache(): void {
   jwksCache.clear();
+  unknownKidCache.clear();
 }

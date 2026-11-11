@@ -363,13 +363,18 @@ export const EntraDirectorySyncStatus = Schema.Struct({
   status: Schema.String,
   azureTenantId: Schema.optional(NullableString),
   lastSyncedAt: Schema.optional(NullableString),
+  lastAttemptedAt: Schema.optional(NullableString),
+  lastRunTrigger: Schema.optional(NullableString),
   lastError: Schema.optional(NullableString),
   lastCounts: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  syncIntervalMinutes: Schema.Number,
+  nextSyncAt: Schema.optional(NullableString),
   consentUrl: Schema.optional(NullableString),
 });
 export type EntraDirectorySyncStatus = typeof EntraDirectorySyncStatus.Type;
 export const PatchEntraDirectorySyncRequest = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
+  syncIntervalMinutes: Schema.optional(Schema.Number),
 });
 export const EntraDirectorySyncResult = Schema.Struct({
   status: Schema.Literal("ok"),

@@ -114,6 +114,24 @@ export type {
 export { buildTenantExport } from "./tenantExport.js";
 export type { TenantExportBundle } from "./tenantExport.js";
 export {
+  ENTRA_GRAPH_NOT_CONFIGURED,
+  ENTRA_SYNC_CONCURRENCY,
+  ENTRA_SYNC_STALE_MS,
+  acquireEntraSyncLock,
+  isEntraSyncDue,
+  runEntraDirectorySyncForTenant,
+  runScheduledEntraSync,
+  syncEntraDirectory,
+} from "./entraSync.js";
+export type {
+  EntraDirectorySyncOutcome,
+  EntraSyncLockState,
+  EntraSyncProgress,
+  EntraSyncScheduleState,
+  EntraSyncTrigger,
+  ScheduledEntraSyncResult,
+} from "./entraSync.js";
+export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
   WEBHOOK_DELIVERY_TIMEOUT_MS,
   WEBHOOK_MAX_RETRY_ATTEMPTS,

@@ -13,6 +13,7 @@ import {
   billingWebhookRoutes,
   runMaintenance,
   runScheduledBackups,
+  runScheduledEntraSync,
   scimRoutes,
   androidRoutes,
   makeAppAuth,
@@ -34,6 +35,7 @@ import {
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
@@ -42,6 +44,7 @@ import { androidDeliveryConfig, androidManagementLayer } from "./android.js";
 import { ssoRoutes } from "./sso.js";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
+import { AzureGraph } from "@mattrax/azure-graph";
 import { AppleMdmTrust, MdmError } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
 import {
@@ -199,6 +202,56 @@ const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
   delete: (keys) => env.STORAGE.delete(typeof keys === "string" ? keys : [...keys]),
   list: (options) => env.STORAGE.list(options as any),
 });
+
+/**
+ * Run the scheduled Entra directory sweep. The Graph client is built only when
+ * the deployment has Entra app credentials; otherwise the sweep returns
+ * immediately so the rest of the cron job is unaffected.
+ */
+const entraSyncEffect = (db: EnterpriseDb, env: Env, concurrency: number | undefined) => {
+  if (!env.AZURE_CLIENT_ID || !env.AZURE_CLIENT_SECRET)
+    return runScheduledEntraSync({ db, concurrency });
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const context = yield* Layer.build(
+        AzureGraphFetchLive({
+          clientId: env.AZURE_CLIENT_ID,
+          clientSecret: env.AZURE_CLIENT_SECRET,
+          origin: env.ORIGIN,
+        }),
+      );
+      return yield* runScheduledEntraSync({
+        db,
+        graph: Context.get(context, AzureGraph),
+        concurrency,
+      });
+    }),
+  );
+};
+
+/**
+ * Hourly trigger that only sweeps due Entra directory syncs. It runs at minute
+ * 47 so the daily job (03:17) has already applied maintenance and backups
+ * before the same hour's sweep.
+ */
+const ENTRA_SYNC_CRON = "47 * * * *";
+
+const parsePositive = (value: string | undefined) => {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+};
+
+/** Standalone scheduled Entra sweep used by the hourly trigger. */
+const entraSyncJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    return yield* entraSyncEffect(
+      db,
+      env,
+      parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
+    );
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
 const makeAppLayer = (env: Env, request: Request) => {
   const androidConfig = androidDeliveryConfig();
@@ -555,25 +608,37 @@ export default {
   },
 
   /**
-   * Daily maintenance. Cloudflare Cron Triggers call this; the same function is
-   * exported from `@mattrax/enterprise-backend` so a future self-hosted
-   * Enterprise deployment can run it from its own scheduler.
+   * Cron entrypoint. The daily trigger runs maintenance, tenant backups and a
+   * directory sweep; the hourly trigger only sweeps due Entra directory syncs.
+   * The same functions are exported from `@mattrax/enterprise-backend` so a
+   * self-hosted Enterprise deployment can run them from its own scheduler.
    */
-  async scheduled(
-    _controller: ScheduledController,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const parseDays = (value: string | undefined) => {
       if (value === undefined) return undefined;
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
     };
-    const parsePositive = (value: string | undefined) => {
-      if (value === undefined) return undefined;
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+    const graphConfigured = Boolean(env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET);
+    const logEntraResult = (exit: Exit.Exit<unknown, unknown>) => {
+      if (Exit.isFailure(exit)) console.error("Scheduled Entra directory sync failed", exit.cause);
+      else console.log("Scheduled Entra directory sync complete", exit.value);
     };
+
+    // The hourly trigger is dedicated to directory sync. The daily trigger
+    // below also runs it so deployments with only one cron still sync.
+    if (controller.cron === ENTRA_SYNC_CRON) {
+      if (!graphConfigured) {
+        console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
+        return;
+      }
+      ctx.waitUntil(
+        Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
+          console.error("Scheduled Entra directory sync job failed", cause),
+        ),
+      );
+      return;
+    }
     // Delivery is best-effort: a missing binding or a provider rejection is
     // logged by maintenance and never fails the scheduled run.
     const notifyCredentialExpiry = (notification: CredentialExpiryNotification) =>
@@ -635,15 +700,25 @@ export default {
           concurrency: parsePositive(apiEnv.MAINTENANCE_BACKUP_CONCURRENCY),
         }),
       );
-      return { maintenance, backups };
+
+      // Entra directory sync runs last, also bounded and failure-isolated per
+      // tenant. Without Graph credentials the sweep is a no-op.
+      const entra = yield* Effect.exit(
+        entraSyncEffect(db, env, parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY)),
+      );
+      return { maintenance, backups, entra };
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+    if (!graphConfigured)
+      console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
 
     ctx.waitUntil(
       Effect.runPromise(daily).then(
-        ({ backups }) => {
+        ({ backups, entra }) => {
           if (Exit.isFailure(backups))
             console.error("Scheduled tenant backups failed", backups.cause);
           else console.log("Scheduled tenant backups complete", backups.value);
+          logEntraResult(entra);
         },
         (cause) => console.error("Scheduled daily job failed", cause),
       ),

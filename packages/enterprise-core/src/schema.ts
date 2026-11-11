@@ -426,6 +426,12 @@ export const entraDirectorySync = mysqlTable("entra_directory_sync", {
   status: varchar("status", { length: 32, enum: ["idle", "running", "error"] })
     .notNull()
     .default("idle"),
+  /** Automatic sync cadence in minutes. `0` disables scheduled runs. */
+  syncIntervalMinutes: int("sync_interval_minutes").notNull().default(0),
+  /** When the next automatic sync is due; null until a cadence is configured. */
+  nextSyncAt: timestamp("next_sync_at"),
+  /** What started the most recent run (`manual` or `scheduled`). */
+  lastRunTrigger: varchar("last_run_trigger", { length: 16, enum: ["manual", "scheduled"] }),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });

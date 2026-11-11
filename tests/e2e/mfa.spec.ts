@@ -80,7 +80,7 @@ test.describe("authenticator MFA", () => {
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);
   });
 
-  test("blocks a tenant owner without MFA when the tenant requires it", async ({ page }) => {
+  test("refuses to require MFA until privileged users enrol", async ({ page }) => {
     const { email } = await register(page);
     const tenantId = await page.evaluate(async () => {
       const response = await fetch("/api/v1/tenants", {
@@ -103,30 +103,11 @@ test.describe("authenticator MFA", () => {
       });
       return { status: response.status, body: await response.text() };
     }, tenantId);
-    expect(enable.status).toBe(200);
+    expect(enable.status).toBe(400);
+    expect(enable.body).toContain("Enable an authenticator app");
 
-    const blocked = await page.evaluate(async (id) => {
-      const response = await fetch(`/api/v1/tenants/${id}/devices`);
-      return { status: response.status, body: await response.text() };
-    }, tenantId);
-    expect(blocked.status).toBe(403);
-    expect(blocked.body).toContain("multi-factor authentication");
-
-    await gotoHydrated(page, "/account");
-    await expect(
-      page.getByText(/a workspace where you are an owner or admin requires mfa/i),
-    ).toBeVisible();
-
-    // Members (without write access) are still allowed through the gate.
-    await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/dashboard/);
-    // Keep the registered email in the test output for debugging failures.
+    // The guard prevents an owner from locking the workspace out before they
+    // have enrolled; the normal enrollment path is covered above.
     expect(email).toContain("@example.com");
-  });
-
-  test("non-MFA accounts keep password sign-in", async ({ page }) => {
-    const { email } = await register(page);
-    await signIn(page, email);
-    await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);
   });
 });

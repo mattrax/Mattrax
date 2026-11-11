@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import { and, eq, inArray } from "drizzle-orm";
+import { Effect, Exit } from "effect";
+import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import type { AzureGraphService, GraphGroup, GraphUser } from "@mattrax/azure-graph";
 import { schema, type EnterpriseDb } from "./schema.ts";
 
@@ -75,14 +75,24 @@ export const acquireEntraSyncLock = (options: {
             previousStatus,
             enabled: state.enabled,
           };
-        yield* tx
+        // Conditional write: only one concurrent caller can take over a stale
+        // lock, even if both read the same snapshot.
+        const takeover = yield* tx
           .update(schema.entraDirectorySync)
           .set({ status: "running", lastAttemptedAt: timestamp, updatedAt: timestamp })
-          .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+          .where(
+            and(
+              eq(schema.entraDirectorySync.organizationId, organizationId),
+              eq(schema.entraDirectorySync.status, "running"),
+              lt(schema.entraDirectorySync.updatedAt, new Date(timestamp.getTime() - staleAfterMs)),
+            ),
+          );
+        if ((takeover as any)?.[0]?.affectedRows === 0)
+          return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
         return { acquired: true, stale: true, previousStatus, enabled: state.enabled };
       }
 
-      yield* tx
+      const claimed = yield* tx
         .update(schema.entraDirectorySync)
         .set({
           status: "running",
@@ -90,7 +100,14 @@ export const acquireEntraSyncLock = (options: {
           lastError: null,
           updatedAt: timestamp,
         })
-        .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+        .where(
+          and(
+            eq(schema.entraDirectorySync.organizationId, organizationId),
+            ne(schema.entraDirectorySync.status, "running"),
+          ),
+        );
+      if ((claimed as any)?.[0]?.affectedRows === 0)
+        return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
       return { acquired: true, stale: false, previousStatus, enabled: state.enabled };
     }),
   );
@@ -600,3 +617,277 @@ export const syncEntraDirectory = (options: {
 
     return { ...counts, usersDelta, groupsDelta };
   });
+
+/** How many tenants a scheduled sweep may sync at once. Graph is rate limited. */
+export const ENTRA_SYNC_CONCURRENCY = 2;
+
+export const ENTRA_GRAPH_NOT_CONFIGURED =
+  "Microsoft Graph is not configured. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET and grant admin consent.";
+
+export type EntraSyncTrigger = "manual" | "scheduled";
+
+export type EntraDirectorySyncOutcome =
+  | {
+      readonly status: "ok";
+      readonly users: number;
+      readonly groups: number;
+      readonly domains: number;
+      readonly usersDelta?: string;
+      readonly groupsDelta?: string;
+    }
+  | { readonly status: "locked" }
+  | { readonly status: "not_configured"; readonly message: string }
+  | { readonly status: "error"; readonly message: string };
+
+export type EntraSyncScheduleState = {
+  readonly enabled: boolean;
+  readonly syncIntervalMinutes: number;
+  readonly nextSyncAt?: Date | string | null;
+  readonly lastAttemptedAt?: Date | string | null;
+};
+
+const toTime = (value: unknown): number | null => {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * Whether a tenant's automatic directory sync is due.
+ *
+ * `nextSyncAt` is authoritative when present (it is written after every run and
+ * whenever the cadence changes). Rows created before the schedule existed fall
+ * back to `lastAttemptedAt + interval`, and a tenant that has never run is due
+ * immediately.
+ */
+export const isEntraSyncDue = (state: EntraSyncScheduleState, at: Date = new Date()): boolean => {
+  if (!state.enabled) return false;
+  const interval = state.syncIntervalMinutes;
+  if (!Number.isFinite(interval) || interval <= 0) return false;
+  const nowMs = at.getTime();
+  const next = toTime(state.nextSyncAt);
+  if (next !== null) return next <= nowMs;
+  const last = toTime(state.lastAttemptedAt);
+  if (last === null) return true;
+  return last + interval * 60_000 <= nowMs;
+};
+
+const nextSyncAtFor = (intervalMinutes: number, at: Date): Date | null =>
+  Number.isFinite(intervalMinutes) && intervalMinutes > 0
+    ? new Date(at.getTime() + intervalMinutes * 60_000)
+    : null;
+
+/**
+ * Run one tenant's directory sync, reusing the tenant-scoped lock and
+ * persisting cursors/status. Callers get a summary instead of a failure so a
+ * scheduled sweep can isolate one broken tenant.
+ *
+ * Manual callers should check `status` to map `not_configured`/`locked`/`error`
+ * onto their HTTP error contract.
+ */
+export const runEntraDirectorySyncForTenant = (options: {
+  readonly db: EnterpriseDb;
+  readonly graph?: AzureGraphService;
+  readonly organizationId: string;
+  readonly trigger?: EntraSyncTrigger;
+  readonly now?: Date;
+}): Effect.Effect<EntraDirectorySyncOutcome, never> =>
+  Effect.gen(function* () {
+    const { db, graph, organizationId } = options;
+    const timestamp = options.now ?? now();
+    const trigger = options.trigger ?? "manual";
+
+    if (!graph) return { status: "not_configured", message: ENTRA_GRAPH_NOT_CONFIGURED } as const;
+
+    const config = yield* db.query.ssoConfig.findFirst({
+      where: { organizationId },
+    });
+    if (!config?.azureTenantId)
+      return {
+        status: "not_configured",
+        message: "Enable Entra ID SSO with a tenant id first.",
+      } as const;
+
+    const state = yield* db.query.entraDirectorySync.findFirst({
+      where: { organizationId },
+    });
+    const interval = state?.syncIntervalMinutes ?? 0;
+    const nextSyncAt = nextSyncAtFor(interval, timestamp);
+
+    const lock = yield* acquireEntraSyncLock({ db, organizationId, now: timestamp });
+    if (!lock.acquired) return { status: "locked" } as const;
+
+    const exit = yield* Effect.exit(
+      syncEntraDirectory({
+        db,
+        graph,
+        organizationId,
+        azureTenantId: config.azureTenantId,
+        autoProvision: config.autoProvision,
+        usersDeltaLink: state?.usersDeltaLink,
+        groupsDeltaLink: state?.groupsDeltaLink,
+        syncUsersAndGroups: true,
+        // Persist each resource class's delta cursor as soon as it is
+        // complete, so a later failure does not replay the whole tenant.
+        onProgress: (progress) =>
+          db
+            .update(schema.entraDirectorySync)
+            .set({
+              ...(progress.usersDelta ? { usersDeltaLink: progress.usersDelta } : {}),
+              ...(progress.groupsDelta ? { groupsDeltaLink: progress.groupsDelta } : {}),
+              lastCounts: {
+                users: progress.users,
+                groups: progress.groups,
+                domains: progress.domains,
+              },
+              // Real heartbeat: a long but healthy sync must not look stale.
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.entraDirectorySync.organizationId, organizationId)),
+      }),
+    );
+
+    if (Exit.isFailure(exit)) {
+      const message = String(exit.cause).slice(0, 2000);
+      yield* db
+        .update(schema.entraDirectorySync)
+        .set({
+          status: "error",
+          lastError: message,
+          lastRunTrigger: trigger,
+          nextSyncAt,
+          updatedAt: timestamp,
+        })
+        .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+      return { status: "error", message } as const;
+    }
+
+    const result = exit.value;
+    yield* db
+      .update(schema.entraDirectorySync)
+      .set({
+        status: "idle",
+        lastError: null,
+        lastSyncedAt: timestamp,
+        ...(result.usersDelta ? { usersDeltaLink: result.usersDelta } : {}),
+        ...(result.groupsDelta ? { groupsDeltaLink: result.groupsDelta } : {}),
+        lastCounts: {
+          users: result.users,
+          groups: result.groups,
+          domains: result.domains,
+        },
+        lastRunTrigger: trigger,
+        nextSyncAt,
+        updatedAt: timestamp,
+      })
+      .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+
+    return {
+      status: "ok",
+      users: result.users,
+      groups: result.groups,
+      domains: result.domains,
+      ...(result.usersDelta ? { usersDelta: result.usersDelta } : {}),
+      ...(result.groupsDelta ? { groupsDelta: result.groupsDelta } : {}),
+    } as const;
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.sync(() => {
+        console.error("Entra directory sync failed", options.organizationId, cause);
+        return {
+          status: "error",
+          message: String(cause).slice(0, 2000),
+        } as const;
+      }),
+    ),
+  );
+
+export type ScheduledEntraSyncResult = {
+  /** False when Graph credentials are absent; nothing was selected or run. */
+  readonly graphConfigured: boolean;
+  /** Tenants with an enabled, positive cadence that were due. */
+  readonly due: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  /** Due tenants skipped because Graph or their Entra tenant id is missing. */
+  readonly skipped: number;
+  /** Due tenants whose sync was already running elsewhere. */
+  readonly locked: number;
+};
+
+/**
+ * Scheduled sweep: pick tenants with an enabled, positive cadence that are due
+ * and sync them with bounded concurrency. A failure or lock conflict for one
+ * tenant never aborts the rest.
+ */
+export const runScheduledEntraSync = (options: {
+  readonly db: EnterpriseDb;
+  readonly graph?: AzureGraphService;
+  readonly now?: Date;
+  readonly concurrency?: number;
+}): Effect.Effect<ScheduledEntraSyncResult, unknown, never> => {
+  const { db, graph } = options;
+  const timestamp = options.now ?? now();
+  const empty = {
+    graphConfigured: false,
+    due: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    locked: 0,
+  } as const;
+
+  if (!graph) return Effect.succeed(empty);
+
+  return Effect.gen(function* () {
+    const rows = (yield* db
+      .select()
+      .from(schema.entraDirectorySync)
+      .where(
+        and(
+          eq(schema.entraDirectorySync.enabled, true),
+          gt(schema.entraDirectorySync.syncIntervalMinutes, 0),
+        ),
+      )) as Array<{
+      organizationId: string;
+      enabled: boolean;
+      syncIntervalMinutes: number;
+      nextSyncAt: Date | null;
+      lastAttemptedAt: Date | null;
+    }>;
+
+    const due = rows.filter((row) => isEntraSyncDue(row, timestamp));
+    const outcomes = yield* Effect.forEach(
+      due,
+      (row) =>
+        runEntraDirectorySyncForTenant({
+          db,
+          graph,
+          organizationId: row.organizationId,
+          trigger: "scheduled",
+          now: timestamp,
+        }).pipe(
+          Effect.catch((cause) =>
+            Effect.sync(() => {
+              console.error("Scheduled Entra directory sync failed", row.organizationId, cause);
+              return { status: "error", message: String(cause) } as const;
+            }),
+          ),
+        ),
+      { concurrency: Math.max(1, options.concurrency ?? ENTRA_SYNC_CONCURRENCY) },
+    );
+
+    return {
+      graphConfigured: true,
+      due: due.length,
+      succeeded: outcomes.filter((outcome) => outcome.status === "ok").length,
+      failed: outcomes.filter((outcome) => outcome.status === "error").length,
+      skipped: outcomes.filter((outcome) => outcome.status === "not_configured").length,
+      locked: outcomes.filter((outcome) => outcome.status === "locked").length,
+    };
+  }) as Effect.Effect<ScheduledEntraSyncResult, unknown, never>;
+};

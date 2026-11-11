@@ -149,7 +149,13 @@ architecture notes in the porting plan.
   (`status = running`) with a 15-minute stale takeover, applies each Graph page
   in its own transaction, and persists each resource class's delta cursor as
   soon as it completes. A failure records `lastError`, sets `status = error`
-  and leaves the previous cursor usable.
+  and leaves the previous cursor usable. Owners can also run it on a schedule:
+  **Settings → Identity → Directory sync** offers Off/Hourly/Daily/Weekly, and
+  an hourly cron sweeps due tenants with bounded concurrency and per-tenant
+  failure isolation (the daily job runs it too, so single-cron deployments still
+  sync). Scheduled runs use the same lock, cursors and status fields, and are
+  skipped for tenants without an Entra tenant id or a deployment without Graph
+  credentials. Real-Entra validation of the scheduled path remains (see below).
 - Tenant owners can export a versioned JSON bundle
   (`GET /v1/tenants/:tenantId/export`) and import it as a new tenant
   (`POST /v1/tenants/import`). The bundle carries profile/branding, groups,
@@ -257,9 +263,11 @@ architecture notes in the porting plan.
   flight, chunked) and per-device outcomes are in place. Large fan-outs are still
   synchronous with the request; move them to Queues (or `waitUntil` with a job
   id) and track retries.
-- **Entra directory sync background scheduling.** Locking, stale takeover,
-  per-page transactions, incremental cursors and `lastError` are in place.
-  Running the sync as a scheduled background job remains.
+- **Entra directory sync real-tenant validation.** Locking, stale takeover,
+  per-page transactions, incremental cursors, `lastError` and a configurable
+  Off/Hourly/Daily/Weekly schedule with bounded per-tenant sweeps are in place
+  and fixture-tested. The scheduled path still needs a run against a real Entra
+  tenant (admin consent, delta expiry/resync and large directories).
 - **Backup off-site copy and drills.** Scheduled per-tenant JSON backups, status
   tracking, authenticated restore downloads and age-based retention are in
   place. Remaining: mirror MySQL dumps and R2 objects to an off-site account,

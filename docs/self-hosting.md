@@ -199,12 +199,13 @@ proxied by the public web Worker.
   daily cron (`17 3 * * *`). It expires invitations, marks devices stale after 30 days
   without a check-in, removes expired auth proofs/sessions, applies 365-day audit
   retention, then backs up every tenant (see [Scheduled tenant
-  backups](#scheduled-tenant-backups)). Override with
-  `MAINTENANCE_STALE_DEVICE_DAYS`, `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the latter
-  to `0` to keep audit entries indefinitely), `MAINTENANCE_BACKUP_RETENTION_DAYS` and
-  `MAINTENANCE_BACKUP_CONCURRENCY`. The same `runMaintenance` and
-  `runScheduledBackups` functions are exported from `@mattrax/enterprise-backend` for
-  external schedulers.
+  backups](#scheduled-tenant-backups)). An hourly cron (`47 * * * *`) sweeps due
+  Entra directory syncs so tenants can schedule Off/Hourly/Daily/Weekly runs. Override
+  with `MAINTENANCE_STALE_DEVICE_DAYS`, `MAINTENANCE_AUDIT_RETENTION_DAYS` (set the
+  latter to `0` to keep audit entries indefinitely), `MAINTENANCE_BACKUP_RETENTION_DAYS`,
+  `MAINTENANCE_BACKUP_CONCURRENCY` and `MAINTENANCE_ENTRA_SYNC_CONCURRENCY`. The same
+  `runMaintenance`, `runScheduledBackups` and `runScheduledEntraSync` functions are
+  exported from `@mattrax/enterprise-backend` for external schedulers.
 - **Edge rate limits.** Cloudflare Rate Limiting namespaces are optional per bucket. At
   build time, set any of `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`,
   `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE`, `MATTRAX_RATE_LIMIT_MDM_NAMESPACE`,
@@ -442,7 +443,8 @@ owner can reset the factor from the database after verifying the account:
 ```sql
 -- Replace :user_id with the account id. Bumps the auth revision so every
 -- existing session is invalidated.
-DELETE FROM auth_totp_factor WHERE scope = :user_id;
+DELETE FROM auth_totp_factor
+ WHERE JSON_UNQUOTE(JSON_EXTRACT(state, '$.subjectId')) = :user_id;
 UPDATE `user` SET totp_enabled = false, auth_revision = UUID() WHERE id = :user_id;
 ```
 

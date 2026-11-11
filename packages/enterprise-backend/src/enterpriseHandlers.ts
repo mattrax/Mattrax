@@ -10,6 +10,7 @@ import {
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
+  EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
   EnterpriseStripeError,
   EnterpriseTenantHasMembers,
@@ -74,7 +75,11 @@ import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
-import { syncEntraDirectory, acquireEntraSyncLock } from "./entraSync.ts";
+import {
+  syncEntraDirectory,
+  runEntraDirectorySyncForTenant,
+  acquireEntraSyncLock,
+} from "./entraSync.ts";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   normalizeDeviceSearchQuery,
@@ -1875,6 +1880,10 @@ export const createEnterpriseService = ({
           );
         const r2 = yield* R2Storage;
         const object = yield* r2.get(run.r2Key);
+        if (!object)
+          return yield* Effect.fail(
+            new EnterpriseR2FileNotFound({ message: "The backup object is no longer available" }),
+          );
         const content = yield* Effect.tryPromise({
           try: () => object.text(),
           catch: () => new EnterpriseR2InternalError({ message: "Could not read the backup" }),
@@ -2471,8 +2480,12 @@ export const createEnterpriseService = ({
           status: state?.status ?? "idle",
           azureTenantId: config?.azureTenantId ?? null,
           lastSyncedAt: state?.lastSyncedAt ? iso(state.lastSyncedAt) : null,
+          lastAttemptedAt: state?.lastAttemptedAt ? iso(state.lastAttemptedAt) : null,
+          lastRunTrigger: state?.lastRunTrigger ?? null,
           lastError: state?.lastError ?? null,
           lastCounts: state?.lastCounts ?? null,
+          syncIntervalMinutes: state?.syncIntervalMinutes ?? 0,
+          nextSyncAt: state?.nextSyncAt ? iso(state.nextSyncAt) : null,
           consentUrl:
             azureGraph && config?.azureTenantId
               ? azureGraph.consentUrl(config.azureTenantId)
@@ -2482,123 +2495,108 @@ export const createEnterpriseService = ({
     patchEntraDirectorySync: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { enabled?: boolean };
+        const body = payload as { enabled?: boolean; syncIntervalMinutes?: number };
+        if (body.syncIntervalMinutes !== undefined) {
+          if (
+            !Number.isInteger(body.syncIntervalMinutes) ||
+            body.syncIntervalMinutes < 0 ||
+            body.syncIntervalMinutes > 525_600
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Sync interval must be a whole number of minutes between 0 and 525600.",
+              }),
+            );
+        }
         const existing = yield* db.query.entraDirectorySync.findFirst({
           where: { organizationId: ctx.organization.id },
         });
         const enabled = body.enabled ?? existing?.enabled ?? false;
+        const interval = body.syncIntervalMinutes ?? existing?.syncIntervalMinutes ?? 0;
+        const timestamp = now();
+        const intervalChanged =
+          body.syncIntervalMinutes !== undefined &&
+          body.syncIntervalMinutes !== (existing?.syncIntervalMinutes ?? 0);
+        // Keep `nextSyncAt` aligned with the cadence: changing the interval
+        // resets the clock, a schedule that is already due (or has no next
+        // run) waits a full interval, and a zero/disabled schedule clears it.
+        const existingNextAt =
+          existing?.nextSyncAt instanceof Date
+            ? existing.nextSyncAt.getTime()
+            : existing?.nextSyncAt
+              ? Date.parse(String(existing.nextSyncAt))
+              : null;
+        const nextSyncAt =
+          interval <= 0
+            ? null
+            : intervalChanged ||
+                existingNextAt === null ||
+                !Number.isFinite(existingNextAt) ||
+                existingNextAt <= timestamp.getTime()
+              ? new Date(timestamp.getTime() + interval * 60_000)
+              : (existing?.nextSyncAt ?? null);
         if (existing)
           yield* db
             .update(schema.entraDirectorySync)
-            .set({ enabled, updatedAt: now() })
+            .set({
+              enabled,
+              syncIntervalMinutes: interval,
+              nextSyncAt,
+              updatedAt: timestamp,
+            })
             .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
         else
           yield* db.insert(schema.entraDirectorySync).values({
             organizationId: ctx.organization.id,
             enabled,
             status: "idle",
-            createdAt: now(),
-            updatedAt: now(),
+            syncIntervalMinutes: interval,
+            nextSyncAt,
+            createdAt: timestamp,
+            updatedAt: timestamp,
           });
-        yield* audit(ctx, "entra.directory_updated", "entra", ctx.organization.id, { enabled });
+        yield* audit(ctx, "entra.directory_updated", "entra", ctx.organization.id, {
+          enabled,
+          syncIntervalMinutes: interval,
+        });
         return ok;
       }),
     syncEntraDirectory: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        if (!azureGraph)
-          return yield* Effect.fail(
-            new EnterpriseBadRequest({
-              message:
-                "Microsoft Graph is not configured. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET and grant admin consent.",
-            }),
-          );
-        const config = yield* db.query.ssoConfig.findFirst({
-          where: { organizationId: ctx.organization.id },
-        });
-        if (!config?.azureTenantId)
-          return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Enable Entra ID SSO with a tenant id first." }),
-          );
-        const state = yield* db.query.entraDirectorySync.findFirst({
-          where: { organizationId: ctx.organization.id },
-        });
-        const lock = yield* acquireEntraSyncLock({
+        const outcome = yield* runEntraDirectorySyncForTenant({
           db,
+          graph: azureGraph,
           organizationId: ctx.organization.id,
+          trigger: "manual",
         });
-        if (!lock.acquired) {
+        if (outcome.status === "not_configured")
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: outcome.message }));
+        if (outcome.status === "locked")
           return yield* Effect.fail(
             new EnterpriseConflict({
               message:
                 "A directory sync is already running for this tenant. Wait for it to finish, or retry after the lock becomes stale.",
             }),
           );
-        }
-        const exit = yield* Effect.exit(
-          syncEntraDirectory({
-            db,
-            graph: azureGraph,
-            organizationId: ctx.organization.id,
-            azureTenantId: config.azureTenantId,
-            autoProvision: config.autoProvision,
-            usersDeltaLink: state?.usersDeltaLink,
-            groupsDeltaLink: state?.groupsDeltaLink,
-            syncUsersAndGroups: true,
-            // Persist each resource class's delta cursor as soon as it is
-            // complete, so a later failure does not replay the whole tenant.
-            onProgress: (progress) =>
-              db
-                .update(schema.entraDirectorySync)
-                .set({
-                  ...(progress.usersDelta ? { usersDeltaLink: progress.usersDelta } : {}),
-                  ...(progress.groupsDelta ? { groupsDeltaLink: progress.groupsDelta } : {}),
-                  lastCounts: {
-                    users: progress.users,
-                    groups: progress.groups,
-                    domains: progress.domains,
-                  },
-                  updatedAt: now(),
-                })
-                .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id)),
-          }),
-        );
-        if (Exit.isFailure(exit)) {
-          const message = String(exit.cause);
-          yield* db
-            .update(schema.entraDirectorySync)
-            .set({ status: "error", lastError: message.slice(0, 2000), updatedAt: now() })
-            .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+        if (outcome.status === "error") {
           yield* audit(ctx, "entra.sync_failed", "entra", ctx.organization.id, {
-            message: message.slice(0, 500),
+            message: outcome.message.slice(0, 500),
           });
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: `Directory sync failed: ${message}` }),
+            new EnterpriseBadRequest({ message: `Directory sync failed: ${outcome.message}` }),
           );
         }
-        const result = exit.value;
-        yield* db
-          .update(schema.entraDirectorySync)
-          .set({
-            status: "idle",
-            lastError: null,
-            lastSyncedAt: now(),
-            ...(result.usersDelta ? { usersDeltaLink: result.usersDelta } : {}),
-            ...(result.groupsDelta ? { groupsDeltaLink: result.groupsDelta } : {}),
-            lastCounts: {
-              users: result.users,
-              groups: result.groups,
-              domains: result.domains,
-            },
-            updatedAt: now(),
-          })
-          .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
-        yield* audit(ctx, "entra.sync_completed", "entra", ctx.organization.id, result);
+        yield* audit(ctx, "entra.sync_completed", "entra", ctx.organization.id, {
+          users: outcome.users,
+          groups: outcome.groups,
+          domains: outcome.domains,
+        });
         return {
           status: "ok" as const,
-          users: result.users,
-          groups: result.groups,
-          domains: result.domains,
+          users: outcome.users,
+          groups: outcome.groups,
+          domains: outcome.domains,
         };
       }),
     listEntraDomains: (request, tenantId) =>
@@ -2728,6 +2726,29 @@ export const createEnterpriseService = ({
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: "That Entra tenant is already linked to another workspace",
+              }),
+            );
+        }
+        if (body.requireMfa === true) {
+          if (!ctx.user.totpEnabled)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "Enable an authenticator app for your own account before requiring MFA for the workspace.",
+              }),
+            );
+          const privileged = yield* db
+            .select({ role: schema.member.role, totpEnabled: schema.user.totpEnabled })
+            .from(schema.member)
+            .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+            .where(eq(schema.member.organizationId, ctx.organization.id));
+          const missing = privileged.filter(
+            (member) => canWriteTenant(member.role) && !member.totpEnabled,
+          ).length;
+          if (missing > 0)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `${missing} owner/admin account${missing === 1 ? " has" : "s have"} not enrolled MFA. Ask them to enrol before enabling this requirement.`,
               }),
             );
         }

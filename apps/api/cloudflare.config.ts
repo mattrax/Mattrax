@@ -34,7 +34,12 @@ export const apiWorker = {
   placement: { mode: "smart" as const },
   // Daily maintenance: expired invitations, stale devices, expired auth
   // proofs/sessions and audit retention. Keep the off-peak UTC schedule.
-  triggers: [triggers.scheduled({ schedule: "17 3 * * *" })],
+  triggers: [
+    triggers.scheduled({ schedule: "17 3 * * *" }),
+    // Hourly sweep for due Entra directory syncs. Runs after the daily job's
+    // maintenance/backups window and is a no-op when no tenant is due.
+    triggers.scheduled({ schedule: "47 * * * *" }),
+  ],
   env: {
     // `ORIGIN` is a secret so local dev and whitelabel deployments can set
     // their own canonical origin. Production sets the hosted Mattrax domain.
@@ -70,6 +75,8 @@ export const apiWorker = {
     MAINTENANCE_BACKUP_RETENTION_DAYS: bindings.text("30"),
     /** Tenants backed up concurrently by the daily job. */
     MAINTENANCE_BACKUP_CONCURRENCY: bindings.text("4"),
+    /** Tenants synced concurrently by the scheduled Entra directory sync. */
+    MAINTENANCE_ENTRA_SYNC_CONCURRENCY: bindings.text("2"),
     /** Optional Sentry-compatible error tracking. */
     SENTRY_DSN: bindings.secret(),
     SENTRY_ENVIRONMENT: bindings.secret(),

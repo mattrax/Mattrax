@@ -713,7 +713,10 @@ export const enterprise = {
     endpoint((api) =>
       api.getEntraDirectorySync({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  patchEntraDirectorySync: (tenantId: RouteParam, payload: { enabled?: boolean }) =>
+  patchEntraDirectorySync: (
+    tenantId: RouteParam,
+    payload: { enabled?: boolean; syncIntervalMinutes?: number },
+  ) =>
     endpoint((api) =>
       api.patchEntraDirectorySync({
         params: { tenantId: required(tenantId, "tenantId") },

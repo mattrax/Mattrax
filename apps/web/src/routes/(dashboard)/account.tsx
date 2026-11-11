@@ -433,7 +433,7 @@ export default function AccountPage() {
       <AccountSecurity
         mfaEnabled={me.data?.user.mfaEnabled ?? false}
         mfaRequired={me.data?.user.mfaRequired ?? false}
-        hasPassword={me.data?.user.hasPassword ?? true}
+        hasPassword={me.data?.user.hasPassword ?? false}
         email={user()?.email ?? ""}
       />
 
