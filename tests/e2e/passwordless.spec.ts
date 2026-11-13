@@ -7,8 +7,9 @@ test.describe("passwordless sign-in", () => {
     await page.context().clearCookies();
 
     await gotoHydrated(page, "/login");
+    await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await page.getByRole("button", { name: /email me a sign-in code instead/i }).click();
-    await page.locator("#email-code").fill(email);
     await page.getByRole("button", { name: /email me a sign-in code$/i }).click();
 
     await expect(page.locator("#code")).toBeVisible({ timeout: 20_000 });

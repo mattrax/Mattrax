@@ -8,6 +8,12 @@ export default function SsoCompletePage() {
   const navigate = useNavigate();
   const [error, setError] = createSignal<string | null>(null);
   const [mfaPending, setMfaPending] = createSignal(false);
+  const returnTo = () => {
+    const value = Array.isArray(searchParams.returnTo)
+      ? searchParams.returnTo[0]
+      : searchParams.returnTo;
+    return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
+  };
 
   onSettled(() => {
     const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
@@ -25,7 +31,7 @@ export default function SsoCompletePage() {
         setMfaPending(true);
         return;
       }
-      navigate("/dashboard", { replace: true });
+      navigate(returnTo(), { replace: true });
     })();
   });
 
@@ -45,7 +51,7 @@ export default function SsoCompletePage() {
           when={!mfaPending()}
           fallback={
             <div class="text-left">
-              <MfaPending onComplete={() => navigate("/dashboard", { replace: true })} />
+              <MfaPending onComplete={() => navigate(returnTo(), { replace: true })} />
             </div>
           }
         >

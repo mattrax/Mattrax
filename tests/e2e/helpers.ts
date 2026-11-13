@@ -140,8 +140,8 @@ export async function signIn(page: Page, email: string, password = PASSWORD) {
     { timeout: 20_000 },
   );
   await page.locator("#email").fill(email);
+  await page.getByRole("button", { name: /^continue$/i }).click();
   await page.locator("#password").fill(password);
-  await expect(page.locator("#email")).toHaveValue(email);
   await expect(page.locator("#password")).toHaveValue(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });

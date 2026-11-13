@@ -1,8 +1,15 @@
-import { createSignal, Show } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
+import { createSignal, Show, untrack } from "solid-js";
 import { authClient } from "~/lib/auth";
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = createSignal("");
+  const [searchParams] = useSearchParams();
+  const [email, setEmail] = createSignal(
+    untrack(() => {
+      const value = searchParams.email;
+      return (Array.isArray(value) ? value[0] : value) ?? "";
+    }),
+  );
   const [error, setError] = createSignal<string | null>(null);
   const [sent, setSent] = createSignal(false);
   const [pending, setPending] = createSignal(false);

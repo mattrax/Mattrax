@@ -28,6 +28,7 @@ test.describe("authenticator MFA", () => {
     await expect(page).toHaveURL(/\/login/);
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await page.locator("#password").fill(PASSWORD);
     await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();
@@ -56,6 +57,7 @@ test.describe("authenticator MFA", () => {
     await expect(page).toHaveURL(/\/login/);
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await page.locator("#password").fill(PASSWORD);
     await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();
@@ -91,6 +93,7 @@ test.describe("authenticator MFA", () => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await page.locator("#password").fill(PASSWORD);
     await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();

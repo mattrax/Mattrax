@@ -15,6 +15,12 @@ const redirectUri = (origin: string) => `${origin}/api/v1/sso/azure/callback`;
 const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: string }) =>
   (claims.email ?? claims.preferred_username ?? claims.upn ?? "").trim().toLowerCase();
 
+/** Only internal, absolute-path destinations can be resumed after sign-in. */
+const safeReturnTo = (value: string | null | undefined) => {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+  return value.slice(0, 2048);
+};
+
 export type SsoRoutesOptions = {
   readonly origin: string;
   readonly clientId?: string;
@@ -31,6 +37,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       const url = new URL(request.url, "http://localhost");
       let tenantId = url.searchParams.get("tenantId");
       const email = url.searchParams.get("email")?.trim().toLowerCase();
+      const returnTo = safeReturnTo(url.searchParams.get("returnTo"));
       const db = yield* Db;
       const emailDomain = email?.slice(email.lastIndexOf("@") + 1).toLowerCase();
       if (!tenantId && emailDomain) {
@@ -62,6 +69,19 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       });
       if (!config?.enabled || !config.azureTenantId)
         return json({ error: "SSO is not enabled for this tenant" }, 404);
+      // The sign-in screen names the organisation so users can recognise the
+      // account before leaving Mattrax.
+      const organization = yield* db.query.organization.findFirst({
+        where: { id: tenantId },
+      });
+      const organizationName = organization?.name ?? null;
+      // Discovery is read-only: it must not mint a state token or overwrite
+      // the cookie that a redirect already in flight depends on.
+      if (url.searchParams.get("discover") === "1")
+        return json({
+          available: true,
+          organization: organizationName ? { name: organizationName } : null,
+        });
       const nonce = crypto.randomUUID();
       const state = yield* signToken(options.authSecret!, {
         sub: tenantId,
@@ -69,6 +89,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         exp: Date.now() + 10 * 60 * 1000,
         purpose: "sso-state",
         nonce,
+        ...(returnTo ? { returnTo } : {}),
       });
       const authorize = new URL(
         `https://login.microsoftonline.com/${encodeURIComponent(config.azureTenantId)}/oauth2/v2.0/authorize`,
@@ -82,9 +103,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       authorize.searchParams.set("nonce", nonce);
       if (email) authorize.searchParams.set("login_hint", email);
       if (emailDomain) authorize.searchParams.set("domain_hint", emailDomain);
-      return json({ url: authorize.toString() }, 200, {
-        "set-cookie": `__Host-sso_state=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
-      });
+      return json(
+        {
+          url: authorize.toString(),
+          organization: organizationName ? { name: organizationName } : null,
+        },
+        200,
+        {
+          "set-cookie": `__Host-sso_state=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
+        },
+      );
     }).pipe(Effect.catch((error) => Effect.succeed(json({ error: String(error) }, 500))));
 
   const callback = (request: HttpServerRequest.HttpServerRequest) =>
@@ -227,7 +255,10 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         purpose: "sso-assertion",
         tenantId,
       });
-      const location = `${options.origin}/sso/complete?token=${encodeURIComponent(assertion)}`;
+      const afterSignIn = safeReturnTo(payload.returnTo);
+      const location = `${options.origin}/sso/complete?token=${encodeURIComponent(assertion)}${
+        afterSignIn ? `&returnTo=${encodeURIComponent(afterSignIn)}` : ""
+      }`;
       return HttpServerResponse.empty({
         status: 302,
         headers: {

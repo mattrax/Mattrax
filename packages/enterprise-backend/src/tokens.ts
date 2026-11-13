@@ -32,6 +32,8 @@ export type TokenPayload = {
   purpose?: string;
   tenantId?: string;
   nonce?: string;
+  /** Internal path to return to once a browser sign-in flow completes. */
+  returnTo?: string;
   /** Serial number bound into an ADE enrollment-profile link. */
   serial?: string;
   /** ADE profile UUID the link was minted for. */
