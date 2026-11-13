@@ -211,7 +211,7 @@
    * behind for `position: fixed` children (e.g. the table selection bar).
    */
   .page-enter {
-    animation: mattax-page-in 200ms var(--ease-swift) both;
+    animation: mattax-page-in 200ms var(--ease-swift) backwards;
   }
 
   /* Indeterminate segment while the router resolves the next page. */

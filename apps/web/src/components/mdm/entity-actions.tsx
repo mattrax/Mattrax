@@ -62,7 +62,11 @@ function ConfirmAction(props: {
             <p class="text-sm">
               Type <span class="font-mono font-semibold">{props.target}</span> to confirm.
             </p>
-            <Input value={value()} onInput={(e) => setValue(e.currentTarget.value)} />
+            <Input
+              aria-label={`Type ${props.target} to confirm`}
+              value={value()}
+              onInput={(e) => setValue(e.currentTarget.value)}
+            />
           </div>
           <ErrorText error={mutation.error} />
           <DialogFooter>
@@ -86,7 +90,7 @@ function ConfirmAction(props: {
 function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "policies" }) {
   const params = useParams();
   const qc = useQueryClient();
-  let scopeRef: HTMLDetailsElement | undefined;
+  const [open, setOpen] = createSignal(false);
   const [changes, setChanges] = createSignal<Record<string, "all" | "none">>({});
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
@@ -107,7 +111,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
       ),
     onSuccess: async () => {
       setChanges({});
-      scopeRef?.removeAttribute("open");
+      setOpen(false);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     },
@@ -115,14 +119,18 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
   const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
 
   return (
-    <details ref={scopeRef} class="relative">
-      <summary
-        class={cn(buttonVariants({ variant: "outline", size: "sm" }), "list-none gap-1.5 [&::-webkit-details-marker]:hidden")}
+    <div class="relative">
+      <Button
+        variant="outline"
+        size="sm"
         aria-label="Assign selected rows to groups"
+        aria-expanded={open() ? "true" : "false"}
+        onClick={() => setOpen((value) => !value)}
       >
         Scope
-      </summary>
-      <div class="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+      </Button>
+      <Show when={open()}>
+      <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
         <For each={groupRows()}>
           {(group) => (
             <button
@@ -157,7 +165,8 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
           </Button>
         </div>
       </div>
-    </details>
+      </Show>
+    </div>
   );
 }
 
@@ -215,8 +224,8 @@ export function EntityActions(props: {
       </Show>
       <Show when={props.entity !== "device"}>
         <ConfirmAction
-          title="Delete"
-          description={`Delete selected ${props.entity}s.`}
+          title={`Delete ${ids().length} ${props.entity === "policy" ? (ids().length === 1 ? "policy" : "policies") : `${props.entity}${ids().length === 1 ? "" : "s"}`}?`}
+          description="This cannot be undone."
           target={confirmTarget(rows(), props.entity)}
           destructive
           onConfirm={async () => {

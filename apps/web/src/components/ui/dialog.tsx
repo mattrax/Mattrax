@@ -63,6 +63,7 @@ type DialogContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
 const DialogContent = <T extends ValidComponent = "div">(props: DialogContentProps<T>) => {
   const mergedProps = mergeProps({ showCloseButton: true } as DialogContentProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
+  const context = DialogPrimitive.useDialogContext();
   let opener: HTMLElement | null = null;
   return (
     <DialogPrimitive.Portal>
@@ -71,9 +72,23 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
         aria-modal="true"
         data-slot="dialog-content"
         class={cn(
-          "dark fixed top-1/2 left-1/2 z-50 z-dialog-content w-full -translate-x-1/2 -translate-y-1/2 text-foreground outline-none",
+          "dark fixed top-1/2 left-1/2 z-50 z-dialog-content max-h-[calc(100dvh-2rem)] w-full -translate-x-1/2 -translate-y-1/2 overflow-y-auto text-foreground outline-none",
           local.class,
         )}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          context.close();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          context.close();
+        }}
+        onInteractOutside={(event) => {
+          event.preventDefault();
+          context.close();
+        }}
         onOpenAutoFocus={() => {
           opener =
             document.activeElement instanceof HTMLElement ? document.activeElement : null;

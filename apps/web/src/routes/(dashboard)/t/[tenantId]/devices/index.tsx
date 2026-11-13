@@ -543,7 +543,7 @@ export default function DevicesPage() {
           setSort(value);
           setPage(0);
         }}
-        searchPlaceholder="Search name, serial, model, asset tag… (⌘F)"
+        searchPlaceholder="Search name, serial, model, asset tag…"
         toolbar={
           <div class="rounded-xl border border-white/[0.07] bg-white/[0.02] p-2">
             <div class="flex flex-col gap-2 lg:flex-row lg:items-center">

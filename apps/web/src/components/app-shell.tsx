@@ -101,8 +101,9 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
           </span>
           <Show when={active()}>
             {(tenant) => (
-              <span class="block truncate text-[10px] capitalize leading-3 text-muted-foreground">
-                {tenant().role} · {tenant().slug}
+              <span class="block truncate text-[10px] leading-3 text-muted-foreground">
+                <span class="capitalize">{tenant().role}</span> ·{" "}
+                <span class="normal-case">{tenant().slug}</span>
               </span>
             )}
           </Show>
@@ -140,8 +141,9 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[13px] font-medium">{tenant.name}</span>
-                  <span class="block truncate text-[11px] capitalize text-muted-foreground">
-                    {tenant.role} · {tenant.slug}
+                  <span class="block truncate text-[11px] text-muted-foreground">
+                    <span class="capitalize">{tenant.role}</span> ·{" "}
+                    <span class="normal-case">{tenant.slug}</span>
                   </span>
                 </span>
                 <Show when={props.activeId === tenant.id}>
@@ -553,14 +555,18 @@ export function AppShell(props: {
         )}
       >
         <Errored
-          fallback={(error, reset) => (
+          fallback={(error, reset) => {
+            const value =
+              typeof error === "function" ? (error as () => unknown)() : error;
+            console.error("Mattrax page render error", value);
+            return (
             <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
               <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
                 <h2 class="text-[14px] font-semibold text-foreground">
                   This page couldn't load
                 </h2>
                 <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-                  {error instanceof Error ? error.message : "An unexpected error occurred."}
+                  {value instanceof Error ? value.message : "An unexpected error occurred."}
                 </p>
                 <div class="mt-4 flex gap-2">
                   <button
@@ -580,7 +586,8 @@ export function AppShell(props: {
                 </div>
               </div>
             </div>
-          )}
+            );
+          }}
         >
           {props.children}
         </Errored>

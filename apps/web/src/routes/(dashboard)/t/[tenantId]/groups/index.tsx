@@ -42,7 +42,7 @@ export default function GroupsPage() {
         loading={groups.isPending}
         error={groups.error}
         storageKey="groups"
-        searchPlaceholder="Search groups… (⌘F)"
+        searchPlaceholder="Search groups…"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/groups/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="group" selected={selected} clear={clear} />

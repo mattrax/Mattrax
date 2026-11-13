@@ -80,7 +80,7 @@ export function Panel(props: {
           <Show
             when={props.header}
             fallback={
-              <div class="min-w-0">
+              <div class="min-w-0 flex-1 basis-0">
                 <h2 class="text-[13px] font-semibold tracking-[-0.01em] text-foreground">
                   {props.title}
                 </h2>

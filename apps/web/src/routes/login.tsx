@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createSignal, Show, untrack } from "solid-js";
+import { createEffect, createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { Eye, EyeOff } from "~/components/ui/icons";
@@ -28,6 +28,17 @@ export default function LoginPage() {
   const [ssoEmail, setSsoEmail] = createSignal("");
   const [mfaPending, setMfaPending] = createSignal(false);
   const [passkeyPending, setPasskeyPending] = createSignal(false);
+  let passwordInput: HTMLInputElement | undefined;
+
+  onSettled(() => {
+    document.title = "Sign in · Mattrax";
+  });
+  createEffect(
+    () => error(),
+    (message) => {
+      if (message) queueMicrotask(() => passwordInput?.focus());
+    },
+  );
 
   const signInWithPasskey = async () => {
     setError(null);
@@ -282,6 +293,7 @@ export default function LoginPage() {
                 </div>
                 <div class="relative">
                   <input
+                    ref={passwordInput}
                     id="password"
                     type={showPassword() ? "text" : "password"}
                     required

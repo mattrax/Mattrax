@@ -67,6 +67,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
     readVisibility(props.storageKey),
   );
+  const [columnsOpen, setColumnsOpen] = createSignal(false);
   let searchInput: HTMLInputElement | undefined;
 
   const serverMode = () => props.mode === "server";
@@ -199,39 +200,44 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 ? `${rows().length} rows`
                 : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
-          <details class="group/columns relative">
-            <summary
+          <div class="relative">
+            <button
+              type="button"
               class={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "list-none gap-1.5 focus-visible:ring-2 focus-visible:ring-ring/60 [&::-webkit-details-marker]:hidden",
+                "gap-1.5 focus-visible:ring-2 focus-visible:ring-ring/60",
               )}
               aria-label="Choose visible columns"
+              aria-expanded={columnsOpen() ? "true" : "false"}
+              onClick={() => setColumnsOpen((value) => !value)}
             >
               <ChevronsUpDown class="size-3.5" />
               <span class="hidden sm:inline">Columns</span>
-            </summary>
-            <div class="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
-              <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Visible columns
+            </button>
+            <Show when={columnsOpen()}>
+              <div class="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+                <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Visible columns
+                </div>
+                <div class="my-1 h-px bg-border" />
+                <For each={props.columns}>
+                  {(column) => (
+                    <label class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-white/[0.05]">
+                      <input
+                        type="checkbox"
+                        class="size-3.5 accent-[var(--brand)]"
+                        checked={!hidden()[column.id] && !column.defaultHidden}
+                        onChange={(event) =>
+                          toggleColumn(column.id, event.currentTarget.checked)
+                        }
+                      />
+                      {column.header}
+                    </label>
+                  )}
+                </For>
               </div>
-              <div class="my-1 h-px bg-border" />
-              <For each={props.columns}>
-                {(column) => (
-                  <label class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-white/[0.05]">
-                    <input
-                      type="checkbox"
-                      class="size-3.5 accent-[var(--brand)]"
-                      checked={!hidden()[column.id] && !column.defaultHidden}
-                      onChange={(event) =>
-                        toggleColumn(column.id, event.currentTarget.checked)
-                      }
-                    />
-                    {column.header}
-                  </label>
-                )}
-              </For>
-            </div>
-          </details>
+            </Show>
+          </div>
         </div>
       </div>
 
@@ -251,7 +257,25 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       </Show>
       <Show
         when={!props.error && !props.loading && rows().length > 0}
-        fallback={!props.error && !props.loading ? props.empty : undefined}
+        fallback={
+          !props.error && !props.loading ? (
+            search().trim() ? (
+              <div class="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
+                <p class="text-[13.5px] font-semibold text-foreground">
+                  No matches for “{search().trim()}”
+                </p>
+                <p class="mt-1 text-[12.5px] text-muted-foreground">
+                  Try a different name or clear the search.
+                </p>
+                <Button variant="outline" size="sm" class="mt-4" onClick={() => setSearch("")}>
+                  Clear search
+                </Button>
+              </div>
+            ) : (
+              props.empty
+            )
+          ) : undefined
+        }
       >
         <div class="relative">
           <div class="page-enter overflow-x-auto rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">

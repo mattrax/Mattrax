@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createSignal, Show } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 
 export default function RegisterPage() {
@@ -12,6 +12,10 @@ export default function RegisterPage() {
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
   const [existingAccount, setExistingAccount] = createSignal<string | null>(null);
+
+  onSettled(() => {
+    document.title = "Create account · Mattrax";
+  });
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
