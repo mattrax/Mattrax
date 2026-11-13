@@ -1,11 +1,10 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
+import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
   enterprise,
@@ -54,26 +53,30 @@ export default function NewGroupPage() {
     update(next);
   };
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
         title="Create group"
         description="Create a reusable deployment target and optionally scope it now."
       />
       <form
-        class="grid max-w-4xl gap-6 lg:grid-cols-[1fr_320px]"
+        class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,330px)]"
         onSubmit={(event) => {
           event.preventDefault();
           create.mutate();
         }}
       >
-        <Card>
-          <CardContent class="space-y-4">
+        <Panel
+          title="Group details"
+          description="Name the target, then choose how devices become members."
+          class="min-w-0"
+        >
+          <div class="space-y-4">
             <Field label="Name">
               <Input required value={name()} onInput={(e) => setName(e.currentTarget.value)} />
             </Field>
-            <Field label="Notes">
+            <Field label="Notes" hint="Optional context for other administrators.">
               <textarea
-                class="min-h-28 rounded-lg border bg-white px-3 py-2 text-sm"
+                class="min-h-28 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
                 value={notes()}
                 onInput={(e) => setNotes(e.currentTarget.value)}
                 placeholder="What is this group for?"
@@ -81,7 +84,7 @@ export default function NewGroupPage() {
             </Field>
             <Field label="Membership">
               <select
-                class="h-9 rounded-lg border bg-white px-3 text-sm"
+                class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
                 value={kind()}
                 onChange={(e) => setKind(e.currentTarget.value as DynamicGroupKind)}
               >
@@ -90,12 +93,12 @@ export default function NewGroupPage() {
               </select>
             </Field>
             <Show when={kind() === "dynamic"}>
-              <div class="rounded-lg border bg-muted/20 p-3">
+              <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
                 <GroupRuleBuilder rules={rules()} onChange={setRules} />
               </div>
             </Show>
             <ErrorText error={create.error} />
-            <div class="flex gap-2">
+            <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
               <Button type="submit" disabled={create.isPending}>
                 {create.isPending ? "Creating…" : "Create group"}
               </Button>
@@ -107,77 +110,102 @@ export default function NewGroupPage() {
                 Cancel
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
 
-        <div class="space-y-6">
-          <Card>
-            <CardContent class="space-y-2">
-              <p class="text-sm font-medium">
-                Devices{" "}
-                <Badge variant="secondary">
-                  {kind() === "dynamic" ? "rule-based" : devices().size}
-                </Badge>
-              </p>
+        <div class="min-w-0 space-y-5">
+          <Panel
+            flush
+            title="Devices"
+            description={
+              kind() === "dynamic"
+                ? "Membership is computed from the rules."
+                : "Pick devices to include now."
+            }
+            actions={
+              <Badge variant="secondary" class="tabular-nums">
+                {kind() === "dynamic" ? "rule-based" : devices().size}
+              </Badge>
+            }
+          >
+            <Show
+              when={kind() === "manual"}
+              fallback={
+                <p class="px-4 py-4 text-[12.5px] leading-relaxed text-muted-foreground sm:px-5">
+                  Membership is computed from the rules above. You can preview matches after the
+                  group is created.
+                </p>
+              }
+            >
               <Show
-                when={kind() === "manual"}
+                when={(deviceList.data?.rows.length ?? 0) > 0}
                 fallback={
-                  <p class="text-sm text-muted-foreground">
-                    Membership is computed from the rules above. You can preview matches after the
-                    group is created.
+                  <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                    No devices enrolled yet.
                   </p>
                 }
               >
-                <Show
-                  when={(deviceList.data?.rows.length ?? 0) > 0}
-                  fallback={<p class="text-sm text-muted-foreground">No devices enrolled yet.</p>}
-                >
-                  <div class="max-h-48 space-y-1 overflow-auto">
-                    <For each={deviceList.data?.rows ?? []}>
-                      {(device) => (
-                        <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
-                          <input
-                            type="checkbox"
-                            checked={devices().has(device.id)}
-                            onChange={() => toggle(devices, setDevices, device.id)}
-                          />
-                          <span class="truncate">{device.name}</span>
-                        </label>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </Show>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent class="space-y-2">
-              <p class="text-sm font-medium">
-                Policies <Badge variant="secondary">{policies().size}</Badge>
-              </p>
-              <Show
-                when={(policyList.data?.rows.length ?? 0) > 0}
-                fallback={<p class="text-sm text-muted-foreground">No policies yet.</p>}
-              >
-                <div class="max-h-48 space-y-1 overflow-auto">
-                  <For each={policyList.data?.rows ?? []}>
-                    {(policy) => (
-                      <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40">
+                <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">
+                  <For each={deviceList.data?.rows ?? []}>
+                    {(device) => (
+                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-white/[0.03] sm:px-5">
                         <input
                           type="checkbox"
-                          checked={policies().has(policy.id)}
-                          onChange={() => toggle(policies, setPolicies, policy.id)}
+                          class="size-3.5 shrink-0 accent-[var(--brand)]"
+                          checked={devices().has(device.id)}
+                          onChange={() => toggle(devices, setDevices, device.id)}
                         />
-                        <span class="truncate">{policy.name}</span>
+                        <span class="min-w-0 flex-1 truncate">{device.name}</span>
+                        <span class="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                          {device.serial ?? ""}
+                        </span>
                       </label>
                     )}
                   </For>
                 </div>
               </Show>
-            </CardContent>
-          </Card>
+            </Show>
+          </Panel>
+          <Panel
+            flush
+            title="Policies"
+            description="Attach policies to deploy to members."
+            actions={
+              <Badge variant="secondary" class="tabular-nums">
+                {policies().size}
+              </Badge>
+            }
+          >
+            <Show
+              when={(policyList.data?.rows.length ?? 0) > 0}
+              fallback={
+                <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                  No policies yet.
+                </p>
+              }
+            >
+              <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">
+                <For each={policyList.data?.rows ?? []}>
+                  {(policy) => (
+                    <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-white/[0.03] sm:px-5">
+                      <input
+                        type="checkbox"
+                        class="size-3.5 shrink-0 accent-[var(--brand)]"
+                        checked={policies().has(policy.id)}
+                        onChange={() => toggle(policies, setPolicies, policy.id)}
+                      />
+                      <span class="min-w-0 flex-1 truncate">{policy.name}</span>
+                      <span class="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+                        priority {policy.priority}
+                      </span>
+                    </label>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </Panel>
         </div>
       </form>
-    </div>
+    </Page>
   );
 }

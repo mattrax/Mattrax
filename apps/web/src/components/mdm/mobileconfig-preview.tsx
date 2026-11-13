@@ -1,12 +1,9 @@
 import { useMutation } from "@tanstack/solid-query";
 import { createEffect, For, Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
+import { CircleAlert } from "~/components/ui/icons";
 import { enterprise } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
-
-function read<T>(data: Record<string, unknown>, camel: string, snake: string): T | undefined {
-  return (data[camel] ?? data[snake]) as T | undefined;
-}
 
 type Preview = {
   payloadDisplayName?: string;
@@ -75,56 +72,67 @@ export function MobileconfigPreview(props: { content: string }) {
   return (
     <div class="space-y-4">
       <Show when={preview.isPending}>
-        <p class="text-sm text-muted-foreground">Analyzing configuration…</p>
+        <p class="text-[12.5px] text-muted-foreground">Analyzing configuration…</p>
       </Show>
       <Show when={preview.data}>
         <div class="space-y-4">
           <Show when={description() || organization()}>
-            <div class="space-y-1 border-b pb-3 text-sm">
+            <dl class="grid gap-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-[12px] sm:grid-cols-[auto_1fr] sm:gap-x-4 sm:gap-y-1">
               <Show when={description()}>
-                <p>
-                  <span class="font-medium">Description:</span> {description()}
-                </p>
+                <div class="contents">
+                  <dt class="font-medium text-muted-foreground">Description</dt>
+                  <dd class="text-foreground">{description()}</dd>
+                </div>
               </Show>
               <Show when={organization()}>
-                <p>
-                  <span class="font-medium">Organization:</span> {organization()}
-                </p>
+                <div class="contents">
+                  <dt class="font-medium text-muted-foreground">Organization</dt>
+                  <dd class="text-foreground">{organization()}</dd>
+                </div>
               </Show>
-            </div>
+            </dl>
           </Show>
-          <div class="flex items-center justify-between">
-            <h4 class="text-sm font-medium">Payloads</h4>
-            <Badge variant="secondary">{rows().length} payloads</Badge>
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-[12.5px] font-semibold text-foreground">Payloads</h4>
+            <Badge variant="secondary" class="tabular-nums">
+              {rows().length} payloads
+            </Badge>
           </div>
           <Show
             when={rows().length > 0}
-            fallback={<p class="text-sm text-muted-foreground">No payloads found.</p>}
+            fallback={<p class="text-[12.5px] text-muted-foreground">No payloads found.</p>}
           >
-            <For each={rows()}>
-              {(item) => (
-                <div class="space-y-1 border-b py-2 text-sm last:border-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <Show when={item.category}>
-                      <Badge variant="outline">{item.category}</Badge>
+            <div class="divide-y divide-border/60 overflow-hidden rounded-lg border border-border">
+              <For each={rows()}>
+                {(item) => (
+                  <div class="space-y-1 bg-muted/10 px-3 py-2.5 text-[12.5px]">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Show when={item.category}>
+                        <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                          {item.category}
+                        </Badge>
+                      </Show>
+                      <span class="font-medium text-foreground">
+                        {item.displayName ?? item.type ?? "Payload"}
+                      </span>
+                    </div>
+                    <Show when={item.description}>
+                      <p class="text-muted-foreground">{item.description}</p>
                     </Show>
-                    <span class="font-medium">{item.displayName ?? item.type ?? "Payload"}</span>
+                    <p class="truncate font-mono text-[10.5px] text-muted-foreground">
+                      {item.type} {item.identifier ? `· ${item.identifier}` : ""}
+                    </p>
                   </div>
-                  <Show when={item.description}>
-                    <p class="text-muted-foreground">{item.description}</p>
-                  </Show>
-                  <p class="text-xs text-muted-foreground">
-                    {item.type} {item.identifier ? `· ${item.identifier}` : ""}
-                  </p>
-                </div>
-              )}
-            </For>
+                )}
+              </For>
+            </div>
           </Show>
         </div>
       </Show>
       <Show when={preview.isError}>
-        <p class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {errorMessage(preview.error, "Failed to parse configuration.")}
+        <p class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-[12.5px] text-destructive">
+          <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
+          <span>{errorMessage(preview.error, "Failed to parse configuration.")}</span>
         </p>
       </Show>
     </div>

@@ -315,16 +315,10 @@ export default function TenantOverviewPage() {
               </Show>
             }
             actions={
-              <>
-                <Button variant="outline" onClick={() => navigate(`/t/${tenantId()}/settings`)}>
-                  <Settings class="size-4" />
-                  Workspace settings
-                </Button>
-                <Button onClick={() => navigate(`/t/${tenantId()}/settings/enrollment`)}>
-                  <LinkIcon class="size-4" />
-                  Enroll a device
-                </Button>
-              </>
+              <Button variant="outline" onClick={() => navigate(`/t/${tenantId()}/settings`)}>
+                <Settings class="size-4" />
+                Workspace settings
+              </Button>
             }
           />
         </div>

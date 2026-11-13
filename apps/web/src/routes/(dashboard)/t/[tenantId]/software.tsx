@@ -1,10 +1,19 @@
 import { useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
-import { EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
+import {
+  EmptyState,
+  formatDate,
+  LinkButton,
+  Page,
+  PageHeader,
+  relativeTime,
+} from "~/components/mdm/common";
 import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Package, X } from "~/components/ui/icons";
+import { cn } from "~/lib/utils";
 import {
   enterpriseQueries,
   type ApplicationInventoryQuery,
@@ -49,12 +58,39 @@ export default function SoftwareInventoryPage() {
       name: row.name ?? row.bundleId,
     }));
   const total = () => inventory.data?.total ?? 0;
+  const filtered = () => search().trim() !== "" || managed() !== "all" || updatesOnly();
+  const resetFilters = () => {
+    setSearch("");
+    setManaged("all");
+    setUpdatesOnly(false);
+    setLimit(100);
+  };
 
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
+        eyebrow="Inventory"
         title="Software"
         description="Installed application inventory reported by managed devices."
+        meta={
+          <Show when={inventory.data}>
+            <span class="tabular-nums">
+              {total()} bundle{total() === 1 ? "" : "s"} reported
+            </span>
+            <Show when={managed() !== "all"}>
+              <span class="text-muted-foreground/40" aria-hidden="true">
+                ·
+              </span>
+              <span class="capitalize">{managed()} only</span>
+            </Show>
+            <Show when={updatesOnly()}>
+              <span class="text-muted-foreground/40" aria-hidden="true">
+                ·
+              </span>
+              <span class="text-warning-foreground">Updates available</span>
+            </Show>
+          </Show>
+        }
         actions={
           <LinkButton href={`/t/${params.tenantId}/applications`}>Application catalogue</LinkButton>
         }
@@ -73,6 +109,7 @@ export default function SoftwareInventoryPage() {
         total={total()}
         empty={
           <EmptyState
+            icon={(props) => <Package {...props} />}
             title="No software reported"
             description="Devices appear here after they report an InstalledApplicationList result. Open a device and choose Refresh applications."
             action={<LinkButton href={`/t/${params.tenantId}/devices`}>View devices</LinkButton>}
@@ -80,30 +117,55 @@ export default function SoftwareInventoryPage() {
         }
         toolbar={
           <div class="flex flex-wrap items-center gap-2">
-            <div class="flex rounded-lg border bg-white p-0.5">
+            <div
+              class="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+              role="group"
+              aria-label="Managed filter"
+            >
               {(["all", "managed", "unmanaged"] as const).map((value) => (
-                <Button
-                  variant={managed() === value ? "secondary" : "ghost"}
-                  size="sm"
+                <button
+                  type="button"
+                  aria-pressed={managed() === value ? "true" : "false"}
                   onClick={() => {
                     setManaged(value);
                     setLimit(100);
                   }}
+                  class={cn(
+                    "h-6 rounded-md px-2.5 text-[11.5px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    managed() === value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
                   {value === "all" ? "All" : value === "managed" ? "Managed" : "Unmanaged"}
-                </Button>
+                </button>
               ))}
             </div>
-            <Button
-              variant={updatesOnly() ? "secondary" : "outline"}
-              size="sm"
+            <button
+              type="button"
+              aria-pressed={updatesOnly() ? "true" : "false"}
               onClick={() => {
                 setUpdatesOnly((value) => !value);
                 setLimit(100);
               }}
+              class={cn(
+                "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                updatesOnly()
+                  ? "border-warning/35 bg-warning/10 text-warning-foreground"
+                  : "border-border bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+              )}
             >
               Updates available
-            </Button>
+            </button>
+            <Show when={filtered()}>
+              <Button variant="ghost" size="xs" class="gap-1" onClick={resetFilters}>
+                <X class="size-3" />
+                Clear filters
+              </Button>
+            </Show>
+            <span class="ml-auto hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
+              {rows().length} shown
+            </span>
           </div>
         }
         footer={
@@ -125,8 +187,8 @@ export default function SoftwareInventoryPage() {
             header: "Application",
             cell: (row) => (
               <span class="block min-w-0">
-                <span class="block truncate font-medium">{row.name}</span>
-                <span class="block truncate font-mono text-xs text-muted-foreground">
+                <span class="block truncate font-medium text-foreground">{row.name}</span>
+                <span class="block max-w-[34ch] truncate font-mono text-[11px] text-muted-foreground">
                   {row.bundleId}
                 </span>
               </span>
@@ -135,7 +197,11 @@ export default function SoftwareInventoryPage() {
           {
             id: "version",
             header: "Version",
-            cell: (row) => row.version ?? row.shortVersion ?? "—",
+            cell: (row) => (
+              <span class="whitespace-nowrap font-mono text-[11.5px] tabular-nums text-foreground/90">
+                {row.version ?? row.shortVersion ?? "—"}
+              </span>
+            ),
           },
           {
             id: "managed",
@@ -150,25 +216,42 @@ export default function SoftwareInventoryPage() {
             id: "update",
             header: "Update",
             cell: (row) =>
-              row.hasUpdateAvailable ? <Badge variant="destructive">Available</Badge> : "—",
+              row.hasUpdateAvailable ? (
+                <Badge variant="destructive">Available</Badge>
+              ) : (
+                <span class="text-muted-foreground/60">—</span>
+              ),
           },
           {
             id: "size",
             header: "Size",
-            cell: (row) => formatBytes(row.bundleSize),
+            cell: (row) => (
+              <span class="whitespace-nowrap text-[11.5px] tabular-nums text-muted-foreground">
+                {formatBytes(row.bundleSize)}
+              </span>
+            ),
           },
           {
             id: "devices",
             header: "Devices",
-            cell: (row) => row.deviceCount,
+            cell: (row) => <span class="tabular-nums">{row.deviceCount}</span>,
           },
           {
             id: "reported",
             header: "Last reported",
-            cell: (row) => formatDate(row.lastReportedAt),
+            cell: (row) => (
+              <span class="block min-w-0">
+                <span class="block whitespace-nowrap text-[12.5px]">
+                  {relativeTime(row.lastReportedAt)}
+                </span>
+                <span class="block truncate text-[11px] text-muted-foreground">
+                  {formatDate(row.lastReportedAt)}
+                </span>
+              </span>
+            ),
           },
         ]}
       />
-    </div>
+    </Page>
   );
 }

@@ -1,18 +1,19 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import {
   DeviceHealthBadge,
   DeviceStatusBadge,
   ErrorText,
   Field,
   formatDate,
-  PageHeader,
+  Page,
+  Panel,
   PlatformBadge,
   QueryError,
 } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
   Dialog,
@@ -22,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { ArrowLeft, Laptop, MonitorSmartphone, Smartphone } from "~/components/ui/icons";
 import {
   enterprise,
   enterpriseKeys,
@@ -30,6 +32,53 @@ import {
   type DeviceRow,
   type EffectivePolicyResponse,
 } from "~/lib/enterprise";
+
+type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
+
+const chipTones: Record<ChipTone, string> = {
+  success: "border-success/25 bg-success/10 text-success-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+  brand: "border-brand/25 bg-brand/10 text-brand",
+  muted: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+};
+
+function Chip(props: { tone?: ChipTone; class?: string; children: JSX.Element }) {
+  return (
+    <span
+      class={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+        chipTones[props.tone ?? "muted"]
+      } ${props.class ?? ""}`}
+    >
+      {props.children}
+    </span>
+  );
+}
+
+/** A stacked label/value row used across the detail panels. */
+function MetaRow(props: { label: string; children: JSX.Element }) {
+  return (
+    <div class="flex items-start justify-between gap-4 border-b border-white/[0.05] py-2 last:border-0">
+      <dt class="shrink-0 text-[12px] text-muted-foreground">{props.label}</dt>
+      <dd class="min-w-0 break-words text-right text-[12.5px] text-foreground">{props.children}</dd>
+    </div>
+  );
+}
+
+function DeviceGlyph(props: { proto: string; class?: string }) {
+  return (
+    <Show
+      when={props.proto === "apple"}
+      fallback={
+        <Show when={props.proto === "win"} fallback={<Smartphone class={props.class} />}>
+          <MonitorSmartphone class={props.class} />
+        </Show>
+      }
+    >
+      <Laptop class={props.class} />
+    </Show>
+  );
+}
 
 export default function DeviceDetailPage() {
   const params = useParams();
@@ -40,6 +89,16 @@ export default function DeviceDetailPage() {
     queryFn: () => enterprise.get(params.tenantId, "device", params.deviceId),
   }));
   const row = () => device.data as DeviceRow | undefined;
+  // The ABM lookup is keyed by serial, which only exists once the device query
+  // resolves. Mirroring it into a signal keeps the query options free of
+  // pending async reads, which throw when evaluated outside a tracking scope.
+  const [abmSerial, setAbmSerial] = createSignal<string | undefined>(undefined);
+  createEffect(
+    () => (row()?.proto === "apple" ? (row()?.serial ?? undefined) : undefined),
+    (serial) => {
+      setAbmSerial(serial);
+    },
+  );
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
@@ -122,12 +181,7 @@ export default function DeviceDetailPage() {
   const applications = useQuery(() =>
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
-  const abmDevice = useQuery(() =>
-    enterpriseQueries.abmDevice(
-      params.tenantId,
-      row()?.proto === "apple" ? (row()?.serial ?? undefined) : undefined,
-    ),
-  );
+  const abmDevice = useQuery(() => enterpriseQueries.abmDevice(params.tenantId, abmSerial()));
   const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
   const assignAbm = useMutation(() => ({
     mutationFn: () => enterprise.assignAbmDevice(params.tenantId, row()!.serial!),
@@ -266,15 +320,13 @@ export default function DeviceDetailPage() {
     if (Number.isNaN(expires.getTime())) return null;
     return Math.ceil((expires.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
   };
-  const certificateExpiryClass = (notAfter: string, revoked: boolean) => {
-    if (revoked) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
+  const certificateTone = (notAfter: string, revoked: boolean): ChipTone => {
+    if (revoked) return "danger";
     const days = certificateDays(notAfter);
-    if (days === null) return "rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5";
-    if (days <= 0) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
-    if (days <= 7) return "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700";
-    if (days <= 30)
-      return "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800";
-    return "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-green-700";
+    if (days === null) return "muted";
+    if (days <= 7) return "danger";
+    if (days <= 30) return "warning";
+    return "success";
   };
   const certificateDaysLabel = (notAfter: string) => {
     const expires = new Date(notAfter);
@@ -308,30 +360,25 @@ export default function DeviceDetailPage() {
     }
     return format.format(seconds, "second");
   };
-  const activityBadgeClass = (kind: string) => {
+  const activityTone = (kind: string): ChipTone => {
     switch (kind) {
-      case "audit":
-        return "border-violet-200 bg-violet-50 text-violet-700";
       case "command":
-        return "border-sky-200 bg-sky-50 text-sky-700";
+        return "brand";
       case "declaration":
-        return "border-amber-200 bg-amber-50 text-amber-800";
+        return "warning";
       case "certificate":
-        return "border-emerald-200 bg-emerald-50 text-emerald-700";
+        return "success";
       default:
-        return "border-stone-200 bg-stone-50 text-stone-600";
+        return "muted";
     }
   };
-  const pushBadge = () => {
+  const pushBadge = (): { label: string; tone: ChipTone } => {
     const push = health.data?.push;
-    if (!push) return { label: "Unknown", class: "border-stone-200 bg-stone-50 text-stone-600" };
-    if (push.invalidToken)
-      return { label: "Re-enroll required", class: "border-red-200 bg-red-50 text-red-700" };
-    if (push.consecutiveFailures > 0)
-      return { label: "Failing", class: "border-amber-200 bg-amber-50 text-amber-800" };
-    if (push.lastSuccessAt)
-      return { label: "Delivering", class: "border-green-200 bg-green-50 text-green-700" };
-    return { label: "Not attempted", class: "border-stone-200 bg-stone-50 text-stone-600" };
+    if (!push) return { label: "Unknown", tone: "muted" };
+    if (push.invalidToken) return { label: "Re-enroll required", tone: "danger" };
+    if (push.consecutiveFailures > 0) return { label: "Failing", tone: "warning" };
+    if (push.lastSuccessAt) return { label: "Delivering", tone: "success" };
+    return { label: "Not attempted", tone: "muted" };
   };
   const declarationIssues = () =>
     (health.data?.declarations ?? []).filter((declaration) => {
@@ -385,956 +432,1034 @@ export default function DeviceDetailPage() {
     else if (action === "revoke") revokeIdentity.mutate();
     else unenroll.mutate();
   };
+  const osLabel = () =>
+    [row()?.osEdition, row()?.osVersion].filter(Boolean).join(" ") || "Not reported";
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
-      <PageHeader
-        title={row()?.name ?? "Device"}
-        description="Device inventory and management actions."
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => sync.mutate()}
-              disabled={sync.isPending || row()?.status !== "enrolled"}
-            >
-              Sync
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmAction("unenroll")}
-              disabled={unenroll.isPending || row()?.status !== "enrolled"}
-            >
-              Unenroll
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setConfirmAction("delete")}
-              disabled={remove.isPending || row()?.status === "enrolled"}
-            >
-              Delete
-            </Button>
-          </>
-        }
-      />
+    <Page wide>
       <Show
         when={row()}
         fallback={
           <Show
             when={device.isError}
             fallback={
-              <Card>
-                <CardContent>Loading device...</CardContent>
-              </Card>
+              <Panel>
+                <div class="space-y-3">
+                  <div class="h-6 w-56 animate-pulse rounded-md bg-white/[0.05]" />
+                  <div class="h-4 w-80 max-w-full animate-pulse rounded-md bg-white/[0.035]" />
+                  <div class="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div class="h-24 animate-pulse rounded-lg bg-white/[0.03]" />
+                    <div class="h-24 animate-pulse rounded-lg bg-white/[0.03]" />
+                  </div>
+                </div>
+              </Panel>
             }
           >
             <QueryError error={device.error} onRetry={() => void device.refetch()} />
           </Show>
         }
       >
-        <Card>
-          <CardHeader>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Device health</CardTitle>
-              <DeviceHealthBadge level={health.data?.health.level ?? "unknown"} />
-            </div>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <Show
-              when={health.data}
-              fallback={
-                <Show
-                  when={health.isError}
-                  fallback={<p class="text-sm text-muted-foreground">Loading health…</p>}
-                >
-                  <QueryError error={health.error} onRetry={() => void health.refetch()} />
-                </Show>
-              }
-            >
-              <div class="grid gap-4 lg:grid-cols-2">
-                <div class="space-y-2">
-                  <p class="text-sm text-muted-foreground">
-                    Last seen {formatDate(health.data!.health.lastSeenAt)}
-                    <Show when={health.data!.health.stale}>
-                      <span class="ml-2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
-                        Stale
+        <>
+          <section class="relative overflow-hidden rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)]">
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(60%_100%_at_20%_0%,rgba(91,100,255,0.1),transparent_75%)]" />
+            <div class="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex min-w-0 items-start gap-3.5">
+                <span class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-brand">
+                  <DeviceGlyph proto={row()!.proto} class="size-5" />
+                </span>
+                <div class="min-w-0">
+                  <a
+                    href={`/t/${params.tenantId}/devices`}
+                    class="mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ArrowLeft class="size-3" />
+                    All devices
+                  </a>
+                  <h1 class="truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[24px]">
+                    {row()!.name}
+                  </h1>
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <DeviceStatusBadge status={row()!.status} />
+                    <PlatformBadge proto={row()!.proto} />
+                    <DeviceHealthBadge level={health.data?.health.level ?? "unknown"} />
+                  </div>
+                  <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
+                    <span class="inline-flex min-w-0 items-baseline gap-1.5">
+                      Serial
+                      <span class="truncate font-mono text-[11px] text-foreground/90">
+                        {row()!.serial ?? "Unknown"}
                       </span>
+                    </span>
+                    <span class="inline-flex min-w-0 items-baseline gap-1.5">
+                      Model
+                      <span class="truncate text-foreground/90">{row()!.model ?? "Unknown"}</span>
+                    </span>
+                    <span class="inline-flex min-w-0 items-baseline gap-1.5">
+                      Asset tag
+                      <span class="truncate text-foreground/90">{row()!.assetTag ?? "—"}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="h-8"
+                  onClick={() => sync.mutate()}
+                  disabled={sync.isPending || row()!.status !== "enrolled"}
+                >
+                  {sync.isPending ? "Syncing…" : "Sync"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="h-8"
+                  onClick={() => setConfirmAction("unenroll")}
+                  disabled={unenroll.isPending || row()!.status !== "enrolled"}
+                >
+                  Unenroll
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  class="h-8"
+                  onClick={() => setConfirmAction("delete")}
+                  disabled={remove.isPending || row()!.status === "enrolled"}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+            <div class="relative grid grid-cols-2 gap-px border-t border-white/[0.06] bg-white/[0.06] sm:grid-cols-4">
+              <div class="min-w-0 bg-card px-4 py-3">
+                <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Enrolled
+                </p>
+                <p class="mt-1 truncate text-[12.5px] font-medium text-foreground">
+                  {relativeTime(row()!.enrolledAt)}
+                </p>
+                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {formatDate(row()!.enrolledAt)}
+                </p>
+              </div>
+              <div class="min-w-0 bg-card px-4 py-3">
+                <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Last seen
+                </p>
+                <p class="mt-1 truncate text-[12.5px] font-medium text-foreground">
+                  {relativeTime(row()!.lastSeenAt)}
+                </p>
+                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {formatDate(row()!.lastSeenAt)}
+                </p>
+              </div>
+              <div class="min-w-0 bg-card px-4 py-3">
+                <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Operating system
+                </p>
+                <p class="mt-1 truncate text-[12.5px] font-medium text-foreground">{osLabel()}</p>
+                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {row()!.osBuild ? `Build ${row()!.osBuild}` : "No build reported"}
+                </p>
+              </div>
+              <div class="min-w-0 bg-card px-4 py-3">
+                <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Asset tag
+                </p>
+                <p class="mt-1 truncate text-[12.5px] font-medium text-foreground">
+                  {row()!.assetTag ?? "Unassigned"}
+                </p>
+                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {row()!.modelNumber ? `Model ${row()!.modelNumber}` : "No model number"}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+            <div class="min-w-0 space-y-5">
+              <Panel
+                title="Health"
+                description="Compliance rollup from enrollment, check-in freshness and declaration state."
+                actions={<DeviceHealthBadge level={health.data?.health.level ?? "unknown"} />}
+              >
+                <Show
+                  when={health.data}
+                  fallback={
+                    <Show
+                      when={health.isError}
+                      fallback={<p class="text-[12.5px] text-muted-foreground">Loading health…</p>}
+                    >
+                      <QueryError error={health.error} onRetry={() => void health.refetch()} />
                     </Show>
-                  </p>
+                  }
+                >
+                  <div class="space-y-4">
+                    <div class="grid gap-4 sm:grid-cols-2">
+                      <div class="space-y-2">
+                        <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+                          Last seen {formatDate(health.data!.health.lastSeenAt)}
+                          <Show when={health.data!.health.stale}>
+                            <Chip tone="warning">Stale</Chip>
+                          </Show>
+                        </p>
+                        <Show
+                          when={health.data!.health.reasons.length > 0}
+                          fallback={
+                            <p class="text-[12.5px] text-success-foreground">
+                              No compliance or inventory issues detected.
+                            </p>
+                          }
+                        >
+                          <ul class="space-y-1.5">
+                            <For each={health.data!.health.reasons}>
+                              {(reason) => (
+                                <li class="flex items-start gap-2 text-[12.5px]">
+                                  <span
+                                    class={
+                                      reason.severity === "critical"
+                                        ? "mt-1.5 size-2 shrink-0 rounded-full bg-destructive"
+                                        : reason.severity === "warning"
+                                          ? "mt-1.5 size-2 shrink-0 rounded-full bg-warning"
+                                          : "mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/50"
+                                    }
+                                    aria-hidden="true"
+                                  />
+                                  <span
+                                    class={
+                                      reason.severity === "critical"
+                                        ? "text-destructive"
+                                        : "text-foreground"
+                                    }
+                                  >
+                                    {reason.label}
+                                  </span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </Show>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          Failing declarations
+                          <Show when={(health.data?.declarations.length ?? 0) > 0}>
+                            <span class="ml-2 normal-case tracking-normal text-muted-foreground/70">
+                              {declarationIssues().length} of {health.data?.declarations.length}
+                            </span>
+                          </Show>
+                        </p>
+                        <Show
+                          when={declarationIssues().length > 0}
+                          fallback={
+                            <p class="text-[12.5px] text-muted-foreground">
+                              No failing declarations.
+                            </p>
+                          }
+                        >
+                          <For each={declarationIssues()}>
+                            {(declaration) => (
+                              <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 text-[11.5px]">
+                                <div class="flex items-center justify-between gap-2">
+                                  <strong class="min-w-0 truncate font-medium">
+                                    {declaration.identifier}
+                                  </strong>
+                                  <span class="shrink-0 text-muted-foreground">
+                                    {declaration.valid} ·{" "}
+                                    {declaration.active ? "active" : "inactive"}
+                                  </span>
+                                </div>
+                                <Show when={declarationReasons(declaration.reasons).length > 0}>
+                                  <ul class="mt-1 space-y-0.5 text-destructive">
+                                    <For each={declarationReasons(declaration.reasons)}>
+                                      {(reason) => <li>{reason}</li>}
+                                    </For>
+                                  </ul>
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
+                      </div>
+                    </div>
+
+                    <div class="space-y-2 border-t border-white/[0.06] pt-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          SCEP identity certificates
+                        </p>
+                        <Show when={certificates().length > 0}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasActiveCertificate() || revokeIdentity.isPending}
+                            onClick={() => setConfirmAction("revoke")}
+                          >
+                            Revoke identity
+                          </Button>
+                        </Show>
+                      </div>
+                      <Show
+                        when={certificates().length > 0}
+                        fallback={
+                          <p class="text-[12.5px] text-muted-foreground">
+                            No device-scoped SCEP identity is recorded. Apple SCEP identities are
+                            tenant-scoped and cannot be revoked per device.
+                          </p>
+                        }
+                      >
+                        <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                          <For each={certificates()}>
+                            {(certificate) => (
+                              <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
+                                <span class="min-w-0 break-all font-mono">
+                                  {certificate.serial}
+                                </span>
+                                <span class="flex flex-wrap items-center gap-2">
+                                  <span class="text-muted-foreground">
+                                    expires {formatDate(certificate.notAfter)}
+                                  </span>
+                                  <Chip
+                                    tone={certificateTone(
+                                      certificate.notAfter,
+                                      Boolean(certificate.revokedAt),
+                                    )}
+                                  >
+                                    {certificate.revokedAt
+                                      ? "revoked"
+                                      : certificateDaysLabel(certificate.notAfter)}
+                                  </Chip>
+                                </span>
+                                <Chip tone={certificate.revokedAt ? "danger" : "success"}>
+                                  {certificate.revokedAt
+                                    ? `revoked ${formatDate(certificate.revokedAt)}`
+                                    : "active"}
+                                </Chip>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    </div>
+
+                    <Show when={row()!.proto === "apple" && health.data?.push}>
+                      <div class="space-y-2 border-t border-white/[0.06] pt-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                          <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            APNs push delivery
+                          </p>
+                          <Chip tone={pushBadge().tone}>{pushBadge().label}</Chip>
+                        </div>
+                        <dl class="grid gap-x-6 sm:grid-cols-2">
+                          <MetaRow label="Last attempt">
+                            {relativeTime(health.data!.push.lastAttemptAt)}
+                          </MetaRow>
+                          <MetaRow label="Last success">
+                            {relativeTime(health.data!.push.lastSuccessAt)}
+                          </MetaRow>
+                          <MetaRow label="Consecutive failures">
+                            {health.data!.push.consecutiveFailures}
+                          </MetaRow>
+                          <MetaRow label="Push credentials">
+                            {health.data!.push.configured ? "Present" : "Missing"}
+                          </MetaRow>
+                        </dl>
+                        <Show when={health.data!.push.lastError}>
+                          <p class="rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2 text-[11.5px] text-destructive">
+                            {health.data!.push.lastError}
+                          </p>
+                        </Show>
+                        <Show when={health.data!.push.invalidToken}>
+                          <p class="text-[11.5px] text-destructive">
+                            Apple rejected this device token. The device must re-enroll before it
+                            can receive pushes again.
+                          </p>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+              </Panel>
+
+              <Panel
+                title="Security & inventory"
+                description="Encryption, escrow state and the last inventory snapshot."
+                actions={
+                  <Show when={row()!.proto === "apple" && row()!.status === "enrolled"}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate({ action: "collect-security-info" })}
+                    >
+                      Collect security info
+                    </Button>
+                  </Show>
+                }
+              >
+                <div class="space-y-4">
+                  <dl class="grid gap-x-6 sm:grid-cols-2">
+                    <MetaRow label="FileVault">
+                      <Chip
+                        tone={
+                          row()!.fileVaultStatus === "enabled"
+                            ? "success"
+                            : row()!.fileVaultStatus === "disabled"
+                              ? "warning"
+                              : "muted"
+                        }
+                      >
+                        {fileVaultLabel()}
+                      </Chip>
+                    </MetaRow>
+                    <MetaRow label="FileVault recovery key">
+                      <span class="flex flex-wrap items-center justify-end gap-2">
+                        <Chip tone={row()!.recoveryKeyEscrowed ? "success" : "warning"}>
+                          {row()!.recoveryKeyEscrowed ? "Escrowed" : "Not escrowed"}
+                        </Chip>
+                        <Show when={row()!.recoveryKeyEscrowed}>
+                          <Button variant="outline" size="xs" onClick={openRecoveryDialog}>
+                            Reveal
+                          </Button>
+                        </Show>
+                      </span>
+                    </MetaRow>
+                    <MetaRow label="Bootstrap token">
+                      <Chip tone={row()!.bootstrapTokenEscrowed ? "success" : "warning"}>
+                        {row()!.bootstrapTokenEscrowed ? "Escrowed" : "Not escrowed"}
+                      </Chip>
+                    </MetaRow>
+                    <MetaRow label="Recovery key updated">
+                      {formatDate(row()!.recoveryKeyUpdatedAt)}
+                    </MetaRow>
+                    <MetaRow label="Battery health">
+                      {row()!.batteryHealth ?? "Not reported"}
+                    </MetaRow>
+                    <MetaRow label="Model number">{row()!.modelNumber ?? "Not reported"}</MetaRow>
+                    <MetaRow label="Inventory updated">
+                      {formatDate(row()!.inventoryUpdatedAt)}
+                    </MetaRow>
+                  </dl>
+                  <Show when={row()!.proto === "apple" && !row()!.recoveryKeyEscrowed}>
+                    <p class="rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                      <strong class="font-medium">No FileVault recovery key is escrowed.</strong> If
+                      FileVault is enabled and the Mac is lost, the disk cannot be unlocked with a
+                      Mattrax-held key. Collect security info after FileVault has been enabled on
+                      the device.
+                    </p>
+                  </Show>
+                  <Show when={row()!.proto === "apple" && !row()!.bootstrapTokenEscrowed}>
+                    <p class="rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                      <strong class="font-medium">No bootstrap token is escrowed.</strong>{" "}
+                      Secure-token operations such as granting a user a Secure Token or authorising
+                      some software updates may prompt for an administrator.
+                    </p>
+                  </Show>
+                  <div>
+                    <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                      Client capabilities
+                    </p>
+                    <Show
+                      when={capabilityLabels().length > 0}
+                      fallback={
+                        <p class="mt-1 text-[12.5px] text-muted-foreground">
+                          No capabilities have been reported yet.
+                        </p>
+                      }
+                    >
+                      <div class="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-auto">
+                        <For each={capabilityLabels()}>
+                          {(capability) => (
+                            <span class="rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted-foreground">
+                              {capability}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+                  <Show when={!row()!.inventoryUpdatedAt}>
+                    <p class="text-[11px] text-muted-foreground">
+                      Security and inventory values are filled in the next time the device reports
+                      its DDM status items.
+                    </p>
+                  </Show>
+                  <ErrorText error={command.error} />
+                </div>
+              </Panel>
+
+              <Panel
+                title="Effective policy"
+                description="Policy configurations that resolve for this device right now."
+                actions={
+                  <span class="text-[11px] tabular-nums text-muted-foreground">
+                    {resolved()?.configurations.length ?? 0} resolved kinds
+                  </span>
+                }
+              >
+                <Show
+                  when={effectivePolicy.data}
+                  fallback={
+                    <Show
+                      when={effectivePolicy.isError}
+                      fallback={
+                        <p class="text-[12.5px] text-muted-foreground">Loading effective policy…</p>
+                      }
+                    >
+                      <QueryError
+                        error={effectivePolicy.error}
+                        onRetry={() => void effectivePolicy.refetch()}
+                      />
+                    </Show>
+                  }
+                >
+                  <div class="space-y-4">
+                    <Show
+                      when={(resolved()?.configurations.length ?? 0) > 0}
+                      fallback={
+                        <p class="text-[12.5px] text-muted-foreground">
+                          No policy configurations resolve for this device. Assign an included
+                          policy directly or through a group.
+                        </p>
+                      }
+                    >
+                      <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                        <For each={resolved()?.configurations ?? []}>
+                          {(configuration) => (
+                            <li class="space-y-1 p-3 text-[12.5px]">
+                              <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="font-mono text-[11px] text-muted-foreground">
+                                  {configuration.kind}
+                                </span>
+                                <span class="flex flex-wrap items-center gap-1.5">
+                                  <Chip tone="muted">
+                                    {configuration.scope === "direct"
+                                      ? "Direct include"
+                                      : "Group include"}
+                                  </Chip>
+                                  <Chip tone="muted">priority {configuration.priority}</Chip>
+                                </span>
+                              </div>
+                              <p class="min-w-0">
+                                <a
+                                  class="font-medium text-foreground hover:underline"
+                                  href={`/t/${params.tenantId}/policies/${configuration.policyId}`}
+                                >
+                                  {configuration.policyName}
+                                </a>
+                                <Show when={configuration.groupNames.length > 0}>
+                                  <span class="text-muted-foreground">
+                                    {" "}
+                                    via {configuration.groupNames.join(", ")}
+                                  </span>
+                                </Show>
+                              </p>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                    <Show when={(resolved()?.overridden.length ?? 0) > 0}>
+                      <div>
+                        <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          Overridden policies
+                        </p>
+                        <ul class="mt-2 space-y-1">
+                          <For each={resolved()?.overridden ?? []}>
+                            {(override) => (
+                              <li class="rounded-lg border border-warning/25 bg-warning/[0.07] p-2 text-[11.5px] text-warning-foreground">
+                                <span class="font-medium">{override.policyName}</span> (
+                                {override.kind}) lost to {override.reason.replaceAll("-", " ")}.
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </div>
+                    </Show>
+                    <Show when={(resolved()?.exclusions.length ?? 0) > 0}>
+                      <div>
+                        <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          Exclusions
+                        </p>
+                        <ul class="mt-2 space-y-1">
+                          <For each={resolved()?.exclusions ?? []}>
+                            {(exclusion) => (
+                              <li
+                                class={
+                                  exclusion.effective
+                                    ? "rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2 text-[11.5px] text-destructive"
+                                    : "rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11.5px] text-muted-foreground"
+                                }
+                              >
+                                <span class="font-medium">{exclusion.policyName}</span>{" "}
+                                {exclusion.scope === "direct"
+                                  ? "is excluded directly"
+                                  : `is excluded by ${exclusion.groupName ?? "a group"}`}
+                                .{" "}
+                                {exclusion.effective
+                                  ? "It removed a group include."
+                                  : "No include to remove."}
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+              </Panel>
+
+              <Panel
+                flush
+                title="Applications"
+                description={
+                  appNames().length > 0
+                    ? `${appNames().length} reported · updated ${formatDate(row()!.applicationsUpdatedAt)}`
+                    : "Installed applications reported by the device."
+                }
+                actions={
+                  <Show when={row()!.proto === "apple" && row()!.status === "enrolled"}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate({ action: "refresh-applications" })}
+                    >
+                      Refresh applications
+                    </Button>
+                  </Show>
+                }
+              >
+                <Show
+                  when={applications.data}
+                  fallback={
+                    <div class="p-4 sm:p-5">
+                      <Show
+                        when={applications.isError}
+                        fallback={
+                          <p class="text-[12.5px] text-muted-foreground">Loading applications…</p>
+                        }
+                      >
+                        <QueryError
+                          error={applications.error}
+                          onRetry={() => void applications.refetch()}
+                        />
+                      </Show>
+                    </div>
+                  }
+                >
                   <Show
-                    when={health.data!.health.reasons.length > 0}
+                    when={appNames().length > 0}
                     fallback={
-                      <p class="text-sm text-green-700">
-                        No compliance or inventory issues detected.
+                      <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                        No installed applications have been reported. Run refresh applications to
+                        collect the inventory from this device.
                       </p>
                     }
                   >
-                    <ul class="space-y-1.5">
-                      <For each={health.data!.health.reasons}>
-                        {(reason) => (
-                          <li class="flex items-start gap-2 text-sm">
-                            <span
-                              class={
-                                reason.severity === "critical"
-                                  ? "mt-1.5 size-2 shrink-0 rounded-full bg-red-500"
-                                  : reason.severity === "warning"
-                                    ? "mt-1.5 size-2 shrink-0 rounded-full bg-amber-500"
-                                    : "mt-1.5 size-2 shrink-0 rounded-full bg-stone-400"
-                              }
-                              aria-hidden="true"
-                            />
-                            <span class={reason.severity === "critical" ? "text-red-700" : ""}>
-                              {reason.label}
+                    <ul class="max-h-96 divide-y divide-white/[0.05] overflow-auto">
+                      <For each={appNames()}>
+                        {(application) => (
+                          <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[12.5px] sm:px-5">
+                            <span class="min-w-0 flex-1">
+                              <span class="block truncate font-medium text-foreground">
+                                {application.name ?? application.bundleId}
+                              </span>
+                              <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                {application.bundleId}
+                              </span>
+                            </span>
+                            <span class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
+                              <span class="tabular-nums text-muted-foreground">
+                                {application.version ?? application.shortVersion ?? "—"}
+                              </span>
+                              <span class="tabular-nums text-muted-foreground">
+                                {formatBytes(application.bundleSize)}
+                              </span>
+                              <Show when={application.isManaged}>
+                                <Chip tone="brand">Managed</Chip>
+                              </Show>
+                              <Show when={application.hasUpdateAvailable}>
+                                <Chip tone="warning">Update available</Chip>
+                              </Show>
                             </span>
                           </li>
                         )}
                       </For>
                     </ul>
                   </Show>
-                </div>
-                <div class="space-y-2">
-                  <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Failing declarations
-                    <Show when={(health.data?.declarations.length ?? 0) > 0}>
-                      <span class="ml-2 normal-case tracking-normal text-stone-500">
-                        {declarationIssues().length} of {health.data?.declarations.length}
-                      </span>
-                    </Show>
-                  </p>
-                  <Show
-                    when={declarationIssues().length > 0}
-                    fallback={<p class="text-sm text-muted-foreground">No failing declarations.</p>}
-                  >
-                    <For each={declarationIssues()}>
-                      {(declaration) => (
-                        <div class="rounded-lg border p-2 text-xs">
-                          <div class="flex items-center justify-between gap-2">
-                            <strong class="min-w-0 truncate">{declaration.identifier}</strong>
-                            <span class="shrink-0 text-muted-foreground">
-                              {declaration.valid} · {declaration.active ? "active" : "inactive"}
-                            </span>
-                          </div>
-                          <Show when={declarationReasons(declaration.reasons).length > 0}>
-                            <ul class="mt-1 space-y-1 text-red-700">
-                              <For each={declarationReasons(declaration.reasons)}>
-                                {(reason) => <li>{reason}</li>}
-                              </For>
-                            </ul>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                </div>
-              </div>
-              <div class="space-y-2 border-t pt-3">
-                <div class="flex items-center justify-between gap-2">
-                  <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    SCEP identity certificates
-                  </p>
-                  <Show when={certificates().length > 0}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasActiveCertificate() || revokeIdentity.isPending}
-                      onClick={() => setConfirmAction("revoke")}
+                </Show>
+              </Panel>
+
+              <Panel
+                title="Device information"
+                description="Management identity and the inventory reported by the client."
+              >
+                <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                  <For each={fields()}>
+                    {([key, value]) => (
+                      <div class="min-w-0 border-b border-white/[0.05] pb-2">
+                        <dt class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          {key}
+                        </dt>
+                        <dd class="mt-0.5 break-words text-[12.5px] text-foreground">
+                          {value || "Unknown"}
+                        </dd>
+                      </div>
+                    )}
+                  </For>
+                </dl>
+              </Panel>
+
+              <Show when={row()!.proto === "apple" && row()!.serial}>
+                <Panel
+                  title="Apple Business Manager"
+                  description="Automated Device Enrollment state for this serial."
+                >
+                  <div class="space-y-3 text-[12.5px]">
+                    <Show
+                      when={abmDevice.data}
+                      fallback={
+                        <p class="text-muted-foreground">
+                          This serial is not in the tenant's Apple Business Manager inventory.
+                          Upload an ABM credential and sync devices in Settings → Management.
+                        </p>
+                      }
                     >
-                      Revoke identity
-                    </Button>
-                  </Show>
-                </div>
-                <Show
-                  when={certificates().length > 0}
-                  fallback={
-                    <p class="text-sm text-muted-foreground">
-                      No device-scoped SCEP identity is recorded. Apple SCEP identities are
-                      tenant-scoped and cannot be revoked per device.
+                      {(abm) => (
+                        <>
+                          <div class="flex flex-wrap items-center gap-2">
+                            <Chip tone="muted" class="capitalize">
+                              {abm().enrollmentState.toLowerCase()}
+                            </Chip>
+                            <Chip tone="muted" class="capitalize">
+                              profile {abm().profileStatus}
+                            </Chip>
+                            <Show when={abm().deviceFamily}>
+                              <span class="text-[11px] text-muted-foreground">
+                                {abm().deviceFamily}
+                              </span>
+                            </Show>
+                            <Show when={abm().os}>
+                              <span class="text-[11px] text-muted-foreground">{abm().os}</span>
+                            </Show>
+                          </div>
+                          <Show when={abm().assignedProfileUuid}>
+                            <p class="break-all font-mono text-[11px] text-muted-foreground">
+                              ADE profile {abm().assignedProfileUuid}
+                            </p>
+                          </Show>
+                          <Show when={abm().assignedServerId}>
+                            <p class="break-all font-mono text-[11px] text-muted-foreground">
+                              MDM server {abm().assignedServerId}
+                            </p>
+                          </Show>
+                          <p class="text-[11px] text-muted-foreground">
+                            Last ABM update {formatDate(abm().lastSeenAt)}
+                          </p>
+                          <div class="flex flex-wrap gap-2">
+                            <Show when={abm().enrollmentState !== "ASSIGNED"}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={assignAbm.isPending}
+                                onClick={() => assignAbm.mutate()}
+                              >
+                                {assignAbm.isPending ? "Assigning…" : "Assign to Mattrax"}
+                              </Button>
+                            </Show>
+                            <Show when={abm().enrollmentState === "ASSIGNED"}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={adeProfile.isPending}
+                                onClick={() => adeProfile.mutate()}
+                              >
+                                {adeProfile.isPending ? "Creating link…" : "Get ADE profile link"}
+                              </Button>
+                            </Show>
+                          </div>
+                          <Show when={adeUrl()}>
+                            {(url) => (
+                              <p class="break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 font-mono text-[11px] text-muted-foreground">
+                                {url()}
+                              </p>
+                            )}
+                          </Show>
+                          <ErrorText error={assignAbm.error ?? adeProfile.error} />
+                        </>
+                      )}
+                    </Show>
+                  </div>
+                </Panel>
+              </Show>
+
+              <Show when={row()!.autopilot}>
+                {(autopilot) => (
+                  <Panel
+                    title="Windows Autopilot"
+                    description="Profile and enrollment state read from Microsoft Graph."
+                  >
+                    <dl class="grid gap-x-6 sm:grid-cols-2">
+                      <MetaRow label="Autopilot serial">
+                        <span class="font-mono text-[11px]">{autopilot().serial}</span>
+                      </MetaRow>
+                      <MetaRow label="Group tag">{autopilot().groupTag ?? "None"}</MetaRow>
+                      <MetaRow label="Profile state">{autopilot().profileStatus}</MetaRow>
+                      <MetaRow label="Enrollment state">{autopilot().enrollmentState}</MetaRow>
+                      <MetaRow label="Entra device id">
+                        <span class="break-all font-mono text-[11px]">
+                          {autopilot().azureAdDeviceId ?? "Not joined yet"}
+                        </span>
+                      </MetaRow>
+                      <MetaRow label="Last Autopilot sync">
+                        {autopilot().lastSyncedAt ? formatDate(autopilot().lastSyncedAt!) : "Never"}
+                      </MetaRow>
+                    </dl>
+                    <p class="mt-3 text-[11px] text-muted-foreground">
+                      Autopilot profile and enrollment state are read from Microsoft Graph. Manage
+                      imports and profiles in Settings → Management.
                     </p>
+                  </Panel>
+                )}
+              </Show>
+            </div>
+
+            <div class="min-w-0 space-y-5">
+              <Show
+                when={
+                  (row()!.proto === "apple" ||
+                    row()!.proto === "win" ||
+                    row()!.proto === "android") &&
+                  row()!.status === "enrolled"
+                }
+              >
+                <Panel
+                  title="Remote actions"
+                  description={
+                    row()!.proto === "android"
+                      ? "Commands are sent to the device through Android Management."
+                      : "Commands are queued and delivered on the device's next check-in."
                   }
                 >
-                  <ul class="divide-y rounded-lg border">
-                    <For each={certificates()}>
-                      {(certificate) => (
-                        <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-xs">
-                          <span class="font-mono">{certificate.serial}</span>
-                          <span class="flex items-center gap-2">
-                            <span class="text-muted-foreground">
-                              expires {formatDate(certificate.notAfter)}
-                            </span>
-                            <span
-                              class={certificateExpiryClass(
-                                certificate.notAfter,
-                                Boolean(certificate.revokedAt),
-                              )}
-                            >
-                              {certificate.revokedAt
-                                ? "revoked"
-                                : certificateDaysLabel(certificate.notAfter)}
-                            </span>
-                          </span>
-                          <span
-                            class={
-                              certificate.revokedAt
-                                ? "rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700"
-                                : "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-green-700"
+                  <div class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                      <Show when={row()!.proto === "apple" || row()!.proto === "android"}>
+                        <Button
+                          variant="outline"
+                          disabled={command.isPending}
+                          onClick={() => command.mutate({ action: "lock" })}
+                        >
+                          Lock
+                        </Button>
+                      </Show>
+                      <Button
+                        variant="outline"
+                        disabled={command.isPending}
+                        onClick={() => command.mutate({ action: "restart" })}
+                      >
+                        Restart
+                      </Button>
+                      <Show when={row()!.proto === "apple"}>
+                        <Button
+                          variant="outline"
+                          disabled={command.isPending}
+                          onClick={() => command.mutate({ action: "shutdown" })}
+                        >
+                          Shut down
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={command.isPending}
+                          onClick={() => command.mutate({ action: "clear-passcode" })}
+                        >
+                          Clear passcode
+                        </Button>
+                      </Show>
+                      <Button
+                        variant="destructive"
+                        class="col-span-2"
+                        disabled={command.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Erase this device? This cannot be undone and will wipe all data.",
+                            )
+                          )
+                            command.mutate({ action: "wipe" });
+                        }}
+                      >
+                        Erase device
+                      </Button>
+                    </div>
+                    <Show when={row()!.proto === "apple"}>
+                      <Field label="Install app from manifest URL">
+                        <div class="flex gap-2">
+                          <Input
+                            value={manifestUrl()}
+                            placeholder="https://example.com/manifest.plist"
+                            onInput={(event) => setManifestUrl(event.currentTarget.value)}
+                          />
+                          <Button
+                            variant="outline"
+                            disabled={command.isPending || !manifestUrl()}
+                            onClick={() =>
+                              command.mutate({ action: "install-app", manifestUrl: manifestUrl() })
                             }
                           >
-                            {certificate.revokedAt
-                              ? `revoked ${formatDate(certificate.revokedAt)}`
-                              : "active"}
-                          </span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </div>
-              <Show when={row()?.proto === "apple" && health.data?.push}>
-                <div class="space-y-2 border-t pt-3">
-                  <div class="flex items-center justify-between gap-2">
-                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      APNs push delivery
-                    </p>
-                    <span class={`rounded-full border px-2 py-0.5 text-xs ${pushBadge().class}`}>
-                      {pushBadge().label}
-                    </span>
-                  </div>
-                  <dl class="grid gap-2 text-sm sm:grid-cols-2">
-                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
-                      <dt class="text-muted-foreground">Last attempt</dt>
-                      <dd>{relativeTime(health.data!.push.lastAttemptAt)}</dd>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
-                      <dt class="text-muted-foreground">Last success</dt>
-                      <dd>{relativeTime(health.data!.push.lastSuccessAt)}</dd>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
-                      <dt class="text-muted-foreground">Consecutive failures</dt>
-                      <dd>{health.data!.push.consecutiveFailures}</dd>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 border-b pb-1.5">
-                      <dt class="text-muted-foreground">Push credentials</dt>
-                      <dd>{health.data!.push.configured ? "Present" : "Missing"}</dd>
-                    </div>
-                  </dl>
-                  <Show when={health.data!.push.lastError}>
-                    <p class="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-                      {health.data!.push.lastError}
-                    </p>
-                  </Show>
-                  <Show when={health.data!.push.invalidToken}>
-                    <p class="text-xs text-red-700">
-                      Apple rejected this device token. The device must re-enroll before it can
-                      receive pushes again.
-                    </p>
-                  </Show>
-                </div>
-              </Show>
-            </Show>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Security & inventory</CardTitle>
-              <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={command.isPending}
-                  onClick={() => command.mutate({ action: "collect-security-info" })}
-                >
-                  Collect security info
-                </Button>
-              </Show>
-            </div>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <dl class="grid gap-3 text-sm sm:grid-cols-2">
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">FileVault</dt>
-                <dd>
-                  <span
-                    class={
-                      row()?.fileVaultStatus === "enabled"
-                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
-                        : row()?.fileVaultStatus === "disabled"
-                          ? "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
-                          : "rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs text-stone-600"
-                    }
-                  >
-                    {fileVaultLabel()}
-                  </span>
-                </dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">FileVault recovery key</dt>
-                <dd class="flex items-center gap-2">
-                  <span
-                    class={
-                      row()?.recoveryKeyEscrowed
-                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
-                        : "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
-                    }
-                  >
-                    {row()?.recoveryKeyEscrowed ? "Escrowed" : "Not escrowed"}
-                  </span>
-                  <Show when={row()?.recoveryKeyEscrowed}>
-                    <Button variant="outline" size="sm" onClick={openRecoveryDialog}>
-                      Reveal
-                    </Button>
-                  </Show>
-                </dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">Bootstrap token</dt>
-                <dd>
-                  <span
-                    class={
-                      row()?.bootstrapTokenEscrowed
-                        ? "rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
-                        : "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
-                    }
-                  >
-                    {row()?.bootstrapTokenEscrowed ? "Escrowed" : "Not escrowed"}
-                  </span>
-                </dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">Recovery key updated</dt>
-                <dd>{formatDate(row()?.recoveryKeyUpdatedAt)}</dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">Battery health</dt>
-                <dd>{row()?.batteryHealth ?? "Not reported"}</dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">Model number</dt>
-                <dd>{row()?.modelNumber ?? "Not reported"}</dd>
-              </div>
-              <div class="flex items-center justify-between gap-2 border-b pb-2">
-                <dt class="text-muted-foreground">Inventory updated</dt>
-                <dd>{formatDate(row()?.inventoryUpdatedAt)}</dd>
-              </div>
-            </dl>
-            <Show when={row()?.proto === "apple" && !row()?.recoveryKeyEscrowed}>
-              <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <strong>No FileVault recovery key is escrowed.</strong> If FileVault is enabled and
-                the Mac is lost, the disk cannot be unlocked with a Mattrax-held key. Collect
-                security info after FileVault has been enabled on the device.
-              </p>
-            </Show>
-            <Show when={row()?.proto === "apple" && !row()?.bootstrapTokenEscrowed}>
-              <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <strong>No bootstrap token is escrowed.</strong> Secure-token operations such as
-                granting a user a Secure Token or authorising some software updates may prompt for
-                an administrator.
-              </p>
-            </Show>
-            <div>
-              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Client capabilities
-              </p>
-              <Show
-                when={capabilityLabels().length > 0}
-                fallback={
-                  <p class="mt-1 text-sm text-muted-foreground">
-                    No capabilities have been reported yet.
-                  </p>
-                }
-              >
-                <div class="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-auto">
-                  <For each={capabilityLabels()}>
-                    {(capability) => (
-                      <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
-                        {capability}
-                      </span>
-                    )}
-                  </For>
-                </div>
-              </Show>
-            </div>
-            <Show when={!row()?.inventoryUpdatedAt}>
-              <p class="text-xs text-muted-foreground">
-                Security and inventory values are filled in the next time the device reports its DDM
-                status items.
-              </p>
-            </Show>
-            <ErrorText error={command.error} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Software</CardTitle>
-              <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={command.isPending}
-                  onClick={() => command.mutate({ action: "refresh-applications" })}
-                >
-                  Refresh applications
-                </Button>
-              </Show>
-            </div>
-          </CardHeader>
-          <CardContent class="space-y-3">
-            <Show
-              when={applications.data}
-              fallback={
-                <Show
-                  when={applications.isError}
-                  fallback={<p class="text-sm text-muted-foreground">Loading software…</p>}
-                >
-                  <QueryError
-                    error={applications.error}
-                    onRetry={() => void applications.refetch()}
-                  />
-                </Show>
-              }
-            >
-              <Show
-                when={appNames().length > 0}
-                fallback={
-                  <p class="text-sm text-muted-foreground">
-                    No installed applications have been reported. Run refresh applications to
-                    collect the inventory from this device.
-                  </p>
-                }
-              >
-                <p class="text-xs text-muted-foreground">
-                  {appNames().length} applications reported · updated{" "}
-                  {formatDate(row()?.applicationsUpdatedAt)}
-                </p>
-                <ul class="max-h-96 divide-y overflow-auto rounded-lg border">
-                  <For each={appNames()}>
-                    {(application) => (
-                      <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-sm">
-                        <span class="min-w-0">
-                          <span class="block truncate font-medium">
-                            {application.name ?? application.bundleId}
-                          </span>
-                          <span class="block truncate font-mono text-xs text-muted-foreground">
-                            {application.bundleId}
-                          </span>
-                        </span>
-                        <span class="flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
-                          <span class="text-muted-foreground">
-                            {application.version ?? application.shortVersion ?? "—"}
-                          </span>
-                          <span class="text-muted-foreground">
-                            {formatBytes(application.bundleSize)}
-                          </span>
-                          <Show when={application.isManaged}>
-                            <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">
-                              Managed
-                            </span>
-                          </Show>
-                          <Show when={application.hasUpdateAvailable}>
-                            <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
-                              Update available
-                            </span>
-                          </Show>
-                        </span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-            </Show>
-          </CardContent>
-        </Card>
-        <Show when={row()?.proto === "apple" && row()?.serial}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Apple Business Manager</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-3 text-sm">
-              <Show
-                when={abmDevice.data}
-                fallback={
-                  <p class="text-muted-foreground">
-                    This serial is not in the tenant's Apple Business Manager inventory. Upload an
-                    ABM credential and sync devices in Settings → Management.
-                  </p>
-                }
-              >
-                {(abm) => (
-                  <>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="rounded-full border px-2 py-0.5 text-xs capitalize">
-                        {abm().enrollmentState.toLowerCase()}
-                      </span>
-                      <span class="rounded-full border px-2 py-0.5 text-xs capitalize">
-                        profile {abm().profileStatus}
-                      </span>
-                      <Show when={abm().deviceFamily}>
-                        <span class="text-xs text-muted-foreground">{abm().deviceFamily}</span>
-                      </Show>
-                      <Show when={abm().os}>
-                        <span class="text-xs text-muted-foreground">{abm().os}</span>
-                      </Show>
-                    </div>
-                    <Show when={abm().assignedProfileUuid}>
-                      <p class="break-all font-mono text-xs text-muted-foreground">
-                        ADE profile {abm().assignedProfileUuid}
-                      </p>
+                            Install
+                          </Button>
+                        </div>
+                      </Field>
                     </Show>
-                    <Show when={abm().assignedServerId}>
-                      <p class="break-all font-mono text-xs text-muted-foreground">
-                        MDM server {abm().assignedServerId}
-                      </p>
-                    </Show>
-                    <p class="text-xs text-muted-foreground">
-                      Last ABM update {formatDate(abm().lastSeenAt)}
-                    </p>
-                    <div class="flex flex-wrap gap-2">
-                      <Show when={abm().enrollmentState !== "ASSIGNED"}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={assignAbm.isPending}
-                          onClick={() => assignAbm.mutate()}
-                        >
-                          {assignAbm.isPending ? "Assigning…" : "Assign to Mattrax"}
-                        </Button>
-                      </Show>
-                      <Show when={abm().enrollmentState === "ASSIGNED"}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={adeProfile.isPending}
-                          onClick={() => adeProfile.mutate()}
-                        >
-                          {adeProfile.isPending ? "Creating link…" : "Get ADE profile link"}
-                        </Button>
-                      </Show>
-                    </div>
-                    <Show when={adeUrl()}>
-                      {(url) => (
-                        <p class="break-all rounded-lg border bg-muted/40 p-2 font-mono text-xs">
-                          {url()}
+                    <Show when={lockPin()}>
+                      {(pin) => (
+                        <p class="rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                          Device lock PIN: <strong class="font-mono">{pin()}</strong>
                         </p>
                       )}
                     </Show>
-                    <ErrorText error={assignAbm.error ?? adeProfile.error} />
-                  </>
-                )}
+                    <ErrorText error={command.error} />
+                  </div>
+                </Panel>
               </Show>
-            </CardContent>
-          </Card>
-        </Show>
-        <div class="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div class="mb-4 flex gap-2">
-                <DeviceStatusBadge status={row()!.status} />
-                <PlatformBadge proto={row()!.proto} />
-              </div>
-              <dl class="grid gap-3 text-sm">
-                <For each={fields()}>
-                  {([key, value]) => (
-                    <div class="grid grid-cols-[160px_1fr] gap-4 border-b pb-2 last:border-0">
-                      <dt class="text-muted-foreground">{key}</dt>
-                      <dd>{value || "Unknown"}</dd>
-                    </div>
-                  )}
-                </For>
-              </dl>
-            </CardContent>
-          </Card>
-          <Show when={row()?.autopilot}>
-            {(autopilot) => (
-              <Card class="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle>Windows Autopilot</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <dl class="grid gap-3 text-sm sm:grid-cols-2">
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Autopilot serial</dt>
-                      <dd class="font-mono text-xs">{autopilot().serial}</dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Group tag</dt>
-                      <dd>{autopilot().groupTag ?? "None"}</dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Profile state</dt>
-                      <dd>{autopilot().profileStatus}</dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Enrollment state</dt>
-                      <dd>{autopilot().enrollmentState}</dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Entra device id</dt>
-                      <dd class="break-all font-mono text-xs">
-                        {autopilot().azureAdDeviceId ?? "Not joined yet"}
-                      </dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b pb-2">
-                      <dt class="text-muted-foreground">Last Autopilot sync</dt>
-                      <dd>
-                        {autopilot().lastSyncedAt ? formatDate(autopilot().lastSyncedAt!) : "Never"}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p class="mt-3 text-xs text-muted-foreground">
-                    Autopilot profile and enrollment state are read from Microsoft Graph. Manage
-                    imports and profiles in Settings → Management.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </Show>
-          <Card class="lg:col-span-2">
-            <CardHeader>
-              <div class="flex items-center justify-between gap-2">
-                <CardTitle>Effective policy</CardTitle>
-                <span class="text-xs text-muted-foreground">
-                  {resolved()?.configurations.length ?? 0} resolved kinds
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <Show
-                when={effectivePolicy.data}
-                fallback={
-                  <Show
-                    when={effectivePolicy.isError}
-                    fallback={
-                      <p class="text-sm text-muted-foreground">Loading effective policy…</p>
-                    }
-                  >
-                    <QueryError
-                      error={effectivePolicy.error}
-                      onRetry={() => void effectivePolicy.refetch()}
-                    />
-                  </Show>
-                }
-              >
+
+              <Panel flush title="Activity" description="Newest first.">
                 <Show
-                  when={(resolved()?.configurations.length ?? 0) > 0}
+                  when={activity.data}
                   fallback={
-                    <p class="text-sm text-muted-foreground">
-                      No policy configurations resolve for this device. Assign an included policy
-                      directly or through a group.
-                    </p>
+                    <div class="p-4 sm:p-5">
+                      <Show
+                        when={activity.isError}
+                        fallback={
+                          <p class="text-[12.5px] text-muted-foreground">Loading activity…</p>
+                        }
+                      >
+                        <QueryError
+                          error={activity.error}
+                          onRetry={() => void activity.refetch()}
+                        />
+                      </Show>
+                    </div>
                   }
                 >
-                  <ul class="divide-y rounded-lg border">
-                    <For each={resolved()?.configurations ?? []}>
-                      {(configuration) => (
-                        <li class="space-y-1 p-3 text-sm">
-                          <div class="flex flex-wrap items-center justify-between gap-2">
-                            <span class="font-mono text-xs">{configuration.kind}</span>
-                            <span class="flex items-center gap-1.5">
-                              <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
-                                {configuration.scope === "direct"
-                                  ? "Direct include"
-                                  : "Group include"}
+                  <Show
+                    when={(activity.data?.events.length ?? 0) > 0}
+                    fallback={
+                      <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                        No activity has been recorded for this device yet.
+                      </p>
+                    }
+                  >
+                    <ul class="max-h-[26rem] divide-y divide-white/[0.05] overflow-auto">
+                      <For each={activity.data?.events ?? []}>
+                        {(event) => (
+                          <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="flex min-w-0 items-center gap-1.5">
+                                <Chip
+                                  tone={activityTone(event.kind)}
+                                  class="uppercase tracking-wide"
+                                >
+                                  {event.kind}
+                                </Chip>
+                                <strong class="truncate font-medium text-foreground">
+                                  {event.title}
+                                </strong>
                               </span>
-                              <span class="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
-                                priority {configuration.priority}
+                              <span
+                                class="shrink-0 text-muted-foreground"
+                                title={formatDate(event.at)}
+                              >
+                                {relativeTime(event.at)}
                               </span>
+                            </div>
+                            <Show when={event.detail || event.status}>
+                              <p class="mt-1 text-muted-foreground">
+                                {[event.status, event.detail].filter(Boolean).join(" · ")}
+                              </p>
+                            </Show>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </Show>
+              </Panel>
+
+              <Show when={(commands.data?.commands.length ?? 0) > 0}>
+                <Panel
+                  flush
+                  title="Command history"
+                  description="Remote commands sent to this device."
+                >
+                  <ul class="max-h-72 divide-y divide-white/[0.05] overflow-auto">
+                    <For each={commands.data?.commands ?? []}>
+                      {(command) => (
+                        <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                          <div class="flex items-center justify-between gap-2">
+                            <strong class="min-w-0 truncate font-medium text-foreground">
+                              {command.requestType}
+                            </strong>
+                            <span class="shrink-0 capitalize text-muted-foreground">
+                              {command.status}
                             </span>
                           </div>
-                          <p>
-                            <a
-                              class="font-medium hover:underline"
-                              href={`/t/${params.tenantId}/policies/${configuration.policyId}`}
-                            >
-                              {configuration.policyName}
-                            </a>
-                            <Show when={configuration.groupNames.length > 0}>
-                              <span class="text-muted-foreground">
-                                {" "}
-                                via {configuration.groupNames.join(", ")}
-                              </span>
-                            </Show>
+                          <Show when={command.resultStatus || command.resultDetail}>
+                            <p class="mt-1 text-muted-foreground">
+                              {command.resultStatus ?? ""} {command.resultDetail ?? ""}
+                            </p>
+                          </Show>
+                          <p class="mt-1 text-muted-foreground/70">
+                            {formatDate(command.createdAt)}
                           </p>
                         </li>
                       )}
                     </For>
                   </ul>
-                </Show>
-                <Show when={(resolved()?.overridden.length ?? 0) > 0}>
-                  <div>
-                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Overridden policies
-                    </p>
-                    <ul class="mt-2 space-y-1">
-                      <For each={resolved()?.overridden ?? []}>
-                        {(override) => (
-                          <li class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                            <span class="font-medium">{override.policyName}</span> ({override.kind})
-                            lost to {override.reason.replaceAll("-", " ")}.
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </div>
-                </Show>
-                <Show when={(resolved()?.exclusions.length ?? 0) > 0}>
-                  <div>
-                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Exclusions
-                    </p>
-                    <ul class="mt-2 space-y-1">
-                      <For each={resolved()?.exclusions ?? []}>
-                        {(exclusion) => (
-                          <li
-                            class={
-                              exclusion.effective
-                                ? "rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800"
-                                : "rounded-lg border bg-muted/20 p-2 text-xs text-muted-foreground"
-                            }
-                          >
-                            <span class="font-medium">{exclusion.policyName}</span>{" "}
-                            {exclusion.scope === "direct"
-                              ? "is excluded directly"
-                              : `is excluded by ${exclusion.groupName ?? "a group"}`}
-                            .{" "}
-                            {exclusion.effective
-                              ? "It removed a group include."
-                              : "No include to remove."}
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </div>
-                </Show>
+                </Panel>
               </Show>
-            </CardContent>
-          </Card>
-          <Show
-            when={
-              (row()?.proto === "apple" || row()?.proto === "win" || row()?.proto === "android") &&
-              row()?.status === "enrolled"
-            }
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle>Remote actions</CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <p class="text-sm text-muted-foreground">
-                  {row()?.proto === "android"
-                    ? "Commands are sent to the device through Android Management."
-                    : "Commands are queued and delivered on the device's next check-in."}
-                </p>
-                <div class="grid grid-cols-2 gap-2">
-                  <Show when={row()?.proto === "apple" || row()?.proto === "android"}>
-                    <Button
-                      variant="outline"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate({ action: "lock" })}
-                    >
-                      Lock
-                    </Button>
-                  </Show>
-                  <Button
-                    variant="outline"
-                    disabled={command.isPending}
-                    onClick={() => command.mutate({ action: "restart" })}
-                  >
-                    Restart
-                  </Button>
-                  <Show when={row()?.proto === "apple"}>
-                    <Button
-                      variant="outline"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate({ action: "shutdown" })}
-                    >
-                      Shut down
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate({ action: "clear-passcode" })}
-                    >
-                      Clear passcode
-                    </Button>
-                  </Show>
-                  <Button
-                    variant="destructive"
-                    class="col-span-2"
-                    disabled={command.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Erase this device? This cannot be undone and will wipe all data.",
-                        )
-                      )
-                        command.mutate({ action: "wipe" });
-                    }}
-                  >
-                    Erase device
-                  </Button>
-                </div>
-                <Show when={row()?.proto === "apple"}>
-                  <Field label="Install app from manifest URL">
-                    <div class="flex gap-2">
-                      <Input
-                        value={manifestUrl()}
-                        placeholder="https://example.com/manifest.plist"
-                        onInput={(event) => setManifestUrl(event.currentTarget.value)}
-                      />
-                      <Button
-                        variant="outline"
-                        disabled={command.isPending || !manifestUrl()}
-                        onClick={() =>
-                          command.mutate({ action: "install-app", manifestUrl: manifestUrl() })
-                        }
-                      >
-                        Install
-                      </Button>
-                    </div>
-                  </Field>
-                </Show>
-                <Show when={lockPin()}>
-                  {(pin) => (
-                    <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      Device lock PIN: <strong class="font-mono">{pin()}</strong>
-                    </p>
-                  )}
-                </Show>
-                <ErrorText error={command.error} />
-              </CardContent>
-            </Card>
-          </Show>
-          <Show when={(commands.data?.commands.length ?? 0) > 0}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Command history</CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-2">
-                <For each={commands.data?.commands ?? []}>
-                  {(command) => (
-                    <div class="rounded-lg border p-2 text-xs">
-                      <div class="flex items-center justify-between gap-2">
-                        <strong>{command.requestType}</strong>
-                        <span class="capitalize text-muted-foreground">{command.status}</span>
-                      </div>
-                      <Show when={command.resultStatus || command.resultDetail}>
-                        <p class="mt-1 text-muted-foreground">
-                          {command.resultStatus ?? ""} {command.resultDetail ?? ""}
-                        </p>
-                      </Show>
-                      <p class="mt-1 text-muted-foreground">{formatDate(command.createdAt)}</p>
-                    </div>
-                  )}
-                </For>
-              </CardContent>
-            </Card>
-          </Show>
-          <Card>
-            <CardHeader>
-              <div class="flex items-center justify-between gap-2">
-                <CardTitle>Activity</CardTitle>
-                <span class="text-xs text-muted-foreground">Newest first</span>
-              </div>
-            </CardHeader>
-            <CardContent class="space-y-2">
-              <Show
-                when={activity.data}
-                fallback={
-                  <Show
-                    when={activity.isError}
-                    fallback={<p class="text-sm text-muted-foreground">Loading activity…</p>}
-                  >
-                    <QueryError error={activity.error} onRetry={() => void activity.refetch()} />
-                  </Show>
-                }
-              >
-                <Show
-                  when={(activity.data?.events.length ?? 0) > 0}
-                  fallback={
-                    <p class="text-sm text-muted-foreground">
-                      No activity has been recorded for this device yet.
-                    </p>
-                  }
+
+              <Panel title="Edit details" description="Management name, asset tag and notes.">
+                <form
+                  class="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    save.mutate();
+                  }}
                 >
-                  <ul class="space-y-2">
-                    <For each={activity.data?.events ?? []}>
-                      {(event) => (
-                        <li class="rounded-lg border p-2 text-xs">
-                          <div class="flex items-center justify-between gap-2">
-                            <span class="flex min-w-0 items-center gap-1.5">
-                              <span
-                                class={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${activityBadgeClass(event.kind)}`}
-                              >
-                                {event.kind}
-                              </span>
-                              <strong class="truncate">{event.title}</strong>
-                            </span>
-                            <span
-                              class="shrink-0 text-muted-foreground"
-                              title={formatDate(event.at)}
-                            >
-                              {relativeTime(event.at)}
-                            </span>
-                          </div>
-                          <Show when={event.detail || event.status}>
-                            <p class="mt-1 text-muted-foreground">
-                              {[event.status, event.detail].filter(Boolean).join(" · ")}
-                            </p>
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </Show>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Edit details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                class="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  save.mutate();
-                }}
-              >
-                <Field label="Name">
-                  <Input value={name()} onInput={(event) => setName(event.currentTarget.value)} />
-                </Field>
-                <Field label="Asset tag">
-                  <Input
-                    value={assetTag()}
-                    onInput={(event) => setAssetTag(event.currentTarget.value)}
-                  />
-                </Field>
-                <Field label="Notes">
-                  <textarea
-                    class="min-h-28 rounded-lg border bg-white px-3 py-2 text-sm"
-                    value={notes()}
-                    onInput={(event) => setNotes(event.currentTarget.value)}
-                  />
-                </Field>
-                <ErrorText error={save.error || sync.error || unenroll.error || remove.error} />
-                <Button type="submit" disabled={save.isPending}>
-                  Save changes
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+                  <Field label="Name">
+                    <Input value={name()} onInput={(event) => setName(event.currentTarget.value)} />
+                  </Field>
+                  <Field label="Asset tag">
+                    <Input
+                      value={assetTag()}
+                      onInput={(event) => setAssetTag(event.currentTarget.value)}
+                    />
+                  </Field>
+                  <Field label="Notes">
+                    <textarea
+                      class="min-h-24 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                      value={notes()}
+                      onInput={(event) => setNotes(event.currentTarget.value)}
+                    />
+                  </Field>
+                  <ErrorText error={save.error || sync.error || unenroll.error || remove.error} />
+                  <Button type="submit" disabled={save.isPending}>
+                    {save.isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </form>
+              </Panel>
+            </div>
+          </div>
+        </>
       </Show>
 
       <Dialog
         open={confirmAction() !== null}
         onOpenChange={(open) => !open && setConfirmAction(null)}
       >
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>{confirmLabel()}?</DialogTitle>
             <DialogDescription>{confirmDescription()}</DialogDescription>
@@ -1369,7 +1494,7 @@ export default function DeviceDetailPage() {
           }
         }}
       >
-        <DialogContent class="max-w-lg rounded-xl bg-white p-6">
+        <DialogContent class="max-w-lg">
           <DialogHeader>
             <DialogTitle>Reveal FileVault recovery key</DialogTitle>
             <DialogDescription>
@@ -1402,7 +1527,7 @@ export default function DeviceDetailPage() {
             {(key) => (
               <>
                 <div class="flex items-start gap-2">
-                  <code class="min-w-0 flex-1 break-all rounded-lg border bg-muted/40 p-3 font-mono text-sm">
+                  <code class="min-w-0 flex-1 break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 font-mono text-sm">
                     {key()}
                   </code>
                   <Button variant="outline" size="sm" onClick={() => void copyRecoveryKey()}>
@@ -1426,6 +1551,6 @@ export default function DeviceDetailPage() {
           </Show>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

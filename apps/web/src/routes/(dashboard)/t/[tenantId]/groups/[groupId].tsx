@@ -1,11 +1,20 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { ErrorText, Field, PageHeader, QueryError, formatDate } from "~/components/mdm/common";
+import type { JSX } from "@solidjs/web";
+import {
+  ErrorText,
+  Field,
+  Page,
+  PageHeader,
+  Panel,
+  QueryError,
+  formatDate,
+} from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Info, ShieldCheck, UsersRound } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import {
   Dialog,
@@ -201,11 +210,12 @@ export default function GroupDetailPage() {
     else next.delete(id);
     setPolicyModes(next);
   };
+  const memberCount = () =>
+    row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : (row()?.devices?.length ?? 0);
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page wide>
       <QueryError error={group.error} onRetry={() => void group.refetch()} />
 
-      <ErrorText error={sync.error} />
       <PageHeader
         title={row()?.name ?? "Group"}
         description={
@@ -235,51 +245,71 @@ export default function GroupDetailPage() {
           </>
         }
       />
-      <div class="flex flex-wrap items-center gap-2">
-        <Show when={row()?.kind === "dynamic"}>
-          <Badge>Dynamic</Badge>
+
+      <ErrorText error={sync.error} />
+
+      <div class="flex flex-col gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <Show when={row()}>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Show when={row()!.kind === "dynamic"}>
+              <Badge>Dynamic</Badge>
+            </Show>
+            <Show when={row()!.kind === "manual"}>
+              <Badge variant="secondary">Manual</Badge>
+            </Show>
+            <span class="flex items-baseline gap-1.5">
+              <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
+                {memberCount()}
+              </span>
+              <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                devices
+              </span>
+            </span>
+            <span class="flex items-baseline gap-1.5">
+              <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
+                {row()!.policies?.length ?? 0}
+              </span>
+              <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                policies
+              </span>
+            </span>
+            <Show when={row()!.kind === "dynamic" && row()!.lastEvaluatedAt}>
+              <span class="text-[11px] text-muted-foreground">
+                Evaluated {formatDate(row()!.lastEvaluatedAt!)}
+              </span>
+            </Show>
+          </div>
         </Show>
-        <div class="mr-4 flex gap-6 text-sm">
-          <span>
-            <span class="font-semibold text-stone-900">
-              {row()?.kind === "dynamic"
-                ? (preview.data?.count ?? "…")
-                : (row()?.devices?.length ?? 0)}
-            </span>
-            <span class="text-muted-foreground"> devices</span>
-          </span>
-          <span>
-            <span class="font-semibold text-stone-900">{row()?.policies?.length ?? 0}</span>
-            <span class="text-muted-foreground"> policies</span>
-          </span>
-          <Show when={row()?.kind === "dynamic" && row()?.lastEvaluatedAt}>
-            <span class="text-muted-foreground">
-              Evaluated {formatDate(row()!.lastEvaluatedAt!)}
-            </span>
-          </Show>
-        </div>
-        <For each={["overview", "devices", "policies"] as const}>
-          {(item) => (
-            <Button variant={tab() === item ? "secondary" : "ghost"} onClick={() => setTab(item)}>
-              {item}
-            </Button>
-          )}
-        </For>
-      </div>
-      <Show when={tab() === "overview"}>
-        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                class="space-y-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  save.mutate();
-                }}
+        <div class="inline-flex w-fit items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.015] p-0.5">
+          <For each={["overview", "devices", "policies"] as const}>
+            {(item) => (
+              <Button
+                size="sm"
+                variant={tab() === item ? "secondary" : "ghost"}
+                class="h-7 rounded-md px-2.5 text-[12px] capitalize"
+                onClick={() => setTab(item)}
               >
+                {item}
+              </Button>
+            )}
+          </For>
+        </div>
+      </div>
+
+      <Show when={tab() === "overview"}>
+        <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Panel
+            title="Group details"
+            description="Name, notes and the membership source for this target."
+          >
+            <form
+              class="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                save.mutate();
+              }}
+            >
+              <div class="grid gap-4 sm:grid-cols-2">
                 <Field label="Name">
                   <Input
                     disabled={!edit()}
@@ -287,18 +317,10 @@ export default function GroupDetailPage() {
                     onInput={(e) => setName(e.currentTarget.value)}
                   />
                 </Field>
-                <Field label="Notes">
-                  <textarea
-                    disabled={!edit()}
-                    class="min-h-28 rounded-lg border bg-white px-3 py-2 text-sm disabled:opacity-70"
-                    value={notes()}
-                    onInput={(e) => setNotes(e.currentTarget.value)}
-                  />
-                </Field>
                 <Field label="Membership">
                   <select
                     disabled={!edit()}
-                    class="h-9 rounded-lg border bg-white px-3 text-sm disabled:opacity-70"
+                    class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
                     value={kind()}
                     onChange={(e) => setKind(e.currentTarget.value as DynamicGroupKind)}
                   >
@@ -306,33 +328,75 @@ export default function GroupDetailPage() {
                     <option value="dynamic">Dynamic — match device rules</option>
                   </select>
                 </Field>
-                <Show when={kind() === "dynamic"}>
-                  <div class="rounded-lg border bg-muted/20 p-3">
-                    <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
+              </div>
+              <Field label="Notes">
+                <textarea
+                  disabled={!edit()}
+                  class="min-h-24 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-70"
+                  value={notes()}
+                  onInput={(e) => setNotes(e.currentTarget.value)}
+                />
+              </Field>
+              <Show when={kind() === "dynamic"}>
+                <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+                  <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
+                </div>
+              </Show>
+              <ErrorText error={save.error || dup.error || del.error} />
+            </form>
+          </Panel>
+          <Show
+            when={kind() === "dynamic"}
+            fallback={
+              <Panel
+                title="Assignments"
+                description="Where this group's membership and policy scope live."
+              >
+                <dl class="divide-y divide-white/[0.05] text-[13px]">
+                  <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div class="min-w-0">
+                      <dt class="font-medium text-foreground">Devices</dt>
+                      <dd class="mt-0.5 text-[12px] text-muted-foreground">
+                        {row()?.devices?.length ?? 0} assigned manually
+                      </dd>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("devices")}>
+                      Manage
+                    </Button>
                   </div>
-                </Show>
-                <ErrorText error={save.error || dup.error || del.error} />
-              </form>
-            </CardContent>
-          </Card>
-          <Show when={kind() === "dynamic"}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Live match preview</CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <p class="text-3xl font-semibold">{preview.data?.count ?? "…"}</p>
-                <p class="text-sm text-muted-foreground">
-                  Devices matching the saved rules. Manual members are not included unless they also
-                  match.
+                  <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div class="min-w-0">
+                      <dt class="font-medium text-foreground">Policies</dt>
+                      <dd class="mt-0.5 text-[12px] text-muted-foreground">
+                        {row()?.policies?.length ?? 0} included or excluded
+                      </dd>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("policies")}>
+                      Manage
+                    </Button>
+                  </div>
+                </dl>
+              </Panel>
+            }
+          >
+            <Panel
+              title="Live match preview"
+              description="Devices matching the saved rules. Manual members are not included unless they also match."
+            >
+              <div class="space-y-3">
+                <p class="text-[26px] font-semibold leading-none tracking-[-0.03em] text-foreground">
+                  {preview.data?.count ?? "…"}
                 </p>
+                <Show when={preview.data && preview.data.count === 0}>
+                  <p class="text-[12px] text-muted-foreground">No devices match these rules yet.</p>
+                </Show>
                 <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
                 <Show when={(preview.data?.devices.length ?? 0) > 0}>
-                  <div class="max-h-64 space-y-1 overflow-auto text-sm">
+                  <div class="max-h-64 space-y-0.5 overflow-auto">
                     <For each={preview.data?.devices.slice(0, 25) ?? []}>
                       {(device) => (
                         <a
-                          class="block truncate rounded px-2 py-1 hover:bg-muted/40"
+                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors hover:bg-white/[0.045]"
                           href={`/t/${params.tenantId}/devices/${device.id}`}
                         >
                           {device.name}
@@ -342,113 +406,153 @@ export default function GroupDetailPage() {
                   </div>
                 </Show>
                 <Show when={(preview.data?.devices.length ?? 0) > 25}>
-                  <p class="text-xs text-muted-foreground">
+                  <p class="text-[11px] text-muted-foreground">
                     Showing the first 25 matches. Refresh after saving to recompute membership.
                   </p>
                 </Show>
-              </CardContent>
-            </Card>
+              </div>
+            </Panel>
           </Show>
         </div>
       </Show>
+
       <Show when={tab() === "devices"}>
         <Show
           when={kind() !== "dynamic"}
           fallback={
-            <>
-              <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-                <p class="font-medium">Dynamic membership</p>
-                <p class="mt-1">
-                  Devices are added to this group automatically when they match the rules. Manual
-                  device assignment is disabled; switch to a manual group to choose devices
-                  explicitly. Manually added exceptions are preserved by recomputes but are not
-                  listed here.
-                </p>
+            <div class="space-y-5">
+              <div class="flex items-start gap-2.5 rounded-xl border border-brand/25 bg-brand/[0.07] p-3.5 text-[12.5px] text-foreground">
+                <Info class="mt-px size-4 shrink-0 text-brand" />
+                <div class="min-w-0">
+                  <p class="font-medium text-brand">Dynamic membership</p>
+                  <p class="mt-1 leading-relaxed text-muted-foreground">
+                    Devices are added to this group automatically when they match the rules. Manual
+                    device assignment is disabled; switch to a manual group to choose devices
+                    explicitly. Manually added exceptions are preserved by recomputes but are not
+                    listed here.
+                  </p>
+                </div>
               </div>
               <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
-              <div class="overflow-hidden rounded-xl border bg-card">
-                <table class="w-full text-sm">
-                  <thead class="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-                    <tr>
-                      <th class="px-4 py-3">Matched device</th>
-                      <th class="px-4 py-3">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y">
-                    <Show
-                      when={(preview.data?.devices.length ?? 0) > 0}
-                      fallback={
+              <Panel flush title="Matched devices" description="Current rule evaluation result.">
+                <Show
+                  when={(preview.data?.devices.length ?? 0) > 0}
+                  fallback={
+                    <div class="px-4 py-10 text-center sm:px-5">
+                      <p class="text-[13px] font-medium text-foreground">
+                        No devices match the current rules
+                      </p>
+                      <p class="mx-auto mt-1 max-w-sm text-[12px] text-muted-foreground">
+                        Adjust the rule conditions in Overview, then save to re-evaluate membership.
+                      </p>
+                    </div>
+                  }
+                >
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-[13px]">
+                      <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                         <tr>
-                          <td class="px-4 py-3 text-muted-foreground" colspan={2}>
-                            No devices match the current rules.
-                          </td>
+                          <th class="px-4 py-2.5">Matched device</th>
+                          <th class="px-4 py-2.5">Source</th>
                         </tr>
-                      }
-                    >
-                      <For each={preview.data?.devices ?? []}>
-                        {(device) => (
-                          <tr class="hover:bg-muted/25">
-                            <td class="px-4 py-3">
-                              <a
-                                class="font-medium hover:underline"
-                                href={`/t/${params.tenantId}/devices/${device.id}`}
-                              >
-                                {device.name}
-                              </a>
-                            </td>
-                            <td class="px-4 py-3 text-muted-foreground">Rule match</td>
-                          </tr>
-                        )}
-                      </For>
-                    </Show>
-                  </tbody>
-                </table>
-              </div>
-            </>
+                      </thead>
+                      <tbody class="divide-y divide-white/[0.05]">
+                        <For each={preview.data?.devices ?? []}>
+                          {(device) => (
+                            <tr class="transition-colors hover:bg-white/[0.025]">
+                              <td class="px-4 py-2.5">
+                                <a
+                                  class="font-medium text-foreground hover:underline"
+                                  href={`/t/${params.tenantId}/devices/${device.id}`}
+                                >
+                                  {device.name}
+                                </a>
+                              </td>
+                              <td class="px-4 py-2.5 text-[12px] text-muted-foreground">
+                                Rule match
+                              </td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </table>
+                  </div>
+                </Show>
+              </Panel>
+            </div>
           }
         >
-          <QueryError
-            error={groupDevices.error ?? allDevices.error}
-            onRetry={() => {
-              void groupDevices.refetch();
-              void allDevices.refetch();
-            }}
-          />
-          <AssignmentTable
-            rows={deviceRows()}
-            selected={deviceIds()}
-            toggle={(id) => toggle(deviceIds, setDeviceIds, id)}
-            href={(id) => `/t/${params.tenantId}/devices/${id}`}
-          />
-          <Show when={!edit() && deviceTotal() > deviceRows().length}>
-            <p class="text-sm text-muted-foreground">
-              Showing the first {deviceRows().length} of {deviceTotal()} devices. Edit the group to
-              assign devices outside this list.
-            </p>
-          </Show>
+          <div class="space-y-5">
+            <QueryError
+              error={groupDevices.error ?? allDevices.error}
+              onRetry={() => {
+                void groupDevices.refetch();
+                void allDevices.refetch();
+              }}
+            />
+            <Panel
+              flush
+              title="Devices in this group"
+              description={
+                edit()
+                  ? "Tick a device to add it to this group, untick to remove it. Remember to save your changes."
+                  : "Manual membership for this group. Use Edit to change the assigned devices."
+              }
+            >
+              <AssignmentTable
+                rows={deviceRows()}
+                selected={deviceIds()}
+                toggle={(id) => toggle(deviceIds, setDeviceIds, id)}
+                href={(id) => `/t/${params.tenantId}/devices/${id}`}
+                emptyTitle="No devices assigned"
+                emptyDescription="Use Edit to choose from the tenant's enrolled devices and add them to this group."
+              />
+              <Show when={!edit() && deviceTotal() > deviceRows().length}>
+                <p class="border-t border-white/[0.06] px-4 py-2.5 text-[11px] text-muted-foreground">
+                  Showing the first {deviceRows().length} of {deviceTotal()} devices. Edit the group
+                  to assign devices outside this list.
+                </p>
+              </Show>
+            </Panel>
+          </div>
         </Show>
       </Show>
+
       <Show when={tab() === "policies"}>
-        <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-          <p class="font-medium">Policy precedence</p>
-          <p class="mt-1">
-            Group includes deliver a policy to every member. A group exclude vetoes that policy for
-            all groups; a direct device include can still override it. Highest policy priority wins
-            when two included policies provide the same configuration kind.
-          </p>
+        <div class="space-y-5">
+          <div class="flex items-start gap-2.5 rounded-xl border border-brand/25 bg-brand/[0.07] p-3.5 text-[12.5px] text-foreground">
+            <Info class="mt-px size-4 shrink-0 text-brand" />
+            <div class="min-w-0">
+              <p class="font-medium text-brand">Policy precedence</p>
+              <p class="mt-1 leading-relaxed text-muted-foreground">
+                Group includes deliver a policy to every member. A group exclude vetoes that policy
+                for all groups; a direct device include can still override it. Highest policy
+                priority wins when two included policies provide the same configuration kind.
+              </p>
+            </div>
+          </div>
+          <Panel
+            flush
+            title="Policy assignments"
+            description="Include delivers the policy to members; exclude removes it for this group."
+          >
+            <AssignmentTable
+              rows={policies.data?.rows ?? []}
+              selected={new Set(policyModes().keys())}
+              toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
+              mode={(id) => policyModes().get(id)}
+              setMode={setPolicyMode}
+              href={(id) => `/t/${params.tenantId}/policies/${id}`}
+              emptyTitle="No policies yet"
+              emptyDescription="Create a policy first, then return here to include or exclude it for this group's members."
+              emptyIcon={ShieldCheck}
+            />
+          </Panel>
         </div>
-        <AssignmentTable
-          rows={policies.data?.rows ?? []}
-          selected={new Set(policyModes().keys())}
-          toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
-          mode={(id) => policyModes().get(id)}
-          setMode={setPolicyMode}
-          href={(id) => `/t/${params.tenantId}/policies/${id}`}
-        />
       </Show>
 
       <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete {row()?.name ?? "group"}?</DialogTitle>
           </DialogHeader>
@@ -472,7 +576,7 @@ export default function GroupDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }
 
@@ -483,67 +587,95 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
   href: (id: string) => string;
   mode?: (id: string) => "include" | "exclude" | undefined;
   setMode?: (id: string, mode: "include" | "exclude" | "") => void;
+  emptyTitle: string;
+  emptyDescription: string;
+  emptyIcon?: (props: { class?: string }) => JSX.Element;
 }) {
   return (
-    <div class="overflow-hidden rounded-xl border bg-card">
-      <table class="w-full text-sm">
-        <thead class="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th class="w-10 px-4 py-3">In</th>
-            <th class="px-4 py-3">Name</th>
-            <Show when={props.mode}>
-              <th class="w-40 px-4 py-3">Mode</th>
+    <Show
+      when={props.rows.length > 0}
+      fallback={
+        <div class="px-4 py-10 text-center sm:px-5">
+          <div class="mx-auto mb-3 flex size-9 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-muted-foreground">
+            <Show when={props.emptyIcon} fallback={<UsersRound class="size-4" />}>
+              {(icon) => icon()({ class: "size-4" })}
             </Show>
-            <th class="px-4 py-3">Priority</th>
-            <th class="px-4 py-3">Updated</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y">
-          <For each={props.rows}>
-            {(row) => (
-              <tr class="hover:bg-muted/25">
-                <td class="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={props.selected.has(row.id)}
-                    onChange={() => props.toggle(row.id)}
-                  />
-                </td>
-                <td class="px-4 py-3">
-                  <a class="font-medium hover:underline" href={props.href(row.id)}>
-                    {row.name}
-                  </a>
-                </td>
-                <Show when={props.mode}>
-                  <td class="px-4 py-3">
-                    <select
-                      class="rounded border bg-white px-2 py-1 text-xs disabled:opacity-50"
-                      disabled={!props.selected.has(row.id)}
-                      value={props.mode?.(row.id) ?? ""}
-                      onChange={(event) =>
-                        props.setMode?.(
-                          row.id,
-                          event.currentTarget.value as "include" | "exclude" | "",
-                        )
-                      }
-                    >
-                      <option value="">Not assigned</option>
-                      <option value="include">Include</option>
-                      <option value="exclude">Exclude</option>
-                    </select>
+          </div>
+          <p class="text-[13px] font-medium text-foreground">{props.emptyTitle}</p>
+          <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+            {props.emptyDescription}
+          </p>
+        </div>
+      }
+    >
+      <div class="overflow-x-auto">
+        <table class="w-full text-[13px]">
+          <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            <tr>
+              <th class="w-10 px-4 py-2.5">In</th>
+              <th class="px-4 py-2.5">Name</th>
+              <Show when={props.mode}>
+                <th class="w-40 px-4 py-2.5">Mode</th>
+              </Show>
+              <th class="px-4 py-2.5">Priority</th>
+              <th class="px-4 py-2.5">Updated</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/[0.05]">
+            <For each={props.rows}>
+              {(row) => (
+                <tr class="transition-colors hover:bg-white/[0.025]">
+                  <td class="px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      class="size-3.5 accent-[var(--brand)]"
+                      aria-label={`Assign ${row.name}`}
+                      checked={props.selected.has(row.id)}
+                      onChange={() => props.toggle(row.id)}
+                    />
                   </td>
-                </Show>
-                <td class="px-4 py-3">{"priority" in row ? (row.priority ?? 0) : "—"}</td>
-                <td class="px-4 py-3">
-                  {"updatedAt" in row
-                    ? new Date(row.updatedAt).toLocaleString()
-                    : new Date(row.lastSeenAt).toLocaleString()}
-                </td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
+                  <td class="px-4 py-2.5">
+                    <a
+                      class="font-medium text-foreground hover:underline"
+                      href={props.href(row.id)}
+                    >
+                      {row.name}
+                    </a>
+                  </td>
+                  <Show when={props.mode}>
+                    <td class="px-4 py-2.5">
+                      <select
+                        class="h-7 rounded-md px-2 pr-7 text-[11.5px] disabled:opacity-50"
+                        aria-label={`Assignment mode for ${row.name}`}
+                        disabled={!props.selected.has(row.id)}
+                        value={props.mode?.(row.id) ?? ""}
+                        onChange={(event) =>
+                          props.setMode?.(
+                            row.id,
+                            event.currentTarget.value as "include" | "exclude" | "",
+                          )
+                        }
+                      >
+                        <option value="">Not assigned</option>
+                        <option value="include">Include</option>
+                        <option value="exclude">Exclude</option>
+                      </select>
+                    </td>
+                  </Show>
+                  <td class="px-4 py-2.5 text-[12px] tabular-nums text-muted-foreground">
+                    {"priority" in row ? (row.priority ?? 0) : "—"}
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-[12px] text-muted-foreground">
+                    {"updatedAt" in row
+                      ? new Date(row.updatedAt).toLocaleString()
+                      : new Date(row.lastSeenAt).toLocaleString()}
+                  </td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </div>
+    </Show>
   );
 }

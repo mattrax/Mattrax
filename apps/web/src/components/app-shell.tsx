@@ -18,7 +18,6 @@ import {
   ChevronsUpDown,
   CircleAlert,
   LayoutDashboard,
-  LinkIcon,
   LogOut,
   Search as SearchIcon,
   Sparkles,
@@ -128,6 +127,11 @@ function TenantSwitcher(props: {
               <DropdownMenuItem
                 as="a"
                 href={`/t/${tenant.id}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  rememberTenant(tenant.id);
+                  navigate(`/t/${tenant.id}`);
+                }}
                 class="mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm outline-none focus:bg-white/[0.06]"
               >
                 <span class="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.06]">
@@ -426,7 +430,6 @@ export function AppShell(props: {
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const navItems = createMemo(() => navFor(scopedTenant()));
-  const tenantBase = createMemo(() => (scopedTenant() ? `/t/${scopedTenant()}` : undefined));
 
   return (
     <div class="dark flex min-h-svh flex-col bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
@@ -470,53 +473,49 @@ export function AppShell(props: {
         </div>
 
         <div class="mx-auto flex max-w-[1600px] items-center gap-3 px-3 sm:px-5 lg:px-6">
-          <nav
-            aria-label="Primary"
-            class="no-scrollbar -mb-px flex h-11 flex-1 items-center gap-0.5 overflow-x-auto"
-          >
-            <For each={navItems()}>
-              {(item) => {
-                const active = () => item.match(location.pathname);
-                return (
-                  <a
-                    href={item.href}
-                    aria-current={active() ? "page" : undefined}
-                    class={cn(
-                      "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                      active()
-                        ? "bg-white/[0.075] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
-                        : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
-                    )}
-                  >
-                    {item.label}
-                  </a>
-                );
-              }}
-            </For>
-          </nav>
-          <Show when={tenantBase()}>
-            {(base) => (
-              <Show when={!location.pathname.includes("/settings/enrollment")}>
-                <a
-                  href={`${base()}/settings/enrollment`}
-                  class="hidden shrink-0 items-center gap-1.5 rounded-md bg-brand px-2.5 py-1.5 text-[11.5px] font-semibold text-brand-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.18)] transition-colors hover:bg-brand/90 sm:flex"
-                >
-                  <LinkIcon class="size-3.5" />
-                  Enroll device
-                </a>
-              </Show>
-            )}
-          </Show>
+          <div class="relative min-w-0 flex-1">
+            <nav
+              aria-label="Primary"
+              class="no-scrollbar -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
+            >
+              <For each={navItems()}>
+                {(item) => {
+                  const active = () => item.match(location.pathname);
+                  return (
+                    <a
+                      href={item.href}
+                      aria-current={active() ? "page" : undefined}
+                      class={cn(
+                        "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                        active()
+                          ? "bg-white/[0.075] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
+                          : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                      )}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                }}
+              </For>
+            </nav>
+            <span
+              class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden"
+              aria-hidden="true"
+            />
+          </div>
         </div>
       </header>
 
-      <EmailVerificationBanner user={props.user} />
+      <Show when={!location.pathname.endsWith("/design")}>
+        <EmailVerificationBanner user={props.user} />
+      </Show>
 
       <main id="main" class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col">
         {props.children}
       </main>
 
-      <footer class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground/60 sm:px-6 lg:px-8">
+      <Show when={!location.pathname.endsWith("/design")}>
+        <footer class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground/60 sm:px-6 lg:px-8">
         <span>Mattrax</span>
         <a class="transition-colors hover:text-muted-foreground" href="/docs/">
           Documentation
@@ -532,8 +531,9 @@ export function AppShell(props: {
         >
           All systems operational
           <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
-        </a>
-      </footer>
+          </a>
+        </footer>
+      </Show>
     </div>
   );
 }

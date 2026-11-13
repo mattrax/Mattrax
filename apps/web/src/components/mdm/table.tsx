@@ -214,7 +214,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             <DropdownMenuTrigger class="inline-flex">
               <Button variant="outline" size="sm" class="gap-1.5">
                 <ChevronsUpDown class="size-3.5" />
-                <span class="hidden xs:inline">Columns</span>
+                <span class="hidden sm:inline">Columns</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent class="w-52 rounded-xl border bg-popover p-1.5 shadow-2xl shadow-black/50">

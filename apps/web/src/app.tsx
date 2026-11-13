@@ -34,6 +34,19 @@ const queryClient = new QueryClient({
 
 const Router = createRouter({ routes: fileRoutes(pageRoutes) });
 
+function BootSplash() {
+  return (
+    <div class="dark flex min-h-screen items-center justify-center bg-background text-foreground">
+      <div class="flex items-center gap-2.5">
+        <span class="flex size-7 animate-pulse items-center justify-center rounded-[7px] bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black">
+          M
+        </span>
+        <span class="text-[13px] font-medium text-muted-foreground">Loading Mattrax…</span>
+      </div>
+    </div>
+  );
+}
+
 function ErrorFallback(props: { error: unknown; reset: () => void }) {
   console.error("Mattrax page error", props.error);
   const presentation = errorPresentation(props.error);
@@ -81,7 +94,7 @@ export default function App() {
           <Title>Mattrax</Title>
           <QueryClientProvider client={queryClient}>
             <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
-              <Loading fallback="Loading...">{props.children}</Loading>
+              <Loading fallback={<BootSplash />}>{props.children}</Loading>
             </Errored>
           </QueryClientProvider>
         </Head>

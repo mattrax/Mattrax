@@ -202,14 +202,17 @@ export default function PolicyDesignerPage() {
   );
 
   return (
-    <div data-policy-designer class="flex min-h-0 flex-1 flex-col overflow-hidden bg-stone-50">
+    <div
+      data-policy-designer
+      class="flex h-[calc(100svh-92px)] min-h-0 flex-1 flex-col overflow-hidden bg-background"
+    >
       <Show
         when={ready() && policy.data}
         fallback={
           <Show
             when={policy.isError}
             fallback={
-              <div class="m-6 rounded-xl border border-stone-200 bg-white p-6 text-sm text-stone-600">
+              <div class="m-6 rounded-xl border border-border bg-card p-6 text-[13px] text-muted-foreground">
                 Loading the policy…
               </div>
             }
@@ -221,10 +224,10 @@ export default function PolicyDesignerPage() {
         }
       >
         <Show when={foreignConfigurations().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 sm:px-4">
+          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning-foreground sm:px-4">
             <div class="min-w-0 flex-1">
               <p class="font-semibold">This policy already has settings</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed">
+              <p class="mt-0.5 text-[11px] leading-relaxed text-warning-foreground/80">
                 Saving from the designer replaces configurations created in the advanced editor.
                 Export your artifact first, or confirm the replacement.
               </p>
@@ -232,7 +235,7 @@ export default function PolicyDesignerPage() {
             <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
               <input
                 type="checkbox"
-                class="mt-0.5 size-3.5 shrink-0 accent-amber-700 sm:mt-0"
+                class="mt-0.5 size-3.5 shrink-0 accent-[var(--warning)] sm:mt-0"
                 checked={replaceExisting()}
                 onChange={(event) => setReplaceExisting(event.currentTarget.checked)}
               />
@@ -242,10 +245,10 @@ export default function PolicyDesignerPage() {
         </Show>
 
         <Show when={otherPlatforms().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-900 sm:px-4">
+          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-brand/25 bg-brand/[0.06] px-3 py-2 text-[12px] text-foreground sm:px-4">
             <div class="min-w-0 flex-1">
               <p class="font-semibold">This policy has a saved designer configuration</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed">
+              <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
                 {otherPlatforms().map(platformLabel).join(" and ")} settings are stored on this
                 policy. Saving this {platformLabel(activePlatform())} draft keeps them unless you
                 choose to replace them.
@@ -254,7 +257,7 @@ export default function PolicyDesignerPage() {
             <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
               <input
                 type="checkbox"
-                class="mt-0.5 size-3.5 shrink-0 accent-sky-700 sm:mt-0"
+                class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand)] sm:mt-0"
                 checked={replaceOtherPlatforms()}
                 onChange={(event) => setReplaceOtherPlatforms(event.currentTarget.checked)}
               />

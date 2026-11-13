@@ -1,11 +1,19 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { ErrorText, Field, LinkButton, PageHeader } from "~/components/mdm/common";
+import {
+  ErrorText,
+  Field,
+  LinkButton,
+  Page,
+  PageHeader,
+  Panel,
+  PlatformBadge,
+} from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { CircleAlert } from "~/components/ui/icons";
 import {
   enterprise,
   enterpriseKeys,
@@ -15,6 +23,25 @@ import {
   type GroupRow,
 } from "~/lib/enterprise";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
+
+const textareaClass =
+  "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+
+const sourceLabel = (source: ApplicationNode["source"]) =>
+  source === "manifest" ? "Manifest URL" : source === "store" ? "App Store" : "Uploaded file";
+
+const formatBytes = (value?: number | null) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = value / 1024;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit++;
+  }
+  return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
+};
 
 export default function ApplicationDetailPage() {
   const params = useParams();
@@ -145,10 +172,27 @@ export default function ApplicationDetailPage() {
   );
 
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
+        eyebrow="Application"
         title={row()?.name ?? "Application"}
         description="Catalogue metadata, assignments and delivery."
+        meta={
+          <Show when={row()}>
+            <PlatformBadge proto={row()!.platform} />
+            <Badge variant="outline" class="text-muted-foreground">
+              {sourceLabel(row()!.source)}
+            </Badge>
+            <Show when={row()?.version}>
+              <span class="font-mono text-[11.5px] text-muted-foreground">v{row()!.version}</span>
+            </Show>
+            <Show when={row()?.bundleId}>
+              <span class="max-w-[24ch] truncate font-mono text-[11.5px] text-muted-foreground">
+                {row()!.bundleId}
+              </span>
+            </Show>
+          </Show>
+        }
         actions={
           <>
             <LinkButton href={`/t/${params.tenantId}/applications`} variant="outline">
@@ -177,49 +221,69 @@ export default function ApplicationDetailPage() {
       <Show
         when={row()}
         fallback={
-          <div class="rounded-xl border bg-white p-6 text-sm text-stone-500">
-            <Show when={app.isError} fallback={<span>Loading application…</span>}>
+          <Panel>
+            <Show
+              when={app.isError}
+              fallback={
+                <div class="space-y-2">
+                  <div class="h-4 w-48 animate-pulse rounded bg-muted/60" />
+                  <div class="h-28 animate-pulse rounded-lg bg-muted/40" />
+                </div>
+              }
+            >
               <ErrorText error={app.error} />
             </Show>
-          </div>
+          </Panel>
         }
       >
         {(application) => (
-          <div class="grid gap-6 xl:grid-cols-[1fr_380px]">
-            <div class="space-y-6">
-              <Card>
-                <CardHeader class="border-b">
-                  <CardTitle class="text-base">Details</CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-4">
-                  <div class="flex flex-wrap items-center gap-2 text-sm">
-                    <Badge variant="secondary">{application().platform}</Badge>
-                    <Badge variant="secondary">{application().source}</Badge>
+          <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+            <div class="space-y-5">
+              <Panel
+                title="Details"
+                description="Metadata, installer source and the upload attached to this app."
+              >
+                <div class="space-y-4">
+                  <div class="flex flex-wrap items-center gap-2 text-[12px]">
+                    <PlatformBadge proto={application().platform} />
+                    <Badge variant="outline" class="text-muted-foreground">
+                      {sourceLabel(application().source)}
+                    </Badge>
                     <Show when={application().sha256}>
                       {(sha) => (
-                        <span class="font-mono text-xs text-stone-400">
+                        <span class="truncate font-mono text-[11px] text-muted-foreground/80">
                           sha256 {sha().slice(0, 16)}…
                         </span>
                       )}
                     </Show>
+                    <Show when={application().size}>
+                      <span class="text-[11px] tabular-nums text-muted-foreground">
+                        {formatBytes(application().size)}
+                      </span>
+                    </Show>
                   </div>
+
                   <Show when={vppAsset()}>
                     {(asset) => (
-                      <div class="rounded-lg border bg-stone-50 p-3 text-sm">
+                      <div class="rounded-lg border border-brand/25 bg-brand/[0.06] p-3">
                         <div class="flex flex-wrap items-center gap-2">
-                          <Badge variant="secondary">VPP</Badge>
-                          <span class="font-medium">{asset().name}</span>
+                          <Badge class="text-[10px]">VPP</Badge>
+                          <span class="text-[13px] font-medium text-foreground">
+                            {asset().name}
+                          </span>
                           <Show when={asset().bundleId}>
-                            <span class="font-mono text-xs text-stone-400">{asset().bundleId}</span>
+                            <span class="font-mono text-[11px] text-muted-foreground">
+                              {asset().bundleId}
+                            </span>
                           </Show>
                         </div>
-                        <p class="mt-1 text-xs text-stone-500">
+                        <p class="mt-1 text-[11.5px] text-muted-foreground">
                           {asset().availableLicenses} of {asset().totalLicenses} licence
                           {asset().totalLicenses === 1 ? "" : "s"} available ·{" "}
                           {asset().assignedLicenses} assigned
                         </p>
                         <Show when={asset().availableLicenses === 0}>
-                          <p class="mt-1 text-xs text-amber-700">
+                          <p class="mt-1 text-[11.5px] text-warning-foreground">
                             No licences are available. Installs will be skipped until a licence is
                             returned or purchased.
                           </p>
@@ -227,12 +291,17 @@ export default function ApplicationDetailPage() {
                       </div>
                     )}
                   </Show>
+
                   <Show when={vpp.data?.configured && !vppAsset()}>
-                    <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                      Apps and Books is configured, but no licence pool exists for this App Store
-                      ID. Sync Apps and Books from Settings → Management before installing.
+                    <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[11.5px] leading-relaxed text-warning-foreground">
+                      <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
+                      <span>
+                        Apps and Books is configured, but no licence pool exists for this App Store
+                        ID. Sync Apps and Books from Settings → Management before installing.
+                      </span>
                     </p>
                   </Show>
+
                   <Field label="Name">
                     <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} />
                   </Field>
@@ -258,12 +327,12 @@ export default function ApplicationDetailPage() {
                   </div>
                   <Field label="Notes">
                     <textarea
-                      class="min-h-24 rounded-lg border bg-white px-3 py-2 text-sm"
+                      class={textareaClass}
                       value={notes()}
                       onInput={(e) => setNotes(e.currentTarget.value)}
                     />
                   </Field>
-                  <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap items-center gap-2 pt-1">
                     <Button disabled={save.isPending} onClick={() => save.mutate()}>
                       {save.isPending ? "Saving…" : "Save changes"}
                     </Button>
@@ -276,7 +345,7 @@ export default function ApplicationDetailPage() {
                     </Button>
                     <Button
                       variant="ghost"
-                      class="text-red-600 hover:text-red-700"
+                      class="ml-auto text-destructive hover:text-destructive"
                       disabled={remove.isPending}
                       onClick={() => {
                         if (window.confirm(`Delete ${application().name}?`)) remove.mutate();
@@ -288,45 +357,55 @@ export default function ApplicationDetailPage() {
                   <ErrorText error={save.error ?? upload.error ?? remove.error ?? install.error} />
                   <Show when={message()}>
                     {(text) => (
-                      <p class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+                      <p
+                        role="status"
+                        class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                      >
                         {text()}
                       </p>
                     )}
                   </Show>
                   <Show when={application().source === "upload"}>
-                    <p class="text-xs text-stone-400">
+                    <p class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
                       Uploaded files are stored and downloadable from the API, but Apple installs
                       still need a manifest URL or store ID.
                     </p>
                   </Show>
-                </CardContent>
-              </Card>
+                </div>
+              </Panel>
             </div>
 
-            <div class="space-y-6">
-              <Card>
-                <CardHeader class="border-b">
-                  <CardTitle class="text-base">
-                    Assignments <Badge variant="secondary">{assignedCount()}</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-4">
+            <div class="space-y-5">
+              <Panel
+                title="Assignments"
+                description="Saved with the form above."
+                actions={
+                  <Badge variant="secondary" class="tabular-nums">
+                    {assignedCount()}
+                  </Badge>
+                }
+              >
+                <div class="space-y-4">
                   <div>
-                    <p class="mb-2 text-sm font-medium">Groups</p>
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      <span>Groups</span>
+                      <span class="tabular-nums">{groupIds().size}</span>
+                    </p>
                     <Show
                       when={(groups.data?.rows.length ?? 0) > 0}
-                      fallback={<p class="text-sm text-stone-500">No groups yet.</p>}
+                      fallback={<p class="text-[12px] text-muted-foreground">No groups yet.</p>}
                     >
-                      <div class="max-h-48 space-y-1 overflow-auto rounded-lg border p-2">
+                      <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                         <For each={groups.data?.rows ?? []}>
                           {(group: GroupRow) => (
-                            <label class="flex items-center gap-2 text-sm">
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
                               <input
                                 type="checkbox"
+                                class="size-3.5 shrink-0 accent-[var(--brand)]"
                                 checked={groupIds().has(group.id)}
                                 onChange={() => toggle(groupIds, setGroupIds, group.id)}
                               />
-                              {group.name}
+                              <span class="min-w-0 truncate">{group.name}</span>
                             </label>
                           )}
                         </For>
@@ -334,38 +413,81 @@ export default function ApplicationDetailPage() {
                     </Show>
                   </div>
                   <div>
-                    <p class="mb-2 text-sm font-medium">Devices</p>
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      <span>Devices</span>
+                      <span class="tabular-nums">{deviceIds().size}</span>
+                    </p>
                     <Show
                       when={(devices.data?.rows.length ?? 0) > 0}
-                      fallback={<p class="text-sm text-stone-500">No devices enrolled yet.</p>}
+                      fallback={
+                        <p class="text-[12px] text-muted-foreground">No devices enrolled yet.</p>
+                      }
                     >
-                      <div class="max-h-48 space-y-1 overflow-auto rounded-lg border p-2">
+                      <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                         <For each={devices.data?.rows ?? []}>
                           {(device: DeviceRow) => (
-                            <label class="flex items-center gap-2 text-sm">
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
                               <input
                                 type="checkbox"
+                                class="size-3.5 shrink-0 accent-[var(--brand)]"
                                 checked={deviceIds().has(device.id)}
                                 onChange={() => toggle(deviceIds, setDeviceIds, device.id)}
                               />
-                              {device.name}{" "}
-                              <span class="text-xs text-stone-400">{device.proto}</span>
+                              <span class="min-w-0 flex-1 truncate">{device.name}</span>
+                              <span class="shrink-0 text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+                                {device.proto}
+                              </span>
                             </label>
                           )}
                         </For>
                       </div>
                     </Show>
                   </div>
-                  <p class="text-xs text-stone-400">
-                    Assignments are saved with the form above. Apple installs are queued on the next
+                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                    Assignments are saved with the form. Apple installs are queued on the next
                     check-in; Windows and Android delivery is not implemented yet.
                   </p>
-                </CardContent>
-              </Card>
+                </div>
+              </Panel>
+
+              <Panel title="Delivery" description="Where this installer resolves from.">
+                <dl class="space-y-2 text-[12px]">
+                  <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted-foreground">Platform</dt>
+                    <dd>
+                      <PlatformBadge proto={application().platform} />
+                    </dd>
+                  </div>
+                  <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted-foreground">Source</dt>
+                    <dd class="text-foreground">{sourceLabel(application().source)}</dd>
+                  </div>
+                  <Show when={application().manifestUrl}>
+                    <div class="min-w-0">
+                      <dt class="text-muted-foreground">Manifest</dt>
+                      <dd class="truncate font-mono text-[11px] text-foreground">
+                        {application().manifestUrl}
+                      </dd>
+                    </div>
+                  </Show>
+                  <Show when={application().storeId}>
+                    <div class="flex items-center justify-between gap-3">
+                      <dt class="text-muted-foreground">Store ID</dt>
+                      <dd class="font-mono text-[11px] text-foreground">{application().storeId}</dd>
+                    </div>
+                  </Show>
+                  <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted-foreground">Install</dt>
+                    <dd class="text-[11.5px] text-foreground">
+                      {canInstall() ? "Supported (Apple)" : "Not implemented"}
+                    </dd>
+                  </div>
+                </dl>
+              </Panel>
             </div>
           </div>
         )}
       </Show>
-    </div>
+    </Page>
   );
 }

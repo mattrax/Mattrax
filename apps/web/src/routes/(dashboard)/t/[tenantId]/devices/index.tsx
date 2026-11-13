@@ -7,6 +7,7 @@ import {
   ErrorText,
   formatDate,
   LinkButton,
+  Page,
   PageHeader,
   PlatformBadge,
 } from "~/components/mdm/common";
@@ -51,7 +52,49 @@ const FILTER_PARAM_KEYS = [
 const emptyFilterParams = () =>
   Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""])) as Record<string, string>;
 
-const selectClass = "h-9 rounded-lg border bg-white px-3 text-sm text-stone-800";
+const selectClass =
+  "h-8 w-full min-w-0 rounded-lg px-2.5 pr-8 text-[12.5px] text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60 sm:w-auto";
+
+const summaryTones = {
+  default: "text-foreground",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-destructive",
+  brand: "text-brand",
+} as const;
+
+/** A single hairline-divided strip keeps the fleet counters compact enough to
+ * sit above the table without competing with it. */
+function FleetSummary(props: {
+  items: ReadonlyArray<{
+    label: string;
+    value: string | number;
+    hint: string;
+    tone?: keyof typeof summaryTones;
+  }>;
+}) {
+  return (
+    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.06] sm:grid-cols-4">
+      <For each={props.items}>
+        {(item) => (
+          <div class="min-w-0 bg-card px-3.5 py-3 sm:px-4">
+            <p class="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              {item.label}
+            </p>
+            <p
+              class={`mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${
+                summaryTones[item.tone ?? "default"]
+              }`}
+            >
+              {item.value}
+            </p>
+            <p class="mt-1.5 truncate text-[11px] text-muted-foreground/80">{item.hint}</p>
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
 
 /** Search rows carry group names; the base `DeviceRow` type does not. */
 const rowGroups = (row: DeviceRow) =>
@@ -353,6 +396,40 @@ export default function DevicesPage() {
     setSearchParams(emptyFilterParams(), { replace: true });
   };
 
+  // Cheap fleet signals derived from the rows already on screen. Nothing here
+  // issues another request; the totals come from the existing search response.
+  const fleet = () => {
+    const rows = devices.data?.devices ?? [];
+    const stale = rows.filter((row) => {
+      const seen = row.lastSeenAt ? new Date(row.lastSeenAt).getTime() : Number.NaN;
+      return Number.isFinite(seen) && Date.now() - seen > 7 * 24 * 60 * 60 * 1000;
+    }).length;
+    return [
+      {
+        label: "Devices",
+        value: total(),
+        hint: hasFilters() ? "Matching current filters" : "In this workspace",
+      },
+      {
+        label: "Enrolled",
+        value: rows.filter((row) => row.status === "enrolled").length,
+        hint: `of ${rows.length} on this page`,
+        tone: "success" as const,
+      },
+      {
+        label: "Stale 7d",
+        value: stale,
+        hint: "No check-in for 7 days",
+        tone: stale > 0 ? ("warning" as const) : ("default" as const),
+      },
+      {
+        label: "No asset tag",
+        value: rows.filter((row) => !row.assetTag).length,
+        hint: "Unlabelled in inventory",
+      },
+    ];
+  };
+
   const exportCsv = async () => {
     setExporting(true);
     setExportError(undefined);
@@ -389,37 +466,64 @@ export default function DevicesPage() {
   };
 
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
         title="Devices"
         description="Inventory, sync, and retire enrolled Apple, Windows, and Android devices."
         actions={
           <>
-            <Button variant="outline" onClick={openImport}>
-              Import CSV
-            </Button>
-            <Button variant="outline" onClick={exportCsv} disabled={exporting()}>
-              {exporting() ? "Exporting…" : "Export CSV"}
-            </Button>
-            <LinkButton href={`/t/${params.tenantId}/settings/enrollment`} variant="outline">
+            <div class="flex items-center divide-x divide-white/[0.07] overflow-hidden rounded-lg border border-white/[0.09]">
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-8 rounded-none px-3 text-[12.5px]"
+                onClick={openImport}
+              >
+                Import CSV
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-8 rounded-none px-3 text-[12.5px]"
+                onClick={exportCsv}
+                disabled={exporting()}
+              >
+                {exporting() ? "Exporting…" : "Export CSV"}
+              </Button>
+            </div>
+            <Button
+              as="a"
+              href={`/t/${params.tenantId}/settings/enrollment`}
+              variant="outline"
+              size="sm"
+              class="h-8 border-brand/30 bg-brand/10 text-[12.5px] text-brand hover:bg-brand/15 hover:text-brand"
+            >
               Enroll device
-            </LinkButton>
+            </Button>
           </>
         }
       />
+
+      <FleetSummary items={fleet()} />
+
       <Show when={exportError()}>
         <ErrorText error={exportError()} />
       </Show>
       <Show when={exportTruncated()}>
         <div
           role="status"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/25 bg-warning/[0.07] px-3.5 py-2.5 text-[12.5px] text-warning-foreground"
         >
           <span>
             The export reached the {10_000}-row limit and was truncated. Narrow the filters to
             export the rest.
           </span>
-          <Button variant="ghost" size="sm" onClick={() => setExportTruncated(false)}>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-warning-foreground hover:bg-warning/10"
+            onClick={() => setExportTruncated(false)}
+          >
             Dismiss
           </Button>
         </div>
@@ -441,134 +545,150 @@ export default function DevicesPage() {
         }}
         searchPlaceholder="Search name, serial, model, asset tag… (⌘F)"
         toolbar={
-          <div class="flex flex-wrap items-center gap-2">
-            <select
-              class={selectClass}
-              aria-label="Filter by status"
-              value={status()}
-              onChange={(event) => {
-                setStatus(event.currentTarget.value as DeviceRow["status"] | "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any status</option>
-              <option value="enrolling">Enrolling</option>
-              <option value="enrolled">Enrolled</option>
-              <option value="unenrolling">Unenrolling</option>
-              <option value="unenrolled">Unenrolled</option>
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Filter by platform"
-              value={proto()}
-              onChange={(event) => {
-                setProto(event.currentTarget.value as DeviceRow["proto"] | "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any platform</option>
-              <option value="apple">Apple</option>
-              <option value="win">Windows</option>
-              <option value="android">Android</option>
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Filter by group"
-              value={groupId()}
-              onChange={(event) => {
-                setGroupId(event.currentTarget.value);
-                setPage(0);
-              }}
-            >
-              <option value="" selected={!groupId()}>
-                Any group
-              </option>
-              {groups.data?.rows.map((group) => (
-                <option value={group.id} selected={group.id === groupId()}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Filter by health"
-              value={health()}
-              onChange={(event) => {
-                setHealth(event.currentTarget.value as DeviceHealthFilter | "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any health</option>
-              <option value="healthy">Healthy</option>
-              <option value="attention">Attention</option>
-              <option value="critical">Critical</option>
-              <option value="stale">Stale (7d)</option>
-              <option value="unknown">Unknown</option>
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Filter by push delivery"
-              value={push()}
-              onChange={(event) => {
-                setPush(event.currentTarget.value as "failing" | "invalid" | "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any push state</option>
-              <option value="failing">Push failing</option>
-              <option value="invalid">Invalid token</option>
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Filter by last seen"
-              value={staleDays()}
-              onChange={(event) => {
-                setStaleDays(event.currentTarget.value as "" | "7" | "30" | "90");
-                setPage(0);
-              }}
-            >
-              <option value="">Seen any time</option>
-              <option value="7">Not seen in 7 days</option>
-              <option value="30">Not seen in 30 days</option>
-              <option value="90">Not seen in 90 days</option>
-            </select>
-            <select
-              class={selectClass}
-              aria-label="Sort devices"
-              value={sort()?.id ?? "name"}
-              onChange={(event) => {
-                setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
-                setPage(0);
-              }}
-            >
-              <option value="name">Sort: name</option>
-              <option value="lastSeenAt">Sort: last seen</option>
-              <option value="enrolledAt">Sort: enrolled</option>
-              <option value="status">Sort: status</option>
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSort({ id: sort()?.id ?? "name", dir: sort()?.dir === "desc" ? "asc" : "desc" });
-                setPage(0);
-              }}
-            >
-              {sort()?.dir === "desc" ? "Descending" : "Ascending"}
-            </Button>
-            <Show when={hasFilters()}>
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            </Show>
+          <div class="rounded-xl border border-white/[0.07] bg-white/[0.02] p-2">
+            <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
+              <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-1 lg:flex-wrap lg:items-center">
+                <select
+                  class={selectClass}
+                  aria-label="Filter by status"
+                  value={status()}
+                  onChange={(event) => {
+                    setStatus(event.currentTarget.value as DeviceRow["status"] | "");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Any status</option>
+                  <option value="enrolling">Enrolling</option>
+                  <option value="enrolled">Enrolled</option>
+                  <option value="unenrolling">Unenrolling</option>
+                  <option value="unenrolled">Unenrolled</option>
+                </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by platform"
+                  value={proto()}
+                  onChange={(event) => {
+                    setProto(event.currentTarget.value as DeviceRow["proto"] | "");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Any platform</option>
+                  <option value="apple">Apple</option>
+                  <option value="win">Windows</option>
+                  <option value="android">Android</option>
+                </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by group"
+                  value={groupId()}
+                  onChange={(event) => {
+                    setGroupId(event.currentTarget.value);
+                    setPage(0);
+                  }}
+                >
+                  <option value="" selected={!groupId()}>
+                    Any group
+                  </option>
+                  {groups.data?.rows.map((group) => (
+                    <option value={group.id} selected={group.id === groupId()}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by health"
+                  value={health()}
+                  onChange={(event) => {
+                    setHealth(event.currentTarget.value as DeviceHealthFilter | "");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Any health</option>
+                  <option value="healthy">Healthy</option>
+                  <option value="attention">Attention</option>
+                  <option value="critical">Critical</option>
+                  <option value="stale">Stale (7d)</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by push delivery"
+                  value={push()}
+                  onChange={(event) => {
+                    setPush(event.currentTarget.value as "failing" | "invalid" | "");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Any push state</option>
+                  <option value="failing">Push failing</option>
+                  <option value="invalid">Invalid token</option>
+                </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by last seen"
+                  value={staleDays()}
+                  onChange={(event) => {
+                    setStaleDays(event.currentTarget.value as "" | "7" | "30" | "90");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Seen any time</option>
+                  <option value="7">Not seen in 7 days</option>
+                  <option value="30">Not seen in 30 days</option>
+                  <option value="90">Not seen in 90 days</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1.5 border-t border-white/[0.06] pt-2 lg:border-l lg:border-t-0 lg:pl-2 lg:pt-0">
+                <select
+                  class={selectClass + " flex-1 lg:flex-none"}
+                  aria-label="Sort devices"
+                  value={sort()?.id ?? "name"}
+                  onChange={(event) => {
+                    setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
+                    setPage(0);
+                  }}
+                >
+                  <option value="name">Sort: name</option>
+                  <option value="lastSeenAt">Sort: last seen</option>
+                  <option value="enrolledAt">Sort: enrolled</option>
+                  <option value="status">Sort: status</option>
+                </select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="shrink-0"
+                  onClick={() => {
+                    setSort({
+                      id: sort()?.id ?? "name",
+                      dir: sort()?.dir === "desc" ? "asc" : "desc",
+                    });
+                    setPage(0);
+                  }}
+                >
+                  {sort()?.dir === "desc" ? "Descending" : "Ascending"}
+                </Button>
+                <Show when={hasFilters()}>
+                  <Button variant="ghost" size="sm" class="shrink-0" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </Show>
+              </div>
+            </div>
           </div>
         }
         footer={
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="text-sm text-muted-foreground">
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5">
+            <span class="text-[12px] tabular-nums text-muted-foreground">
               Page {page() + 1} of {pageCount()}
+              <Show when={total() > 0}>
+                <span class="text-muted-foreground/60">
+                  {" "}
+                  · {total().toLocaleString()} device{total() === 1 ? "" : "s"}
+                </span>
+              </Show>
             </span>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
@@ -604,7 +724,15 @@ export default function DevicesPage() {
                 <Button variant="outline" onClick={clearFilters}>
                   Clear filters
                 </Button>
-              ) : undefined
+              ) : (
+                <LinkButton
+                  href={`/t/${params.tenantId}/settings/enrollment`}
+                  variant="outline"
+                  size="sm"
+                >
+                  Enroll device
+                </LinkButton>
+              )
             }
           />
         }
@@ -616,7 +744,7 @@ export default function DevicesPage() {
             search: (row) => row.name,
             cell: (row) => (
               <a
-                class="font-medium text-stone-950 hover:underline"
+                class="font-medium text-foreground hover:underline"
                 href={`/t/${params.tenantId}/devices/${row.id}`}
               >
                 {row.name}
@@ -681,7 +809,7 @@ export default function DevicesPage() {
       />
 
       <Dialog open={importOpen()} onOpenChange={(open) => !open && closeImport()}>
-        <DialogContent class="max-h-[85vh] max-w-2xl overflow-y-auto rounded-xl bg-white p-6">
+        <DialogContent class="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import pre-registered devices</DialogTitle>
             <DialogDescription>
@@ -700,7 +828,9 @@ export default function DevicesPage() {
                   Download template
                 </Button>
                 <Show when={importFileName()}>
-                  <span class="text-xs text-muted-foreground">{importFileName()}</span>
+                  <span class="min-w-0 truncate text-xs text-muted-foreground">
+                    {importFileName()}
+                  </span>
                 </Show>
               </div>
 
@@ -713,7 +843,7 @@ export default function DevicesPage() {
                         row{parsed().rows.length === 1 ? "" : "s"} ready
                       </span>
                       <Show when={parsed().issues.length > 0}>
-                        <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                        <span class="rounded-full border border-destructive/25 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
                           {parsed().issues.length} issue
                           {parsed().issues.length === 1 ? "" : "s"}
                         </span>
@@ -724,7 +854,7 @@ export default function DevicesPage() {
                     </div>
 
                     <Show when={parsed().issues.length > 0}>
-                      <ul class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      <ul class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-destructive/25 bg-destructive/[0.07] p-3 text-sm text-destructive">
                         <For each={parsed().issues.slice(0, 100)}>
                           {(issue) => (
                             <li>
@@ -736,21 +866,21 @@ export default function DevicesPage() {
                     </Show>
 
                     <Show when={parsed().rows.length > 0}>
-                      <div class="max-h-64 overflow-auto rounded-lg border">
-                        <table class="w-full text-left text-sm">
-                          <thead class="sticky top-0 bg-stone-50 text-xs uppercase text-stone-500">
+                      <div class="max-h-64 overflow-auto rounded-lg border border-white/[0.07]">
+                        <table class="w-full text-left text-[12.5px]">
+                          <thead class="sticky top-0 z-10 border-b border-white/[0.07] bg-popover text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                             <tr>
-                              <th class="px-3 py-2">Serial</th>
-                              <th class="px-3 py-2">Name</th>
-                              <th class="px-3 py-2">Asset tag</th>
-                              <th class="px-3 py-2">Group</th>
-                              <th class="px-3 py-2">Notes</th>
+                              <th class="px-3 py-2 font-medium">Serial</th>
+                              <th class="px-3 py-2 font-medium">Name</th>
+                              <th class="px-3 py-2 font-medium">Asset tag</th>
+                              <th class="px-3 py-2 font-medium">Group</th>
+                              <th class="px-3 py-2 font-medium">Notes</th>
                             </tr>
                           </thead>
-                          <tbody class="divide-y">
+                          <tbody class="divide-y divide-white/[0.05]">
                             <For each={parsed().rows.slice(0, 20)}>
                               {(row) => (
-                                <tr>
+                                <tr class="hover:bg-white/[0.025]">
                                   <td class="px-3 py-2 font-mono text-xs">{row.serial}</td>
                                   <td class="px-3 py-2">{row.name ?? "—"}</td>
                                   <td class="px-3 py-2">{row.assetTag ?? "—"}</td>
@@ -803,21 +933,23 @@ export default function DevicesPage() {
             {(result) => (
               <div class="space-y-4">
                 <div class="grid grid-cols-3 gap-2 text-center">
-                  <div class="rounded-lg border bg-green-50 p-3">
-                    <div class="text-2xl font-semibold text-green-700">{result().created}</div>
-                    <div class="text-xs text-green-700">Created</div>
+                  <div class="rounded-lg border border-success/25 bg-success/10 p-3">
+                    <div class="text-2xl font-semibold text-success-foreground">
+                      {result().created}
+                    </div>
+                    <div class="text-[11px] text-success-foreground">Created</div>
                   </div>
-                  <div class="rounded-lg border bg-stone-50 p-3">
-                    <div class="text-2xl font-semibold text-stone-700">{result().updated}</div>
-                    <div class="text-xs text-stone-700">Updated</div>
+                  <div class="rounded-lg border border-white/[0.07] bg-white/[0.03] p-3">
+                    <div class="text-2xl font-semibold text-foreground">{result().updated}</div>
+                    <div class="text-[11px] text-muted-foreground">Updated</div>
                   </div>
-                  <div class="rounded-lg border bg-red-50 p-3">
-                    <div class="text-2xl font-semibold text-red-700">{result().failed}</div>
-                    <div class="text-xs text-red-700">Failed</div>
+                  <div class="rounded-lg border border-destructive/25 bg-destructive/10 p-3">
+                    <div class="text-2xl font-semibold text-destructive">{result().failed}</div>
+                    <div class="text-[11px] text-destructive">Failed</div>
                   </div>
                 </div>
                 <Show when={result().failed > 0}>
-                  <ul class="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <ul class="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-destructive/25 bg-destructive/[0.07] p-3 text-sm text-destructive">
                     <For each={result().results.filter((row) => row.status === "error")}>
                       {(row) => (
                         <li>
@@ -843,6 +975,6 @@ export default function DevicesPage() {
           </Show>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

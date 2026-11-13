@@ -1053,11 +1053,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             type="button"
             disabled={loading() || !data()}
             onClick={() => applyTemplate(template.keys)}
-            class="w-full rounded-xl border border-stone-200 bg-white p-3 text-left transition-colors hover:border-stone-400 hover:bg-stone-50 focus-visible:border-stone-500 focus-visible:ring-[3px] focus-visible:ring-stone-900/10 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            class="w-full rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <strong class="block text-[13px] font-semibold text-stone-900">{template.label}</strong>
-            <span class="mt-0.5 block text-xs text-stone-600">{template.description}</span>
-            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-stone-900 px-2 py-0.5 text-[10px] font-medium text-white">
+            <strong class="block text-[13px] font-semibold text-foreground">
+              {template.label}
+            </strong>
+            <span class="mt-0.5 block text-xs text-muted-foreground">{template.description}</span>
+            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
               Recommended
             </span>
           </button>
@@ -1068,7 +1070,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const platformPills = () => (
     <div
-      class="flex shrink-0 items-center gap-0.5 rounded-full border border-stone-200 bg-stone-100/80 p-0.5"
+      class="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted/60 p-0.5"
       role="group"
       aria-label="Platform"
     >
@@ -1084,10 +1086,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             }
             onClick={() => choosePlatform(item.id)}
             class={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-stone-900/15 focus-visible:outline-none",
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none",
               platform() === item.id
-                ? "bg-stone-900 text-white shadow-sm"
-                : "text-stone-600 hover:bg-white hover:text-stone-900",
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-card hover:text-foreground",
             )}
           >
             {item.short}
@@ -1105,8 +1107,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         class={cn(
           "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
           errorCount() > 0
-            ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 focus-visible:ring-red-500/20"
-            : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 focus-visible:ring-amber-500/20",
+            ? "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:ring-destructive/30"
+            : "border-warning/30 bg-warning/10 text-warning-foreground hover:bg-warning/20 focus-visible:ring-warning/30",
           compact && "border-0 bg-transparent px-0 py-0",
         )}
       >
@@ -1120,15 +1122,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const summaryPanel = () => (
     <div class="flex min-h-0 flex-1 flex-col">
-      <div class="shrink-0 border-b border-stone-200 px-4 py-3">
-        <h2 class="text-[13px] font-semibold text-stone-900">Summary</h2>
-        <p class="mt-0.5 text-[11px] text-stone-600">
+      <div class="shrink-0 border-b border-border px-4 py-3">
+        <h2 class="text-[13px] font-semibold text-foreground">Summary</h2>
+        <p class="mt-0.5 text-[11px] text-muted-foreground">
           {platformName()} · {selections().length} collection{selections().length === 1 ? "" : "s"}
         </p>
       </div>
       <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         <div class="space-y-1.5">
-          <p class="text-[11px] font-medium text-stone-600">
+          <p class="text-[11px] font-medium text-muted-foreground">
             {props.mode === "dashboard" ? "Profile name" : "Policy name"}
           </p>
           <Input
@@ -1138,31 +1140,35 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             aria-label={props.mode === "dashboard" ? "Profile name" : "Policy name"}
             class="h-8 text-[13px]"
           />
-          <p class="text-[11px] leading-relaxed text-stone-600">
+          <p class="text-[11px] leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
               ? "Shown on devices. The Mattrax policy name stays the same."
               : "Shown on devices and in the exported artifact."}
           </p>
         </div>
 
-        <dl class="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-stone-200 bg-stone-200">
-          <div class="bg-white px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-stone-500">Sets</dt>
-            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-stone-900">
+        <dl class="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
+          <div class="bg-card px-2 py-2">
+            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Sets
+            </dt>
+            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
               {selections().length}
             </dd>
           </div>
-          <div class="bg-white px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-stone-500">
+          <div class="bg-card px-2 py-2">
+            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Configured
             </dt>
-            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-stone-900">
+            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
               {policyStats().configured}
             </dd>
           </div>
-          <div class="bg-white px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-stone-500">Changed</dt>
-            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-stone-900">
+          <div class="bg-card px-2 py-2">
+            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Changed
+            </dt>
+            <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
               {policyStats().changed}
             </dd>
           </div>
@@ -1170,9 +1176,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-2">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Issues</h3>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Issues
+            </h3>
             <Show when={issues().length > 0}>
-              <span class="text-[10px] text-stone-600">
+              <span class="text-[10px] text-muted-foreground">
                 {errorCount()} error{errorCount() === 1 ? "" : "s"} · {warningCount()} warning
                 {warningCount() === 1 ? "" : "s"}
               </span>
@@ -1181,7 +1189,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <Show
             when={issues().length > 0}
             fallback={
-              <p class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] text-stone-600">
+              <p class="rounded-lg border border-border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
                 No validation issues. Defaults are not counted as changes.
               </p>
             }
@@ -1196,8 +1204,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       class={cn(
                         "flex w-full items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
                         issue.severity === "error"
-                          ? "border-red-200 bg-red-50/60 text-red-800 hover:bg-red-50 focus-visible:ring-red-500/20"
-                          : "border-amber-200 bg-amber-50/60 text-amber-900 hover:bg-amber-50 focus-visible:ring-amber-500/20",
+                          ? "border-destructive/30 bg-destructive/[0.07] text-destructive hover:bg-destructive/10 focus-visible:ring-destructive/30"
+                          : "border-warning/30 bg-warning/[0.07] text-warning-foreground hover:bg-warning/10 focus-visible:ring-warning/30",
                       )}
                     >
                       <Show
@@ -1218,19 +1226,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               </For>
             </ul>
             <Show when={issues().length > 40}>
-              <p class="text-[10px] text-stone-600">And {issues().length - 40} more…</p>
+              <p class="text-[10px] text-muted-foreground">And {issues().length - 40} more…</p>
             </Show>
           </Show>
         </div>
 
         <div class="space-y-1.5">
-          <h3 class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+          <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Collections
           </h3>
           <Show
             when={selections().length > 0}
             fallback={
-              <p class="text-[11px] text-stone-600">
+              <p class="text-[11px] text-muted-foreground">
                 Add a collection from the catalogue or start from a baseline.
               </p>
             }
@@ -1248,12 +1256,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                           setSummaryOpen(false);
                         }}
                         class={cn(
-                          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-stone-100 focus-visible:ring-[3px] focus-visible:outline-none",
-                          activeKey() === selection.collectionId && "bg-stone-100",
+                          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:outline-none",
+                          activeKey() === selection.collectionId && "bg-muted",
                         )}
                       >
-                        <span class="min-w-0 flex-1 truncate text-stone-800">{selection.name}</span>
-                        <span class="shrink-0 tabular-nums text-stone-600">
+                        <span class="min-w-0 flex-1 truncate text-foreground">
+                          {selection.name}
+                        </span>
+                        <span class="shrink-0 tabular-nums text-muted-foreground">
                           {stats().changed}/{stats().total}
                         </span>
                       </button>
@@ -1265,8 +1275,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </Show>
         </div>
 
-        <div class="space-y-2 rounded-lg border border-stone-200 bg-stone-50 p-2.5">
-          <p class="text-[11px] leading-relaxed text-stone-600">
+        <div class="space-y-2 rounded-lg border border-border bg-muted/30 p-2.5">
+          <p class="text-[11px] leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
               ? "Saving replaces this policy's designer configuration. Advanced-editor settings need explicit confirmation."
               : "Export the artifact now, or deploy it into a Mattrax workspace."}
@@ -1275,7 +1285,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             type="button"
             onClick={() => setStartOverOpen(true)}
             disabled={selections().length === 0}
-            class="text-[11px] font-medium text-red-700 underline underline-offset-2 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+            class="text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
           >
             Start over
           </button>
@@ -1285,147 +1295,173 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   );
 
   return (
-    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-stone-50">
+    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <a
         href="#designer-editor"
-        class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:shadow"
+        class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:shadow"
       >
         Skip to settings
       </a>
 
-      <header class="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-stone-200 bg-white/85 px-3 py-2 backdrop-blur sm:px-4">
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="hidden rounded-lg bg-stone-900 p-1.5 text-white sm:inline-flex">
-            <ShieldCheck class="size-4" />
-          </span>
-          <div class="min-w-0">
-            <h2 class="truncate text-[15px] font-semibold tracking-tight text-stone-900">
-              {name() || "Untitled policy"}
-            </h2>
-            <p class="truncate text-[11px] text-stone-600">
-              {platformName()} · {manifest()?.stats[platform()]?.properties.toLocaleString() ?? "…"}{" "}
-              settings ·{" "}
-              <span
-                class={cn(props.mode === "dashboard" && dirtySincePolicy() && "text-amber-700")}
-              >
-                {saveStatus()}
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {platformPills()}
-
-        <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          {props.pageActions}
-          <span class="hidden xl:inline-flex">{issuesButton()}</span>
-          <Button
-            size="sm"
-            variant="outline"
-            class="xl:hidden"
-            onClick={() => setSummaryOpen(true)}
-          >
-            <PanelRight class="mr-1 size-3.5" /> Summary
-          </Button>
-          <div class="hidden items-center gap-1.5 xl:flex">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPreviewOpen(true)}
-              disabled={selections().length === 0}
-            >
-              Preview
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={download}
-              disabled={selections().length === 0 || blockingIssues().length > 0}
-              title={
-                blockingIssues().length > 0
-                  ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before exporting`
-                  : selections().length === 0
-                    ? "Add a setting to enable export"
-                    : undefined
-              }
-            >
-              <Download class="mr-1 size-3.5" /> Export
-            </Button>
-            <Show
-              when={props.onSave}
-              fallback={
-                <Button
-                  size="sm"
-                  onClick={deploy}
-                  disabled={selections().length === 0 || blockingIssues().length > 0}
-                  title={
-                    blockingIssues().length > 0
-                      ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
-                      : undefined
-                  }
+      <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-background/85 backdrop-blur">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
+          <div class="flex min-w-0 items-center gap-2.5">
+            <span class="hidden size-7 shrink-0 items-center justify-center rounded-lg border border-brand/25 bg-brand-muted text-brand sm:inline-flex">
+              <ShieldCheck class="size-4" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
+                {name() || "Untitled policy"}
+              </h2>
+              <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
+                <span class="truncate">{platformName()}</span>
+                <span class="text-muted-foreground/40" aria-hidden="true">
+                  ·
+                </span>
+                <span class="tabular-nums">
+                  {manifest()?.stats[platform()]?.properties.toLocaleString() ?? "…"} settings
+                </span>
+                <span class="text-muted-foreground/40" aria-hidden="true">
+                  ·
+                </span>
+                <span
+                  class={cn(
+                    "inline-flex min-w-0 items-center gap-1.5",
+                    props.mode === "dashboard" && dirtySincePolicy() && "text-warning-foreground",
+                  )}
                 >
-                  Deploy in Mattrax →
-                </Button>
-              }
+                  <span
+                    class={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      props.mode === "dashboard" && dirtySincePolicy()
+                        ? "bg-warning"
+                        : "bg-success",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span class="truncate">{saveStatus()}</span>
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div class="order-3 w-full sm:order-none sm:w-auto">{platformPills()}</div>
+
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+            {props.pageActions}
+            <span class="hidden xl:inline-flex">{issuesButton()}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              class="xl:hidden"
+              onClick={() => setSummaryOpen(true)}
             >
+              <PanelRight class="mr-1 size-3.5" /> Summary
+            </Button>
+            <div class="hidden items-center gap-1.5 xl:flex">
               <Button
                 size="sm"
-                disabled={!canSave() || props.saving}
-                title={disabledHint() ?? undefined}
-                onClick={save}
+                variant="outline"
+                onClick={() => setPreviewOpen(true)}
+                disabled={selections().length === 0}
               >
-                {props.saving ? "Saving…" : "Save policy"}
+                Preview
               </Button>
-            </Show>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={download}
+                disabled={selections().length === 0 || blockingIssues().length > 0}
+                title={
+                  blockingIssues().length > 0
+                    ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before exporting`
+                    : selections().length === 0
+                      ? "Add a setting to enable export"
+                      : undefined
+                }
+              >
+                <Download class="mr-1 size-3.5" /> Export
+              </Button>
+              <Show
+                when={props.onSave}
+                fallback={
+                  <Button
+                    size="sm"
+                    onClick={deploy}
+                    disabled={selections().length === 0 || blockingIssues().length > 0}
+                    title={
+                      blockingIssues().length > 0
+                        ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
+                        : undefined
+                    }
+                  >
+                    Deploy in Mattrax →
+                  </Button>
+                }
+              >
+                <Button
+                  size="sm"
+                  disabled={!canSave() || props.saving}
+                  title={disabledHint() ?? undefined}
+                  onClick={save}
+                >
+                  {props.saving ? "Saving…" : "Save policy"}
+                </Button>
+              </Show>
+            </div>
           </div>
         </div>
 
-        <Show when={disabledHint()}>
-          {(hint) => (
-            <p class="order-last w-full text-right text-[11px] text-stone-600">{hint()}</p>
-          )}
-        </Show>
-        <Show when={props.error}>
-          {(error) => (
-            <div
-              ref={(element) => {
-                errorRef = element;
-              }}
-              role="alert"
-              class="order-last flex w-full items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-700"
-            >
-              <CircleAlert class="size-3.5 shrink-0" />
-              <span class="min-w-0 flex-1 break-words">{errorMessage(error())}</span>
-            </div>
-          )}
-        </Show>
-        <Show when={notice()}>
-          {(message) => (
-            <p
-              role="status"
-              class="order-last flex w-full items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[11px] text-stone-700"
-            >
-              <Info class="size-3.5 shrink-0" />
-              <span class="min-w-0 flex-1">{message()}</span>
-              <button
-                type="button"
-                aria-label="Dismiss message"
-                class="rounded p-0.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800 focus-visible:ring-2 focus-visible:outline-none"
-                onClick={() => setNotice(null)}
-              >
-                <X class="size-3" />
-              </button>
-            </p>
-          )}
+        <Show when={disabledHint() || props.error || notice()}>
+          <div class="space-y-1 px-3 pb-2 sm:px-4">
+            <Show when={disabledHint()}>
+              {(hint) => (
+                <p class="text-right text-[11px] leading-relaxed text-muted-foreground">{hint()}</p>
+              )}
+            </Show>
+            <Show when={props.error}>
+              {(error) => (
+                <div
+                  ref={(element) => {
+                    errorRef = element;
+                  }}
+                  role="alert"
+                  class="flex w-full items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive"
+                >
+                  <CircleAlert class="size-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1 break-words">{errorMessage(error())}</span>
+                </div>
+              )}
+            </Show>
+            <Show when={notice()}>
+              {(message) => (
+                <p
+                  role="status"
+                  class="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-[11px] text-foreground/90"
+                >
+                  <Info class="size-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1">{message()}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss message"
+                    class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
+                    onClick={() => setNotice(null)}
+                  >
+                    <X class="size-3" />
+                  </button>
+                </p>
+              )}
+            </Show>
+          </div>
         </Show>
       </header>
 
       <Show when={props.mode !== "dashboard"}>
-        <div class="shrink-0 border-b border-stone-200 bg-white px-4 py-2.5 sm:px-6">
-          <h1 class="text-[17px] font-semibold tracking-tight text-stone-900">
+        <div class="shrink-0 border-b border-border bg-card px-4 py-2.5 sm:px-6">
+          <h1 class="text-[17px] font-semibold tracking-tight text-foreground">
             Build a policy in minutes
           </h1>
-          <p class="mt-0.5 text-xs text-stone-600">
+          <p class="mt-0.5 text-xs text-muted-foreground">
             Browse Apple, Windows and Android settings and export a ready-to-use artifact. No
             account is needed to export; sign in only to deploy.
           </p>
@@ -1435,14 +1471,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       <div class="flex min-h-0 flex-1">
         <aside
           class={cn(
-            "min-h-0 w-full shrink-0 flex-col border-r border-stone-200 bg-white xl:flex xl:w-[288px]",
+            "min-h-0 w-full shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-[288px]",
             mobileView() === "editor" ? "hidden xl:flex" : "flex",
           )}
           aria-label="Settings catalogue"
         >
-          <div class="shrink-0 border-b border-stone-200 p-2.5">
+          <div class="shrink-0 border-b border-border p-2.5">
             <div class="relative">
-              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-stone-500" />
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query()}
                 onInput={(event) => setQuery(event.currentTarget.value)}
@@ -1455,14 +1491,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setQuery("")}
-                  class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:ring-2 focus-visible:outline-none"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
                 >
                   <X class="size-3.5" />
                 </button>
               </Show>
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
-              <p class="text-[11px] text-stone-600" aria-live="polite">
+              <p class="text-[11px] text-muted-foreground" aria-live="polite">
                 {!data()
                   ? loadingLabel()
                   : searchIndexLoading()
@@ -1473,16 +1509,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <button
                   type="button"
                   onClick={retryCatalogue}
-                  class="shrink-0 text-[10px] text-red-700 underline underline-offset-2"
+                  class="shrink-0 text-[10px] text-destructive underline underline-offset-2"
                 >
                   Search unavailable · Retry
                 </button>
               </Show>
               <Show when={deprecatedCount() > 0}>
-                <label class="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-stone-600">
+                <label class="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
                   <input
                     type="checkbox"
-                    class="size-3 accent-stone-900"
+                    class="size-3 accent-[var(--brand)]"
                     checked={showDeprecated()}
                     onChange={(event) => setShowDeprecated(event.currentTarget.checked)}
                   />
@@ -1497,7 +1533,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               when={!catalogError()}
               fallback={
                 <div class="space-y-2 p-3">
-                  <p role="alert" class="text-xs text-red-700">
+                  <p role="alert" class="text-xs text-destructive">
                     {catalogError()}
                   </p>
                   <Button size="sm" variant="outline" onClick={retryCatalogue}>
@@ -1508,18 +1544,18 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             >
               <Show
                 when={!loading()}
-                fallback={<p class="p-3 text-xs text-stone-600">{loadingLabel()}</p>}
+                fallback={<p class="p-3 text-xs text-muted-foreground">{loadingLabel()}</p>}
               >
-                <section class="border-b border-stone-200">
+                <section class="border-b border-border">
                   <div class="flex items-center justify-between gap-2 px-3 pb-1 pt-2.5">
-                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-stone-600">
+                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       In this policy ({selections().length})
                     </h3>
                     <Show when={selections().length > 0}>
                       <button
                         type="button"
                         onClick={() => setStartOverOpen(true)}
-                        class="text-[10px] text-stone-500 underline underline-offset-2 hover:text-stone-900"
+                        class="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
                       >
                         Clear
                       </button>
@@ -1528,7 +1564,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Show
                     when={inPolicy().length > 0}
                     fallback={
-                      <p class="px-3 pb-2.5 text-[11px] leading-relaxed text-stone-600">
+                      <p class="px-3 pb-2.5 text-[11px] leading-relaxed text-muted-foreground">
                         {selections().length > 0
                           ? "No collections in this policy match the current search."
                           : "Nothing added yet. Pick a baseline or browse the catalogue."}
@@ -1544,8 +1580,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               class={cn(
                                 "group flex items-center gap-1 border-l-2 pr-1.5",
                                 activeKey() === item.selection.collectionId
-                                  ? "border-indigo-600 bg-stone-100"
-                                  : "border-transparent hover:bg-stone-50",
+                                  ? "border-brand bg-muted"
+                                  : "border-transparent hover:bg-muted/30",
                               )}
                             >
                               <button
@@ -1561,17 +1597,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                         collectionIssues().some(
                                           (issue) => issue.severity === "error",
                                         )
-                                          ? "bg-red-500"
-                                          : "bg-amber-500",
+                                          ? "bg-destructive"
+                                          : "bg-warning",
                                       )}
                                       title={`${collectionIssues().length} validation issue${collectionIssues().length === 1 ? "" : "s"}`}
                                     />
                                   </Show>
-                                  <span class="truncate text-[13px] font-medium text-stone-900">
+                                  <span class="truncate text-[13px] font-medium text-foreground">
                                     {item.selection.name}
                                   </span>
                                 </span>
-                                <span class="mt-0.5 block text-[11px] text-stone-600">
+                                <span class="mt-0.5 block text-[11px] text-muted-foreground">
                                   {item.stats.changed}/{item.stats.total} settings
                                   <Show when={item.matchCount > 0}>
                                     {" "}
@@ -1583,7 +1619,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 type="button"
                                 aria-label={`Remove ${item.selection.name}`}
                                 onClick={() => setRemoveTarget(item.selection)}
-                                class="rounded p-1 text-stone-500 opacity-60 hover:bg-stone-200 hover:text-stone-900 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none group-hover:opacity-100"
+                                class="rounded p-1 text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none group-hover:opacity-100"
                               >
                                 <X class="size-3.5" />
                               </button>
@@ -1597,14 +1633,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
                 <section>
                   <div class="flex items-center justify-between px-3 pb-1 pt-2.5">
-                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-stone-600">
+                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Browse
                     </h3>
                     <Show when={manifestError()}>
                       <button
                         type="button"
                         onClick={retryCatalogue}
-                        class="text-[10px] text-red-700 underline underline-offset-2"
+                        class="text-[10px] text-destructive underline underline-offset-2"
                       >
                         Retry
                       </button>
@@ -1613,7 +1649,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Show
                     when={browseItems().length > 0}
                     fallback={
-                      <p class="px-3 pb-3 text-[11px] text-stone-600">
+                      <p class="px-3 pb-3 text-[11px] text-muted-foreground">
                         {searchIndexLoading()
                           ? "Searching settings…"
                           : "No settings match that search."}
@@ -1623,23 +1659,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     <For each={renderedGroups()}>
                       {(group) => (
                         <div>
-                          <div class="sticky top-0 z-10 flex items-center gap-1 bg-stone-50/95 px-2 py-1 backdrop-blur">
+                          <div class="sticky top-0 z-10 flex items-center gap-1 bg-muted/80 px-2 py-1 backdrop-blur">
                             <button
                               type="button"
                               aria-expanded={group.collapsed ? "false" : "true"}
                               onClick={() => toggleGroup(group.label)}
-                              class="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-stone-100 focus-visible:ring-2 focus-visible:outline-none"
+                              class="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted focus-visible:ring-2 focus-visible:outline-none"
                             >
                               <ChevronDown
                                 class={cn(
-                                  "size-3 shrink-0 text-stone-500 transition-transform",
+                                  "size-3 shrink-0 text-muted-foreground transition-transform",
                                   group.collapsed && "-rotate-90",
                                 )}
                               />
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-wide text-stone-600">
+                              <span class="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 {group.label}
                               </span>
-                              <span class="shrink-0 text-[10px] tabular-nums text-stone-500">
+                              <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                                 {group.total}
                               </span>
                             </button>
@@ -1654,36 +1690,36 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                     class={cn(
                                       "flex w-full items-start gap-2 border-l-2 py-1.5 pl-2.5 pr-2 text-left focus-visible:ring-2 focus-visible:outline-none",
                                       activeKey() === keyOf(item.collection)
-                                        ? "border-indigo-600 bg-stone-100"
-                                        : "border-transparent hover:bg-stone-50",
+                                        ? "border-brand bg-muted"
+                                        : "border-transparent hover:bg-muted/30",
                                     )}
                                   >
                                     <span class="min-w-0 flex-1">
-                                      <span class="block truncate text-[13px] text-stone-900">
+                                      <span class="block truncate text-[13px] text-foreground">
                                         {item.collection.name}
                                       </span>
-                                      <span class="mt-0.5 flex items-center gap-1.5 text-[11px] text-stone-600">
+                                      <span class="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                                         <span class="truncate font-mono">
                                           {item.collection.group ?? item.collection.identifier}
                                         </span>
                                         <Show when={item.collection.deprecated}>
                                           <Badge
                                             variant="outline"
-                                            class="h-4 border-amber-300 bg-amber-50 px-1 text-[9px] text-amber-800"
+                                            class="h-4 border-warning/30 bg-warning/10 px-1 text-[9px] text-warning-foreground"
                                           >
                                             Deprecated
                                           </Badge>
                                         </Show>
                                       </span>
                                       <Show when={item.matchCount > 0}>
-                                        <span class="mt-0.5 block text-[10px] text-indigo-700">
+                                        <span class="mt-0.5 block text-[10px] text-brand">
                                           {item.matchCount} matching setting
                                           {item.matchCount === 1 ? "" : "s"}
                                         </span>
                                       </Show>
                                     </span>
                                     <Show when={selected().has(keyOf(item.collection))}>
-                                      <Check class="mt-0.5 size-3.5 shrink-0 text-indigo-600" />
+                                      <Check class="mt-0.5 size-3.5 shrink-0 text-brand" />
                                     </Show>
                                   </button>
                                 </li>
@@ -1693,17 +1729,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         </div>
                       )}
                     </For>
-                    <div class="border-t border-stone-200 p-2.5">
+                    <div class="border-t border-border p-2.5">
                       <Show
                         when={shownBrowseCount() < expandedBrowseTotal()}
                         fallback={
-                          <p class="text-[10px] text-stone-600">
+                          <p class="text-[10px] text-muted-foreground">
                             {expandedBrowseTotal()} collection
                             {expandedBrowseTotal() === 1 ? "" : "s"}
                           </p>
                         }
                       >
-                        <p class="text-[10px] text-stone-600" aria-live="polite">
+                        <p class="text-[10px] text-muted-foreground" aria-live="polite">
                           Showing {shownBrowseCount()} of {expandedBrowseTotal()}
                         </p>
                         <Button
@@ -1726,7 +1762,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         <section
           id="designer-editor"
           class={cn(
-            "min-h-0 min-w-0 flex-1 flex-col bg-white xl:flex",
+            "min-h-0 min-w-0 flex-1 flex-col bg-background xl:flex",
             mobileView() === "browse" ? "hidden xl:flex" : "flex",
           )}
           aria-label="Collection editor"
@@ -1735,15 +1771,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             when={activeSummary()}
             fallback={
               <div class="mx-auto w-full max-w-xl px-5 py-8">
-                <h2 class="text-base font-semibold tracking-tight text-stone-900">
+                <h2 class="text-base font-semibold tracking-tight text-foreground">
                   Start a policy
                 </h2>
-                <p class="mt-1 text-[13px] text-stone-600">
+                <p class="mt-1 text-[13px] text-muted-foreground">
                   The fastest way to see a real policy. Add a baseline, then tune individual
                   settings.
                 </p>
                 <div class="mt-3">{templateButtons()}</div>
-                <div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-stone-300 px-4 py-3 text-[13px] text-stone-600">
+                <div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-input px-4 py-3 text-[13px] text-muted-foreground">
                   <span class="min-w-0 flex-1">
                     Or search the catalogue and add settings one at a time.
                   </span>
@@ -1758,7 +1794,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 </div>
                 <Show when={manifestError()}>
                   {(error) => (
-                    <p role="alert" class="mt-3 text-xs text-red-700">
+                    <p role="alert" class="mt-3 text-xs text-destructive">
                       {error()}{" "}
                       <button
                         type="button"
@@ -1775,13 +1811,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           >
             {(collection) => (
               <>
-                <div class="shrink-0 border-b border-stone-200 bg-white/90 px-3 py-2.5 backdrop-blur sm:px-5">
+                <div class="shrink-0 border-b border-border bg-background/90 px-3 py-2.5 backdrop-blur sm:px-5">
                   <div class="flex items-start gap-2">
                     <button
                       type="button"
                       onClick={() => setMobileView("browse")}
                       aria-label="Back to settings list"
-                      class="-ml-1 mt-0.5 rounded-lg p-1 text-stone-600 hover:bg-stone-100 hover:text-stone-900 focus-visible:ring-2 focus-visible:outline-none xl:hidden"
+                      class="-ml-1 mt-0.5 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none xl:hidden"
                     >
                       <ArrowLeft class="size-4" />
                     </button>
@@ -1790,32 +1826,29 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         <h2
                           id="designer-editor-heading"
                           tabindex="-1"
-                          class="truncate text-[15px] font-semibold tracking-tight text-stone-900 focus:outline-none"
+                          class="truncate text-[15px] font-semibold tracking-tight text-foreground focus:outline-none"
                         >
                           {collection().name}
                         </h2>
                         <Show when={collection().deprecated}>
                           <Badge
                             variant="outline"
-                            class="border-amber-300 bg-amber-50 text-[10px] text-amber-800"
+                            class="border-warning/30 bg-warning/10 text-[10px] text-warning-foreground"
                           >
                             Deprecated
                           </Badge>
                         </Show>
                         <Show when={activeSelection()}>
-                          <Badge
-                            variant="secondary"
-                            class="bg-stone-100 text-[10px] text-stone-700"
-                          >
+                          <Badge variant="secondary" class="text-[10px]">
                             In policy
                           </Badge>
                         </Show>
                       </div>
-                      <p class="mt-0.5 truncate font-mono text-[11px] text-stone-600">
+                      <p class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                         {collection().identifier}
                         <Show when={collection().minOs}> · {collection().minOs}+</Show>
                         <Show when={activeCollectionLoading()}>
-                          <span class="text-stone-500"> · Loading settings…</span>
+                          <span class="text-muted-foreground"> · Loading settings…</span>
                         </Show>
                       </p>
                     </div>
@@ -1850,15 +1883,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Show when={activeSelection()}>
                     {(selection) => (
                       <div class="mt-2 flex flex-wrap items-center gap-2">
-                        <p class="text-[11px] text-stone-600">
-                          <span class="font-medium text-stone-800">
+                        <p class="text-[11px] text-muted-foreground">
+                          <span class="font-medium text-foreground">
                             {activeStats().changed}/{activeStats().total}
                           </span>{" "}
                           changed · {activeStats().configured} configured
                         </p>
                         <Show when={activeMatchKeys()}>
                           {(keys) => (
-                            <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
+                            <span class="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] text-brand">
                               {keys().size} matching setting{keys().size === 1 ? "" : "s"}
                             </span>
                           )}
@@ -1875,7 +1908,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                           />
                         </div>
                         <div
-                          class="flex shrink-0 rounded-lg border border-stone-200 bg-stone-100/70 p-0.5"
+                          class="flex shrink-0 rounded-lg border border-border bg-muted/60 p-0.5"
                           role="group"
                           aria-label="Show settings"
                         >
@@ -1896,8 +1929,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 class={cn(
                                   "rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
                                   filterMode() === mode.id
-                                    ? "bg-white text-stone-900 shadow-sm"
-                                    : "text-stone-600 hover:text-stone-900",
+                                    ? "bg-background text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground",
                                 )}
                               >
                                 {mode.label}
@@ -1918,7 +1951,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     when={activeSelection()}
                     fallback={
                       <div class="mx-auto w-full max-w-2xl px-5 py-6">
-                        <p class="text-[13px] leading-relaxed text-stone-600">
+                        <p class="text-[13px] leading-relaxed text-muted-foreground">
                           {activeCollection()?.description ||
                             (activeCollectionLoading()
                               ? "Loading this collection from the catalogue…"
@@ -1926,7 +1959,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         </p>
                         <Show when={activeCollectionError()}>
                           {(error) => (
-                            <p role="alert" class="mt-2 text-xs text-red-700">
+                            <p role="alert" class="mt-2 text-xs text-destructive">
                               {error()}{" "}
                               <button
                                 type="button"
@@ -1945,7 +1978,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 (property) => property.category !== "Envelope",
                               ).length;
                             return (
-                              <p class="mt-3 rounded-lg border border-dashed border-stone-300 px-3 py-2.5 text-[12px] text-stone-600">
+                              <p class="mt-3 rounded-lg border border-dashed border-input px-3 py-2.5 text-[12px] text-muted-foreground">
                                 Add it to the policy to configure {settings().toLocaleString()}{" "}
                                 {settings() === 1 ? "setting" : "settings"}.
                               </p>
@@ -2008,7 +2041,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         <div>
                           <Show when={activeMatchKeys()}>
                             {(keys) => (
-                              <div class="flex flex-wrap items-center gap-2 border-b border-indigo-100 bg-indigo-50/60 px-4 py-2 text-[11px] text-indigo-800 sm:px-5">
+                              <div class="flex flex-wrap items-center gap-2 border-b border-brand/20 bg-brand/[0.06] px-4 py-2 text-[11px] text-brand sm:px-5">
                                 <Info class="size-3.5 shrink-0" />
                                 Showing {keys().size} setting
                                 {keys().size === 1 ? "" : "s"} matching “{query().trim()}”.
@@ -2026,7 +2059,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             when={sections().length > 0}
                             fallback={
                               <div class="px-5 py-8 text-center">
-                                <p class="text-[13px] text-stone-600">
+                                <p class="text-[13px] text-muted-foreground">
                                   No settings match this filter.
                                 </p>
                                 <Button
@@ -2051,7 +2084,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 const collapsed = () => Boolean(collapsedSections()[sectionKey()]);
                                 return (
                                   <section aria-label={section.label}>
-                                    <div class="sticky top-0 z-10 flex items-center gap-2 border-y border-stone-200 bg-stone-50/95 px-3 py-1.5 backdrop-blur sm:px-5">
+                                    <div class="sticky top-0 z-10 flex items-center gap-2 border-y border-border bg-muted/80 px-3 py-1.5 backdrop-blur sm:px-5">
                                       <button
                                         type="button"
                                         aria-expanded={collapsed() ? "false" : "true"}
@@ -2060,14 +2093,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                       >
                                         <ChevronDown
                                           class={cn(
-                                            "size-3.5 shrink-0 text-stone-500 transition-transform",
+                                            "size-3.5 shrink-0 text-muted-foreground transition-transform",
                                             collapsed() && "-rotate-90",
                                           )}
                                         />
-                                        <span class="truncate text-[11px] font-semibold uppercase tracking-wide text-stone-700">
+                                        <span class="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground/90">
                                           {section.label}
                                         </span>
-                                        <span class="shrink-0 text-[10px] tabular-nums text-stone-500">
+                                        <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                                           {section.changed}/{section.properties.length}
                                         </span>
                                       </button>
@@ -2082,7 +2115,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                               section.label,
                                             )
                                           }
-                                          class="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-stone-600 underline underline-offset-2 hover:text-stone-900 focus-visible:ring-2 focus-visible:outline-none"
+                                          class="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
                                         >
                                           Reset section
                                         </button>
@@ -2130,7 +2163,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               }}
                             </For>
                             <Show when={selection().kind === "declaration"}>
-                              <p class="border-t border-stone-100 px-4 py-3 text-[11px] text-stone-600 sm:px-5">
+                              <p class="border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground sm:px-5">
                                 Type, identifier and server token are generated when you export or
                                 save.
                               </p>
@@ -2147,15 +2180,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </section>
 
         <aside
-          class="hidden min-h-0 w-[312px] shrink-0 flex-col border-l border-stone-200 bg-white xl:flex"
+          class="hidden min-h-0 w-[312px] shrink-0 flex-col border-l border-border bg-card xl:flex"
           aria-label="Policy summary"
         >
           {summaryPanel()}
         </aside>
       </div>
 
-      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-stone-200 bg-white/95 px-3 py-2 backdrop-blur xl:hidden">
-        <div class="min-w-0 flex-1 text-[11px] text-stone-600">
+      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-background/95 px-3 py-2 backdrop-blur xl:hidden">
+        <div class="min-w-0 flex-1 text-[11px] text-muted-foreground">
           <p class="truncate">
             {selections().length} collection{selections().length === 1 ? "" : "s"} ·{" "}
             {policyStats().changed} changed
@@ -2203,12 +2236,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           if (!open) setPendingPlatform(null);
         }}
       >
-        <DialogContent class="max-w-md rounded-xl bg-white p-5">
+        <DialogContent class="max-w-md rounded-xl p-5">
           <DialogHeader>
             <DialogTitle class="text-base">
               Switch to {platformLabel(pendingPlatform())}?
             </DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-stone-600">
+            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
               This draft has {selections().length} {platformName()} collection
               {selections().length === 1 ? "" : "s"}. Switching platforms replaces the draft with a
               new {platformLabel(pendingPlatform())} draft; the current selections will be
@@ -2242,10 +2275,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           if (!open) setRemoveTarget(null);
         }}
       >
-        <DialogContent class="max-w-md rounded-xl bg-white p-5">
+        <DialogContent class="max-w-md rounded-xl p-5">
           <DialogHeader>
             <DialogTitle class="text-base">Remove {removeTarget()?.name}?</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-stone-600">
+            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
               {removeTarget()
                 ? `This collection and its ${statsFor(removeTarget()!).configured} configured setting${
                     statsFor(removeTarget()!).configured === 1 ? "" : "s"
@@ -2272,10 +2305,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       {/* Start over */}
       <Dialog open={startOverOpen()} onOpenChange={setStartOverOpen}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-5">
+        <DialogContent class="max-w-md rounded-xl p-5">
           <DialogHeader>
             <DialogTitle class="text-base">Start over?</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-stone-600">
+            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
               This clears every collection and setting in the current {platformName()} draft.
               {props.mode === "dashboard"
                 ? " Settings already saved to the policy are not changed until you save."
@@ -2304,10 +2337,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       {/* Review issues */}
       <Dialog open={issuesOpen()} onOpenChange={setIssuesOpen}>
-        <DialogContent class="max-h-[80vh] max-w-2xl overflow-hidden rounded-xl bg-white p-5">
+        <DialogContent class="max-h-[80vh] max-w-2xl overflow-hidden rounded-xl p-5">
           <DialogHeader>
             <DialogTitle class="text-base">Review issues</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] text-stone-600">
+            <DialogDescription class="mt-1 text-[13px] text-muted-foreground">
               {errorCount()} error{errorCount() === 1 ? "" : "s"} block saving and exporting.{" "}
               {warningCount()} warning{warningCount() === 1 ? "" : "s"} should be reviewed.
             </DialogDescription>
@@ -2322,8 +2355,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     class={cn(
                       "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
                       issue.severity === "error"
-                        ? "border-red-200 bg-red-50/60 text-red-800 hover:bg-red-50"
-                        : "border-amber-200 bg-amber-50/60 text-amber-900 hover:bg-amber-50",
+                        ? "border-destructive/30 bg-destructive/[0.07] text-destructive hover:bg-destructive/10"
+                        : "border-warning/30 bg-warning/[0.07] text-warning-foreground hover:bg-warning/10",
                     )}
                   >
                     <Show
@@ -2353,10 +2386,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       {/* Artifact preview */}
       <Dialog open={previewOpen()} onOpenChange={setPreviewOpen}>
-        <DialogContent class="max-h-[85vh] max-w-3xl overflow-hidden rounded-xl bg-white p-5">
+        <DialogContent class="max-h-[85vh] max-w-3xl overflow-hidden rounded-xl p-5">
           <DialogHeader>
             <DialogTitle class="text-base">Artifact preview</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] text-stone-600">
+            <DialogDescription class="mt-1 text-[13px] text-muted-foreground">
               {(() => {
                 try {
                   const artifact = buildArtifact(draft());
@@ -2367,7 +2400,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               })()}
             </DialogDescription>
           </DialogHeader>
-          <pre class="mt-3 max-h-[60vh] overflow-auto rounded-lg border border-stone-200 bg-stone-50 p-3 font-mono text-[11px] leading-relaxed text-stone-800">
+          <pre class="mt-3 max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground">
             {(() => {
               try {
                 return buildArtifact(draft()).content;
@@ -2387,7 +2420,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       {/* Summary sheet below xl */}
       <Sheet open={summaryOpen()} onOpenChange={setSummaryOpen}>
         <Show when={summaryOpen()}>
-          <SheetContent side="right" class="w-[min(92vw,360px)] bg-white p-0">
+          <SheetContent side="right" class="w-[min(92vw,360px)] bg-background p-0">
             <SheetHeader class="sr-only">
               <SheetTitle>Policy summary</SheetTitle>
               <SheetDescription>Review collections, issues and save this policy.</SheetDescription>
@@ -2403,7 +2436,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 function MakeIssuesSummary(props: { issues: number; errors: number }) {
   return (
     <Show when={props.issues === 0}>
-      <span class="text-[10px] text-stone-500">No issues</span>
+      <span class="text-[10px] text-muted-foreground">No issues</span>
     </Show>
   );
 }
@@ -2495,39 +2528,39 @@ function PropertyField(props: PropertyFieldProps) {
     <div
       data-policy-field={valueKey(props.property, props.platform)}
       class={cn(
-        "designer-field relative flex flex-col gap-2 border-b border-stone-100 px-4 py-3 last:border-b-0",
-        rowInvalid() && "bg-red-50/40",
+        "designer-field relative flex flex-col gap-2 border-b border-border/60 px-4 py-3 last:border-b-0",
+        rowInvalid() && "bg-destructive/[0.05]",
       )}
     >
       <Show when={props.changed}>
-        <span class="absolute inset-y-0 left-0 w-0.5 bg-indigo-600" aria-hidden="true" />
+        <span class="absolute inset-y-0 left-0 w-0.5 bg-brand" aria-hidden="true" />
       </Show>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Show
             when={groupedControl()}
             fallback={
-              <label for={props.id} class="text-[13px] font-medium text-stone-900">
+              <label for={props.id} class="text-[13px] font-medium text-foreground">
                 {props.property.name}
               </label>
             }
           >
-            <span class="text-[13px] font-medium text-stone-900">{props.property.name}</span>
+            <span class="text-[13px] font-medium text-foreground">{props.property.name}</span>
           </Show>
           <Show when={props.property.required}>
-            <span class="text-[10px] font-medium uppercase tracking-wide text-red-700">
+            <span class="text-[10px] font-medium uppercase tracking-wide text-destructive">
               Required
             </span>
           </Show>
           <Show when={props.changed}>
-            <Badge variant="secondary" class="h-4 bg-indigo-50 px-1 text-[9px] text-indigo-700">
+            <Badge variant="secondary" class="h-4 bg-brand/10 px-1 text-[9px] text-brand">
               Changed
             </Badge>
           </Show>
           <Show when={props.property.deprecated}>
             <Badge
               variant="outline"
-              class="h-4 border-amber-300 bg-amber-50 px-1 text-[9px] text-amber-800"
+              class="h-4 border-warning/30 bg-warning/10 px-1 text-[9px] text-warning-foreground"
             >
               Deprecated
             </Badge>
@@ -2538,7 +2571,7 @@ function PropertyField(props: PropertyFieldProps) {
             aria-expanded={showDescription() ? "true" : "false"}
             aria-controls={descId()}
             aria-label={`${showDescription() ? "Hide" : "Show"} description for ${props.property.name}`}
-            class="rounded p-0.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:ring-2 focus-visible:outline-none"
+            class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
           >
             <Info class="size-3.5" />
           </button>
@@ -2547,7 +2580,7 @@ function PropertyField(props: PropertyFieldProps) {
               type="button"
               onClick={props.onReset}
               aria-label={`Reset ${props.property.name} to its default`}
-              class="ml-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-stone-600 underline underline-offset-2 hover:text-stone-900 focus-visible:ring-2 focus-visible:outline-none"
+              class="ml-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
             >
               <RotateCcw class="size-3" /> Reset
             </button>
@@ -2556,7 +2589,7 @@ function PropertyField(props: PropertyFieldProps) {
         <p
           id={descId()}
           class={cn(
-            "mt-1 text-xs leading-relaxed text-stone-600",
+            "mt-1 text-xs leading-relaxed text-muted-foreground",
             !descriptionVisible() && "sr-only",
           )}
         >
@@ -2564,9 +2597,9 @@ function PropertyField(props: PropertyFieldProps) {
         </p>
         <div
           id={hintId()}
-          class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-stone-600"
+          class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground"
         >
-          <span class="max-w-full truncate font-mono text-[10px] text-stone-500">
+          <span class="max-w-full truncate font-mono text-[10px] text-muted-foreground">
             {props.property.address ?? props.property.key}
           </span>
           <span aria-hidden="true">·</span>
@@ -2574,7 +2607,7 @@ function PropertyField(props: PropertyFieldProps) {
           <Show when={catalogDefault(props.property) !== undefined}>
             <span>
               Default:{" "}
-              <span class="text-stone-700">{formatValue(catalogDefault(props.property))}</span>
+              <span class="text-foreground/90">{formatValue(catalogDefault(props.property))}</span>
             </span>
           </Show>
           <Show when={props.property.min !== undefined || props.property.max !== undefined}>
@@ -2588,7 +2621,7 @@ function PropertyField(props: PropertyFieldProps) {
             )}
           </Show>
           <Show when={props.searchMatch}>
-            <span class="text-indigo-700">Matches search</span>
+            <span class="text-brand">Matches search</span>
           </Show>
         </div>
         <Show when={props.issue}>
@@ -2597,7 +2630,7 @@ function PropertyField(props: PropertyFieldProps) {
               id={errorId()}
               class={cn(
                 "mt-1 text-[11px]",
-                issue().severity === "error" ? "text-red-700" : "text-amber-800",
+                issue().severity === "error" ? "text-destructive" : "text-warning-foreground",
               )}
             >
               {issue().message}
@@ -2611,7 +2644,7 @@ function PropertyField(props: PropertyFieldProps) {
           {(values) => (
             <select
               id={props.id}
-              class="h-8 w-full rounded-lg border border-stone-300 bg-white px-2 text-[13px] text-stone-900 outline-none transition-colors focus-visible:border-stone-500 focus-visible:ring-[3px] focus-visible:ring-stone-900/10 aria-invalid:border-red-400"
+              class="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-invalid:border-destructive/60"
               value={props.value === undefined ? "" : String(props.value)}
               aria-required={props.property.required ? "true" : undefined}
               aria-invalid={invalid() ? "true" : undefined}
@@ -2643,20 +2676,20 @@ function PropertyField(props: PropertyFieldProps) {
                   class="h-7 text-xs"
                 />
               </Show>
-              <div class="flex items-center justify-between gap-2 text-[10px] text-stone-600">
+              <div class="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
                 <span>{arrayValue().length} selected</span>
                 <span class="flex gap-2">
                   <button
                     type="button"
                     onClick={selectAllOptions}
-                    class="underline underline-offset-2 hover:text-stone-900"
+                    class="underline underline-offset-2 hover:text-foreground"
                   >
                     Select all
                   </button>
                   <button
                     type="button"
                     onClick={() => props.onChange([])}
-                    class="underline underline-offset-2 hover:text-stone-900"
+                    class="underline underline-offset-2 hover:text-foreground"
                   >
                     None
                   </button>
@@ -2670,19 +2703,21 @@ function PropertyField(props: PropertyFieldProps) {
                 aria-invalid={invalid() ? "true" : undefined}
                 aria-describedby={describedBy()}
                 class={cn(
-                  "max-h-52 space-y-0.5 overflow-y-auto rounded-lg border bg-white p-1.5",
-                  invalid() ? "border-red-400" : "border-stone-300",
+                  "max-h-52 space-y-0.5 overflow-y-auto rounded-lg border bg-muted/20 p-1.5",
+                  invalid() ? "border-destructive/60" : "border-input",
                 )}
               >
                 <For
                   each={visibleOptions()}
-                  fallback={<p class="px-1 py-2 text-xs text-stone-600">No options match.</p>}
+                  fallback={
+                    <p class="px-1 py-2 text-xs text-muted-foreground">No options match.</p>
+                  }
                 >
                   {(option) => (
-                    <label class="flex items-start gap-2 rounded px-1 py-0.5 text-[12px] leading-snug text-stone-700 hover:bg-stone-50">
+                    <label class="flex items-start gap-2 rounded px-1 py-0.5 text-[12px] leading-snug text-foreground/90 hover:bg-muted/30">
                       <input
                         type="checkbox"
-                        class="mt-0.5 size-3.5 accent-stone-900"
+                        class="mt-0.5 size-3.5 accent-[var(--brand)]"
                         checked={arrayValue().includes(option.value)}
                         onChange={(event) =>
                           toggleArrayValue(option.value, event.currentTarget.checked)
@@ -2705,7 +2740,7 @@ function PropertyField(props: PropertyFieldProps) {
             aria-required={props.property.required ? "true" : undefined}
             aria-invalid={invalid() ? "true" : undefined}
             aria-describedby={describedBy()}
-            class="flex w-full rounded-lg border border-stone-300 bg-white p-0.5"
+            class="flex w-full rounded-lg border border-input bg-muted/30 p-0.5"
           >
             <For
               each={[
@@ -2727,8 +2762,8 @@ function PropertyField(props: PropertyFieldProps) {
                     class={cn(
                       "flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
                       pressed()
-                        ? "bg-stone-900 text-white"
-                        : "text-stone-600 hover:bg-stone-100 hover:text-stone-900",
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     {option.label}
@@ -2922,20 +2957,20 @@ function StructuredField(props: {
             .join(" ") || undefined
         }
         class={cn(
-          "min-h-24 w-full rounded-lg border bg-white p-2 font-mono text-[11px] leading-relaxed text-stone-800 outline-none transition-colors focus-visible:ring-[3px]",
+          "min-h-24 w-full rounded-lg border border-input bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground outline-none transition-colors focus-visible:ring-[3px]",
           props.invalid || error()
-            ? "border-red-400 focus-visible:border-red-500 focus-visible:ring-red-500/20"
-            : "border-stone-300 focus-visible:border-stone-500 focus-visible:ring-stone-900/10",
+            ? "border-destructive/60 focus-visible:border-destructive focus-visible:ring-destructive/30"
+            : "border-input focus-visible:border-ring focus-visible:ring-ring/30",
         )}
       />
       <Show when={error()}>
         {(message) => (
-          <p id={`${props.id}-json-error`} class="text-[11px] text-red-700">
+          <p id={`${props.id}-json-error`} class="text-[11px] text-destructive">
             {message()}
           </p>
         )}
       </Show>
-      <p class="text-[10px] text-stone-600">
+      <p class="text-[10px] text-muted-foreground">
         {isData() ? "Base64 data — pasted text is stored as-is." : "Advanced JSON"}
       </p>
     </div>

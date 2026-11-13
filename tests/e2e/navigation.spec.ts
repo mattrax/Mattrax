@@ -31,6 +31,20 @@ test.describe("top navigation", () => {
     }
   });
 
+  test("mounts exactly one application shell", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Shell Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(1);
+
+    await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(1);
+
+    await page.reload();
+    await expect(page.locator("header")).toHaveCount(1);
+  });
+
   test("shows one email verification reminder at a time", async ({ page }) => {
     // Register without confirming the email so the reminder is visible.
     await page.goto("/register", { waitUntil: "networkidle" });
