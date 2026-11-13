@@ -10,7 +10,7 @@ test.describe("top navigation", () => {
     const base = `/t/${tenant.id}`;
 
     for (const [label, path, heading] of [
-      ["Overview", base, /Nav Tenant/],
+      ["Overview", base, "Device health"],
       ["Devices", `${base}/devices`, "Devices"],
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],

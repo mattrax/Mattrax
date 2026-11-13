@@ -1,14 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
-import {
-  DeviceStatusBadge,
-  Page,
-  PageHeader,
-  Panel,
-  QueryError,
-  StatCard,
-} from "~/components/mdm/common";
+import { DeviceStatusBadge, Page, Panel, QueryError, StatCard } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -24,18 +17,6 @@ import {
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type { CredentialInfo } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
-
-const tenantInitials = (name: string | undefined) => {
-  if (!name) return "?";
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  );
-};
 
 const credentialBadgeClass = (level: CredentialInfo["level"]) => {
   switch (level) {
@@ -290,40 +271,6 @@ export default function TenantOverviewPage() {
   return (
     <Page class="gap-6">
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
-
-      <div class="flex min-w-0 items-start gap-3">
-        <span class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border border-white/[0.09] bg-white/[0.04] text-[11px] font-semibold tracking-[0.02em] text-foreground/90">
-          {tenantInitials(tenant.data?.displayName ?? tenant.data?.name)}
-        </span>
-        <div class="min-w-0 flex-1">
-          <PageHeader
-            title={tenant.data?.displayName ?? tenant.data?.name ?? "Tenant"}
-            meta={
-              <Show when={tenant.data} fallback={<span>Loading tenant…</span>}>
-                {(detail) => (
-                  <>
-                    <span class="capitalize">{detail().role}</span>
-                    <span class="text-muted-foreground/40" aria-hidden="true">
-                      ·
-                    </span>
-                    <span class="break-all font-mono text-[10.5px]">{detail().slug}</span>
-                  </>
-                )}
-              </Show>
-            }
-            actions={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(`/t/${tenantId()}/settings`)}
-              >
-                <Settings class="size-3.5" />
-                Tenant settings
-              </Button>
-            }
-          />
-        </div>
-      </div>
 
       <div class="grid gap-3 sm:grid-cols-3">
         <StatCard
