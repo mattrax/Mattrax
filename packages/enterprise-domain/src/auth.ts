@@ -83,6 +83,7 @@ export const AuthClaims = Schema.Struct({
   email: Schema.String,
   emailVerified: Schema.Boolean,
 });
+
 export type AuthClaims = typeof AuthClaims.Type;
 
 const AUTH_REQUIREMENT_MAX_AGE_MILLIS = 365 * 24 * 60 * 60 * 1000;
@@ -137,6 +138,7 @@ export const authenticationRequirement = (
 export const Registration = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
 });
+
 export type Registration = typeof Registration.Type;
 
 const email = Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email));
@@ -200,10 +202,12 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
       Session: sessions.Session,
       CompletionResult: sessions.CompletionResult,
     });
+
     const passkey = PasskeyContract.make(PASSKEY_MODULE_ID, {
       Session: sessions.Session,
       CompletionResult: sessions.CompletionResult,
     });
+
     const passkeyManagement = PasskeyContract.makeManagement(PASSKEY_MODULE_ID);
 
     /**

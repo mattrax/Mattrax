@@ -12,6 +12,7 @@ const secret = "scep-ca-test-secret";
 
 const makeJwk = async () => {
   const keyPair = await generateCaKeyPair();
+
   return exportPrivateKeyJwk(keyPair.privateKey);
 };
 
@@ -19,11 +20,14 @@ const makeJwk = async () => {
 const tamper = (base64: string) => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
+
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
   const last = bytes.byteLength - 1;
   bytes[last] = bytes[last]! ^ 0x01;
   let out = "";
+
   for (const byte of bytes) out += String.fromCharCode(byte);
+
   return btoa(out);
 };
 
@@ -115,6 +119,7 @@ describe("SCEP CA private key sealing", () => {
 
   it("rejects malformed stored values without leaking them", async () => {
     const jwk = await makeJwk();
+
     const cases: unknown[] = [
       {},
       { v: 2, sealed: "abc" },
@@ -124,6 +129,7 @@ describe("SCEP CA private key sealing", () => {
       JSON.stringify({ kty: "RSA" }),
       { kty: "RSA", n: jwk.n, d: "" },
     ];
+
     for (const stored of cases) {
       const error = await openCaPrivateKey(stored, secret).catch((cause: unknown) => cause);
       expect(error).toBeInstanceOf(ScepCaKeyError);
@@ -135,6 +141,7 @@ describe("SCEP CA private key sealing", () => {
   it("does not attach key material to decrypt errors", async () => {
     const jwk = await makeJwk();
     const sealed = await sealCaPrivateKey(secret, jwk);
+
     const error = (await openCaPrivateKey({ v: 1, sealed: tamper(sealed.sealed) }, secret).catch(
       (cause: unknown) => cause,
     )) as ScepCaKeyError;

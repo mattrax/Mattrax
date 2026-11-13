@@ -15,6 +15,7 @@ describe("mergeAndroidPolicies", () => {
       { screenCaptureDisabled: false, minimumApiLevel: 30 },
       { screenCaptureDisabled: true },
     ]);
+
     expect(merged).toEqual({ minimumApiLevel: 30, screenCaptureDisabled: true });
   });
 
@@ -23,6 +24,7 @@ describe("mergeAndroidPolicies", () => {
       { statusReportingSettings: { deviceSettingsEnabled: true, softwareInfoEnabled: true } },
       { statusReportingSettings: { softwareInfoEnabled: false } },
     ]);
+
     expect(merged).toEqual({
       statusReportingSettings: { deviceSettingsEnabled: true, softwareInfoEnabled: false },
     });
@@ -33,15 +35,18 @@ describe("mergeAndroidPolicies", () => {
       { accountTypesWithManagementDisabled: ["a", "b"] },
       { accountTypesWithManagementDisabled: ["b", "c"] },
     ]);
+
     expect(merged).toEqual({ accountTypesWithManagementDisabled: ["a", "b", "c"] });
   });
 
   it("dedupes arrays of objects by canonical value", () => {
     const app = { packageName: "com.example", installType: "AVAILABLE" };
+
     const merged = mergeAndroidPolicies([
       { applications: [app] },
       { applications: [{ installType: "AVAILABLE", packageName: "com.example" }] },
     ]);
+
     expect(merged).toEqual({ applications: [app] });
   });
 
@@ -50,6 +55,7 @@ describe("mergeAndroidPolicies", () => {
       { cameraDisabled: true, applications: [{ packageName: "a" }] },
       { cameraDisabled: null as unknown as boolean, applications: undefined },
     ]);
+
     expect(merged).toEqual({ applications: [{ packageName: "a" }], cameraDisabled: true });
   });
 
@@ -117,6 +123,7 @@ describe("androidPolicyHash", () => {
       { cameraDisabled: true },
       { screenCaptureDisabled: true },
     ]);
+
     const reordered = { screenCaptureDisabled: true, cameraDisabled: true };
     await expect(androidPolicyHash(merged)).resolves.toBe(await androidPolicyHash(reordered));
   });
@@ -135,6 +142,7 @@ describe("compileAndroidPolicy", () => {
         data: { screenCaptureDisabled: true },
       },
     ]);
+
     expect(policy).toEqual({ cameraDisabled: true, screenCaptureDisabled: true });
     expect(policy).not.toHaveProperty("draft");
     expect(policy).not.toHaveProperty("policy");
@@ -157,9 +165,11 @@ describe("compileAndroidPolicy", () => {
     const first = await compileAndroidPolicyWithHash([
       { kind: "mttx.android.policy.a", data: { cameraDisabled: true } },
     ]);
+
     const second = await compileAndroidPolicyWithHash([
       { kind: "mttx.android.policy.b", data: { cameraDisabled: true } },
     ]);
+
     expect(first.hash).toBe(second.hash);
     expect(androidPolicyIdForHash(first.hash)).toMatch(/^mattrax-[a-z0-9]+$/);
     expect(androidPolicyIdForHash(first.hash).length).toBeLessThanOrEqual(32);

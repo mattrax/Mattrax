@@ -9,17 +9,21 @@ export const DEVICE_ACTIVITY_MAX_LIMIT = 200;
  */
 export const normalizeDeviceActivityLimit = (value: unknown) => {
   let parsed: number | undefined;
+
   if (typeof value === "number" && Number.isFinite(value)) parsed = Math.trunc(value);
   else if (typeof value === "string" && value.trim() !== "") {
     const candidate = Number(value);
+
     if (Number.isFinite(candidate)) parsed = Math.trunc(candidate);
   }
+
   return Math.min(Math.max(parsed ?? DEVICE_ACTIVITY_DEFAULT_LIMIT, 1), DEVICE_ACTIVITY_MAX_LIMIT);
 };
 
 const iso = (value: Date | string | null | undefined) => {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value);
+
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
@@ -83,6 +87,7 @@ const AUDIT_TITLES: Record<string, string> = {
 const trimmed = (value: unknown, limit = 200) => {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
+
   return text ? text.slice(0, limit) : null;
 };
 
@@ -96,19 +101,26 @@ const auditDetail = (row: AuditRow) => {
     row.metadata && typeof row.metadata === "object"
       ? (row.metadata as Record<string, unknown>)
       : {};
+
   const parts: string[] = [];
   const action = trimmed(metadata.action, 40);
+
   if (action) parts.push(`Action: ${action}`);
+
   if (Array.isArray(metadata.fields)) {
     const fields = metadata.fields
       .filter((field): field is string => typeof field === "string")
       .slice(0, 8);
+
     if (fields.length > 0) parts.push(`Fields: ${fields.join(", ")}`);
   }
+
   if (typeof metadata.revokedCertificates === "number")
     parts.push(`${metadata.revokedCertificates} certificate(s) revoked`);
   const actor = trimmed(row.actorEmail, 120);
+
   if (actor) parts.push(`by ${actor}`);
+
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
@@ -124,6 +136,7 @@ export const buildDeviceActivity = (
 
   for (const row of inputs.audits) {
     const at = iso(row.createdAt);
+
     if (!at) continue;
     events.push({
       id: `audit:${row.id}`,
@@ -137,10 +150,13 @@ export const buildDeviceActivity = (
 
   for (const row of inputs.commands) {
     const at = iso(row.updatedAt) ?? iso(row.createdAt);
+
     if (!at) continue;
+
     const result = [trimmed(row.resultStatus, 80), trimmed(row.resultDetail, 160)]
       .filter(Boolean)
       .join(": ");
+
     events.push({
       id: `command:${row.id}`,
       kind: "command",
@@ -153,6 +169,7 @@ export const buildDeviceActivity = (
 
   for (const row of inputs.declarations) {
     const at = iso(row.updatedAt);
+
     if (!at) continue;
     events.push({
       id: `declaration:${row.identifier}`,
@@ -166,6 +183,7 @@ export const buildDeviceActivity = (
 
   for (const row of inputs.certificates) {
     const issuedAt = iso(row.createdAt);
+
     if (issuedAt)
       events.push({
         id: `certificate:${row.serial}:issued`,
@@ -176,6 +194,7 @@ export const buildDeviceActivity = (
         at: issuedAt,
       });
     const revokedAt = iso(row.revokedAt);
+
     if (revokedAt)
       events.push({
         id: `certificate:${row.serial}:revoked`,
@@ -192,8 +211,10 @@ export const buildDeviceActivity = (
     ["last-seen", "Last check-in", inputs.device.lastSeenAt],
     ["inventory", "Inventory updated", inputs.device.inventoryUpdatedAt],
   ];
+
   for (const [key, title, value] of lifecycle) {
     const at = iso(value);
+
     if (at)
       events.push({
         id: `lifecycle:${key}`,
@@ -208,6 +229,7 @@ export const buildDeviceActivity = (
   return events
     .sort((left, right) => {
       const delta = Date.parse(right.at) - Date.parse(left.at);
+
       return delta !== 0 ? delta : left.id.localeCompare(right.id);
     })
     .slice(0, limit);

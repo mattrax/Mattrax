@@ -19,10 +19,13 @@ export default function TenantSettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
   const base = () => `/t/${params.tenantId}/settings`;
+
   const active = () => {
     const rest = location.pathname.slice(base().length).replace(/^\//, "");
+
     return rest.split("/")[0] ?? "";
   };
+
   let tabNav: HTMLElement | undefined;
   createEffect(
     () => location.pathname,
@@ -51,6 +54,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
           {(tab) => {
             const href = tab.id ? `${base()}/${tab.id}` : base();
             const isActive = () => active() === tab.id;
+
             return (
               <a
                 href={href}

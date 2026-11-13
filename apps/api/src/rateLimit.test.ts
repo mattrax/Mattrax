@@ -46,6 +46,7 @@ describe("per-isolate fallback limiter", () => {
   it("allows up to the limit and then returns Retry-After", async () => {
     let now = 1_000;
     const limiter = makeRateLimiter({ now: () => now });
+
     const req = () =>
       request("/api/v1/signIn", {
         method: "POST",
@@ -56,6 +57,7 @@ describe("per-isolate fallback limiter", () => {
       expect((await limiter.check(req())).limited).toBe(false);
       now += 10;
     }
+
     const blocked = await limiter.check(req());
     expect(blocked.limited).toBe(true);
     expect(blocked.bucket).toBe("auth");
@@ -68,12 +70,15 @@ describe("per-isolate fallback limiter", () => {
 
   it("keeps buckets and clients independent", async () => {
     const limiter = makeRateLimiter({ now: () => 1_000 });
+
     const ipA = request("/api/v1/enrollment/a", {
       headers: { "cf-connecting-ip": "203.0.113.4" },
     });
+
     const ipB = request("/api/v1/enrollment/a", {
       headers: { "cf-connecting-ip": "198.51.100.9" },
     });
+
     for (let index = 0; index < 600; index++) await limiter.check(ipA);
     expect((await limiter.check(ipA)).limited).toBe(true);
     expect((await limiter.check(ipB)).limited).toBe(false);
@@ -83,15 +88,19 @@ describe("per-isolate fallback limiter", () => {
 describe("shared limiter bindings", () => {
   it("uses the Cloudflare binding when present", async () => {
     const keys: string[] = [];
+
     const bindings: RateLimitBindings = {
       auth: {
         limit: async ({ key }) => {
           keys.push(key);
+
           return { success: false };
         },
       },
     };
+
     const limiter = makeRateLimiter();
+
     const outcome = await limiter.check(
       request("/api/v1/signIn", {
         method: "POST",
@@ -99,12 +108,14 @@ describe("shared limiter bindings", () => {
       }),
       bindings,
     );
+
     expect(outcome.limited).toBe(true);
     expect(keys).toEqual(["auth:203.0.113.4"]);
   });
 
   it("falls back locally when the edge limiter throws", async () => {
     const warnings: string[] = [];
+
     const bindings: RateLimitBindings = {
       enrollment: {
         limit: async () => {
@@ -112,10 +123,12 @@ describe("shared limiter bindings", () => {
         },
       },
     };
+
     const limiter = makeRateLimiter({
       now: () => 1_000,
       warn: (message) => warnings.push(message),
     });
+
     const outcome = await limiter.check(request("/api/v1/enrollment/a"), bindings);
     expect(outcome.limited).toBe(false);
     expect(warnings).toHaveLength(1);
@@ -126,6 +139,7 @@ describe("shared limiter bindings", () => {
 describe("rate limit bindings from env", () => {
   it("maps every bucket binding and leaves unconfigured buckets undefined", () => {
     const limiter = { limit: async () => ({ success: true }) };
+
     const bindings = rateLimitBindingsFromEnv({
       RATE_LIMITER_AUTH: limiter,
       RATE_LIMITER_ENROLLMENT: limiter,
@@ -134,6 +148,7 @@ describe("rate limit bindings from env", () => {
       RATE_LIMITER_BILLING: limiter,
       RATE_LIMITER_SCEP: limiter,
     });
+
     expect(Object.keys(bindings).sort()).toEqual([
       "auth",
       "billing",
@@ -149,18 +164,22 @@ describe("rate limit bindings from env", () => {
 
   it("selects the matching bucket binding for MDM, SCIM, billing and SCEP", async () => {
     const seen: string[] = [];
+
     const bindingFor = (bucket: string) => ({
       limit: async ({ key }: { key: string }) => {
         seen.push(`${bucket}:${key}`);
+
         return { success: true };
       },
     });
+
     const bindings: RateLimitBindings = {
       mdm: bindingFor("mdm"),
       scim: bindingFor("scim"),
       billing: bindingFor("billing"),
       scep: bindingFor("scep"),
     };
+
     const limiter = makeRateLimiter();
     await limiter.check(request("/mdm/apple/mdm", { method: "PUT" }), bindings);
     await limiter.check(request("/scim/v2/org/Users"), bindings);
@@ -181,6 +200,7 @@ describe("rate limit responses", () => {
       { limited: true, bucket: "auth", limit: 120, retryAfterSeconds: 42 },
       "req-12345678",
     );
+
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("42");
     expect(response.headers.get("x-request-id")).toBe("req-12345678");

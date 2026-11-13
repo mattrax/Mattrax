@@ -80,19 +80,26 @@ const platformLabel = (value: string | null | undefined) =>
 
 const cellValue = (row: Record<string, unknown>, column: string, dataset: string | undefined) => {
   const value = row[column];
+
   if (column === "platform") return platformLabel(value as string | null);
+
   if (column === "managed") return value === true ? "Managed" : value === false ? "Unmanaged" : "—";
+
   if (column === "lastSeenAt" || column === "enrolledAt")
     return value ? relativeTime(String(value)) : "—";
+
   if (column === "health")
     return (
       <span class={cn("capitalize", healthClass(value as string | null))}>
         {typeof value === "string" ? value : "Unknown"}
       </span>
     );
+
   if (column === "status")
     return <span class="capitalize">{typeof value === "string" ? value : "—"}</span>;
+
   if (column === "deviceCount") return typeof value === "number" ? value : "—";
+
   if (column === "name" && dataset === "software")
     return (
       <span class="block min-w-0">
@@ -104,7 +111,9 @@ const cellValue = (row: Record<string, unknown>, column: string, dataset: string
         </Show>
       </span>
     );
+
   if (value === null || value === undefined || value === "") return "—";
+
   return String(value);
 };
 
@@ -112,12 +121,14 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
   const config = () => configOf(props.widget);
   const dataset = () => config().dataset ?? "devices";
   const query = createMemo(() => config().query ?? { all: [] });
+
   const queryRequest = (groupBy?: string, limit?: number) => ({
     dataset: dataset(),
     query: query(),
     ...(groupBy ? { groupBy } : {}),
     ...(limit ? { limit } : {}),
   });
+
   const result = useQuery(() => ({
     queryKey: enterpriseKeys.dashboardQuery(
       props.tenantId,
@@ -257,15 +268,19 @@ function PieBuckets(props: {
 }) {
   const slices = createMemo(() => {
     const total = props.buckets.reduce((sum, bucket) => sum + bucket.value, 0);
+
     if (total <= 0) return [];
     let offset = 0;
+
     return props.buckets.map((bucket, index) => {
       const start = (offset / total) * 100;
       offset += bucket.value;
       const end = (offset / total) * 100;
+
       return { ...bucket, start, end, color: CHART_COLORS[index % CHART_COLORS.length]! };
     });
   });
+
   const gradient = () =>
     slices()
       .map((slice) => `${slice.color} ${slice.start}% ${slice.end}%`)

@@ -15,6 +15,7 @@ function describeFailure(cause: Cause.Cause<unknown>, fallback: string) {
   try {
     const error = Cause.squash(cause);
     const candidate = error as { readonly _tag?: unknown; readonly message?: unknown } | null;
+
     if (
       candidate?._tag === "WindowsMdmError" &&
       typeof candidate.message === "string" &&
@@ -24,6 +25,7 @@ function describeFailure(cause: Cause.Cause<unknown>, fallback: string) {
   } catch {
     // An empty/interrupted cause has nothing to describe.
   }
+
   return fallback;
 }
 
@@ -42,10 +44,12 @@ const fallbackFaultEnvelope = (message: string) =>
 function encodeFault(service: WindowsMdmService.Service, message: string) {
   try {
     const encoded = Effect.runSync(service.fault(message));
+
     if (typeof encoded === "string" && encoded.trim()) return encoded;
   } catch {
     // Fall through to a minimal, fixed envelope.
   }
+
   return fallbackFaultEnvelope(message);
 }
 
@@ -57,12 +61,15 @@ function encodeFault(service: WindowsMdmService.Service, message: string) {
 function requestContext(request: HttpServerRequest.HttpServerRequest): WindowsMdmRequestContext {
   const url = new URL(request.url, "http://localhost");
   const tenantToken = url.searchParams.get("tenant") ?? undefined;
+
   const identityCertificate = request.headers["x-device-identity-certificate"] as
     | string
     | undefined;
+
   const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"] as
     | string
     | undefined;
+
   return {
     ...(tenantToken ? { tenantToken } : {}),
     ...(identityCertificate ? { identityCertificate } : {}),
@@ -81,6 +88,7 @@ function soapHandler(
     Effect.gen(function* () {
       const service = yield* WindowsMdmService;
       const body = yield* textRequest(request);
+
       const response = yield* handle(service, body, requestContext(request)).pipe(
         Effect.matchCause({
           onSuccess: (value) => value,
@@ -88,6 +96,7 @@ function soapHandler(
             encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
         }),
       );
+
       return HttpServerResponse.text(response, {
         contentType: "application/soap+xml; charset=utf-8",
       });
@@ -98,6 +107,7 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* WindowsMdmService;
     const body = yield* textRequest(request);
+
     const response = yield* service.management(body, requestContext(request)).pipe(
       Effect.matchCause({
         onSuccess: (value) => value,
@@ -105,6 +115,7 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
           encodeFault(service, describeFailure(cause, "Invalid SyncML request")),
       }),
     );
+
     return HttpServerResponse.text(response, { contentType: "application/vnd.syncml.dm+xml" });
   });
 }

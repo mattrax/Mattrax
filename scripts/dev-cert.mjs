@@ -15,6 +15,7 @@ if (existsSync(key) && existsSync(cert)) {
 }
 
 mkdirSync(dir, { recursive: true });
+
 execFileSync(
   "openssl",
   [
@@ -37,4 +38,5 @@ execFileSync(
   ],
   { stdio: "inherit" },
 );
+
 console.log(`Generated dev certificate at ${dir}`);

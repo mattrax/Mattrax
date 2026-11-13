@@ -38,6 +38,7 @@ describe("SOAP Envelope", () => {
 
   it("should support custom namespaces in envelope", () => {
     const bodyXml = `<wst:RequestSecurityToken></wst:RequestSecurityToken>`;
+
     const envelope = serializeSoapEnvelope({
       body: bodyXml,
       namespaces: {

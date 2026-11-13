@@ -39,7 +39,9 @@ const encoder = new TextEncoder();
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
@@ -51,16 +53,21 @@ const hmac = async (secret: string, message: string): Promise<string> => {
     false,
     ["sign"],
   );
+
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+
   return toBase64Url(new Uint8Array(signature));
 };
 
 const timingSafeEqual = (left: string, right: string): boolean => {
   const a = encoder.encode(left);
   const b = encoder.encode(right);
+
   if (a.length !== b.length) return false;
   let difference = 0;
+
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+
   return difference === 0;
 };
 
@@ -71,8 +78,10 @@ const timingSafeEqual = (left: string, right: string): boolean => {
  */
 const isWindowsEnrollmentTokenShaped = (token: string): boolean => {
   const parts = token.split(".");
+
   if (parts.length !== 3) return false;
   const [subject, issuedAt, signature] = parts;
+
   return Boolean(
     subject && /^\d+$/.test(issuedAt ?? "") && /^[A-Za-z0-9_-]+$/.test(signature ?? ""),
   );
@@ -113,9 +122,11 @@ export const createWindowsEnrollmentToken = (
 ): Promise<string> =>
   (async () => {
     if (!subject) throw new Error("Windows enrollment token subject is required");
+
     if (!authSecret) throw new Error("Windows enrollment token requires a secret");
     const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
     const signature = await hmac(authSecret, `${subject}.${issuedAt}`);
+
     return `${subject}.${issuedAt}.${signature}`;
   })();
 
@@ -147,20 +158,27 @@ export const verifyWindowsEnrollmentTokenDetailed = async (
   options: WindowsEnrollmentTokenOptions = {},
 ): Promise<WindowsEnrollmentTokenEvaluation> => {
   const invalid = { verification: null, expired: false } as const;
+
   if (!token || !authSecret) return invalid;
   const parts = token.split(".");
+
   if (parts.length !== 3) return invalid;
   const [subject, issuedAtRaw, signature] = parts;
+
   if (!subject || !issuedAtRaw || !signature) return invalid;
   const issuedAt = Number(issuedAtRaw);
+
   if (!Number.isFinite(issuedAt)) return invalid;
 
   const expected = await hmac(authSecret, `${subject}.${issuedAtRaw}`);
+
   if (!timingSafeEqual(expected, signature)) return invalid;
 
   const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
   const ttlSeconds = options.ttlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
+
   if (nowSeconds > issuedAt + ttlSeconds) return { verification: null, expired: true };
+
   // Allow a little clock skew for freshly issued tokens.
   if (issuedAt > nowSeconds + 60) return invalid;
 
@@ -171,6 +189,7 @@ const fromBase64Url = (value: string): string | null => {
   try {
     const padded = value.replaceAll("-", "+").replaceAll("_", "/");
     const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
+
     return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
   } catch {
     return null;
@@ -179,10 +198,12 @@ const fromBase64Url = (value: string): string | null => {
 
 /** Prefix that marks a tenant-scoped Windows enrollment token. */
 const TENANT_TOKEN_PREFIX = "mttxw1";
+
 /** Prefix for a tenant token whose discovery chose the Federated auth policy. */
 const FEDERATED_TENANT_TOKEN_PREFIX = "mttxw2";
 const TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v1";
 const FEDERATED_TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v2:federated";
+
 /** Prefix that binds the organization into a WSTEP enrollment token subject. */
 const ENROLLMENT_SUBJECT_PREFIX = "mttxw1:";
 
@@ -243,14 +264,17 @@ export const createWindowsTenantToken = (
 ): Promise<string> =>
   (async () => {
     if (!organizationId) throw new Error("Windows tenant token organization is required");
+
     if (!authSecret) throw new Error("Windows tenant token requires a secret");
     const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
     const expiresAt = issuedAt + (options.ttlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS);
     const federated = options.federated === true;
+
     const signature = await hmac(
       authSecret,
       tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
     );
+
     return [
       federated ? FEDERATED_TENANT_TOKEN_PREFIX : TENANT_TOKEN_PREFIX,
       toBase64Url(encoder.encode(organizationId)),
@@ -266,11 +290,14 @@ export const verifyWindowsTenantTokenDetailed = async (
   options: WindowsTenantTokenOptions = {},
 ): Promise<WindowsTenantTokenEvaluation> => {
   const invalid = { verification: null, expired: false } as const;
+
   if (!token || !authSecret) return invalid;
   const parts = token.split(".");
+
   if (parts.length !== 5) return invalid;
   const [prefix, encodedOrganization, issuedAtRaw, expiresAtRaw, signature] = parts;
   const federated = prefix === FEDERATED_TENANT_TOKEN_PREFIX;
+
   if (
     (!federated && prefix !== TENANT_TOKEN_PREFIX) ||
     !encodedOrganization ||
@@ -282,17 +309,22 @@ export const verifyWindowsTenantTokenDetailed = async (
   const organizationId = fromBase64Url(encodedOrganization);
   const issuedAt = Number(issuedAtRaw);
   const expiresAt = Number(expiresAtRaw);
+
   if (!organizationId || !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return invalid;
+
   if (expiresAt <= issuedAt) return invalid;
 
   const expected = await hmac(
     authSecret,
     tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
   );
+
   if (!timingSafeEqual(expected, signature)) return invalid;
 
   const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
+
   if (nowSeconds > expiresAt) return { verification: null, expired: true };
+
   // Allow a little clock skew for freshly issued tokens.
   if (issuedAt > nowSeconds + 300) return invalid;
 
@@ -311,8 +343,10 @@ export const verifyWindowsTenantToken = (
 /** Expiry encoded in a tenant token, for display in the enrollment UI. */
 export const windowsTenantTokenExpiresAt = (token: string): Date | null => {
   const parts = token.split(".");
+
   if (parts.length !== 5) return null;
   const seconds = Number(parts[3]);
+
   return Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
 };
 
@@ -327,7 +361,9 @@ export const organizationFromWindowsEnrollmentSubject = (
   if (!subject?.startsWith(ENROLLMENT_SUBJECT_PREFIX)) return null;
   const rest = subject.slice(ENROLLMENT_SUBJECT_PREFIX.length);
   const separator = rest.indexOf(":");
+
   if (separator <= 0) return null;
+
   return fromBase64Url(rest.slice(0, separator));
 };
 
@@ -344,9 +380,12 @@ export const certificateDeviceIdsFor = (device: {
   readonly dmIdentifier?: string | null;
 }): string[] => {
   const ids = new Set<string>();
+
   if (device.id) ids.add(device.id);
   const dmIdentifier = device.dmIdentifier?.trim();
+
   if (dmIdentifier) ids.add(dmIdentifier);
+
   return [...ids];
 };
 
@@ -416,6 +455,7 @@ const certificateAttribute = (
 ): string | null => {
   if (!identityCertificate) return null;
   const text = decodeCertificateSubject(identityCertificate);
+
   return (
     text.match(new RegExp(`(?:^|[,/\\n])\\s*${attribute}\\s*=\\s*([^,/\\n]+)`, "i"))?.[1]?.trim() ??
     null
@@ -430,8 +470,10 @@ const certificateAttribute = (
 const certificateSerialCandidates = (value: string): string[] => {
   const candidates = new Set<string>();
   const normalized = normalizeIssuedCertificateSerial(value);
+
   if (normalized) candidates.add(normalized);
   const compact = value.trim().replace(/[\s:]/g, "");
+
   if (/^\d+$/.test(compact)) {
     try {
       candidates.add(BigInt(compact).toString(16));
@@ -439,6 +481,7 @@ const certificateSerialCandidates = (value: string): string[] => {
       // Not a decimal serial; the hex form above still applies.
     }
   }
+
   return [...candidates];
 };
 
@@ -462,8 +505,10 @@ type OrganizationResolution = Effect.Effect<string, UnknownDevice | InternalServ
 export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
   const { db, origin, authSecret, windowsOrganizationId, requireDeviceIdentity } = options;
   const ttlSeconds = options.enrollmentTokenTtlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
+
   const tenantTokenTtlSeconds =
     options.tenantTokenTtlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS;
+
   const internal = () => new InternalServerError();
 
   const requireSecret = (): Effect.Effect<string, InternalServerError> =>
@@ -474,8 +519,10 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
   ): Effect.Effect<WindowsTenantTokenEvaluation, InternalServerError> =>
     Effect.gen(function* () {
       const trimmed = tenantToken?.trim();
+
       if (!trimmed) return { verification: null, expired: false };
       const secret = yield* requireSecret();
+
       return yield* Effect.promise(() =>
         verifyWindowsTenantTokenDetailed(trimmed, secret, { ttlSeconds: tenantTokenTtlSeconds }),
       );
@@ -483,6 +530,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
   const federated = options.federated;
   const federatedAudience = federated?.audience;
+
   const federatedEnabled = Boolean(
     federated &&
     federated.enabled !== false &&
@@ -499,6 +547,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         .from(s.ssoConfig)
         .where(eq(s.ssoConfig.organizationId, organizationId))
         .limit(1);
+
       return config?.azureTenantId?.trim() || null;
     });
 
@@ -511,6 +560,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         .from(s.ssoConfig)
         .where(eq(s.ssoConfig.azureTenantId, azureTenantId))
         .limit(1);
+
       return config?.organizationId ?? null;
     });
 
@@ -548,18 +598,25 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     Effect.gen(function* () {
       if (!federatedEnabled) return yield* Effect.fail(new UnknownDevice());
       const unverifiedTenant = unverifiedFederatedTenantId(token);
+
       if (!unverifiedTenant) return yield* Effect.fail(new UnknownDevice());
+
       const organizationId =
         expectedOrganizationId ?? (yield* organizationForAzureTenant(unverifiedTenant));
+
       if (!organizationId) return yield* Effect.fail(new UnknownDevice());
       const azureTenantId = yield* tenantAzureTenantId(organizationId);
+
       if (!azureTenantId) return yield* Effect.fail(new UnknownDevice());
+
       // The signed tenant token (when present) pins the organization; the
       // token's own tenant must still match that organization's Entra tenant.
       if (azureTenantId.toLowerCase() !== unverifiedTenant.toLowerCase())
         return yield* Effect.fail(new UnknownDevice());
       const validation = yield* validateFederatedToken(token, azureTenantId);
+
       if (!validation.ok) return yield* Effect.fail(new UnknownDevice());
+
       return { organizationId, claims: validation.claims };
     }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
 
@@ -573,12 +630,15 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     Effect.gen(function* () {
       const evaluation = yield* evaluateTenantToken(input.tenantToken);
       const tokenOrganizationId = evaluation.verification?.organizationId ?? null;
+
       if (input.tenantToken?.trim() && !tokenOrganizationId && (input.rejectInvalidToken ?? true))
         return yield* Effect.fail(new UnknownDevice());
 
       const certificateOrganizationId = certificateAttribute(input.identityCertificate, "OU");
+
       if (input.requireCertificate && !certificateOrganizationId)
         return yield* Effect.fail(new UnknownDevice());
+
       if (
         tokenOrganizationId &&
         certificateOrganizationId &&
@@ -590,7 +650,9 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         tokenOrganizationId ??
         certificateOrganizationId ??
         (input.allowPin === false ? null : (windowsOrganizationId ?? null));
+
       if (!organizationId) return yield* Effect.fail(new UnknownDevice());
+
       return organizationId;
     });
 
@@ -603,6 +665,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           and(eq(s.device.organizationId, organizationId), eq(s.device.dmIdentifier, deviceId)),
         )
         .limit(1);
+
       return device ?? null;
     });
 
@@ -653,9 +716,12 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
   ): Effect.Effect<boolean, unknown> =>
     Effect.gen(function* () {
       const trimmed = serial?.trim();
+
       if (!trimmed) return false;
       const candidates = certificateSerialCandidates(trimmed);
+
       if (candidates.length === 0) return false;
+
       for (const deviceId of certificateDeviceIdsFor(device)) {
         const rows = yield* db
           .select({
@@ -669,6 +735,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               eq(s.scepIssuedCertificate.deviceId, deviceId),
             ),
           );
+
         if (
           rows.some(
             (row) =>
@@ -678,6 +745,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         )
           return true;
       }
+
       return false;
     });
 
@@ -691,23 +759,29 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     ): Effect.Effect<WindowsDiscoveryResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const organizationId = yield* resolveOrganization({ tenantToken: request.tenantToken });
+
         const offeredFederated = request.authPolicies.some(
           (policy) => policy.trim().toLowerCase() === "federated",
         );
+
         const azureTenantId = federatedEnabled
           ? yield* tenantAzureTenantId(organizationId).pipe(Effect.mapError(() => internal()))
           : null;
+
         if (federatedEnabled && offeredFederated && azureTenantId) {
           // Mint a federated-mode tenant token so policy/enroll can enforce
           // Entra token validation without guessing from the request shape.
           const secret = yield* requireSecret();
+
           const federatedToken = yield* Effect.promise(() =>
             createWindowsTenantToken(organizationId, secret, {
               federated: true,
               ttlSeconds: tenantTokenTtlSeconds,
             }),
           );
+
           const query = tenantQuery(federatedToken);
+
           return {
             authPolicy: "Federated",
             // MS-MDE2 enrollment version supported by the WSTEP implementation.
@@ -716,11 +790,10 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             enrollmentServiceUrl: `${origin}/mdm/windows/enroll${query}`,
             authServiceUrl:
               federated?.authServiceUrl?.(azureTenantId) ??
-              federatedAuthServiceUrl(azureTenantId, {
-                ...(federated?.clientId ? { clientId: federated.clientId } : {}),
-              }),
+              federatedAuthServiceUrl(azureTenantId, (federated?.clientId ? { clientId: federated.clientId } : {})),
           };
         }
+
         return {
           authPolicy: "OnPremise",
           // MS-MDE2 enrollment version supported by the WSTEP implementation.
@@ -741,19 +814,24 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const presentedToken = authToken.trim();
         const tenantEvaluation = yield* evaluateTenantToken(context.tenantToken);
         const presentedJwt = isFederatedTokenShaped(presentedToken);
+
         // Discovery mints a federated-mode tenant token; a JWT also selects
         // federated validation when the deployment supports it. OnPremise
         // discovery keeps working even when federated is configured.
         const federatedFlow =
           tenantEvaluation.verification?.federated === true || (federatedEnabled && presentedJwt);
+
         let organizationId: string;
+
         if (federatedFlow) {
           // Federated policy requests must carry a verifiable Entra token.
           // There is deliberately no fallback to an opaque client credential.
           if (!presentedJwt) return yield* Effect.fail(new UnknownDevice());
+
           const expectedOrganizationId = context.tenantToken?.trim()
             ? yield* resolveOrganization({ tenantToken: context.tenantToken })
             : null;
+
           organizationId = (yield* resolveFederatedOrganization(
             presentedToken,
             expectedOrganizationId,
@@ -763,11 +841,13 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             tenantToken: context.tenantToken,
           });
         }
+
         const evaluated = presentedToken
           ? yield* Effect.promise(() =>
               verifyWindowsEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
             )
           : { verification: null, expired: false };
+
         // First enrollment legitimately arrives without a token (or with an
         // opaque WSTEP client credential we cannot verify). A token in *our*
         // format whose signature fails, however, is forgery: fail closed rather
@@ -781,22 +861,27 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           !evaluated.expired
         )
           return yield* Effect.fail(new UnknownDevice());
+
         const presentedOrganizationId = evaluated.verification
           ? organizationFromWindowsEnrollmentSubject(evaluated.verification.subject)
           : null;
+
         // A token minted for another tenant must never be upgraded into this
         // tenant's enrollment flow.
         if (presentedOrganizationId && presentedOrganizationId !== organizationId)
           return yield* Effect.fail(new UnknownDevice());
+
         const subject =
           evaluated.verification &&
           presentedOrganizationId === organizationId &&
           evaluated.verification.subject
             ? evaluated.verification.subject
             : windowsEnrollmentSubject(organizationId);
+
         const issued = yield* Effect.promise(() =>
           createWindowsEnrollmentToken(subject, secret, { ttlSeconds }),
         );
+
         return {
           minimalKeyLength: "2048",
           certificateValidityPeriodSeconds: "31536000",
@@ -813,21 +898,27 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const presentedToken = request.authToken.trim();
         const tenantEvaluation = yield* evaluateTenantToken(request.tenantToken);
         const presentedJwt = isFederatedTokenShaped(presentedToken);
+
         const federatedFlow =
           tenantEvaluation.verification?.federated === true || (federatedEnabled && presentedJwt);
+
         let organizationId: string;
         let deviceIdentifier: string;
+
         if (federatedFlow) {
           // The device presented an Entra token instead of (or after) our
           // WSTEP token. Validate it against the tenant's issuer and JWKS.
           if (!presentedJwt) return yield* Effect.fail(new UnknownDevice());
+
           const expectedOrganizationId = request.tenantToken?.trim()
             ? yield* resolveOrganization({ tenantToken: request.tenantToken })
             : null;
+
           const resolved = yield* resolveFederatedOrganization(
             presentedToken,
             expectedOrganizationId,
           );
+
           organizationId = resolved.organizationId;
           deviceIdentifier =
             request.deviceId?.trim() || resolved.claims.objectId || resolved.claims.subject;
@@ -835,33 +926,40 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           const verification = yield* Effect.promise(() =>
             verifyWindowsEnrollmentToken(presentedToken, secret, { ttlSeconds }),
           );
+
           if (!verification) return yield* Effect.fail(new UnknownDevice());
           deviceIdentifier = request.deviceId?.trim() || verification.subject;
           organizationId = yield* resolveOrganization({
             tenantToken: request.tenantToken,
           });
+
           const boundOrganizationId = organizationFromWindowsEnrollmentSubject(
             verification.subject,
           );
+
           // The WSTEP token is minted per tenant. URL token and WSTEP token must
           // agree; an unbound legacy token is only accepted for the legacy
           // deployment-wide pin, never alongside a tenant token.
           if (boundOrganizationId && boundOrganizationId !== organizationId)
             return yield* Effect.fail(new UnknownDevice());
+
           if (!boundOrganizationId && request.tenantToken?.trim())
             return yield* Effect.fail(new UnknownDevice());
         }
+
         const [enrollment] = yield* db
           .select()
           .from(s.enterpriseEnrollment)
           .where(eq(s.enterpriseEnrollment.organizationId, organizationId))
           .limit(1);
+
         if (!enrollment?.enabledWindows) return yield* Effect.fail(new UnknownDevice());
 
         // Resolve the existing device (by Windows DeviceID) before enforcing the
         // tenant device cap: re-enrolling an existing device must not fail just
         // because the tenant is at its limit.
         const existing = yield* findDevice(organizationId, deviceIdentifier);
+
         // `maxDevices === 0` means unlimited for the tenant.
         if (!existing && enrollment.maxDevices > 0) {
           const windowsDevices = yield* db
@@ -869,9 +967,11 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             .from(s.device)
             .where(and(eq(s.device.organizationId, organizationId), eq(s.device.proto, "win")))
             .limit(enrollment.maxDevices);
+
           if (windowsDevices.length >= enrollment.maxDevices)
             return yield* Effect.fail(new UnknownDevice());
         }
+
         // The deployment plan limit applies to all platforms. Re-enrolling an
         // existing device is always allowed.
         if (!existing) {
@@ -880,10 +980,12 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             organizationId,
             config: options.planLimits,
           }).pipe(Effect.mapError(() => new InternalServerError()));
+
           if (planStatus.reached) return yield* Effect.fail(new UnknownDevice());
         }
 
         const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);
+
         if (!ca) return yield* Effect.fail(internal());
 
         // Windows issuance reads the same sealed CA key as SCEP issuance. Pick
@@ -893,6 +995,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           try: () => openCaPrivateKey(ca.privateKeyJwk, authSecret),
           catch: internal,
         });
+
         if (caKey.migrated) {
           yield* db
             .update(s.scepCa)
@@ -902,6 +1005,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
         const timestamp = new Date();
         const notAfter = new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000);
+
         const signed = yield* signScepCsr({
           csr: request.csr,
           caCertPem: ca.certPem,
@@ -918,6 +1022,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // against the DeviceID here is what previously made revocation inert.
         const deviceRowId = existing?.id ?? newDeviceId();
         const name = request.deviceName?.trim() || deviceIdentifier;
+
         if (existing) {
           yield* db
             .update(s.device)
@@ -944,6 +1049,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         }
 
         const serial = certificateSerialHex(signed.certificate);
+
         const [recorded] = yield* db
           .select({
             serial: s.scepIssuedCertificate.serial,
@@ -953,6 +1059,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           .from(s.scepIssuedCertificate)
           .where(eq(s.scepIssuedCertificate.serial, serial))
           .limit(1);
+
         if (recorded) {
           // Serial collisions are now ~2^-127, but a stale row could still
           // exist. Reuse it only for the same tenant *and* device; never let a
@@ -961,6 +1068,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           const sameIdentity =
             recorded.organizationId === organizationId &&
             (recorded.deviceId === deviceRowId || recorded.deviceId === deviceIdentifier);
+
           if (!sameIdentity) return yield* Effect.fail(internal());
           yield* db
             .update(s.scepIssuedCertificate)
@@ -1016,14 +1124,19 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           // client certificate remains the durable device identity.
           rejectInvalidToken: false,
         });
+
         if (requireDeviceIdentity) {
           const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
+
           if (subjectCn && subjectCn !== scope.deviceId) {
             return yield* Effect.fail(new UnknownDevice());
           }
         }
+
         const device = yield* findDevice(organizationId, scope.deviceId);
+
         if (!device) return yield* Effect.fail(new UnknownDevice());
+
         if (
           requireDeviceIdentity &&
           (yield* identityCertificateRevoked(
@@ -1038,6 +1151,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         for (const status of checkinRequest.statuses) {
           const entry = status as { cmdRef?: unknown; data?: unknown };
           const commandId = typeof entry.cmdRef === "string" ? entry.cmdRef : undefined;
+
           if (!commandId) continue;
           const data = String(entry.data ?? "");
           yield* db
@@ -1054,6 +1168,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           id: device.id,
           organizationId: device.organizationId,
         });
+
         const configurations = effective.configurations.map((configuration) => ({
           policyId: configuration.policyId,
           kind: configuration.kind,
@@ -1067,8 +1182,10 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           data?: string;
           format?: string;
         }> = [];
+
         // 1 is reserved for the SyncHdr status; server commands start at 2.
         let index = 2;
+
         // Resolve duplicate OMA-URIs deterministically. A policy with a
         // lexicographically smaller id wins, so check-ins are stable across
         // group ordering and devices.
@@ -1076,9 +1193,11 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           string,
           { readonly policyId: string; readonly data: string; readonly format?: string }
         >();
+
         const sorted = [...configurations].sort((left, right) =>
           String(left.policyId).localeCompare(String(right.policyId)),
         );
+
         for (const configuration of sorted) {
           for (const node of windowsPolicyNodes({
             policyId: configuration.policyId,
@@ -1099,6 +1218,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             });
           }
         }
+
         for (const [locURI, node] of desired) {
           commands.push({
             kind: "Replace",
@@ -1121,12 +1241,14 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               lt(s.deviceCommand.updatedAt, new Date(Date.now() - 30 * 60 * 1000)),
             ),
           );
+
         const queued = yield* db
           .select()
           .from(s.deviceCommand)
           .where(and(eq(s.deviceCommand.deviceId, device.id), eq(s.deviceCommand.status, "queued")))
           .orderBy(asc(s.deviceCommand.createdAt))
           .limit(1000);
+
         for (const command of queued) {
           const payload = (command.payload ?? {}) as { locURI?: string; data?: string };
           commands.push({
@@ -1156,6 +1278,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // tenant token (or the legacy pin). Management events must prove device
         // identity when configured.
         const isEnrollmentEvent = event._tag === "Enrolled";
+
         const organizationId = yield* resolveOrganization({
           tenantToken: scope.tenantToken,
           identityCertificate: scope.identityCertificate,
@@ -1164,10 +1287,13 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           // wedged by an expired enrollment URL token.
           rejectInvalidToken: isEnrollmentEvent,
         });
+
         if (requireDeviceIdentity && !isEnrollmentEvent) {
           const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
+
           if (subjectCn && subjectCn !== deviceId) return yield* Effect.fail(new UnknownDevice());
         }
+
         const device = yield* findDevice(organizationId, deviceId);
         const timestamp = new Date();
 
@@ -1200,6 +1326,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               timestamp,
             });
           }
+
           return;
         }
 

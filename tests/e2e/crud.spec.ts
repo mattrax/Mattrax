@@ -36,6 +36,7 @@ test.describe("groups and policies", () => {
 
   test("creates a dynamic group and shows its rule-based membership", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Dynamic Tenant");
+
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
       body: JSON.stringify({
@@ -63,6 +64,7 @@ test.describe("groups and policies", () => {
       page,
       `/api/v1/tenants/${tenant.id}/groups/${group.id}/preview`,
     );
+
     expect(preview).toEqual(expect.objectContaining({ kind: "dynamic", count: 0 }));
 
     await gotoHydrated(page, `/t/${tenant.id}/groups/${group.id}`);

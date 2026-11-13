@@ -28,7 +28,9 @@ const selectClass =
 function initials(name: string | undefined | null) {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
+
   if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+
   return parts[0]?.[0]?.toUpperCase() ?? "?";
 }
 
@@ -36,23 +38,30 @@ export default function AdministratorsSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const session = authClient.useSession();
+
   const users = useQuery(() => ({
     queryKey: enterpriseKeys.users(params.tenantId),
     queryFn: () => enterprise.listUsers(params.tenantId),
   }));
+
   const invitations = useQuery(() => ({
     queryKey: enterpriseKeys.invitations(params.tenantId),
     queryFn: () => enterprise.listInvitations(params.tenantId),
   }));
+
   const roles = useQuery(() => enterpriseQueries.roles(params.tenantId));
+
   const roleOptions = createMemo(() => {
     const list = roles.data?.roles;
+
     if (!list) return fallbackRoleOptions;
+
     return list.map((item) => ({
       value: item.builtIn ? `builtin:${item.id.replace("builtin:", "")}` : `role:${item.id}`,
       label: item.name,
     }));
   });
+
   const [email, setEmail] = createSignal("");
   const [role, setRole] = createSignal("builtin:member");
   const [roleEditing, setRoleEditing] = createSignal<TenantRole | null>(null);
@@ -71,6 +80,7 @@ export default function AdministratorsSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
   }));
+
   const removeUser = useMutation(() => ({
     mutationFn: (memberId: string) => enterprise.removeUser(params.tenantId, memberId),
     onSuccess: async () => {
@@ -78,6 +88,7 @@ export default function AdministratorsSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
+
   const changeRole = useMutation(() => ({
     mutationFn: ({ memberId, role }: { memberId: string; role: string }) =>
       enterprise.patchUser(
@@ -91,6 +102,7 @@ export default function AdministratorsSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.users(params.tenantId) });
     },
   }));
+
   const cancelInvitation = useMutation(() => ({
     mutationFn: (invitationId: string) =>
       enterprise.cancelInvitation(params.tenantId, invitationId),
@@ -104,20 +116,25 @@ export default function AdministratorsSettingsPage() {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.users(params.tenantId) });
     await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
   };
+
   const saveRole = useMutation(() => ({
     mutationFn: async (): Promise<{ status: "ok" }> => {
       if (rolePermissions().size === 0) throw new Error("Choose at least one permission");
+
       const payload = {
         name: roleName().trim(),
         description: roleDescription().trim() || null,
         permissions: [...rolePermissions()] as Permission[],
       };
+
       if (!payload.name) throw new Error("Give the role a name");
+
       if (roleEditing()) {
         await enterprise.patchRole(params.tenantId, roleEditing()!.id, payload);
       } else {
         await enterprise.createRole(params.tenantId, payload);
       }
+
       return { status: "ok" };
     },
     onSuccess: async () => {
@@ -128,11 +145,13 @@ export default function AdministratorsSettingsPage() {
     },
     onError: (error) => setRoleError(errorMessage(error)),
   }));
+
   const removeRole = useMutation(() => ({
     mutationFn: (roleId: string) => enterprise.deleteRole(params.tenantId, roleId),
     onSuccess: invalidateRoles,
     onError: (error) => setRoleError(errorMessage(error)),
   }));
+
   const openCreateRole = () => {
     setRoleEditing(null);
     setRoleName("");
@@ -141,6 +160,7 @@ export default function AdministratorsSettingsPage() {
     setRoleError(null);
     setRoleFormOpen(true);
   };
+
   const openEditRole = (role: TenantRole) => {
     setRoleEditing(role);
     setRoleName(role.name);
@@ -149,11 +169,14 @@ export default function AdministratorsSettingsPage() {
     setRoleError(null);
     setRoleFormOpen(true);
   };
+
   const togglePermission = (permission: string) => {
     setRolePermissions((current) => {
       const next = new Set(current);
+
       if (next.has(permission)) next.delete(permission);
       else next.add(permission);
+
       return next;
     });
   };

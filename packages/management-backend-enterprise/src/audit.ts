@@ -74,13 +74,16 @@ export const writeSystemAudit = (
     // writes and device protocol requests keep working when an endpoint is
     // down or the deployment has no signing secret.
     const webhookEvent = webhookEventForAuditAction(event.action);
+
     if (!webhookEvent || !options.authSecret || options.webhooks === false) return;
+
     const metadata =
       typeof event.metadata === "object" && event.metadata !== null
         ? (event.metadata as Record<string, unknown>)
         : event.metadata === undefined
           ? {}
           : { metadata: event.metadata };
+
     yield* dispatchWebhookEvent(
       db,
       {
@@ -108,6 +111,7 @@ const normalizeEnum = (value: string | null | undefined) => (value ?? "").trim()
  */
 export const isDeclarationFailure = (valid: string | null | undefined) => {
   const value = normalizeEnum(valid);
+
   return value === "invalid" || value === "failed" || value === "error";
 };
 

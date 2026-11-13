@@ -17,11 +17,13 @@ const thresholdLabel = (
       subject: "credential expired",
       summary: "One or more management credentials have expired.",
     };
+
   if (threshold === "7d")
     return {
       subject: "credential expires within 7 days",
       summary: "One or more management credentials expire within 7 days.",
     };
+
   return {
     subject: "credential expires within 30 days",
     summary: "One or more management credentials expire within 30 days.",
@@ -34,9 +36,12 @@ const credentialLine = (
 ) => {
   if (!credential.configured) return `${label}: not configured`;
   const daysLeft = credential.daysLeft;
+
   if (daysLeft == null) return `${label}: expiry could not be read`;
   const expiry = credential.expiresAt ? `, expires ${credential.expiresAt.slice(0, 10)}` : "";
+
   if (daysLeft <= 0) return `${label}: expired${expiry}`;
+
   return `${label}: ${daysLeft} day${daysLeft === 1 ? "" : "s"} left${expiry}`;
 };
 
@@ -49,9 +54,11 @@ export const credentialExpiryEmail = (
   options: { readonly origin: string; readonly supportEmail?: string },
 ): CredentialExpiryEmail => {
   const label = thresholdLabel(notification.threshold);
+
   const managementUrl = `${options.origin.replace(/\/+$/, "")}/t/${encodeURIComponent(
     notification.organizationId,
   )}/settings/management`;
+
   const supportEmail = options.supportEmail ?? CREDENTIAL_EMAIL_FROM;
   const { apns, scepCa, deviceCertificates } = notification.health;
 

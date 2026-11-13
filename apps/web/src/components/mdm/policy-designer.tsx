@@ -100,8 +100,10 @@ const SECTION_FALLBACK = "Settings";
 
 const sectionLabel = (property: Property) => {
   if (property.category && property.category !== "Envelope") return property.category;
+
   if (property.scope)
     return `${property.scope.charAt(0).toUpperCase()}${property.scope.slice(1)} settings`;
+
   return SECTION_FALLBACK;
 };
 
@@ -112,9 +114,12 @@ const collectionGroup = (collection: {
   group?: string;
 }) => {
   if (collection.group?.trim()) return collection.group.trim();
+
   if (collection.platform === "apple")
     return collection.kind === "declaration" ? "DDM declarations" : "Configuration profiles";
+
   if (collection.platform === "android") return "Android Management API";
+
   // Windows mixes grouped ADMX content with ungrouped Policy CSP settings.
   // Surface the CSP settings first: they are the ones most policies configure.
   return "General settings";
@@ -122,10 +127,15 @@ const collectionGroup = (collection: {
 
 const formatValue = (value: unknown) => {
   if (value === undefined) return "Not set";
+
   if (value === null) return "Empty";
+
   if (typeof value === "boolean") return value ? "On" : "Off";
+
   if (Array.isArray(value)) return value.length === 0 ? "Empty list" : JSON.stringify(value);
+
   if (typeof value === "object") return JSON.stringify(value);
+
   return String(value);
 };
 
@@ -218,18 +228,22 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [collections, setCollections] = createSignal<Record<string, Collection>>({});
   const [collectionErrors, setCollectionErrors] = createSignal<Record<string, string>>({});
   const [loadingCollections, setLoadingCollections] = createSignal<Record<string, boolean>>({});
+
   const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
     {},
   );
+
   const [searchIndexErrors, setSearchIndexErrors] = createSignal<
     Partial<Record<PlatformId, string>>
   >({});
+
   const [selectionMap, setSelectionMap] = createSignal<Record<PlatformId, Selection[]>>({
     apple: [],
     android: [],
     windows: [],
-    ...(initialDraft?.platforms ?? {}),
+    ...initialDraft?.platforms,
   });
+
   const [notice, setNotice] = createSignal<string | null>(null);
   const [liveMessage, setLiveMessage] = createSignal("");
   const [showDeprecated, setShowDeprecated] = createSignal(false);
@@ -239,6 +253,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [mobileView, setMobileView] = createSignal<"browse" | "editor">("editor");
   const [summaryOpen, setSummaryOpen] = createSignal(false);
   const [issuesOpen, setIssuesOpen] = createSignal(false);
+
   const [invalidStructured, setInvalidStructured] = createSignal<
     Record<
       string,
@@ -250,6 +265,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       }
     >
   >({});
+
   const [startOverOpen, setStartOverOpen] = createSignal(false);
   const [removeTarget, setRemoveTarget] = createSignal<Selection | null>(null);
   const [justSaved, setJustSaved] = createSignal(false);
@@ -267,6 +283,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const initialSnapshot = untrack(() => {
     const policy = emptyPolicyDraft(name());
     policy.platforms = { ...selectionMap() };
+
     return serializePolicy(policy);
   });
 
@@ -287,12 +304,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     untrack(() => {
       const targetPlatform = target ?? platform();
       const cacheKey = collectionCacheKey(targetPlatform, collectionId);
+
       if (collections()[cacheKey] || loadingCollections()[cacheKey]) return;
       setLoadingCollections((current) => ({ ...current, [cacheKey]: true }));
       setCollectionErrors((current) => {
         if (!(cacheKey in current)) return current;
         const next = { ...current };
         delete next[cacheKey];
+
         return next;
       });
       void loadCollection(targetPlatform, collectionId)
@@ -304,6 +323,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           setLoadingCollections((current) => {
             const next = { ...current };
             delete next[cacheKey];
+
             return next;
           }),
         );
@@ -322,12 +342,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setIndexErrors((current) => {
       const next = { ...current };
       delete next[target];
+
       return next;
     });
+
     if (!force && indexes()[target]) {
       ensureDraftCollections(target);
+
       return;
     }
+
     const id = ++requestId;
     requestIds.set(target, id);
     void loadPlatformIndex(target)
@@ -344,6 +368,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const retryCatalogue = () => {
     setManifestError(null);
+
     if (!manifest())
       void loadManifest()
         .then(setManifest)
@@ -352,16 +377,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setIndexes((current) => {
       const next = { ...current };
       delete next[target];
+
       return next;
     });
     setSearchIndexes((current) => {
       const next = { ...current };
       delete next[target];
+
       return next;
     });
     setSearchIndexErrors((current) => {
       const next = { ...current };
       delete next[target];
+
       return next;
     });
     setCollections({});
@@ -393,6 +421,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   };
 
   const selections = () => selectionMap()[platform()] ?? [];
+
   const setSelections = (updater: (current: Selection[]) => Selection[]) =>
     setSelectionMap((current) => ({
       ...current,
@@ -406,6 +435,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
+
       if (stored) {
         setPlatform(policyPlatforms(stored)[0] ?? "apple");
         setName(stored.name);
@@ -413,6 +443,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         setNotice("Restored your last draft.");
       }
     }
+
     beginLoad(platform());
 
     return () => {};
@@ -426,6 +457,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     () => ({ name: name(), selections: selectionMap() }),
     (value) => {
       clearTimeout(autosaveTimer);
+
       // Do not rewrite the browser draft merely because the editor mounted.
       if (
         serializePolicy({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
@@ -440,6 +472,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             platforms: value.selections,
             savedAt: Date.now(),
           };
+
           localStorage.setItem(storageKey, JSON.stringify(policy));
         } catch {
           // Storage can be unavailable in private mode; exporting still works.
@@ -454,6 +487,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     () => ({ data: data(), active: activeKey(), selections: selections() }),
     (value) => {
       if (!value.data) return;
+
       // Drafts written by older builds used `apple:<identifier>` instead of the
       // catalogue key (`apple/profiles/<identifier>#Name`). Resolve them against
       // the loaded index rather than showing an empty editor.
@@ -462,6 +496,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           value.data!.collections.some((collection) => keyOf(collection) === selection.collectionId)
         )
           return selection;
+
         const match =
           value.data!.collections.find(
             (collection) =>
@@ -470,8 +505,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           value.data!.collections.find(
             (collection) => collection.identifier === selection.identifier,
           );
+
         return match ? { ...selection, collectionId: keyOf(match) } : selection;
       });
+
       if (normalised.some((selection, index) => selection !== value.selections[index]))
         setSelections(() => normalised);
 
@@ -480,10 +517,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         value.data.collections.some((collection) => keyOf(collection) === value.active)
       ) {
         ensureCollection(collectionIdOf(value.active));
+
         return;
       }
+
       const first = normalised[0];
       setActiveKey(first ? first.collectionId : null);
+
       if (first) ensureCollection(collectionIdOf(first.collectionId));
     },
   );
@@ -515,28 +555,36 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const searchEntries = createMemo(() => {
     const term = query().trim().toLowerCase();
     const current = data();
+
     if (!term || !current) return null;
     const tokens = term.split(/\s+/).filter(Boolean);
     const matches = (text: string) => tokens.every((token) => text.includes(token));
     const searchIndex = searchIndexes()[platform()];
     const propertyMatches = searchIndex ? searchIndexProperties(searchIndex, term) : null;
     const entries = new Map<string, { collection: CollectionSummary; matchKeys: Set<string> }>();
+
     for (const collection of current.collections) {
       if (collection.platform !== platform()) continue;
+
       const collectionMatches = matches(
         `${collection.name} ${collection.identifier} ${collection.group ?? ""}`.toLowerCase(),
       );
+
       const matchKeys = new Set(propertyMatches?.get(collection.id) ?? []);
+
       if (!collectionMatches && matchKeys.size === 0) continue;
       entries.set(keyOf(collection), { collection, matchKeys });
     }
+
     return entries;
   });
 
   const browseItems = createMemo(() => {
     const current = data();
+
     if (!current) return [];
     const entries = searchEntries();
+
     return current.collections
       .filter(
         (collection) =>
@@ -553,27 +601,33 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const browseGroups = createMemo(() => {
     const groups = new Map<string, Array<{ collection: CollectionSummary; matchCount: number }>>();
+
     for (const item of browseItems()) {
       const label = collectionGroup(item.collection);
       const list = groups.get(label) ?? [];
       list.push(item);
       groups.set(label, list);
     }
+
     return [...groups.entries()]
       .map(([label, items]) => ({ label, items }))
       .sort((a, b) => {
         if (a.label === "General settings") return -1;
+
         if (b.label === "General settings") return 1;
+
         return a.label.localeCompare(b.label);
       });
   });
 
   const renderedGroups = createMemo(() => {
     let remaining = visibleCount();
+
     return browseGroups().map((group) => {
       const collapsed = Boolean(collapsedGroups()[group.label]);
       const items = collapsed ? [] : group.items.slice(0, Math.max(0, remaining));
       remaining -= items.length;
+
       return { ...group, collapsed, items, total: group.items.length };
     });
   });
@@ -583,6 +637,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       .filter((group) => !collapsedGroups()[group.label])
       .reduce((total, group) => total + group.items.length, 0),
   );
+
   const shownBrowseCount = createMemo(() =>
     renderedGroups().reduce((total, group) => total + group.items.length, 0),
   );
@@ -604,35 +659,48 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const activeSummary = createMemo<CollectionSummary | undefined>(() => {
     const key = activeKey();
+
     return key ? data()?.collections.find((collection) => keyOf(collection) === key) : undefined;
   });
+
   const activeCollection = createMemo<Collection | undefined>(() => {
     const key = activeKey();
+
     return key ? collections()[collectionCacheKey(platform(), collectionIdOf(key))] : undefined;
   });
+
   const activeCollectionLoading = () => {
     const key = activeKey();
+
     return key
       ? Boolean(loadingCollections()[collectionCacheKey(platform(), collectionIdOf(key))])
       : false;
   };
+
   const activeCollectionError = () => {
     const key = activeKey();
+
     return key
       ? collectionErrors()[collectionCacheKey(platform(), collectionIdOf(key))]
       : undefined;
   };
+
   const selected = createMemo(
     () => new Set(selections().map((selection) => selection.collectionId)),
   );
+
   const activeSelection = createMemo(() =>
     selections().find((selection) => selection.collectionId === activeKey()),
   );
+
   const activeMatchKeys = createMemo<Set<string> | null>(() => {
     const key = activeKey();
+
     if (!key) return null;
     const entry = searchEntries()?.get(key);
+
     if (!entry || entry.matchKeys.size === 0) return null;
+
     return entry.matchKeys;
   });
 
@@ -643,28 +711,35 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     let total = 0;
     let configured = 0;
     let changed = 0;
+
     const selectionPlatform: PlatformId = selection.collectionId.startsWith("windows")
       ? "windows"
       : selection.collectionId.startsWith("android")
         ? "android"
         : "apple";
+
     for (const property of selection.properties) {
       if (property.category === "Envelope") continue;
       total += 1;
       const value = selection.values[valueKey(property, selectionPlatform)];
+
       if (isConfiguredValue(value)) configured += 1;
+
       if (isChangedValue(property, value)) changed += 1;
     }
+
     return { total, configured, changed };
   };
 
   const activeStats = createMemo(() => {
     const selection = activeSelection();
+
     return selection ? statsFor(selection) : { total: 0, configured: 0, changed: 0 };
   });
 
   const inPolicy = createMemo(() => {
     const entries = searchEntries();
+
     return selections()
       .filter((selection) => !entries || entries.has(selection.collectionId))
       .map((selection) => ({
@@ -693,17 +768,22 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       message: "Invalid structured value. Fix the JSON to save or export.",
     })),
   ]);
+
   const blockingIssues = createMemo(() => issues().filter((issue) => issue.severity === "error"));
+
   const errorCount = createMemo(
     () => issues().filter((issue) => issue.severity === "error").length,
   );
+
   const warningCount = createMemo(
     () => issues().filter((issue) => issue.severity === "warning").length,
   );
+
   const policyStats = createMemo(() => {
     let total = 0;
     let configured = 0;
     let changed = 0;
+
     for (const target of PLATFORM_ORDER) {
       for (const selection of selectionMap()[target] ?? []) {
         const stats = statsFor(selection);
@@ -712,17 +792,20 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         changed += stats.changed;
       }
     }
+
     return { total, configured, changed };
   });
 
   const issuesFor = (collectionId: string) =>
     issues().filter((issue) => issue.collectionId === collectionId);
+
   const fieldIssue = (collectionId: string, propertyKey: string) =>
     issues().find(
       (issue) => issue.collectionId === collectionId && issue.propertyKey === propertyKey,
     );
 
   const dirtySinceLoad = () => serializePolicy(policyDraft()) !== initialSnapshot;
+
   const dirtySincePolicy = () =>
     props.persistedDraft === undefined ||
     serializePolicy(policyDraft()) !== serializePolicy(props.persistedDraft);
@@ -738,8 +821,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const saveStatus = () => {
     if (props.saving) return "Saving…";
+
     if (props.mode === "dashboard")
       return dirtySincePolicy() ? "Unsaved changes" : "Saved to policy";
+
     return dirtySinceLoad() ? "Unsaved draft" : "Draft saved";
   };
 
@@ -748,6 +833,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   useBeforeLeave((event) => {
     if (props.mode !== "dashboard" || props.saving || justSaved() || !dirtySincePolicy()) return;
     event.preventDefault();
+
     if (window.confirm("You have unsaved policy changes. Leave without saving?")) event.retry(true);
   });
   onSettled(() => {
@@ -756,13 +842,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       event.preventDefault();
       event.returnValue = "";
     };
+
     if (props.mode === "dashboard") window.addEventListener("beforeunload", beforeUnload);
+
     return () => window.removeEventListener("beforeunload", beforeUnload);
   });
 
   const addCollection = (collection: Collection) => {
     const key = keyOf(collection);
+
     if (selected().has(key)) return false;
+
     // A single Apple policy is either a configuration profile or a set of DDM
     // declarations. Mixing them silently drops one half of the draft.
     if (
@@ -771,6 +861,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       collection.kind !== "declaration"
     )
       return false;
+
     if (
       platform() === "apple" &&
       selections().some((selection) => selection.kind !== collection.kind)
@@ -778,8 +869,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       setNotice(
         "Apple profiles and declarations are separate policies. Remove the other kind first, or start a new policy.",
       );
+
       return false;
     }
+
     setSelections((current) => [
       ...current,
       {
@@ -797,6 +890,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setFilterMode("all");
     setLiveMessage(`${collection.name} added to the policy.`);
     focusEditor();
+
     return true;
   };
 
@@ -804,27 +898,36 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     const id = collectionIdOf(key);
     const cacheKey = collectionCacheKey(target, id);
     let collection = collections()[cacheKey];
+
     if (!collection) {
       try {
         collection = await loadCollection(target, id);
       } catch (error) {
         setNotice(`Could not load ${key}: ${errorMessage(error)}`);
+
         return false;
       }
+
       setCollections((current) => ({ ...current, [cacheKey]: collection }));
     }
+
     if (target !== platform()) return false;
+
     return addCollection(collection);
   };
 
   /** Add the collection open in the editor, loading it first if necessary. */
   const addActiveCollection = () => {
     const loaded = activeCollection();
+
     if (loaded) {
       addCollection(loaded);
+
       return;
     }
+
     const key = activeKey();
+
     if (!key) return;
     setLiveMessage(`Loading ${activeSummary()?.name ?? "settings"}…`);
     void addByKey(key);
@@ -844,10 +947,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         ),
       ),
     );
+
     if (activeKey() === selection.collectionId) {
       const next = selections().find((item) => item.collectionId !== selection.collectionId);
       setActiveKey(next?.collectionId ?? null);
     }
+
     setRemoveTarget(null);
     setLiveMessage(`${selection.name} removed from the policy.`);
     focusEditor();
@@ -878,8 +983,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   ) =>
     setInvalidStructured((current) => {
       const id = `${selection.collectionId}:${key}`;
+
       if (invalid === Boolean(current[id])) return current;
       const next = { ...current };
+
       if (invalid)
         next[id] = {
           collectionId: selection.collectionId,
@@ -888,6 +995,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           propertyName: property.name,
         };
       else delete next[id];
+
       return next;
     });
 
@@ -896,8 +1004,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       current.map((item) => {
         if (item.collectionId !== selection.collectionId) return item;
         const values = { ...item.values };
+
         for (const property of properties)
           values[valueKey(property, platform())] = catalogDefault(property);
+
         return { ...item, values };
       }),
     );
@@ -908,7 +1018,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     const target = platform();
     void (async () => {
       let added = 0;
+
       for (const key of keys) if (await addByKey(key, target)) added += 1;
+
       if (target !== platform()) return;
       setNotice(
         added === keys.length
@@ -920,12 +1032,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const download = () => {
     if (policySelectionCount(policyDraft()) === 0) return;
+
     if (blockingIssues().length > 0) {
       setIssuesOpen(true);
+
       return;
     }
+
     try {
       const bundle = buildPolicyBundle(policyDraft());
+
       if (!bundle) return;
       const blob = new Blob([bundle.content as BlobPart], { type: bundle.contentType });
       const url = URL.createObjectURL(blob);
@@ -943,19 +1059,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const deploy = () => {
     if (policySelectionCount(policyDraft()) === 0) return;
+
     if (blockingIssues().length > 0) {
       setIssuesOpen(true);
       setNotice(
         `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying.`,
       );
+
       return;
     }
+
     try {
       localStorage.setItem("mattrax:designer-draft", JSON.stringify(policyDraft()));
     } catch {
       setNotice("Could not save the draft in this browser. Export the artifact instead.");
+
       return;
     }
+
     const returnTo = "/dashboard?designerDraft=1";
     navigate(session().data?.user ? returnTo : `/login?returnTo=${encodeURIComponent(returnTo)}`);
   };
@@ -965,12 +1086,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     policySelectionCount(policyDraft()) > 0 &&
     !props.saveDisabled &&
     blockingIssues().length === 0;
+
   const disabledHint = () => {
     if (props.saveDisabled) return "Confirm the replacement option above before saving.";
+
     if (policySelectionCount(policyDraft()) === 0)
       return "Add a template or a setting to get started.";
+
     if (blockingIssues().length > 0)
       return `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before saving.`;
+
     return null;
   };
 
@@ -1054,27 +1179,35 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const platformLabel = (id: PlatformId | null | undefined) => {
     if (!id) return "";
+
     return (
       manifest()?.platforms.find((item) => item.id === id)?.name ??
       id.charAt(0).toUpperCase() + id.slice(1)
     );
   };
+
   const platforms = (): Array<{ id: PlatformId; short: string }> =>
     manifest()?.platforms ?? [
       { id: "apple", short: "Apple" },
       { id: "android", short: "Android" },
       { id: "windows", short: "Windows" },
     ];
+
   const platformName = () => platformLabel(platform());
+
   const loadingLabel = () => {
     const stats = manifest()?.stats[platform()];
+
     return stats
       ? `Loading ${platformName()} settings — ${stats.properties.toLocaleString()} properties…`
       : `Loading ${platformName()} settings…`;
   };
+
   const resultLabel = () => {
     const shown = browseItems().length;
+
     if (query().trim()) return `${shown} matching collection${shown === 1 ? "" : "s"}`;
+
     return `${shown} collection${shown === 1 ? "" : "s"}`;
   };
 
@@ -1101,13 +1234,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     // Selections carry their own properties, so the section can be revealed
     // without waiting for the catalogue entry to load.
     const selection = selections().find((item) => item.collectionId === issue.collectionId);
+
     const property = selection?.properties.find(
       (item) => valueKey(item, platform()) === issue.propertyKey,
     );
+
     if (property) {
       const key = `${issue.collectionId}:${sectionLabel(property)}`;
       setCollapsedSections((current) => ({ ...current, [key]: false }));
     }
+
     setTimeout(() => {
       const rows = [...document.querySelectorAll<HTMLElement>("[data-policy-field]")];
       const row = rows.find((item) => item.dataset.policyField === issue.propertyKey);
@@ -1121,6 +1257,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const toggleGroup = (label: string) =>
     setCollapsedGroups((current) => ({ ...current, [label]: !current[label] }));
+
   const toggleSection = (key: string) =>
     setCollapsedSections((current) => ({ ...current, [key]: !current[key] }));
 
@@ -1346,6 +1483,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       <For each={selectionMap()[target]}>
                         {(selection) => {
                           const stats = () => statsFor(selection);
+
                           return (
                             <li>
                               <button
@@ -1675,6 +1813,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       <For each={inPolicy()}>
                         {(item) => {
                           const collectionIssues = () => issuesFor(item.selection.collectionId);
+
                           return (
                             <li
                               class={cn(
@@ -2077,6 +2216,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               loaded().properties.filter(
                                 (property) => property.category !== "Envelope",
                               ).length;
+
                             return (
                               <p class="mt-3 rounded-lg border border-dashed border-input px-3 py-2.5 text-[12px] text-muted-foreground">
                                 Add it to the policy to configure {settings().toLocaleString()}{" "}
@@ -2093,18 +2233,25 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         selection().properties.filter(
                           (property) => property.category !== "Envelope",
                         );
+
                       const matching = () => activeMatchKeys();
+
                       const visibleProperties = createMemo(() => {
                         const term = filterQuery().trim().toLowerCase();
                         const matches = matching();
+
                         return allProperties().filter((property) => {
                           const key = valueKey(property, platform());
+
                           if (matches && !matches.has(key)) return false;
                           const value = selection().values[key];
+
                           if (filterMode() === "configured" && !isConfiguredValue(value))
                             return false;
+
                           if (filterMode() === "changed" && !isChangedValue(property, value))
                             return false;
+
                           if (
                             term &&
                             !`${property.name} ${property.key} ${property.address ?? ""} ${property.description ?? ""}`
@@ -2112,19 +2259,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               .includes(term)
                           )
                             return false;
+
                           return true;
                         });
                       });
+
                       const sections = createMemo(() => {
                         const groups = new Map<string, Property[]>();
+
                         for (const property of visibleProperties()) {
                           const label = sectionLabel(property);
                           const list = groups.get(label) ?? [];
                           list.push(property);
                           groups.set(label, list);
                         }
+
                         return [...groups.entries()].map(([label, properties]) => {
                           let changed = 0;
+
                           for (const property of properties) {
                             if (
                               isChangedValue(
@@ -2134,9 +2286,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             )
                               changed += 1;
                           }
+
                           return { label, properties, changed };
                         });
                       });
+
                       return (
                         <div>
                           <Show when={activeMatchKeys()}>
@@ -2181,7 +2335,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               {(section) => {
                                 const sectionKey = () =>
                                   `${selection().collectionId}:${section.label}`;
+
                                 const collapsed = () => Boolean(collapsedSections()[sectionKey()]);
+
                                 return (
                                   <section aria-label={section.label}>
                                     <div class="sticky top-0 z-10 flex items-center gap-2 border-y border-border bg-muted/80 px-3 py-1.5 backdrop-blur sm:px-5">
@@ -2226,6 +2382,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                         {(property) => {
                                           const key = () => valueKey(property, platform());
                                           const value = () => selection().values[key()];
+
                                           return (
                                             <PropertyField
                                               property={property}
@@ -2355,6 +2512,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               variant="destructive"
               onClick={() => {
                 const target = removeTarget();
+
                 if (target) removeSelection(target);
               }}
             >
@@ -2490,8 +2648,10 @@ function PropertyField(props: PropertyFieldProps) {
   const arrayEnumValues = () => (props.property.type === "array" ? props.property.enum : undefined);
   const enumValues = () => (props.property.type !== "array" ? props.property.enum : undefined);
   const groupedControl = () => isBoolean() || Boolean(arrayEnumValues());
+
   const isStructured = () =>
     ["array", "dictionary", "data"].includes(props.property.type) && !arrayEnumValues();
+
   const [structuredInvalid, setStructuredInvalid] = createSignal(false);
   const rowInvalid = () => invalid() || (isStructured() && structuredInvalid());
   createEffect(
@@ -2501,10 +2661,13 @@ function PropertyField(props: PropertyFieldProps) {
     },
   );
   const [showDescription, setShowDescription] = createSignal(false);
+
   const descriptionVisible = () =>
     props.changed || props.searchMatch || Boolean(props.issue) || showDescription();
+
   const describedBy = () =>
     [descId(), hintId(), props.issue ? errorId() : undefined].filter(Boolean).join(" ");
+
   const invalid = () => props.issue?.severity === "error";
 
   /**
@@ -2514,23 +2677,31 @@ function PropertyField(props: PropertyFieldProps) {
    */
   const enumKind = () => {
     const values = enumValues()?.map((option) => option.value) ?? [];
+
     if (values.length > 0 && values.every((value) => value === "true" || value === "false"))
       return "boolean";
+
     if (
       values.length > 0 &&
       values.every((value) => value.trim() !== "" && Number.isFinite(Number(value)))
     )
       return "number";
+
     return "string";
   };
+
   const coerce = (value: string) => {
     const kind = enumKind();
+
     if (kind === "boolean") return value === "true";
+
     if (kind === "number") return Number(value);
+
     return value;
   };
 
   const arrayValue = () => (Array.isArray(props.value) ? (props.value as unknown[]) : []);
+
   const toggleArrayValue = (option: string, checked: boolean) => {
     const current = arrayValue().map(String);
     props.onChange(
@@ -2539,14 +2710,18 @@ function PropertyField(props: PropertyFieldProps) {
         : current.filter((value) => value !== option),
     );
   };
+
   const [optionQuery, setOptionQuery] = createSignal("");
+
   const visibleOptions = () => {
     const term = optionQuery().trim().toLowerCase();
+
     return (arrayEnumValues() ?? []).filter(
       (option) =>
         !term || `${option.description ?? ""} ${option.value}`.toLowerCase().includes(term),
     );
   };
+
   const selectAllOptions = () => {
     const values = (arrayEnumValues() ?? []).map((option) => option.value);
     props.onChange([...new Set([...arrayValue().map(String), ...values])]);
@@ -2782,6 +2957,7 @@ function PropertyField(props: PropertyFieldProps) {
                   option.value === undefined
                     ? props.value === undefined
                     : props.value === option.value;
+
                 return (
                   <button
                     type="button"
@@ -2828,6 +3004,7 @@ function PropertyField(props: PropertyFieldProps) {
             onInput={(event) => {
               const value = event.currentTarget.value;
               const number = value === "" ? undefined : Number(value);
+
               if (number === undefined || Number.isFinite(number)) props.onChange(number);
             }}
           />
@@ -2847,6 +3024,7 @@ function PropertyField(props: PropertyFieldProps) {
             onInput={(event) => {
               const value = event.currentTarget.value;
               const number = value === "" ? undefined : Number(value);
+
               if (number === undefined || Number.isFinite(number)) props.onChange(number);
             }}
           />
@@ -2907,12 +3085,17 @@ function StructuredField(props: {
   onChange: (value: unknown) => void;
 }) {
   const isData = () => props.property.type === "data";
+
   const format = (value: unknown) => {
     if (value === undefined || value === null) return "";
+
     if (isData()) return typeof value === "string" ? value : String(value);
+
     if (typeof value === "string") return value;
+
     return JSON.stringify(value, null, 2);
   };
+
   const [text, setText] = createSignal(format(props.value));
   const [error, setError] = createSignal<string | null>(null);
   let lastIncoming: unknown;
@@ -2932,35 +3115,45 @@ function StructuredField(props: {
 
   const handleInput = (raw: string) => {
     setText(raw);
+
     if (isData()) {
       lastIncoming = raw;
       setError(null);
       props.onInvalidChange(false);
       props.onChange(raw === "" ? undefined : raw);
+
       return;
     }
+
     if (raw.trim() === "") {
       lastIncoming = undefined;
       setError(null);
       props.onInvalidChange(false);
       props.onChange(undefined);
+
       return;
     }
+
     try {
       const parsed = JSON.parse(raw) as unknown;
+
       if (props.property.type === "array" && !Array.isArray(parsed)) {
         setError('Expected a JSON list, for example ["value"].');
         props.onInvalidChange(true);
+
         return;
       }
+
       if (
         props.property.type === "dictionary" &&
         (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
       ) {
         setError('Expected a JSON object, for example {"key": "value"}.');
         props.onInvalidChange(true);
+
         return;
       }
+
       lastIncoming = parsed;
       setError(null);
       props.onInvalidChange(false);

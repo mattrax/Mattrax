@@ -2,10 +2,12 @@ import { Schema } from "effect";
 import { env as cfEnv } from "cloudflare:workers";
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
+
 const urlString = Schema.String.check(
   Schema.makeFilter<string>((value) => {
     try {
       new URL(value);
+
       return true;
     } catch {
       return "a valid URL";

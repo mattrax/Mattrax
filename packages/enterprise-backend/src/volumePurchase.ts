@@ -51,15 +51,19 @@ const mapVppError = <A, R>(effect: Effect.Effect<A, unknown, R>) =>
   );
 
 const now = () => new Date();
+
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
 const text = (value: unknown): string | undefined => {
   if (typeof value === "string") {
     const trimmed = value.trim();
+
     return trimmed === "" ? undefined : trimmed;
   }
+
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
+
   return undefined;
 };
 
@@ -71,12 +75,15 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const base64ToBytes = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
   const binary = atob(cleaned);
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -85,7 +92,9 @@ const jsonToBase64 = (value: unknown) =>
 
 const tryJson = (value: string): unknown => {
   const trimmed = value.trim();
+
   if (!trimmed.startsWith("{")) return undefined;
+
   try {
     return JSON.parse(trimmed);
   } catch {
@@ -112,9 +121,11 @@ export const parseVppTokenUpload = async (input: {
   readonly encoding?: "text" | "base64";
 }): Promise<VppContentToken> => {
   const raw = input.content.trim();
+
   if (!raw) throw fail("invalid_token", "The uploaded Apps and Books token is empty.");
 
   const candidates: string[] = [];
+
   if (input.encoding === "base64") {
     try {
       candidates.push(new TextDecoder().decode(base64ToBytes(raw)));
@@ -122,13 +133,16 @@ export const parseVppTokenUpload = async (input: {
       // Fall through to the raw value; a base64 sToken is handled below.
     }
   }
+
   candidates.push(raw);
 
   let decoded: Record<string, unknown> | undefined;
   let contentToken: string | undefined;
+
   for (const candidate of candidates) {
     const json = tryJson(candidate);
     const value = record(json);
+
     if (value) {
       decoded = value;
       // Raw JSON is not itself the base64 sToken Apple expects. Re-encode it
@@ -136,9 +150,11 @@ export const parseVppTokenUpload = async (input: {
       contentToken = jsonToBase64(value);
       break;
     }
+
     // The normal case: the file content is already the base64 sToken.
     try {
       const value = record(tryJson(new TextDecoder().decode(base64ToBytes(candidate))));
+
       if (value) {
         decoded = value;
         contentToken = candidate.replace(/\s/g, "");
@@ -152,6 +168,7 @@ export const parseVppTokenUpload = async (input: {
   if (!decoded && (raw.startsWith("<?xml") || raw.startsWith("<plist"))) {
     const parsed = await Effect.runPromise(parsePlist(raw)).catch(() => undefined);
     const value = record(parsed);
+
     if (value) {
       decoded = value;
       contentToken = jsonToBase64(value);
@@ -166,20 +183,25 @@ export const parseVppTokenUpload = async (input: {
   const tokenId = text(decoded.token);
   const orgName = text(decoded.orgName) ?? text(decoded.org_name) ?? text(decoded.orgId);
   const expiresAt = parseAppleDate(decoded.expDate ?? decoded.expiry ?? decoded.expiresAt);
+
   if (!tokenId)
     throw fail(
       "invalid_token",
       "The Apps and Books token is missing its organizational-unit token.",
     );
+
   if (!expiresAt)
     throw fail("invalid_token", "The Apps and Books token is missing a valid expiry date.");
+
   if (!orgName)
     throw fail("invalid_token", "The Apps and Books token is missing its organization name.");
+
   if (expiresAt.getTime() <= Date.now())
     throw fail(
       "expired",
       "The Apps and Books token has expired. Download a new token from Apple Business Manager.",
     );
+
   return { contentToken, tokenId, expiresAt, orgName };
 };
 
@@ -191,6 +213,7 @@ export const openVppToken = async (
   sealed: string,
 ): Promise<VppContentToken> => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
   } catch (cause) {
@@ -200,13 +223,16 @@ export const openVppToken = async (
       cause,
     );
   }
+
   const value = record(parsed);
   const contentToken = text(value?.contentToken);
   const tokenId = text(value?.tokenId);
   const orgName = text(value?.orgName);
   const expiresAt = parseAppleDate(value?.expiresAt);
+
   if (!contentToken || !tokenId || !orgName || !expiresAt)
     throw fail("invalid_token", "The stored Apps and Books token is incomplete.");
+
   return { contentToken, tokenId, orgName, expiresAt };
 };
 
@@ -273,10 +299,15 @@ export type VppApiConfig = {
 
 const vppErrorKind = (status: number): VppErrorKind => {
   if (status === 401) return "unauthorized";
+
   if (status === 403) return "forbidden";
+
   if (status === 404) return "not_found";
+
   if (status === 409) return "conflict";
+
   if (status === 429) return "upstream";
+
   return "upstream";
 };
 
@@ -291,6 +322,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     init: RequestInit = {},
   ): Promise<T> => {
     let response: Response;
+
     try {
       response = await fetchWithTimeout(
         `${baseUrl}${path}`,
@@ -308,10 +340,12 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     } catch (cause) {
       throw fail("upstream", `Apple VPP request failed: ${describeAppleError(cause)}`, cause);
     }
+
     if (!response.ok) {
       const body = (await response.json().catch(() => undefined)) as
         | { errorMessage?: string; errorNumber?: number }
         | undefined;
+
       throw fail(
         vppErrorKind(response.status),
         body?.errorMessage
@@ -319,7 +353,9 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
           : `Apple Apps and Books returned HTTP ${response.status}.`,
       );
     }
+
     if (response.status === 204) return undefined as T;
+
     try {
       return (await response.json()) as T;
     } catch (cause) {
@@ -331,25 +367,31 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     const items: T[] = [];
     let pageIndex = 0;
     let totalPages = 1;
+
     do {
       const page = await request<Record<string, unknown>>(
         `${path}${path.includes("?") ? "&" : "?"}pageIndex=${pageIndex}`,
         contentToken,
       );
+
       const values = page[key];
+
       if (Array.isArray(values)) items.push(...(values as T[]));
       const total = Number(page.totalPages);
       totalPages = Number.isFinite(total) && total > 0 ? total : 1;
       pageIndex++;
+
       if (pageIndex > 100)
         throw fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages.");
     } while (pageIndex < totalPages);
+
     return items;
   };
 
   return {
     listAssets: async (contentToken) => {
       const assets = await paged<Record<string, unknown>>("/v2/assets", contentToken, "assets");
+
       return assets.map((asset) => ({
         adamId: text(asset.adamId) ?? "",
         ...(text(asset.name) ? { name: text(asset.name)! } : {}),
@@ -374,6 +416,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         contentToken,
         "assignments",
       );
+
       return assignments.map((assignment) => ({
         adamId: text(assignment.adamId) ?? "",
         ...(text(assignment.serialNumber) ? { serialNumber: text(assignment.serialNumber)! } : {}),
@@ -395,6 +438,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
           serialNumbers: [...input.serialNumbers],
         }),
       });
+
       return response.eventId ? { eventId: response.eventId } : {};
     },
 
@@ -415,6 +459,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
           }),
         },
       );
+
       return response.eventId ? { eventId: response.eventId } : {};
     },
 
@@ -423,6 +468,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         method: "POST",
         body: JSON.stringify({ serialNumbers: [...input.serialNumbers] }),
       });
+
       return response.eventId ? { eventId: response.eventId } : {};
     },
 
@@ -431,6 +477,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         `/v2/status?eventId=${encodeURIComponent(eventId)}`,
         contentToken,
       );
+
       return {
         ...(response.eventStatus ? { eventStatus: response.eventStatus } : {}),
         ...(response.eventType ? { eventType: response.eventType } : {}),
@@ -442,7 +489,9 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 // ─── Persistence and service operations ──────────────────────────
 
 export type VppTokenRow = typeof schema.vppToken.$inferSelect;
+
 export type VppAssetRow = typeof schema.vppAsset.$inferSelect;
+
 export type DeviceVppAssignmentRow = typeof schema.deviceVppAssignment.$inferSelect;
 
 export const loadVppToken = (
@@ -475,10 +524,12 @@ export const vppInfo = (
 ): Effect.Effect<VppInfo, VppError> =>
   Effect.gen(function* () {
     const row = yield* loadVppToken(db, organizationId);
+
     const assets = (yield* db
       .select()
       .from(schema.vppAsset)
       .where(eq(schema.vppAsset.organizationId, organizationId))) as VppAssetRow[];
+
     return {
       configured: Boolean(row),
       status: row?.status ?? "unconfigured",
@@ -527,15 +578,18 @@ export const saveVppToken = (input: {
       return yield* Effect.fail(
         fail("not_configured", "AUTH_SECRET is required to store the Apps and Books token."),
       );
+
     const token = yield* Effect.tryPromise({
       try: () => parseVppTokenUpload(input.upload),
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("invalid_token", describeAppleError(cause), cause),
     });
+
     const sealed = yield* Effect.tryPromise({
       try: () => sealVppToken(input.authSecret!, token),
       catch: (cause) => fail("upstream", "Could not seal the Apps and Books token.", cause),
     });
+
     const existing = yield* loadVppToken(input.db, input.organizationId);
     yield* upsertVppRow(
       input.db,
@@ -553,11 +607,13 @@ export const saveVppToken = (input: {
     // Validate against Apple immediately so an expired/revoked token is
     // reported instead of silently accepted.
     const client = makeVppClient(input.config);
+
     const validation = yield* Effect.tryPromise({
       try: () => client.listAssets(token.contentToken),
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
     }).pipe(Effect.result);
+
     if (validation._tag === "Failure") {
       yield* upsertVppRow(
         input.db,
@@ -565,8 +621,10 @@ export const saveVppToken = (input: {
         { status: "error", lastError: describeAppleError(validation.failure.message) },
         existing ?? (yield* loadVppToken(input.db, input.organizationId)),
       );
+
       return yield* Effect.fail(validation.failure);
     }
+
     return yield* vppInfo(input.db, input.organizationId);
   }).pipe(mapVppError);
 
@@ -605,27 +663,33 @@ export const syncVppAssets = (input: {
 > =>
   Effect.gen(function* () {
     const row = yield* loadVppToken(input.db, input.organizationId);
+
     if (!row) return yield* Effect.fail(notConfigured());
+
     if (!input.authSecret)
       return yield* Effect.fail(
         fail("not_configured", "AUTH_SECRET is required to decrypt the Apps and Books token."),
       );
+
     const token = yield* Effect.tryPromise({
       try: () => openVppToken(input.authSecret!, row.encryptedToken),
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("invalid_token", describeAppleError(cause), cause),
     });
+
     if (token.expiresAt.getTime() <= Date.now())
       return yield* Effect.fail(
         fail("expired", "The Apps and Books token has expired. Download a new token."),
       );
 
     const client = makeVppClient(input.config);
+
     const remote = yield* Effect.tryPromise({
       try: () => client.listAssets(token.contentToken),
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
     });
+
     const catalogue = (yield* input.db
       .select()
       .from(schema.application)
@@ -634,13 +698,16 @@ export const syncVppAssets = (input: {
       storeId: string | null;
       bundleId: string | null;
     }>;
+
     const catalogueByStoreId = new Map(
       catalogue.filter((app) => app.storeId).map((app) => [app.storeId!, app] as const),
     );
+
     const local = (yield* input.db
       .select()
       .from(schema.vppAsset)
       .where(eq(schema.vppAsset.organizationId, input.organizationId))) as VppAssetRow[];
+
     const localByAdamId = new Map(local.map((asset) => [asset.adamId, asset]));
     const remoteIds = new Set(remote.map((asset) => asset.adamId));
 
@@ -650,6 +717,7 @@ export const syncVppAssets = (input: {
       const metadata = input.appMetadata?.get(asset.adamId);
       const name = metadata?.name ?? asset.name ?? catalogueEntry?.name ?? `App ${asset.adamId}`;
       const bundleId = metadata?.bundleId ?? asset.bundleId ?? catalogueEntry?.bundleId ?? null;
+
       const patch = {
         name,
         bundleId,
@@ -665,6 +733,7 @@ export const syncVppAssets = (input: {
         lastSyncedAt: now(),
         updatedAt: now(),
       };
+
       if (existing) {
         yield* input.db
           .update(schema.vppAsset)
@@ -713,11 +782,13 @@ export const syncVppAssets = (input: {
       availableLicenses: remote.reduce((sum, asset) => sum + asset.availableCount, 0),
       assignedLicenses: remote.reduce((sum, asset) => sum + asset.assignedCount, 0),
     };
+
     const syncedAt = now();
     yield* input.db
       .update(schema.vppToken)
       .set({ status: "active", lastSyncedAt: syncedAt, lastError: null, updatedAt: syncedAt })
       .where(eq(schema.vppToken.organizationId, input.organizationId));
+
     return { ...result, lastSyncedAt: syncedAt.toISOString() };
   }).pipe(
     Effect.catch((error) =>
@@ -732,6 +803,7 @@ export const syncVppAssets = (input: {
             })
             .where(eq(schema.vppToken.organizationId, input.organizationId));
         }).pipe(Effect.catch(() => Effect.void));
+
         return yield* Effect.fail(error);
       }),
     ),
@@ -762,15 +834,19 @@ const updateAssetCounts = (
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     const asset = (yield* findVppAsset(db, organizationId, adamId)) as VppAssetRow | undefined;
+
     if (!asset) return;
+
     const available =
       direction === "consume"
         ? Math.max(0, asset.availableLicenses - 1)
         : asset.availableLicenses + 1;
+
     const assigned =
       direction === "consume"
         ? asset.assignedLicenses + 1
         : Math.max(0, asset.assignedLicenses - 1);
+
     yield* db
       .update(schema.vppAsset)
       .set({ availableLicenses: available, assignedLicenses: assigned, updatedAt: now() })
@@ -800,15 +876,20 @@ export const assignVppLicence = (input: {
 }): Effect.Effect<VppAssignResult, VppError> =>
   Effect.gen(function* () {
     const row = yield* loadVppToken(input.db, input.organizationId);
+
     if (!row) return yield* Effect.fail(notConfigured());
+
     if (!input.authSecret)
       return yield* Effect.fail(
         fail("not_configured", "AUTH_SECRET is required to decrypt the Apps and Books token."),
       );
+
     const device = (yield* input.db.query.device.findFirst({
       where: { id: input.deviceId, organizationId: input.organizationId },
     })) as { id: string; serial: string | null } | undefined;
+
     if (!device) return yield* Effect.fail(fail("not_found", "Device not found in this tenant."));
+
     if (!device.serial)
       return yield* Effect.fail(
         fail("conflict", "The device has no serial number; VPP licences are assigned by serial."),
@@ -817,12 +898,16 @@ export const assignVppLicence = (input: {
     // A VPP install is addressed by the application's store id (adamId), which
     // the caller passes through `findVppAssetByStoreId`.
     const assetId = input.adamId;
+
     if (!assetId) return yield* Effect.fail(fail("invalid_token", "No VPP asset was selected."));
+
     const asset = (yield* findVppAsset(input.db, input.organizationId, assetId)) as
       | VppAssetRow
       | undefined;
+
     if (!asset)
       return yield* Effect.fail(fail("not_found", "No VPP licence pool exists for this app."));
+
     if (!asset.deviceAssignable)
       return yield* Effect.fail(
         fail(
@@ -830,6 +915,7 @@ export const assignVppLicence = (input: {
           "This VPP asset cannot be assigned to devices (it is user-assignable only).",
         ),
       );
+
     if (asset.availableLicenses <= 0)
       return yield* Effect.fail(fail("no_license", "No VPP licences are available for this app."));
 
@@ -840,6 +926,7 @@ export const assignVppLicence = (input: {
         adamId: assetId,
       },
     })) as DeviceVppAssignmentRow | undefined;
+
     if (existing?.state === "assigned")
       return {
         deviceId: device.id,
@@ -853,10 +940,12 @@ export const assignVppLicence = (input: {
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("invalid_token", describeAppleError(cause), cause),
     });
+
     if (token.expiresAt.getTime() <= Date.now())
       return yield* Effect.fail(fail("expired", "The Apps and Books token has expired."));
 
     const client = makeVppClient(input.config);
+
     const associated = yield* Effect.tryPromise({
       try: () =>
         client.associateAssets(token.contentToken, {
@@ -869,6 +958,7 @@ export const assignVppLicence = (input: {
     });
 
     const timestamp = now();
+
     const patch = {
       serial: device.serial,
       pricingParam: asset.pricingParam,
@@ -877,6 +967,7 @@ export const assignVppLicence = (input: {
       lastError: null,
       updatedAt: timestamp,
     };
+
     if (existing) {
       yield* input.db
         .update(schema.deviceVppAssignment)
@@ -897,7 +988,9 @@ export const assignVppLicence = (input: {
         ...patch,
       });
     }
+
     yield* updateAssetCounts(input.db, input.organizationId, assetId, "consume");
+
     return {
       deviceId: device.id,
       serial: device.serial,
@@ -912,7 +1005,9 @@ export const assignVppLicence = (input: {
         const device = (yield* input.db.query.device.findFirst({
           where: { id: input.deviceId, organizationId: input.organizationId },
         })) as { id: string; serial: string | null } | undefined;
+
         const assetId = input.adamId;
+
         if (device && assetId) {
           const existing = (yield* input.db.query.deviceVppAssignment.findFirst({
             where: {
@@ -921,12 +1016,14 @@ export const assignVppLicence = (input: {
               adamId: assetId,
             },
           })) as DeviceVppAssignmentRow | undefined;
+
           const patch = {
             serial: device.serial ?? "",
             state: "failed" as const,
             lastError: describeAppleError(error instanceof VppError ? error.message : error),
             updatedAt: now(),
           };
+
           if (existing) {
             yield* input.db
               .update(schema.deviceVppAssignment)
@@ -948,6 +1045,7 @@ export const assignVppLicence = (input: {
             });
           }
         }
+
         return yield* Effect.fail(error);
       }),
     ),
@@ -964,25 +1062,33 @@ export const releaseVppLicence = (input: {
 }): Effect.Effect<{ readonly released: boolean; readonly eventId?: string }, VppError> =>
   Effect.gen(function* () {
     const row = yield* loadVppToken(input.db, input.organizationId);
+
     if (!row) return yield* Effect.fail(notConfigured());
+
     if (!input.authSecret)
       return yield* Effect.fail(
         fail("not_configured", "AUTH_SECRET is required to decrypt the Apps and Books token."),
       );
+
     const device = (yield* input.db.query.device.findFirst({
       where: { id: input.deviceId, organizationId: input.organizationId },
     })) as { id: string; serial: string | null } | undefined;
+
     if (!device?.serial)
       return yield* Effect.fail(fail("not_found", "Device not found in this tenant."));
+
     const asset = (yield* findVppAsset(input.db, input.organizationId, input.adamId)) as
       | VppAssetRow
       | undefined;
+
     if (!asset)
       return yield* Effect.fail(fail("not_found", "No VPP licence pool exists for this app."));
+
     if (!asset.revocable)
       return yield* Effect.fail(
         fail("conflict", "This VPP licence is irrevocable and cannot be returned to the pool."),
       );
+
     const assignment = (yield* input.db.query.deviceVppAssignment.findFirst({
       where: {
         organizationId: input.organizationId,
@@ -990,16 +1096,20 @@ export const releaseVppLicence = (input: {
         adamId: input.adamId,
       },
     })) as DeviceVppAssignmentRow | undefined;
+
     if (assignment?.state !== "assigned")
       return yield* Effect.fail(
         fail("conflict", "This device has no active VPP licence assignment for the app."),
       );
+
     const token = yield* Effect.tryPromise({
       try: () => openVppToken(input.authSecret!, row.encryptedToken),
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("invalid_token", describeAppleError(cause), cause),
     });
+
     const client = makeVppClient(input.config);
+
     const result = yield* Effect.tryPromise({
       try: () =>
         client.disassociateAssets(token.contentToken, {
@@ -1010,6 +1120,7 @@ export const releaseVppLicence = (input: {
       catch: (cause) =>
         cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
     });
+
     yield* input.db
       .update(schema.deviceVppAssignment)
       .set({
@@ -1026,6 +1137,7 @@ export const releaseVppLicence = (input: {
         ),
       );
     yield* updateAssetCounts(input.db, input.organizationId, input.adamId, "release");
+
     return {
       released: true,
       ...(result.eventId ? { eventId: result.eventId } : {}),

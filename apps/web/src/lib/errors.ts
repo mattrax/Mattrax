@@ -205,23 +205,32 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const messageOf = (error: unknown): string | undefined => {
   if (typeof error === "string") return error.trim() || undefined;
+
   if (error instanceof Error) return error.message.trim() || undefined;
+
   if (isRecord(error)) {
     const message = error.message;
+
     if (typeof message === "string" && message.trim()) return message.trim();
     const nested = error.error;
+
     if (typeof nested === "string" && nested.trim()) return nested.trim();
+
     if (isRecord(nested)) {
       const nestedMessage = nested.message;
+
       if (typeof nestedMessage === "string" && nestedMessage.trim()) return nestedMessage.trim();
     }
   }
+
   return undefined;
 };
 
 const parseJson = (value: string): unknown => {
   const text = value.trim();
+
   if (!text.startsWith("{") && !text.startsWith("[")) return undefined;
+
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -232,12 +241,16 @@ const parseJson = (value: string): unknown => {
 export const errorTag = (error: unknown): string | undefined => {
   if (typeof error === "string") {
     const parsed = parseJson(error);
+
     if (parsed !== undefined) return errorTag(parsed);
+
     return TAG_PATTERN.test(error.trim()) ? error.trim() : undefined;
   }
+
   if (!isRecord(error)) return undefined;
   const nested = error.error;
   const outer = error._tag;
+
   // Envelopes (`{ _tag: "Failure", error: {…} }`) and transport wrappers carry
   // the domain tag one level down.
   if (
@@ -249,8 +262,11 @@ export const errorTag = (error: unknown): string | undefined => {
       outer === undefined)
   )
     return nested._tag;
+
   if (typeof outer === "string" && outer !== "Failure" && outer !== "Success") return outer;
+
   if (isRecord(nested) && typeof nested._tag === "string") return nested._tag;
+
   return undefined;
 };
 
@@ -262,21 +278,29 @@ export const errorField = (error: unknown, key: string): unknown => {
   if (!isRecord(error)) {
     if (typeof error === "string") {
       const parsed = parseJson(error);
+
       return isRecord(parsed) ? parsed[key] : undefined;
     }
+
     return undefined;
   }
+
   if (key in error) return error[key];
   const nested = error.error;
+
   if (isRecord(nested) && key in nested) return nested[key];
   const message = error.message;
+
   if (typeof message === "string") {
     const parsed = parseJson(message);
+
     if (isRecord(parsed)) {
       if (key in parsed) return parsed[key];
+
       if (isRecord(parsed.error) && key in parsed.error) return parsed.error[key];
     }
   }
+
   return undefined;
 };
 
@@ -293,6 +317,7 @@ export const errorPresentation = (
   const parsed = rawMessage ? parseJson(rawMessage) : undefined;
   const tag = directTag ?? errorTag(parsed) ?? (rawMessage ? errorTag(rawMessage) : undefined);
   const reason = isRecord(error) && typeof error.reason === "string" ? error.reason : undefined;
+
   if (tag === "NewPasswordRejected" && reason) {
     const message =
       reason === "too-short"
@@ -304,12 +329,15 @@ export const errorPresentation = (
             : reason === "common"
               ? "This password is too common. Choose something less predictable."
               : "Choose a stronger, less predictable password.";
+
     return { title: TITLES.validation, message, variant: "validation", tag };
   }
+
   const mapped = tag ? TAGS[tag] : undefined;
 
   if (tag && mapped) {
     const serverMessage = rawMessage && !TAG_PATTERN.test(rawMessage) ? rawMessage : undefined;
+
     const canUseServerMessage =
       serverMessage &&
       !GENERIC_SERVER_MESSAGES.has(serverMessage) &&
@@ -321,6 +349,7 @@ export const errorPresentation = (
         "EnterprisePermissionDenied",
         "EnterpriseNotConfigured",
       ].includes(tag);
+
     return {
       title: TITLES[mapped.variant],
       message: canUseServerMessage ? serverMessage : mapped.message,
@@ -336,18 +365,21 @@ export const errorPresentation = (
         message: "Too many attempts. Wait a minute and try again.",
         variant: "rate-limit",
       };
+
     if (/failed to fetch|network|connection|offline|load failed/i.test(rawMessage))
       return {
         title: TITLES.network,
         message: "Can't reach the server. Check your connection and try again.",
         variant: "network",
       };
+
     if (/decode error|undeclared status code|unexpected response/i.test(rawMessage))
       return {
         title: TITLES.server,
         message: "The server returned an unexpected response. Try again shortly.",
         variant: "server",
       };
+
     if (!isTechnical(rawMessage) && !GENERIC_SERVER_MESSAGES.has(rawMessage))
       return { title: TITLES.validation, message: rawMessage, variant: "validation" };
   }

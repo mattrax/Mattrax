@@ -3,10 +3,12 @@ import { DeviceQuery } from "./deviceQuery.ts";
 
 /** Widgets supported by the dashboard grid. */
 export const DashboardWidgetType = Schema.Literals(["table", "pie", "stat", "markdown"]);
+
 export type DashboardWidgetType = typeof DashboardWidgetType.Type;
 
 /** Datasets a query widget can project. */
 export const DashboardDataset = Schema.Literals(["devices", "software"]);
+
 export type DashboardDataset = typeof DashboardDataset.Type;
 
 /**
@@ -26,6 +28,7 @@ export const DashboardWidget = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type DashboardWidget = typeof DashboardWidget.Type;
 
 export const DashboardSummary = Schema.Struct({
@@ -37,17 +40,20 @@ export const DashboardSummary = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type DashboardSummary = typeof DashboardSummary.Type;
 
 export const Dashboard = Schema.Struct({
   ...DashboardSummary.fields,
   widgets: Schema.Array(DashboardWidget),
 });
+
 export type Dashboard = typeof Dashboard.Type;
 
 export const DashboardListResponse = Schema.Struct({
   dashboards: Schema.Array(DashboardSummary),
 });
+
 export type DashboardListResponse = typeof DashboardListResponse.Type;
 
 export const CreateDashboardRequest = Schema.Struct({
@@ -56,6 +62,7 @@ export const CreateDashboardRequest = Schema.Struct({
   /** Seed a new dashboard with the default overview widgets. */
   template: Schema.optional(Schema.Literal("overview")),
 });
+
 export type CreateDashboardRequest = typeof CreateDashboardRequest.Type;
 
 /** Every field is optional; only the supplied fields are written. */
@@ -64,6 +71,7 @@ export const PatchDashboardRequest = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   isDefault: Schema.optional(Schema.Boolean),
 });
+
 export type PatchDashboardRequest = typeof PatchDashboardRequest.Type;
 
 export const CreateDashboardWidgetRequest = Schema.Struct({
@@ -75,6 +83,7 @@ export const CreateDashboardWidgetRequest = Schema.Struct({
   w: Schema.optional(Schema.Number),
   h: Schema.optional(Schema.Number),
 });
+
 export type CreateDashboardWidgetRequest = typeof CreateDashboardWidgetRequest.Type;
 
 /**
@@ -91,6 +100,7 @@ export const PatchDashboardWidgetRequest = Schema.Struct({
   w: Schema.optional(Schema.Number),
   h: Schema.optional(Schema.Number),
 });
+
 export type PatchDashboardWidgetRequest = typeof PatchDashboardWidgetRequest.Type;
 
 export const DashboardLayoutRequest = Schema.Struct({
@@ -104,6 +114,7 @@ export const DashboardLayoutRequest = Schema.Struct({
     }),
   ),
 });
+
 export type DashboardLayoutRequest = typeof DashboardLayoutRequest.Type;
 
 export const DashboardQueryRequest = Schema.Struct({
@@ -113,6 +124,7 @@ export const DashboardQueryRequest = Schema.Struct({
   groupBy: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.Number),
 });
+
 export type DashboardQueryRequest = typeof DashboardQueryRequest.Type;
 
 /**
@@ -135,12 +147,14 @@ export const DashboardQueryRow = Schema.Struct({
   bundleId: Schema.optional(Schema.NullOr(Schema.String)),
   deviceCount: Schema.optional(Schema.NullOr(Schema.Number)),
 });
+
 export type DashboardQueryRow = typeof DashboardQueryRow.Type;
 
 export const DashboardQueryBucket = Schema.Struct({
   label: Schema.String,
   value: Schema.Number,
 });
+
 export type DashboardQueryBucket = typeof DashboardQueryBucket.Type;
 
 export const DashboardQueryResponse = Schema.Struct({
@@ -148,6 +162,7 @@ export const DashboardQueryResponse = Schema.Struct({
   rows: Schema.Array(DashboardQueryRow),
   buckets: Schema.Array(DashboardQueryBucket),
 });
+
 export type DashboardQueryResponse = typeof DashboardQueryResponse.Type;
 
 /** Typed views of the open-ended widget config used by the UI. */
@@ -157,16 +172,19 @@ export type DashboardQueryConfig = {
   columns?: ReadonlyArray<string>;
   limit?: number;
 };
+
 export type DashboardPieConfig = {
   dataset: DashboardDataset;
   query: DeviceQuery;
   dimension: string;
 };
+
 export type DashboardStatConfig = {
   dataset: DashboardDataset;
   query: DeviceQuery;
   label?: string;
 };
+
 export type DashboardMarkdownConfig = { markdown: string };
 
 /** Fallback dashboard used when a tenant has not created one yet. */

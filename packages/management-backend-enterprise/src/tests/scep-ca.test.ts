@@ -10,6 +10,7 @@ const authSecret = "scep-ca-test-secret";
 
 const makeJwk = async () => {
   const keyPair = await generateCaKeyPair();
+
   return exportPrivateKeyJwk(keyPair.privateKey);
 };
 
@@ -24,6 +25,7 @@ const seedPlaintextCa = async (jwk: JsonWebKey) => {
       },
     ],
   });
+
   return db as ReturnType<typeof makeDb>;
 };
 
@@ -32,10 +34,12 @@ const withoutSecret = async (run: () => Promise<void>) => {
   const previousLocal = process.env.MATTRAX_AUTH_SECRET;
   delete process.env.AUTH_SECRET;
   delete process.env.MATTRAX_AUTH_SECRET;
+
   try {
     await run();
   } finally {
     if (previous !== undefined) process.env.AUTH_SECRET = previous;
+
     if (previousLocal !== undefined) process.env.MATTRAX_AUTH_SECRET = previousLocal;
   }
 };
@@ -59,11 +63,13 @@ describe("ScepRepositoryLive CA key protection", () => {
   it("opens an already sealed key", async () => {
     const jwk = await makeJwk();
     const sealed = await sealCaPrivateKey(authSecret, jwk);
+
     const db = makeDb({
       [tableName(schema.scepCa)]: [
         { id: 1, certPem: "PEM", privateKeyJwk: sealed, createdAt: new Date() },
       ],
     });
+
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
 
     const ca = await Effect.runPromise(repository.getCa());
@@ -80,6 +86,7 @@ describe("ScepRepositoryLive CA key protection", () => {
       const error = await Effect.runPromise(
         Effect.flip(repository.getCa()).pipe(Effect.map((cause) => cause)),
       );
+
       expect(error).toMatchObject({ _tag: "ScepError" });
       expect(error.message).toContain("AUTH_SECRET");
       expect(error.message).not.toContain(jwk.d!);
@@ -94,11 +101,13 @@ describe("ScepRepositoryLive CA key protection", () => {
     const jwk = await makeJwk();
     const sealed = await sealCaPrivateKey(authSecret, jwk);
     const tampered = { v: 1 as const, sealed: `${sealed.sealed.slice(0, -4)}AAAA` };
+
     const db = makeDb({
       [tableName(schema.scepCa)]: [
         { id: 1, certPem: "PEM", privateKeyJwk: tampered, createdAt: new Date() },
       ],
     });
+
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
 
     const error = await Effect.runPromise(Effect.flip(repository.getCa()));
@@ -113,11 +122,13 @@ describe("ScepRepositoryLive CA key protection", () => {
     // envelope must still be openable by the shared primitive.
     const jwk = await makeJwk();
     const sealed = { v: 1 as const, sealed: await sealSecret(authSecret, JSON.stringify(jwk)) };
+
     const db = makeDb({
       [tableName(schema.scepCa)]: [
         { id: 1, certPem: "PEM", privateKeyJwk: sealed, createdAt: new Date() },
       ],
     });
+
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await expect(Effect.runPromise(repository.getCa())).resolves.toMatchObject({
       privateKeyJwk: { kty: "RSA", n: jwk.n },

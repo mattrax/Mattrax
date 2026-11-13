@@ -8,5 +8,6 @@ import { onSettled } from "solid-js";
 export default function SettingsRedirectPage() {
   const navigate = useNavigate();
   onSettled(() => navigate("/account", { replace: true }));
+
   return null;
 }

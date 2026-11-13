@@ -49,9 +49,11 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       const url = new URL(request.url, "http://localhost");
       const state = url.searchParams.get("state") ?? "";
       const enterpriseToken = url.searchParams.get("enterpriseToken") ?? "";
+
       if (!state || !enterpriseToken)
         return json({ error: "Missing Android signup state or enterprise token" }, 400);
       const db = yield* Db;
+
       const result = yield* completeAndroidSignup({
         db,
         config: options.config,
@@ -59,7 +61,9 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
         state,
         enterpriseToken,
       });
+
       const location = `${options.origin.replace(/\/+$/, "")}/t/${encodeURIComponent(result.organizationId)}/settings/management?android=connected`;
+
       return HttpServerResponse.empty({
         status: 302,
         headers: { location, "cache-control": "no-store" },
@@ -71,6 +75,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchCause((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android signup callback failed", cause);
+
           return json({ error: "Android signup failed" }, 500);
         }),
       ),
@@ -82,6 +87,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       const header = request.headers["authorization"];
       const authorization = Array.isArray(header) ? header[0] : header;
       const body = yield* request.text;
+
       const result = yield* handleAndroidPubSub({
         db,
         config: options.config,
@@ -91,6 +97,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
         authorization: typeof authorization === "string" ? authorization : undefined,
         body,
       });
+
       return json(result);
     }).pipe(
       Effect.catchTag("AndroidDeliveryError", (error) =>
@@ -99,6 +106,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchCause((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android Pub/Sub handling failed", cause);
+
           return json({ error: "Android Pub/Sub handling failed" }, 500);
         }),
       ),

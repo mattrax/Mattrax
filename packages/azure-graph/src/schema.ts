@@ -10,6 +10,7 @@ const optionalBoolean = Schema.optional(Schema.NullOr(Schema.Boolean));
 const RemovedReason = Schema.Struct({
   reason: Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 type RemovedReason = typeof RemovedReason.Type;
 
 const GraphUserWire = Schema.Struct({
@@ -40,6 +41,7 @@ export type GraphUser = {
 
 export function graphUserFromWire(user: typeof GraphUserWire.Type): GraphUser {
   const reason: RemovedReason | undefined = user["@removed"];
+
   return {
     id: user.id,
     displayName: user.displayName ?? undefined,
@@ -70,6 +72,7 @@ export type GraphGroupMember = {
 
 function memberType(type: string | null | undefined): string {
   if (!type) return "unknown";
+
   return type.replace(/^#microsoft\.graph\./, "");
 }
 
@@ -103,6 +106,7 @@ export type GraphGroup = {
 
 export function graphGroupFromWire(group: typeof GraphGroupWire.Type): GraphGroup {
   const members = group["members@delta"];
+
   return {
     id: group.id,
     displayName: group.displayName ?? "",
@@ -120,6 +124,7 @@ export const GraphDomainSchema = Schema.Struct({
   isDefault: Schema.Boolean,
   isInitial: Schema.Boolean,
 });
+
 export type GraphDomain = typeof GraphDomainSchema.Type;
 
 export const GraphUserDeltaResponse = Schema.Struct({
@@ -127,6 +132,7 @@ export const GraphUserDeltaResponse = Schema.Struct({
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type GraphUserDeltaResponse = typeof GraphUserDeltaResponse.Type;
 
 export const GraphGroupDeltaResponse = Schema.Struct({
@@ -134,12 +140,14 @@ export const GraphGroupDeltaResponse = Schema.Struct({
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type GraphGroupDeltaResponse = typeof GraphGroupDeltaResponse.Type;
 
 export const GraphDomainsResponse = Schema.Struct({
   value: Schema.Array(GraphDomainSchema),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type GraphDomainsResponse = typeof GraphDomainsResponse.Type;
 
 /**
@@ -197,6 +205,7 @@ const AutopilotDeviceWire = Schema.Struct({
   systemFamily: optionalString,
   skuNumber: optionalString,
 });
+
 type AutopilotDeviceWire = typeof AutopilotDeviceWire.Type;
 
 /** A Windows Autopilot device identity returned by Microsoft Graph. */
@@ -298,6 +307,7 @@ const AutopilotProfileWire = Schema.Struct({
   lastModifiedDateTime: optionalString,
   createdDateTime: optionalString,
 });
+
 type AutopilotProfileWire = typeof AutopilotProfileWire.Type;
 
 /** A Windows Autopilot deployment profile returned by Microsoft Graph. */
@@ -335,6 +345,7 @@ export const GraphAutopilotDevicesResponse = Schema.Struct({
   value: Schema.optional(Schema.Array(AutopilotDeviceWire)),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type GraphAutopilotDevicesResponse = typeof GraphAutopilotDevicesResponse.Type;
 
 export const GraphAutopilotDeviceResponse = AutopilotDeviceWire;
@@ -343,6 +354,7 @@ export const GraphAutopilotProfilesResponse = Schema.Struct({
   value: Schema.optional(Schema.Array(AutopilotProfileWire)),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type GraphAutopilotProfilesResponse = typeof GraphAutopilotProfilesResponse.Type;
 
 export const GraphAutopilotProfileResponse = AutopilotProfileWire;
@@ -355,11 +367,13 @@ export const GraphAutopilotImportResponse = Schema.Union([
   Schema.Struct({ value: Schema.Array(AutopilotDeviceWire) }),
   AutopilotDeviceWire,
 ]);
+
 export type GraphAutopilotImportResponse = typeof GraphAutopilotImportResponse.Type;
 
 export function importedAutopilotDevices(
   response: GraphAutopilotImportResponse,
 ): ReadonlyArray<GraphAutopilotDevice> {
   if ("value" in response) return response.value.map(graphAutopilotDeviceFromWire);
+
   return [graphAutopilotDeviceFromWire(response)];
 }

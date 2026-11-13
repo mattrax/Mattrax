@@ -22,6 +22,7 @@ const makeStorage = () => {
   const objects = new Map<string, string>();
   const deleted: string[] = [];
   let failPuts = false;
+
   const storage = {
     objects,
     deleted,
@@ -33,7 +34,9 @@ const makeStorage = () => {
         failPuts = false;
         throw new Error("R2 unavailable");
       }
+
       objects.set(key, String(value));
+
       return {
         key,
         version: "1",
@@ -45,7 +48,9 @@ const makeStorage = () => {
     },
     get: async (key: string) => {
       const body = objects.get(key);
+
       if (body === undefined) return null;
+
       return {
         key,
         version: "1",
@@ -70,6 +75,7 @@ const makeStorage = () => {
     },
     list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
   };
+
   return storage;
 };
 
@@ -110,10 +116,12 @@ const makeContext = (role = "owner") => {
     updatedAt: timestamp,
   });
   const storage = makeStorage();
+
   const auth = {
     requireUser: (input: any) => {
       const inputHeaders =
         input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return inputHeaders.cookie
         ? Effect.succeed({ user: db.store.user[0] })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -125,6 +133,7 @@ const makeContext = (role = "owner") => {
     requireStepUp: () => Effect.void,
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
   };
+
   const service = createEnterpriseService({
     db: db as any,
     schema,
@@ -134,12 +143,14 @@ const makeContext = (role = "owner") => {
     auth: auth as any,
     authSecret: "backup-test-secret",
   });
+
   return { db, service, storage };
 };
 
 describe("tenant backup runs", () => {
   it("writes the export bundle to a deterministic tenant-scoped key and records success", async () => {
     const { db, storage } = makeContext();
+
     const result = await runEffect(
       runTenantBackup(db as any, storage as any, "org-1", "manual", {
         now,
@@ -175,6 +186,7 @@ describe("tenant backup runs", () => {
   it("records a failed run instead of throwing when the upload fails", async () => {
     const { db, storage } = makeContext();
     storage.failNextPut();
+
     const result = await runEffect(
       runTenantBackup(db as any, storage as any, "org-1", "scheduled", { now }),
     );
@@ -193,6 +205,7 @@ describe("tenant backup runs", () => {
     const described = describeBackupError(
       new Error(`upstream rejected owner@example.com token ${"a".repeat(48)}`),
     );
+
     expect(described).not.toContain("owner@example.com");
     expect(described).not.toContain("a".repeat(48));
     expect(described).toContain("[email]");
@@ -276,6 +289,7 @@ describe("backup retention", () => {
     const pruned = await runEffect(
       pruneBackups(db as any, storage as any, { now, retentionDays: 30 }),
     );
+
     expect(pruned).toEqual({ runsDeleted: 1, objectsDeleted: 1 });
     expect(storage.objects.has(oldKey)).toBe(false);
     expect(storage.objects.has(pinnedKey)).toBe(true);
@@ -297,9 +311,11 @@ describe("backup retention", () => {
       trigger: "scheduled",
       retention: "default",
     });
+
     const pruned = await runEffect(
       pruneBackups(db as any, storage as any, { now, retentionDays: 0 }),
     );
+
     expect(pruned).toEqual({ runsDeleted: 0, objectsDeleted: 0 });
     expect(db.store.backup_run).toHaveLength(1);
   });
@@ -319,12 +335,14 @@ describe("scheduled backup sweep", () => {
     const originalPut = storage.put;
     storage.put = async (key: string, value: unknown) => {
       if (key.startsWith("backups/org-2/")) throw new Error("tenant storage broken");
+
       return originalPut(key, value);
     };
 
     const result = await runEffect(
       runScheduledBackups(db as any, storage as any, { now, concurrency: 2, retentionDays: 30 }),
     );
+
     expect(result).toEqual({
       tenants: 2,
       succeeded: 1,
@@ -355,6 +373,7 @@ describe("backup API", () => {
     const download = await runEffect(
       service.downloadTenantBackup(request(headers), "org-1", run.id),
     );
+
     expect(download.filename).toMatch(/^tenant-acme-backup-\d{4}-\d{2}-\d{2}\.json$/);
     expect(JSON.parse(download.content).tenant.slug).toBe("acme");
   });

@@ -26,15 +26,18 @@ describe("TOTP secret storage", () => {
 
   it("stores an encrypted envelope rather than the secret", async () => {
     const key = await deriveTotpSecretKey("test-secret");
+
     const program = Effect.gen(function* () {
       const cryptography = yield* Totp.TotpCryptography;
       const secret = yield* cryptography.generateSecret;
+
       const binding = {
         moduleId: "mattrax/auth/totp",
         subjectId: AuthSchema.SubjectId.make("subject-1"),
         credentialId: "credential-1",
         revision: "revision-1",
       } as const;
+
       const envelope = yield* cryptography.encryptSecret(binding, secret);
       const stored = JSON.stringify(envelope);
       expect(stored).not.toContain(Buffer.from(secret).toString("base64"));
@@ -42,6 +45,7 @@ describe("TOTP secret storage", () => {
       const decrypted = yield* cryptography.decryptSecret(binding, envelope);
       expect(Buffer.from(decrypted)).toEqual(Buffer.from(secret));
     });
+
     await Effect.runPromise(
       program.pipe(
         Effect.provide(

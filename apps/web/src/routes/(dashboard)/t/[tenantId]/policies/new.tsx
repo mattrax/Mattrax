@@ -16,6 +16,7 @@ export default function NewPolicyPage() {
   const qc = useQueryClient();
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
+
   const create = useMutation(() => ({
     mutationFn: () =>
       enterprise.createPolicy(params.tenantId, { name: name(), notes: notes() || null }),
@@ -24,6 +25,7 @@ export default function NewPolicyPage() {
       navigate(`/t/${params.tenantId}/policies/${id}/editor`);
     },
   }));
+
   return (
     <Page>
       <PageHeader

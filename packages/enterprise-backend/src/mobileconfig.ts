@@ -124,6 +124,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
   const binary = atob(cleaned);
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
@@ -135,21 +136,27 @@ const decodeBase64 = (value: string): Uint8Array => {
 const extractSignedContent = async (bytes: Uint8Array): Promise<Uint8Array | null> => {
   try {
     const pkijs = await import("pkijs");
+
     const contentInfo = pkijs.ContentInfo.fromBER(
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
     );
+
     if (contentInfo.contentType !== pkijs.ContentInfo.SIGNED_DATA) return null;
     const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+
     const content = signedData.encapContentInfo.eContent as unknown as {
       getValue?: () => ArrayBuffer;
     };
+
     if (!content) return null;
+
     const value =
       typeof content.getValue === "function"
         ? content.getValue()
         : (
             content as unknown as { valueBlock?: { valueHexView?: Uint8Array } }
           ).valueBlock?.valueHexView?.slice().buffer;
+
     return value ? new Uint8Array(value) : null;
   } catch {
     return null;
@@ -161,16 +168,20 @@ const textFromBytes = async (bytes: Uint8Array): Promise<string> => {
   const text = decoder.decode(bytes).trim();
   // PKCS#7 can be supplied as PEM or as raw DER.
   const pem = /-----BEGIN (?:PKCS7|CMS)-----([\s\S]*?)-----END (?:PKCS7|CMS)-----/.exec(text);
+
   if (pem) {
     return decoder.decode((await extractSignedContent(decodeBase64(pem[1]!))) ?? new Uint8Array());
   }
+
   if (text.startsWith("<?xml") || text.startsWith("<plist")) return text;
   const extracted = await extractSignedContent(bytes);
+
   return extracted ? decoder.decode(extracted) : text;
 };
 
 const payloadPreview = (payload: Record<string, unknown>): MobileconfigPayloadPreview => {
   const type = typeof payload.PayloadType === "string" ? payload.PayloadType : "Unknown";
+
   return {
     type,
     identifier:
@@ -193,6 +204,7 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
   }
 
   let bytes: Uint8Array;
+
   try {
     bytes = decodeBase64(base64);
   } catch {
@@ -200,19 +212,23 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
   }
 
   const text = await textFromBytes(bytes);
+
   const plist = await Effect.runPromise(
     parsePlist(text).pipe(
       Effect.mapError((cause) => new Error(`Invalid mobileconfig: ${cause.message}`)),
     ),
   );
+
   if (!isRecord(plist)) throw new Error("The mobileconfig root must be a dictionary");
 
   const content = plist.PayloadContent;
+
   const payloads = Array.isArray(content)
     ? content.filter(isRecord)
     : isRecord(content)
       ? [content]
       : [];
+
   if (!Array.isArray(content) && !isRecord(content)) {
     throw new Error("The mobileconfig is missing PayloadContent");
   }
@@ -245,7 +261,9 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
 export const extractMobileconfigPlist = async (base64: string): Promise<string> => {
   const bytes = decodeBase64(base64);
   const text = await textFromBytes(bytes);
+
   if (!text.includes("<plist") && !text.includes("<?xml"))
     throw new Error("No plist content could be extracted from this profile");
+
   return text;
 };

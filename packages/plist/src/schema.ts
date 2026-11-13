@@ -4,6 +4,7 @@ export class PlistParseError extends Data.TaggedError("PlistParseError")<{
   message: string;
   cause?: unknown;
 }> {}
+
 export class PlistSerializeError extends Data.TaggedError("PlistSerializeError")<{
   message: string;
   cause?: unknown;

@@ -221,6 +221,7 @@ describe("Windows MDM - RequestSecurityTokenResponseCollection", () => {
     const xml = await runPromise(
       serializeSoapElement(RequestSecurityTokenResponseCollection, response),
     );
+
     expect(xml).toContain("<RequestSecurityTokenResponseCollection");
     expect(xml).toContain(
       "<TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>",

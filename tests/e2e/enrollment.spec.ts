@@ -14,6 +14,7 @@ test.describe("device enrollment", () => {
     for (const platform of ["Apple", "Windows", "Android"]) {
       await expect(page.getByRole("button", { name: new RegExp(`^${platform}$`) })).toBeVisible();
     }
+
     await page.getByRole("button", { name: /^Apple$/ }).click();
     await expect(
       page.getByText(/Apple management is not configured|Apple enrollment is disabled/i),
@@ -39,23 +40,28 @@ test.describe("device enrollment", () => {
     page,
   }) => {
     const tenant = await bootstrapTenant(page, "Windows Tenant");
+
     const other = await createTenant(
       page,
       `Windows Other ${Math.random().toString(36).slice(2, 8)}`,
     );
+
     await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
       method: "PATCH",
       body: JSON.stringify({ enabledAndroid: true }),
     });
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
     const otherEnrollment = await api<{ id: string }>(
       page,
       `/api/v1/tenants/${other.id}/enrollment`,
     );
+
     const details = await api<{
       windows: { discoveryUrl: string; tenantScoped: boolean; expiresAt?: string };
       android: { error: string } | string;
     }>(page, `/api/v1/enrollment/${enrollment.id}`);
+
     const otherDetails = await api<{
       windows: { discoveryUrl: string; tenantScoped: boolean };
     }>(page, `/api/v1/enrollment/${otherEnrollment.id}`);
@@ -122,6 +128,7 @@ test.describe("device enrollment", () => {
     const response = await page.request.get(
       `/api/v1/enrollment/${enrollment.id}/apple.mobileconfig`,
     );
+
     expect(response.status()).toBe(400);
     expect(await response.json()).toMatchObject({
       message: "Apple management is not configured! Contact your administrator.",
@@ -130,6 +137,7 @@ test.describe("device enrollment", () => {
     const settings = await page.request.get(
       `/api/v1/enrollment/not-a-real-enrollment/apple.mobileconfig`,
     );
+
     expect(settings.status()).toBe(404);
   });
 
@@ -153,6 +161,7 @@ test.describe("device enrollment", () => {
       page,
       `/api/v1/enrollment/${enrollment.id}?code=wrong`,
     );
+
     expect(denied.authenticated).toBe(false);
 
     await gotoHydrated(page, `/t/${tenant.id}/settings/enrollment`);
@@ -180,6 +189,7 @@ test.describe("device enrollment", () => {
       page,
       `/api/v1/tenants/${tenant.id}/enrollment`,
     );
+
     expect(enrollment.maxDevices).toBe(0);
   });
 });

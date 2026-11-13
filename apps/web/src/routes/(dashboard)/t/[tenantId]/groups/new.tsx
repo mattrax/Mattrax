@@ -23,14 +23,17 @@ export default function NewGroupPage() {
   const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [devices, setDevices] = createSignal<Set<string>>(new Set());
   const [policies, setPolicies] = createSignal<Set<string>>(new Set());
+
   const deviceList = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
   }));
+
   const policyList = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
+
   const create = useMutation(() => ({
     mutationFn: () =>
       enterprise.createGroup(params.tenantId, {
@@ -46,12 +49,15 @@ export default function NewGroupPage() {
       navigate(`/t/${params.tenantId}/groups/${id}`);
     },
   }));
+
   const toggle = (set: () => Set<string>, update: (v: Set<string>) => void, id: string) => {
     const next = new Set(set());
+
     if (next.has(id)) next.delete(id);
     else next.add(id);
     update(next);
   };
+
   return (
     <Page>
       <PageHeader

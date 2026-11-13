@@ -2,16 +2,19 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 
 type Row = Record<string, any>;
+
 type Store = Record<string, Row[]>;
 
 const tableSymbol = (description: string) => (value: object) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
+
 const nameSymbol = tableSymbol("drizzle:Name");
 
 export const tableName = (table: any) => table?.[nameSymbol(table)] as string;
 
 const flattenChunks = (value: any): any[] => {
   if (!value?.queryChunks) return [value];
+
   return value.queryChunks.flatMap((chunk: any) => flattenChunks(chunk));
 };
 
@@ -22,12 +25,15 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
 
   for (let index = 0; index < chunks.length; index++) {
     const chunk = chunks[index];
+
     if (chunk?.table && typeof chunk.name === "string") {
       const op = chunks[index + 1]?.value?.join?.("") ?? "";
       const param = chunks[index + 2];
       const key = chunk.name as string;
+
       if (op.includes(" = ") && "value" in param)
         predicates.push((row) => (row[key] ?? row[camel(key)]) === param.value);
+
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (row[key] ?? row[camel(key)]) == null);
     }
@@ -49,50 +55,66 @@ const camel = (value: string) =>
 
 const comparable = (value: unknown): any => {
   if (value instanceof Date) return value.getTime();
+
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     const parsed = Date.parse(value.replace(" ", "T") + "Z");
+
     if (Number.isFinite(parsed)) return parsed;
   }
+
   return value;
 };
 
 const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
+
   if (!query) return true;
   let index = 0;
   const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
+
   for (const match of query.sql.matchAll(regex)) {
     const column = camel(match[2]!);
     const key = match[1] ? `${match[1]}.${column}` : column;
     const actual = key in row ? row[key] : (row[column] ?? row[match[2]!]);
     const operator = match[3]!.toLowerCase();
+
     if (operator === "is null") {
       if (actual != null) return false;
     } else if (operator === "in") {
       const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
       const values = query.params.slice(index, index + count);
       index += count;
+
       if (!values.includes(actual)) return false;
     } else {
       const expected = query.params[index++];
+
       if (operator === "=") {
         if (actual !== expected) return false;
         continue;
       }
+
       const left = comparable(actual);
       const right = comparable(expected);
+
       if (operator === "<" && !(left < right)) return false;
+
       if (operator === "<=" && !(left <= right)) return false;
+
       if (operator === ">" && !(left > right)) return false;
+
       if (operator === ">=" && !(left >= right)) return false;
     }
   }
+
   return true;
 };
 
 const matches = (condition: any, row: Row) => {
   if (condition === undefined) return true;
+
   if (queryFor(condition)) return matchesQuery(condition, row);
+
   return collectPredicates(condition).every((predicate) => predicate(row));
 };
 
@@ -106,11 +128,13 @@ class SelectBuilder {
 
   from(table: any) {
     this.table = tableName(table);
+
     return this;
   }
 
   where(condition: any) {
     this.condition = condition;
+
     return this;
   }
 
@@ -129,6 +153,7 @@ class SelectBuilder {
             | undefined,
       )
       .filter((column): column is string => Boolean(column));
+
     return this;
   }
 
@@ -154,21 +179,27 @@ class SelectBuilder {
   private execute() {
     const rows = this.rows().filter((row) => row.__table === this.table);
     const matched = rows.filter((row) => matches(this.condition, row));
+
     for (let index = this.order.length - 1; index >= 0; index--) {
       const column = this.order[index]!;
       matched.sort((left, right) => {
         const a = left[column] ?? left[camel(column)];
         const b = right[column] ?? right[camel(column)];
+
         return a < b ? -1 : a > b ? 1 : 0;
       });
     }
+
     const fields = this.fields;
+
     if (!fields) return matched.map(unprefix);
+
     return matched.map((row) =>
       Object.fromEntries(
         Object.entries(fields).map(([key, field]) => {
           const column = field?.name ?? key;
           const value = row[column] ?? row[camel(column)];
+
           return [key, value];
         }),
       ),
@@ -193,7 +224,9 @@ class InsertBuilder {
 
   values(value: Row | Row[]) {
     this.inserted = Array.isArray(value) ? value : [value];
+
     for (const row of this.inserted) this.rows().push({ ...row, __table: this.table });
+
     return this;
   }
 
@@ -228,17 +261,21 @@ class UpdateBuilder {
 
   set(value: Row) {
     this.patch = value;
+
     return this;
   }
 
   where(condition: any) {
     for (const row of this.rows()) {
       if (row.__table !== this.table) continue;
+
       if (!matches(condition, row)) continue;
+
       for (const [key, value] of Object.entries(this.patch)) {
         if (value !== undefined) row[key] = value;
       }
     }
+
     return Effect.succeed([]);
   }
 }
@@ -251,10 +288,13 @@ class DeleteBuilder {
 
   where(condition: any) {
     const rows = this.rows();
+
     for (let index = rows.length - 1; index >= 0; index--) {
       const row = rows[index]!;
+
       if (row.__table === this.table && matches(condition, row)) rows.splice(index, 1);
     }
+
     return Effect.succeed([]);
   }
 
@@ -270,9 +310,11 @@ class DeleteBuilder {
 export const makeDb = (initial: Partial<Store> = {}) => {
   const store: Store = {};
   const ensure = (table: string) => (store[table] ??= []);
+
   for (const [table, rows] of Object.entries(initial)) {
     store[table] = (rows ?? []).map((row) => ({ ...row, __table: table }));
   }
+
   ensure(tableName(schema.organization));
   ensure(tableName(schema.device));
   ensure(tableName(schema.scepCa));

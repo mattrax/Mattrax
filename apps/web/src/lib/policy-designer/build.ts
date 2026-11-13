@@ -31,24 +31,33 @@ const escapeXml = (value: string) =>
 /** Marks a string that is already base64 and should become `<data>`. */
 const PLIST_DATA = Symbol("plist-data");
 const plistData = (value: string) => ({ [PLIST_DATA]: value });
+
 const isPlistData = (value: unknown): value is { [PLIST_DATA]: string } =>
   typeof value === "object" && value !== null && PLIST_DATA in value;
 
 const plistValue = (value: unknown): string => {
   if (value === null || value === undefined) return "<string></string>";
+
   if (isPlistData(value)) return `<data>${escapeXml(value[PLIST_DATA].replace(/\s/g, ""))}</data>`;
+
   if (typeof value === "boolean") return value ? "<true/>" : "<false/>";
+
   if (typeof value === "number")
     return Number.isInteger(value) ? `<integer>${value}</integer>` : `<real>${value}</real>`;
+
   if (value instanceof Date) return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
+
   if (typeof value === "string") return `<string>${escapeXml(value)}</string>`;
+
   if (Array.isArray(value))
     return `<array>${value.map((item) => plistValue(item)).join("")}</array>`;
+
   if (typeof value === "object")
     return `<dict>${Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== undefined && item !== null)
       .map(([key, item]) => `<key>${escapeXml(key)}</key>${plistValue(item)}`)
       .join("")}</dict>`;
+
   return `<string>${escapeXml(String(value))}</string>`;
 };
 
@@ -69,6 +78,7 @@ const isPlistDateProperty = (property: Property) => property.type === "date";
 /** Payload fields, without generated declaration envelope fields or unset values. */
 const payloadValues = (selection: Selection): Record<string, unknown> => {
   const envelope = new Set(selection.properties.filter(isEnvelope).map((property) => property.key));
+
   return Object.fromEntries(
     Object.entries(selection.values).filter(
       ([key, value]) => value !== undefined && value !== null && !envelope.has(key),
@@ -83,13 +93,16 @@ const payloadValues = (selection: Selection): Record<string, unknown> => {
  */
 const enumDomainKind = (property: Property): "boolean" | "number" | "string" => {
   const values = property.enum?.map((option) => option.value) ?? [];
+
   if (values.length > 0 && values.every((value) => value === "true" || value === "false"))
     return "boolean";
+
   if (
     values.length > 0 &&
     values.every((value) => value.trim() !== "" && Number.isFinite(Number(value)))
   )
     return "number";
+
   return "string";
 };
 
@@ -97,22 +110,31 @@ const enumDomainKind = (property: Property): "boolean" | "number" | "string" => 
 const coerceEnumValue = (property: Property, value: unknown): unknown => {
   if (!property.enum) return value;
   const kind = enumDomainKind(property);
+
   if (kind === "boolean") {
     if (value === true || value === "true") return true;
+
     if (value === false || value === "false") return false;
+
     return value;
   }
+
   if (kind === "number") {
     const number = typeof value === "number" ? value : Number(value);
+
     return Number.isFinite(number) ? number : value;
   }
+
   return value;
 };
 
 export const catalogDefault = (property: Property): unknown => {
   const value = property.defaultValue;
+
   if (value === undefined || value === null) return undefined;
+
   if (property.enum) return coerceEnumValue(property, value);
+
   switch (property.type) {
     case "array":
       return Array.isArray(value) ? value : undefined;
@@ -126,8 +148,10 @@ export const catalogDefault = (property: Property): unknown => {
     case "real": {
       if (property.enum) return value;
       const number = typeof value === "number" ? value : Number(value);
+
       return Number.isFinite(number) ? number : undefined;
     }
+
     default:
       return value;
   }
@@ -148,7 +172,9 @@ export const defaultValues = (collection: Collection): Record<string, unknown> =
 export const sameValue = (left: unknown, right: unknown): boolean => {
   const normalize = (value: unknown): string => {
     if (value instanceof Date) return `date:${value.toISOString()}`;
+
     if (Array.isArray(value)) return `[${value.map(normalize).join(",")}]`;
+
     if (typeof value === "object" && value !== null)
       return `{${Object.keys(value as Record<string, unknown>)
         .sort()
@@ -156,8 +182,10 @@ export const sameValue = (left: unknown, right: unknown): boolean => {
           (key) => `${JSON.stringify(key)}:${normalize((value as Record<string, unknown>)[key])}`,
         )
         .join(",")}}`;
+
     return JSON.stringify(value) ?? "undefined";
   };
+
   return normalize(left) === normalize(right);
 };
 
@@ -192,11 +220,13 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
  */
 export const validateDraft = (draft: Draft): ValidationIssue[] => {
   const issues: ValidationIssue[] = [];
+
   for (const selection of draft.selections) {
     for (const property of collectionProperties(selection)) {
       if (isEnvelope(property)) continue;
       const key = valueKey(property, draft.platform);
       const value = selection.values[key];
+
       const add = (severity: ValidationSeverity, message: string) =>
         issues.push({
           severity,
@@ -218,38 +248,47 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       if (sameValue(value, catalogDefault(property))) continue;
 
       const enumProperty = Boolean(property.enum);
+
       if (property.type === "array") {
         if (!Array.isArray(value)) add("error", "Expected a list of values.");
         continue;
       }
+
       if (property.type === "dictionary") {
         if (!isPlainObject(value)) add("error", "Expected a dictionary (JSON object).");
         continue;
       }
+
       if (property.type === "data") {
         if (typeof value !== "string") {
           add("error", "Expected a base64-encoded string.");
         } else if (value.trim() !== "" && !BASE64.test(value.replace(/\s/g, ""))) {
           add("warning", "This value does not look like base64 data.");
         }
+
         continue;
       }
+
       if (property.type === "boolean" && !enumProperty) {
         if (typeof value !== "boolean") add("error", "Expected On or Off.");
         continue;
       }
+
       if ((property.type === "integer" || property.type === "real") && !enumProperty) {
         const number = typeof value === "number" ? value : Number(value);
+
         if (!Number.isFinite(number)) {
           add("error", `Expected a ${property.type === "integer" ? "whole number" : "number"}.`);
           continue;
         }
+
         if (property.min !== undefined && number < property.min)
           add("error", `Must be at least ${property.min}.`);
         else if (property.max !== undefined && number > property.max)
           add("error", `Must be at most ${property.max}.`);
         continue;
       }
+
       if (property.type === "string" && property.pattern && typeof value === "string") {
         try {
           if (!new RegExp(property.pattern).test(value))
@@ -260,6 +299,7 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       }
     }
   }
+
   if (
     draft.platform === "windows" &&
     draft.selections.length > 0 &&
@@ -275,21 +315,27 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       message: "This collection has no applicable Windows settings; add a setting or remove it.",
     });
   }
+
   return issues;
 };
 
 const applePayloadValues = (selection: Selection) => {
   const values = payloadValues(selection);
+
   for (const property of selection.properties) {
     const value = values[property.key];
+
     if (value === undefined) continue;
+
     if (isPlistDataProperty(property) && typeof value === "string")
       values[property.key] = plistData(value);
+
     if (isPlistDateProperty(property) && typeof value === "string") {
       const date = new Date(value);
       values[property.key] = Number.isNaN(date.getTime()) ? value : date;
     }
   }
+
   return values;
 };
 
@@ -298,6 +344,7 @@ export const buildAppleProfile = (draft: Draft) => {
     .filter((selection) => selection.kind === "profile")
     .map((selection) => {
       const values = applePayloadValues(selection);
+
       return {
         ...values,
         PayloadType: selection.identifier,
@@ -308,6 +355,7 @@ export const buildAppleProfile = (draft: Draft) => {
         PayloadVersion: values.PayloadVersion ?? 1,
       };
     });
+
   return {
     PayloadContent: payloads,
     PayloadDisplayName: draft.name || "Mattrax policy",
@@ -327,6 +375,7 @@ export const buildDeclarations = (draft: Draft) =>
     .map((selection) => {
       const values = payloadValues(selection);
       const explicit = values.Payload;
+
       return {
         Type: selection.identifier,
         Identifier: `com.mattrax.designer.${identifierSafe(selection.identifier)}`,
@@ -342,24 +391,35 @@ export const buildDeclarations = (draft: Draft) =>
 const normalizeEnumValue = (property: Property, value: unknown) => {
   if (!property.enum) return value;
   const kind = enumDomainKind(property);
+
   if (kind === "boolean") {
     if (value === true || value === "true") return true;
+
     if (value === false || value === "false") return false;
+
     return value;
   }
+
   if (kind === "number") {
     const number = typeof value === "number" ? value : Number(value);
+
     return Number.isFinite(number) ? number : value;
   }
+
   return value;
 };
 
 const windowsFormat = (property: Property, value: unknown) => {
   if (typeof value === "boolean") return "int";
+
   if (typeof value === "number") return Number.isInteger(value) ? "int" : "chr";
+
   if (property.type === "integer" || property.type === "boolean") return "int";
+
   if (property.enum && enumDomainKind(property) !== "string") return "int";
+
   if (property.type === "data") return "b64";
+
   return "chr";
 };
 
@@ -377,23 +437,29 @@ const syncmlData = (value: unknown) =>
 
 export const buildWindowsNodes = (draft: Draft) => {
   const nodes = new Map<string, { omaUri: string; value: unknown; format: string }>();
+
   for (const selection of draft.selections) {
     for (const property of collectionProperties(selection)) {
       const rawValue = selection.values[valueKey(property, "windows")];
+
       if (rawValue === undefined || rawValue === null) continue;
       const value = normalizeEnumValue(property, rawValue);
+
       const omaUri =
         property.address ??
         `./Device/Vendor/MSFT/Policy/Config/${selection.identifier}/${property.key}`;
+
       if (/[{}]/.test(omaUri)) continue;
       nodes.set(omaUri, { omaUri, value, format: windowsFormat(property, value) });
     }
   }
+
   return [...nodes.values()];
 };
 
 export const buildSyncML = (draft: Draft) => {
   const nodes = buildWindowsNodes(draft);
+
   const commands = nodes
     .map(
       (node, index) => `    <Replace>
@@ -406,6 +472,7 @@ export const buildSyncML = (draft: Draft) => {
     </Replace>`,
     )
     .join("\n");
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <SyncML xmlns="SYNCML:SYNCML1.2">
   <SyncHdr>
@@ -428,9 +495,11 @@ export const buildAndroidPolicy = (draft: Draft) => {
     {},
     ...draft.selections.map((selection) => payloadValues(selection)),
   ) as Record<string, unknown>;
+
   // These are read-only Google resource fields, not policy settings.
   delete policy.name;
   delete policy.version;
+
   return policy;
 };
 
@@ -445,6 +514,7 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
   if (draft.platform === "apple") {
     const declarations = buildDeclarations(draft);
     const profiles = draft.selections.filter((selection) => selection.kind === "profile");
+
     if (declarations.length > 0 && profiles.length > 0)
       return {
         fileName: `${identifierSafe(draft.name || "policy")}-bundle.json`,
@@ -452,6 +522,7 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
         content: JSON.stringify({ profile: buildMobileconfig(draft), declarations }, null, 2),
         kind: "apple-bundle",
       };
+
     if (declarations.length > 0)
       return {
         fileName: `${identifierSafe(draft.name || "policy")}.json`,
@@ -459,6 +530,7 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
         content: JSON.stringify(declarations, null, 2),
         kind: "declarations",
       };
+
     return {
       fileName: `${identifierSafe(draft.name || "policy")}.mobileconfig`,
       contentType: "application/x-apple-aspen-config",
@@ -466,6 +538,7 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
       kind: "mobileconfig",
     };
   }
+
   if (draft.platform === "windows")
     return {
       fileName: `${identifierSafe(draft.name || "policy")}.syncml.xml`,
@@ -473,6 +546,7 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
       content: buildSyncML(draft),
       kind: "syncml",
     };
+
   return {
     fileName: `${identifierSafe(draft.name || "policy")}.json`,
     contentType: "application/json",
@@ -484,10 +558,12 @@ export const buildArtifact = (draft: Draft): ExportArtifact => {
 /** FNV-1a keeps declaration configuration kinds stable and alphanumeric. */
 const stableId = (value: string) => {
   let hash = 0x811c9dc5;
+
   for (let index = 0; index < value.length; index++) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
+
   return (hash >>> 0).toString(36);
 };
 
@@ -505,6 +581,7 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       const content = buildMobileconfig(draft);
       const bytes = new TextEncoder().encode(content);
       let binary = "";
+
       for (const byte of bytes) binary += String.fromCharCode(byte);
       configurations["mttx.apple.custom.designer"] = {
         content: btoa(binary),
@@ -525,8 +602,10 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
         ...(profiles.length === 0 && index === 0 ? { draft: draftWithTime } : {}),
       };
     });
+
     return configurations;
   }
+
   if (draft.platform === "windows") {
     return {
       "mttx.windows.custom.designer": {
@@ -539,6 +618,7 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       },
     };
   }
+
   if (draft.platform === "android") {
     return {
       "mttx.android.policy.designer": {
@@ -547,6 +627,7 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       },
     };
   }
+
   return {};
 };
 
@@ -580,6 +661,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const parsePolicyDraft = (value: unknown): PolicyDraft | undefined => {
   if (!value) return undefined;
   let parsed = value;
+
   if (typeof value === "string") {
     try {
       parsed = JSON.parse(value);
@@ -587,12 +669,16 @@ export const parsePolicyDraft = (value: unknown): PolicyDraft | undefined => {
       return undefined;
     }
   }
+
   if (!isRecord(parsed)) return undefined;
   const name = typeof parsed.name === "string" ? parsed.name : "My policy";
   const savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : undefined;
+
   if (parsed.version === 1 && Array.isArray(parsed.selections)) {
     const platform = parsed.platform;
+
     if (platform !== "apple" && platform !== "windows" && platform !== "android") return undefined;
+
     return {
       version: 2,
       name,
@@ -600,12 +686,16 @@ export const parsePolicyDraft = (value: unknown): PolicyDraft | undefined => {
       ...(savedAt ? { savedAt } : {}),
     };
   }
+
   if (parsed.version !== 2 || !isRecord(parsed.platforms)) return undefined;
   const platforms: Partial<Record<PlatformId, Selection[]>> = {};
+
   for (const platform of PLATFORM_ORDER) {
     const selections = parsed.platforms[platform];
+
     if (Array.isArray(selections)) platforms[platform] = selections as Selection[];
   }
+
   return { version: 2, name, platforms, ...(savedAt ? { savedAt } : {}) };
 };
 
@@ -640,9 +730,12 @@ export type PolicyBundle = {
  */
 export const buildPolicyBundle = (policy: PolicyDraft): PolicyBundle | null => {
   const artifacts = buildArtifacts(policy);
+
   if (artifacts.length === 0) return null;
+
   if (artifacts.length === 1) {
     const artifact = artifacts[0]!;
+
     return {
       fileName: artifact.fileName,
       contentType: artifact.contentType,
@@ -650,7 +743,9 @@ export const buildPolicyBundle = (policy: PolicyDraft): PolicyBundle | null => {
       artifactCount: 1,
     };
   }
+
   const base = identifierSafe(policy.name || "policy");
+
   return {
     fileName: `${base}.zip`,
     contentType: "application/zip",
@@ -670,11 +765,14 @@ const draftAnchor = (
     return "mttx.windows.custom.designer" in configurations
       ? "mttx.windows.custom.designer"
       : undefined;
+
   if (platform === "android")
     return "mttx.android.policy.designer" in configurations
       ? "mttx.android.policy.designer"
       : undefined;
+
   if ("mttx.apple.custom.designer" in configurations) return "mttx.apple.custom.designer";
+
   return Object.keys(configurations).find((kind) => kind.startsWith("mttx.apple.declaration."));
 };
 
@@ -683,15 +781,20 @@ export const policyToConfigurations = (policy: PolicyDraft): Record<string, unkn
   const savedAt = policy.savedAt ?? Date.now();
   const snapshot: PolicyDraft = { ...policy, savedAt };
   const configurations: Record<string, unknown> = {};
+
   for (const platform of policyPlatforms(policy)) {
     Object.assign(configurations, artifactToConfigurations(draftForPlatform(policy, platform)));
   }
+
   for (const platform of PLATFORM_ORDER) {
     const kind = draftAnchor(platform, configurations);
+
     if (!kind) continue;
     const current = configurations[kind];
+
     if (!isRecord(current)) continue;
     configurations[kind] = { ...current, draft: snapshot };
   }
+
   return configurations;
 };

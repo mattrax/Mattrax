@@ -24,7 +24,9 @@ import {
 } from "~/lib/enterprise";
 
 type Named = { id: string; name: string };
+
 const selectedNamed = (rows: Named[]) => rows.map((row) => ({ id: row.id, name: row.name }));
+
 const confirmTarget = (rows: Named[], entity: string) =>
   rows.length > 3
     ? `Delete ${rows.length} ${entity === "policy" ? "policies" : `${entity}s`}`
@@ -39,6 +41,7 @@ function ConfirmAction(props: {
 }) {
   const [open, setOpen] = createSignal(false);
   const [value, setValue] = createSignal("");
+
   const mutation = useMutation(() => ({
     mutationFn: props.onConfirm,
     onSuccess: () => {
@@ -46,6 +49,7 @@ function ConfirmAction(props: {
       setOpen(false);
     },
   }));
+
   return (
     <>
       <Button variant={props.destructive ? "destructive" : "outline"} onClick={() => setOpen(true)}>
@@ -91,10 +95,12 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
   const qc = useQueryClient();
   const [open, setOpen] = createSignal(false);
   const [changes, setChanges] = createSignal<Record<string, "all" | "none">>({});
+
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
   }));
+
   const patch = useMutation(() => ({
     mutationFn: async () =>
       Promise.all(
@@ -115,6 +121,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     },
   }));
+
   const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
 
   return (
@@ -178,12 +185,15 @@ export function EntityActions(props: {
   const qc = useQueryClient();
   const rows = () => selectedNamed(props.selected as Named[]);
   const ids = () => rows().map((row) => row.id);
+
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, props.entity) });
+
     if (props.entity === "device")
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     props.clear();
   };
+
   const sync = useMutation(() => ({
     mutationFn: async () =>
       props.entity === "device"
@@ -193,6 +203,7 @@ export function EntityActions(props: {
           : enterprise.syncPolicies(params.tenantId, ids()),
     onSuccess: invalidate,
   }));
+
   return (
     <>
       <Show when={props.entity === "device"}>

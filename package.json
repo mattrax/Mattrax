@@ -20,7 +20,9 @@
     "doc": "rspress dev docs --port 9060",
     "doc:build": "rspress build docs",
     "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod",
-    "doc:preview": "rspress preview docs --port 9060"
+    "doc:preview": "rspress preview docs --port 9060",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix"
   },
   "devDependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -29,7 +31,9 @@
     "@rspress/plugin-llms": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "@oxlint/plugins": "1.91.0",
+    "oxlint": "1.91.0"
   },
   "engines": {
     "node": ">=22.12.0"

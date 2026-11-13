@@ -15,6 +15,7 @@ import {
 } from "../harness/windows.ts";
 
 const tenantToken = "mttxw-compliance";
+
 const check = (
   id: string,
   category: Check["category"],
@@ -45,11 +46,13 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "A valid Discover request must return auth policy, enrollment version and both service URLs.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/discovery", windowsSoapEnvelope(windowsDiscoveryBody()), {
           tenantToken,
         }),
       );
+
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /application\/soap\+xml/);
       const body = await windowsDiscoveryResponse(response);
@@ -73,9 +76,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
         enrollmentPolicyServiceUrl: "",
         enrollmentServiceUrl: "",
       };
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/discovery", windowsSoapEnvelope(windowsDiscoveryBody())),
       );
+
       const body = await windowsDiscoveryResponse(response);
       assert.equal(
         body.discoverResult.enrollmentPolicyServiceUrl,
@@ -95,9 +100,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createWindowsHarness();
       harness.state.discoveryError = "unknown";
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/discovery", windowsSoapEnvelope(windowsDiscoveryBody())),
       );
+
       assert.equal(response.status, 200);
       const text = await response.text();
       assert.match(text, /Fault/);
@@ -124,6 +131,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "GetPolicies must advertise RSA key length, certificate validity, renewal period and auto-enrollment permission.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost(
           "/mdm/windows/policy",
@@ -131,6 +139,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
           { tenantToken },
         ),
       );
+
       assert.equal(response.status, 200);
       const body = await windowsPolicyResponse(response);
       const policy = body.response.policies.policy;
@@ -151,12 +160,14 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "The policy endpoint must not issue a policy without the authentication token.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost(
           "/mdm/windows/policy",
           windowsSoapEnvelope(windowsPolicyBody(), { security: null }),
         ),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Missing binary security token/);
@@ -169,9 +180,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "A syntactically valid SOAP envelope with an invalid body must produce a policy fault.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/policy", windowsSoapEnvelope("<GetPolicies/>")),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Invalid policy request/);
@@ -185,9 +198,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createWindowsHarness();
       harness.state.policyError = "unknown";
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/policy", windowsSoapEnvelope(windowsPolicyBody())),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /enrollment link is invalid or has expired/);
@@ -200,11 +215,13 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "WSTEP enrollment must return RequestSecurityTokenResponseCollection containing a base64 WAP provisioning document.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/enroll", windowsSoapEnvelope(windowsEnrollBody()), {
           tenantToken,
         }),
       );
+
       assert.equal(response.status, 200);
       const body = await windowsEnrollmentResponse(response);
       const token = body.requestSecurityTokenResponse.requestedSecurityToken.binarySecurityToken;
@@ -226,15 +243,19 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "The management URL in the provisioning document must carry the tenant token so an unauthenticated device can resolve its tenant.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/enroll", windowsSoapEnvelope(windowsEnrollBody()), {
           tenantToken,
         }),
       );
+
       const body = await windowsEnrollmentResponse(response);
+
       const provisioning = provisioningXml(
         body.requestSecurityTokenResponse.requestedSecurityToken.binarySecurityToken.content,
       );
+
       assert.match(provisioning, new RegExp(`mdm/windows/management\\?tenant=${tenantToken}`));
     },
   ),
@@ -245,12 +266,14 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "WSTEP must not create an identity without the authentication token.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost(
           "/mdm/windows/enroll",
           windowsSoapEnvelope(windowsEnrollBody(), { security: null }),
         ),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Missing binary security token/);
@@ -263,6 +286,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "A malformed RequestSecurityToken must not create a device identity.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost(
           "/mdm/windows/enroll",
@@ -271,6 +295,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
           ),
         ),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Invalid enrollment request/);
@@ -284,9 +309,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createWindowsHarness();
       harness.state.enrollmentError = "unknown";
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/enroll", windowsSoapEnvelope(windowsEnrollBody())),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /enrollment link is invalid or has expired/);
@@ -316,9 +343,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
           },
         ],
       };
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", windowsSyncMLBody(), { tenantToken }),
       );
+
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /syncml/);
       const message = await windowsSyncMLResponse(response);
@@ -362,9 +391,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "Every inbound SyncML command must be acknowledged with the matching command name and CmdRef.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", windowsSyncMLBody({ command: "replace" })),
       );
+
       const message = await windowsSyncMLResponse(response);
       const acknowledgement = message.syncBody.status?.find((status) => status.cmdRef === "2");
       assert.ok(acknowledgement);
@@ -379,9 +410,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "Remote actions must be acknowledged without the server inventing a different command reference.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", windowsSyncMLBody({ command: "exec" })),
       );
+
       const message = await windowsSyncMLResponse(response);
       const acknowledgement = message.syncBody.status?.find((status) => status.cmdRef === "2");
       assert.ok(acknowledgement);
@@ -395,9 +428,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "A non-SyncML management body must return a fault instead of an empty response.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", "<SyncML><broken>"),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Invalid SyncML request/);
@@ -411,9 +446,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createWindowsHarness();
       harness.state.managementError = "unsupported";
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", windowsSyncMLBody()),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /Management backend failed/);
@@ -427,9 +464,11 @@ export const windowsChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createWindowsHarness();
       harness.state.managementError = "unknown";
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/management", windowsSyncMLBody()),
       );
+
       const text = await response.text();
       assert.match(text, /Fault/);
       assert.match(text, /enrollment link is invalid or has expired/);
@@ -443,16 +482,21 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "Windows auto-enrollment needs a positive renewal period strictly before certificate expiry.",
     async () => {
       const harness = createWindowsHarness();
+
       const response = await harness.handler(
         windowsPost("/mdm/windows/policy", windowsSoapEnvelope(windowsPolicyBody())),
       );
+
       const body = await windowsPolicyResponse(response);
+
       const validity = Number(
         body.response.policies.policy.attributes.certificateValidity.validityPeriodSeconds,
       );
+
       const renewal = Number(
         body.response.policies.policy.attributes.certificateValidity.renewalPeriodSeconds,
       );
+
       assert.ok(renewal > 0);
       assert.ok(renewal < validity);
       assert.ok(validity - renewal >= 24 * 60 * 60);
@@ -466,6 +510,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
     "Day-N certificate renewal is a second WSTEP enrollment; the server must accept a new CSR and return a complete provisioning document.",
     async () => {
       const harness = createWindowsHarness();
+
       const first = await harness.handler(
         windowsPost(
           "/mdm/windows/enroll",
@@ -474,6 +519,7 @@ export const windowsChecks: ReadonlyArray<Check> = [
           ),
         ),
       );
+
       const second = await harness.handler(
         windowsPost(
           "/mdm/windows/enroll",
@@ -482,15 +528,18 @@ export const windowsChecks: ReadonlyArray<Check> = [
           ),
         ),
       );
+
       assert.equal(first.status, 200);
       assert.equal(second.status, 200);
       assert.equal(harness.state.enrollments.length, 2);
       assert.equal(harness.state.enrollments[0]?.csr, "Y3NyLW9uZQ==");
       assert.equal(harness.state.enrollments[1]?.csr, "Y3NyLXR3bw==");
       const body = await windowsEnrollmentResponse(second);
+
       const provisioning = provisioningXml(
         body.requestSecurityTokenResponse.requestedSecurityToken.binarySecurityToken.content,
       );
+
       assert.match(provisioning, /mdm\/windows\/management/);
     },
     true,

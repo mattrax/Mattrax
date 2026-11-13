@@ -13,8 +13,10 @@ import {
 
 const inputClass =
   "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
+
 const primaryButton =
   "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50";
+
 const secondaryButton =
   "rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05] disabled:opacity-50";
 
@@ -50,14 +52,17 @@ export function StepUpDialog() {
   const submit = async (event?: SubmitEvent) => {
     event?.preventDefault();
     const current = request();
+
     if (!current) return;
     setError(null);
     setPending(true);
+
     try {
       const grant = await performStepUp(current.action, method(), {
         password: password(),
         code: code(),
       });
+
       rememberStepUpGrant(current.action, grant.grant, grant.expiresAtMillis);
       completeStepUp(grant.grant);
       setPassword("");

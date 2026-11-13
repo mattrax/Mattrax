@@ -51,6 +51,7 @@ const defaultFor = <T,>(field: EntityField<T>): EntityCondition => ({
 
 const quote = (value: string) =>
   /[\s"]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+
 const unquote = (value: string) =>
   value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
 
@@ -63,18 +64,24 @@ const splitAnd = (text: string): string[] => {
   const parts: string[] = [];
   let current = "";
   let quoted = false;
+
   for (let index = 0; index < text.length; index++) {
     const character = text[index]!;
+
     if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
+
     if (!quoted && text.slice(index, index + 5).toLowerCase() === " and ") {
       parts.push(current.trim());
       current = "";
       index += 4;
       continue;
     }
+
     current += character;
   }
+
   if (current.trim()) parts.push(current.trim());
+
   return parts;
 };
 
@@ -83,19 +90,25 @@ export const parseEntityQuery = <T,>(
   fields: ReadonlyArray<EntityField<T>>,
 ): EntityCondition[] => {
   const trimmed = text?.trim();
+
   if (!trimmed) return [];
   const conditions: EntityCondition[] = [];
+
   for (const clause of splitAnd(trimmed)) {
     const match = clause.match(
       /^([A-Za-z][A-Za-z0-9]*)\s+(is not|is|contains|starts with|at least|more than|at most|less than|exactly)\s+(.+)$/i,
     );
+
     if (!match) continue;
     const field = fields.find((item) => item.id === match[1]!.toLowerCase());
+
     if (!field) continue;
     const op = match[2]!.toLowerCase();
+
     if (!opsFor(field as EntityField<unknown>).some((option) => option.value === op)) continue;
     conditions.push({ field: field.id, op, value: unquote(match[3]!.trim()) });
   }
+
   return conditions;
 };
 
@@ -123,22 +136,32 @@ export const matchesEntityQuery = <T,>(
 ): boolean => {
   for (const condition of conditions) {
     const field = fields.find((item) => item.id === condition.field);
+
     if (!field) continue;
     const raw = field.get(row);
+
     if (field.kind === "number") {
       const actual = typeof raw === "number" ? raw : Number(raw ?? 0);
       const expected = Number(condition.value);
+
       if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+
       if (!compareNumber(actual, expected, condition.op)) return false;
       continue;
     }
+
     const actual = String(raw ?? "").toLowerCase();
     const expected = condition.value.toLowerCase();
+
     if (condition.op === "is" && actual !== expected) return false;
+
     if (condition.op === "is not" && actual === expected) return false;
+
     if (condition.op === "contains" && !actual.includes(expected)) return false;
+
     if (condition.op === "starts with" && !actual.startsWith(expected)) return false;
   }
+
   return true;
 };
 
@@ -155,6 +178,7 @@ export function EntityQueryBar<T>(props: {
     },
   );
   const fieldsById = (id: string) => props.fields.find((field) => field.id === id);
+
   const applyText = () => {
     const parsed = parseEntityQuery(text(), props.fields);
     props.onChange(parsed);
@@ -172,6 +196,7 @@ export function EntityQueryBar<T>(props: {
             size="xs"
             onClick={() => {
               const field = props.fields[0];
+
               if (field) props.onChange([defaultFor(field)]);
             }}
           >
@@ -193,6 +218,7 @@ export function EntityQueryBar<T>(props: {
               size="xs"
               onClick={() => {
                 const field = props.fields[0];
+
                 if (field) props.onChange([...props.conditions, defaultFor(field)]);
               }}
             >
@@ -215,6 +241,7 @@ export function EntityQueryBar<T>(props: {
           <For each={props.conditions}>
             {(condition, index) => {
               const field = () => fieldsById(condition.field) ?? props.fields[0];
+
               return (
                 <div class="flex flex-wrap items-center gap-1.5">
                   <select
@@ -223,9 +250,11 @@ export function EntityQueryBar<T>(props: {
                     value={condition.field}
                     onChange={(event) => {
                       const next = [...props.conditions];
+
                       const selected = props.fields.find(
                         (item) => item.id === event.currentTarget.value,
                       );
+
                       if (selected) next[index()] = defaultFor(selected);
                       props.onChange(next);
                     }}

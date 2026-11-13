@@ -5,9 +5,11 @@ import { filterChecks, runChecks } from "../src/runner.ts";
 describe("MDM compliance suite", () => {
   it("passes every protocol check", async () => {
     const report = await runChecks(allChecks, { timeoutMs: 30_000 });
+
     const failures = report.checks
       .filter((check) => check.status === "failed")
       .map((check) => `${check.id}: ${check.error ?? "failed"}`);
+
     expect(failures).toEqual([]);
     expect(report.summary.total).toBeGreaterThanOrEqual(90);
     expect(report.summary.failed).toBe(0);

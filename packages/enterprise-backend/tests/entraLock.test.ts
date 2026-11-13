@@ -26,6 +26,7 @@ const makeLockDb = (initial?: Row) => {
         where: () =>
           Effect.sync(() => {
             calls.updates.push(value);
+
             if (rows[0]) Object.assign(rows[0], value);
           }),
       }),
@@ -41,6 +42,7 @@ const now = new Date("2026-11-11T12:00:00.000Z");
 describe("Entra directory sync lock", () => {
   it("creates a running lock for a tenant that has never synced", async () => {
     const fake = makeLockDb();
+
     const result = await Effect.runPromise(
       acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
     );
@@ -67,6 +69,7 @@ describe("Entra directory sync lock", () => {
       status: "running",
       updatedAt: new Date(now.getTime() - 60_000),
     });
+
     const result = await Effect.runPromise(
       acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
     );
@@ -84,6 +87,7 @@ describe("Entra directory sync lock", () => {
       lastError: "worker was evicted",
       updatedAt: new Date(now.getTime() - ENTRA_SYNC_STALE_MS - 1_000),
     });
+
     const result = await Effect.runPromise(
       acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
     );
@@ -101,6 +105,7 @@ describe("Entra directory sync lock", () => {
       status: "running",
       updatedAt: "not-a-date",
     });
+
     const result = await Effect.runPromise(
       acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
     );
@@ -118,6 +123,7 @@ describe("Entra directory sync lock", () => {
         lastError: "previous failure",
         updatedAt: new Date(now.getTime() - 1_000),
       });
+
       const result = await Effect.runPromise(
         acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
       );
@@ -136,6 +142,7 @@ describe("Entra directory sync lock", () => {
       status: "running",
       updatedAt: new Date(now.getTime() - 5_000),
     });
+
     const result = await Effect.runPromise(
       acquireEntraSyncLock({
         db: fake.db as never,

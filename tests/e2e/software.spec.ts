@@ -15,6 +15,7 @@ test.describe("software inventory and device security", () => {
       page,
       `/api/v1/tenants/${tenant.id}/applications/inventory`,
     );
+
     expect(inventory).toEqual({ applications: [], total: 0 });
 
     // A search with no matches is still tenant-scoped and well-formed.
@@ -22,12 +23,14 @@ test.describe("software inventory and device security", () => {
       page,
       `/api/v1/tenants/${tenant.id}/applications/inventory?q=safari&managed=managed`,
     );
+
     expect(search).toEqual({ applications: [], total: 0 });
 
     // Security endpoints reject unknown devices rather than leaking existence.
     const missing = await page.request.get(
       `/api/v1/tenants/${tenant.id}/devices/not-a-device/recovery-key`,
     );
+
     expect(missing.status()).toBe(404);
   });
 });

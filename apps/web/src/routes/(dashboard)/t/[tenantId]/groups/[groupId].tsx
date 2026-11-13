@@ -37,10 +37,12 @@ export default function GroupDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
   const group = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
     queryFn: () => enterprise.get(params.tenantId, "group", params.groupId),
   }));
+
   // Viewing a group only needs its own devices. The full tenant list is loaded
   // lazily when editing, because the picker must also offer unassigned devices.
   const groupDevices = useQuery(() => ({
@@ -56,16 +58,20 @@ export default function GroupDetailPage() {
         sort: "name",
       }),
   }));
+
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
+
   const preview = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "group", params.groupId), "preview"],
     queryFn: () => enterprise.previewGroup(params.tenantId, params.groupId),
   }));
+
   const row = () => group.data as GroupNode | undefined;
   const [edit, setEdit] = createSignal(false);
+
   // The full tenant list is only needed while editing, because the picker must
   // offer unassigned devices too.
   const allDevices = useQuery(() => ({
@@ -73,10 +79,13 @@ export default function GroupDetailPage() {
     queryFn: () => enterprise.list(params.tenantId, "device"),
     enabled: edit(),
   }));
+
   const deviceRows = () =>
     edit() ? (allDevices.data?.rows ?? []) : (groupDevices.data?.devices ?? []);
+
   const deviceTotal = () =>
     edit() ? (allDevices.data?.rows.length ?? 0) : (groupDevices.data?.total ?? 0);
+
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [deleteConfirm, setDeleteConfirm] = createSignal("");
   const [tab, setTab] = createSignal<"overview" | "devices" | "policies">("overview");
@@ -103,19 +112,24 @@ export default function GroupDetailPage() {
       }
     },
   );
+
   const policySignature = (policies: ReadonlyArray<{ id: string; mode?: string }>) =>
     policies
       .map((policy) => `${policy.id}:${policy.mode ?? "include"}`)
       .sort()
       .join(",");
+
   const currentPolicySignature = () =>
     [...policyModes()]
       .map(([id, mode]) => `${id}:${mode}`)
       .sort()
       .join(",");
+
   const kindChanged = () => kind() !== (row()?.kind ?? "manual");
+
   const rulesChanged = () =>
     JSON.stringify(rules()) !== JSON.stringify(row()?.rules ?? { version: 1 });
+
   const dirty = createMemo(
     () =>
       row() &&
@@ -131,6 +145,7 @@ export default function GroupDetailPage() {
               .join(",") ?? "")) ||
         currentPolicySignature() !== policySignature(row()!.policies ?? [])),
   );
+
   const invalidate = async () => {
     await qc.invalidateQueries({
       queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
@@ -140,14 +155,18 @@ export default function GroupDetailPage() {
       queryKey: [...enterpriseKeys.item(params.tenantId, "group", params.groupId), "preview"],
     });
   };
+
   const save = useMutation(() => ({
     mutationFn: async () => {
       const oldDevices = row()?.devices?.map((d) => d.id) ?? [];
+
       const oldPolicies = new Map(
         (row()?.policies ?? []).map((policy) => [policy.id, policy.mode ?? "include"]),
       );
+
       const nextDevices = kind() === "dynamic" ? oldDevices : [...deviceIds()];
       const nextPolicies = policyModes();
+
       if (
         name() !== row()?.name ||
         notes() !== (row()?.notes ?? "") ||
@@ -178,9 +197,11 @@ export default function GroupDetailPage() {
       await invalidate();
     },
   }));
+
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncGroups(params.tenantId, [params.groupId!]),
   }));
+
   const dup = useMutation(() => ({
     mutationFn: () => enterprise.duplicateGroup(params.tenantId, params.groupId),
     onSuccess: async ({ id }) => {
@@ -188,6 +209,7 @@ export default function GroupDetailPage() {
       navigate(`/t/${params.tenantId}/groups/${id}`);
     },
   }));
+
   const del = useMutation(() => ({
     mutationFn: () =>
       enterprise.deleteGroups(params.tenantId, params.groupId ? [params.groupId] : []),
@@ -196,22 +218,28 @@ export default function GroupDetailPage() {
       navigate(`/t/${params.tenantId}/groups`);
     },
   }));
+
   const toggle = (set: () => Set<string>, update: (v: Set<string>) => void, id: string) => {
     if (!edit()) return;
     const next = new Set(set());
+
     if (next.has(id)) next.delete(id);
     else next.add(id);
     update(next);
   };
+
   const setPolicyMode = (id: string, mode: "include" | "exclude" | "") => {
     if (!edit()) return;
     const next = new Map(policyModes());
+
     if (mode) next.set(id, mode);
     else next.delete(id);
     setPolicyModes(next);
   };
+
   const memberCount = () =>
     row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : (row()?.devices?.length ?? 0);
+
   return (
     <Page wide>
       <QueryError error={group.error} onRetry={() => void group.refetch()} />

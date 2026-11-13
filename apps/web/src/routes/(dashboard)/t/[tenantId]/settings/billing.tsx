@@ -17,11 +17,13 @@ import { cn } from "~/lib/utils";
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
   const date = new Date(value);
+
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
 };
 
 const statusTone = (status: string | null | undefined, configured: boolean) => {
   if (!configured) return "neutral" as const;
+
   switch (status) {
     case "active":
     case "trialing":
@@ -39,16 +41,19 @@ const statusTone = (status: string | null | undefined, configured: boolean) => {
 
 export default function BillingSettingsPage() {
   const params = useParams();
+
   const billing = useQuery(() => ({
     queryKey: enterpriseKeys.billing(params.tenantId),
     queryFn: () => enterprise.billing(params.tenantId),
   }));
+
   const portal = useMutation(() => ({
     mutationFn: () => enterprise.billingPortal(params.tenantId, globalThis.location.href),
     onSuccess: ({ url }) => {
       globalThis.location.href = url;
     },
   }));
+
   const configured = () => billing.data?.configured !== false;
   const overLimit = () => Boolean(billing.data?.overDeviceLimit || billing.data?.overTenantLimit);
 

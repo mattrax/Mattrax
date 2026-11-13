@@ -9,7 +9,9 @@ const otherOrganizationId = "org-2";
 
 const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -18,7 +20,9 @@ const makePrivateKeyPem = async () => {
     "sign",
     "verify",
   ]);
+
   const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+
   return `-----BEGIN PRIVATE KEY-----\n${bytesToBase64(new Uint8Array(pkcs8))
     .match(/.{1,64}/g)!
     .join("\n")}\n-----END PRIVATE KEY-----`;
@@ -48,9 +52,11 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const makeFetch = () => {
   const calls: string[] = [];
+
   const fetchImpl = (async (input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
+
     if (url.includes("/auth/oauth2/token"))
       return jsonResponse({
         access_token: "apple-access-token",
@@ -58,6 +64,7 @@ const makeFetch = () => {
         expires_in: 3600,
         scope: "business.api",
       });
+
     if (url.includes("/orgDevices"))
       return jsonResponse({
         data: [
@@ -73,6 +80,7 @@ const makeFetch = () => {
           },
         ],
       });
+
     if (url.includes("/mdmServers"))
       return jsonResponse({
         data: [
@@ -82,11 +90,15 @@ const makeFetch = () => {
           },
         ],
       });
+
     if (url.includes("/orgDeviceActivities"))
       return jsonResponse({ data: { id: "activity-1", attributes: { status: "IN_PROGRESS" } } });
+
     if (url.includes("/v2/assets/associate")) return jsonResponse({ eventId: "associate-event-1" });
+
     if (url.includes("/v2/assets/disassociate"))
       return jsonResponse({ eventId: "disassociate-event-1" });
+
     if (url.includes("/v2/assets"))
       return jsonResponse({
         assets: [
@@ -106,14 +118,17 @@ const makeFetch = () => {
         currentPageIndex: 0,
         totalPages: 1,
       });
+
     return jsonResponse({ errors: [{ detail: `Unexpected ${url}` }] }, 500);
   }) as typeof globalThis.fetch;
+
   return { fetchImpl, calls };
 };
 
 const makeContext = async () => {
   const db = makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -123,7 +138,9 @@ const makeContext = async () => {
     createdAt: now,
     updatedAt: now,
   };
+
   db.store.user.push(user);
+
   for (const id of [organizationId, otherOrganizationId]) {
     db.store.organization.push({
       id,
@@ -133,6 +150,7 @@ const makeContext = async () => {
       updatedAt: now,
     });
   }
+
   db.store.member.push({
     id: "member-1",
     organizationId,
@@ -181,6 +199,7 @@ const makeContext = async () => {
   const auth = {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return headers.cookie
         ? Effect.succeed({ user, apiToken: undefined })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -192,7 +211,9 @@ const makeContext = async () => {
     requireStepUp: () => Effect.void,
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
   };
+
   const { fetchImpl } = makeFetch();
+
   const service = createEnterpriseService({
     db: db as any,
     schema,
@@ -202,22 +223,26 @@ const makeContext = async () => {
     authSecret,
     appleApi: { fetch: fetchImpl },
   });
+
   return { db, service, headers: { cookie: "mattrax_session=test" } };
 };
 
 describe("Apple Business Manager API flow", () => {
   it("uploads, syncs, assigns and serves a tenant-scoped ADE profile", async () => {
     const { db, service, headers } = await makeContext();
+
     const info = await runEffect(
       service.uploadAppleBusinessManagerToken(request(headers), organizationId, {
         content: JSON.stringify(await credentialJson()),
       }),
     );
+
     expect(info).toMatchObject({ configured: true, status: "active", credentialType: "abm_api" });
 
     const sync = await runEffect(
       service.syncAppleBusinessManager(request(headers), organizationId),
     );
+
     expect(sync).toMatchObject({ devices: 1, assigned: 1, unassigned: 0 });
     expect(db.store.abm_device[0]).toMatchObject({
       organizationId,
@@ -228,11 +253,13 @@ describe("Apple Business Manager API flow", () => {
     const assigned = await runEffect(
       service.assignAppleBusinessManagerDevice(request(headers), organizationId, "SERIAL-1"),
     );
+
     expect(assigned).toMatchObject({ status: "ok", mdmServerId: "mdm-server-1" });
 
     const link = await runEffect(
       service.getAbmDeviceProfileUrl(request(headers), organizationId, "SERIAL-1"),
     );
+
     const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]!);
     const profile = await runEffect(service.getAdeEnrollmentProfile(token));
     expect(profile.filename).toBe("serial-1.mobileconfig");
@@ -253,9 +280,11 @@ describe("Apple Business Manager API flow", () => {
 
   it("uploads and syncs Apps and Books, then installs with a consumed licence", async () => {
     const { db, service, headers } = await makeContext();
+
     const vpp = await runEffect(
       service.uploadVppToken(request(headers), organizationId, { content: vppToken() }),
     );
+
     expect(vpp).toMatchObject({ configured: true, status: "active", appleOrgId: "ORG12345" });
 
     const synced = await runEffect(service.syncVpp(request(headers), organizationId));
@@ -264,6 +293,7 @@ describe("Apple Business Manager API flow", () => {
     const result = await runEffect(
       service.installApplication(request(headers), organizationId, "app-1"),
     );
+
     expect(result).toMatchObject({ status: "ok", queued: 1, skipped: 0 });
     expect(db.store.device_vpp_assignment[0]).toMatchObject({
       organizationId,
@@ -291,6 +321,7 @@ describe("Apple Business Manager API flow", () => {
         devices: ["device-1"],
       }),
     );
+
     expect(installed).toMatchObject({ status: "ok", assigned: 1, queued: 1, failed: 0 });
     expect(db.store.device_command[0]).toMatchObject({ requestType: "InstallApplication" });
 
@@ -299,6 +330,7 @@ describe("Apple Business Manager API flow", () => {
         devices: ["device-1"],
       }),
     );
+
     expect(released).toMatchObject({ status: "ok", released: 1, failed: 0 });
     expect(db.store.vpp_asset[0]).toMatchObject({ availableLicenses: 5, assignedLicenses: 0 });
   });

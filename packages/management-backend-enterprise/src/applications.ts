@@ -26,37 +26,51 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const text = (value: unknown): string | undefined => {
   if (typeof value === "string") {
     const trimmed = value.trim();
+
     return trimmed === "" ? undefined : trimmed;
   }
+
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
+
   return undefined;
 };
 
 const booleanValue = (value: unknown): boolean | undefined => {
   if (typeof value === "boolean") return value;
+
   if (typeof value === "number") return value === 0 ? false : value === 1 ? true : undefined;
+
   if (typeof value === "string") {
     const normalised = value.trim().toLowerCase();
+
     if (["true", "yes", "1", "on"].includes(normalised)) return true;
+
     if (["false", "no", "0", "off"].includes(normalised)) return false;
   }
+
   return undefined;
 };
 
 const byteCount = (value: unknown): number | undefined => {
   const raw = text(value);
+
   if (raw === undefined) return undefined;
+
   if (!/^\d+$/.test(raw)) return undefined;
   const parsed = Number(raw);
+
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
 const ITEM_LIST = (queryResponses: unknown): unknown => {
   const root = record(queryResponses);
+
   if (!root) return undefined;
   const value = root.InstalledApplicationList;
+
   if (Array.isArray(value)) return value;
   const nested = record(value);
+
   return nested?.InstalledApplicationListItem ?? undefined;
 };
 
@@ -69,13 +83,17 @@ export const parseInstalledApplications = (
   queryResponses: unknown,
 ): InstalledApplicationReport[] | undefined => {
   const items = ITEM_LIST(queryResponses);
+
   if (!Array.isArray(items)) return undefined;
 
   const applications = new Map<string, InstalledApplicationReport>();
+
   for (const item of items) {
     const entry = record(item);
+
     if (!entry) continue;
     const bundleId = text(entry.Identifier) ?? text(entry.BundleIdentifier);
+
     if (!bundleId) continue;
     const name = text(entry.Name);
     const version = text(entry.Version);
@@ -97,5 +115,6 @@ export const parseInstalledApplications = (
         (managementFlags !== undefined && managementFlags > 0),
     });
   }
+
   return [...applications.values()];
 };

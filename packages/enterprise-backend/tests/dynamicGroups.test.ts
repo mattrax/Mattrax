@@ -177,6 +177,7 @@ describe("dynamic group evaluator", () => {
       ],
       none: [{ field: "health", op: "eq", value: "critical" }],
     });
+
     expect(evaluateDynamicGroupRules(combined, device(), { now })).toBe(true);
     expect(
       evaluateDynamicGroupRules(combined, device({ health: { level: "critical", stale: false } }), {
@@ -366,6 +367,7 @@ describe("dynamic group materialisation", () => {
       createdAt: now,
       updatedAt: now,
     };
+
     db.store.enterprise_group.push(manualGroup);
     db.store.group_device.push({ groupId: "manual-1", deviceId: "win-1", source: "manual" });
     const manual = await runEffect(previewDynamicGroup(db, "org-1", "manual-1", { now }));

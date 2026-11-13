@@ -16,16 +16,19 @@ type MeResponse = {
 const withCors = (response: Response, request: Request) => {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin");
+
   if (origin) {
     headers.set("access-control-allow-origin", origin);
     headers.set("vary", "origin");
   }
+
   headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
     "authorization, content-type, mcp-session-id, mcp-protocol-version, last-event-id",
   );
   headers.set("access-control-expose-headers", "mcp-session-id");
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -71,13 +74,21 @@ const unavailable = (request: Request) =>
 
 const statusMessage = (status: number) => {
   if (status === 400) return "Bad request";
+
   if (status === 401) return "Unauthorized";
+
   if (status === 403) return "Forbidden";
+
   if (status === 404) return "Not found";
+
   if (status === 409) return "Conflict";
+
   if (status === 422) return "Unprocessable request";
+
   if (status === 429) return "Too many requests";
+
   if (status >= 500) return "The Mattrax API returned an internal error";
+
   return "Request failed";
 };
 
@@ -97,10 +108,12 @@ const failureMessage = (operation: string, status: number, data: unknown) => {
             (data as { message?: unknown }).message ??
             (data as { detail?: unknown }).detail)
           : undefined;
+
   const summary =
     typeof description === "string" && description.trim()
       ? description.trim().replace(/\s+/g, " ").slice(0, 200)
       : statusMessage(status);
+
   return `${operation} failed (${status}): ${summary}`;
 };
 
@@ -108,9 +121,11 @@ const failureMessage = (operation: string, status: number, data: unknown) => {
 const toBase64 = (bytes: Uint8Array) => {
   const chunkSize = 0x8000;
   const chunks: string[] = [];
+
   for (let index = 0; index < bytes.length; index += chunkSize) {
     chunks.push(String.fromCharCode(...bytes.subarray(index, index + chunkSize)));
   }
+
   return btoa(chunks.join(""));
 };
 
@@ -120,6 +135,7 @@ const apiFetch = async (
   init: { method?: string; body?: unknown } = {},
 ) => {
   let response: Response;
+
   try {
     response = await env.API.fetch(
       new Request(`${API_BASE}${path}`, {
@@ -136,8 +152,10 @@ const apiFetch = async (
   } catch {
     throw new Error("The Mattrax API could not be reached");
   }
+
   const contentType = response.headers.get("content-type") ?? "";
   let data: unknown;
+
   if (contentType.includes("application/json") || contentType.includes("+json")) {
     data = await response.json().catch(() => null);
   } else if (
@@ -155,6 +173,7 @@ const apiFetch = async (
       bytes: bytes.byteLength,
     };
   }
+
   return {
     status: response.status,
     ok: response.ok,
@@ -180,6 +199,7 @@ const recordActivity = async (
         body: JSON.stringify(entry),
       }),
     );
+
     if (!response.ok) console.error(`MCP activity recording failed with status ${response.status}`);
   } catch (cause) {
     console.error("MCP activity recording failed", cause);
@@ -189,12 +209,16 @@ const recordActivity = async (
 const queryString = (value: unknown) => {
   if (typeof value !== "object" || value === null) return "";
   const params = new URLSearchParams();
+
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     if (raw === undefined || raw === null) continue;
+
     if (Array.isArray(raw)) for (const item of raw) params.append(key, String(item));
     else params.set(key, String(raw));
   }
+
   const text = params.toString();
+
   return text ? `?${text}` : "";
 };
 
@@ -203,11 +227,14 @@ const toolName = (identifier: string) => {
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[^A-Za-z0-9_]/g, "_")
     .toLowerCase();
+
   if (name.length <= 64) return name;
   // Tool names are commonly capped at 64 characters. Keep a stable suffix so
   // two long endpoint identifiers cannot collapse onto the same tool.
   let hash = 0;
+
   for (const character of identifier) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+
   return `${name.slice(0, 56)}_${Math.abs(hash).toString(36).slice(0, 7)}`;
 };
 
@@ -216,9 +243,13 @@ const pathParameters = (path: string) =>
 
 const shouldExpose = (path: string) => {
   if (path.includes("/account")) return false;
+
   if (path.includes("/mcp/activity")) return false;
+
   if (path === "/v1/me" || path === "/v1/deleteMe") return false;
+
   if (path.includes("email-change") || path.includes("email-verification")) return false;
+
   return true;
 };
 
@@ -273,15 +304,19 @@ const buildTools = (authorization: string, me: MeResponse) => {
 
   for (const [identifier, endpoint] of Object.entries(enterpriseApi.endpoints)) {
     const path = endpoint.path;
+
     if (!shouldExpose(path)) continue;
     const name = toolName(identifier);
+
     if (name === "list_tenants" || name === "query_data" || rest.has(name)) continue;
     const placeholders = pathParameters(path);
+
     const parameters = Schema.Struct({
       ...Object.fromEntries(placeholders.map((parameter) => [parameter, Schema.String])),
       queryParams: Schema.optional(Schema.Unknown),
       body: Schema.optional(Schema.Unknown),
     });
+
     tools.push(
       Tool.make(name, {
         description: `${identifier.replace(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
@@ -309,7 +344,9 @@ const buildTools = (authorization: string, me: MeResponse) => {
             path,
             status: result.status,
           });
+
           if (!result.ok) throw new Error(failureMessage("Search", result.status, result.data));
+
           return result.data;
         },
         catch: (error) => error,
@@ -318,8 +355,10 @@ const buildTools = (authorization: string, me: MeResponse) => {
       Effect.tryPromise({
         try: async () => {
           const result = await apiFetch(authorization, "/api/openapi.json");
+
           if (!result.ok)
             throw new Error(failureMessage("OpenAPI discovery", result.status, result.data));
+
           return result.data;
         },
         catch: (error) => error,
@@ -328,6 +367,7 @@ const buildTools = (authorization: string, me: MeResponse) => {
       Effect.tryPromise({
         try: async () => {
           const path = `/api/v1/tenants/${encodeURIComponent(params.tenantId)}/dashboard-query`;
+
           const result = await apiFetch(authorization, path, {
             method: "POST",
             body: {
@@ -337,13 +377,16 @@ const buildTools = (authorization: string, me: MeResponse) => {
               ...(params.limit ? { limit: params.limit } : {}),
             },
           });
+
           await recordActivity(authorization, params.tenantId, {
             tool: "query_data",
             method: "POST",
             path,
             status: result.status,
           });
+
           if (!result.ok) throw new Error(failureMessage("Query", result.status, result.data));
+
           return result.data;
         },
         catch: (error) => error,
@@ -357,14 +400,19 @@ const buildTools = (authorization: string, me: MeResponse) => {
           const path = endpoint.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
             encodeURIComponent(String(params[key] ?? "")),
           );
+
           const query = queryString(params.queryParams);
+
           const body =
             endpoint.method === "GET" || endpoint.method === "HEAD" ? undefined : params.body;
+
           const result = await apiFetch(authorization, `${path}${query}`, {
             method: endpoint.method,
             ...(body === undefined ? {} : { body }),
           });
+
           const tenantId = typeof params.tenantId === "string" ? params.tenantId : undefined;
+
           if (tenantId)
             await recordActivity(authorization, tenantId, {
               tool: name,
@@ -372,10 +420,12 @@ const buildTools = (authorization: string, me: MeResponse) => {
               path,
               status: result.status,
             });
+
           if (!result.ok)
             throw new Error(
               failureMessage(`${endpoint.method} ${endpoint.path}`, result.status, result.data),
             );
+
           return { status: result.status, body: result.data };
         },
         catch: (error) => error,
@@ -388,9 +438,11 @@ const buildTools = (authorization: string, me: MeResponse) => {
 const mcpLayer = (authorization: string, me: MeResponse) => {
   const built = buildTools(authorization, me);
   const toolkit = Toolkit.make(...(built.tools as any));
+
   const registrations = McpServer.toolkit(toolkit as any).pipe(
     Layer.provide(toolkit.toLayer(built.handlers as any)),
   );
+
   return McpServer.layerHttpRequestScoped({
     name: SERVER_NAME,
     version: SERVER_VERSION,
@@ -404,14 +456,17 @@ const mcpLayer = (authorization: string, me: MeResponse) => {
 
 const handleMcp = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
+
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }), request);
   }
 
   const authorization = request.headers.get("authorization") ?? "";
+
   if (!/^Bearer\s+\S+/i.test(authorization)) return unauthorized(url.origin, request);
 
   let meResponse: Response;
+
   try {
     meResponse = await env.API.fetch(
       new Request("https://api.mattrax.internal/api/v1/me", {
@@ -424,29 +479,38 @@ const handleMcp = async (request: Request): Promise<Response> => {
     );
   } catch (cause) {
     console.error("MCP identity lookup failed", cause);
+
     return unavailable(request);
   }
+
   // Only a rejected credential is an MCP authentication failure. Anything else
   // (including a 5xx or a malformed response) is an availability problem.
   if (meResponse.status === 401 || meResponse.status === 403)
     return unauthorized(url.origin, request);
+
   if (!meResponse.ok) {
     console.error(`MCP identity lookup failed with status ${meResponse.status}`);
+
     return unavailable(request);
   }
+
   let me: MeResponse;
+
   try {
     const body = (await meResponse.json()) as Partial<MeResponse> | null;
+
     if (!body || typeof body !== "object" || !body.user || !Array.isArray(body.tenants))
       throw new Error("Unexpected identity response");
     me = body as MeResponse;
   } catch (cause) {
     console.error("MCP identity response could not be read", cause);
+
     return unavailable(request);
   }
 
   const layer = mcpLayer(authorization, me).pipe(Layer.provide(HttpServer.layerServices));
   const web = HttpRouter.toWebHandler(layer as any);
+
   try {
     return withCors(await web.handler(request), request);
   } finally {

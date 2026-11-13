@@ -30,6 +30,7 @@ const queryClient = new QueryClient({
       retry: (count, error) => {
         // Client errors (4xx) will not get better by retrying.
         const tag = errorTag(error);
+
         if (
           tag &&
           (tag.startsWith("Enterprise") ||
@@ -38,6 +39,7 @@ const queryClient = new QueryClient({
             tag.startsWith("Session"))
         )
           return false;
+
         return count < 1;
       },
     },
@@ -56,12 +58,14 @@ function PostHogIdentity() {
   createEffect(
     () => {
       const state = session();
+
       return state.isPending ? undefined : (state.data?.user ?? null);
     },
     (user) => {
       if (user !== undefined) syncPostHogUser(user);
     },
   );
+
   return null;
 }
 
@@ -81,6 +85,7 @@ function BootSplash() {
 function ErrorFallback(props: { error: unknown; reset: () => void }) {
   console.error("Mattrax page error", props.error);
   const presentation = errorPresentation(props.error);
+
   return (
     <div class="dark flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
       <div class="w-full max-w-md rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/50">

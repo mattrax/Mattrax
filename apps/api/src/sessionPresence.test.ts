@@ -3,7 +3,9 @@ import { SESSION_PRESENCE_COOKIE, withSessionPresence } from "./sessionPresence.
 
 const responseWithCookies = (cookies: ReadonlyArray<string>) => {
   const headers = new Headers({ "content-type": "application/json" });
+
   for (const cookie of cookies) headers.append("set-cookie", cookie);
+
   return new Response("{}", { headers });
 };
 
@@ -19,6 +21,7 @@ describe("session presence cookie", () => {
       ]),
       { sessionCookieName: "__Host-mattrax_session", secure: true },
     );
+
     const cookies = setCookies(response);
     expect(cookies).toHaveLength(3);
     expect(cookies[0]).toContain("__Host-mattrax_session=abc123");
@@ -39,6 +42,7 @@ describe("session presence cookie", () => {
       responseWithCookies(["__Host-mattrax_session=; Path=/; Max-Age=0; HttpOnly"]),
       { sessionCookieName: "__Host-mattrax_session", secure: false },
     );
+
     const presence = setCookies(response).at(-1)!;
     expect(presence).toContain(`${SESSION_PRESENCE_COOKIE}=;`);
     expect(presence).toContain("Max-Age=0");
@@ -48,10 +52,12 @@ describe("session presence cookie", () => {
 
   it("leaves responses that do not touch the session alone", () => {
     const original = responseWithCookies(["theme=dark; Path=/"]);
+
     const response = withSessionPresence(original, {
       sessionCookieName: "__Host-mattrax_session",
       secure: true,
     });
+
     expect(response).toBe(original);
   });
 
@@ -60,6 +66,7 @@ describe("session presence cookie", () => {
       responseWithCookies(["__Host-mattrax_session=abc; Path=/; HttpOnly"]),
       { sessionCookieName: "__Host-mattrax_session", secure: true },
     );
+
     const presence = setCookies(response).at(-1)!;
     const expiresAt = Number(/v1\.(\d+)/.exec(presence)?.[1]);
     expect(expiresAt).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);

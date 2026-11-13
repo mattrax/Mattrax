@@ -159,19 +159,25 @@ const responses: Record<string, unknown> = {
 
 const installFetch = (overrides: Record<string, () => Response | Promise<Response>> = {}) => {
   const calls: string[] = [];
+
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
     const override = overrides[url];
+
     if (override) return override();
     const body = responses[url];
+
     if (body === undefined) return new Response("not found", { status: 404 });
+
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
   });
+
   vi.stubGlobal("fetch", fetchMock);
+
   return calls;
 };
 
@@ -261,7 +267,9 @@ describe("policy catalogue loaders", () => {
     installFetch({
       "/catalog/windows/index.json": () => {
         attempts += 1;
+
         if (attempts === 1) return new Response("boom", { status: 503 });
+
         return new Response(JSON.stringify(responses["/catalog/windows/index.json"]), {
           status: 200,
         });
@@ -281,7 +289,9 @@ describe("policy catalogue loaders", () => {
     installFetch({
       "/catalog/windows/windows--settings--missing.json": () => {
         attempts += 1;
+
         if (attempts === 1) return new Response("nope", { status: 500 });
+
         return new Response(
           JSON.stringify(windowsCollection("windows/settings/missing", "Missing")),
           { status: 200 },

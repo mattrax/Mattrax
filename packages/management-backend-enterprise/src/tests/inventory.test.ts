@@ -127,6 +127,7 @@ describe("normalizeBoolean", () => {
   it("accepts the FileVault spellings Apple and clients use", () => {
     for (const value of [true, 1, "Enabled", "enabled", " YES "])
       expect(normalizeBoolean(value)).toBe(true);
+
     for (const value of [false, 0, "Disabled", "disabled", " false "])
       expect(normalizeBoolean(value)).toBe(false);
   });

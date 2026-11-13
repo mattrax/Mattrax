@@ -56,6 +56,7 @@ export const checkReadiness = async ({
         timer = setTimeout(() => reject(new Error("readiness check timed out")), timeoutMs);
       }),
     ]);
+
     return {
       httpStatus: 200,
       body: {
@@ -67,6 +68,7 @@ export const checkReadiness = async ({
     };
   } catch (error) {
     const timedOut = error instanceof Error && error.message === "readiness check timed out";
+
     return {
       httpStatus: 503,
       body: {

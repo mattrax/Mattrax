@@ -107,7 +107,9 @@ const toBytes = (value: ArrayBuffer | Uint8Array): Uint8Array =>
 
 const bytesEqual = (left: Uint8Array, right: Uint8Array): boolean => {
   if (left.byteLength !== right.byteLength) return false;
+
   for (let i = 0; i < left.byteLength; i++) if (left[i] !== right[i]) return false;
+
   return true;
 };
 
@@ -116,13 +118,18 @@ const bytesToHex = (bytes: Uint8Array): string =>
 
 const decodeBase64 = (value: string, label: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
+
   if (cleaned.length === 0) throw new Error(`${label} is empty`);
+
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cleaned)) {
     throw new Error(`${label} is not valid base64`);
   }
+
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
+
   try {
     const binary = atob(padded);
+
     return Uint8Array.from(binary, (char) => char.charCodeAt(0));
   } catch {
     throw new Error(`${label} is not valid base64`);
@@ -134,7 +141,9 @@ const decodePemCertificate = (pem: string): Uint8Array => {
     /-----BEGIN (?:TRUSTED )?CERTIFICATE-----([\s\S]*?)-----END (?:TRUSTED )?CERTIFICATE-----/.exec(
       pem,
     );
+
   const base64 = match ? match[1]! : pem;
+
   return decodeBase64(base64, "CA certificate");
 };
 
@@ -167,35 +176,45 @@ const splitDnParts = (dn: string): string[] => {
   const parts: string[] = [];
   let current = "";
   let quoted = false;
+
   for (let i = 0; i < dn.length; i++) {
     const char = dn[i]!;
+
     if (char === "\\") {
       current += char;
+
       if (i + 1 < dn.length) current += dn[++i]!;
       continue;
     }
+
     if (char === '"') {
       quoted = !quoted;
       current += char;
       continue;
     }
+
     if (!quoted && (char === "," || char === ";" || char === "+")) {
       parts.push(current);
       current = "";
       continue;
     }
+
     current += char;
   }
+
   if (current.trim().length > 0) parts.push(current);
+
   return parts;
 };
 
 const unquoteDnValue = (value: string): string => {
   const trimmed = value.trim();
+
   const unquoted =
     trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
       ? trimmed.slice(1, -1)
       : trimmed;
+
   return unquoted.replace(/\\(.)/g, "$1");
 };
 
@@ -205,14 +224,18 @@ const unquoteDnValue = (value: string): string => {
  */
 export function parseSubjectDn(dn: string): SubjectDnAttribute[] {
   const attributes: SubjectDnAttribute[] = [];
+
   for (const part of splitDnParts(dn)) {
     const separator = part.indexOf("=");
+
     if (separator === -1) continue;
     const type = part.slice(0, separator).trim();
     const value = unquoteDnValue(part.slice(separator + 1));
+
     if (type.length === 0 || value.length === 0) continue;
     attributes.push({ type: normalizeAttributeType(type), value });
   }
+
   return attributes;
 }
 
@@ -220,8 +243,11 @@ const attributeValueToString = (value: pkijs.AttributeValueType): string => {
   const block = (
     value as unknown as { valueBlock?: { value?: unknown; valueHexView?: Uint8Array } }
   ).valueBlock;
+
   if (typeof block?.value === "string") return block.value;
+
   if (block?.valueHexView) return new TextDecoder().decode(block.valueHexView);
+
   return "";
 };
 
@@ -244,8 +270,10 @@ const identitySubjectMatches = (
   identitySubject: string,
 ): boolean => {
   const provided = parseSubjectDn(identitySubject);
+
   if (provided.length === 0) {
     const expected = normalizeDnValue(identitySubject);
+
     return signerSubject.some(
       (attribute) =>
         (attribute.type === "CN" || attribute.type === "OU") &&
@@ -257,8 +285,10 @@ const identitySubjectMatches = (
     const signerValues = signerSubject
       .filter((candidate) => candidate.type === attribute.type)
       .map((candidate) => normalizeDnValue(candidate.value));
+
     if (!signerValues.includes(normalizeDnValue(attribute.value))) return false;
   }
+
   return true;
 };
 
@@ -267,6 +297,7 @@ const normalizeSerial = (value: string): string => {
     .replace(/^0x/i, "")
     .replace(/[^0-9a-f]/gi, "")
     .toLowerCase();
+
   return hex.replace(/^0+/, "") || "0";
 };
 
@@ -275,7 +306,9 @@ const normalizeFingerprint = (value: string): string =>
 
 const certificateSerialHex = (cert: pkijs.Certificate): string => {
   const serial = cert.serialNumber.valueBlock as unknown as { valueHexView?: Uint8Array };
+
   if (serial.valueHexView) return bytesToHex(serial.valueHexView);
+
   return normalizeSerial(cert.serialNumber.valueBlock.toString());
 };
 
@@ -284,6 +317,7 @@ const certificateFingerprintSha256 = async (cert: pkijs.Certificate): Promise<st
   // fingerprint matches the certificate exactly as it was transmitted.
   const der = new Uint8Array(cert.toSchema().toBER(false));
   const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(der));
+
   return bytesToHex(new Uint8Array(digest));
 };
 
@@ -292,9 +326,12 @@ const findExtension = (cert: pkijs.Certificate, oid: string): pkijs.Extension | 
 
 const isCertificateAuthority = (cert: pkijs.Certificate): boolean => {
   const extension = findExtension(cert, BASIC_CONSTRAINTS_OID);
+
   if (!extension) return false;
+
   try {
     const value = extension.parsedValue;
+
     return value instanceof pkijs.BasicConstraints && value.cA;
   } catch {
     return false;
@@ -303,9 +340,12 @@ const isCertificateAuthority = (cert: pkijs.Certificate): boolean => {
 
 const hasClientAuthEku = (cert: pkijs.Certificate): boolean => {
   const extension = findExtension(cert, EXT_KEY_USAGE_OID);
+
   if (!extension) return false;
+
   try {
     const value = extension.parsedValue;
+
     return value instanceof pkijs.ExtKeyUsage && value.keyPurposes.includes(CLIENT_AUTH_EKU_OID);
   } catch {
     return false;
@@ -316,6 +356,7 @@ const assertValidityWindow = (cert: pkijs.Certificate, now: Date): void => {
   if (now.getTime() < cert.notBefore.value.getTime()) {
     throw new Error("signer certificate is not yet valid");
   }
+
   if (now.getTime() > cert.notAfter.value.getTime()) {
     throw new Error("signer certificate has expired");
   }
@@ -337,13 +378,16 @@ const findIssuerCertificate = async (
 ): Promise<pkijs.Certificate> => {
   for (const candidate of caCertificates) {
     if (!isCertificateAuthority(candidate)) continue;
+
     if (!signer.issuer.isEqual(candidate.subject)) continue;
+
     try {
       if (await signer.verify(candidate)) return candidate;
     } catch {
       // Try the next candidate.
     }
   }
+
   throw new Error("signer certificate does not chain to a supplied CA");
 };
 
@@ -358,6 +402,7 @@ const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
   if (bytes.byteLength === 0) throw new Error("signature is empty");
 
   let contentInfo: pkijs.ContentInfo;
+
   try {
     contentInfo = pkijs.ContentInfo.fromBER(toArrayBuffer(bytes));
   } catch (cause) {
@@ -367,9 +412,11 @@ const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
   if (contentInfo.contentType !== SIGNED_DATA_OID) {
     throw new Error(`signature is not CMS SignedData (content type ${contentInfo.contentType})`);
   }
+
   if (!contentInfo.content) throw new Error("signature is missing SignedData content");
 
   let signedData: pkijs.SignedData;
+
   try {
     signedData = new pkijs.SignedData({ schema: contentInfo.content });
   } catch (cause) {
@@ -379,6 +426,7 @@ const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
   const certificates = (signedData.certificates ?? []).filter(
     (certificate): certificate is pkijs.Certificate => certificate instanceof pkijs.Certificate,
   );
+
   return { signedData, certificates };
 };
 
@@ -393,18 +441,22 @@ const verifyCmsSignature = async (
       `CMS signature must contain exactly one SignerInfo (found ${signedData.signerInfos.length})`,
     );
   }
+
   if (certificates.length === 0) {
     throw new Error("CMS signature must contain at least one certificate");
   }
 
   const eContent = signedData.encapContentInfo.eContent;
+
   if (eContent) {
     let embedded: Uint8Array;
+
     try {
       embedded = new Uint8Array(eContent.getValue());
     } catch (cause) {
       throw new Error(`CMS eContent could not be read: ${errorMessage(cause)}`);
     }
+
     if (body && !bytesEqual(embedded, body)) {
       throw new Error("CMS eContent does not match the request body");
     }
@@ -414,6 +466,7 @@ const verifyCmsSignature = async (
 
   const data = toArrayBuffer(body ?? new Uint8Array(0));
   let result: pkijs.SignedDataVerifyResult;
+
   try {
     result = await signedData.verify({
       signer: 0,
@@ -427,7 +480,9 @@ const verifyCmsSignature = async (
   }
 
   if (result.signatureVerified !== true) throw new Error("CMS signature is invalid");
+
   if (!result.signerCertificate) throw new Error("CMS signer certificate was not found");
+
   return result.signerCertificate;
 };
 
@@ -451,9 +506,11 @@ export async function verifyMdmSignature(
   if (typeof signature !== "string" || signature.length === 0) {
     throw new Error("Mdm-Signature is empty");
   }
+
   if (signature.length > MAX_MDM_SIGNATURE_BASE64_LENGTH) {
     throw new Error("Mdm-Signature is too large");
   }
+
   if (!Array.isArray(caCertPems) || caCertPems.length === 0) {
     throw new Error("at least one CA certificate is required");
   }
@@ -466,6 +523,7 @@ export async function verifyMdmSignature(
   const signer = await verifyCmsSignature(signedData, certificates, bodyBytes, now);
 
   assertValidityWindow(signer, now);
+
   if (!hasClientAuthEku(signer)) {
     throw new Error("signer certificate is missing the client authentication EKU");
   }
@@ -484,12 +542,14 @@ export async function verifyMdmSignature(
   ) {
     throw new Error("signer certificate subject does not match the mTLS identity certificate");
   }
+
   if (
     options.identityCertificateSerial !== undefined &&
     normalizeSerial(options.identityCertificateSerial) !== normalizeSerial(serial)
   ) {
     throw new Error("signer certificate serial does not match the mTLS identity certificate");
   }
+
   if (
     options.identityCertificateFingerprintSha256 !== undefined &&
     normalizeFingerprint(options.identityCertificateFingerprintSha256) !== fingerprintSha256
@@ -520,20 +580,24 @@ export async function verifyScepPkcsReqSignature(
 ): Promise<VerifiedScepPkcsReqSignature> {
   const input = options.signature;
   let cmsBytes: Uint8Array;
+
   if (typeof input === "string") {
     if (input.length > MAX_SCEP_CMS_BASE64_LENGTH) {
       throw new Error("SCEP PKCSReq signature is too large");
     }
+
     cmsBytes = decodeBase64(input, "SCEP PKCSReq signature");
   } else {
     cmsBytes = toBytes(input);
   }
+
   if (cmsBytes.byteLength > MAX_SCEP_CMS_BASE64_LENGTH) {
     throw new Error("SCEP PKCSReq signature is too large");
   }
 
   const { signedData, certificates } = parseSignedData(cmsBytes);
   const eContent = signedData.encapContentInfo.eContent;
+
   if (!eContent) throw new Error("SCEP PKCSReq signature must encapsulate eContent");
 
   const now = new Date();
@@ -541,19 +605,23 @@ export async function verifyScepPkcsReqSignature(
   assertValidityWindow(signer, now);
 
   const selfSigned = signer.issuer.isEqual(signer.subject);
+
   if (selfSigned) {
     let valid = false;
+
     try {
       valid = await signer.verify();
     } catch {
       valid = false;
     }
+
     if (!valid) throw new Error("SCEP PKCSReq signer certificate is self-signed but invalid");
   } else if (options.caCertPems && options.caCertPems.length > 0) {
     await findIssuerCertificate(signer, parseCaCertificates(options.caCertPems));
   }
 
   const signerSubject = certificateSubjectAttributes(signer);
+
   return {
     subject: formatSubject(signerSubject),
     serial: certificateSerialHex(signer),

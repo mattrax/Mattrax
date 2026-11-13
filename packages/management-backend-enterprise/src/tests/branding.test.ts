@@ -45,6 +45,7 @@ const setup = (organization: Record<string, unknown>) => {
       },
     ],
   });
+
   return ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 };
 
@@ -103,6 +104,7 @@ describe("DDM management declaration branding", () => {
       displayName: "First Brand",
       supportEmail: "first@example.test",
     });
+
     // The device identity certificate scopes every lookup to org-1, so a
     // mismatched tenant must surface as an unknown device instead of falling
     // back to another tenant's branding.

@@ -1,6 +1,7 @@
 import { Context, type Effect } from "effect";
 
 type Dynamic = any;
+
 type HeadersRecord = Record<string, string | string[] | undefined>;
 
 export type EnterpriseAuthUser = {

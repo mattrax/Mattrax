@@ -19,6 +19,7 @@ function withSecurityHeaders(request: Request, response: Response): Response {
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
 
   const contentType = headers.get("content-type") ?? "";
+
   if (contentType.includes("text/html")) {
     headers.set(
       "content-security-policy",
@@ -48,6 +49,7 @@ function withSecurityHeaders(request: Request, response: Response): Response {
 export default {
   async fetch(request: Request): Promise<Response> {
     const response = await handleRequest(request);
+
     return withSecurityHeaders(request, response);
   },
 } satisfies ExportedHandler<Env>;

@@ -11,10 +11,12 @@ import {
 } from "@mattrax/enterprise-domain";
 
 type DeviceStatusValue = typeof DeviceStatus.Type;
+
 type DeviceProtocolValue = typeof DeviceProtocol.Type;
 
 export const DEVICE_SEARCH_DEFAULT_LIMIT = 50;
 export const DEVICE_SEARCH_MAX_LIMIT = 200;
+
 /** Hard ceiling for CSV exports so a bad request cannot buffer an entire fleet. */
 export const DEVICE_EXPORT_MAX_ROWS = 10_000;
 
@@ -47,10 +49,13 @@ export type DeviceSearchFilters = {
 /** Coerce a query-string value (or JSON number) into an integer. */
 const integer = (value: unknown, fallback: number) => {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
+
     if (Number.isFinite(parsed)) return Math.trunc(parsed);
   }
+
   return fallback;
 };
 
@@ -59,6 +64,7 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 
 const optionalText = (value: string | undefined) => {
   const text = value?.trim();
+
   return text ? text : undefined;
 };
 
@@ -73,26 +79,33 @@ export const normalizeDeviceSearchQuery = (
   now: Date = new Date(),
 ): DeviceSearchFilters => {
   const staleDays = query.staleDays === undefined ? undefined : integer(query.staleDays, 0);
+
   if (staleDays !== undefined && staleDays < 0)
     throw new EnterpriseBadRequest({ message: "staleDays must not be negative" });
 
   let notSeenBefore: Date | undefined;
+
   if (query.notSeenSince) {
     const parsed = new Date(query.notSeenSince);
+
     if (Number.isNaN(parsed.getTime()))
       throw new EnterpriseBadRequest({ message: "notSeenSince must be an ISO timestamp" });
     notSeenBefore = parsed;
   }
+
   if (staleDays !== undefined && staleDays > 0) {
     const cutoff = new Date(now.getTime() - staleDays * MS_PER_DAY);
+
     // `lastSeenAt < cutoff`: an earlier cutoff matches fewer devices, so with
     // both filters the earlier one is the stricter constraint.
     if (!notSeenBefore || cutoff < notSeenBefore) notSeenBefore = cutoff;
   }
 
   const structured = parseDeviceQueryText(query.query);
+
   if (structured) {
     const problem = deviceQueryProblem(structured);
+
     if (problem) throw new EnterpriseBadRequest({ message: problem });
   }
 
@@ -113,6 +126,7 @@ export const normalizeDeviceSearchQuery = (
 };
 
 const CSV_SPECIAL = /[",\r\n]/;
+
 /**
  * Leading characters Excel/Sheets interpret as a formula (or as a way to break
  * out of a cell). Prefixing with an apostrophe keeps the value literal.
@@ -123,6 +137,7 @@ const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 export const csvEscape = (value: unknown) => {
   const raw = value == null ? "" : String(value);
   const text = CSV_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
+
   return CSV_SPECIAL.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 };
 
@@ -132,7 +147,9 @@ export const toCsv = (
   rows: Iterable<ReadonlyArray<unknown>>,
 ): string => {
   const lines = [header.map(csvEscape).join(",")];
+
   for (const row of rows) lines.push(row.map(csvEscape).join(","));
+
   return `${lines.join("\r\n")}\r\n`;
 };
 

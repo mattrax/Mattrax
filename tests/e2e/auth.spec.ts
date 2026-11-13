@@ -51,12 +51,15 @@ test.describe("authentication and onboarding", () => {
   test("branches to organisation sign-in when the domain has SSO", async ({ page }) => {
     await page.route("**/api/v1/sso/azure/start*", async (route) => {
       const url = new URL(route.request().url());
+
       if (url.searchParams.get("discover") === "1") {
         await route.fulfill({
           json: { available: true, organization: { name: "Acme Corp" } },
         });
+
         return;
       }
+
       // The redirect must carry the same return target as password sign-in.
       expect(url.searchParams.get("returnTo")).toBe("/t/example/devices");
       await route.fulfill({

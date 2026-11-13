@@ -8,6 +8,7 @@ describe("plist", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><string>hello</string></plist>`;
+
       const result = await parsePlist(xml).pipe(Effect.runPromise);
       expect(result).toBe("hello");
     });
@@ -27,6 +28,7 @@ describe("plist", () => {
   <real>3.14</real>
 </dict>
 </plist>`;
+
       const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(result.name).toBe("Test");
       expect(result.count).toBe(42);
@@ -37,6 +39,7 @@ describe("plist", () => {
     it("fails on invalid XML", async () => {
       const result = await parsePlist("not xml").pipe(Effect.runPromiseExit);
       expect(result._tag).toBe("Failure");
+
       if (result._tag === "Failure") {
         expect(String(result.cause)).toContain("PlistParseError");
       }
@@ -55,6 +58,7 @@ describe("plist", () => {
       const result = await serializePlist({ "x<y": `<script>alert("xss'or'1'='1")</script>` }).pipe(
         Effect.runPromise,
       );
+
       expect(result).not.toContain("<script>");
       expect(result).toContain("<key>x&lt;y</key>");
       expect(result).toContain("&apos;or&apos;");
@@ -68,6 +72,7 @@ describe("plist", () => {
         Tokens: ["one", "two"],
         Nested: { key: "value" },
       };
+
       const plist = await serializePlist(original).pipe(Effect.runPromise);
       const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(parsed.MessageType).toBe("Authenticate");

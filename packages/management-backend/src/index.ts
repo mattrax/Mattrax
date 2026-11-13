@@ -4,11 +4,14 @@ export class ManagementNotSupported extends Schema.TaggedError<ManagementNotSupp
   "ManagementNotSupported",
   {},
 ) {}
+
 export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {}) {}
+
 export class ServerInitiatedUnenrollment extends Schema.TaggedError<ServerInitiatedUnenrollment>()(
   "ServerInitiatedUnenrollment",
   {},
 ) {}
+
 export class InternalServerError extends Schema.TaggedError<InternalServerError>()(
   "InternalServerError",
   {},
@@ -50,6 +53,7 @@ export const CheckinScope = Schema.Union([
     mdmOrigin: MdmOrigin,
   }),
 ]);
+
 export type CheckinScope = typeof CheckinScope.Type;
 
 export const AppleDeviceEvent = Schema.Union([
@@ -98,6 +102,7 @@ export const AppleDeviceEvent = Schema.Union([
     ),
   }),
 ]);
+
 export type AppleDeviceEvent = typeof AppleDeviceEvent.Type;
 
 // Mutually exclusive: what the device should do after a checkin.
@@ -113,6 +118,7 @@ export const ManagementManifest = Schema.Union([
     serverToken: Schema.String,
   }),
 ]);
+
 export type ManagementManifest = typeof ManagementManifest.Type;
 
 export const DdmTokens = Schema.Struct({
@@ -123,12 +129,14 @@ export const DdmTokens = Schema.Struct({
   /** Combined token that equals the DdmSync server token. */
   declarationsToken: Schema.String,
 });
+
 export type DdmTokens = typeof DdmTokens.Type;
 
 export const DdmDeclarationItem = Schema.Struct({
   identifier: Schema.String,
   serverToken: Schema.String,
 });
+
 export type DdmDeclarationItem = typeof DdmDeclarationItem.Type;
 
 export const DdmDeclarationItems = Schema.Struct({
@@ -137,6 +145,7 @@ export const DdmDeclarationItems = Schema.Struct({
   assets: Schema.Array(DdmDeclarationItem),
   management: Schema.Array(DdmDeclarationItem),
 });
+
 export type DdmDeclarationItems = typeof DdmDeclarationItems.Type;
 
 export const WindowsDiscoveryRequest = Schema.Struct({
@@ -154,6 +163,7 @@ export const WindowsDiscoveryRequest = Schema.Struct({
    */
   tenantToken: Schema.optional(Schema.String),
 });
+
 export type WindowsDiscoveryRequest = typeof WindowsDiscoveryRequest.Type;
 
 export const WindowsDiscoveryResponse = Schema.Struct({
@@ -163,6 +173,7 @@ export const WindowsDiscoveryResponse = Schema.Struct({
   enrollmentServiceUrl: Schema.String,
   authServiceUrl: Schema.optional(Schema.String),
 });
+
 export type WindowsDiscoveryResponse = typeof WindowsDiscoveryResponse.Type;
 
 export const WindowsManagementScope = Schema.Struct({
@@ -174,6 +185,7 @@ export const WindowsManagementScope = Schema.Struct({
   tenantToken: Schema.optional(Schema.String),
   mdmOrigin: MdmOrigin,
 });
+
 export type WindowsManagementScope = typeof WindowsManagementScope.Type;
 
 export const WindowsEnrollmentPolicy = Schema.Struct({
@@ -182,6 +194,7 @@ export const WindowsEnrollmentPolicy = Schema.Struct({
   renewalPeriodSeconds: Schema.String,
   authToken: Schema.String,
 });
+
 export type WindowsEnrollmentPolicy = typeof WindowsEnrollmentPolicy.Type;
 
 /** Request-scoped tenant identity for the WSTEP policy endpoint. */
@@ -200,6 +213,7 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   /** Tenant token from the enrollment URL (or provisioning context). */
   tenantToken: Schema.optional(Schema.String),
 });
+
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;
 
 export const WindowsEnrollmentResult = Schema.Struct({
@@ -210,6 +224,7 @@ export const WindowsEnrollmentResult = Schema.Struct({
   secret: Schema.String,
   providerId: Schema.String,
 });
+
 export type WindowsEnrollmentResult = typeof WindowsEnrollmentResult.Type;
 
 export const WindowsSyncMLCommand = Schema.Struct({
@@ -219,6 +234,7 @@ export const WindowsSyncMLCommand = Schema.Struct({
   data: Schema.optional(Schema.String),
   format: Schema.optional(Schema.String),
 });
+
 export type WindowsSyncMLCommand = typeof WindowsSyncMLCommand.Type;
 
 export const WindowsManagementRequest = Schema.Struct({
@@ -229,11 +245,13 @@ export const WindowsManagementRequest = Schema.Struct({
   statuses: Schema.Array(Schema.Unknown),
   alerts: Schema.Array(Schema.Unknown),
 });
+
 export type WindowsManagementRequest = typeof WindowsManagementRequest.Type;
 
 export const WindowsManagementResponse = Schema.Struct({
   commands: Schema.Array(WindowsSyncMLCommand),
 });
+
 export type WindowsManagementResponse = typeof WindowsManagementResponse.Type;
 
 export const WindowsDeviceEvent = Schema.Union([
@@ -245,6 +263,7 @@ export const WindowsDeviceEvent = Schema.Union([
     commandRef: Schema.optional(Schema.String),
   }),
 ]);
+
 export type WindowsDeviceEvent = typeof WindowsDeviceEvent.Type;
 
 export declare namespace ManagementBackend {

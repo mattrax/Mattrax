@@ -19,8 +19,10 @@ type FetchHandler = (
 function mockLayer(handler: FetchHandler) {
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
     return handler(url, init);
   };
+
   return FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)));
 }
 
@@ -32,18 +34,26 @@ function run<A, E>(effect: Effect.Effect<A, E, AzureGraph>, handler: FetchHandle
 
 function header(init: RequestInit | undefined, name: string): string | undefined {
   const headers = init?.headers;
+
   if (!headers) return undefined;
+
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
+
   if (Array.isArray(headers)) return new Headers(headers).get(name) ?? undefined;
   const record = headers as Record<string, string>;
+
   return record[name.toLowerCase()] ?? record[name];
 }
 
 function bodyText(init: RequestInit | undefined): string {
   const body = init?.body;
+
   if (typeof body === "string") return body;
+
   if (body instanceof URLSearchParams) return body.toString();
+
   if (body instanceof Uint8Array) return new TextDecoder().decode(body);
+
   return "";
 }
 
@@ -88,16 +98,20 @@ describe("AzureGraph", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.domains(tenantId);
       }),
       (url, init) => {
         if (isTokenRequest(url)) {
           tokenMethod = init?.method;
           tokenBodies.push(bodyText(init));
+
           return tokenResponse("token-1");
         }
+
         authorization = header(init, "authorization");
         domainsUrl = url;
+
         return domainsResponse([contosoDomain]);
       },
     );
@@ -122,13 +136,16 @@ describe("AzureGraph", () => {
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
         yield* graph.domains(tenantId);
+
         return yield* graph.domains(tenantId);
       }),
       (url) => {
         if (isTokenRequest(url)) {
           tokenCalls++;
+
           return tokenResponse();
         }
+
         return domainsResponse([contosoDomain]);
       },
     );
@@ -147,11 +164,13 @@ describe("AzureGraph", () => {
         const graph = yield* AzureGraph;
         const first = yield* graph.usersDelta(tenantId);
         const second = yield* graph.usersDelta(tenantId, first.nextLink!);
+
         return { first, second };
       }),
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         requestedUrls.push(url);
+
         if (url === nextLink) {
           return json({
             value: [
@@ -169,6 +188,7 @@ describe("AzureGraph", () => {
             "@odata.deltaLink": deltaLink,
           });
         }
+
         return json({
           value: [
             {
@@ -218,11 +238,13 @@ describe("AzureGraph", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.groupsDelta(tenantId);
       }),
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         requestedUrl = url;
+
         return json({
           value: [
             {
@@ -274,6 +296,7 @@ describe("AzureGraph", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.domains(tenantId);
       }),
       (url) =>
@@ -306,6 +329,7 @@ describe("AzureGraph", () => {
       run(
         Effect.gen(function* () {
           const graph = yield* AzureGraph;
+
           return yield* graph.domains(tenantId);
         }),
         (url) =>
@@ -332,20 +356,25 @@ describe("AzureGraph", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.domains(tenantId);
       }),
       (url) => {
         if (isTokenRequest(url)) {
           tokenCalls++;
+
           return tokenResponse();
         }
+
         graphCalls++;
+
         if (graphCalls === 1) {
           return new Response(JSON.stringify({ error: { code: "TooManyRequests" } }), {
             status: 429,
             headers: { "content-type": "application/json", "retry-after": "0.05" },
           });
         }
+
         return domainsResponse([contosoDomain]);
       },
     );
@@ -361,6 +390,7 @@ describe("AzureGraph", () => {
       run(
         Effect.gen(function* () {
           const graph = yield* AzureGraph;
+
           return yield* graph.domains(tenantId);
         }),
         (url) =>
@@ -373,6 +403,7 @@ describe("AzureGraph", () => {
     const url = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return graph.consentUrl(tenantId);
       }),
       () => new Response("unused"),
@@ -413,11 +444,13 @@ function runWithConfig<A, E>(
 describe("AzureGraph outbound timeouts", () => {
   const domains = Effect.gen(function* () {
     const graph = yield* AzureGraph;
+
     return yield* graph.domains(tenantId);
   });
 
   it("fails a hung Graph request with a timeout instead of hanging", async () => {
     const started = Date.now();
+
     const error = await runWithConfig(
       domains,
       (url, init) => (isTokenRequest(url) ? tokenResponse() : hangingResponse(url, init)),
@@ -440,14 +473,17 @@ describe("AzureGraph outbound timeouts", () => {
 
   it("still retries a throttled request within the deadline", async () => {
     let graphCalls = 0;
+
     const result = await runWithConfig(
       domains,
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         graphCalls++;
+
         if (graphCalls === 1) {
           return json({ error: "throttled" }, 429);
         }
+
         return domainsResponse([contosoDomain]);
       },
       { timeoutMs: 1_000 },
@@ -479,6 +515,7 @@ describe("AzureGraph Autopilot", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.importAutopilotDevices(tenantId, [
           {
             serialNumber: "ABC123",
@@ -495,6 +532,7 @@ describe("AzureGraph Autopilot", () => {
           body: JSON.parse(bodyText(init)),
           auth: header(init, "authorization"),
         });
+
         return json(autopilotDevice);
       },
     );
@@ -524,6 +562,7 @@ describe("AzureGraph Autopilot", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         return yield* graph.importAutopilotDevices(tenantId, [
           { serialNumber: "ABC123", hardwareIdentifier: "aGFzaA==" },
         ]);
@@ -538,17 +577,21 @@ describe("AzureGraph Autopilot", () => {
   it("lists device identities across nextLinks", async () => {
     const nextLink =
       "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$skiptoken=2";
+
     const urls: string[] = [];
+
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
         const first = yield* graph.listAutopilotDevices(tenantId);
         const second = yield* graph.listAutopilotDevices(tenantId, first.nextLink!);
+
         return { first, second };
       }),
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         urls.push(url);
+
         return url === nextLink
           ? json({ value: [{ ...autopilotDevice, id: "autopilot-2", serialNumber: "DEF456" }] })
           : json({ value: [autopilotDevice], "@odata.nextLink": nextLink });
@@ -570,6 +613,7 @@ describe("AzureGraph Autopilot", () => {
     const result = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
+
         const created = yield* graph.createAutopilotProfile(tenantId, {
           displayName: "Standard",
           deploymentMode: "userDriven",
@@ -577,19 +621,24 @@ describe("AzureGraph Autopilot", () => {
           deviceNameTemplate: "DESKTOP-%SERIAL%",
           enableDevicePreparation: true,
         });
+
         const updated = yield* graph.updateAutopilotProfile(tenantId, created.id, {
           displayName: "Standard v2",
           deploymentMode: "selfDeploying",
           joinType: "azureADJoinUsingDeviceAuth",
           enableDevicePreparation: false,
         });
+
         yield* graph.assignAutopilotProfile(tenantId, created.id, "group-1");
+
         return { created, updated };
       }),
       (url, init) => {
         if (isTokenRequest(url)) return tokenResponse();
         requests.push({ url, method: init?.method, body: JSON.parse(bodyText(init)) });
+
         if (url.endsWith("/assign")) return new Response(null, { status: 204 });
+
         return json({
           id: "profile-1",
           displayName: requests.at(-1)?.body.displayName,
@@ -637,6 +686,7 @@ describe("AzureGraph Autopilot", () => {
       (url, init) => {
         if (isTokenRequest(url)) return tokenResponse();
         method = init?.method;
+
         return new Response(null, { status: 204 });
       },
     );

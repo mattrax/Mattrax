@@ -32,11 +32,13 @@ describe("product key request signing", () => {
   it("rejects a base64url signature for the same digest", async () => {
     const message = "1700000000.0:0";
     const hex = await hmacSha256Hex(secret, message);
+
     const base64url = Buffer.from(hex, "hex")
       .toString("base64")
       .replaceAll("+", "-")
       .replaceAll("/", "_")
       .replace(/=+$/, "");
+
     await expect(verifyProductKeyRequest(secret, message, base64url)).resolves.toBe(false);
   });
 

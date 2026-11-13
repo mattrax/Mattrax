@@ -15,6 +15,7 @@ const TEST_CONFIG = {
 
 async function makeHandler(getAppleProfile: () => Effect.Effect<any, any>) {
   const backend = mockManagementBackend({ getAppleProfile });
+
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backend),
     Layer.provideMerge(
@@ -24,18 +25,22 @@ async function makeHandler(getAppleProfile: () => Effect.Effect<any, any>) {
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
   );
+
   const { handler } = HttpRouter.toWebHandler(
     appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer)),
   );
+
   return handler;
 }
 
 describe("GET /mdm/apple/profiles", () => {
   it("serves a legacy profile for a valid signed URL", async () => {
     const profile = new TextEncoder().encode("profile-content");
+
     const handler = await makeHandler(() =>
       Effect.succeed({ content: profile, contentType: "application/x-apple-aspen-config" }),
     );
+
     const token = await signAppleProfileToken(TEST_CONFIG.authSecret, {
       policyId: "policy-1",
       kind: "mttx.apple.device",
@@ -47,6 +52,7 @@ describe("GET /mdm/apple/profiles", () => {
         `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}`,
       ),
     );
+
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/x-apple-aspen-config");
     expect(await response.text()).toBe("profile-content");
@@ -59,9 +65,11 @@ describe("GET /mdm/apple/profiles", () => {
         contentType: "application/x-apple-aspen-config",
       }),
     );
+
     const response = await handler(
       new Request("http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device"),
     );
+
     expect(response.status).toBe(404);
   });
 
@@ -72,16 +80,19 @@ describe("GET /mdm/apple/profiles", () => {
         contentType: "application/x-apple-aspen-config",
       }),
     );
+
     const token = await signAppleProfileToken(TEST_CONFIG.authSecret, {
       policyId: "policy-1",
       kind: "mttx.apple.device",
       deviceToken: "other-device",
     });
+
     const response = await handler(
       new Request(
         `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}`,
       ),
     );
+
     expect(response.status).toBe(404);
   });
 });

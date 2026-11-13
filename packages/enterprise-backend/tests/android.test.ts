@@ -49,6 +49,7 @@ const config: AndroidDeliveryConfig = {
 async function sign(overrides: Record<string, unknown> = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT", kid }));
+
   const payload = base64UrlEncode(
     JSON.stringify({
       iss: "https://accounts.google.com",
@@ -61,11 +62,13 @@ async function sign(overrides: Record<string, unknown> = {}): Promise<string> {
       ...overrides,
     }),
   );
+
   const signature = await crypto.subtle.sign(
     { name: "RSASSA-PKCS1-v1_5" },
     privateKey,
     encoder.encode(`${header}.${payload}`),
   );
+
   return `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
@@ -78,7 +81,9 @@ const jwksFetch = (async () =>
 function base64Json(value: unknown): string {
   const bytes = encoder.encode(JSON.stringify(value));
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 }
 
@@ -116,9 +121,11 @@ function makeAndroid(overrides: Partial<AndroidManagementShape> = {}) {
     devices: [],
     commands: [],
   };
+
   const service = AndroidManagement.of({
     createSignupUrl: (input) => {
       calls.signupUrls.push({ callbackUrl: input.callbackUrl });
+
       return Effect.succeed({
         name: "signups/signup-1",
         url: "https://enterprise.google.test/signup",
@@ -126,6 +133,7 @@ function makeAndroid(overrides: Partial<AndroidManagementShape> = {}) {
     },
     createEnterprise: (input) => {
       calls.enterprises.push({ ...input });
+
       return Effect.succeed({ name: enterpriseName });
     },
     createEnrollmentToken: () =>
@@ -142,20 +150,24 @@ function makeAndroid(overrides: Partial<AndroidManagementShape> = {}) {
         policyId: input.policyId,
         policy: input.policy,
       });
+
       return Effect.succeed(input.policy);
     },
     patchDevice: (input) => {
       calls.devices.push({ deviceName: input.deviceName, policyName: input.policyName });
+
       return Effect.succeed({ name: input.deviceName, policyName: input.policyName });
     },
     listDevices: () => Effect.succeed({ devices: [] }),
     issueCommand: (input) => {
       calls.commands.push({ deviceName: input.deviceName, type: input.type });
+
       return Effect.succeed({ operationName: `${input.deviceName}/operations/op-1` });
     },
     deleteDevice: () => Effect.void,
     ...overrides,
   });
+
   return { service, calls };
 }
 
@@ -239,6 +251,7 @@ describe("Android Enterprise delivery", () => {
       true,
       ["sign", "verify"],
     )) as CryptoKeyPair;
+
     privateKey = pair.privateKey;
     publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
     publicJwk.kid = kid;
@@ -252,6 +265,7 @@ describe("Android Enterprise delivery", () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],
     });
+
     const info = await runEffect(androidEnterpriseInfo(db, organizationId));
     expect(info.configured).toBe(false);
     expect(info.status).toBe("disabled");
@@ -267,6 +281,7 @@ describe("Android Enterprise delivery", () => {
         }),
       ),
     );
+
     expect(configError.kind).toBe("not_configured");
 
     const sync = await Effect.runPromise(syncAndroidPoliciesForTenant({ db, organizationId }));
@@ -278,6 +293,7 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [],
     });
+
     const { service, calls } = makeAndroid();
 
     const signup = await provideAndroid(
@@ -290,6 +306,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(signup.url).toBe("https://enterprise.google.test/signup");
     expect(calls.signupUrls).toHaveLength(1);
     const callback = new URL(calls.signupUrls[0]!.callbackUrl);
@@ -312,6 +329,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(completed).toEqual({ organizationId, enterpriseName });
     expect(calls.enterprises[0]).toMatchObject({
       signupUrlName: "signups/signup-1",
@@ -340,6 +358,7 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [],
     });
+
     const { service, calls } = makeAndroid();
     await provideAndroid(
       createAndroidSignup({
@@ -365,6 +384,7 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(error.kind).toBe("invalid_state");
     expect(db.store.android_enterprise![0]!.status).toBe("pending");
   });
@@ -374,8 +394,10 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],
     });
+
     const { service, calls } = makeAndroid();
     const token = await sign();
+
     const device = {
       name: deviceName,
       state: "ACTIVE",
@@ -397,6 +419,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(result.status).toBe("ok");
     expect(db.store.device).toHaveLength(1);
     expect(db.store.device![0]).toMatchObject({
@@ -424,6 +447,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(duplicate.status).toBe("duplicate");
     expect(db.store.device).toHaveLength(1);
     expect(calls.policies).toHaveLength(1);
@@ -434,6 +458,7 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],
     });
+
     const { service } = makeAndroid();
     const body = pushBody({ name: deviceName }, "ENROLLMENT");
 
@@ -447,9 +472,11 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(missing.kind).toBe("unauthorized");
 
     const wrongAudienceToken = await sign({ aud: "https://other.test/pubsub" });
+
     const wrongAudience = await Effect.runPromise(
       Effect.flip(
         handleAndroidPubSub({
@@ -462,9 +489,11 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(wrongAudience.kind).toBe("unauthorized");
 
     const wrongIssuerToken = await sign({ iss: "https://evil.test" });
+
     const wrongIssuer = await Effect.runPromise(
       Effect.flip(
         handleAndroidPubSub({
@@ -477,11 +506,13 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(wrongIssuer.kind).toBe("unauthorized");
 
     const validToken = await sign();
     const [header, payload, signature] = validToken.split(".");
     const tampered = `${header}.${payload}.${signature!.slice(0, -2)}AA`;
+
     const badSignature = await Effect.runPromise(
       Effect.flip(
         handleAndroidPubSub({
@@ -494,6 +525,7 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(badSignature.kind).toBe("unauthorized");
     expect(db.store.device).toHaveLength(0);
   });
@@ -503,8 +535,10 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],
     });
+
     const { service } = makeAndroid();
     const token = await sign();
+
     const foreign = {
       name: "enterprises/LC999/devices/device-9",
       state: "ACTIVE",
@@ -522,6 +556,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(result.status).toBe("ignored");
     expect(db.store.device).toHaveLength(0);
   });
@@ -564,12 +599,14 @@ describe("Android Enterprise delivery", () => {
       ],
       device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
     });
+
     const { service, calls } = makeAndroid();
 
     const first = await provideAndroid(
       syncAndroidPoliciesForTenant({ db, config, organizationId }),
       service,
     );
+
     expect(first).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
     expect(calls.policies).toHaveLength(1);
     expect(calls.policies[0]!.policy).toEqual({
@@ -586,6 +623,7 @@ describe("Android Enterprise delivery", () => {
       syncAndroidPoliciesForTenant({ db, config, organizationId }),
       service,
     );
+
     expect(second).toEqual({ devices: 1, updated: 0, skipped: 1, failed: 0 });
     expect(calls.policies).toHaveLength(1);
   });
@@ -595,11 +633,14 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],
     });
+
     const { service } = makeAndroid();
+
     const token = await provideAndroid(
       createAndroidEnrollmentToken({ db, config, organizationId }),
       service,
     );
+
     expect(token).toEqual({
       value: "TOKEN-VALUE",
       qrCode: "QR-JSON",
@@ -611,6 +652,7 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [{ ...activeEnterpriseRow(), status: "disabled" }],
     });
+
     const error = await Effect.runPromise(
       Effect.flip(
         createAndroidEnrollmentToken({ db: disabled, config, organizationId }).pipe(
@@ -618,6 +660,7 @@ describe("Android Enterprise delivery", () => {
         ),
       ),
     );
+
     expect(error.kind).toBe("conflict");
   });
 
@@ -627,6 +670,7 @@ describe("Android Enterprise delivery", () => {
       android_enterprise: [activeEnterpriseRow()],
       device: [androidDeviceRow()],
     });
+
     const { service, calls } = makeAndroid();
 
     const wipe = await provideAndroid(
@@ -639,6 +683,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(wipe?.operationName).toContain("/operations/op-1");
     expect(calls.commands).toEqual([{ deviceName, type: "WIPE" }]);
     expect(db.store.device_command![0]).toMatchObject({
@@ -658,6 +703,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
+
     expect(restart?.operationName).toBeDefined();
     expect(calls.commands[1]).toEqual({ deviceName, type: "REBOOT" });
   });
@@ -670,6 +716,7 @@ describe("Android Enterprise delivery", () => {
       ],
       android_enterprise: [],
     });
+
     const { service, calls } = makeAndroid();
     await provideAndroid(
       createAndroidSignup({
@@ -703,6 +750,7 @@ describe("Android Enterprise delivery", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [],
     });
+
     const { service } = makeAndroid({
       createSignupUrl: () =>
         Effect.fail({
@@ -722,6 +770,7 @@ describe("Android Enterprise delivery", () => {
         }).pipe(Effect.provideService(AndroidManagement, service)),
       ),
     );
+
     expect(error).toBeInstanceOf(AndroidDeliveryError);
     expect(error.kind).toBe("upstream");
     expect(error.message).not.toContain(serviceAccountEmail);

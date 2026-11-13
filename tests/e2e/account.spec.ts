@@ -15,6 +15,7 @@ test.describe("account", () => {
       .poll(async () =>
         page.evaluate(async () => {
           const body = (await (await fetch("/api/v1/me")).json()) as { user: { name: string } };
+
           return body.user.name;
         }),
       )
@@ -76,6 +77,7 @@ test.describe("account", () => {
       headers: { ...headers, "content-type": "application/json" },
       data: { name: "Should be rejected" },
     });
+
     expect(write.status()).toBe(403);
 
     const crossTenant = await request.get(`/api/v1/tenants/${other.id}/devices`, { headers });
@@ -88,9 +90,11 @@ test.describe("account deletion", () => {
     const { email } = await import("./helpers").then((helpers) =>
       helpers.register(page).then(async (result) => {
         await helpers.createTenant(page, "Delete Me Tenant");
+
         return result;
       }),
     );
+
     await gotoHydrated(page, "/account");
     await page.locator('input[placeholder="' + email + '"]').fill(email);
     await page.getByRole("button", { name: /delete account/i }).click();

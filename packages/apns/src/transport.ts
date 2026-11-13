@@ -52,6 +52,7 @@ export const buildApnsRequest = (
 
 const responseError = async (response: Response) => {
   const text = await response.text().catch(() => "");
+
   return `APNs rejected push (HTTP ${response.status})${text ? `: ${text}` : ""}`;
 };
 
@@ -72,12 +73,14 @@ export function NodePushTransport(defaults?: {
 }): ApnsPushTransport {
   const timeoutMs = defaults?.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
   const endpoint = defaults?.endpoint ?? APNS_PRODUCTION_ENDPOINT;
+
   return {
     name: "node",
     available: true,
     push: (input) => {
       const certPem = input.certPem ?? defaults?.certPem;
       const privateKeyPem = input.privateKeyPem ?? defaults?.privateKeyPem;
+
       if (!certPem || !privateKeyPem)
         return Effect.fail(
           new ApnsError({
@@ -90,6 +93,7 @@ export function NodePushTransport(defaults?: {
           const request = buildApnsRequest(input, endpoint);
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
+
           const client = http2.connect(url.origin, {
             cert: certPem,
             key: privateKeyPem,
@@ -99,36 +103,44 @@ export function NodePushTransport(defaults?: {
             let status = 0;
             let settled = false;
             let timer: ReturnType<typeof setTimeout> | undefined;
+
             const timeoutError = () =>
               new ApnsError({ message: `APNs request timed out after ${timeoutMs}ms` });
+
             const close = () => {
               // `close` only waits for existing streams; `destroy` guarantees
               // the socket (and any in-flight TLS handshake) is released.
               try {
                 client.close();
               } catch {}
+
               try {
                 client.destroy();
               } catch {}
             };
+
             const fail = (error: unknown) => {
               if (settled) return;
               settled = true;
+
               if (timer !== undefined) clearTimeout(timer);
               close();
               reject(error);
             };
+
             timer = setTimeout(() => fail(timeoutError()), timeoutMs);
             timer.unref?.();
 
             // Covers a stalled TCP/TLS connect as well as an idle socket.
             client.setTimeout(timeoutMs, () => fail(timeoutError()));
             client.on("error", fail);
+
             const req = client.request({
               ":method": request.method,
               ":path": url.pathname + url.search,
               ...request.headers,
             });
+
             const chunks: Buffer[] = [];
             req.on("response", (headers) => {
               status = Number(headers[":status"] ?? 0);
@@ -138,8 +150,10 @@ export function NodePushTransport(defaults?: {
             req.on("end", () => {
               if (settled) return;
               settled = true;
+
               if (timer !== undefined) clearTimeout(timer);
               close();
+
               if (status === 200) return resolve();
               const text = Buffer.concat(chunks).toString("utf8");
               reject(
@@ -169,6 +183,7 @@ export function MtlsPushTransport(options: {
   readonly timeoutMs?: number;
 }): ApnsPushTransport {
   const timeoutMs = options.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
+
   return {
     name: "mtls",
     available: true,
@@ -176,6 +191,7 @@ export function MtlsPushTransport(options: {
       Effect.tryPromise({
         try: async () => {
           const request = buildApnsRequest(input);
+
           const response = await fetchWithTimeout(
             new Request(request.url, {
               method: request.method,
@@ -185,6 +201,7 @@ export function MtlsPushTransport(options: {
             {},
             { timeoutMs, fetch: options.fetch as typeof globalThis.fetch },
           );
+
           if (response.status !== 200)
             throw new ApnsError({ message: await responseError(response) });
         },
@@ -217,11 +234,13 @@ export async function relaySignature(
     false,
     ["sign"],
   );
+
   const signature = await crypto.subtle.sign(
     "HMAC",
     key,
     new TextEncoder().encode(`${timestamp}.${body}`),
   );
+
   return bytesToHex(new Uint8Array(signature));
 }
 
@@ -258,8 +277,10 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
             certPem: input.certPem,
             privateKeyPem: input.privateKeyPem,
           });
+
           const timestamp = String(now());
           const signature = await relaySignature(options.secret, timestamp, body);
+
           // The relay talks to APNs on our behalf; a hung relay must not hold
           // the Worker's request open.
           const response = await fetchWithTimeout(
@@ -275,6 +296,7 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
             },
             { timeoutMs, fetch: doFetch },
           );
+
           if (!response.ok) throw new ApnsError({ message: await responseError(response) });
         },
         catch: (cause) =>

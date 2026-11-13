@@ -17,6 +17,7 @@ const sha256 = async (value: string) =>
 
 const seed = () => {
   const now = new Date();
+
   return {
     user: [
       {
@@ -37,9 +38,11 @@ const seed = () => {
 
 const makeContext = (verifyPassword = true) => {
   const db = makeDb(seed());
+
   const appAuth = {
     verifySession: () => Effect.succeed({ subjectId: "user-1", sessionId: "session-1" }),
   };
+
   const stepUp = Layer.succeed(StepUpService, {
     methods: () => Effect.succeed({ password: true, totp: true, passkey: false }),
     verifyPassword: () => Effect.succeed(verifyPassword),
@@ -47,6 +50,7 @@ const makeContext = (verifyPassword = true) => {
     beginPasskey: () => Effect.fail(new StepUpUnavailable({ message: "No passkey" })),
     completePasskey: () => Effect.succeed(false),
   });
+
   const Live = makeEnterpriseAuthLive({
     appAuth: Effect.succeed(appAuth) as any,
     origin,
@@ -57,6 +61,7 @@ const makeContext = (verifyPassword = true) => {
     runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
+
         return yield* work(auth);
       }).pipe(Effect.provide(Live)),
     );
@@ -154,10 +159,12 @@ describe("step-up enforcement", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
     const bearer = new Request(`${origin}/api/v1/tenants/tenant-1`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${raw}` },
     });
+
     await expect(run((auth) => auth.requireStepUp(bearer, "tenant-delete"))).resolves.toMatchObject(
       { apiToken: { id: "token-1" } },
     );
@@ -165,12 +172,14 @@ describe("step-up enforcement", () => {
 
   it("issues a grant from a verified password and rejects a wrong one", async () => {
     const { run } = makeContext(true);
+
     const issued = await run((auth) =>
       auth.stepUpPassword(session(), {
         password: "correct horse battery",
         action: "tenant-delete",
       }),
     );
+
     expect(issued.method).toBe("password");
     expect(issued.expiresAtMillis).toBeGreaterThan(Date.now());
     await expect(

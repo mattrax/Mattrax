@@ -25,6 +25,7 @@ function runWithService<A, E>(
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
   );
+
   return effect.pipe(Effect.provide(layer), Effect.runPromise);
 }
 
@@ -32,6 +33,7 @@ describe("AppleMdmService", () => {
   describe("handleAuthenticate", () => {
     it("sends an Authenticate event to the backend", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -43,6 +45,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleAuthenticate({
             MessageType: "Authenticate",
             Topic: TEST_CONFIG.topic,
@@ -63,6 +66,7 @@ describe("AppleMdmService", () => {
 
     it("passes the identity certificate serial to the backend scope", async () => {
       let receivedScope: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (scope: unknown) =>
           Effect.sync(() => {
@@ -74,6 +78,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleAuthenticate(
             {
               MessageType: "Authenticate",
@@ -108,6 +113,7 @@ describe("AppleMdmService", () => {
           backend,
           Effect.gen(function* () {
             const service = yield* AppleMdmService;
+
             return yield* service.handleAuthenticate({
               MessageType: "Authenticate",
               Topic: TEST_CONFIG.topic,
@@ -127,6 +133,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleAuthenticate({
             MessageType: "Authenticate",
             Topic: TEST_CONFIG.topic,
@@ -138,6 +145,7 @@ describe("AppleMdmService", () => {
 
     it("uses ModelName as fallback for Model", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -149,6 +157,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleAuthenticate({
             MessageType: "Authenticate",
             Topic: TEST_CONFIG.topic,
@@ -166,6 +175,7 @@ describe("AppleMdmService", () => {
   describe("handleTokenUpdate", () => {
     it("sends a device-scoped TokenUpdate", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -177,6 +187,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleTokenUpdate({
             MessageType: "TokenUpdate",
             Topic: TEST_CONFIG.topic,
@@ -195,6 +206,7 @@ describe("AppleMdmService", () => {
 
     it("sends a user-scoped TokenUpdate when UserID is present", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -206,6 +218,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleTokenUpdate({
             MessageType: "TokenUpdate",
             Topic: TEST_CONFIG.topic,
@@ -225,6 +238,7 @@ describe("AppleMdmService", () => {
   describe("handleCheckOut", () => {
     it("sends a CheckOut event", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -236,6 +250,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCheckOut({
             MessageType: "CheckOut",
             Topic: TEST_CONFIG.topic,
@@ -252,6 +267,7 @@ describe("AppleMdmService", () => {
   describe("handleCommandResult", () => {
     it("sends a CommandResult with status", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -263,6 +279,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCommandResult({
             UDID: "udid-123",
             Status: "Acknowledged",
@@ -278,6 +295,7 @@ describe("AppleMdmService", () => {
 
     it("includes errorDetail from ErrorChain", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -289,6 +307,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCommandResult({
             UDID: "udid-123",
             Status: "Error",
@@ -308,6 +327,7 @@ describe("AppleMdmService", () => {
 
     it("includes queryResponses when present", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -319,6 +339,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCommandResult({
             UDID: "udid-123",
             Status: "Acknowledged",
@@ -349,6 +370,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCheckin({
             _tag: "device",
             udid: "udid-123",
@@ -356,6 +378,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result).not.toBeNull();
       expect(result!.commandUUID).toBe("cmd-001");
       expect(result!.requestType).toBe("DeviceInformation");
@@ -370,6 +393,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCheckin({
             _tag: "device",
             udid: "udid-123",
@@ -377,6 +401,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result).toBeNull();
     });
 
@@ -393,6 +418,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCheckin({
             _tag: "device",
             udid: "udid-123",
@@ -400,6 +426,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result).not.toBeNull();
       expect(result!.requestType).toBe("DeclarativeManagement");
       expect(result!.commandUUID).toBeDefined();
@@ -414,6 +441,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleCheckin({
             _tag: "device",
             udid: "unknown",
@@ -421,6 +449,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result).toBeNull();
     });
   });
@@ -442,6 +471,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleDeclarativeTokens({
             _tag: "device",
             udid: "udid-123",
@@ -449,6 +479,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
       expect(result.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
@@ -462,6 +493,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleDeclarativeTokens({
             _tag: "device",
             udid: "unknown",
@@ -471,6 +503,7 @@ describe("AppleMdmService", () => {
       )
         .then(() => "Success")
         .catch(() => "Failure");
+
       expect(result).toBe("Failure");
     });
   });
@@ -491,6 +524,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleDeclarationItems({
             _tag: "device",
             udid: "udid-123",
@@ -498,6 +532,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       expect(result.Declarations.Activations).toHaveLength(1);
       expect(result.Declarations.Activations[0].Identifier).toBe("act-1");
       expect(result.Declarations.Configurations).toHaveLength(1);
@@ -515,6 +550,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleDeclaration(
             { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
             "configurations",
@@ -522,6 +558,7 @@ describe("AppleMdmService", () => {
           );
         }),
       );
+
       expect(result).toEqual({ Payload: { test: true } });
     });
 
@@ -534,6 +571,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleDeclaration(
             { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
             "configurations",
@@ -543,6 +581,7 @@ describe("AppleMdmService", () => {
       )
         .then(() => "Success")
         .catch(() => "Failure");
+
       expect(result).toBe("Failure");
     });
   });
@@ -550,6 +589,7 @@ describe("AppleMdmService", () => {
   describe("handleStatusReport", () => {
     it("sends a DeclarationStatus event", async () => {
       let receivedEvent: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -561,6 +601,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.handleStatusReport(
             { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
             {
@@ -592,6 +633,7 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.generateEnrollmentProfile({
             challenge: "enrollment-123.signature",
             organizationId: "tenant-123",
@@ -599,6 +641,7 @@ describe("AppleMdmService", () => {
           });
         }),
       );
+
       const parsed = (await Effect.runPromise(parsePlist(profile))) as any;
 
       expect(parsed.PayloadType).toBe("Configuration");
@@ -608,6 +651,7 @@ describe("AppleMdmService", () => {
       const scepPayload = parsed.PayloadContent.find(
         (p: any) => p.PayloadType === "com.apple.security.scep",
       );
+
       expect(scepPayload).toBeDefined();
       expect(scepPayload.PayloadContent.URL).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep`);
       expect(scepPayload.PayloadContent.Challenge).toBe("enrollment-123.signature");

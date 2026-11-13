@@ -47,7 +47,9 @@ const makeGraph = (options: {
   ({
     domains: (tenantId: string) => {
       options.calls.push({ kind: "domains", tenantId });
+
       if (options.failFor === tenantId) return Effect.fail(new Error("graph down"));
+
       return (
         options.domains?.(tenantId) ??
         Effect.succeed([{ id: `${tenantId}.onmicrosoft.com`, isVerified: true, isInitial: false }])
@@ -55,10 +57,12 @@ const makeGraph = (options: {
     },
     usersDelta: (tenantId: string) => {
       options.calls.push({ kind: "users", tenantId });
+
       return Effect.succeed(page("users-delta"));
     },
     groupsDelta: (tenantId: string) => {
       options.calls.push({ kind: "groups", tenantId });
+
       return Effect.succeed(page("groups-delta"));
     },
     consentUrl: () => "https://consent.test",
@@ -159,6 +163,7 @@ describe("runScheduledEntraSync", () => {
         tenantRow({ organizationId: "org-4", enabled: false }),
       ],
     });
+
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
@@ -195,6 +200,7 @@ describe("runScheduledEntraSync", () => {
       sso_config: [],
       entra_directory_sync: [tenantRow()],
     });
+
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
@@ -212,6 +218,7 @@ describe("runScheduledEntraSync", () => {
         tenantRow({ status: "running", updatedAt: new Date(now.getTime() - 60_000) }),
       ],
     });
+
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
@@ -231,6 +238,7 @@ describe("runScheduledEntraSync", () => {
         tenantRow({ organizationId: "org-2" }),
       ],
     });
+
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
@@ -254,6 +262,7 @@ describe("runScheduledEntraSync", () => {
       sso_config: [ssoRow("org-1", "entra-1")],
       entra_directory_sync: [tenantRow()],
     });
+
     const calls: GraphCall[] = [];
 
     await Effect.runPromise(

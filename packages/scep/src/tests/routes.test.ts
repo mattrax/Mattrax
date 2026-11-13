@@ -19,6 +19,7 @@ async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
+
   return handler;
 }
 
@@ -38,6 +39,7 @@ describe("SCEP routes", () => {
       const keyPair = await generateKeyPair();
       const caCert = await createTestCaCert(keyPair, "Route CA");
       const certPem = certToPem(caCert);
+
       const privateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         keyPair.privateKey,
@@ -46,6 +48,7 @@ describe("SCEP routes", () => {
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem, privateKeyJwk }),
       });
+
       const handler = await makeScepHandler(repo);
       const request = new Request("http://localhost/mdm/apple/scep?operation=GetCACert");
       const response = await handler(request);
@@ -77,6 +80,7 @@ describe("SCEP routes", () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
+
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
@@ -86,6 +90,7 @@ describe("SCEP routes", () => {
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
       const csr = await buildTestCsr(deviceKeyPair, "PostDevice");
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
+
       const pkcsReq = await buildPkcsReq(
         csr,
         caCert,
@@ -101,11 +106,14 @@ describe("SCEP routes", () => {
         saveCa: () => Effect.void,
         authenticatePkcsReq: () => Effect.void,
       });
+
       const handler = await makeScepHandler(repo);
+
       const request = new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
         method: "POST",
         body: pkcsReq,
       });
+
       const response = await handler(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("application/x-pki-message");
@@ -117,6 +125,7 @@ describe("SCEP routes", () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
+
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
@@ -126,6 +135,7 @@ describe("SCEP routes", () => {
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
       const csr = await buildTestCsr(deviceKeyPair, "PostDevice");
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
+
       const pkcsReq = await buildPkcsReq(
         csr,
         caCert,
@@ -141,11 +151,14 @@ describe("SCEP routes", () => {
         saveCa: () => Effect.void,
         authenticatePkcsReq: () => Effect.fail(new ScepError({ message: "Auth failed" })),
       });
+
       const handler = await makeScepHandler(repo);
+
       const request = new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
         method: "POST",
         body: pkcsReq,
       });
+
       const response = await handler(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("application/x-pki-message");

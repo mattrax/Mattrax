@@ -13,22 +13,27 @@ import { cn } from "~/lib/utils";
 export default function EnrollmentSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+
   const enrollment = useQuery(() => ({
     queryKey: enterpriseKeys.enrollment(params.tenantId),
     queryFn: () => enterprise.getTenantEnrollment(params.tenantId),
   }));
+
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(params.tenantId),
     queryFn: () => enterprise.getApns(params.tenantId),
   }));
+
   const androidEnterprise = useQuery(() => ({
     queryKey: enterpriseKeys.android(params.tenantId),
     queryFn: () => enterprise.getTenantAndroid(params.tenantId),
   }));
+
   const attempts = useQuery(() => ({
     queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
     queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
   }));
+
   const preRegistrations = useQuery(() => ({
     queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
     queryFn: () => enterprise.listDevicePreRegistrations(params.tenantId),
@@ -54,12 +59,15 @@ export default function EnrollmentSettingsPage() {
   );
 
   const enabled = () => apple() || windows() || android();
+
   const url = () =>
     enrollment.data
       ? `${globalThis.location?.origin ?? ""}/enroll/${enrollment.data.id}`
       : "Loading…";
+
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchTenantEnrollment(params.tenantId, {
@@ -74,6 +82,7 @@ export default function EnrollmentSettingsPage() {
       await invalidate();
     },
   }));
+
   const reset = useMutation(() => ({
     mutationFn: () => enterprise.resetTenantEnrollment(params.tenantId),
     onSuccess: invalidate,
@@ -197,6 +206,7 @@ export default function EnrollmentSettingsPage() {
             onChange={(value) => {
               setApple(value);
               setWindows(value);
+
               if (!value) setAndroid(false);
             }}
             title="Enable device enrollment"
@@ -428,7 +438,9 @@ const outcomeLabels: Record<string, string> = {
 
 const outcomeTone = (outcome: string) =>
   outcomeTones[outcome as keyof typeof outcomeTones] ?? outcomeTones.other;
+
 const outcomeLabel = (outcome: string) => outcomeLabels[outcome] ?? outcome;
+
 const platformLabel = (platform: string) =>
   platform === "apple"
     ? "Apple"
@@ -437,8 +449,10 @@ const platformLabel = (platform: string) =>
       : platform === "android"
         ? "Android"
         : "Unknown device";
+
 const formatAttemptTime = (value: string) => {
   const date = new Date(value);
+
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 

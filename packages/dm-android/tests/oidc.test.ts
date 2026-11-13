@@ -26,18 +26,22 @@ function sign(
     const header = base64UrlEncode(
       JSON.stringify({ alg: "RS256", typ: "JWT", kid: options.kid ?? kid, ...options.header }),
     );
+
     const payload = base64UrlEncode(JSON.stringify(claims));
+
     const signature = await crypto.subtle.sign(
       { name: "RSASSA-PKCS1-v1_5" },
       privateKey,
       encoder.encode(`${header}.${payload}`),
     );
+
     return `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
   })();
 }
 
 function claims(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const now = Math.floor(Date.now() / 1000);
+
   return {
     iss: "https://accounts.google.com",
     aud: audience,
@@ -78,6 +82,7 @@ describe("verifyPubSubOidcToken", () => {
       true,
       ["sign", "verify"],
     )) as CryptoKeyPair;
+
     privateKey = pair.privateKey;
     publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
     const jwk = publicJwk as Record<string, unknown>;
@@ -140,16 +145,20 @@ describe("verifyPubSubOidcToken", () => {
       true,
       ["sign", "verify"],
     )) as CryptoKeyPair;
+
     const header = base64UrlEncode(JSON.stringify({ alg: "RS256", kid }));
     const payload = base64UrlEncode(JSON.stringify(claims()));
+
     const signature = await crypto.subtle.sign(
       { name: "RSASSA-PKCS1-v1_5" },
       pair.privateKey,
       encoder.encode(`${header}.${payload}`),
     );
+
     const error = await rejection(
       `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`,
     );
+
     expect(error.message).toContain("signature");
   });
 

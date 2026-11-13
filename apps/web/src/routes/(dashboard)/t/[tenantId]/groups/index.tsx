@@ -17,6 +17,7 @@ import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
 
 function MembershipBadge(props: { kind: GroupRow["kind"] }) {
   const dynamic = () => props.kind === "dynamic";
+
   return (
     <span
       class={
@@ -52,19 +53,24 @@ export default function GroupsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
   const [conditions, setConditions] = createSignal<EntityCondition[]>(
     parseEntityQuery(param(searchParams.query), fields),
   );
+
   const updateConditions = (next: EntityCondition[]) => {
     setConditions(next);
     setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
   };
+
   const filteredRows = () =>
     (groups.data?.rows ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
+
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
   }));
+
   return (
     <Page>
       <PageHeader

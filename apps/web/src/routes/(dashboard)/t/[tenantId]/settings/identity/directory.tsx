@@ -25,25 +25,32 @@ export default function DirectorySyncPage() {
   const params = useParams();
   const qc = useQueryClient();
   const status = useQuery(() => enterpriseQueries.directorySync(params.tenantId));
+
   const invalidate = async () =>
     qc.invalidateQueries({ queryKey: enterpriseKeys.directorySync(params.tenantId) });
+
   const toggle = useMutation(() => ({
     mutationFn: (enabled: boolean) =>
       enterprise.patchEntraDirectorySync(params.tenantId, { enabled }),
     onSuccess: invalidate,
   }));
+
   const interval = useMutation(() => ({
     mutationFn: (syncIntervalMinutes: number) =>
       enterprise.patchEntraDirectorySync(params.tenantId, { syncIntervalMinutes }),
     onSuccess: invalidate,
   }));
+
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncEntraDirectory(params.tenantId),
     onSuccess: invalidate,
   }));
+
   const counts = () => status.data?.lastCounts as Record<string, number> | null | undefined;
+
   const intervalOptions = () => {
     const minutes = status.data?.syncIntervalMinutes ?? 0;
+
     return SYNC_INTERVALS.some((option) => option.minutes === minutes)
       ? SYNC_INTERVALS
       : [...SYNC_INTERVALS, { minutes, label: `${minutes} minutes` }];

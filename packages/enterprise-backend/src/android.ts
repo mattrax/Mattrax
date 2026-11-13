@@ -80,6 +80,7 @@ export class AndroidDeliveryError extends Data.TaggedError("AndroidDeliveryError
 
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
@@ -97,6 +98,7 @@ export const describeAndroidError = (cause: unknown): string => {
               return String(cause);
             }
           })();
+
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\s+/g, " ")
@@ -203,14 +205,18 @@ export const androidEnterpriseInfo = (
 ): Effect.Effect<AndroidEnterpriseInfoResult, AndroidDeliveryError> =>
   Effect.gen(function* () {
     const row = yield* loadAndroidEnterprise(db, organizationId);
+
     const mappings = yield* db
       .select()
       .from(schema.androidDevice)
       .where(eq(schema.androidDevice.organizationId, organizationId));
+
     const configured = isAndroidConfigured(config);
+
     const status: AndroidEnterpriseRow["status"] = configured
       ? (row?.status ?? "pending")
       : "disabled";
+
     return {
       configured,
       status,
@@ -237,6 +243,7 @@ export const setAndroidEnabled = (input: {
     if (input.enabled && !isAndroidConfigured(input.config))
       return yield* Effect.fail(notConfigured());
     const row = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
     if (input.enabled && !row?.enterpriseName)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -245,6 +252,7 @@ export const setAndroidEnabled = (input: {
         }),
       );
     const timestamp = now();
+
     if (!row) {
       yield* insertAndroidEnterprise(input.db, {
         organizationId: input.organizationId,
@@ -318,6 +326,7 @@ const readSignupState = (
           cause,
         }),
     });
+
     if (payload.purpose !== SIGNUP_STATE_PURPOSE || payload.exp <= Date.now())
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -325,6 +334,7 @@ const readSignupState = (
           message: "The Android signup state has expired.",
         }),
       );
+
     if (!payload.nonce)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -332,6 +342,7 @@ const readSignupState = (
           message: "The Android signup state is incomplete.",
         }),
       );
+
     return { organizationId: payload.sub, nonce: payload.nonce };
   });
 
@@ -345,7 +356,9 @@ export const createAndroidSignup = (input: {
 }): Effect.Effect<{ readonly url: string }, AndroidDeliveryError, AndroidManagement> =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
+
     if (!input.authSecret)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -355,6 +368,7 @@ export const createAndroidSignup = (input: {
       );
     const android = yield* AndroidManagement;
     const existing = yield* loadAndroidEnterprise(input.db, input.organization.id);
+
     if (existing?.status === "active" && existing.enterpriseName)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -366,6 +380,7 @@ export const createAndroidSignup = (input: {
     const nonce = crypto.randomUUID();
     const state = yield* signupStateToken(input.authSecret, input.organization.id, nonce);
     const callbackUrl = `${input.origin.replace(/\/+$/, "")}/api/v1/android/signup/callback?state=${encodeURIComponent(state)}`;
+
     const signup = yield* android.createSignupUrl({ callbackUrl }).pipe(
       Effect.mapError(
         (cause) =>
@@ -378,6 +393,7 @@ export const createAndroidSignup = (input: {
     );
 
     const timestamp = now();
+
     if (!existing) {
       yield* insertAndroidEnterprise(input.db, {
         organizationId: input.organization.id,
@@ -416,6 +432,7 @@ export const createAndroidSignup = (input: {
       },
       {},
     );
+
     return { url: signup.url };
   }).pipe(mapAndroidError);
 
@@ -437,7 +454,9 @@ export const completeAndroidSignup = (input: {
 > =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
+
     if (!input.authSecret)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -445,6 +464,7 @@ export const completeAndroidSignup = (input: {
           message: "Android Enterprise signup requires AUTH_SECRET.",
         }),
       );
+
     if (!input.enterpriseToken.trim())
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -455,6 +475,7 @@ export const completeAndroidSignup = (input: {
 
     const state = yield* readSignupState(input.authSecret, input.state);
     const row = yield* loadAndroidEnterprise(input.db, state.organizationId);
+
     if (
       !row ||
       row.signupState !== state.nonce ||
@@ -471,6 +492,7 @@ export const completeAndroidSignup = (input: {
     const organization = yield* input.db.query.organization.findFirst({
       where: { id: state.organizationId },
     });
+
     if (!organization)
       return yield* Effect.fail(
         new AndroidDeliveryError({ kind: "not_found", message: "Tenant not found." }),
@@ -478,6 +500,7 @@ export const completeAndroidSignup = (input: {
 
     const android = yield* AndroidManagement;
     const defaultPolicyId = config.defaultPolicyId ?? DEFAULT_ANDROID_POLICY_ID;
+
     const enterpriseName = yield* Effect.gen(function* () {
       const enterprise = yield* android.createEnterprise({
         signupUrlName: row.signupUrl!,
@@ -487,6 +510,7 @@ export const completeAndroidSignup = (input: {
         pubsubTopic: config.pubsubTopic,
         enabledNotificationTypes: [...ANDROID_NOTIFICATION_TYPES],
       });
+
       // A policy must exist before an enrollment token can reference it. An
       // empty policy is the correct starting point; device-specific policy is
       // pushed after enrollment.
@@ -495,6 +519,7 @@ export const completeAndroidSignup = (input: {
         policyId: defaultPolicyId,
         policy: {},
       });
+
       return enterprise.name;
     }).pipe(
       Effect.mapError(
@@ -530,6 +555,7 @@ export const completeAndroidSignup = (input: {
       },
       {},
     );
+
     return { organizationId: state.organizationId, enterpriseName };
   }).pipe(
     mapAndroidError,
@@ -541,6 +567,7 @@ export const completeAndroidSignup = (input: {
             const state = yield* readSignupState(input.authSecret!, input.state).pipe(
               Effect.catch(() => Effect.succeed(undefined)),
             );
+
             if (state) {
               yield* ignoreDbFailure(
                 updateAndroidEnterprise(input.db, state.organizationId, {
@@ -561,6 +588,7 @@ export const completeAndroidSignup = (input: {
                 {},
               ).pipe(Effect.catch(() => Effect.void));
             }
+
             return yield* Effect.fail(error);
           })
         : Effect.fail(error),
@@ -581,8 +609,10 @@ export const createAndroidEnrollmentToken = (input: {
 }): Effect.Effect<AndroidEnrollmentTokenResult, AndroidDeliveryError, AndroidManagement> =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
     const row = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
     if (row?.status !== "active" || !row.enterpriseName)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -591,6 +621,7 @@ export const createAndroidEnrollmentToken = (input: {
         }),
       );
     const android = yield* AndroidManagement;
+
     const token = yield* android
       .createEnrollmentToken({
         enterpriseName: row.enterpriseName,
@@ -608,6 +639,7 @@ export const createAndroidEnrollmentToken = (input: {
             }),
         ),
       );
+
     return {
       value: token.value,
       ...(token.qrCode ? { qrCode: token.qrCode } : {}),
@@ -628,8 +660,10 @@ function stringOf(value: unknown): string | undefined {
 
 function dateOf(value: unknown): Date | undefined {
   const text = stringOf(value);
+
   if (!text) return undefined;
   const parsed = Date.parse(text);
+
   return Number.isFinite(parsed) ? new Date(parsed) : undefined;
 }
 
@@ -663,11 +697,14 @@ function parseDeviceResource(
   fallbackEnterpriseName: string,
 ): AndroidDeviceResource | undefined {
   const record = recordOf(data);
+
   if (!record) return undefined;
   const name = stringOf(record["name"]);
+
   if (!name) return undefined;
   const hardware = recordOf(record["hardwareInfo"]) ?? {};
   const software = recordOf(record["softwareInfo"]) ?? {};
+
   return {
     name,
     enterpriseName: stringOf(record["enterpriseName"]) ?? fallbackEnterpriseName,
@@ -689,14 +726,19 @@ const deviceNameBelongs = (enterpriseName: string, deviceName: string) =>
 
 const enterpriseNameFromResource = (data: unknown): string | undefined => {
   const record = recordOf(data);
+
   if (!record) return undefined;
   const explicit = stringOf(record["enterpriseName"]);
+
   if (explicit) return explicit;
+
   for (const candidate of [record["name"], record["deviceName"]]) {
     const text = stringOf(candidate);
     const match = text ? /^(enterprises\/[^/]+)/.exec(text) : undefined;
+
     if (match) return match[1];
   }
+
   return undefined;
 };
 
@@ -718,9 +760,11 @@ const upsertAndroidDevice = (input: {
     const existingMapping = yield* input.db.query.androidDevice.findFirst({
       where: { organizationId: input.organizationId, deviceName: input.resource.name },
     });
+
     let existingDevice = existingMapping
       ? yield* input.db.query.device.findFirst({ where: { id: existingMapping.deviceId } })
       : undefined;
+
     if (!existingDevice) {
       existingDevice = yield* input.db.query.device.findFirst({
         where: {
@@ -729,6 +773,7 @@ const upsertAndroidDevice = (input: {
         },
       });
     }
+
     // A serial may already belong to an Apple/Windows device. In that case do
     // not reuse or overwrite it; keep the Android device's serial null so the
     // tenant-wide unique index cannot be violated.
@@ -737,6 +782,7 @@ const upsertAndroidDevice = (input: {
           where: { organizationId: input.organizationId, serial: input.resource.serial },
         })
       : undefined;
+
     const serial =
       serialMatch && existingDevice?.id !== serialMatch.id ? null : (input.resource.serial ?? null);
 
@@ -746,12 +792,15 @@ const upsertAndroidDevice = (input: {
         organizationId: input.organizationId,
         config: input.planLimits,
       });
+
       if (limit.limit !== null && (limit.used ?? 0) >= limit.limit)
         return { deviceId: "", created: false, limitReached: true };
     }
+
     const deviceId = existingDevice?.id ?? id();
     const timestamp = now();
     const status = androidDeviceStatus(input.resource.state);
+
     const name =
       input.resource.displayName ??
       input.resource.model ??
@@ -814,6 +863,7 @@ const upsertAndroidDevice = (input: {
     }
 
     const mapping = yield* input.db.query.androidDevice.findFirst({ where: { deviceId } });
+
     if (!mapping) {
       yield* insertAndroidDevice(input.db, {
         deviceId,
@@ -837,6 +887,7 @@ const upsertAndroidDevice = (input: {
         lastError: null,
       });
     }
+
     return {
       deviceId,
       created: !existingDevice,
@@ -867,6 +918,7 @@ const syncAndroidPolicyForDevice = (input: {
         }),
       );
     const android = yield* AndroidManagement;
+
     const effective = yield* resolveEffectivePolicyForDevice(input.db, {
       id: input.device.id,
       organizationId: input.organizationId,
@@ -880,9 +932,11 @@ const syncAndroidPolicyForDevice = (input: {
           }),
       ),
     );
+
     const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
       (configuration) => ({ kind: configuration.kind, data: configuration.data }),
     );
+
     const compiled = yield* Effect.tryPromise({
       try: () => compileAndroidPolicyWithHash(configurations),
       catch: (cause) =>
@@ -892,10 +946,13 @@ const syncAndroidPolicyForDevice = (input: {
           cause,
         }),
     });
+
     const policyId = androidPolicyIdForHash(compiled.hash);
+
     const mapping = yield* input.db.query.androidDevice.findFirst({
       where: { deviceId: input.device.id },
     });
+
     if (mapping && mapping.policyHash === compiled.hash && mapping.policyId === policyId) {
       return { status: "skipped" as const };
     }
@@ -933,6 +990,7 @@ const syncAndroidPolicyForDevice = (input: {
       );
 
     const timestamp = now();
+
     if (mapping) {
       yield* updateAndroidDevice(input.db, input.device.id, {
         policyId,
@@ -955,6 +1013,7 @@ const syncAndroidPolicyForDevice = (input: {
         updatedAt: timestamp,
       });
     }
+
     return { status: "updated" as const };
   }).pipe(mapAndroidError);
 
@@ -978,15 +1037,19 @@ export const syncAndroidPoliciesForTenant = (input: {
 }): Effect.Effect<AndroidSyncResult, AndroidDeliveryError, AndroidManagement> =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return { devices: 0, updated: 0, skipped: 0, failed: 0 };
     const enterprise = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
     if (enterprise?.status !== "active" || !enterprise.enterpriseName)
       return { devices: 0, updated: 0, skipped: 0, failed: 0 };
     const enterpriseName = enterprise.enterpriseName;
 
     const scopedIds = input.deviceIds ? [...new Set(input.deviceIds)] : undefined;
+
     if (scopedIds && scopedIds.length === 0)
       return { devices: 0, updated: 0, skipped: 0, failed: 0 };
+
     const devices = (yield* input.db
       .select()
       .from(schema.device)
@@ -1007,6 +1070,7 @@ export const syncAndroidPoliciesForTenant = (input: {
     let skipped = 0;
     let failed = 0;
     let lastError: string | null = null;
+
     // AMAPI policy pushes are two network calls per device. Keep the fan-out
     // bounded so a large group save cannot exhaust the Worker request budget.
     const outcomes = yield* Effect.forEach(
@@ -1026,17 +1090,20 @@ export const syncAndroidPoliciesForTenant = (input: {
         ),
       { concurrency: 4 },
     );
+
     for (const outcome of outcomes) {
       if (outcome.status === "updated") updated += 1;
       else if (outcome.status === "skipped") skipped += 1;
       else {
         failed += 1;
+
         const error =
           outcome.error ??
           new AndroidDeliveryError({
             kind: "upstream",
             message: "Android policy sync failed",
           });
+
         lastError = error.message;
         yield* ignoreDbFailure(
           updateAndroidDevice(input.db, outcome.device.id, {
@@ -1063,6 +1130,7 @@ export const syncAndroidPoliciesForTenant = (input: {
         lastError,
       }),
     );
+
     return { devices: devices.length, updated, skipped, failed };
   }).pipe(mapAndroidError);
 
@@ -1092,18 +1160,23 @@ const applyDeviceNotification = (
 ): Effect.Effect<ApplyNotificationResult, unknown, AndroidManagement> =>
   Effect.gen(function* () {
     const enterpriseName = input.enterprise.enterpriseName;
+
     if (!enterpriseName)
       return { status: "ignored" as const, reason: "enterprise has no Google name" };
     const resource = parseDeviceResource(input.data, enterpriseName);
+
     if (!resource) return { status: "ignored" as const, reason: "notification is not a device" };
+
     if (resource.enterpriseName !== enterpriseName)
       return { status: "ignored" as const, reason: "device belongs to another enterprise" };
+
     if (!deviceNameBelongs(enterpriseName, resource.name))
       return { status: "ignored" as const, reason: "device resource is outside the enterprise" };
 
     // Reuse the enterprise's owning tenant; never trust a tenant id in the
     // notification payload.
     const organizationId = input.enterprise.organizationId;
+
     const device = yield* upsertAndroidDevice({
       db: input.db,
       organizationId,
@@ -1111,6 +1184,7 @@ const applyDeviceNotification = (
       resource,
       planLimits: input.planLimits,
     });
+
     if (device.limitReached)
       return { status: "ignored" as const, reason: "tenant device limit reached" };
     yield* syncDynamicGroupsForDevice(input.db, organizationId, device.deviceId, {
@@ -1134,6 +1208,7 @@ const applyDeviceNotification = (
         { authSecret: input.authSecret },
       ).pipe(Effect.catch(() => Effect.void));
     }
+
     if (resource.state === "DELETED" && device.previousStatus === "enrolled") {
       yield* writeSystemAudit(
         input.db,
@@ -1156,6 +1231,7 @@ const applyDeviceNotification = (
       organizationId,
       deviceIds: [device.deviceId],
     }).pipe(Effect.catch(() => Effect.void));
+
     return { status: "ok" as const };
   });
 
@@ -1164,24 +1240,31 @@ const applyCommandNotification = (
 ): Effect.Effect<ApplyNotificationResult, unknown> =>
   Effect.gen(function* () {
     const enterpriseName = input.enterprise.enterpriseName;
+
     if (!enterpriseName) return { status: "ignored" as const, reason: "enterprise has no name" };
     const record = recordOf(input.data);
     const operationName = stringOf(record?.["name"]);
     const metadata = recordOf(record?.["metadata"]);
+
     const deviceName =
       stringOf(metadata?.["deviceName"]) ??
       (operationName
         ? /^(enterprises\/[^/]+\/devices\/[^/]+)/.exec(operationName)?.[1]
         : undefined);
+
     if (!deviceName) return { status: "ignored" as const, reason: "operation has no device" };
+
     if (!deviceNameBelongs(enterpriseName, deviceName))
       return { status: "ignored" as const, reason: "device belongs to another enterprise" };
+
     const mapping = yield* input.db.query.androidDevice.findFirst({
       where: { organizationId: input.enterprise.organizationId, deviceName },
     });
+
     if (!mapping) return { status: "ignored" as const, reason: "device is not enrolled" };
 
     const status = commandStatus({ data: input.data });
+
     const nextStatus =
       status === "COMPLETED"
         ? "succeeded"
@@ -1190,6 +1273,7 @@ const applyCommandNotification = (
           : status === "PENDING"
             ? "sent"
             : undefined;
+
     if (nextStatus) {
       const candidates = (yield* input.db
         .select()
@@ -1202,6 +1286,7 @@ const applyCommandNotification = (
         )
         .orderBy(desc(schema.deviceCommand.createdAt))
         .limit(20)) as Array<typeof schema.deviceCommand.$inferSelect>;
+
       // Match the AMAPI operation stored when the command was queued. Falling
       // back to the newest sent command is only safe when the payload has no
       // operation (legacy rows); otherwise two in-flight commands could swap
@@ -1209,13 +1294,16 @@ const applyCommandNotification = (
       const command = operationName
         ? (candidates.find((candidate) => {
             const payload = candidate.payload as { operationName?: unknown } | null;
+
             return payload?.operationName === operationName;
           }) ??
           candidates.find((candidate) => {
             const payload = candidate.payload as { operationName?: unknown } | null;
+
             return payload?.operationName === undefined;
           }))
         : candidates[0];
+
       if (command) {
         yield* input.db
           .update(schema.deviceCommand)
@@ -1226,6 +1314,7 @@ const applyCommandNotification = (
             updatedAt: now(),
           })
           .where(eq(schema.deviceCommand.id, command.id));
+
         if (nextStatus === "failed") {
           yield* writeSystemAudit(
             input.db,
@@ -1241,10 +1330,12 @@ const applyCommandNotification = (
         }
       }
     }
+
     yield* input.db
       .update(schema.device)
       .set({ lastSeenAt: now() })
       .where(eq(schema.device.id, mapping.deviceId));
+
     return { status: "ok" as const };
   });
 
@@ -1266,8 +1357,10 @@ export const handleAndroidPubSub = (input: {
 }): Effect.Effect<AndroidPubSubResult, AndroidDeliveryError, AndroidManagement> =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
     const token = bearerToken(input.authorization);
+
     if (!token)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -1303,8 +1396,10 @@ export const handleAndroidPubSub = (input: {
           }),
       ),
     );
+
     const notificationType = push.notificationType ?? "UNKNOWN";
     const enterpriseName = enterpriseNameFromResource(push.data);
+
     if (!enterpriseName)
       return {
         status: "ignored",
@@ -1313,6 +1408,7 @@ export const handleAndroidPubSub = (input: {
       } satisfies AndroidPubSubResult;
 
     const enterprise = yield* findAndroidEnterpriseByName(input.db, enterpriseName);
+
     if (!enterprise || enterprise.status !== "active")
       return {
         status: "ignored",
@@ -1323,6 +1419,7 @@ export const handleAndroidPubSub = (input: {
     const seen = yield* input.db.query.androidPubSubMessage.findFirst({
       where: { messageId: push.messageId },
     });
+
     if (seen) return { status: "duplicate", type: notificationType } satisfies AndroidPubSubResult;
 
     const context: ApplyNotificationInput = {
@@ -1334,6 +1431,7 @@ export const handleAndroidPubSub = (input: {
       data: push.data,
       ...(input.planLimits ? { planLimits: input.planLimits } : {}),
     };
+
     const result: ApplyNotificationResult =
       notificationType === "ENROLLMENT" || notificationType === "STATUS_REPORT"
         ? yield* applyDeviceNotification(context)
@@ -1350,6 +1448,7 @@ export const handleAndroidPubSub = (input: {
       notificationType,
       receivedAt: now(),
     });
+
     if (result.status === "ok") {
       yield* ignoreDbFailure(
         updateAndroidEnterprise(input.db, enterprise.organizationId, {
@@ -1358,6 +1457,7 @@ export const handleAndroidPubSub = (input: {
         }),
       );
     }
+
     return {
       status: result.status,
       type: notificationType,
@@ -1395,10 +1495,13 @@ export const issueAndroidCommand = (input: {
 > =>
   Effect.gen(function* () {
     const config = input.config;
+
     if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
     const command = androidCommandForAction(input.action);
+
     if (!command) return null;
     const enterprise = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
     if (enterprise?.status !== "active" || !enterprise.enterpriseName)
       return yield* Effect.fail(
         new AndroidDeliveryError({
@@ -1406,6 +1509,7 @@ export const issueAndroidCommand = (input: {
           message: "Android Enterprise is not connected for this tenant.",
         }),
       );
+
     if (
       !input.device.dmIdentifier ||
       !deviceNameBelongs(enterprise.enterpriseName, input.device.dmIdentifier)
@@ -1419,6 +1523,7 @@ export const issueAndroidCommand = (input: {
     const android = yield* AndroidManagement;
     const commandId = crypto.randomUUID();
     const timestamp = now();
+
     const operation = yield* android
       .issueCommand({
         deviceName: input.device.dmIdentifier,
@@ -1447,6 +1552,7 @@ export const issueAndroidCommand = (input: {
       createdAt: timestamp,
       updatedAt: timestamp,
     });
+
     return { operationName: operation.operationName, commandId };
   }).pipe(mapAndroidError);
 

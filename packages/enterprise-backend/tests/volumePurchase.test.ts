@@ -38,31 +38,39 @@ const makeFetch = (
   } = {},
 ) => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
+
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
+
     if (options.tokenStatus && options.tokenStatus !== 200)
       return jsonResponse(
         { errorMessage: "Invalid token", errorNumber: 9601 },
         options.tokenStatus,
       );
+
     if (url.includes("/v2/assets/associate")) return jsonResponse({ eventId: "associate-event-1" });
+
     if (url.includes("/v2/assets/disassociate"))
       return jsonResponse({ eventId: "disassociate-event-1" });
+
     if (url.includes("/v2/assets"))
       return jsonResponse({
         assets: options.assets ?? [],
         currentPageIndex: 0,
         totalPages: 1,
       });
+
     return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 500);
   }) as typeof globalThis.fetch;
+
   return { fetchImpl, calls };
 };
 
 const makeDbWithTenant = () => {
   const db = makeDb();
   const now = new Date();
+
   for (const id of [organizationId, otherOrganizationId]) {
     db.store.organization.push({
       id,
@@ -72,6 +80,7 @@ const makeDbWithTenant = () => {
       updatedAt: now,
     });
   }
+
   db.store.device.push({
     id: "device-1",
     organizationId,
@@ -92,6 +101,7 @@ const makeDbWithTenant = () => {
     enrolledAt: now,
     lastSeenAt: now,
   });
+
   return db;
 };
 
@@ -164,6 +174,7 @@ describe("Apps and Books tokens", () => {
 describe("Apps and Books asset sync and licences", () => {
   it("syncs assets and keeps tenant rows separate", async () => {
     const db = makeDbWithTenant();
+
     const { fetchImpl } = makeFetch({
       assets: [
         {
@@ -180,7 +191,9 @@ describe("Apps and Books asset sync and licences", () => {
         },
       ],
     });
+
     await saveToken(db, fetchImpl);
+
     const result = await runEffect(
       syncVppAssets({
         db,
@@ -190,6 +203,7 @@ describe("Apps and Books asset sync and licences", () => {
         appMetadata: new Map([["361309726", { name: "Pages", bundleId: "com.apple.Pages" }]]),
       }),
     );
+
     expect(result).toMatchObject({
       assets: 1,
       totalLicenses: 10,
@@ -224,6 +238,7 @@ describe("Apps and Books asset sync and licences", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(first).toMatchObject({ serial: "SERIAL-1", eventId: "associate-event-1" });
     expect(db.store.vpp_asset[0]).toMatchObject({ availableLicenses: 4, assignedLicenses: 1 });
     expect(db.store.device_vpp_assignment[0]).toMatchObject({
@@ -243,6 +258,7 @@ describe("Apps and Books asset sync and licences", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(second).toMatchObject({ serial: "SERIAL-1" });
     expect(db.store.vpp_asset[0]).toMatchObject({ availableLicenses: 4, assignedLicenses: 1 });
     expect(calls.filter((call) => call.url.includes("/associate"))).toHaveLength(1);
@@ -296,6 +312,7 @@ describe("Apps and Books asset sync and licences", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(result).toMatchObject({ released: true, eventId: "disassociate-event-1" });
     expect(db.store.vpp_asset[0]).toMatchObject({ availableLicenses: 5, assignedLicenses: 0 });
     expect(db.store.device_vpp_assignment[0]).toMatchObject({ state: "revoked" });

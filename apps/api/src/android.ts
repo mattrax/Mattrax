@@ -28,18 +28,24 @@ let cachedAndroidConfig: AndroidDeliveryConfig | null | undefined;
 export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
   if (cachedAndroidConfig !== undefined) return cachedAndroidConfig ?? undefined;
   const raw = apiEnv.ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON;
+
   if (!raw?.trim()) {
     cachedAndroidConfig = null;
+
     return undefined;
   }
+
   if (!/^\s*[{[]/.test(raw)) {
     console.warn(
       "Android Management is disabled: ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON is not JSON",
     );
     cachedAndroidConfig = null;
+
     return undefined;
   }
+
   let decoded: typeof ServiceAccountJson.Type;
+
   try {
     decoded = Schema.decodeUnknownSync(ServiceAccountJson)(JSON.parse(raw) as unknown);
   } catch {
@@ -47,14 +53,19 @@ export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
       "Android Management is disabled: ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON is not a valid service account",
     );
     cachedAndroidConfig = null;
+
     return undefined;
   }
+
   const projectId = apiEnv.ANDROID_MANAGEMENT_PROJECT_ID ?? decoded.project_id;
+
   if (!projectId?.trim() || !decoded.client_email.trim() || !decoded.private_key.trim()) {
     console.warn("Android Management is disabled: service account fields are incomplete");
     cachedAndroidConfig = null;
+
     return undefined;
   }
+
   const parsed = {
     serviceAccount: {
       clientEmail: decoded.client_email,
@@ -75,7 +86,9 @@ export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
       ? { jwksUri: apiEnv.ANDROID_MANAGEMENT_PUBSUB_JWKS_URI }
       : {}),
   } satisfies AndroidDeliveryConfig;
+
   cachedAndroidConfig = parsed;
+
   return parsed;
 };
 

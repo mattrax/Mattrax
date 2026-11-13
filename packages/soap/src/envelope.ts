@@ -20,40 +20,51 @@ export interface SerializeSoapEnvelopeOptions {
 
 export function serializeSoapEnvelope(options: SerializeSoapEnvelopeOptions): string {
   const ns = options.namespaces ?? {};
+
   const nsAttrs = Object.entries(ns)
     .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeAttr(uri)}"`)
     .join("");
 
   let headerXml = "";
+
   if (options.header) {
     const h = options.header;
     const parts: Array<string> = [];
+
     if (h.action) {
       parts.push(`<a:Action s:mustUnderstand="1">${escapeXml(h.action)}</a:Action>`);
     }
+
     if (h.messageId) {
       parts.push(`<a:MessageID>${escapeXml(h.messageId)}</a:MessageID>`);
     }
+
     if (h.replyTo) {
       parts.push(`<a:ReplyTo><a:Address>${escapeXml(h.replyTo)}</a:Address></a:ReplyTo>`);
     }
+
     if (h.to) {
       parts.push(`<a:To s:mustUnderstand="1">${escapeXml(h.to)}</a:To>`);
     }
+
     if (h.relatesTo) {
       parts.push(`<a:RelatesTo>${escapeXml(h.relatesTo)}</a:RelatesTo>`);
     }
+
     if (h.activityId) {
       parts.push(
         `<ActivityId CorrelationId="${escapeAttr(h.activityId)}">${escapeXml(h.activityId)}</ActivityId>`,
       );
     }
+
     if (h.securityXml) {
       parts.push(h.securityXml);
     }
+
     if (h.rawXml) {
       parts.push(h.rawXml);
     }
+
     if (parts.length > 0) {
       headerXml = `  <s:Header>\n${parts.map((p) => "    " + p).join("\n")}\n  </s:Header>\n`;
     }
@@ -80,10 +91,12 @@ export interface DeserializeSoapEnvelopeResult<T> {
 function findChildByLocalName(element: Element, localName: string): Element | undefined {
   for (let i = 0; i < element.children.length; i++) {
     const child = element.children[i];
+
     if (child.localName === localName) {
       return child;
     }
   }
+
   return undefined;
 }
 
@@ -95,17 +108,23 @@ export function extractSoapBody(xml: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "application/xml") as unknown as Document;
   const envelope = doc.documentElement;
+
   if (!envelope || envelope.localName !== "Envelope") {
     throw new Error("Expected SOAP Envelope as root element");
   }
+
   const body = findChildByLocalName(envelope, "Body");
+
   if (!body) {
     throw new Error("SOAP Body not found in envelope");
   }
+
   const firstChild = body.children[0];
+
   if (!firstChild) {
     throw new Error("SOAP Body is empty");
   }
+
   return serializeNode(firstChild);
 }
 
@@ -113,15 +132,19 @@ export function extractSoapHeader(xml: string): SoapHeader {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "application/xml") as unknown as Document;
   const envelope = doc.documentElement;
+
   if (!envelope) {
     return {};
   }
+
   const header = findChildByLocalName(envelope, "Header");
   const result: SoapHeader = {};
+
   if (!header) return result;
 
   for (let i = 0; i < header.children.length; i++) {
     const child = header.children[i];
+
     switch (child.localName) {
       case "Action":
         result.action = child.textContent ?? undefined;
@@ -131,15 +154,18 @@ export function extractSoapHeader(xml: string): SoapHeader {
         break;
       case "ReplyTo": {
         let addr: Element | undefined;
+
         for (let j = 0; j < child.children.length; j++) {
           if (child.children[j].localName === "Address") {
             addr = child.children[j];
             break;
           }
         }
+
         result.replyTo = addr?.textContent ?? undefined;
         break;
       }
+
       case "To":
         result.to = child.textContent ?? undefined;
         break;

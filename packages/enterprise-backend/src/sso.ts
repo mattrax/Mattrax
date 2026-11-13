@@ -26,6 +26,7 @@ const toBase64Url = (bytes: Uint8Array) =>
 const digest = (value: string) =>
   Effect.promise(async () => {
     const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+
     return toBase64Url(new Uint8Array(bytes));
   });
 
@@ -44,6 +45,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
         const db = yield* Db;
         const completion = yield* sessions.AuthenticationCompletion;
         const config = yield* Auth.AuthConfig;
+
         return SsoServicesTag.of({
           db,
           completion,
@@ -57,20 +59,25 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
         signIn: (_invocation: unknown, input: { token: string }) =>
           Effect.gen(function* () {
             const services = yield* SsoServicesTag;
+
             const payload = yield* verifyToken(services.secret, input.token).pipe(
               Effect.mapError(() => new SsoRejected({ message: "Invalid SSO assertion" })),
             );
+
             if (payload.exp <= Date.now() || payload.purpose !== "sso-assertion")
               return yield* Effect.fail(new SsoRejected({ message: "SSO assertion expired" }));
             const tenantId = (payload as { tenantId?: string }).tenantId;
+
             if (!tenantId)
               return yield* Effect.fail(
                 new SsoRejected({ message: "SSO assertion has no tenant" }),
               );
 
             const user = yield* services.db.query.user.findFirst({ where: { id: payload.sub } });
+
             if (!user || user.disabled)
               return yield* Effect.fail(new SsoRejected({ message: "Unknown SSO user" }));
+
             if (user.email.toLowerCase() !== payload.email.toLowerCase())
               return yield* Effect.fail(
                 new SsoRejected({ message: "SSO email does not match the account" }),
@@ -79,6 +86,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             const member = yield* services.db.query.member.findFirst({
               where: { userId: user.id, organizationId: tenantId },
             });
+
             if (!member)
               return yield* Effect.fail(
                 new SsoRejected({ message: "User is not a member of this tenant" }),
@@ -88,7 +96,9 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
               .select()
               .from(authCredentials)
               .where(eq(authCredentials.subjectId, user.id));
+
             const active = credentials.filter((credential: any) => credential.active);
+
             if (active.length === 0)
               return yield* Effect.fail(
                 new SsoRejected({ message: "User has no active credential" }),
@@ -101,9 +111,11 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
                 .where(eq(schema.user.id, user.id));
 
             const flowId = Sessions.AuthenticationFlowId.make(`sso:${crypto.randomUUID()}`);
+
             const bindingDigest = AuthSchema.TokenDigest.make(
               yield* digest(`${input.token}:${flowId}`),
             );
+
             const revision = yield* Schema.decodeUnknownEffect(Sessions.AuthenticationRevision)({
               subjectId: user.id,
               securityRevision: user.authRevision,
@@ -112,6 +124,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
                 revision: credential.revision,
               })),
             });
+
             const evidence: Sessions.AuthenticationEvidence = {
               flowId,
               bindingDigest,
@@ -127,19 +140,24 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
                 },
               ],
             };
+
             const applicationClaims: AuthClaims = {
               name: user.name,
               email: user.email,
               emailVerified: true,
             };
+
             const prepared = yield* services.completion.prepare({
               evidence,
               requirement: authRequirementForSubject(user),
               claims: applicationClaims,
             });
+
             const result = yield* prepared.read;
             const collector = yield* AuthCredentialCommandCollector;
+
             if (result.credentialCommands.length > 0) yield* collector(result.credentialCommands);
+
             return result.value;
           }).pipe(
             Effect.catch((error) =>

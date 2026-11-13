@@ -23,13 +23,16 @@ const SHA256_WITH_RSA_OID = "1.2.840.113549.1.1.11";
 // CMS attributes
 const CMS_CONTENT_TYPE = "1.2.840.113549.1.9.3";
 const CMS_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
+
 // SCEP attributes (VeriSign/iPlanet arc) — OIDs per RFC 8894 / draft-gutmann-scep
 const SCEP_MESSAGE_TYPE = "2.16.840.1.113733.1.9.2";
 const SCEP_PKI_STATUS = "2.16.840.1.113733.1.9.3";
+
 // OID .4 = failInfo (unused in success path)
 const SCEP_SENDER_NONCE = "2.16.840.1.113733.1.9.5";
 const SCEP_RECIPIENT_NONCE = "2.16.840.1.113733.1.9.6";
 const SCEP_TRANSACTION_ID = "2.16.840.1.113733.1.9.7";
+
 // PKCS#9 challengePassword, carried in the CSR attributes (not signedAttrs).
 const PKCS9_CHALLENGE_PASSWORD = "1.2.840.113549.1.9.7";
 
@@ -59,6 +62,7 @@ async function decryptEnvelopedData(
   const recipientInfo = envelopedData.recipientInfos[0]?.value as
     | pkijs.KeyTransRecipientInfo
     | undefined;
+
   if (!recipientInfo) throw new Error("No recipient info in EnvelopedData");
 
   // Export JWK → PKCS8 DER so Node.js privateDecrypt can use it for PKCS#1 v1.5.
@@ -71,19 +75,23 @@ async function decryptEnvelopedData(
     true,
     ["sign"],
   );
+
   const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
   const encryptedSessionKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+
   const sessionKeyBytes = privateDecrypt(
     { key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING },
     encryptedSessionKey,
   );
 
   const contentEncAlgId = envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
+
   const ivHex = (
     envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
   )?.valueBlock?.valueHex as ArrayBuffer | undefined;
+
   if (!ivHex) throw new Error("Missing IV in content encryption algorithm params");
   const iv = Buffer.from(ivHex);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
@@ -100,11 +108,13 @@ async function decryptEnvelopedData(
       false,
       ["decrypt"],
     );
+
     return crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encryptedContent);
   }
 
   if (contentEncAlgId === DES3_CBC_OID) {
     const decipher = createDecipheriv("des-ede3-cbc", sessionKeyBytes, iv);
+
     return Buffer.concat([decipher.update(Buffer.from(encryptedContent)), decipher.final()])
       .buffer as ArrayBuffer;
   }
@@ -126,12 +136,14 @@ async function encryptForDevice(
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
     "encrypt",
   ]);
+
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
 
   // Encrypt session key with recipient's RSA public key using PKCS#1 v1.5.
   // We pass the SPKI as PEM to avoid KeyObject instanceof issues in Vite context.
   const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
   const spkiPem = pemEncode("PUBLIC KEY", spkiDer);
+
   const encryptedSessionKey = publicEncrypt(
     { key: spkiPem, padding: constants.RSA_PKCS1_PADDING },
     Buffer.from(sessionKeyBytes),
@@ -180,11 +192,13 @@ async function encryptForDevice(
 
 export function certToPem(cert: pkijs.Certificate): string {
   const der = cert.toSchema().toBER(false);
+
   return pemEncode("CERTIFICATE", der);
 }
 
 export function pemToCert(pem: string): pkijs.Certificate {
   const der = pemDecode("CERTIFICATE", pem);
+
   return pkijs.Certificate.fromBER(der);
 }
 
@@ -230,10 +244,12 @@ export async function buildScepCertFailure(
   failInfo = "2",
 ): Promise<ArrayBuffer> {
   const empty = new ArrayBuffer(0);
+
   const encapContentInfo = new pkijs.EncapsulatedContentInfo({
     eContentType: pkijs.ContentInfo.DATA,
     eContent: new asn1js.OctetString({ valueHex: empty }),
   });
+
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [
@@ -246,6 +262,7 @@ export async function buildScepCertFailure(
     certificates: [caCert],
     signerInfos: [],
   });
+
   const cryptoEngine = pkijs.getCrypto(true);
   const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, empty);
   signedData.signerInfos.push(
@@ -299,6 +316,7 @@ export async function buildScepCertFailure(
     }),
   );
   await signedData.sign(caPrivateKey, 0, "SHA-256");
+
   return signedData.toSchema(true).toBER(false);
 }
 
@@ -423,25 +441,31 @@ function extractOctetStringContent(node: any): ArrayBuffer {
     if (node.valueBlock && node.valueBlock.valueHexView) {
       return node.valueBlock.valueHexView.slice().buffer;
     }
+
     // Constructed OCTET STRING has value array of fragments
     if (node.valueBlock && Array.isArray(node.valueBlock.value)) {
       let total = 0;
       const parts: Uint8Array[] = [];
+
       for (const child of node.valueBlock.value) {
         const bytes = new Uint8Array(
           child.valueBlock?.valueHexView
             ? child.valueBlock.valueHexView.slice().buffer
             : child.toBER(false),
         );
+
         parts.push(bytes);
         total += bytes.length;
       }
+
       const result = new Uint8Array(total);
       let offset = 0;
+
       for (const p of parts) {
         result.set(p, offset);
         offset += p.length;
       }
+
       return result.buffer;
     }
   }
@@ -459,14 +483,18 @@ function extractOctetStringContent(node: any): ArrayBuffer {
 function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
   let length = der[offset]!;
   let headerLen = 1;
+
   if (length & 0x80) {
     const numBytes = length & 0x7f;
     length = 0;
+
     for (let i = 0; i < numBytes; i++) {
       length = (length << 8) | der[offset + 1 + i]!;
     }
+
     headerLen = 1 + numBytes;
   }
+
   return [length, headerLen];
 }
 
@@ -491,17 +519,21 @@ function extractEContent(eContent: any): ArrayBuffer {
     // Multiple children — concatenate their raw inner bytes.
     let total = 0;
     const parts: Uint8Array[] = [];
+
     for (const child of children) {
       const bytes = new Uint8Array(extractOctetStringContent(child));
       parts.push(bytes);
       total += bytes.length;
     }
+
     const result = new Uint8Array(total);
     let offset = 0;
+
     for (const p of parts) {
       result.set(p, offset);
       offset += p.length;
     }
+
     return result.buffer;
   }
 
@@ -514,13 +546,16 @@ function extractEContent(eContent: any): ArrayBuffer {
   // Fallback: serialize the whole eContent node and manually strip
   // the outer tag + length to get the inner bytes.
   const fullBytes = new Uint8Array(eContent.toBER(false));
+
   if (fullBytes.length < 2) return fullBytes.buffer;
 
   const tag = fullBytes[0];
+
   // Context-specific [0] EXPLICIT (0xa0) or OCTET STRING (0x04)
   if ((tag === 0xa0 || tag === 0x04) && fullBytes.length >= 2) {
     const [length, headerLen] = readAsn1Length(fullBytes, 1);
     const contentStart = 1 + headerLen;
+
     if (contentStart + length <= fullBytes.length) {
       return fullBytes.slice(contentStart, contentStart + length).buffer;
     }
@@ -567,6 +602,7 @@ function bytesToHex(bytes: ArrayBuffer): string {
 
 function getStringValue(node: any): string {
   if (!node) return "";
+
   if (
     isUniversalTag(node, TAG_PRINTABLE_STRING) ||
     isUniversalTag(node, TAG_UTF8_STRING) ||
@@ -575,10 +611,12 @@ function getStringValue(node: any): string {
   ) {
     return node.valueBlock.value ?? "";
   }
+
   if (isUniversalTag(node, TAG_INTEGER)) {
     // Some SCEP implementations encode messageType as INTEGER
     return String(node.valueBlock.valueDec ?? "");
   }
+
   if (isUniversalTag(node, TAG_OCTET_STRING)) {
     return bytesToHex(
       node.valueBlock.valueHexView
@@ -586,37 +624,50 @@ function getStringValue(node: any): string {
         : node.valueBlock.valueHex,
     );
   }
+
   return "";
 }
 
 function getOctetStringValue(node: any): ArrayBuffer {
   if (!node) return new ArrayBuffer(0);
+
   if (isUniversalTag(node, TAG_OCTET_STRING)) {
     const view = node.valueBlock.valueHexView;
+
     if (view) return view.slice().buffer;
     const hex = node.valueBlock.valueHex;
+
     if (hex) return hex.slice(0);
   }
+
   return new ArrayBuffer(0);
 }
 
 function extractChallengePassword(csr: pkijs.CertificationRequest): string | undefined {
   const attributes = (csr as unknown as { attributes?: Array<{ type: string; values?: any[] }> })
     .attributes;
+
   if (!Array.isArray(attributes)) return undefined;
+
   for (const attribute of attributes) {
     if (attribute.type !== PKCS9_CHALLENGE_PASSWORD) continue;
     const value = attribute.values?.[0];
+
     if (!value) continue;
+
     // PrintableString and UTF8String are the common encodings. Some clients
     // wrap the password in an OCTET STRING.
     if (isUniversalTag(value, TAG_OCTET_STRING)) {
       const bytes = getOctetStringValue(value);
+
       return new TextDecoder().decode(bytes);
     }
+
     const text = getStringValue(value);
+
     if (text) return text;
   }
+
   return undefined;
 }
 
@@ -627,13 +678,17 @@ function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
     // Some implementations wrap the CSR in an OCTET STRING inside the EnvelopedData
     try {
       const parsed = asn1js.fromBER(bytes);
+
       if (parsed.result && parsed.result.idBlock && parsed.result.idBlock.tagNumber === 4) {
         const octet = parsed.result as asn1js.OctetString;
+
         const inner = octet.valueBlock.valueHexView
           ? octet.valueBlock.valueHexView.slice().buffer
           : octet.valueBlock.valueHex;
+
         return pkijs.CertificationRequest.fromBER(inner);
       }
+
       throw err;
     } catch {
       throw err;
@@ -650,6 +705,7 @@ export function parseScepPkcsReq(
     try: async () => {
       // Parse outer ContentInfo → SignedData
       const contentInfo = pkijs.ContentInfo.fromBER(der);
+
       if (contentInfo.contentType !== pkijs.ContentInfo.SIGNED_DATA) {
         throw new Error(`Unexpected content type: ${contentInfo.contentType}`);
       }
@@ -659,7 +715,9 @@ export function parseScepPkcsReq(
       if (signedData.signerInfos.length !== 1) {
         throw new Error("SCEP request must contain exactly one signer");
       }
+
       const signerInfo = signedData.signerInfos[0];
+
       if (!signerInfo || !signerInfo.signedAttrs) {
         throw new Error("Missing signerInfo or signedAttrs in SCEP request");
       }
@@ -672,9 +730,11 @@ export function parseScepPkcsReq(
         checkChain: false,
         extendedMode: true,
       });
+
       if (!verification.signatureVerified) {
         throw new Error("SCEP request CMS signature is invalid");
       }
+
       const verifiedSigner = (verification as { signerCertificate?: pkijs.Certificate })
         .signerCertificate;
 
@@ -684,6 +744,7 @@ export function parseScepPkcsReq(
 
       for (const attr of signerInfo.signedAttrs.attributes) {
         if (!attr.values || attr.values.length === 0) continue;
+
         switch (attr.type) {
           case SCEP_TRANSACTION_ID:
             transactionId = getStringValue(attr.values[0]);
@@ -718,9 +779,11 @@ export function parseScepPkcsReq(
 
       // Extract eContent
       const eContent = signedData.encapContentInfo.eContent;
+
       if (!eContent) {
         throw new Error("Missing eContent in SCEP request");
       }
+
       const innerBytes = extractEContent(eContent);
 
       // Try to parse innerBytes as ContentInfo.
@@ -731,6 +794,7 @@ export function parseScepPkcsReq(
 
       try {
         const innerContentInfo = pkijs.ContentInfo.fromBER(innerBytes);
+
         if (innerContentInfo.contentType === pkijs.ContentInfo.ENVELOPED_DATA) {
           isEnveloped = true;
           const envelopedData = new pkijs.EnvelopedData({ schema: innerContentInfo.content });
@@ -747,6 +811,7 @@ export function parseScepPkcsReq(
 
       try {
         const csr = parseCsr(csrBytes);
+
         return {
           csr,
           transactionId,
@@ -829,6 +894,7 @@ export function certificateSerialHex(certificate: pkijs.Certificate): string {
   const buffer =
     certificate.serialNumber.valueBlock.valueHexView ??
     new Uint8Array(certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0));
+
   return Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0"))
     .join("")
     .replace(/^0+(?=.)/, "");

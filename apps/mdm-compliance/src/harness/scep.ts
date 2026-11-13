@@ -15,6 +15,7 @@ let sharedCa: Promise<ScepCaFixture> | undefined;
 
 export const sharedScepCa = (): Promise<ScepCaFixture> => {
   sharedCa ??= createCaFixture();
+
   return sharedCa;
 };
 
@@ -39,6 +40,7 @@ export const createScepHarness = async (
   } = {},
 ): Promise<ScepHarness> => {
   const ca = await sharedScepCa();
+
   const state: ScepHarnessState = {
     ca,
     authenticate: options.authenticate ?? (() => Effect.void),
@@ -47,6 +49,7 @@ export const createScepHarness = async (
     saveCount: 0,
     getCaFailure: null,
   };
+
   const repository = Layer.succeed(
     ScepRepository,
     ScepRepository.of({
@@ -67,9 +70,11 @@ export const createScepHarness = async (
       findIssuedCertificate: (serial) => Effect.succeed(state.issued.get(serial) ?? null),
     }),
   );
+
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repository));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
+
   return { handler, state };
 };
 

@@ -6,5 +6,6 @@ export default function Page() {
     // If this is hit in prod, we did an SPA route (forgot `target="_self"`) so this should reload and make the docs show correctly.
     location.reload();
   });
+
   return undefined;
 }

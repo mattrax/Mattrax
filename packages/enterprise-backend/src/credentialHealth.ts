@@ -21,8 +21,10 @@ export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** A credential inside this window is shown as a warning. */
 export const CREDENTIAL_WARNING_DAYS = 30;
+
 /** A credential inside this window is shown as critical. */
 export const CREDENTIAL_CRITICAL_DAYS = 7;
+
 /** Legacy, device-unscoped certificates this far past expiry are history. */
 export const CERTIFICATE_HISTORY_GRACE_DAYS = 30;
 
@@ -39,11 +41,14 @@ export type CredentialHealth = {
  */
 export const parseCertificateNotAfter = (pem: string | null | undefined): Date | null => {
   if (!pem) return null;
+
   try {
     const der = pemDecode("CERTIFICATE", pem);
     const certificate = pkijs.Certificate.fromBER(der);
     const value = certificate.notAfter?.value;
+
     if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+
     return value;
   } catch {
     return null;
@@ -65,11 +70,16 @@ export const credentialLevel = (
   now: Date,
 ): CredentialInfo["level"] => {
   if (!configured) return "missing";
+
   if (!expiresAt) return "unknown";
+
   if (expiresAt.getTime() <= now.getTime()) return "expired";
   const daysLeft = daysUntilExpiry(expiresAt, now);
+
   if (daysLeft <= CREDENTIAL_CRITICAL_DAYS) return "critical";
+
   if (daysLeft <= CREDENTIAL_WARNING_DAYS) return "warning";
+
   return "ok";
 };
 
@@ -99,7 +109,9 @@ export type DeviceCertificateRecord = {
  */
 const certificateTime = (certificate: DeviceCertificateRecord): number => {
   const createdAt = certificate.createdAt?.getTime();
+
   if (createdAt !== undefined && Number.isFinite(createdAt)) return createdAt;
+
   return certificate.notAfter.getTime();
 };
 
@@ -108,15 +120,19 @@ export const latestDeviceCertificates = (
 ): DeviceCertificateRecord[] => {
   const latest = new Map<string, DeviceCertificateRecord>();
   const unscoped: DeviceCertificateRecord[] = [];
+
   for (const certificate of certificates) {
     if (!certificate.deviceId) {
       unscoped.push(certificate);
       continue;
     }
+
     const existing = latest.get(certificate.deviceId);
+
     if (!existing || certificateTime(certificate) >= certificateTime(existing))
       latest.set(certificate.deviceId, certificate);
   }
+
   return [...unscoped, ...latest.values()];
 };
 
@@ -133,18 +149,22 @@ export const summarizeDeviceCertificates = (
       Boolean(certificate.deviceId) ||
       certificate.notAfter.getTime() >= now.getTime() - CERTIFICATE_HISTORY_GRACE_DAYS * MS_PER_DAY,
   );
+
   const cutoff = new Date(now.getTime() + CREDENTIAL_WARNING_DAYS * MS_PER_DAY);
   let expiringSoon = 0;
   let expired = 0;
   let revoked = 0;
+
   for (const certificate of current) {
     if (certificate.revokedAt) {
       revoked += 1;
       continue;
     }
+
     if (certificate.notAfter.getTime() <= now.getTime()) expired += 1;
     else if (certificate.notAfter.getTime() <= cutoff.getTime()) expiringSoon += 1;
   }
+
   return { total: current.length, expiringSoon, expired, revoked };
 };
 
@@ -164,11 +184,13 @@ export const loadCredentialHealth = (
       .from(schema.applePushCertificate)
       .where(eq(schema.applePushCertificate.organizationId, organizationId))
       .limit(1)) as Array<{ certPem: string }>;
+
     const [caRow] = (yield* db
       .select()
       .from(schema.scepCa)
       .where(eq(schema.scepCa.id, 1))
       .limit(1)) as Array<{ certPem: string }>;
+
     const certificates = (yield* db
       .select()
       .from(schema.scepIssuedCertificate)

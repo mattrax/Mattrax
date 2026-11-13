@@ -10,7 +10,7 @@ const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
     status,
     headers: {
       "cache-control": "no-store",
-      ...(headers ?? {}),
+      ...headers,
     },
   });
 
@@ -61,6 +61,7 @@ const sha256 = async (value: string) =>
 const validRedirectUri = (value: string) => {
   try {
     const url = new URL(value);
+
     return (
       url.protocol === "https:" ||
       (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1"))
@@ -82,8 +83,10 @@ const clientAndRedirect = (
     if (!clientId || !redirectUri) return null;
     const db = yield* Db;
     const client = yield* db.query.mcpOAuthClient.findFirst({ where: { id: clientId } });
+
     if (!client) return null;
     const uris = Array.isArray(client.redirectUris) ? client.redirectUris : [];
+
     return uris.includes(redirectUri) ? client : null;
   });
 
@@ -93,6 +96,7 @@ const resolveUser = (request: HttpServerRequest.HttpServerRequest) =>
     // bearer token that is trying to mint another connection.
     if (!request.cookies[sessionCookie]) return null;
     const service = yield* EnterpriseService;
+
     return yield* (
       service.me(request) as Effect.Effect<
         {
@@ -146,6 +150,7 @@ const issueTokens = (
         createdAt: now,
       },
     ]);
+
     return { accessToken, refreshToken };
   });
 
@@ -161,6 +166,7 @@ const consentPage = (options: {
 }) => {
   const hidden = (name: string, value: string) =>
     `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" />`;
+
   const tenantList = options.tenants.length
     ? `<ul>${options.tenants
         .map(
@@ -168,6 +174,7 @@ const consentPage = (options: {
         )
         .join("")}</ul>`
     : "<p>No tenant memberships.</p>";
+
   return html(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Authorise ${escapeHtml(options.client.name)} · Mattrax</title>
@@ -217,23 +224,28 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
   const register = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
       const db = yield* Db;
+
       let body: {
         client_name?: unknown;
         redirect_uris?: unknown;
         token_endpoint_auth_method?: unknown;
       };
+
       try {
         body = JSON.parse((yield* request.text) || "{}");
       } catch {
         return errorResponse("invalid_client_metadata", "Registration body must be JSON");
       }
+
       const name =
         typeof body.client_name === "string" && body.client_name.trim()
           ? body.client_name.trim().slice(0, 120)
           : "MCP client";
+
       const redirectUris = Array.isArray(body.redirect_uris)
         ? body.redirect_uris.filter((value): value is string => typeof value === "string")
         : [];
+
       if (
         redirectUris.length === 0 ||
         redirectUris.length > 10 ||
@@ -243,6 +255,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
           "invalid_redirect_uri",
           "Redirect URIs must be https, or http on localhost/127.0.0.1",
         );
+
       if (
         body.token_endpoint_auth_method !== undefined &&
         body.token_endpoint_auth_method !== "none"
@@ -259,6 +272,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         redirectUris,
         createdAt: now,
       });
+
       return json(
         {
           client_id: id,
@@ -280,17 +294,23 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       const clientId = url.searchParams.get("client_id");
       const redirectUri = url.searchParams.get("redirect_uri");
       const client = yield* clientAndRedirect(clientId, redirectUri);
+
       if (!client) return errorResponse("invalid_request", "Unknown client or redirect URI");
+
       if (url.searchParams.get("response_type") !== "code")
         return errorResponse("unsupported_response_type", "Only response_type=code is supported");
       const codeChallenge = url.searchParams.get("code_challenge");
+
       if (!codeChallenge || url.searchParams.get("code_challenge_method") !== "S256")
         return errorResponse("invalid_request", "PKCE with S256 is required");
       const me = yield* resolveUser(request);
+
       if (!me) {
         const returnTo = `${url.pathname}${url.search}`;
+
         return redirect(`${options.origin}/login?returnTo=${encodeURIComponent(returnTo)}`);
       }
+
       return consentPage({
         requestUrl: url,
         client,
@@ -311,14 +331,18 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       const redirectUri = form.get("redirect_uri");
       const state = form.get("state");
       const client = yield* clientAndRedirect(clientId, redirectUri);
+
       if (!client || !redirectUri)
         return errorResponse("invalid_request", "Unknown client or redirect URI");
       const codeChallenge = form.get("code_challenge") ?? "";
+
       if (!codeChallenge) return errorResponse("invalid_request", "PKCE challenge is required");
 
       const me = yield* resolveUser(request);
+
       if (!me) {
         const url = new URL(request.url, options.origin);
+
         return redirect(
           `${options.origin}/login?returnTo=${encodeURIComponent(`${url.pathname}${url.search}`)}`,
         );
@@ -328,7 +352,9 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         const denied = new URL(redirectUri);
         denied.searchParams.set("error", "access_denied");
         denied.searchParams.set("error_description", "The user denied the request");
+
         if (state) denied.searchParams.set("state", state);
+
         return redirect(denied.toString());
       }
 
@@ -339,7 +365,9 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
           revokedAt: { isNull: true },
         },
       });
+
       const connectionId = existing?.id ?? crypto.randomUUID();
+
       if (existing)
         yield* db
           .update(schema.mcpOAuthConnection)
@@ -370,7 +398,9 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       });
       const target = new URL(redirectUri);
       target.searchParams.set("code", code);
+
       if (state) target.searchParams.set("state", state);
+
       return redirect(target.toString());
     }).pipe(Effect.catchCause((cause) => internalError("authorisation decision", cause)));
 
@@ -380,20 +410,24 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       const form = parseForm(yield* request.text);
       const grantType = form.get("grant_type");
       const clientId = form.get("client_id");
+
       if (!clientId) return errorResponse("invalid_client", "client_id is required");
       const client = yield* db.query.mcpOAuthClient.findFirst({ where: { id: clientId } });
+
       if (!client) return errorResponse("invalid_client", "Unknown client", 401);
 
       if (grantType === "authorization_code") {
         const code = form.get("code");
         const redirectUri = form.get("redirect_uri");
         const verifier = form.get("code_verifier");
+
         if (!code || !redirectUri || !verifier)
           return errorResponse(
             "invalid_request",
             "code, redirect_uri and code_verifier are required",
           );
         const codeHash = yield* Effect.promise(() => sha256(code));
+
         const row = yield* db.query.mcpOAuthCode.findFirst({
           where: {
             codeHash,
@@ -402,30 +436,37 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
             expiresAt: { gt: new Date() },
           },
         });
+
         if (!row || row.redirectUri !== redirectUri)
           return errorResponse("invalid_grant", "Invalid or expired authorization code");
         const expected = yield* Effect.promise(() => sha256(verifier));
+
         if (expected !== row.codeChallenge)
           return errorResponse("invalid_grant", "PKCE verification failed");
+
         const connection = yield* db.query.mcpOAuthConnection.findFirst({
           where: {
             id: row.connectionId,
             revokedAt: { isNull: true },
           },
         });
+
         if (!connection) return errorResponse("invalid_grant", "This connection was revoked");
         yield* db
           .update(schema.mcpOAuthCode)
           .set({ consumedAt: new Date() })
           .where(eq(schema.mcpOAuthCode.id, row.id));
         const tokens = yield* issueTokens(connection.id, client.id);
+
         return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
       }
 
       if (grantType === "refresh_token") {
         const refreshToken = form.get("refresh_token");
+
         if (!refreshToken) return errorResponse("invalid_request", "refresh_token is required");
         const tokenHash = yield* Effect.promise(() => sha256(refreshToken));
+
         const row = yield* db.query.mcpOAuthToken.findFirst({
           where: {
             tokenHash,
@@ -435,16 +476,20 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
             expiresAt: { gt: new Date() },
           },
         });
+
         if (!row) return errorResponse("invalid_grant", "Invalid or expired refresh token");
+
         const connection = yield* db.query.mcpOAuthConnection.findFirst({
           where: { id: row.connectionId, revokedAt: { isNull: true } },
         });
+
         if (!connection) return errorResponse("invalid_grant", "This connection was revoked");
         yield* db
           .update(schema.mcpOAuthToken)
           .set({ revokedAt: new Date() })
           .where(eq(schema.mcpOAuthToken.id, row.id));
         const tokens = yield* issueTokens(connection.id, client.id);
+
         return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
       }
 
@@ -456,12 +501,14 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       const db = yield* Db;
       const form = parseForm(yield* request.text);
       const token = form.get("token");
+
       if (!token) return json({}, 200);
       const tokenHash = yield* Effect.promise(() => sha256(token));
       yield* db
         .update(schema.mcpOAuthToken)
         .set({ revokedAt: new Date() })
         .where(eq(schema.mcpOAuthToken.tokenHash, tokenHash));
+
       return json({}, 200);
     }).pipe(
       Effect.catchCause((cause) =>

@@ -46,17 +46,29 @@ const textareaClass =
 
 const kindLabel = (kind: string) => {
   if (kind === "mttx.apple.device") return "Device restrictions";
+
   if (kind.startsWith("mttx.apple.certificate")) return "Certificate";
+
   if (kind === "mttx.apple.custom.wifi" || kind === "mttx.windows.custom.wifi") return "Wi-Fi";
+
   if (kind === "mttx.apple.custom.passcode") return "Passcode";
+
   if (kind === "mttx.apple.custom.designer") return "Apple configuration";
+
   if (kind.startsWith("mttx.apple.custom")) return "Custom profile";
+
   if (kind.startsWith("mttx.apple.application")) return "Application";
+
   if (kind.startsWith("mttx.apple.declaration")) return "Declaration";
+
   if (kind === "mttx.windows.custom.designer") return "Windows configuration";
+
   if (kind.startsWith("mttx.windows.custom")) return "Windows configuration";
+
   if (kind === "mttx.android.policy.designer") return "Android policy";
+
   if (kind.startsWith("mttx.android.policy")) return "Android policy";
+
   return kind;
 };
 
@@ -77,9 +89,11 @@ const platformForKind = (kind: string) =>
 const describe = (kind: string, data: unknown) => {
   const record = isRecord(data) ? data : {};
   const draft = parsePolicyDraft(record.draft);
+
   if (draft) {
     const target = platformForKind(kind);
     const selections = draft.platforms[target] ?? [];
+
     return {
       title: draft.name || kindLabel(kind),
       subtitle: `${kindLabel(kind)} · ${selections.length} collection${
@@ -89,6 +103,7 @@ const describe = (kind: string, data: unknown) => {
       platforms: [target],
     };
   }
+
   if (Array.isArray(record.nodes)) {
     return {
       title: typeof record.ssid === "string" ? `Wi-Fi: ${record.ssid}` : kindLabel(kind),
@@ -100,8 +115,10 @@ const describe = (kind: string, data: unknown) => {
       platforms: ["windows"],
     };
   }
+
   if (isRecord(record.policy)) {
     const keys = Object.keys(record.policy);
+
     return {
       title: kindLabel(kind),
       subtitle: `${keys.length} Android setting${keys.length === 1 ? "" : "s"}`,
@@ -109,10 +126,12 @@ const describe = (kind: string, data: unknown) => {
       platforms: ["android"],
     };
   }
+
   if (typeof record.content === "string") {
     const signed =
       record.signed === true ||
       (!record.content.startsWith("PD94bWw") && !record.content.startsWith("PHBsaXN0"));
+
     const security =
       record.security === "wpa3"
         ? "WPA3 Personal"
@@ -121,6 +140,7 @@ const describe = (kind: string, data: unknown) => {
           : record.security === "open"
             ? "Open network"
             : undefined;
+
     return {
       title:
         typeof record.ssid === "string"
@@ -136,6 +156,7 @@ const describe = (kind: string, data: unknown) => {
       signed,
     };
   }
+
   if (typeof record.pem === "string")
     return {
       title: "Certificate",
@@ -143,6 +164,7 @@ const describe = (kind: string, data: unknown) => {
       collections: [],
       platforms: ["apple"],
     };
+
   return {
     title: kindLabel(kind),
     subtitle: Object.keys(record).length
@@ -160,6 +182,7 @@ function ViewTabs(props: { base: string; active: "overview" | "assignments" | "d
     { id: "assignments" as const, label: "Assignments", href: `${props.base}/assignments` },
     { id: "designer" as const, label: "Designer", href: `${props.base}/design` },
   ];
+
   return (
     <nav
       aria-label="Policy views"
@@ -168,6 +191,7 @@ function ViewTabs(props: { base: string; active: "overview" | "assignments" | "d
       <For each={tabs()}>
         {(tab) => {
           const current = tab.id === props.active;
+
           return (
             <a
               href={tab.href}
@@ -191,10 +215,12 @@ export default function PolicyDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
+
   const row = () => policy.data as PolicyRow | undefined;
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
@@ -206,6 +232,7 @@ export default function PolicyDetailPage() {
     () => row()?.id,
     () => {
       const policy = row();
+
       if (policy) {
         setName(policy.name);
         setNotes(policy.notes ?? "");
@@ -213,12 +240,14 @@ export default function PolicyDetailPage() {
       }
     },
   );
+
   const invalidate = async () => {
     await qc.invalidateQueries({
       queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     });
     await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
   };
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchPolicy(params.tenantId, params.policyId, {
@@ -228,6 +257,7 @@ export default function PolicyDetailPage() {
       }),
     onSuccess: invalidate,
   }));
+
   const addConfigurations = useMutation(() => ({
     mutationFn: (configurations: Record<string, unknown>) =>
       enterprise.patchPolicy(params.tenantId, params.policyId, { configurations }),
@@ -236,6 +266,7 @@ export default function PolicyDetailPage() {
       await invalidate();
     },
   }));
+
   const dup = useMutation(() => ({
     mutationFn: () => enterprise.duplicatePolicy(params.tenantId, params.policyId),
     onSuccess: async ({ id }) => {
@@ -243,6 +274,7 @@ export default function PolicyDetailPage() {
       navigate(`/t/${params.tenantId}/policies/${id}`);
     },
   }));
+
   const del = useMutation(() => ({
     mutationFn: () =>
       enterprise.deletePolicies(params.tenantId, params.policyId ? [params.policyId] : []),
@@ -251,10 +283,12 @@ export default function PolicyDetailPage() {
       navigate(`/t/${params.tenantId}/policies`);
     },
   }));
+
   const deployments = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "policy", params.policyId), "deployments"],
     queryFn: () => enterprise.listPolicyDeployments(params.tenantId, params.policyId),
   }));
+
   const rollback = useMutation(() => ({
     mutationFn: (deploymentId: string) =>
       enterprise.rollbackPolicy(params.tenantId, params.policyId, deploymentId),
@@ -268,6 +302,7 @@ export default function PolicyDetailPage() {
       });
     },
   }));
+
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncPolicies(params.tenantId, [params.policyId!]),
   }));
@@ -519,8 +554,10 @@ function ConfigurationCard(props: {
 }) {
   const [opened, setOpened] = createSignal(false);
   const info = () => describe(props.kind, props.data);
+
   const content = () =>
     isRecord(props.data) && typeof props.data.content === "string" ? props.data.content : undefined;
+
   return (
     <details
       class="group overflow-hidden rounded-lg border border-border bg-muted/15"
@@ -649,10 +686,14 @@ function AddConfigurationDialog(props: {
   const submit = () => {
     setError(null);
     const next: Record<string, unknown> = Object.fromEntries(props.existing);
+
     if (preset() === "wifi") {
       if (!ssid().trim()) return setError("Enter the network name (SSID).");
+
       if (security() !== "open" && !password()) return setError("Enter the Wi-Fi password.");
+
       if (!apple() && !windows()) return setError("Choose at least one platform.");
+
       const value = {
         ssid: ssid().trim(),
         security: security(),
@@ -660,10 +701,12 @@ function AddConfigurationDialog(props: {
         autoJoin: autoJoin(),
         hidden: hidden(),
       };
+
       if (apple()) {
         const config = appleWifiConfiguration(value);
         next[config.kind] = config.data;
       }
+
       if (windows()) {
         const config = windowsWifiConfiguration(value);
         next[config.kind] = config.data;
@@ -674,8 +717,10 @@ function AddConfigurationDialog(props: {
         requireAlphanumeric: requireAlphanumeric(),
         allowSimple: allowSimple(),
       });
+
       next[config.kind] = config.data;
     }
+
     props.onAdd(next);
   };
 
@@ -684,6 +729,7 @@ function AddConfigurationDialog(props: {
       open={props.open}
       onOpenChange={(open) => {
         props.onOpenChange(open);
+
         if (!open) reset();
       }}
     >

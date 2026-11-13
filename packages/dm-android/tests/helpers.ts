@@ -21,7 +21,9 @@ export async function makeServiceAccount(): Promise<ServiceAccountFixture> {
     "sign",
     "verify",
   ])) as CryptoKeyPair;
+
   const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+
   return {
     clientEmail: "mattrax-test@test-project.iam.gserviceaccount.com",
     projectId: "test-project",
@@ -37,6 +39,7 @@ export function base64UrlToBytes(input: string): Uint8Array {
       .replace(/_/g, "/")
       .padEnd(input.length + ((4 - (input.length % 4)) % 4), "="),
   );
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
@@ -47,8 +50,10 @@ export function decodeJwt(token: string): {
   signature: Uint8Array;
 } {
   const parts = token.split(".");
+
   if (parts.length !== 3) throw new Error("JWT must have three parts");
   const decode = (part: string) => JSON.parse(new TextDecoder().decode(base64UrlToBytes(part)));
+
   return {
     header: decode(parts[0]!),
     claims: decode(parts[1]!),
@@ -59,6 +64,7 @@ export function decodeJwt(token: string): {
 
 export async function verifyJwt(token: string, publicKey: CryptoKey): Promise<boolean> {
   const decoded = decodeJwt(token);
+
   return crypto.subtle.verify(
     { name: "RSASSA-PKCS1-v1_5" },
     publicKey,
@@ -93,11 +99,15 @@ export function emptyResponse(status = 204): Response {
  */
 export function mockFetch(handler: (request: RecordedRequest) => Response | Promise<Response>) {
   const requests: Array<RecordedRequest> = [];
+
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
+
     const body =
       request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+
     const url = new URL(request.url);
+
     const recorded: RecordedRequest = {
       url: request.url,
       pathname: url.pathname,
@@ -106,9 +116,12 @@ export function mockFetch(handler: (request: RecordedRequest) => Response | Prom
       headers: request.headers,
       body,
     };
+
     requests.push(recorded);
+
     return handler(recorded);
   };
+
   return {
     requests,
     layer: FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch))),
@@ -117,5 +130,6 @@ export function mockFetch(handler: (request: RecordedRequest) => Response | Prom
 
 export function jsonBody(request: RecordedRequest): unknown {
   if (request.body === undefined || request.body === "") return undefined;
+
   return JSON.parse(request.body) as unknown;
 }

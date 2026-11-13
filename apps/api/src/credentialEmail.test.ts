@@ -52,6 +52,7 @@ describe("credentialExpiryEmail", () => {
       },
       { origin: "https://e.mattrax.app" },
     );
+
     expect(email.subject).toContain("credential expired");
     expect(email.text).toContain("APNs certificate: expired");
   });

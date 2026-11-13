@@ -19,11 +19,13 @@ const FORBIDDEN_KEYS = new Set(["name", "policyName"]);
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value) as unknown;
+
   return prototype === Object.prototype || prototype === null;
 }
 
 function assertNoForbiddenKeys(value: unknown, path: string): void {
   if (!isPlainObject(value)) return;
+
   for (const key of Object.keys(value)) {
     if (path === "" && FORBIDDEN_KEYS.has(key)) {
       throw new PolicyMergeError({
@@ -42,9 +44,12 @@ export function canonicalPolicyJson(value: unknown): string {
 
 function sortKeysDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeysDeep);
+
   if (!isPlainObject(value)) return value;
   const sorted: Record<string, unknown> = {};
+
   for (const key of Object.keys(value).sort()) sorted[key] = sortKeysDeep(value[key]);
+
   return sorted;
 }
 
@@ -58,12 +63,15 @@ function uniqueConcat(
 ): Array<unknown> {
   const result: Array<unknown> = [];
   const seen = new Set<string>();
+
   for (const item of [...existing, ...incoming]) {
     const identity = stableIdentity(item);
+
     if (seen.has(identity)) continue;
     seen.add(identity);
     result.push(item);
   }
+
   return result;
 }
 
@@ -80,9 +88,11 @@ function mergeInto(
         key,
       });
     }
+
     if (value === null || value === undefined) continue;
     const childPath = path === "" ? key : `${path}.${key}`;
     const existing = target[key];
+
     if (Array.isArray(value)) {
       target[key] = uniqueConcat(Array.isArray(existing) ? existing : [], value);
     } else if (isPlainObject(value)) {
@@ -91,6 +101,7 @@ function mergeInto(
       target[key] = value;
     }
   }
+
   return target;
 }
 
@@ -110,6 +121,7 @@ export function mergeAndroidPolicies(
   policies: ReadonlyArray<Record<string, unknown>>,
 ): Record<string, unknown> {
   let merged: Record<string, unknown> = {};
+
   for (const policy of policies) {
     if (!isPlainObject(policy)) {
       throw new PolicyMergeError({
@@ -117,9 +129,11 @@ export function mergeAndroidPolicies(
         path: "",
       });
     }
+
     assertNoForbiddenKeys(policy, "");
     merged = mergeInto(merged, policy, "");
   }
+
   return sortKeysDeep(merged) as Record<string, unknown>;
 }
 
@@ -129,13 +143,14 @@ export async function androidPolicyHash(policy: Record<string, unknown>): Promis
     "SHA-256",
     new TextEncoder().encode(canonicalPolicyJson(policy)),
   );
+
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
 /** True for tenant configuration kinds that contribute to an AMAPI policy. */
-export const isAndroidPolicyKind = (kind: string): boolean => /^mttx\.android\.policy\./.test(kind);
+export const isAndroidPolicyKind = (kind: string): boolean => kind.startsWith('mttx.android.policy.');
 
 export type AndroidPolicyConfiguration = {
   readonly kind: string;
@@ -157,21 +172,26 @@ function policyFromConfiguration(
   configuration: AndroidPolicyConfiguration,
 ): Record<string, unknown> {
   const data = configuration.data;
+
   if (!isRecord(data))
     throw new PolicyMergeError({
       message: `"${configuration.kind}" must be an object`,
       path: configuration.kind,
     });
+
   if (data["policy"] !== undefined) {
     if (!isRecord(data["policy"]))
       throw new PolicyMergeError({
         message: `"${configuration.kind}.policy" must be an object`,
         path: `${configuration.kind}.policy`,
       });
+
     return data["policy"];
   }
+
   const policy = { ...data };
   delete policy["draft"];
+
   return policy;
 }
 
@@ -186,6 +206,7 @@ export function compileAndroidPolicy(
   const policies = configurations
     .filter((configuration) => isAndroidPolicyKind(configuration.kind))
     .map(policyFromConfiguration);
+
   return mergeAndroidPolicies(policies);
 }
 
@@ -200,6 +221,7 @@ export function androidPolicyIdForHash(hash: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
     .slice(0, 24);
+
   return `mattrax-${suffix || "default"}`;
 }
 
@@ -208,5 +230,6 @@ export async function compileAndroidPolicyWithHash(
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
 ): Promise<{ policy: Record<string, unknown>; hash: string }> {
   const policy = compileAndroidPolicy(configurations);
+
   return { policy, hash: await androidPolicyHash(policy) };
 }

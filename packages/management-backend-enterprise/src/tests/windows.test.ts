@@ -36,6 +36,7 @@ const makeCa = async () => {
   const keyPair = await generateCaKeyPair();
   const privateKeyJwk = await exportPrivateKeyJwk(keyPair.privateKey);
   const certificate = await createCaCertificate(keyPair, "Mattrax Windows Test CA");
+
   return { certPem: certToPem(certificate), privateKeyJwk, certificate };
 };
 
@@ -53,6 +54,7 @@ const makeCsr = async (commonName = "DESKTOP-TEST") => {
   });
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
+
   return arrayBufferToBase64(csr.toSchema().toBER(false));
 };
 
@@ -93,6 +95,7 @@ const setup = async (
   } = {},
 ) => {
   const ca = await makeCa();
+
   const db = makeDb({
     [tableName(schema.organization)]: [
       organizationRow("org-late", new Date("2024-02-01T00:00:00Z")),
@@ -111,6 +114,7 @@ const setup = async (
     ...(overrides.devices ? { [tableName(schema.device)]: overrides.devices } : {}),
     ...(overrides.ssoConfig ? { [tableName(schema.ssoConfig)]: overrides.ssoConfig } : {}),
   });
+
   const backend = makeWindowsBackend({
     db: db as any,
     origin,
@@ -124,6 +128,7 @@ const setup = async (
     planLimits: overrides.planLimits,
     ...(overrides.federated ? { federated: overrides.federated } : {}),
   });
+
   return { ca, db, backend };
 };
 
@@ -143,7 +148,9 @@ const federatedAudience = "22222222-2222-2222-2222-222222222222";
 const base64Url = (value: Uint8Array | string): string => {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
@@ -158,7 +165,9 @@ const makeFederatedSigner = async () => {
     true,
     ["sign", "verify"],
   );
+
   const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+
   return {
     privateKey: pair.privateKey,
     jwks: {
@@ -182,6 +191,7 @@ const makeFederatedToken = async (
 ) => {
   const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "federated-test-key" }));
   const now = Math.floor(Date.now() / 1000);
+
   const payload = base64Url(
     JSON.stringify({
       iss: `https://login.microsoftonline.com/${federatedTenantId}/v2.0`,
@@ -196,7 +206,9 @@ const makeFederatedToken = async (
       ...overrides,
     }),
   );
+
   const signingInput = `${header}.${payload}`;
+
   const signature = new Uint8Array(
     await crypto.subtle.sign(
       { name: "RSASSA-PKCS1-v1_5" },
@@ -204,6 +216,7 @@ const makeFederatedToken = async (
       new TextEncoder().encode(signingInput),
     ),
   );
+
   return `${signingInput}.${base64Url(signature)}`;
 };
 
@@ -220,6 +233,7 @@ const federatedSsoConfig = (organizationId: string) => ({
 describe("Windows enterprise backend", () => {
   it("discovers the OnPremise policy and enrollment services", async () => {
     const { backend } = await setup();
+
     const response = await run(
       backend.windowsDiscovery({
         requestVersion: "5.0",
@@ -271,6 +285,7 @@ describe("Windows enterprise backend", () => {
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
       now: Date.now() - 2 * 60 * 60 * 1000,
     });
+
     const renewed = await run(backend.getWindowsEnrollmentPolicy(expired));
     const verification = await verifyWindowsEnrollmentToken(renewed.authToken, authSecret);
     expect(verification).not.toBeNull();
@@ -301,6 +316,7 @@ describe("Windows enterprise backend", () => {
     const deviceExtension = certificate.extensions!.find(
       (extension) => extension.extnID === "1.3.6.1.4.1.311.66.1.0",
     )!;
+
     expect(new Uint8Array(deviceExtension.extnValue.valueBlock.valueHexView)).toEqual(
       new Uint8Array(new asn1js.Utf8String({ value: "device-1" }).toBER(false)),
     );
@@ -332,6 +348,7 @@ describe("Windows enterprise backend", () => {
 
   it("rejects a new Windows device when the plan device limit is reached", async () => {
     const now = new Date("2024-03-01T00:00:00Z");
+
     const { backend, db } = await setup({
       planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
       subscription: {
@@ -366,6 +383,7 @@ describe("Windows enterprise backend", () => {
 
   it("allows re-enrolling an existing Windows device above the plan limit", async () => {
     const now = new Date("2024-03-01T00:00:00Z");
+
     const { backend, db } = await setup({
       planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
       subscription: {
@@ -409,6 +427,7 @@ describe("Windows enterprise backend", () => {
     expect(devices[0]!.name).toBe("DESKTOP-TEST");
     const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
     expect(certificates).toHaveLength(2);
+
     for (const certificate of certificates) expect(certificate.deviceId).toBe(devices[0]!.id);
     expect(certificates[0]!.serial).not.toBe(certificates[1]!.serial);
   });
@@ -424,6 +443,7 @@ describe("Windows enterprise backend", () => {
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
       now: Date.now() - 2 * 60 * 60 * 1000,
     });
+
     await expect(run(backend.windowsEnroll(enrollmentRequest(expired, csr)))).rejects.toMatchObject(
       { _tag: "UnknownDevice" },
     );
@@ -431,10 +451,12 @@ describe("Windows enterprise backend", () => {
 
   it("verifies token expiry and tampering deterministically", async () => {
     const now = 1_700_000_000_000;
+
     const token = await createWindowsEnrollmentToken("subject", authSecret, {
       now,
       ttlSeconds: 60,
     });
+
     await expect(
       verifyWindowsEnrollmentToken(token, authSecret, { now, ttlSeconds: 60 }),
     ).resolves.toMatchObject({ subject: "subject" });
@@ -523,6 +545,7 @@ describe("Windows enterprise backend", () => {
         },
       ),
     );
+
     expect(response.commands).toEqual([]);
   });
 
@@ -606,6 +629,7 @@ describe("Windows enterprise backend", () => {
 describe("Windows tenant enrollment tokens", () => {
   it("creates a verifiable token that expires", async () => {
     const now = 1_700_000_000_000;
+
     const token = await createWindowsTenantToken("org-late", authSecret, {
       now,
       ttlSeconds: 60,
@@ -654,6 +678,7 @@ describe("Windows tenant enrollment tokens", () => {
         tenantToken: token,
       }),
     );
+
     expect(discovery.enrollmentPolicyServiceUrl).toBe(
       `${origin}/mdm/windows/policy?tenant=${encoded}`,
     );
@@ -740,6 +765,7 @@ describe("Windows identity lifecycle", () => {
 
     const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0]!;
     const storedCertificate = db.store[tableName(schema.scepIssuedCertificate)]![0]!;
+
     const scope = {
       deviceId: "device-1",
       identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
@@ -754,6 +780,7 @@ describe("Windows identity lifecycle", () => {
     const expiredToken = await createWindowsTenantToken("org-early", authSecret, {
       now: Date.now() - 8 * 24 * 60 * 60 * 1000,
     });
+
     await expect(checkin(backend, { ...scope, tenantToken: expiredToken })).resolves.toEqual({
       commands: [],
     });
@@ -770,6 +797,7 @@ describe("Windows identity lifecycle", () => {
       requireDeviceIdentity: true,
       windowsOrganizationId: null,
     });
+
     const token = await createWindowsTenantToken("org-early", authSecret);
 
     // Enrollment events arrive before a client certificate exists.
@@ -810,6 +838,7 @@ describe("Windows identity lifecycle", () => {
 describe("Windows federated Entra enrollment", () => {
   const setupFederated = async () => {
     const signer = await makeFederatedSigner();
+
     const setupResult = await setup({
       ssoConfig: [federatedSsoConfig("org-early")],
       federated: {
@@ -818,12 +847,14 @@ describe("Windows federated Entra enrollment", () => {
         jwks: signer.jwks,
       },
     });
+
     return { ...setupResult, signer };
   };
 
   it("advertises Federated with a tenant-specific auth service URL", async () => {
     const { backend } = await setupFederated();
     const token = await createWindowsTenantToken("org-early", authSecret);
+
     const response = await run(
       backend.windowsDiscovery({
         requestVersion: "5.0",
@@ -845,6 +876,7 @@ describe("Windows federated Entra enrollment", () => {
   it("keeps OnPremise when the client does not offer Federated", async () => {
     const { backend } = await setupFederated();
     const token = await createWindowsTenantToken("org-early", authSecret);
+
     const response = await run(
       backend.windowsDiscovery({
         requestVersion: "5.0",
@@ -873,11 +905,13 @@ describe("Windows federated Entra enrollment", () => {
         tenantToken,
       }),
     );
+
     expect(enrolled.signedCertificate).toContain("BEGIN CERTIFICATE");
   });
 
   it("fails closed when a federated-mode tenant token is used without a JWT", async () => {
     const { backend } = await setupFederated();
+
     const federatedToken = await createWindowsTenantToken("org-early", authSecret, {
       federated: true,
     });
@@ -911,6 +945,7 @@ describe("Windows federated Entra enrollment", () => {
   it("fails closed when the token tenant does not match the enrollment tenant", async () => {
     const { backend, signer } = await setupFederated();
     const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+
     const jwt = await makeFederatedToken(signer, {
       tid: "33333333-3333-3333-3333-333333333333",
       iss: "https://login.microsoftonline.com/33333333-3333-3333-3333-333333333333/v2.0",
@@ -925,6 +960,7 @@ describe("Windows federated Entra enrollment", () => {
     const { backend, signer, db } = await setupFederated();
     const tenantToken = await createWindowsTenantToken("org-early", authSecret);
     const jwt = await makeFederatedToken(signer);
+
     const result = await run(
       backend.windowsEnroll({
         ...enrollmentRequest(jwt, await makeCsr("FEDERATED-HOST")),
@@ -942,6 +978,7 @@ describe("Windows federated Entra enrollment", () => {
 describe("SCEP CSR signing helper", () => {
   it("signs a PKCS#10 CSR with the CA and client-auth extensions", async () => {
     const ca = await makeCa();
+
     const signed = await run(
       signScepCsr({
         csr: await makeCsr("WINDOWS-HOST"),

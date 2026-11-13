@@ -17,15 +17,18 @@ const sha256 = async (value: string) =>
 
 const makeContext = (initial: Record<string, any[]> = {}) => {
   const db = makeDb(initial);
+
   const appAuth = {
     verifySession: () => Effect.succeed({ subjectId: "user-1", sessionId: "session-1" }),
     strategies: { email: { persistence: { moduleId: "email" } } },
   };
+
   // The production value is the auth definition itself, which is both
   // Effect-like and carries the strategy metadata used when provisioning.
   const appAuthService = Object.assign(Effect.succeed(appAuth), {
     strategies: appAuth.strategies,
   });
+
   const Live = makeEnterpriseAuthLive({
     appAuth: appAuthService as any,
     origin,
@@ -36,6 +39,7 @@ const makeContext = (initial: Record<string, any[]> = {}) => {
     runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
+
         return yield* work(auth);
       }).pipe(Effect.provide(Live)),
     );
@@ -45,6 +49,7 @@ const makeContext = (initial: Record<string, any[]> = {}) => {
 
 const seedUserAndTenant = () => {
   const now = new Date();
+
   return {
     user: [
       {
@@ -112,6 +117,7 @@ describe("enterprise API tokens", () => {
         tenantId: "tenant-1",
       }),
     );
+
     expect(created.token).toMatch(/^mtx_/);
     expect(created.item).toMatchObject({
       name: "Auditor CLI",
@@ -141,6 +147,7 @@ describe("enterprise API tokens", () => {
     const created = await run((auth) =>
       auth.createApiToken(session(grant), { name: "Legacy-compatible" }),
     );
+
     expect(created.item.scopes).toEqual(["read", "write"]);
     expect(created.item.tenantId).toBeNull();
     expect(db.store.account_api_token[0]).toMatchObject({
@@ -152,6 +159,7 @@ describe("enterprise API tokens", () => {
     const writeOnly = await run((auth) =>
       auth.createApiToken(session(grant), { name: "Write", scopes: ["write"] }),
     );
+
     expect(writeOnly.item.scopes).toEqual(["read", "write"]);
   });
 
@@ -186,6 +194,7 @@ describe("enterprise API tokens", () => {
   it("stops an API token from minting a broader or cross-tenant token", async () => {
     const now = new Date();
     const raw = "mtx_existing_read_token";
+
     const context = makeContext({
       ...seedUserAndTenant(),
       account_api_token: [
@@ -243,12 +252,14 @@ describe("email verification", () => {
   const unverified = () => {
     const seed = seedUserAndTenant();
     seed.user = [{ ...seed.user[0], emailVerified: false }];
+
     return seed;
   };
 
   it("verifies a six-digit code and consumes it", async () => {
     const { db, run } = makeContext(unverified());
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
     try {
       const requested = await run((auth) => auth.requestEmailVerification(session()));
       const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
@@ -259,6 +270,7 @@ describe("email verification", () => {
       const result = await run((auth) =>
         auth.verifyEmail(session(), { code, challenge: requested.challenge }),
       );
+
       expect(result).toEqual({ status: "ok" });
       expect(db.store.user[0]!.emailVerified).toBe(true);
     } finally {
@@ -269,6 +281,7 @@ describe("email verification", () => {
   it("rejects a wrong code and counts the attempt", async () => {
     const { db, run } = makeContext(unverified());
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
     try {
       const requested = await run((auth) => auth.requestEmailVerification(session()));
       const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");

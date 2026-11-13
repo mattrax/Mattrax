@@ -25,6 +25,7 @@ export default function NewApplicationPage() {
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [storeId, setStoreId] = createSignal("");
   const [notes, setNotes] = createSignal("");
+
   const create = useMutation(() => ({
     mutationFn: () =>
       enterprise.createApplication(params.tenantId, {
@@ -75,6 +76,7 @@ export default function NewApplicationPage() {
                   onChange={(event) => {
                     const value = event.currentTarget.value as "apple" | "win" | "android";
                     setPlatform(value);
+
                     if (value !== "apple") setSource("manifest");
                   }}
                 >

@@ -42,17 +42,21 @@ export default function PoliciesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
   const [conditions, setConditions] = createSignal<EntityCondition[]>(
     parseEntityQuery(param(searchParams.query), fields),
   );
+
   const updateConditions = (next: EntityCondition[]) => {
     setConditions(next);
     setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
   };
+
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
+
   const rows = () =>
     (policies.data?.rows ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
 
@@ -135,6 +139,7 @@ export default function PoliciesPage() {
             sort: (row) => configurationCount(row),
             cell: (row) => {
               const count = configurationCount(row);
+
               return (
                 <Badge variant={count > 0 ? "secondary" : "outline"} class="tabular-nums">
                   {count}

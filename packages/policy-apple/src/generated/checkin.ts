@@ -22,6 +22,7 @@ export const Authenticate = Schema.Struct({
   IMEI: Schema.optional(Schema.String),
   MEID: Schema.optional(Schema.String),
 });
+
 export type Authenticate = typeof Authenticate.Type;
 
 /**
@@ -39,6 +40,7 @@ export const CheckinDeclarativemanagement = Schema.Struct({
   UserID: Schema.optional(Schema.String),
   UserLongName: Schema.String,
 });
+
 export type CheckinDeclarativemanagement = typeof CheckinDeclarativemanagement.Type;
 
 /**
@@ -51,6 +53,7 @@ export const Checkout = Schema.Struct({
   UDID: Schema.String,
   EnrollmentID: Schema.String,
 });
+
 export type Checkout = typeof Checkout.Type;
 
 /**
@@ -61,6 +64,7 @@ export const Getbootstraptoken = Schema.Struct({
   MessageType: Schema.Literal("GetBootstrapToken"),
   AwaitingConfiguration: Schema.optional(Schema.Boolean),
 });
+
 export type Getbootstraptoken = typeof Getbootstraptoken.Type;
 
 /**
@@ -84,6 +88,7 @@ export const Gettoken = Schema.Struct({
   UserID: Schema.optional(Schema.String),
   UserLongName: Schema.String,
 });
+
 export type Gettoken = typeof Gettoken.Type;
 
 /**
@@ -94,6 +99,7 @@ export const Returntoservice = Schema.Struct({
   MessageType: Schema.Literal("ReturnToService"),
   UDID: Schema.String,
 });
+
 export type Returntoservice = typeof Returntoservice.Type;
 
 /**
@@ -105,6 +111,7 @@ export const Setbootstraptoken = Schema.Struct({
   BootstrapToken: Schema.optional(Schema.String),
   AwaitingConfiguration: Schema.optional(Schema.Boolean),
 });
+
 export type Setbootstraptoken = typeof Setbootstraptoken.Type;
 
 /**
@@ -126,6 +133,7 @@ export const Tokenupdate = Schema.Struct({
   UnlockToken: Schema.optional(Schema.String),
   AwaitingConfiguration: Schema.optional(Schema.Boolean),
 });
+
 export type Tokenupdate = typeof Tokenupdate.Type;
 
 /**
@@ -138,4 +146,5 @@ export const Userauthenticate = Schema.Struct({
   UserID: Schema.String,
   DigestResponse: Schema.String,
 });
+
 export type Userauthenticate = typeof Userauthenticate.Type;

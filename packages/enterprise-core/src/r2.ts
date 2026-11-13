@@ -112,6 +112,7 @@ export const toR2Error = (cause: unknown): R2Error => {
     cause instanceof Error
       ? cause.message
       : (stringField(cause, "message") ?? "R2 operation failed");
+
   const code = stringField(cause, "code") ?? stringField(cause, "name");
 
   if (code === "NoSuchKey" || code === "NotFound" || code === "404" || /not found/i.test(message)) {
@@ -123,6 +124,7 @@ export const toR2Error = (cause: unknown): R2Error => {
 
 const toR2InternalError = (cause: unknown): R2InternalError => {
   const error = toR2Error(cause);
+
   return error instanceof R2InternalError ? error : new R2InternalError({ message: error.message });
 };
 

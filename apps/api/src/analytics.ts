@@ -77,6 +77,7 @@ const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 export const redactAnalyticsText = (value: unknown): string => {
   const error = value instanceof Error ? value : undefined;
   const text = error ? `${error.name}: ${error.message}` : String(value);
+
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
@@ -92,6 +93,7 @@ const headerValue = (
 ): string | undefined => {
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
   const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+
   return match?.[1]?.trim() || undefined;
 };
 
@@ -100,6 +102,7 @@ export const readClientDistinctId = (
   headers: Headers | Readonly<Record<string, string | undefined>>,
 ): string | undefined => {
   const value = headerValue(headers, "x-posthog-distinct-id");
+
   return value && DISTINCT_ID_PATTERN.test(value) ? value : undefined;
 };
 
@@ -108,6 +111,7 @@ export const readClientSessionId = (
   headers: Headers | Readonly<Record<string, string | undefined>>,
 ): string | undefined => {
   const value = headerValue(headers, "x-posthog-session-id");
+
   return value && SESSION_ID_PATTERN.test(value) ? value : undefined;
 };
 
@@ -122,8 +126,10 @@ const errorTimestamps: number[] = [];
 
 const withinErrorBudget = (now: number, maxEvents: number): boolean => {
   while (errorTimestamps.length > 0 && now - errorTimestamps[0]! >= 60_000) errorTimestamps.shift();
+
   if (errorTimestamps.length >= maxEvents) return false;
   errorTimestamps.push(now);
+
   return true;
 };
 
@@ -132,11 +138,13 @@ const sanitizeError = (error: unknown): Error => {
   const message = redactAnalyticsText(error.message);
   const safe = new Error(message);
   safe.name = redactAnalyticsText(error.name);
+
   if (error.stack)
     safe.stack = error.stack
       .split("\n")
       .map((line) => line.replace(error.message, message))
       .join("\n");
+
   return safe;
 };
 
@@ -158,6 +166,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
   let client = config.client;
   let captured = false;
   const enabled = Boolean(client || key);
+
   if (!enabled) {
     return {
       enabled: false,
@@ -167,9 +176,12 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
       flush: async () => {},
     };
   }
+
   let clientUnavailable = false;
+
   const ensureClient = (): AnalyticsClient | undefined => {
     if (client || !key || clientUnavailable) return client;
+
     try {
       client = createClient({ ...config, key });
     } catch (error) {
@@ -178,6 +190,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
         `PostHog client creation failed: ${redactAnalyticsText(error)}`,
       );
     }
+
     return client;
   };
 
@@ -185,9 +198,11 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
   const random = config.random ?? Math.random;
   const warn = config.warn ?? ((message: string) => console.warn(message));
   const requestedSampleRate = config.errorSampleRate ?? 1;
+
   const errorSampleRate = Number.isFinite(requestedSampleRate)
     ? Math.min(1, Math.max(0, requestedSampleRate))
     : 1;
+
   const requestedMaxErrors = config.maxErrorsPerMinute ?? 20;
   const maxErrors = Number.isFinite(requestedMaxErrors) ? Math.max(1, requestedMaxErrors) : 20;
   const method = config.method.toUpperCase();
@@ -219,8 +234,10 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
 
   const safeCapture = (message: Parameters<AnalyticsClient["capture"]>[0]) => {
     const active = ensureClient();
+
     if (!active) return;
     captured = true;
+
     try {
       active.capture(message);
     } catch (error) {
@@ -234,8 +251,10 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
     distinct: string,
   ) => {
     const active = ensureClient();
+
     if (!active) return;
     captured = true;
+
     try {
       active.captureException(error, distinct, properties);
     } catch (cause) {
@@ -280,9 +299,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
             ...baseProperties(),
             $group_type: "tenant",
             $group_key: tenantId,
-            $group_set: {
-              ...(tenantName ? { name: tenantName } : {}),
-            },
+            $group_set: (tenantName ? { name: tenantName } : {}),
           },
           groups: { tenant: tenantId },
         });
@@ -299,6 +316,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
     },
     captureError: (error, properties = {}) => {
       if (random() >= errorSampleRate) return;
+
       if (!withinErrorBudget(now(), maxErrors)) return;
       safeCaptureException(
         sanitizeError(error),
@@ -309,7 +327,9 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
     flush: async () => {
       if (!captured) return;
       const active = ensureClient();
+
       if (!active) return;
+
       try {
         await active.flush();
       } catch (error) {
@@ -326,7 +346,9 @@ export const authEventForRequest = (
   status: number,
 ): string | undefined => {
   if (status >= 400) return undefined;
+
   if (method !== "POST") return undefined;
+
   switch (safeAnalyticsPath(path)) {
     case "/api/v1/signIn":
       return "auth_signed_in";
@@ -355,14 +377,19 @@ export const authOutcomeFromResponse = async (
   response: Response,
 ): Promise<"authenticated" | "pending" | undefined> => {
   if (!(response.headers.get("content-type") ?? "").includes("json")) return undefined;
+
   try {
     const body = (await response.clone().json()) as {
       value?: { _tag?: unknown };
       _tag?: unknown;
     };
+
     const tag = body?.value?._tag ?? body?._tag;
+
     if (tag === "Authenticated") return "authenticated";
+
     if (tag === "PendingAuthentication") return "pending";
+
     return undefined;
   } catch {
     return undefined;
@@ -373,6 +400,7 @@ export const authOutcomeFromResponse = async (
 export const shouldTrackApiRequest = (path: string, method: string): boolean => {
   if (method === "OPTIONS") return false;
   const pathname = safeAnalyticsPath(path);
+
   if (
     pathname === "/api/health" ||
     pathname === "/health" ||
@@ -384,5 +412,6 @@ export const shouldTrackApiRequest = (path: string, method: string): boolean => 
     pathname.startsWith("/api/debug/")
   )
     return false;
+
   return pathname.startsWith("/api/") || pathname === "/api";
 };

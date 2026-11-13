@@ -8,6 +8,7 @@ test("keeps the dashboard stable and animates the active nav indicator", async (
   const gutter = await page.evaluate(
     () => getComputedStyle(document.documentElement).scrollbarGutter,
   );
+
   expect(gutter).toContain("stable");
 
   const indicator = page.locator('nav[aria-label="Primary"] span[aria-hidden="true"]');

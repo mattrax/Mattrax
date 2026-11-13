@@ -62,6 +62,7 @@ describe("SCEP crypto wrappers", () => {
         signature,
         data,
       );
+
       expect(isValid).toBe(true);
     });
   });

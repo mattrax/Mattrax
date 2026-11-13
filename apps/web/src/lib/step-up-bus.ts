@@ -32,11 +32,15 @@ const grants = new Map<StepUpAction, { grant: string; expiresAtMillis: number }>
 export const stepUpGrant = (action: StepUpAction | undefined) => {
   if (!action) return undefined;
   const current = grants.get(action);
+
   if (!current) return undefined;
+
   if (current.expiresAtMillis <= Date.now() + 5_000) {
     grants.delete(action);
+
     return undefined;
   }
+
   return current.grant;
 };
 
@@ -68,18 +72,25 @@ export const requestStepUp = (
 ) =>
   new Promise<string>((resolve, reject) => {
     const existing = stepUpGrant(action);
+
     if (existing) {
       resolve(existing);
+
       return;
     }
+
     if (pendingAction === action) {
       waiters.push({ resolve, reject });
+
       return;
     }
+
     if (pendingAction !== null) {
       reject(new Error("Another confirmation is already open"));
+
       return;
     }
+
     pendingAction = action;
     waiters = [{ resolve, reject }];
     setPending({ action, methods, resolve, reject });
@@ -87,21 +98,25 @@ export const requestStepUp = (
 
 export const completeStepUp = (grant: string) => {
   const current = pending();
+
   if (!current) return;
   const pendingWaiters = waiters;
   waiters = [];
   pendingAction = null;
   setPending(null);
+
   for (const waiter of pendingWaiters) waiter.resolve(grant);
 };
 
 export const cancelStepUp = (error: unknown = new Error("Confirmation cancelled")) => {
   const current = pending();
+
   if (!current) return;
   const pendingWaiters = waiters;
   waiters = [];
   pendingAction = null;
   setPending(null);
+
   for (const waiter of pendingWaiters) waiter.reject(error);
 };
 

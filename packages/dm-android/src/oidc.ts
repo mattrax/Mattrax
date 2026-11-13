@@ -42,6 +42,7 @@ type JwkSet = { readonly keys: ReadonlyArray<JsonWebKey> };
 type CachedJwkSet = { readonly keys: ReadonlyArray<JsonWebKey>; readonly expiresAt: number };
 
 const jwksCache = new Map<string, CachedJwkSet>();
+
 /** Unknown kids that recently forced a refetch; avoid a JWKS-fetch oracle. */
 const unknownKidCache = new Map<string, number>();
 const UNKNOWN_KID_NEGATIVE_CACHE_MS = 60 * 1000;
@@ -52,14 +53,17 @@ function decodeBase64Url(input: string): Uint8Array {
   const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
+
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function decodeJsonPart(input: string, label: string): Record<string, unknown> {
   try {
     const value = JSON.parse(textDecoder.decode(decodeBase64Url(input))) as unknown;
+
     if (typeof value !== "object" || value === null || Array.isArray(value))
       throw new Error(`${label} is not an object`);
+
     return value as Record<string, unknown>;
   } catch (cause) {
     throw new PubSubAuthError({ message: `OIDC token ${label} is not valid JSON`, cause });
@@ -95,14 +99,19 @@ export type PubSubOidcClaims = {
 
 async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise<CachedJwkSet> {
   const cached = jwksCache.get(uri);
+
   if (cached && cached.expiresAt > Date.now()) return cached;
+
   const response = await fetcher(uri, {
     headers: { accept: "application/json" },
   });
+
   if (!response.ok) throw new Error(`JWKS request returned HTTP ${response.status}`);
   const json = (await response.json()) as unknown;
+
   if (typeof json !== "object" || json === null || !Array.isArray((json as JwkSet).keys))
     throw new Error("JWKS response has no keys array");
+
   const keys = (json as JwkSet).keys.filter(
     (key): key is JsonWebKey =>
       typeof key === "object" &&
@@ -113,15 +122,19 @@ async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise
       (key.alg === undefined || key.alg === "RS256") &&
       (key.use === undefined || key.use === "sig"),
   );
+
   if (keys.length === 0) throw new Error("JWKS response has no usable RS256 keys");
   const entry = { keys, expiresAt: Date.now() + JWKS_CACHE_MS } satisfies CachedJwkSet;
   jwksCache.set(uri, entry);
+
   return entry;
 }
 
 function audienceMatches(audience: unknown, expected: string): boolean {
   if (typeof audience === "string") return audience === expected;
+
   if (Array.isArray(audience)) return audience.some((value) => value === expected);
+
   return false;
 }
 
@@ -150,6 +163,7 @@ export function verifyPubSubOidcToken(
       );
 
     const parts = token.split(".");
+
     if (parts.length !== 3 || parts.some((part) => part === ""))
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is malformed" }));
 
@@ -160,9 +174,11 @@ export function verifyPubSubOidcToken(
           ? cause
           : new PubSubAuthError({ message: "OIDC token header is invalid", cause }),
     });
+
     if (header["alg"] !== "RS256")
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token alg must be RS256" }));
     const kid = stringClaim(header["kid"]);
+
     if (!kid) return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token has no kid" }));
 
     const claims = yield* Effect.try({
@@ -175,20 +191,24 @@ export function verifyPubSubOidcToken(
 
     const jwksUri = config.jwksUri ?? GOOGLE_OIDC_JWKS_URI;
     const fetcher = config.fetch ?? globalThis.fetch;
+
     const loadKeys = () =>
       Effect.tryPromise({
         try: () => fetchJwks(jwksUri, fetcher),
         catch: (cause) =>
           new PubSubAuthError({ message: "Could not load Google signing keys", cause }),
       });
+
     const nowMs = config.now?.() ?? Date.now();
     const negativeKey = `${jwksUri}:${kid}`;
     const blockedUntil = unknownKidCache.get(negativeKey);
+
     if (blockedUntil !== undefined && blockedUntil > nowMs)
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signing key not found" }));
 
     let keySet = yield* loadKeys();
     let jwk = keySet.keys.find((candidate) => candidate.kid === kid);
+
     if (!jwk) {
       // Keys rotate; an unknown kid may just mean our cache is stale. Only
       // refetch once per kid per minute so random kids cannot amplify egress.
@@ -196,11 +216,14 @@ export function verifyPubSubOidcToken(
       keySet = yield* loadKeys();
       jwk = keySet.keys.find((candidate) => candidate.kid === kid);
     }
+
     if (!jwk) {
       if (unknownKidCache.size > 1000) unknownKidCache.clear();
       unknownKidCache.set(negativeKey, nowMs + UNKNOWN_KID_NEGATIVE_CACHE_MS);
+
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signing key not found" }));
     }
+
     const signingJwk = jwk;
 
     const key = yield* Effect.tryPromise({
@@ -214,6 +237,7 @@ export function verifyPubSubOidcToken(
         ),
       catch: (cause) => new PubSubAuthError({ message: "Invalid OIDC signing key", cause }),
     });
+
     const valid = yield* Effect.tryPromise({
       try: () =>
         crypto.subtle.verify(
@@ -224,11 +248,13 @@ export function verifyPubSubOidcToken(
         ),
       catch: (cause) => new PubSubAuthError({ message: "OIDC signature check failed", cause }),
     });
+
     if (!valid)
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signature is invalid" }));
 
     const issuer = stringClaim(claims["iss"]);
     const acceptedIssuers: ReadonlyArray<string> = config.issuers ?? GOOGLE_OIDC_ISSUERS;
+
     if (!issuer || !acceptedIssuers.includes(issuer))
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC issuer is not trusted" }));
 
@@ -237,25 +263,31 @@ export function verifyPubSubOidcToken(
 
     const now = Math.floor((config.now?.() ?? Date.now()) / 1000);
     const expiresAt = numberClaim(claims["exp"]);
+
     if (expiresAt === undefined || expiresAt + CLOCK_SKEW_SECONDS <= now)
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token has expired" }));
 
     const issuedAt = numberClaim(claims["iat"]);
+
     if (issuedAt !== undefined && issuedAt - CLOCK_SKEW_SECONDS > now)
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is not valid yet" }));
+
     if (issuedAt !== undefined && config.maxAgeSeconds !== undefined) {
       if (issuedAt + config.maxAgeSeconds + CLOCK_SKEW_SECONDS < now)
         return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is too old" }));
     }
 
     const email = stringClaim(claims["email"]);
+
     const emailVerified =
       typeof claims["email_verified"] === "boolean" ? claims["email_verified"] : undefined;
+
     if (config.serviceAccountEmail) {
       if (!email || email.toLowerCase() !== config.serviceAccountEmail.toLowerCase())
         return yield* Effect.fail(
           new PubSubAuthError({ message: "OIDC token is from an unexpected service account" }),
         );
+
       if (emailVerified === false)
         return yield* Effect.fail(
           new PubSubAuthError({ message: "OIDC token email is not verified" }),
@@ -278,6 +310,7 @@ export function verifyPubSubOidcToken(
 /** Extract a bearer token from an `Authorization` header value. */
 export function bearerToken(header: string | undefined): string | undefined {
   const match = /^Bearer\s+(.+)$/i.exec((header ?? "").trim());
+
   return match?.[1]?.trim() || undefined;
 }
 

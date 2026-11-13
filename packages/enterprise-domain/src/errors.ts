@@ -59,6 +59,7 @@ export const diagnoseError = <E extends object>(
   diagnostic: EnterpriseErrorDiagnostic,
 ): E => {
   diagnostics.set(error, diagnostic);
+
   return error;
 };
 

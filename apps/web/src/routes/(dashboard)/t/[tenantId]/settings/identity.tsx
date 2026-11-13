@@ -12,10 +12,13 @@ export default function IdentitySettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
   const base = () => `/t/${params.tenantId}/settings/identity`;
+
   const active = () => {
     const rest = location.pathname.slice(base().length).replace(/^\//, "");
+
     return rest.split("/")[0] ?? "";
   };
+
   return (
     <div class="flex flex-col gap-5">
       <nav
@@ -26,6 +29,7 @@ export default function IdentitySettingsLayout(props: ParentProps) {
           {(tab) => {
             const href = tab.id ? `${base()}/${tab.id}` : base();
             const isActive = () => active() === tab.id;
+
             return (
               <a
                 href={href}

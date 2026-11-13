@@ -110,7 +110,9 @@ export const federatedAuthServiceUrl = (
   options: { readonly clientId?: string } = {},
 ): string => {
   const url = new URL(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/wsfed`);
+
   if (options.clientId) url.searchParams.set("wtrealm", options.clientId);
+
   return url.toString();
 };
 
@@ -125,7 +127,9 @@ function base64UrlToBytes(input: string): Uint8Array | null {
     const padded = input.replaceAll("-", "+").replaceAll("_", "/");
     const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
     const bytes = new Uint8Array(binary.length);
+
     for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+
     return bytes;
   } catch {
     return null;
@@ -134,7 +138,9 @@ function base64UrlToBytes(input: string): Uint8Array | null {
 
 function decodeJson(value: string): unknown {
   const bytes = base64UrlToBytes(value);
+
   if (!bytes) return null;
+
   try {
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch {
@@ -151,10 +157,12 @@ type DecodedToken = {
 
 function decodeToken(token: string): DecodedToken | null {
   const parts = token.split(".");
+
   if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
   const header = decodeJson(parts[0]);
   const payload = decodeJson(parts[1]);
   const signature = base64UrlToBytes(parts[2]);
+
   if (
     !header ||
     typeof header !== "object" ||
@@ -165,7 +173,9 @@ function decodeToken(token: string): DecodedToken | null {
     return null;
   const alg = (header as { alg?: unknown }).alg;
   const kid = (header as { kid?: unknown }).kid;
+
   if (typeof alg !== "string") return null;
+
   return {
     header: {
       alg,
@@ -189,6 +199,7 @@ export function isFederatedTokenShaped(token: string): boolean {
 export function unverifiedFederatedTenantId(token: string): string | null {
   const decoded = decodeToken(token);
   const tid = decoded?.payload.tid;
+
   return typeof tid === "string" && tid.trim() ? tid.trim() : null;
 }
 
@@ -198,27 +209,34 @@ async function loadJwks(
   if (options.jwks) return options.jwks;
   const uri = options.jwksUri ?? federatedJwksUri(options.tenantId);
   const cached = jwksCache.get(uri);
+
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
   const fetchImpl = options.fetch ?? globalThis.fetch;
+
   if (!fetchImpl) return failure("jwks", "No fetch implementation is available for Entra JWKS");
   const controller = new AbortController();
+
   const timeout = setTimeout(
     () => controller.abort(),
     options.jwksTimeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS,
   );
+
   try {
     const response = await fetchImpl(uri, {
       method: "GET",
       headers: { accept: "application/json" },
       signal: controller.signal,
     });
+
     if (!response.ok) return failure("jwks", `Entra JWKS request returned HTTP ${response.status}`);
     const body = (await response.json()) as unknown;
+
     if (!body || typeof body !== "object" || !Array.isArray((body as { keys?: unknown }).keys))
       return failure("jwks", "Entra JWKS response did not contain a keys array");
     const value = body as FederatedJsonWebKeySet;
     jwksCache.set(uri, { value, expiresAt: Date.now() + JWKS_CACHE_TTL_MS });
+
     return value;
   } catch (cause) {
     return failure("jwks", `Entra JWKS request failed: ${String(cause)}`);
@@ -244,62 +262,82 @@ export async function validateFederatedEntraToken(
   options: ValidateFederatedEntraTokenOptions,
 ): Promise<FederatedTokenValidation> {
   const decoded = decodeToken(options.token);
+
   if (!decoded) return failure("malformed", "The federated token is not a JWT");
+
   if (decoded.header.alg !== "RS256")
     return failure("unsupported", `Unsupported token algorithm: ${decoded.header.alg}`);
 
   const tenantId = options.tenantId.trim();
+
   if (!tenantId) return failure("tenant", "An expected Entra tenant id is required");
 
   const claimTenant = claimString(decoded.payload.tid);
+
   if (!claimTenant) return failure("tenant", "The token has no tenant id (tid) claim");
+
   if (claimTenant.toLowerCase() !== tenantId.toLowerCase())
     return failure("tenant", "The token tenant does not match this enrollment");
 
   const issuer = claimString(decoded.payload.iss);
+
   if (!issuer) return failure("issuer", "The token has no issuer (iss) claim");
+
   const allowedIssuers = options.issuer
     ? [options.issuer]
     : [
         `https://login.microsoftonline.com/${claimTenant}/v2.0`,
         `https://sts.windows.net/${claimTenant}/`,
       ];
+
   if (!allowedIssuers.includes(issuer))
     return failure("issuer", "The token issuer is not an Entra issuer for this tenant");
 
   const audiences = audienceValues(options.audience);
+
   if (audiences.length === 0)
     return failure("audience", "At least one expected token audience is required");
   const rawAudience = decoded.payload.aud;
+
   const tokenAudiences = Array.isArray(rawAudience)
     ? rawAudience.filter((value): value is string => typeof value === "string")
     : typeof rawAudience === "string"
       ? [rawAudience]
       : [];
+
   if (!tokenAudiences.some((audience) => audiences.includes(audience)))
     return failure("audience", "The token audience is not allowed");
 
   const now = Math.floor((options.now ?? Date.now()) / 1_000);
   const tolerance = options.clockToleranceSeconds ?? DEFAULT_CLOCK_TOLERANCE_SECONDS;
   const expiresAt = claimNumber(decoded.payload.exp);
+
   if (expiresAt === undefined) return failure("expired", "The token has no expiry (exp) claim");
+
   if (expiresAt + tolerance < now) return failure("expired", "The token is expired");
   const notBefore = claimNumber(decoded.payload.nbf);
+
   if (notBefore !== undefined && notBefore - tolerance > now)
     return failure("not_yet_valid", "The token is not valid yet");
 
   const jwks = await loadJwks(options);
+
   if ("ok" in jwks) return jwks;
   const kid = decoded.header.kid;
+
   if (!kid) return failure("signature", "The token has no key id (kid)");
   const jwk = jwks.keys.find((key) => key.kid === kid);
+
   if (!jwk) return failure("signature", "No Entra signing key matches the token key id");
+
   if (jwk.kty !== "RSA" || !jwk.n || !jwk.e)
     return failure("signature", "The Entra signing key is not an RSA key");
+
   if (jwk.alg && jwk.alg !== decoded.header.alg)
     return failure("signature", "The Entra signing key algorithm does not match the token");
 
   let valid = false;
+
   try {
     const key = await crypto.subtle.importKey(
       "jwk",
@@ -308,6 +346,7 @@ export async function validateFederatedEntraToken(
       false,
       ["verify"],
     );
+
     valid = await crypto.subtle.verify(
       { name: "RSASSA-PKCS1-v1_5" },
       key,
@@ -317,12 +356,14 @@ export async function validateFederatedEntraToken(
   } catch {
     return failure("signature", "The token signature could not be verified");
   }
+
   if (!valid) return failure("signature", "The token signature is invalid");
 
   const subject =
     claimString(decoded.payload.oid) ??
     claimString(decoded.payload.sub) ??
     claimString(decoded.payload.preferred_username);
+
   if (!subject) return failure("malformed", "The token has no subject (sub/oid) claim");
 
   return {

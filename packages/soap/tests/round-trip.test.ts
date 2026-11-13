@@ -85,6 +85,7 @@ describe("Error handling", () => {
         Effect.result,
       ),
     );
+
     expect(result._tag).toBe("Failure");
   });
 
@@ -96,6 +97,7 @@ describe("Error handling", () => {
     const result = await Effect.runPromise(
       deserializeSoapElement("<<<not xml>>>", Simple).pipe(Effect.result),
     );
+
     expect(result._tag).toBe("Failure");
   });
 });

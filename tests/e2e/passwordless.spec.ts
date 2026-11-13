@@ -19,10 +19,12 @@ test.describe("passwordless sign-in", () => {
       .poll(
         async () => {
           const response = await page.request.get("/api/debug/emails");
+
           if (!response.ok()) return "";
           const messages = (await response.json()) as Array<{ to: string; text: string }>;
           const latest = messages.find((message) => message.to === email);
           code = latest?.text.match(/code is (\d+)/)?.[1] ?? "";
+
           return code;
         },
         { timeout: 20_000 },

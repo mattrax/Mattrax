@@ -17,8 +17,10 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
   );
+
   const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
+
   return handler;
 }
 
@@ -26,9 +28,11 @@ describe("Apple MDM handlers", () => {
   describe("enroll endpoint", () => {
     it("returns an enrollment profile plist", async () => {
       const backend = mockManagementBackend();
+
       const profile = await Effect.runPromise(
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
+
           return yield* service.generateEnrollmentProfile();
         }).pipe(
           Effect.provide(
@@ -45,6 +49,7 @@ describe("Apple MDM handlers", () => {
           ),
         ),
       );
+
       expect(profile).toContain("com.mattrax.enrollment");
     });
   });
@@ -72,17 +77,20 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
     });
 
     it("forwards the mTLS identity certificate serial in the check-in scope", async () => {
       let receivedScope: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (scope: unknown) =>
           Effect.sync(() => {
             receivedScope = scope;
           }),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -106,6 +114,7 @@ describe("Apple MDM handlers", () => {
           },
         }),
       );
+
       expect(response.status).toBe(200);
       expect(receivedScope).toMatchObject({
         _tag: "device",
@@ -139,6 +148,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
     });
   });
@@ -165,6 +175,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
     });
   });
@@ -191,6 +202,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm" },
         }),
       );
+
       expect(response.status).toBe(200);
     });
   });
@@ -207,6 +219,7 @@ describe("Apple MDM handlers", () => {
             declarationsToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           }),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -227,10 +240,13 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
+
       const body = (await response.json()) as {
         SyncTokens: { DeclarationsToken: string; Timestamp: string };
       };
+
       expect(body.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
       expect(body.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
@@ -247,6 +263,7 @@ describe("Apple MDM handlers", () => {
             management: [],
           }),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -267,11 +284,14 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
+
       const body = (await response.json()) as {
         Declarations: { Activations: Array<{ Identifier: string }> };
         DeclarationsToken: string;
       };
+
       expect(body.Declarations.Activations[0]?.Identifier).toBe("act-1");
       expect(body.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
     });
@@ -280,6 +300,7 @@ describe("Apple MDM handlers", () => {
   describe("PUT /mdm/apple/mdm - command result polling", () => {
     it("returns the next command after an Idle result", async () => {
       const events: Array<unknown> = [];
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
@@ -293,6 +314,7 @@ describe("Apple MDM handlers", () => {
             payload: {},
           }),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -311,6 +333,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm" },
         }),
       );
+
       expect(response.status).toBe(200);
       expect(await response.text()).toContain("cmd-next");
       // Idle has no CommandUUID and must not be reported as a command result.
@@ -321,13 +344,16 @@ describe("Apple MDM handlers", () => {
   describe("PUT /mdm/apple/mdm - DDM status", () => {
     it("decodes the base64 JSON status report and forwards it", async () => {
       let report: unknown;
+
       const backend = mockManagementBackend({
         appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             report = event;
           }),
       });
+
       const handler = await makeMdmHandler(backend);
+
       // {"StatusItems":{"device.identifier.serial-number":"SN-1"}}
       const data = btoa(
         JSON.stringify({ StatusItems: { "device.identifier.serial-number": "SN-1" } }),
@@ -351,6 +377,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
         }),
       );
+
       expect(response.status).toBe(200);
       expect(report).toMatchObject({
         _tag: "DeclarationStatus",
@@ -370,6 +397,7 @@ describe("Apple MDM handlers", () => {
             payload: { Queries: ["DeviceName"] },
           }),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -387,6 +415,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm" },
         }),
       );
+
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("CommandUUID");
@@ -397,6 +426,7 @@ describe("Apple MDM handlers", () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () => Effect.succeed({ _tag: "Idle" } as const),
       });
+
       const handler = await makeMdmHandler(backend);
 
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -414,6 +444,7 @@ describe("Apple MDM handlers", () => {
           headers: { "Content-Type": "application/x-apple-aspen-mdm" },
         }),
       );
+
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("<dict></dict>");

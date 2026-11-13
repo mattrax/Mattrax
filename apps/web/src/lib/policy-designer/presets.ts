@@ -13,7 +13,9 @@ const escapeXml = (value: string) =>
 const base64 = (value: string) => {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -36,6 +38,7 @@ export type PresetConfiguration = {
 export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration => {
   const encryption =
     preset.security === "wpa3" ? "WPA3" : preset.security === "wpa2" ? "WPA2" : "None";
+
   const payload: Record<string, unknown> = {
     PayloadType: "com.apple.wifi.managed",
     PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replace(/[^A-Za-z0-9]+/g, "-")}`,
@@ -48,6 +51,7 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
     HIDDEN_NETWORK: preset.hidden,
     ...(preset.security !== "open" && preset.password ? { Password: preset.password } : {}),
   };
+
   const profile = {
     PayloadContent: [payload],
     PayloadDisplayName: `Wi-Fi: ${preset.ssid}`,
@@ -57,6 +61,7 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
     PayloadUUID: uuid(),
     PayloadVersion: 1,
   };
+
   return {
     kind: "mttx.apple.custom.wifi",
     data: {
@@ -71,6 +76,7 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
 /** Windows Wi-Fi profile delivered through the WiFi CSP. */
 export const windowsWifiConfiguration = (preset: WifiPreset): PresetConfiguration => {
   const protectedNetwork = preset.security !== "open";
+
   const xml = `<?xml version="1.0"?>
 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
   <name>${escapeXml(preset.ssid)}</name>
@@ -94,6 +100,7 @@ export const windowsWifiConfiguration = (preset: WifiPreset): PresetConfiguratio
     </security>
   </MSM>
 </WLANProfile>`;
+
   return {
     kind: "mttx.windows.custom.wifi",
     data: {
@@ -130,6 +137,7 @@ export const applePasscodeConfiguration = (preset: PasscodePreset): PresetConfig
     allowSimple: preset.allowSimple,
     forcePIN: true,
   };
+
   const profile = {
     PayloadContent: [payload],
     PayloadDisplayName: "Passcode requirements",
@@ -139,6 +147,7 @@ export const applePasscodeConfiguration = (preset: PasscodePreset): PresetConfig
     PayloadUUID: uuid(),
     PayloadVersion: 1,
   };
+
   return {
     kind: "mttx.apple.custom.passcode",
     data: { content: base64(serializePlist(profile)), preset: "passcode" },

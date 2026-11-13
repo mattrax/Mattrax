@@ -16,7 +16,9 @@ export const provisionEmailCredential = (
     const user = yield* db.query.user
       .findFirst({ where: { id: subjectId } })
       .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
     if (!user) return;
+
     const [existing] = yield* db
       .select({ credentialId: authCredentials.credentialId })
       .from(authCredentials)
@@ -28,6 +30,7 @@ export const provisionEmailCredential = (
         and(eq(authCredentials.subjectId, subjectId), eq(authEmailCredentials.moduleId, moduleId)),
       )
       .limit(1);
+
     if (existing) return;
 
     const credentialId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);

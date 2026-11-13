@@ -24,8 +24,10 @@ export default function ResetPasswordPage() {
     void (async () => {
       const flow = authClient.resetFlow();
       const fragment = window.location.hash;
+
       if (!flow || !fragment) {
         setError("Invalid or expired reset link. Please request a new one.");
+
         return;
       }
 
@@ -50,16 +52,20 @@ export default function ResetPasswordPage() {
 
     if (password() !== confirm()) {
       setError("Passwords do not match");
+
       return;
     }
 
     const current = link();
+
     if (!current) {
       setError("Invalid or missing reset token. Please request a new reset link.");
+
       return;
     }
 
     setPending(true);
+
     const result = await authClient.resetPassword({
       newPassword: password(),
       flowId: current.flowId,
@@ -67,10 +73,12 @@ export default function ResetPasswordPage() {
       reference: current.reference,
       secret: current.secret,
     });
+
     setPending(false);
 
     if (result.error) {
       setError(errorMessage(result.error, "Could not reset password"));
+
       return;
     }
 

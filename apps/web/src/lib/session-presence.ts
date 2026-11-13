@@ -28,19 +28,26 @@ export const sessionPresenceSetCookie = (
 
 const cookieValue = (name: string): string | undefined => {
   if (typeof document === "undefined") return undefined;
+
   for (const part of document.cookie.split(";")) {
     const [key, ...rest] = part.trim().split("=");
+
     if (key === name) return rest.join("=");
   }
+
   return undefined;
 };
 
 export function readSessionPresence(): SessionPresence {
   const value = cookieValue(SESSION_PRESENCE_COOKIE);
+
   if (!value) return { state: "missing" };
+
   if (!value.startsWith(PREFIX)) return { state: "active" };
   const expiresAt = Number(value.slice(PREFIX.length));
+
   if (!Number.isFinite(expiresAt)) return { state: "missing" };
+
   return expiresAt > Date.now() ? { state: "active", expiresAt } : { state: "expired", expiresAt };
 }
 

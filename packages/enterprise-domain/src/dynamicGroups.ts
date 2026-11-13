@@ -8,6 +8,7 @@ import {
 } from "./deviceQuery.ts";
 
 export { compareVersionStrings };
+
 export type { DeviceQueryEvaluationOptions };
 
 /** Kept as a named export for callers that describe group health levels. */
@@ -17,6 +18,7 @@ export const DynamicGroupHealthLevel = Schema.Literals([
   "critical",
   "unknown",
 ]);
+
 export type DynamicGroupHealthLevel = typeof DynamicGroupHealthLevel.Type;
 
 /**
@@ -39,6 +41,7 @@ export const DYNAMIC_GROUP_RULES_VERSION = 1;
 
 /** Groups and dashboards share the same condition schema and evaluator. */
 export const DynamicGroupCondition = DeviceCondition;
+
 export type DynamicGroupCondition = DeviceCondition;
 
 export const DynamicGroupRules = Schema.Struct({
@@ -47,9 +50,11 @@ export const DynamicGroupRules = Schema.Struct({
   any: Schema.optional(Schema.Array(DeviceCondition)),
   none: Schema.optional(Schema.Array(DeviceCondition)),
 });
+
 export type DynamicGroupRules = typeof DynamicGroupRules.Type;
 
 export const DynamicGroupKind = Schema.Literals(["manual", "dynamic"]);
+
 export type DynamicGroupKind = typeof DynamicGroupKind.Type;
 
 /** Version currently supported by this build; anything else is rejected. */
@@ -71,20 +76,25 @@ export const dynamicGroupRulesProblem = (
   rules: DynamicGroupRules | null | undefined,
 ): string | null => {
   if (rules == null) return "Dynamic groups require a rule set";
+
   if (rules.version !== DYNAMIC_GROUP_RULES_VERSION)
     return `Unsupported rule version: ${String(rules.version)}`;
+
   if (!hasDynamicGroupConditions(rules))
     return "Add at least one condition before saving a dynamic group";
+
   for (const list of [rules.all ?? [], rules.any ?? [], rules.none ?? []])
     for (const condition of list) {
       if (typeof condition.value === "string" && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
+
       if (
         (condition.field === "staleDays" || condition.field === "enrolledDays") &&
         condition.value < 0
       )
         return `${condition.field} must not be negative`;
     }
+
   return null;
 };
 
@@ -104,5 +114,6 @@ export const evaluateDynamicGroupRules = (
 ): boolean => {
   // No conditions means "match nothing", never "match everything".
   if (!hasDynamicGroupConditions(rules)) return false;
+
   return evaluateDeviceQuery(rules, device, options);
 };

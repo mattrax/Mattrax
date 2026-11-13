@@ -69,9 +69,11 @@ describe("validateDraft", () => {
       defaultValue: 0,
       min: 1,
     });
+
     const issues = validateDraft(
       draft("windows", [selection([propertyWithInvalidDefault], { minimumKeySize: 0 })]),
     );
+
     expect(issues.filter((issue) => issue.severity === "error")).toHaveLength(0);
   });
 
@@ -83,9 +85,11 @@ describe("validateDraft", () => {
       defaultValue: 16,
       min: 1,
     });
+
     const issues = validateDraft(
       draft("windows", [selection([propertyWithMin], { minimumKeySize: -2 })]),
     );
+
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
   });
 
@@ -95,6 +99,7 @@ describe("validateDraft", () => {
         selection([property({ key: "list", type: "array" })], { list: "[not json" }),
       ]),
     );
+
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
   });
 
@@ -104,6 +109,7 @@ describe("validateDraft", () => {
         selection([property({ key: "ignored", address: "./Vendor/MSFT/{bad}" })], { ignored: "x" }),
       ]),
     );
+
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
   });
 });
@@ -117,16 +123,19 @@ describe("Windows SyncML", () => {
       enum: [{ value: "true" }, { value: "false" }],
       defaultValue: "true",
     });
+
     const stringDraft = buildWindowsNodes(
       draft("windows", [
         selection([booleanEnum], { "./Vendor/MSFT/Policy/Config/Test/Enabled": "true" }),
       ]),
     );
+
     const booleanDraft = buildWindowsNodes(
       draft("windows", [
         selection([booleanEnum], { "./Vendor/MSFT/Policy/Config/Test/Enabled": true }),
       ]),
     );
+
     expect(stringDraft).toEqual(booleanDraft);
     expect(stringDraft[0]).toMatchObject({ value: true, format: "int" });
   });
@@ -135,6 +144,7 @@ describe("Windows SyncML", () => {
 describe("artifactToConfigurations", () => {
   it("keys Apple declarations by identifier, not array position", () => {
     const first = selection([], {});
+
     const second = {
       ...selection([], {}),
       collectionId: "second#Second",
@@ -142,6 +152,7 @@ describe("artifactToConfigurations", () => {
       kind: "declaration" as const,
       name: "Second",
     };
+
     const forward = Object.keys(artifactToConfigurations(draft("apple", [first, second]))).sort();
     const reversed = Object.keys(artifactToConfigurations(draft("apple", [second, first]))).sort();
     expect(forward).toEqual(reversed);
@@ -157,6 +168,7 @@ describe("multi-platform policy drafts", () => {
     surface: "profiles",
     name: "Accessibility",
   };
+
   const windowsSelection = {
     ...selection([], {}),
     collectionId: "windows/settings/bitlocker#BitLocker",
@@ -165,6 +177,7 @@ describe("multi-platform policy drafts", () => {
     surface: "settings",
     name: "BitLocker",
   };
+
   const policy = {
     version: 2 as const,
     name: "Cross platform",
@@ -183,6 +196,7 @@ describe("multi-platform policy drafts", () => {
       "mttx.apple.custom.designer",
       "mttx.windows.custom.designer",
     ]);
+
     for (const value of Object.values(configurations)) {
       expect(parsePolicyDraft((value as { draft?: unknown }).draft)).toMatchObject({
         version: 2,

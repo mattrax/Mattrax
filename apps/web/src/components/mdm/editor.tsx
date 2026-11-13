@@ -50,10 +50,12 @@ const sections = [
 export function PolicyConfigurationEditor() {
   const params = useParams();
   const queryClient = useQueryClient();
+
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
+
   const row = () => policy.data as PolicyRow | undefined;
   const [canEdit, setCanEdit] = createSignal(false);
   const [active, setActive] = createSignal("custom");
@@ -65,6 +67,7 @@ export function PolicyConfigurationEditor() {
     () => row()?.id,
     () => {
       const configurations = row()?.configurations;
+
       if (!configurations) return;
       setConfig(configurations);
       setInitial(JSON.stringify(configurations));
@@ -74,8 +77,10 @@ export function PolicyConfigurationEditor() {
 
   const dirty = createMemo(() => JSON.stringify(config()) !== initial());
   const configuredKinds = createMemo(() => Object.keys(config()).length);
+
   const setKey = (key: string, value: unknown) =>
     setConfig((current) => ({ ...current, [key]: value }));
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchPolicy(params.tenantId, params.policyId, { configurations: config() }),
@@ -92,6 +97,7 @@ export function PolicyConfigurationEditor() {
     if (canEdit() && dirty()) save.mutate();
     else setCanEdit(!canEdit());
   };
+
   const cancel = () => {
     setConfig(JSON.parse(initial()));
     setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
@@ -131,7 +137,9 @@ export function PolicyConfigurationEditor() {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape" && canEdit()) cancel();
     };
+
     window.addEventListener("keydown", handler);
+
     return () => window.removeEventListener("keydown", handler);
   });
 
@@ -252,18 +260,26 @@ export function PolicyConfigurationEditor() {
 
 function activeTitle(active: string) {
   if (active === "custom") return "Profiles";
+
   if (active === "device") return "Device restrictions";
+
   if (active === "windows") return "Windows configuration";
+
   if (active === "raw") return "JSON";
+
   return "Certificates";
 }
 
 function sectionDescription(active: string) {
   if (active === "custom")
     return "Upload .mobileconfig profiles. Signed profiles deploy exactly as supplied.";
+
   if (active === "device") return "Restrictions applied to every device in scope.";
+
   if (active === "windows") return "SyncML policy nodes for Windows devices.";
+
   if (active === "raw") return "The full configuration map, as stored on the policy.";
+
   return "Certificates attached to this policy.";
 }
 
@@ -277,6 +293,7 @@ function EditorNav(props: {
       <nav aria-label="Editor sections" class="no-scrollbar flex gap-1 overflow-x-auto p-2 lg:grid">
         {sections.map((section) => {
           const current = () => props.active === section.id;
+
           return (
             <Button
               variant={current() ? "secondary" : "ghost"}
@@ -314,12 +331,14 @@ function EditorNav(props: {
 
 function SecuritySection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
   const cert = () => props.config[keys.cert] as { pem?: string } | null | undefined;
+
   const uploadCert = async () =>
     props.setKey(keys.cert, {
       pem: await (
         await selectFile(".pem,text/plain,application/pem,application/x-pem-file")
       ).text(),
     });
+
   return (
     <Show
       when={cert()}
@@ -354,6 +373,7 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
 
 function DeviceSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
   const device = () => (props.config[keys.device] ?? { camera: true }) as { camera?: boolean };
+
   return (
     <div class="space-y-4">
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -382,6 +402,7 @@ function DeviceSection(props: { config: Config; setKey: (key: string, value: unk
 function WindowsSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
   const current = () =>
     props.config[keys.windows] as { omaUri?: string; value?: string; format?: string } | undefined;
+
   return (
     <div class="space-y-4">
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -432,26 +453,31 @@ function CustomSection(props: {
 }) {
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
+
   const profiles = () =>
     Object.entries(props.config).filter(([kind, value]) => isCustomProfile(kind, value));
 
   const nextKind = () => {
     for (let index = 1; ; index++) {
       const kind = `mttx.apple.custom.uploaded${index === 1 ? "" : index}`;
+
       if (!(kind in props.config)) return kind;
     }
   };
 
   const upload = async () => {
     setError(null);
+
     try {
       const file = await selectFile("application/x-apple-aspen-config,.mobileconfig");
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       const head = new TextDecoder().decode(bytes.slice(0, 512));
+
       const signed =
         (bytes[0] === 0x30 && (bytes[1] === 0x82 || bytes[1] === 0x81 || bytes[1] === 0x80)) ||
         /-----BEGIN (?:PKCS7|CMS)-----/.test(head);
+
       props.setKey(nextKind(), {
         content: arrayBufferToBase64(buffer),
         fileName: file.name,
@@ -467,6 +493,7 @@ function CustomSection(props: {
     const value = props.config[kind] as { content: string; fileName?: string };
     setBusy(kind);
     setError(null);
+
     try {
       const result = await enterprise.extractMobileconfig(value.content);
       props.setKey(kind, {
@@ -512,6 +539,7 @@ function CustomSection(props: {
                 fileName?: string;
                 signed?: boolean;
               };
+
               return (
                 <div class="overflow-hidden rounded-lg border border-border">
                   <div class="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2">

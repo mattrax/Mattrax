@@ -13,6 +13,7 @@ export type WidgetLayout = { x: number; y: number; w: number; h: number };
 
 const integer = (value: unknown, fallback: number) => {
   const number = typeof value === "number" ? value : Number(value);
+
   return Number.isFinite(number) ? Math.trunc(number) : fallback;
 };
 
@@ -24,6 +25,7 @@ export const normalizeWidgetLayout = (
   const h = Math.min(Math.max(integer(layout.h, fallback.h), 1), 24);
   const x = Math.min(Math.max(integer(layout.x, fallback.x), 0), 12 - w);
   const y = Math.max(integer(layout.y, fallback.y), 0);
+
   return { x, y, w, h };
 };
 
@@ -33,6 +35,7 @@ const record = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown, field: string, maximum = 500) => {
   if (typeof value !== "string" || value.trim() === "")
     throw new EnterpriseBadRequest({ message: `${field} is required` });
+
   return value.trim().slice(0, maximum);
 };
 
@@ -40,7 +43,9 @@ const queryValue = (value: unknown) => {
   try {
     const query = decodeQuery(value ?? { all: [] });
     const problem = deviceQueryProblem(query);
+
     if (problem) throw new EnterpriseBadRequest({ message: problem });
+
     return query;
   } catch (error) {
     if (error instanceof EnterpriseBadRequest) throw error;
@@ -51,13 +56,16 @@ const queryValue = (value: unknown) => {
 const datasetValue = (value: unknown) => {
   if (value !== "devices" && value !== "software")
     throw new EnterpriseBadRequest({ message: "Choose a devices or software dataset" });
+
   return value;
 };
 
 const columnsValue = (value: unknown) => {
   if (value === undefined) return undefined;
+
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
     throw new EnterpriseBadRequest({ message: "Table columns must be a list of field names" });
+
   return value.slice(0, 20).map((item) => String(item));
 };
 
@@ -67,11 +75,14 @@ const columnsValue = (value: unknown) => {
  */
 export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown): unknown => {
   const config = record(value);
+
   switch (type) {
     case "markdown": {
       const markdown = text(config.markdown, "Markdown", 20_000);
+
       return { markdown };
     }
+
     case "stat":
       return {
         dataset: datasetValue(config.dataset),
@@ -88,6 +99,7 @@ export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown)
       };
     case "table": {
       const columns = columnsValue(config.columns);
+
       return {
         dataset: datasetValue(config.dataset),
         query: queryValue(config.query),
@@ -97,6 +109,7 @@ export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown)
           : { limit: Math.min(Math.max(integer(config.limit, 100), 1), 200) }),
       };
     }
+
     default:
       throw new EnterpriseBadRequest({ message: "Choose a valid widget type" });
   }
@@ -139,18 +152,26 @@ export const deviceBucket = (
     case "fileVault":
     case "fileVaultStatus": {
       if (device.fileVaultStatus) return titleCase(device.fileVaultStatus);
+
       if (device.fileVaultEnabled === true) return "Enabled";
+
       if (device.fileVaultEnabled === false) return "Disabled";
+
       return "Unknown";
     }
+
     case "enrolledDays": {
       const days = ageInDays(device.enrolledAt, now);
+
       return days === null ? "Unknown" : ageBucket(days);
     }
+
     case "staleDays": {
       const days = ageInDays(device.lastSeenAt, now);
+
       return days === null ? "Never seen" : ageBucket(days);
     }
+
     case "osVersion":
       return device.osVersion?.trim() || "Unknown";
     case "model":
@@ -170,7 +191,9 @@ const titleCase = (value: string) =>
 const ageInDays = (value: Date | string | null | undefined, now: Date) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
+
   if (Number.isNaN(date.getTime())) return null;
+
   return Math.max(0, (now.getTime() - date.getTime()) / (24 * 60 * 60 * 1000));
 };
 
@@ -209,8 +232,10 @@ export const toBuckets = (
   order?: ReadonlyArray<string>,
 ): DashboardQueryBucket[] => {
   const counts = new Map<string, number>();
+
   for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
   const entries = [...counts.entries()];
+
   if (order) {
     const rank = new Map(order.map((label, index) => [label, index]));
     entries.sort(
@@ -219,5 +244,6 @@ export const toBuckets = (
         right[1] - left[1],
     );
   } else entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+
   return entries.slice(0, 12).map(([label, value]) => ({ label, value }));
 };

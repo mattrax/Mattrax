@@ -21,6 +21,7 @@ type BreadcrumbProps<T extends ValidComponent = "nav"> = PolymorphicProps<
 
 const Breadcrumb = <T extends ValidComponent = "nav">(props: BreadcrumbProps<T>) => {
   const [local, others] = splitProps(props as BreadcrumbProps, ["class"]);
+
   return (
     <Root
       aria-label="breadcrumb"
@@ -35,6 +36,7 @@ type BreadcrumbListProps = ComponentProps<"ol">;
 
 const BreadcrumbList = (props: BreadcrumbListProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <ol
       class={cn("wrap-break-word z-breadcrumb-list flex flex-wrap items-center", local.class)}
@@ -48,6 +50,7 @@ type BreadcrumbItemProps = ComponentProps<"li">;
 
 const BreadcrumbItem = (props: BreadcrumbItemProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <li
       class={cn("z-breadcrumb-item inline-flex items-center", local.class)}
@@ -65,6 +68,7 @@ type BreadcrumbLinkProps<T extends ValidComponent = "a"> = PolymorphicProps<
 
 const BreadcrumbLink = <T extends ValidComponent = "a">(props: BreadcrumbLinkProps<T>) => {
   const [local, others] = splitProps(props as BreadcrumbLinkProps, ["class"]);
+
   return (
     <Link class={cn("z-breadcrumb-link", local.class)} data-slot="breadcrumb-link" {...others} />
   );
@@ -74,6 +78,7 @@ type BreadcrumbPageProps = ComponentProps<"span">;
 
 const BreadcrumbPage = (props: BreadcrumbPageProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     // biome-ignore lint/a11y/useFocusableInteractive: <exception for breadcrumb>
     // biome-ignore lint/a11y/useSemanticElements: <exception for breadcrumb>
@@ -98,6 +103,7 @@ const BreadcrumbSeparator = <T extends ValidComponent = "span">(
   props: BreadcrumbSeparatorProps<T>,
 ) => {
   const [local, others] = splitProps(props as BreadcrumbSeparatorProps, ["class"]);
+
   return (
     <Separator
       data-slot="breadcrumb-separator"
@@ -113,6 +119,7 @@ type BreadcrumbEllipsisProps = ComponentProps<"span">;
 
 const BreadcrumbEllipsis = (props: BreadcrumbEllipsisProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <span
       data-slot="breadcrumb-ellipsis"

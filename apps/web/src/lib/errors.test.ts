@@ -35,6 +35,7 @@ describe("errorPresentation", () => {
       _tag: "EnterpriseDbError",
       message: "connection refused",
     });
+
     expect(presentation.message).not.toContain("connection refused");
     expect(presentation.variant).toBe("server");
   });

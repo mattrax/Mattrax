@@ -5,6 +5,7 @@ const openPalette = async (page: import("@playwright/test").Page) => {
   await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
   const input = page.locator('input[role="combobox"]');
   await expect(input).toBeVisible();
+
   return input;
 };
 
@@ -63,10 +64,12 @@ test.describe("command palette", () => {
     const input = await openPalette(page);
     await expect(page.getByRole("option", { name: /Account settings/ })).toBeVisible();
     await expect(page.getByRole("option", { name: /Create policy/ })).toBeVisible();
+
     const shortcut = await page
       .getByRole("option", { name: /Account settings/ })
       .locator("kbd")
       .innerText();
+
     expect(shortcut).toMatch(/[,]/);
     await page.keyboard.press("Escape");
 
@@ -86,10 +89,12 @@ test.describe("command palette", () => {
 
   test("registers policy designer actions and removes them on unmount", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Palette Designer");
+
     const policy = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/policies`, {
       method: "POST",
       body: JSON.stringify({ name: "Command Policy" }),
     });
+
     await gotoHydrated(page, `/t/${tenant.id}/policies/${policy.id}/design`);
     await page.waitForTimeout(1600);
 

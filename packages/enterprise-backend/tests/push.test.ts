@@ -94,6 +94,7 @@ describe("summarizeApplePushHealth", () => {
     const counts = summarizeApplePushHealth([
       { token: "t", pushMagic: "m", lastPushOkAt: new Date(), consecutivePushFailures: 1 },
     ]);
+
     expect(counts.succeeded).toBe(0);
     expect(counts.failing).toBe(1);
   });
@@ -140,6 +141,7 @@ describe("makeApplePush outbound backstop", () => {
     insert: () => ({
       values: (row: Record<string, unknown>) => {
         captured.audit?.push(row);
+
         return Effect.void;
       },
     }),
@@ -147,6 +149,7 @@ describe("makeApplePush outbound backstop", () => {
       set: (patch: Record<string, unknown>) => ({
         where: () => {
           captured.patch = patch;
+
           return Effect.void;
         },
       }),
@@ -161,6 +164,7 @@ describe("makeApplePush outbound backstop", () => {
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
     const captured: { patch?: Record<string, unknown> } = {};
+
     const apple = makeApplePush({
       db: makeFakeDb(sealedKey, captured) as never,
       schema: schema as never,
@@ -181,6 +185,7 @@ describe("makeApplePush outbound backstop", () => {
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
     const captured: { patch?: Record<string, unknown> } = {};
+
     const apple = makeApplePush({
       db: makeFakeDb(sealedKey, captured) as never,
       schema: schema as never,
@@ -199,10 +204,12 @@ describe("makeApplePush outbound backstop", () => {
     const keyPair = await generateCaKeyPair();
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
+
     const captured: {
       patch?: Record<string, unknown>;
       audit?: Array<Record<string, unknown>>;
     } = { audit: [] };
+
     const apple = makeApplePush({
       db: makeFakeDb(sealedKey, captured) as never,
       schema: schema as never,
@@ -234,6 +241,7 @@ describe("makeApplePush outbound backstop", () => {
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
 
     const repeated: { audit?: Array<Record<string, unknown>> } = { audit: [] };
+
     const repeatedApple = makeApplePush({
       db: makeFakeDb(sealedKey, repeated, "invalid_token") as never,
       schema: schema as never,
@@ -246,10 +254,12 @@ describe("makeApplePush outbound backstop", () => {
       authSecret,
       pushTimeoutMs: 5_000,
     });
+
     await Effect.runPromise(repeatedApple.pushAppleDevice("device-1"));
     expect(repeated.audit).toHaveLength(0);
 
     const delivery: { audit?: Array<Record<string, unknown>> } = { audit: [] };
+
     const deliveryApple = makeApplePush({
       db: makeFakeDb(sealedKey, delivery) as never,
       schema: schema as never,
@@ -263,6 +273,7 @@ describe("makeApplePush outbound backstop", () => {
       authSecret,
       pushTimeoutMs: 5_000,
     });
+
     await Effect.runPromise(deliveryApple.pushAppleDevice("device-1"));
     expect(delivery.audit).toHaveLength(0);
   });

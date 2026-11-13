@@ -140,6 +140,7 @@ function LoadedOverview(props: {
   error?: unknown;
 }) {
   const dashboard = useQuery(() => enterpriseQueries.dashboard(props.tenantId, props.summary.id));
+
   return (
     <Page class="gap-5">
       <OverviewHeader
@@ -185,6 +186,7 @@ function PreviewOverview(props: {
   error?: unknown;
 }) {
   const widgets = createMemo(previewWidgets);
+
   return (
     <Page class="gap-5">
       <OverviewHeader

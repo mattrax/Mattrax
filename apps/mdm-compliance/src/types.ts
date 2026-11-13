@@ -1,4 +1,5 @@
 export const PLATFORMS = ["apple", "windows", "android", "scep"] as const;
+
 export type Platform = (typeof PLATFORMS)[number];
 
 export type CheckCategory =

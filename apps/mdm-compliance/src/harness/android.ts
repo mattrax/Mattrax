@@ -24,11 +24,13 @@ const tableName = (table: any): string => {
   const symbol = Object.getOwnPropertySymbols(table).find(
     (candidate) => candidate.description === "drizzle:Name",
   );
+
   return table?.[symbol!] as string;
 };
 
 const matches = (row: Row, where: unknown): boolean => {
   if (!where || typeof where !== "object") return true;
+
   return Object.entries(where as Record<string, unknown>).every(([key, value]) =>
     value === undefined ? true : row[key] === value,
   );
@@ -69,7 +71,9 @@ class FakeInsert implements Iterable<Effect.Effect<Row[]>> {
   ) {}
   values(value: Row | Row[]): this {
     this.rows.push(...(Array.isArray(value) ? value : [value]));
+
     for (const row of this.rows) this.store[this.table]!.push({ ...row });
+
     return this;
   }
   ignore(): this {
@@ -94,10 +98,12 @@ class FakeUpdate implements Iterable<Effect.Effect<Row[]>> {
   ) {}
   set(value: Row): this {
     this.patch = value;
+
     return this;
   }
   where(): this {
     for (const row of this.store[this.table]!) Object.assign(row, this.patch);
+
     return this;
   }
   [Symbol.iterator](): Iterator<Effect.Effect<Row[]>> {
@@ -112,6 +118,7 @@ class FakeDelete implements Iterable<Effect.Effect<Row[]>> {
   ) {}
   where(): this {
     this.store[this.table] = [];
+
     return this;
   }
   returning(): this {
@@ -126,10 +133,13 @@ export const createFakeDb = (seed: Record<string, Row[]> = {}) => {
   const store: Record<string, Row[]> = Object.fromEntries(
     Object.keys(schema).map((key) => [tableName((schema as any)[key]), []]),
   );
+
   for (const [table, rows] of Object.entries(seed)) store[table] = rows.map((row) => ({ ...row }));
+
   const query = Object.fromEntries(
     Object.keys(schema).map((key) => {
       const table = tableName((schema as any)[key]);
+
       return [
         key,
         {
@@ -141,6 +151,7 @@ export const createFakeDb = (seed: Record<string, Row[]> = {}) => {
       ];
     }),
   );
+
   const db = {
     store,
     query,
@@ -150,6 +161,7 @@ export const createFakeDb = (seed: Record<string, Row[]> = {}) => {
     select: () => new EmptySelect(),
     transaction: (work: (tx: unknown) => unknown) => work(db),
   };
+
   return db;
 };
 
@@ -194,6 +206,7 @@ const signJwt = async (
 ): Promise<string> => {
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "compliance" }));
+
   const payload = base64UrlEncode(
     JSON.stringify({
       iss: "https://accounts.google.com",
@@ -206,23 +219,28 @@ const signJwt = async (
       ...overrides,
     }),
   );
+
   const signature = await crypto.subtle.sign(
     { name: "RSASSA-PKCS1-v1_5" },
     privateKey,
     encoder.encode(`${header}.${payload}`),
   );
+
   return `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
 };
 
 const base64Json = (value: unknown): string => {
   const bytes = encoder.encode(JSON.stringify(value));
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
 export const createAndroidHarness = async (): Promise<AndroidHarness> => {
   clearJwksCache();
+
   const keyPair = (await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -233,12 +251,14 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     true,
     ["sign", "verify"],
   )) as CryptoKeyPair;
+
   const publicJwk = {
     ...(await crypto.subtle.exportKey("jwk", keyPair.publicKey)),
     kid: "compliance",
     alg: "RS256",
     use: "sig",
   };
+
   const jwksFetch = (async () =>
     new Response(JSON.stringify({ keys: [publicJwk] }), {
       status: 200,
@@ -256,6 +276,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     pubsubAudience: audience,
     jwksUri,
   };
+
   const calls: AndroidHarness["calls"] = {
     signupUrls: [],
     enterprises: [],
@@ -263,9 +284,11 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     devices: [],
     commands: [],
   };
+
   const androidService = AndroidManagement.of({
     createSignupUrl: (input) => {
       calls.signupUrls.push({ callbackUrl: input.callbackUrl });
+
       return Effect.succeed({
         name: "signupUrls/compliance",
         url: "https://android.example.test/signup",
@@ -273,6 +296,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     },
     createEnterprise: (input) => {
       calls.enterprises.push(input as unknown as Record<string, unknown>);
+
       return Effect.succeed({ name: enterpriseName });
     },
     createEnrollmentToken: () =>
@@ -287,10 +311,12 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
         policyId: input.policyId,
         policy: input.policy,
       });
+
       return Effect.succeed(input.policy);
     },
     patchDevice: (input) => {
       calls.devices.push(input);
+
       return Effect.succeed({
         name: input.deviceName,
         policyName: `${input.deviceName.split("/devices/")[0]}/policies/${input.policyName}`,
@@ -299,6 +325,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     listDevices: () => Effect.succeed({ devices: [] }),
     issueCommand: (input) => {
       calls.commands.push({ deviceName: input.deviceName, type: input.type });
+
       return Effect.succeed({ operationName: `${enterpriseName}/operations/compliance` });
     },
     deleteDevice: () => Effect.void,
@@ -384,6 +411,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     Layer.provideMerge(Layer.succeed(Db, db as unknown as EnterpriseDb)),
     Layer.provideMerge(Layer.succeed(AndroidManagement, androidService)),
   );
+
   const { handler: routeHandler } = HttpRouter.toWebHandler(routeLayer, { disableLogger: true });
 
   return {

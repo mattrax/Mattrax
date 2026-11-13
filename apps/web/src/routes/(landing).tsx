@@ -7,6 +7,7 @@ import { reportGlobalError } from "~/lib/global-errors";
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
+
   return (
     <div
       class={`dark flex min-h-screen flex-col bg-background font-sans text-foreground ${
@@ -62,14 +63,18 @@ function TopNavigation() {
   const handleLogout = async () => {
     try {
       const result = await authClient.signOut();
+
       if (result.error) {
         reportGlobalError(result.error);
+
         return;
       }
     } catch (error) {
       reportGlobalError(error);
+
       return;
     }
+
     window.location.href = "/";
   };
 

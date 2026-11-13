@@ -53,6 +53,7 @@ export const importApnsKeyJwk = (jwk: JsonWebKey): Promise<CryptoKey> => importP
 export const apnsKeyToPkcs8Pem = async (jwk: JsonWebKey): Promise<string> => {
   const key = await importPrivateKeyJwk(jwk);
   const der = await crypto.subtle.exportKey("pkcs8", key);
+
   return pemEncode("PRIVATE KEY", der);
 };
 
@@ -74,11 +75,13 @@ export async function createApnsCsrDer(
   });
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
+
   return csr.toSchema(true).toBER(false);
 }
 
 async function importVendorPrivateKey(pem: string): Promise<CryptoKey> {
   const der = pemDecode("PRIVATE KEY", pem);
+
   return crypto.subtle.importKey("pkcs8", der, RSA_ALGORITHM, false, ["sign"]);
 }
 
@@ -88,6 +91,7 @@ async function importVendorPrivateKey(pem: string): Promise<CryptoKey> {
  */
 export async function signApnsCsr(csrDer: ArrayBuffer, vendorKeyPem: string): Promise<ArrayBuffer> {
   const key = await importVendorPrivateKey(vendorKeyPem);
+
   return crypto.subtle.sign(SIGN_ALGORITHM, key, csrDer);
 }
 
@@ -125,6 +129,7 @@ export async function buildApnsCsr(options: {
 
   let certificateChain = "";
   let signature = "";
+
   if (options.vendor) {
     certificateChain = [
       options.vendor.certificatePem.trim(),
@@ -135,6 +140,7 @@ export async function buildApnsCsr(options: {
   }
 
   const certificateSigningRequest = arrayBufferToBase64(csrDer);
+
   const plist = await Effect.runPromise(
     serializePlist({
       PushCertCertificateChain: certificateChain,

@@ -5,12 +5,15 @@ import { errorMessage } from "~/lib/errors";
 
 export default function ForgotPasswordPage() {
   const [searchParams] = useSearchParams();
+
   const [email, setEmail] = createSignal(
     untrack(() => {
       const value = searchParams.email;
+
       return (Array.isArray(value) ? value[0] : value) ?? "";
     }),
   );
+
   const [error, setError] = createSignal<string | null>(null);
   const [sent, setSent] = createSignal(false);
   const [pending, setPending] = createSignal(false);
@@ -29,6 +32,7 @@ export default function ForgotPasswordPage() {
 
     if (result.error) {
       setError(errorMessage(result.error, "Something went wrong"));
+
       return;
     }
 

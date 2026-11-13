@@ -269,7 +269,9 @@ function PreviewStat(props: { value: string; label: string }) {
 
 function DeviceGlyph(props: { detail: string }) {
   if (props.detail.startsWith("Windows")) return <WindowsIcon class="size-3.5" />;
+
   if (props.detail.startsWith("Android")) return <AndroidIcon class="size-3.5" />;
+
   return <AppleIcon class="size-3.5" />;
 }
 

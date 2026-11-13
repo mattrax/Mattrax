@@ -49,6 +49,7 @@ describe("Windows SOAP schemas", () => {
         oIDs: { oID: [{ value: "1.2.3", group: "4", oIDReferenceID: "0", defaultName: "test" }] },
       }),
     );
+
     expect(xml).toContain("GetPoliciesResponse");
     expect(xml).toContain("minimalKeyLength");
   });

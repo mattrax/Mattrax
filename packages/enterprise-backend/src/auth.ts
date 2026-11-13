@@ -62,6 +62,7 @@ export const passkeyProfile = (
   if (!origin) return fallback;
 
   let parsed: URL;
+
   try {
     parsed = new URL(origin);
   } catch {
@@ -70,27 +71,35 @@ export const passkeyProfile = (
 
   const hostname = parsed.hostname;
   const developmentLocalhost = hostname === "localhost";
+
   const validHostname =
     developmentLocalhost ||
     /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(hostname);
+
   if (!validHostname) return fallback;
+
   if (!developmentLocalhost && parsed.protocol !== "https:") return fallback;
 
   const origins = new Set<string>([parsed.origin]);
+
   for (const candidate of trustedOrigins) {
     let other: URL;
+
     try {
       other = new URL(candidate);
     } catch {
       continue;
     }
+
     const sameSite =
       other.hostname === hostname ||
       (!developmentLocalhost && other.hostname.endsWith(`.${hostname}`));
+
     const schemeOk = developmentLocalhost
       ? other.protocol === "https:" ||
         (other.hostname === "localhost" && other.protocol === "http:")
       : other.protocol === "https:";
+
     // A different registrable domain cannot share this RP id, so it is ignored
     // rather than silently weakening the allowlist.
     if (sameSite && schemeOk && other.origin === other.href.replace(/\/$/, ""))
@@ -113,6 +122,7 @@ export const deriveTotpSecretKey = async (authSecret: string) =>
       new TextEncoder().encode(`mattrax/totp/secret-key/v1:${authSecret}`),
     ),
   );
+
 type EmailBinding = {
   send(message: {
     to: string;
@@ -160,7 +170,9 @@ export const makeAuthLive = ({
             const user = yield* db.query.user
               .findFirst({ where: { id: subjectId } })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
+
             return {
               name: user.name,
               email: user.email,
@@ -183,6 +195,7 @@ export const makeAuthLive = ({
               const id = yield* random.uuidV4();
               const revision = yield* random.uuidV4();
               const now = new Date();
+
               return {
                 id,
                 name: registration.name,
@@ -207,8 +220,10 @@ export const makeAuthLive = ({
         try: async () => {
           if (!email) {
             console.log("EMAIL", message.to, message.subject, Redacted.value(message.text));
+
             return;
           }
+
           await email.send({
             to: message.to,
             from: { name: "Mattrax", email: emailFrom ?? "hello@mattrax.cloud" },
@@ -245,6 +260,7 @@ export const makeAuthLive = ({
             )
             .limit(1)
             .pipe(Effect.catch(() => Effect.succeed([])));
+
           yield* db
             .update(schema.user)
             .set({ passkeyEnabled: remaining.length > 0 })
@@ -258,12 +274,14 @@ export const makeAuthLive = ({
           Effect.gen(function* () {
             if (event.snapshot.action === "credential-change" && event.snapshot.subjectId) {
               const operation = event.snapshot.operation;
+
               if (
                 operation === `${PASSKEY_MODULE_ID}/passkey/enrollment` ||
                 operation === `${PASSKEY_MODULE_ID}/passkey/remove`
               )
                 yield* syncPasskeyFactor(event.snapshot.subjectId);
             }
+
             if (
               (event.snapshot.action === "registration" || event.snapshot.action === "sign-in") &&
               event.snapshot.subjectId
@@ -277,6 +295,7 @@ export const makeAuthLive = ({
               // six-digit code (see enterpriseAuth.requestEmailVerification),
               // so the auth runtime does not send a second link email here.
             }
+
             return [];
           }),
       });
@@ -309,7 +328,9 @@ export const makeAuthLive = ({
         if (recovery) {
           const credentialId =
             challenge.targetCredentialId ?? challenge.revision.credentials[0]?.credentialId;
+
           if (!credentialId) return yield* Password.PasswordActionRequired.make({});
+
           return {
             evidence: {
               revision: challenge.revision,
@@ -337,10 +358,13 @@ export const makeAuthLive = ({
   const resolveClaims = (subjectId: string) =>
     Effect.gen(function* () {
       const db = yield* Db;
+
       const user = yield* db.query.user
         .findFirst({ where: { id: subjectId } })
         .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
       if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
+
       return {
         name: user.name,
         email: user.email,
@@ -384,21 +408,25 @@ export const makeAuthLive = ({
           Effect.gen(function* () {
             if (invocation._tag !== "Authenticated")
               return yield* Passkey.PasskeyActionRequired.make({});
+
             if (invocation.subjectId !== challenge.revision.subjectId)
               return yield* Passkey.PasskeyActionRequired.make({});
 
             const user = yield* db.query.user
               .findFirst({ where: { id: invocation.subjectId } })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (!user || user.disabled) return yield* Passkey.PasskeyActionRequired.make({});
 
             const firstCredential = challenge.revision.credentials[0]?.credentialId;
+
             if (firstCredential === undefined) return yield* Passkey.PasskeyActionRequired.make({});
 
             // A step-up grant proves recent possession even when the session's
             // own sign-in is older than the management freshness window. It is
             // bound to this account, session and the enroll/remove action.
             const action = challenge.action === "remove" ? "passkey-remove" : "passkey-enroll";
+
             const steppedUp =
               proof !== undefined && invocation.sessionId !== undefined && authSecret !== undefined
                 ? yield* verifyStepUpGrant(authSecret, Redacted.value(proof), {
@@ -407,9 +435,11 @@ export const makeAuthLive = ({
                     action,
                   })
                 : false;
+
             const verifiedAt = steppedUp ? yield* DateTime.now : undefined;
 
             const assurance = invocation.assurance;
+
             const proofs = (assurance.evidence ?? []).map((item) => ({
               method: item.method,
               credentialId:
@@ -420,6 +450,7 @@ export const makeAuthLive = ({
               phishingResistant: item.phishingResistant,
               verifiedAt: verifiedAt ?? item.verifiedAt,
             }));
+
             if (proofs.length === 0)
               proofs.push({
                 method: assurance.method,
@@ -464,6 +495,7 @@ export const makeAuthLive = ({
     Effect.gen(function* () {
       if (!authSecret) return yield* Totp.TotpUnavailable.make({});
       const key = Redacted.make(yield* Effect.promise(() => deriveTotpSecretKey(authSecret)));
+
       return Totp.TotpSecretKeys.of({
         current: Effect.succeed({ keyId: "v1", key }),
         get: (keyId) =>
@@ -477,10 +509,12 @@ export const makeAuthLive = ({
     Effect.gen(function* () {
       const db = yield* Db;
       const hooks = yield* Hooks.LifecycleHooks;
+
       const services = yield* makeTotpPersistenceServices(totpMapping).pipe(
         Effect.provideService(Database, db as any),
         Effect.provideService(Hooks.LifecycleHooks, hooks),
       );
+
       return services.totpPersistence;
     }),
   ).pipe(Layer.provide(cryptoLayer), Layer.provide(LifecycleHooksLive));
@@ -509,6 +543,7 @@ export const makeAuthLive = ({
       const parseProof = (raw: string): { password?: string; code?: string } => {
         try {
           const parsed = JSON.parse(raw) as { password?: unknown; code?: unknown };
+
           if (parsed && typeof parsed === "object")
             return {
               ...(typeof parsed.password === "string" ? { password: parsed.password } : {}),
@@ -517,6 +552,7 @@ export const makeAuthLive = ({
         } catch {
           // Not JSON: keep compatibility with a code-only proof.
         }
+
         return { code: raw };
       };
 
@@ -524,15 +560,18 @@ export const makeAuthLive = ({
         verify: ({ invocation, challenge, proof }) =>
           Effect.gen(function* () {
             if (invocation._tag !== "Authenticated") return yield* Totp.TotpActionRequired.make({});
+
             if (invocation.subjectId !== challenge.revision.subjectId)
               return yield* Totp.TotpActionRequired.make({});
 
             const snapshot = yield* persistence
               .snapshot({ moduleId: TOTP_MODULE_ID, subjectId: invocation.subjectId })
               .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
+
             if (snapshot === undefined) return yield* Totp.TotpActionRequired.make({});
 
             const firstCredential = challenge.revision.credentials[0]?.credentialId;
+
             if (firstCredential === undefined) return yield* Totp.TotpActionRequired.make({});
 
             const assuranceProofs = (invocation.assurance.evidence ?? []).map((item) => ({
@@ -568,6 +607,7 @@ export const makeAuthLive = ({
                   ];
 
             const record = snapshot.record;
+
             if (!record?.secret) {
               // MFA requires a knowledge factor. Passwordless/SSO-only
               // accounts can never satisfy password + authenticator, so refuse
@@ -578,11 +618,14 @@ export const makeAuthLive = ({
                   subjectId: invocation.subjectId,
                 })
                 .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
+
               if (candidate._tag === "None") return yield* Totp.TotpActionRequired.make({});
             }
+
             if (record?.secret) {
               if (proof === undefined) return yield* Totp.TotpActionRequired.make({});
               const parsed = parseProof(Redacted.value(proof));
+
               if (!parsed.password || !parsed.code) return yield* Totp.TotpActionRequired.make({});
 
               const candidate = yield* passwords
@@ -591,13 +634,17 @@ export const makeAuthLive = ({
                   subjectId: invocation.subjectId,
                 })
                 .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
+
               if (candidate._tag === "None") return yield* Totp.TotpActionRequired.make({});
+
               const verified = yield* passwordHashing
                 .verify(Redacted.make(parsed.password), candidate.value.verifier)
                 .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
+
               if (!verified.matches) return yield* Totp.TotpActionRequired.make({});
 
               const nowMillis = DateTime.toEpochMillis(yield* DateTime.now);
+
               const step = yield* Effect.acquireUseRelease(
                 cryptography.decryptSecret(
                   {
@@ -611,6 +658,7 @@ export const makeAuthLive = ({
                 (secret) => cryptography.matchCode(secret, parsed.code!, nowMillis, 1),
                 (secret) => Effect.sync(() => secret.fill(0)),
               );
+
               if (step === null) return yield* Totp.TotpActionRequired.make({});
               proofs.push(
                 {

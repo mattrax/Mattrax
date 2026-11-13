@@ -208,18 +208,21 @@ const toDraft = (condition: DeviceCondition): Draft => ({
 
 const defaultDraft = (fieldId: string): Draft => {
   const field = fieldById(fieldId);
+
   return { field: field.id, op: field.defaultOp, value: field.defaultValue };
 };
 
 /** Build a typed condition from the generic editor values. */
 export const draftToCondition = (draft: Draft): DeviceCondition => {
   const field = fieldById(draft.field);
+
   const value =
     field.kind === "number"
       ? Number(draft.value || 0)
       : field.kind === "select"
         ? draft.value
         : draft.value;
+
   return {
     field: field.id,
     op: draft.op || field.defaultOp,
@@ -240,6 +243,7 @@ export function DeviceQueryBuilder(props: {
   dataset?: "devices" | "software";
 }) {
   const drafts = () => queryConditions(props.query).map(toDraft);
+
   const update = (next: Draft[]) =>
     props.onChange(
       next.length
@@ -259,6 +263,7 @@ export function DeviceQueryBuilder(props: {
       setText(formatDeviceQueryText(query));
     },
   );
+
   const applyText = () => {
     const parsed = parseDeviceQueryText(text());
     props.onChange(parsed);
@@ -299,6 +304,7 @@ export function DeviceQueryBuilder(props: {
           <For each={drafts()}>
             {(draft, index) => {
               const field = () => fieldById(draft.field);
+
               return (
                 <div class="flex flex-wrap items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-1.5">
                   <select

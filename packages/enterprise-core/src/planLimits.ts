@@ -50,10 +50,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const normalizeLimit = (value: unknown, path: string, warnings: string[]): PlanLimit => {
   if (value === null || value === undefined) return null;
+
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
   warnings.push(
     `MATTRAX_PLAN_LIMITS: "${path}" must be a non-negative whole number or null; treating it as unlimited.`,
   );
+
   return null;
 };
 
@@ -63,6 +65,7 @@ const normalizeLimit = (value: unknown, path: string, warnings: string[]): PlanL
  */
 export const parsePlanLimits = (raw?: string | null): PlanLimitsConfig => {
   const warnings: string[] = [];
+
   const absent = (): PlanLimitsConfig => ({
     configured: false,
     defaultPlan: DEFAULT_PLAN_NAME,
@@ -71,26 +74,32 @@ export const parsePlanLimits = (raw?: string | null): PlanLimitsConfig => {
   });
 
   const text = raw?.trim();
+
   if (!text) return absent();
 
   let decoded: unknown;
+
   try {
     decoded = JSON.parse(text);
   } catch {
     warnings.push(
       "MATTRAX_PLAN_LIMITS: the value is not valid JSON; plan limits are disabled (unlimited).",
     );
+
     return absent();
   }
+
   if (!isRecord(decoded)) {
     warnings.push(
       "MATTRAX_PLAN_LIMITS: the value must be a JSON object; plan limits are disabled (unlimited).",
     );
+
     return absent();
   }
 
   let defaultPlan = DEFAULT_PLAN_NAME;
   const rawDefault = decoded.defaultPlan ?? decoded.$defaultPlan;
+
   if (rawDefault !== undefined) {
     if (typeof rawDefault === "string" && rawDefault.trim()) defaultPlan = rawDefault.trim();
     else
@@ -106,23 +115,29 @@ export const parsePlanLimits = (raw?: string | null): PlanLimitsConfig => {
   const nestedPlans = isRecord(decoded.plans) ? decoded.plans : undefined;
   const source = nestedPlans ?? decoded;
   const plans: Record<string, PlanLimits> = {};
+
   for (const [rawName, value] of Object.entries(source)) {
     // Reserved keys only apply to the flat format.
     if (!nestedPlans && (rawName === "defaultPlan" || rawName === "$defaultPlan")) continue;
+
     if (!nestedPlans && rawName === "plans") continue;
 
     const name = rawName.trim();
+
     if (!name) {
       warnings.push("MATTRAX_PLAN_LIMITS: ignoring a plan with an empty name.");
       continue;
     }
+
     if (!isRecord(value)) {
       warnings.push(
         `MATTRAX_PLAN_LIMITS: plan "${name}" must be an object; ignoring it (unlimited).`,
       );
       continue;
     }
+
     const unknownKeys = Object.keys(value).filter((key) => key !== "devices" && key !== "tenants");
+
     if (unknownKeys.length > 0)
       warnings.push(
         `MATTRAX_PLAN_LIMITS: plan "${name}" has unknown keys (${unknownKeys.join(
@@ -154,6 +169,7 @@ export const planLimitsFor = (
 ): PlanLimits => {
   if (!config?.configured) return UNLIMITED_PLAN_LIMITS;
   const name = (plan?.trim() || config.defaultPlan).toLowerCase();
+
   return config.plans[name] ?? UNLIMITED_PLAN_LIMITS;
 };
 
@@ -165,9 +181,12 @@ const planNameForSubscription = (
   config: PlanLimitsConfig | undefined,
 ) => {
   const fallback = config?.defaultPlan ?? DEFAULT_PLAN_NAME;
+
   if (!subscription) return fallback;
   const status = subscription.status?.trim().toLowerCase();
+
   if (status && DOWNGRADED_SUBSCRIPTION_STATUSES.has(status)) return fallback;
+
   return subscription.plan?.trim() || fallback;
 };
 
@@ -189,6 +208,7 @@ export const planForOrganization = (input: PlanResolutionInput) =>
       .from(subscription)
       .where(eq(subscription.referenceId, input.organizationId))
       .limit(1);
+
     return planNameForSubscription(row, input.config);
   });
 
@@ -199,6 +219,7 @@ export const countOrganizationDevices = (db: EnterpriseDb, organizationId: strin
       .select({ value: count() })
       .from(device)
       .where(eq(device.organizationId, organizationId));
+
     return row?.value ?? 0;
   });
 
@@ -227,6 +248,7 @@ export const deviceLimitForOrganization = (input: PlanResolutionInput) =>
   Effect.gen(function* () {
     const plan = yield* planForOrganization(input);
     const limit = planLimitsFor(input.config, plan).devices;
+
     if (limit === null) return { plan, limit, used: null, reached: false, overLimit: false };
 
     const rows = yield* input.db
@@ -234,7 +256,9 @@ export const deviceLimitForOrganization = (input: PlanResolutionInput) =>
       .from(device)
       .where(eq(device.organizationId, input.organizationId))
       .limit(limit + 1);
+
     const used = rows.length;
+
     return { plan, limit, used, reached: used >= limit, overLimit: used > limit };
   });
 
@@ -248,6 +272,7 @@ const hasOwnerRole = (role: string | null | undefined) =>
 export const ownedTenantIds = (db: EnterpriseDb, userId: string) =>
   Effect.gen(function* () {
     const memberships = yield* db.query.member.findMany({ where: { userId } });
+
     return [
       ...new Set(
         memberships.filter((row) => hasOwnerRole(row.role)).map((row) => row.organizationId),
@@ -280,6 +305,7 @@ export const tenantLimitForAccount = (input: {
   Effect.gen(function* () {
     const owned = yield* ownedTenantIds(input.db, input.userId);
     const used = owned.length;
+
     if (!input.config?.configured) {
       return {
         plan: input.config?.defaultPlan ?? DEFAULT_PLAN_NAME,
@@ -292,14 +318,17 @@ export const tenantLimitForAccount = (input: {
 
     let plan = input.config.defaultPlan;
     let best = planLimitsFor(input.config, plan);
+
     for (const organizationId of owned) {
       const [row] = yield* input.db
         .select({ plan: subscription.plan, status: subscription.status })
         .from(subscription)
         .where(eq(subscription.referenceId, organizationId))
         .limit(1);
+
       const candidatePlan = planNameForSubscription(row, input.config);
       const candidate = planLimitsFor(input.config, candidatePlan);
+
       if (morePermissive(candidate.tenants, best.tenants)) {
         best = candidate;
         plan = candidatePlan;
@@ -307,6 +336,7 @@ export const tenantLimitForAccount = (input: {
     }
 
     const limit = best.tenants;
+
     return {
       plan,
       limit,

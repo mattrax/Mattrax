@@ -44,10 +44,12 @@ const graphMock = (
 ) => {
   const calls: GraphCalls = { imports: [], lists: [], profiles: [], assignments: [] };
   const pages = options.pages ?? [[device()]];
+
   const graph = {
     importAutopilotDevices: (tenantId: string, devices: Array<Record<string, unknown>>) =>
       Effect.sync(() => {
         calls.imports.push({ tenantId, devices });
+
         return (
           options.imported ??
           devices.map((item) => device({ serialNumber: item.serialNumber as string }))
@@ -58,6 +60,7 @@ const graphMock = (
         calls.lists.push(tenantId);
         const index = link ? Number(new URL(link).searchParams.get("page") ?? 0) : 0;
         const items = pages[index] ?? [];
+
         return {
           items,
           nextLink: index + 1 < pages.length ? `https://graph.test/next?page=${index + 1}` : null,
@@ -66,6 +69,7 @@ const graphMock = (
     createAutopilotProfile: (tenantId: string, input: AutopilotDeploymentProfileInput) =>
       Effect.sync(() => {
         calls.profiles.push(input);
+
         return {
           id: "graph-profile-1",
           displayName: input.displayName,
@@ -82,6 +86,7 @@ const graphMock = (
         calls.assignments.push({ tenantId, profileId, groupId });
       }),
   } as unknown as AzureGraphService;
+
   return { graph, calls };
 };
 
@@ -146,6 +151,7 @@ describe("Autopilot profile validation", () => {
     });
 
     expect(result.ok).toBe(true);
+
     if (!result.ok) return;
     expect(result.value).toMatchObject({
       name: "Standard",
@@ -188,9 +194,11 @@ describe("Autopilot profile validation", () => {
 describe("Autopilot Graph mirroring", () => {
   it("imports hashes through Graph and stores tenant-scoped rows", async () => {
     const db = makeDb();
+
     const { graph, calls } = graphMock({
       imported: [device({ id: "graph-1", serialNumber: "ABC123" })],
     });
+
     const now = new Date("2026-01-01T00:00:00Z");
 
     const result = await run(
@@ -248,6 +256,7 @@ describe("Autopilot Graph mirroring", () => {
         },
       ],
     });
+
     const { graph, calls } = graphMock({
       pages: [
         [device({ id: "graph-1", serialNumber: "ABC123" })],
@@ -302,6 +311,7 @@ describe("Autopilot Graph mirroring", () => {
 
   it("fails closed before writing when Graph rejects the import", async () => {
     const db = makeDb();
+
     const graph = {
       importAutopilotDevices: () =>
         Effect.fail({

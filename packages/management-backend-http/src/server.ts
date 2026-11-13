@@ -5,12 +5,15 @@ import { InternalServerError, ManagementBackend } from "@mattrax/management-back
 import { managementWebhookGroup } from "./http.ts";
 
 const encoder = new TextEncoder();
+
 const toHex = (bytes: ArrayBuffer) =>
   Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
 const sha256 = (value: string) =>
   Effect.promise(() => crypto.subtle.digest("SHA-256", encoder.encode(value))).pipe(
     Effect.map(toHex),
   );
+
 const hmac = (secret: string, value: string) =>
   Effect.gen(function* () {
     const key = yield* Effect.promise(() =>
@@ -22,16 +25,21 @@ const hmac = (secret: string, value: string) =>
         ["sign"],
       ),
     );
+
     return toHex(
       yield* Effect.promise(() => crypto.subtle.sign("HMAC", key, encoder.encode(value))),
     );
   });
+
 const timingSafeEqual = (left: string, right: string) => {
   const a = encoder.encode(left);
   const b = encoder.encode(right);
+
   if (a.length !== b.length) return false;
   let difference = 0;
+
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+
   return difference === 0;
 };
 
@@ -49,14 +57,18 @@ const verifySignature = (
       console.error(
         "Management webhook rejected: WEBHOOK_SECRET is not configured. Set the same secret on the gateway and this backend.",
       );
+
       return yield* Effect.fail(new InternalServerError());
     }
+
     const timestamp = request.headers["x-mattrax-timestamp"];
     const signature = request.headers["x-mattrax-signature"];
+
     if (!timestamp || !signature || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300)
       return yield* Effect.fail(new InternalServerError());
     const digest = yield* sha256(JSON.stringify(payload ?? null));
     const expected = yield* hmac(secret, `${operation}.${timestamp}.${digest}`);
+
     if (!timingSafeEqual(expected, signature)) return yield* Effect.fail(new InternalServerError());
   });
 
@@ -84,6 +96,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "appleManagementCheckin", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.appleManagementCheckin(payload.scope);
       }),
     )
@@ -91,6 +104,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleBootstrapToken", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getAppleBootstrapToken(payload.scope);
       }),
     )
@@ -98,6 +112,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleDeclarationTokens", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getAppleDeclarationTokens(payload.scope);
       }),
     )
@@ -105,6 +120,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleDeclarationItems", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getAppleDeclarationItems(payload.scope);
       }),
     )
@@ -112,6 +128,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleDeclaration", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getAppleDeclaration(payload.scope, payload.type, payload.identifier);
       }),
     )
@@ -119,6 +136,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleAsset", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getAppleAsset(
           payload.identityCertificate,
           payload.identifier,
@@ -130,7 +148,9 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleProfile", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         if (!backend.getAppleProfile) return null;
+
         return yield* backend.getAppleProfile(payload.policyId, payload.kind);
       }),
     )
@@ -138,6 +158,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "windowsDiscovery", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.windowsDiscovery(payload);
       }),
     )
@@ -145,6 +166,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "getWindowsEnrollmentPolicy", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.getWindowsEnrollmentPolicy(payload.authToken, {
           tenantToken: payload.tenantToken,
         });
@@ -154,6 +176,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "windowsEnroll", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.windowsEnroll(payload);
       }),
     )
@@ -161,6 +184,7 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "windowsManagementCheckin", payload, options.secret);
         const backend = yield* ManagementBackend;
+
         return yield* backend.windowsManagementCheckin(payload.scope, payload.request);
       }),
     )

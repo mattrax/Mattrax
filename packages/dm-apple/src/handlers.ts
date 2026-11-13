@@ -22,6 +22,7 @@ const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
   const binary = atob(padded);
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
@@ -50,12 +51,15 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
     const buf = yield* request.arrayBuffer;
+
     const identityCertificate = request.headers["x-device-identity-certificate"] as
       | string
       | undefined;
+
     const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"] as
       | string
       | undefined;
+
     const verifiedSignature = yield* service.verifyDeviceSignature({
       signature: request.headers["mdm-signature"] as string | undefined,
       body: buf,
@@ -65,6 +69,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         "x-device-identity-certificate-sha256"
       ] as string | undefined,
     });
+
     const identityFingerprint = verifiedSignature?.fingerprintSha256;
     // Prefer the serial from the verified CMS signer (canonical lowercase hex)
     // over the forwarded header, which is only checked when trust is wired.
@@ -91,102 +96,134 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
+
           yield* service.handleAuthenticate(
             auth,
             identityCertificate,
             identityFingerprint,
             identitySerial,
           );
+
           return HttpServerResponse.empty({ status: 200 });
         }
+
         case "TokenUpdate": {
           const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
+
           yield* service.handleTokenUpdate(
             update,
             identityCertificate,
             identityFingerprint,
             identitySerial,
           );
+
           return HttpServerResponse.empty({ status: 200 });
         }
+
         case "CheckOut": {
           const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
+
           yield* service.handleCheckOut(
             checkout,
             identityCertificate,
             identityFingerprint,
             identitySerial,
           );
+
           return HttpServerResponse.empty({ status: 200 });
         }
+
         case "DeclarativeManagement": {
           const endpoint = (plist as any).Endpoint;
+
           if (!udid) return HttpServerResponse.empty({ status: 400 });
           const checkinScope = scope();
 
           if (endpoint === "tokens") {
             const tokens = yield* service.handleDeclarativeTokens(checkinScope);
+
             return json(tokens);
           }
+
           if (endpoint === "declaration-items") {
             const items = yield* service.handleDeclarationItems(checkinScope);
+
             return json(items);
           }
+
           if (endpoint === "status") {
             const data = (plist as any).Data;
+
             if (typeof data !== "string") return HttpServerResponse.empty({ status: 400 });
+
             const parsed = yield* Effect.try({
               try: () => JSON.parse(new TextDecoder().decode(decodeBase64(data))) as unknown,
               catch: (cause) => new Error(`Invalid DDM status report: ${String(cause)}`),
             });
+
             const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(parsed).pipe(
               Effect.mapError((err) => new Error(String(err))),
             );
+
             yield* service.handleStatusReport(checkinScope, decoded);
+
             return HttpServerResponse.empty({ status: 200 });
           }
+
           if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
             const parts = endpoint.split("/");
+
             if (parts.length !== 3) return HttpServerResponse.empty({ status: 400 });
             const [, type, identifier] = parts;
+
             if (!["activation", "configuration", "asset", "management"].includes(type!))
               return HttpServerResponse.empty({ status: 404 });
             const decl = yield* service.handleDeclaration(checkinScope, type!, identifier!);
+
             return json(decl);
           }
+
           return HttpServerResponse.empty({ status: 404 });
         }
+
         case "SetBootstrapToken": {
           const token = yield* Schema.decodeUnknownEffect(SetBootstrapTokenPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
+
           yield* service.handleSetBootstrapToken(
             token.BootstrapToken ?? "",
             identityCertificate,
             token.UDID ?? token.EnrollmentID,
             identitySerial,
           );
+
           return HttpServerResponse.empty({ status: 200 });
         }
+
         case "GetBootstrapToken": {
           const request = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
+
           const value = yield* service.handleGetBootstrapToken(
             identityCertificate,
             request.UDID ?? request.EnrollmentID,
             identitySerial,
           );
+
           if (!value) return HttpServerResponse.empty({ status: 200 });
           const binary = Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
           return HttpServerResponse.text(yield* serializePlist({ BootstrapToken: binary }), {
             contentType: "application/xml",
           });
         }
+
         case "GetToken":
           return HttpServerResponse.empty({ status: 400 });
         case "UserAuthenticate":
@@ -200,6 +237,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
         Effect.mapError((err) => new Error(String(err))),
       );
+
       if (result.CommandUUID) {
         yield* service.handleCommandResult(
           result,
@@ -208,9 +246,12 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           identitySerial,
         );
       }
+
       if (!udid) return HttpServerResponse.empty({ status: 200 });
       const command = yield* service.handleCheckin(scope());
+
       if (!command) return HttpServerResponse.empty({ status: 200 });
+
       return HttpServerResponse.text(yield* commandBytes(command), {
         contentType: "application/xml",
       });
@@ -218,10 +259,13 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 
     if (!udid) return HttpServerResponse.empty({ status: 400 });
     const command = yield* service.handleCheckin(scope());
+
     if (!command) {
       const empty = yield* serializePlist({});
+
       return HttpServerResponse.text(empty, { contentType: "application/xml" });
     }
+
     return HttpServerResponse.text(yield* commandBytes(command), {
       contentType: "application/xml",
     });
@@ -231,6 +275,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       onFailure: (err) => {
         if (err instanceof DeviceUnenrolled) return HttpServerResponse.empty({ status: 410 });
         console.error("mdm error:", err);
+
         return HttpServerResponse.empty({ status: 400 });
       },
     }),
@@ -240,15 +285,19 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 function handleAsset(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
+
     const identityCertificate = request.headers["x-device-identity-certificate"] as
       | string
       | undefined;
+
     const url = new URL(request.url, "http://localhost");
     const identifier = url.pathname.replace("/mdm/apple/assets/", "");
+
     if (!identifier) return HttpServerResponse.empty({ status: 404 });
 
     const token = url.searchParams.get("token") ?? undefined;
     const asset = yield* service.handleAsset(identityCertificate, identifier, token);
+
     if (!asset) return HttpServerResponse.empty({ status: 404 });
 
     return HttpServerResponse.uint8Array(asset.content, { contentType: asset.contentType });
@@ -257,6 +306,7 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
       onSuccess: (val) => val,
       onFailure: (err) => {
         console.error("asset error:", err);
+
         return HttpServerResponse.empty({ status: 500 });
       },
     }),
@@ -270,11 +320,14 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
     const service = yield* AppleMdmService;
     const url = new URL(request.url, "http://localhost");
     const prefix = "/mdm/apple/profiles/";
+
     if (!url.pathname.startsWith(prefix)) return HttpServerResponse.empty({ status: 404 });
+
     const [deviceToken, policyId, kind] = url.pathname
       .slice(prefix.length)
       .split("/")
       .map((part) => decodeURIComponent(part));
+
     if (!deviceToken || !policyId || !kind) return HttpServerResponse.empty({ status: 404 });
 
     const profile = yield* service.handleProfile(
@@ -283,6 +336,7 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
       kind,
       url.searchParams.get("token") ?? undefined,
     );
+
     if (!profile) return HttpServerResponse.empty({ status: 404 });
 
     return HttpServerResponse.uint8Array(profile.content, {
@@ -296,6 +350,7 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
       onSuccess: (val) => val,
       onFailure: (err) => {
         console.error("profile error:", err);
+
         return HttpServerResponse.empty({ status: 500 });
       },
     }),

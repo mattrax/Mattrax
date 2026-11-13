@@ -12,6 +12,7 @@ export function GlobalErrorBanner() {
     <Show when={globalError()}>
       {(notice) => {
         const presentation = () => errorPresentation(notice().error);
+
         return (
           <div class="pointer-events-none fixed inset-x-0 bottom-4 z-[70] flex justify-center px-4">
             <div

@@ -84,11 +84,13 @@ const password = {
   method: "password",
   factors: ["knowledge"] as const,
 };
+
 const totp = {
   credentialId: "totp-1",
   method: "totp",
   factors: ["possession"] as const,
 };
+
 const passkey = {
   credentialId: "passkey-1",
   method: "passkey",
@@ -96,6 +98,7 @@ const passkey = {
   userVerified: true,
   phishingResistant: true,
 };
+
 const emailCode = {
   credentialId: "email-1",
   method: "email",

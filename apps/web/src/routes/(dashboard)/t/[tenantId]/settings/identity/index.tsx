@@ -11,12 +11,15 @@ import { errorMessage } from "~/lib/errors";
 export default function IdentitySettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+
   const tokens = useQuery(() => ({
     queryKey: enterpriseKeys.scim(params.tenantId),
     queryFn: () => enterprise.listScimTokens(params.tenantId),
   }));
+
   const [name, setName] = createSignal("Identity provider");
   const [created, setCreated] = createSignal<{ token: string; baseUrl: string } | null>(null);
+
   const create = useMutation(() => ({
     mutationFn: () => enterprise.createScimToken(params.tenantId, { name: name() }),
     onSuccess: async (result) => {
@@ -24,18 +27,21 @@ export default function IdentitySettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) });
     },
   }));
+
   const revoke = useMutation(() => ({
     mutationFn: (tokenId: string) => enterprise.revokeScimToken(params.tenantId, tokenId),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) });
     },
   }));
+
   const baseUrl = () => `${globalThis.location?.origin ?? ""}/scim/v2/${params.tenantId}`;
 
   const sso = useQuery(() => ({
     queryKey: enterpriseKeys.sso(params.tenantId),
     queryFn: () => enterprise.getSsoConfig(params.tenantId),
   }));
+
   const [azureTenantId, setAzureTenantId] = createSignal("");
   const [ssoEnabled, setSsoEnabled] = createSignal(false);
   const [autoProvision, setAutoProvision] = createSignal(true);
@@ -52,6 +58,7 @@ export default function IdentitySettingsPage() {
       setRequireMfa(config.requireMfa);
     },
   );
+
   const saveSso = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchSsoConfig(params.tenantId, {
@@ -64,21 +71,28 @@ export default function IdentitySettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
     },
   }));
+
   const [ssoError, setSsoError] = createSignal<string | null>(null);
+
   const startSso = async () => {
     setSsoError(null);
+
     try {
       const response = await fetch(
         `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
       );
+
       const body = (await response.json().catch(() => ({}))) as {
         url?: string;
         error?: string;
       };
+
       if (body.url) {
         window.location.href = body.url;
+
         return;
       }
+
       setSsoError(errorMessage(body, "Single sign-on is not available for this tenant."));
     } catch (error) {
       setSsoError(errorMessage(error));

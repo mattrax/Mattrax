@@ -6,22 +6,29 @@ import type { EnterpriseDb } from "./schema.ts";
 
 /** Default age after which a non-pinned run and its R2 object are deleted. */
 export const BACKUP_RUN_RETENTION_DAYS = 30;
+
 /** Tenants backed up in parallel by the scheduled handler. */
 export const BACKUP_CONCURRENCY = 4;
+
 /** Caps how much of a failure can reach the database/UI. */
 export const BACKUP_ERROR_MAX_LENGTH = 500;
 
 const day = 24 * 60 * 60 * 1000;
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const chunk = <T>(values: ReadonlyArray<T>, size: number): T[][] => {
   const chunks: T[][] = [];
+
   for (let index = 0; index < values.length; index += size)
     chunks.push(values.slice(index, index + size) as T[]);
+
   return chunks;
 };
 
 export type BackupTrigger = "scheduled" | "manual";
+
 export type BackupRetention = "default" | "pinned";
+
 export type BackupStatus = "running" | "succeeded" | "failed";
 
 export type BackupActor = {
@@ -68,6 +75,7 @@ export const backupObjectKey = (organizationId: string, startedAt: Date, runId?:
 export const describeBackupError = (cause: unknown): string => {
   const error = cause instanceof Error ? cause : undefined;
   const text = error ? `${error.name}: ${error.message}` : String(cause);
+
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
@@ -141,6 +149,7 @@ export const runTenantBackup = (
     }) =>
       Effect.gen(function* () {
         yield* db.update(schema.backupRun).set(patch).where(eq(schema.backupRun.id, runId));
+
         return {
           id: runId,
           organizationId,
@@ -158,9 +167,11 @@ export const runTenantBackup = (
     const organization = yield* db.query.organization.findFirst({
       where: { id: organizationId },
     });
+
     if (!organization) {
       const completedAt = options.now ?? new Date();
       const error = "Tenant not found";
+
       const result = yield* finish({
         status: "failed",
         r2Key: null,
@@ -168,7 +179,9 @@ export const runTenantBackup = (
         completedAt,
         error,
       });
+
       yield* recordAudit(db, organizationId, "backup.failed", { trigger, error }, options.actor);
+
       return result;
     }
 
@@ -181,6 +194,7 @@ export const runTenantBackup = (
 
     if (!built.ok) {
       const completedAt = options.now ?? new Date();
+
       const result = yield* finish({
         status: "failed",
         r2Key: null,
@@ -188,6 +202,7 @@ export const runTenantBackup = (
         completedAt,
         error: built.error,
       });
+
       yield* recordAudit(
         db,
         organizationId,
@@ -195,6 +210,7 @@ export const runTenantBackup = (
         { trigger, error: built.error },
         options.actor,
       );
+
       return result;
     }
 
@@ -222,6 +238,7 @@ export const runTenantBackup = (
 
     if (!upload.ok) {
       const completedAt = options.now ?? new Date();
+
       const result = yield* finish({
         status: "failed",
         r2Key: null,
@@ -229,6 +246,7 @@ export const runTenantBackup = (
         completedAt,
         error: upload.error,
       });
+
       yield* recordAudit(
         db,
         organizationId,
@@ -236,10 +254,12 @@ export const runTenantBackup = (
         { trigger, error: upload.error },
         options.actor,
       );
+
       return result;
     }
 
     const completedAt = options.now ?? new Date();
+
     const result = yield* finish({
       status: "succeeded",
       r2Key: key,
@@ -247,6 +267,7 @@ export const runTenantBackup = (
       completedAt,
       error: null,
     });
+
     yield* recordAudit(
       db,
       organizationId,
@@ -254,6 +275,7 @@ export const runTenantBackup = (
       { trigger, sizeBytes, key },
       options.actor,
     );
+
     return result;
   }) as Effect.Effect<TenantBackupResult, unknown, never>;
 
@@ -276,24 +298,29 @@ export const pruneBackups = (
 ): Effect.Effect<PruneBackupsResult, unknown, never> =>
   Effect.gen(function* () {
     const retentionDays = options.retentionDays ?? BACKUP_RUN_RETENTION_DAYS;
+
     if (retentionDays <= 0) return { runsDeleted: 0, objectsDeleted: 0 };
 
     const cutoff = new Date((options.now ?? new Date()).getTime() - retentionDays * day);
+
     const stale = (yield* db
       .select()
       .from(schema.backupRun)
       .where(
         and(lt(schema.backupRun.startedAt, cutoff), eq(schema.backupRun.retention, "default")),
       )) as Array<{ id: string; r2Key: string | null }>;
+
     if (stale.length === 0) return { runsDeleted: 0, objectsDeleted: 0 };
 
     let objectsDeleted = 0;
     let objectDeleteFailed = false;
     const keys = stale.flatMap((run) => (run.r2Key ? [run.r2Key] : []));
+
     for (const batch of chunk(keys, 50)) {
       const removed = yield* Effect.tryPromise({
         try: async () => {
           await storage.delete(batch);
+
           return batch.length;
         },
         catch: (cause) => cause,
@@ -304,10 +331,12 @@ export const pruneBackups = (
           Effect.sync(() => {
             console.error("Backup object retention failed", cause);
             objectDeleteFailed = true;
+
             return 0;
           }),
         ),
       );
+
       objectsDeleted += removed;
     }
 
@@ -316,6 +345,7 @@ export const pruneBackups = (
     if (objectDeleteFailed) return { runsDeleted: 0, objectsDeleted };
 
     const deletable = stale.map((run) => run.id);
+
     if (deletable.length > 0)
       yield* db.delete(schema.backupRun).where(inArray(schema.backupRun.id, deletable));
 
@@ -373,6 +403,7 @@ export const runScheduledBackups = (
           Effect.catch((cause) =>
             Effect.sync(() => {
               console.error("Scheduled tenant backup failed", organization.id, cause);
+
               return { ok: false };
             }),
           ),
@@ -438,6 +469,7 @@ export const listTenantBackups = (
       completedAt: Date | null;
       error: string | null;
     }>;
+
     return rows.map((row) => ({
       id: row.id,
       status: row.status,

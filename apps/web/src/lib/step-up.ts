@@ -22,22 +22,29 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+
   const data = (await response.json().catch(() => undefined)) as
     | (T & { _tag?: string; error?: ApiFailure })
     | undefined;
+
   if (!response.ok || data?._tag === "Failure") {
     const failure = data?.error ?? (data as ApiFailure | undefined);
+
     const error = new Error(
       errorMessage(
         { _tag: failure?._tag, message: failure?.message },
         "We couldn't confirm that action. Try again.",
       ),
     ) as Error & { _tag?: string; action?: string; methods?: string[] };
+
     if (failure?._tag) error._tag = failure._tag;
+
     if (failure?.action) error.action = failure.action;
+
     if (failure?.methods) error.methods = failure.methods;
     throw error;
   }
+
   return data as T;
 }
 
@@ -55,6 +62,7 @@ export const performStepUp = async (
 ): Promise<StepUpGrant> => {
   if (method === "password")
     return call<StepUpGrant>("/password", { password: input.password ?? "", action });
+
   if (method === "totp") return call<StepUpGrant>("/totp", { code: input.code ?? "", action });
 
   const started = await call<{
@@ -64,6 +72,7 @@ export const performStepUp = async (
   }>("/passkey/begin", { action });
 
   let response: unknown;
+
   try {
     const { startAuthentication } = await import("@simplewebauthn/browser");
     response = await startAuthentication({
@@ -87,8 +96,10 @@ export const performStepUp = async (
  */
 export const requireStepUpGrant = async (action: StepUpAction): Promise<string> => {
   const cached = stepUpGrant(action);
+
   if (cached) return cached;
   let methods: StepUpMethod[] | undefined;
+
   try {
     const available = await call<{ password: boolean; totp: boolean; passkey: boolean }>("");
     methods = (Object.entries(available) as Array<[StepUpMethod, boolean]>)
@@ -97,6 +108,7 @@ export const requireStepUpGrant = async (action: StepUpAction): Promise<string> 
   } catch {
     // Fall back to offering every method; the dialog reports a rejection.
   }
+
   return requestStepUp(action, methods);
 };
 
@@ -114,10 +126,12 @@ export const withStepUp = async <T>(
     if (errorTag(error) !== "StepUpRequired") throw error;
     const required = (errorField(error, "action") as StepUpAction | undefined) ?? action;
     const methods = errorField(error, "methods");
+
     const grant = await requestStepUp(
       required,
       Array.isArray(methods) ? (methods as StepUpMethod[]) : undefined,
     );
+
     return run(grant);
   }
 };

@@ -53,22 +53,29 @@ export const normalizeDeviceHealth = (health: DeviceHealthSummary): DeviceHealth
 const parseDate = (value: Date | string | null | undefined): Date | null => {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value);
+
   if (Number.isNaN(date.getTime())) return null;
+
   // `lastSeenAt` is non-null in the schema, but the API renders a missing value
   // as the epoch. Treat that as "never seen" rather than 1970 being stale.
   if (date.getTime() <= 0) return null;
+
   return date;
 };
 
 const labelFor = (value: unknown): string => {
   if (typeof value === "string") return value;
+
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
+
     const parts = [record.code, record.description]
       .filter((part): part is string => typeof part === "string" && part.trim() !== "")
       .map((part) => part.trim());
+
     if (parts.length > 0) return parts.join(": ");
   }
+
   return "";
 };
 
@@ -76,6 +83,7 @@ const labelFor = (value: unknown): string => {
 export const declarationReasonLabels = (reasons: unknown): string[] => {
   if (reasons == null) return [];
   const values = Array.isArray(reasons) ? reasons : [reasons];
+
   return values
     .map(labelFor)
     .map((label) => label.trim())
@@ -85,10 +93,13 @@ export const declarationReasonLabels = (reasons: unknown): string[] => {
 /** Parse the byte counts stored in `device.diskTotal` / `device.diskUsed`. */
 export const parseStorageBytes = (value: string | number | null | undefined): number | null => {
   if (value == null) return null;
+
   if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
   const text = value.trim();
+
   if (!/^\d+$/.test(text)) return null;
   const parsed = Number(text);
+
   return Number.isFinite(parsed) ? parsed : null;
 };
 
@@ -117,16 +128,21 @@ export const isMacOsDevice = (input: {
   readonly osEdition?: string | null;
 }): boolean => {
   const edition = input.osEdition?.trim() ?? "";
+
   if (/macos/i.test(edition)) return true;
+
   if (NON_MAC_OS.test(edition)) return false;
   const model = input.model?.trim() ?? "";
+
   if (model) return /mac/i.test(model);
+
   return input.proto === "apple";
 };
 
 /** Battery conditions that mean the battery needs service or replacement. */
 export const needsBatteryService = (batteryHealth: string | null | undefined): boolean => {
   if (!batteryHealth) return false;
+
   return /(service|replace|poor)/i.test(batteryHealth);
 };
 
@@ -138,8 +154,10 @@ export const needsBatteryService = (batteryHealth: string | null | undefined): b
  */
 export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummary => {
   const now = input.now ?? new Date();
+
   const staleAfterDays =
     input.staleAfterDays === undefined ? DEVICE_STALE_AFTER_DAYS : input.staleAfterDays;
+
   const lastSeen = parseDate(input.lastSeenAt);
   const lastSeenAt = lastSeen ? lastSeen.toISOString() : null;
   const stale = lastSeen ? now.getTime() - lastSeen.getTime() > staleAfterDays * MS_PER_DAY : false;
@@ -172,8 +190,10 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
 
   const invalid: string[] = [];
   const inactive: string[] = [];
+
   for (const declaration of input.declarations ?? []) {
     const validity = (declaration.valid ?? "").trim().toLowerCase();
+
     if (validity === "invalid") invalid.push(declarationName(declaration));
     else if (
       validity === "unknown" &&
@@ -187,6 +207,7 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     )
       inactive.push(declarationName(declaration));
   }
+
   if (invalid.length > 0) {
     reasons.push(
       reason(
@@ -198,6 +219,7 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
       ),
     );
   }
+
   if (inactive.length > 0) {
     reasons.push(
       reason(
@@ -212,9 +234,11 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
 
   const total = parseStorageBytes(input.diskTotal);
   const used = parseStorageBytes(input.diskUsed);
+
   if (total !== null && used !== null && total > 0) {
     const ratio = used / total;
     const percent = Math.round(ratio * 100);
+
     if (ratio >= 0.97)
       reasons.push(
         reason("disk_critical", `Storage is almost full (${percent}% used)`, "critical"),
@@ -263,10 +287,13 @@ export const countDeviceHealth = (
     stale: 0,
     unknown: 0,
   };
+
   for (const summary of summaries) {
     counts[summary.level] += 1;
+
     if (summary.stale) counts.stale += 1;
   }
+
   return counts;
 };
 
@@ -309,10 +336,13 @@ export const groupDeviceHealthReasons = (
     string,
     { label: string; severity: DeviceHealthReason["severity"]; count: number }
   >();
+
   for (const summary of summaries) {
     if (summary.level === "healthy") continue;
+
     for (const item of summary.reasons) {
       const existing = groups.get(item.code);
+
       if (!existing) {
         groups.set(item.code, {
           label: REASON_GROUP_LABELS[item.code] ?? item.label,
@@ -321,17 +351,23 @@ export const groupDeviceHealthReasons = (
         });
         continue;
       }
+
       existing.count += 1;
+
       if (SEVERITY_RANK[item.severity] < SEVERITY_RANK[existing.severity])
         existing.severity = item.severity;
     }
   }
+
   return [...groups.entries()]
     .map(([code, group]) => ({ code, ...group }))
     .sort((left, right) => {
       const severity = SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity];
+
       if (severity !== 0) return severity;
+
       if (left.count !== right.count) return right.count - left.count;
+
       return left.label.localeCompare(right.label);
     });
 };

@@ -9,6 +9,7 @@ type DropdownMenuProps = DropdownMenuPrimitive.DropdownMenuRootProps;
 
 const DropdownMenu = (props: DropdownMenuProps) => {
   const mergedProps = mergeProps({ gutter: 4 }, props);
+
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...mergedProps} />;
 };
 
@@ -28,6 +29,7 @@ const DropdownMenuTrigger = <T extends ValidComponent = "button">(
   props: DropdownMenuTriggerProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuTriggerProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.Trigger
       class={local.class}
@@ -47,6 +49,7 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
   props: DropdownMenuContentProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuContentProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.Content
       data-slot="dropdown-menu-content"
@@ -67,6 +70,7 @@ type DropdownMenuGroupProps<T extends ValidComponent = "div"> = PolymorphicProps
 
 const DropdownMenuGroup = <T extends ValidComponent = "div">(props: DropdownMenuGroupProps<T>) => {
   const [local, others] = splitProps(props as DropdownMenuGroupProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.Group class={local.class} data-slot="dropdown-menu-group" {...others} />
   );
@@ -82,6 +86,7 @@ type DropdownMenuLabelProps<T extends ValidComponent = "span"> = PolymorphicProp
 
 const DropdownMenuLabel = <T extends ValidComponent = "span">(props: DropdownMenuLabelProps<T>) => {
   const [local, others] = splitProps(props as DropdownMenuLabelProps, ["class", "inset"]);
+
   return (
     <DropdownMenuPrimitive.GroupLabel
       data-slot="dropdown-menu-label"
@@ -104,6 +109,7 @@ type DropdownMenuItemProps<T extends ValidComponent = "div"> = PolymorphicProps<
 const DropdownMenuItem = <T extends ValidComponent = "div">(rawProps: DropdownMenuItemProps<T>) => {
   const props = mergeProps({ variant: "default" } as DropdownMenuItemProps<T>, rawProps);
   const [local, others] = splitProps(props as DropdownMenuItemProps, ["class", "inset", "variant"]);
+
   return (
     <DropdownMenuPrimitive.Item
       data-slot="dropdown-menu-item"
@@ -140,6 +146,7 @@ const DropdownMenuSubTrigger = <T extends ValidComponent = "div">(
     "inset",
     "children",
   ]);
+
   return (
     <DropdownMenuPrimitive.SubTrigger
       data-slot="dropdown-menu-sub-trigger"
@@ -166,6 +173,7 @@ const DropdownMenuSubContent = <T extends ValidComponent = "div">(
   props: DropdownMenuSubContentProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuSubContentProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.SubContent
@@ -190,6 +198,7 @@ const DropdownMenuCheckboxItem = <T extends ValidComponent = "div">(
   props: DropdownMenuCheckboxItemProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuCheckboxItemProps, ["class", "children"]);
+
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
@@ -222,6 +231,7 @@ const DropdownMenuRadioGroup = <T extends ValidComponent = "div">(
   props: DropdownMenuRadioGroupProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuRadioGroupProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.RadioGroup
       class={local.class}
@@ -241,6 +251,7 @@ const DropdownMenuRadioItem = <T extends ValidComponent = "div">(
   props: DropdownMenuRadioItemProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuRadioItemProps, ["class", "children"]);
+
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
@@ -273,6 +284,7 @@ const DropdownMenuSeparator = <T extends ValidComponent = "hr">(
   props: DropdownMenuSeparatorProps<T>,
 ) => {
   const [local, others] = splitProps(props as DropdownMenuSeparatorProps, ["class"]);
+
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
@@ -286,6 +298,7 @@ type DropdownMenuShortcutProps = ComponentProps<"span">;
 
 const DropdownMenuShortcut = (props: DropdownMenuShortcutProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <span
       data-slot="dropdown-menu-shortcut"

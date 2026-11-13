@@ -7,6 +7,7 @@ type InputProps = ComponentProps<"input">;
 
 const Input = (props: InputProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <input
       data-slot="input"

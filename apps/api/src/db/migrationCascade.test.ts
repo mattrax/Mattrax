@@ -23,6 +23,7 @@ const deleteRule = (clause: string): string =>
  */
 const migratedForeignKeys = (): Map<string, ForeignKey> => {
   const keys = new Map<string, ForeignKey>();
+
   const directories = readdirSync(migrationsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -30,6 +31,7 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
 
   for (const directory of directories) {
     let sql: string;
+
     try {
       sql = readFileSync(join(migrationsDir, directory, "migration.sql"), "utf8");
     } catch {
@@ -38,10 +40,12 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
 
     for (const match of sql.matchAll(/CREATE TABLE `(\w+)` \(([\s\S]*?)\n\);/g)) {
       const table = match[1]!;
+
       for (const line of match[2]!.split("\n")) {
         const constraint = line.match(
           /CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\(([^)]*)\)([\s\S]*)/,
         );
+
         if (!constraint) continue;
         keys.set(constraint[1]!, {
           name: constraint[1]!,
@@ -75,7 +79,9 @@ const latestSnapshot = () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
+
   const latest = directories.at(-1)!;
+
   return JSON.parse(readFileSync(join(migrationsDir, latest, "snapshot.json"), "utf8")) as {
     ddl: Array<{
       entityType: string;
@@ -109,7 +115,9 @@ describe("migration foreign-key delete rules", () => {
     const organizationKeys = snapshotForeignKeys.filter(
       (entry) => entry.tableTo === "organization",
     );
+
     expect(organizationKeys.length).toBeGreaterThan(0);
+
     for (const expected of organizationKeys) {
       expect(sql.get(expected.name)?.onDelete, expected.name).toBe("CASCADE");
     }

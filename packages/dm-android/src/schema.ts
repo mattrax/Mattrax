@@ -11,6 +11,7 @@ export const ServiceAccount = Schema.Struct({
   project_id: Schema.String,
   token_uri: Schema.optional(Schema.String),
 });
+
 export type ServiceAccount = typeof ServiceAccount.Type;
 
 /** A signup URL used to start the Android Enterprise signup flow. */
@@ -18,6 +19,7 @@ export const SignupUrl = Schema.Struct({
   name: Schema.String,
   url: Schema.String,
 });
+
 export type SignupUrl = typeof SignupUrl.Type;
 
 /** An Android Enterprise (the Google-side tenant). */
@@ -33,6 +35,7 @@ export const Enterprise = Schema.StructWithRest(
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
+
 export type Enterprise = typeof Enterprise.Type;
 
 /** An enrollment token (and its QR code payload) for a single device. */
@@ -50,6 +53,7 @@ export const EnrollmentToken = Schema.StructWithRest(
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
+
 export type EnrollmentToken = typeof EnrollmentToken.Type;
 
 /** A managed Android device. */
@@ -71,6 +75,7 @@ export const Device = Schema.StructWithRest(
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
+
 export type Device = typeof Device.Type;
 
 /** A page of devices returned by `enterprises.devices.list`. */
@@ -78,6 +83,7 @@ export const DeviceList = Schema.Struct({
   devices: Schema.optional(Schema.Array(Device)),
   nextPageToken: Schema.optional(Schema.String),
 });
+
 export type DeviceList = typeof DeviceList.Type;
 
 /**
@@ -87,6 +93,7 @@ export type DeviceList = typeof DeviceList.Type;
  * It still guarantees the value is a JSON object (not an array or scalar).
  */
 export const Policy = Schema.Record(Schema.String, Schema.Unknown);
+
 export type Policy = typeof Policy.Type;
 
 /** Google API `Status` attached to a failed long-running operation. */
@@ -96,6 +103,7 @@ export const OperationStatus = Schema.Struct({
   status: Schema.optional(Schema.String),
   details: Schema.optional(Schema.Unknown),
 });
+
 export type OperationStatus = typeof OperationStatus.Type;
 
 /** A long-running operation (for example `issueCommand`). */
@@ -109,6 +117,7 @@ export const Operation = Schema.StructWithRest(
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
+
 export type Operation = typeof Operation.Type;
 
 /** The `message` object of a Pub/Sub push delivery. */
@@ -119,6 +128,7 @@ export const PubSubMessage = Schema.Struct({
   publishTime: Schema.optional(Schema.String),
   orderingKey: Schema.optional(Schema.String),
 });
+
 export type PubSubMessage = typeof PubSubMessage.Type;
 
 /** The JSON body Pub/Sub POSTs to a push subscription endpoint. */
@@ -126,6 +136,7 @@ export const PubSubPushEnvelope = Schema.Struct({
   message: PubSubMessage,
   subscription: Schema.String,
 });
+
 export type PubSubPushEnvelope = typeof PubSubPushEnvelope.Type;
 
 /**
@@ -146,4 +157,5 @@ export const AndroidNotification = Schema.StructWithRest(
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
+
 export type AndroidNotification = typeof AndroidNotification.Type;

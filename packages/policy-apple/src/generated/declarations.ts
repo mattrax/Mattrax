@@ -14,6 +14,7 @@ export const ComAppleConfigurationAccountCaldav = Schema.Struct({
   Path: Schema.optional(Schema.String),
   AuthenticationCredentialsAssetReference: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationAccountCaldav = typeof ComAppleConfigurationAccountCaldav.Type;
 
 /**
@@ -27,6 +28,7 @@ export const ComAppleConfigurationAccountCarddav = Schema.Struct({
   Path: Schema.optional(Schema.String),
   AuthenticationCredentialsAssetReference: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationAccountCarddav = typeof ComAppleConfigurationAccountCarddav.Type;
 
 /**
@@ -84,6 +86,7 @@ export const ComAppleConfigurationAccountExchange = Schema.Struct({
   NotesServiceActive: Schema.optional(Schema.Boolean),
   LockNotesService: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationAccountExchange = typeof ComAppleConfigurationAccountExchange.Type;
 
 /**
@@ -94,6 +97,7 @@ export const ComAppleConfigurationAccountGoogle = Schema.Struct({
   VisibleName: Schema.optional(Schema.String),
   UserIdentityAssetReference: Schema.String,
 });
+
 export type ComAppleConfigurationAccountGoogle = typeof ComAppleConfigurationAccountGoogle.Type;
 
 /**
@@ -115,6 +119,7 @@ export const ComAppleConfigurationAccountLdap = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleConfigurationAccountLdap = typeof ComAppleConfigurationAccountLdap.Type;
 
 /**
@@ -160,6 +165,7 @@ export const ComAppleConfigurationAccountMail = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationAccountMail = typeof ComAppleConfigurationAccountMail.Type;
 
 /**
@@ -171,6 +177,7 @@ export const ComAppleConfigurationAccountSubscribedCalendar = Schema.Struct({
   CalendarURL: Schema.String,
   AuthenticationCredentialsAssetReference: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationAccountSubscribedCalendar =
   typeof ComAppleConfigurationAccountSubscribedCalendar.Type;
 
@@ -283,6 +290,7 @@ export const ComAppleConfigurationAppManaged = Schema.Struct({
   ),
   LegacyAppConfigAssetReference: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationAppManaged = typeof ComAppleConfigurationAppManaged.Type;
 
 /**
@@ -308,6 +316,7 @@ export const ComAppleConfigurationAudioAccessorySettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationAudioAccessorySettings =
   typeof ComAppleConfigurationAudioAccessorySettings.Type;
 
@@ -323,6 +332,7 @@ export const ComAppleConfigurationDiskmanagementSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationDiskmanagementSettings =
   typeof ComAppleConfigurationDiskmanagementSettings.Type;
 
@@ -335,6 +345,7 @@ export const ComAppleConfigurationExternalIntelligenceSettings = Schema.Struct({
   AllowSignIn: Schema.optional(Schema.Boolean),
   AllowedWorkspaceIDs: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleConfigurationExternalIntelligenceSettings =
   typeof ComAppleConfigurationExternalIntelligenceSettings.Type;
 
@@ -374,6 +385,7 @@ export const ComAppleConfigurationIntelligenceSettings = Schema.Struct({
   ForceOnDeviceOnlyDictation: Schema.optional(Schema.Boolean),
   ForceOnDeviceOnlyTranslation: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationIntelligenceSettings =
   typeof ComAppleConfigurationIntelligenceSettings.Type;
 
@@ -391,6 +403,7 @@ export const ComAppleConfigurationKeyboardSettings = Schema.Struct({
   AllowSpellCheck: Schema.optional(Schema.Boolean),
   AllowTextReplacement: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationKeyboardSettings =
   typeof ComAppleConfigurationKeyboardSettings.Type;
 
@@ -401,6 +414,7 @@ export type ComAppleConfigurationKeyboardSettings =
 export const ComAppleConfigurationLegacy = Schema.Struct({
   ProfileURL: Schema.String,
 });
+
 export type ComAppleConfigurationLegacy = typeof ComAppleConfigurationLegacy.Type;
 
 /**
@@ -411,6 +425,7 @@ export const ComAppleConfigurationLegacyInteractive = Schema.Struct({
   ProfileURL: Schema.String,
   VisibleName: Schema.String,
 });
+
 export type ComAppleConfigurationLegacyInteractive =
   typeof ComAppleConfigurationLegacyInteractive.Type;
 
@@ -425,6 +440,7 @@ export const ComAppleConfigurationManagementStatusSubscriptions = Schema.Struct(
     }),
   ),
 });
+
 export type ComAppleConfigurationManagementStatusSubscriptions =
   typeof ComAppleConfigurationManagementStatusSubscriptions.Type;
 
@@ -437,6 +453,7 @@ export const ComAppleConfigurationManagementTest = Schema.Struct({
   EchoDataAssetReference: Schema.optional(Schema.String),
   ReturnStatus: Schema.optional(Schema.Literals(["Installed", "Failed", "Unlocked"])),
 });
+
 export type ComAppleConfigurationManagementTest = typeof ComAppleConfigurationManagementTest.Type;
 
 /**
@@ -481,6 +498,7 @@ export const ComAppleConfigurationMathSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationMathSettings = typeof ComAppleConfigurationMathSettings.Type;
 
 /**
@@ -494,6 +512,7 @@ export const ComAppleConfigurationMigrationAssistantSettings = Schema.Struct({
   RequiredPaths: Schema.optional(Schema.Array(Schema.String)),
   ShouldMigrateSecurityPrivacySettings: Schema.Boolean,
 });
+
 export type ComAppleConfigurationMigrationAssistantSettings =
   typeof ComAppleConfigurationMigrationAssistantSettings.Type;
 
@@ -509,6 +528,7 @@ export const ComAppleConfigurationPackage = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationPackage = typeof ComAppleConfigurationPackage.Type;
 
 /**
@@ -553,6 +573,7 @@ export const ComAppleConfigurationPasscodeSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationPasscodeSettings =
   typeof ComAppleConfigurationPasscodeSettings.Type;
 
@@ -562,7 +583,9 @@ const makeManagedbookmarksBookmarksFolder = (): Schema.Schema<any> =>
     URL: Schema.optional(Schema.String),
     Folder: Schema.optional(Schema.Array(Schema.suspend(() => ManagedbookmarksBookmarksFolder))),
   });
+
 export const ManagedbookmarksBookmarksFolder = makeManagedbookmarksBookmarksFolder();
+
 export type ManagedbookmarksBookmarksFolder = typeof ManagedbookmarksBookmarksFolder.Type;
 
 /**
@@ -588,6 +611,7 @@ export const ComAppleConfigurationSafariBookmarks = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleConfigurationSafariBookmarks = typeof ComAppleConfigurationSafariBookmarks.Type;
 
 /**
@@ -608,6 +632,7 @@ export const ComAppleConfigurationSafariExtensionsSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationSafariExtensionsSettings =
   typeof ComAppleConfigurationSafariExtensionsSettings.Type;
 
@@ -633,6 +658,7 @@ export const ComAppleConfigurationSafariSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationSafariSettings = typeof ComAppleConfigurationSafariSettings.Type;
 
 /**
@@ -649,6 +675,7 @@ export const ComAppleConfigurationScreensharingConnection = Schema.Struct({
   }),
   AuthenticationCredentialsAssetReference: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationScreensharingConnection =
   typeof ComAppleConfigurationScreensharingConnection.Type;
 
@@ -661,6 +688,7 @@ export const ComAppleConfigurationScreensharingConnectionGroup = Schema.Struct({
   GroupName: Schema.String,
   Members: Schema.Array(Schema.String),
 });
+
 export type ComAppleConfigurationScreensharingConnectionGroup =
   typeof ComAppleConfigurationScreensharingConnectionGroup.Type;
 
@@ -681,6 +709,7 @@ export const ComAppleConfigurationScreensharingHostSettings = Schema.Struct({
   PreventCopyFilesToHost: Schema.optional(Schema.Boolean),
   PreventHighPerformanceConnections: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationScreensharingHostSettings =
   typeof ComAppleConfigurationScreensharingHostSettings.Type;
 
@@ -691,6 +720,7 @@ export type ComAppleConfigurationScreensharingHostSettings =
 export const ComAppleConfigurationSecurityCertificate = Schema.Struct({
   CredentialAssetReference: Schema.String,
 });
+
 export type ComAppleConfigurationSecurityCertificate =
   typeof ComAppleConfigurationSecurityCertificate.Type;
 
@@ -703,6 +733,7 @@ export const ComAppleConfigurationSecurityIdentity = Schema.Struct({
   AllowAllAppsAccess: Schema.optional(Schema.Boolean),
   KeyIsExtractable: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationSecurityIdentity =
   typeof ComAppleConfigurationSecurityIdentity.Type;
 
@@ -715,6 +746,7 @@ export const ComAppleConfigurationSecurityPasskeyAttestation = Schema.Struct({
   AttestationIdentityKeyIsExtractable: Schema.optional(Schema.Boolean),
   RelyingParties: Schema.Array(Schema.String),
 });
+
 export type ComAppleConfigurationSecurityPasskeyAttestation =
   typeof ComAppleConfigurationSecurityPasskeyAttestation.Type;
 
@@ -735,6 +767,7 @@ export const ComAppleConfigurationServicesBackgroundTasks = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleConfigurationServicesBackgroundTasks =
   typeof ComAppleConfigurationServicesBackgroundTasks.Type;
 
@@ -746,6 +779,7 @@ export const ComAppleConfigurationServicesConfigurationFiles = Schema.Struct({
   ServiceType: Schema.String,
   DataAssetReference: Schema.String,
 });
+
 export type ComAppleConfigurationServicesConfigurationFiles =
   typeof ComAppleConfigurationServicesConfigurationFiles.Type;
 
@@ -759,6 +793,7 @@ export const ComAppleConfigurationSiriSettings = Schema.Struct({
   AllowWhileLocked: Schema.optional(Schema.Boolean),
   ForceProfanityFilter: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleConfigurationSiriSettings = typeof ComAppleConfigurationSiriSettings.Type;
 
 /**
@@ -771,6 +806,7 @@ export const ComAppleConfigurationSoftwareupdateEnforcementSpecific = Schema.Str
   TargetLocalDateTime: Schema.String,
   DetailsURL: Schema.optional(Schema.String),
 });
+
 export type ComAppleConfigurationSoftwareupdateEnforcementSpecific =
   typeof ComAppleConfigurationSoftwareupdateEnforcementSpecific.Type;
 
@@ -839,6 +875,7 @@ export const ComAppleConfigurationSoftwareupdateSettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleConfigurationSoftwareupdateSettings =
   typeof ComAppleConfigurationSoftwareupdateSettings.Type;
 
@@ -850,4 +887,5 @@ export const ComAppleConfigurationWatchEnrollment = Schema.Struct({
   EnrollmentProfileURL: Schema.String,
   AnchorCertificateAssetReferences: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleConfigurationWatchEnrollment = typeof ComAppleConfigurationWatchEnrollment.Type;

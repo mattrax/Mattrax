@@ -17,10 +17,12 @@ import { cn } from "~/lib/utils";
 export default function DeliverySettingsPage() {
   const params = useParams();
   const tenantId = () => params.tenantId!;
+
   const pushHealth = useQuery(() => ({
     queryKey: enterpriseKeys.devicePushHealth(tenantId()),
     queryFn: () => enterprise.getDevicePushHealth(tenantId()),
   }));
+
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(tenantId()),
     queryFn: () => enterprise.getApns(tenantId()),
@@ -28,6 +30,7 @@ export default function DeliverySettingsPage() {
 
   const cards = () => {
     const counts = pushHealth.data?.counts;
+
     return [
       {
         label: "Configured",

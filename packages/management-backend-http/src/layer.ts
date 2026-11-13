@@ -38,6 +38,7 @@ const normalizeCheckin = <A, E extends { readonly _tag?: string | undefined }, R
 ) => effect.pipe(Effect.mapError(toCheckinError));
 
 const encoder = new TextEncoder();
+
 const toHex = (bytes: ArrayBuffer) =>
   Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 
@@ -57,6 +58,7 @@ const hmac = (secret: string, value: string) =>
         ["sign"],
       ),
     );
+
     return toHex(
       yield* Effect.promise(() => crypto.subtle.sign("HMAC", key, encoder.encode(value))),
     );
@@ -73,6 +75,7 @@ const signRequest = (secret: string, operation: string, payload: unknown) =>
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const digest = yield* sha256(JSON.stringify(payload ?? null));
     const signature = yield* hmac(secret, `${operation}.${timestamp}.${digest}`);
+
     return {
       "x-mattrax-timestamp": timestamp,
       "x-mattrax-signature": signature,
@@ -88,7 +91,9 @@ const signingClient = <Client extends { ManagementWebhook: Record<string, unknow
     ManagementWebhook: new Proxy(client.ManagementWebhook, {
       get(target, property, receiver) {
         const value = Reflect.get(target, property, receiver);
+
         if (typeof value !== "function") return value;
+
         return (options: Record<string, unknown> = {}) =>
           Effect.flatMap(signRequest(secret, String(property), options.payload), (headers) =>
             value({
@@ -105,6 +110,7 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
     ManagementBackend,
     Effect.gen(function* () {
       const options = typeof input === "string" ? { baseUrl: input } : input;
+
       if (!options.secret)
         console.error(
           "ManagementBackendHttp has no webhook secret; requests will be unsigned and a correctly configured backend will reject them. Set WEBHOOK_SECRET / MATTRAX_WEBHOOK_SECRET.",

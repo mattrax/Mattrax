@@ -33,10 +33,12 @@ export default function PolicyDesignerPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const storageKey = () => `mattrax:designer:${params.policyId}`;
+
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
+
   const row = () => policy.data as PolicyRow | undefined;
   const configurations = () => row()?.configurations ?? {};
   const [ready, setReady] = createSignal(false);
@@ -50,14 +52,19 @@ export default function PolicyDesignerPage() {
    */
   const configurationDraft = () => {
     let latest: PolicyDraft | undefined;
+
     for (const [kind, value] of Object.entries(configurations())) {
       if (!isDesignerConfiguration(kind, value)) continue;
       const draft = parsePolicyDraft(isRecord(value) ? value.draft : undefined);
+
       if (!draft) continue;
+
       if (!latest || (draft.savedAt ?? 0) > (latest.savedAt ?? 0)) latest = draft;
     }
+
     return latest;
   };
+
   const localStorageDraft = () =>
     typeof localStorage === "undefined"
       ? undefined
@@ -67,8 +74,11 @@ export default function PolicyDesignerPage() {
   const designerDraft = () => {
     const local = localStorageDraft();
     const saved = configurationDraft();
+
     if (!local) return saved;
+
     if (!saved) return local;
+
     return (local.savedAt ?? 0) > (saved.savedAt ?? 0) ? local : saved;
   };
 
@@ -84,14 +94,17 @@ export default function PolicyDesignerPage() {
   const save = useMutation(() => ({
     mutationFn: (draft: PolicyDraft) => {
       const next = policyToConfigurations(draft);
+
       // Designer configurations are replaced as a set. Advanced-editor
       // configurations are only deleted after the explicit replacement
       // confirmation, so saving the designer cannot silently drop them.
       for (const [kind, value] of Object.entries(configurations())) {
         if (kind in next) continue;
+
         if (isDesignerConfiguration(kind, value)) next[kind] = null;
         else if (replaceExisting()) next[kind] = null;
       }
+
       return enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: row()?.name,
         configurations: next,

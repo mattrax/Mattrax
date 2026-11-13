@@ -78,6 +78,7 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
 
   if (pathname.startsWith("/mdm/")) {
     if (pathname === "/mdm/apple/scep") return { bucket: "scep", limit: 300, windowSeconds: 60 };
+
     return { bucket: "mdm", limit: 600, windowSeconds: 60 };
   }
 
@@ -105,6 +106,7 @@ export type RateLimitBindings = Partial<Record<RateLimitBucket, RateLimitBinding
 export const rateLimitBindingsFromEnv = (env: unknown): RateLimitBindings => {
   const candidate = env as Record<string, unknown>;
   const binding = (name: string) => candidate[name] as RateLimitBindingLike | undefined;
+
   return {
     auth: binding("RATE_LIMITER_AUTH"),
     enrollment: binding("RATE_LIMITER_ENROLLMENT"),
@@ -123,6 +125,7 @@ export type RateLimitOutcome = {
 };
 
 type Counter = { count: number; resetAt: number };
+
 export type RateLimitStore = Map<string, Counter>;
 
 export type RateLimiterOptions = {
@@ -143,12 +146,15 @@ export const makeRateLimiter = ({
   const prune = () => {
     if (store.size < maxEntries) return;
     const nowMs = now();
+
     for (const [key, entry] of store) {
       if (entry.resetAt <= nowMs) store.delete(key);
     }
+
     // Still full: drop the oldest keys. Map preserves insertion order.
     while (store.size >= maxEntries) {
       const oldest = store.keys().next().value;
+
       if (oldest === undefined) break;
       store.delete(oldest);
     }
@@ -157,14 +163,19 @@ export const makeRateLimiter = ({
   const consumeFallback = (key: string, rule: RateLimitRule): RateLimitOutcome => {
     const nowMs = now();
     const entry = store.get(key);
+
     if (!entry || entry.resetAt <= nowMs) {
       if (!entry) prune();
       store.set(key, { count: 1, resetAt: nowMs + rule.windowSeconds * 1_000 });
+
       return { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 };
     }
+
     entry.count += 1;
+
     if (entry.count <= rule.limit)
       return { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 };
+
     return {
       limited: true,
       bucket: rule.bucket,
@@ -178,13 +189,16 @@ export const makeRateLimiter = ({
     bindings: RateLimitBindings = {},
   ): Promise<RateLimitOutcome> => {
     const rule = rateLimitRuleFor(request);
+
     if (!rule) return { limited: false, retryAfterSeconds: 0 };
 
     const key = `${rule.bucket}:${clientKey(request)}`;
     const binding = bindings[rule.bucket];
+
     if (binding) {
       try {
         const result = await binding.limit({ key });
+
         return result.success
           ? { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 }
           : {
@@ -214,6 +228,7 @@ export type RateLimiter = ReturnType<typeof makeRateLimiter>;
 /** Stable JSON body for 429s so clients and probes can branch on `error`. */
 export const rateLimitResponse = (outcome: RateLimitOutcome, requestId: string): Response => {
   const retryAfter = Math.max(1, outcome.retryAfterSeconds);
+
   return new Response(
     JSON.stringify({
       error: "rate_limited",

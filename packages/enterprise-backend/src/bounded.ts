@@ -4,8 +4,10 @@ import { Effect } from "effect";
 export const chunk = <T>(items: ReadonlyArray<T>, size: number): T[][] => {
   if (!Number.isFinite(size) || size < 1) throw new Error("chunk size must be >= 1");
   const chunks: T[][] = [];
+
   for (let index = 0; index < items.length; index += size)
     chunks.push(items.slice(index, index + size));
+
   return chunks;
 };
 
@@ -25,6 +27,7 @@ export const forEachBounded = <A, E, R>(
 ): Effect.Effect<void, E, R> => {
   const concurrency = Math.max(1, Math.floor(options.concurrency));
   const chunkSize = Math.max(concurrency, Math.floor(options.chunkSize ?? concurrency * 2));
+
   return Effect.forEach(
     chunk(items, chunkSize),
     (batch, batchIndex) =>

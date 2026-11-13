@@ -35,7 +35,9 @@ export default function DashboardsPage() {
     meta: { inlineError: true },
     mutationFn: async () => {
       const title = name().trim();
+
       if (!title) throw new Error("Give the dashboard a name first");
+
       return enterprise.createDashboard(params.tenantId, { name: title });
     },
     onSuccess: async (result) => {
@@ -96,6 +98,7 @@ export default function DashboardsPage() {
           class="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
+
             if (!create.isPending) create.mutate();
           }}
         >

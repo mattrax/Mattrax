@@ -12,6 +12,7 @@ const Tooltip = (props: TooltipPrimitive.TooltipRootProps) => {
     } as TooltipPrimitive.TooltipRootProps,
     props,
   );
+
   return <TooltipPrimitive.Root data-slot="tooltip" {...mergedProps} />;
 };
 
@@ -32,6 +33,7 @@ type TooltipContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
 
 const TooltipContent = <T extends ValidComponent = "div">(props: TooltipContentProps<T>) => {
   const [local, others] = splitProps(props as TooltipContentProps, ["class", "children"]);
+
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content

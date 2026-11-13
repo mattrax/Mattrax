@@ -17,8 +17,11 @@ function base64Url(data: ArrayBuffer | Uint8Array | string): string {
       : data instanceof Uint8Array
         ? data
         : new Uint8Array(data);
+
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
@@ -29,6 +32,7 @@ function base64UrlToBytes(input: string): Uint8Array {
       .replace(/_/g, "/")
       .padEnd(input.length + ((4 - (input.length % 4)) % 4), "="),
   );
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
@@ -43,7 +47,9 @@ async function makeKeyPair() {
     true,
     ["sign", "verify"],
   )) as CryptoKeyPair;
+
   const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+
   return { pair, jwk: { ...jwk, kid, kty: "RSA", use: "sig", alg: "RS256" } };
 }
 
@@ -55,11 +61,13 @@ async function signJwt(
   const encodedHeader = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid, ...header }));
   const encodedPayload = base64Url(JSON.stringify(claims));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
+
   const signature = await crypto.subtle.sign(
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     privateKey,
     new TextEncoder().encode(signingInput),
   );
+
   return `${signingInput}.${base64Url(signature)}`;
 }
 
@@ -68,24 +76,31 @@ function mockAzureLayer(jwks: unknown, counters?: { discovery: number; jwks: num
     issuer: azureIssuer(tenantId),
     jwks_uri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
   };
+
   const fetch: typeof globalThis.fetch = async (input) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
     if (url.endsWith("/.well-known/openid-configuration")) {
       if (counters) counters.discovery++;
+
       return new Response(JSON.stringify(discovery), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }
+
     if (url.endsWith("/discovery/v2.0/keys")) {
       if (counters) counters.jwks++;
+
       return new Response(JSON.stringify(jwks), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }
+
     return new Response("not found", { status: 404 });
   };
+
   return FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)));
 }
 
@@ -112,11 +127,13 @@ describe("AzureOidc", () => {
 
   it("fetches discovery and JWKS through the Effect HTTP client", async () => {
     const counters = { discovery: 0, jwks: 0 };
+
     const result = await runWithOidc(
       Effect.gen(function* () {
         const oidc = yield* AzureOidc;
         const discovery = yield* oidc.discovery(tenantId);
         const keys = yield* oidc.jwks(tenantId);
+
         return { discovery, keys };
       }),
       { keys: [sharedJwk] },
@@ -130,6 +147,7 @@ describe("AzureOidc", () => {
 
   it("validates a signed Azure AD v2 JWT", async () => {
     const now = Math.floor(Date.now() / 1000);
+
     const token = await signJwt(sharedPair.privateKey, {
       iss: azureIssuer(tenantId),
       aud: audience,
@@ -142,6 +160,7 @@ describe("AzureOidc", () => {
     });
 
     const parts = token.split(".");
+
     const imported = await crypto.subtle.importKey(
       "jwk",
       { kty: sharedJwk.kty, n: sharedJwk.n, e: sharedJwk.e, ext: true },
@@ -149,6 +168,7 @@ describe("AzureOidc", () => {
       false,
       ["verify"],
     );
+
     expect(
       await crypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
@@ -161,6 +181,7 @@ describe("AzureOidc", () => {
     const claims = await runWithOidc(
       Effect.gen(function* () {
         const oidc = yield* AzureOidc;
+
         return yield* oidc.validateJwt(token, { tenantIds: [tenantId], audience });
       }),
       { keys: [sharedJwk] },
@@ -172,6 +193,7 @@ describe("AzureOidc", () => {
 
   it("rejects wrong audience", async () => {
     const now = Math.floor(Date.now() / 1000);
+
     const token = await signJwt(sharedPair.privateKey, {
       iss: azureIssuer(tenantId),
       aud: "wrong",
@@ -184,6 +206,7 @@ describe("AzureOidc", () => {
       runWithOidc(
         Effect.gen(function* () {
           const oidc = yield* AzureOidc;
+
           return yield* oidc.validateJwt(token, { tenantIds: [tenantId], audience });
         }),
         { keys: [sharedJwk] },
@@ -193,6 +216,7 @@ describe("AzureOidc", () => {
 
   it("rejects wrong tenant", async () => {
     const now = Math.floor(Date.now() / 1000);
+
     const token = await signJwt(sharedPair.privateKey, {
       iss: azureIssuer(tenantId),
       aud: audience,
@@ -205,6 +229,7 @@ describe("AzureOidc", () => {
       runWithOidc(
         Effect.gen(function* () {
           const oidc = yield* AzureOidc;
+
           return yield* oidc.validateJwt(token, {
             tenantIds: ["22222222-2222-2222-2222-222222222222"],
             audience,
@@ -217,6 +242,7 @@ describe("AzureOidc", () => {
 
   it("rejects expired tokens", async () => {
     const now = Math.floor(Date.now() / 1000);
+
     const token = await signJwt(sharedPair.privateKey, {
       iss: azureIssuer(tenantId),
       aud: audience,
@@ -229,6 +255,7 @@ describe("AzureOidc", () => {
       runWithOidc(
         Effect.gen(function* () {
           const oidc = yield* AzureOidc;
+
           return yield* oidc.validateJwt(token, {
             tenantIds: [tenantId],
             audience,
@@ -242,6 +269,7 @@ describe("AzureOidc", () => {
 
   it("refreshes JWKS when the token kid is missing", async () => {
     const now = Math.floor(Date.now() / 1000);
+
     const token = await signJwt(sharedPair.privateKey, {
       iss: azureIssuer(tenantId),
       aud: audience,
@@ -249,9 +277,12 @@ describe("AzureOidc", () => {
       tid: tenantId,
       sub: "subject-1",
     });
+
     let calls = 0;
+
     const fetch: typeof globalThis.fetch = async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
       if (url.endsWith("/.well-known/openid-configuration")) {
         return new Response(
           JSON.stringify({
@@ -261,11 +292,14 @@ describe("AzureOidc", () => {
           { status: 200 },
         );
       }
+
       calls++;
+
       return new Response(JSON.stringify({ keys: calls === 1 ? [] : [sharedJwk] }), {
         status: 200,
       });
     };
+
     const layer = FetchHttpClient.layer.pipe(
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
     );
@@ -273,6 +307,7 @@ describe("AzureOidc", () => {
     const claims = await Effect.runPromise(
       Effect.gen(function* () {
         const oidc = yield* AzureOidc;
+
         return yield* oidc.validateJwt(token, { tenantIds: [tenantId], audience });
       }).pipe(Effect.provide(AzureOidcLive().pipe(Layer.provide(layer)))),
     );

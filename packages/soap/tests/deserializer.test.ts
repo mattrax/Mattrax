@@ -97,6 +97,7 @@ describe("SOAP Deserializer", () => {
     const result = await Effect.runPromise(
       deserializeSoapElement("<invalid", Simple).pipe(Effect.result),
     );
+
     expect(result._tag).toBe("Failure");
   });
 
@@ -108,6 +109,7 @@ describe("SOAP Deserializer", () => {
     const result = await Effect.runPromise(
       deserializeSoapElement("<Strict></Strict>", Strict).pipe(Effect.result),
     );
+
     expect(result._tag).toBe("Failure");
   });
 });

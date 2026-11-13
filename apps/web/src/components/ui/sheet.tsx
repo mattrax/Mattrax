@@ -42,6 +42,7 @@ type SheetOverlayProps<T extends ValidComponent = "div"> = PolymorphicProps<
 
 const SheetOverlay = <T extends ValidComponent = "div">(props: SheetOverlayProps<T>) => {
   const [local, others] = splitProps(props as SheetOverlayProps, ["class"]);
+
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
@@ -65,8 +66,10 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
     { side: "right", showCloseButton: true } as SheetContentProps,
     props,
   );
+
   const [local, others] = splitProps(mergedProps, ["class", "children", "side", "showCloseButton"]);
   let opener: HTMLElement | null = null;
+
   return (
     <SheetPrimitive.Portal>
       <SheetOverlay />
@@ -106,6 +109,7 @@ type SheetHeaderProps = ComponentProps<"div">;
 
 const SheetHeader = (props: SheetHeaderProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <div
       data-slot="sheet-header"
@@ -119,6 +123,7 @@ type SheetFooterProps = ComponentProps<"div">;
 
 const SheetFooter = (props: SheetFooterProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <div
       data-slot="sheet-footer"
@@ -136,6 +141,7 @@ type SheetTitleProps<T extends ValidComponent = "h2"> = PolymorphicProps<
 
 const SheetTitle = <T extends ValidComponent = "h2">(props: SheetTitleProps<T>) => {
   const [local, others] = splitProps(props as SheetTitleProps, ["class"]);
+
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
@@ -153,6 +159,7 @@ type SheetDescriptionProps<T extends ValidComponent = "p"> = PolymorphicProps<
 
 const SheetDescription = <T extends ValidComponent = "p">(props: SheetDescriptionProps<T>) => {
   const [local, others] = splitProps(props as SheetDescriptionProps, ["class"]);
+
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"

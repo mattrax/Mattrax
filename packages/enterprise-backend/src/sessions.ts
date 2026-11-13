@@ -21,12 +21,15 @@ const asMillis = (value: bigint | number) => Number(value);
 
 const methodFromRecord = (record: string | undefined) => {
   if (!record) return undefined;
+
   try {
     const parsed = JSON.parse(record) as {
       assurance?: { method?: unknown };
       provenance?: { evidence?: { proofs?: Array<{ method?: unknown }> } };
     };
+
     const method = parsed.assurance?.method ?? parsed.provenance?.evidence?.proofs?.[0]?.method;
+
     return typeof method === "string" ? method.replaceAll("-", " ") : undefined;
   } catch {
     return undefined;
@@ -49,6 +52,7 @@ export const listUserSessions = (
       .where(
         and(eq(authSessions.subjectId, userId), gt(authSessions.expiresAt, Date.now())),
       )) as SessionRow[];
+
     return rows
       .map((row) => ({
         id: row.sessionId,
@@ -72,9 +76,11 @@ export const revokeUserSession = (
       .from(authSessions)
       .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, userId)))
       .limit(1)) as Array<{ id: string }>;
+
     if (!existing) return false;
     yield* db
       .delete(authSessions)
       .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, userId)));
+
     return true;
   }).pipe(Effect.orDie);

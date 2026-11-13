@@ -17,21 +17,29 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
     event.preventDefault();
     setError(null);
     setPending(true);
+
     if (mode() === "passkey") {
       const result = await authClient.passkeyPending();
       setPending(false);
+
       if (result.error) {
         setError(errorMessage(result.error, "That passkey wasn't accepted"));
+
         return;
       }
+
       props.onComplete();
+
       return;
     }
+
     const result =
       mode() === "totp"
         ? await authClient.verifyTotpPending(code().trim())
         : await authClient.recoverTotpPending(code().trim());
+
     setPending(false);
+
     if (result.error) {
       setError(
         errorMessage(
@@ -41,8 +49,10 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
             : "That recovery code is not valid",
         ),
       );
+
       return;
     }
+
     props.onComplete();
   };
 

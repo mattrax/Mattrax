@@ -9,6 +9,7 @@ import { schema, type EnterpriseDb } from "./schema.ts";
 
 /** Upper bound for a single hardware-hash import request. */
 export const AUTOPILOT_IMPORT_MAX_ROWS = 500;
+
 /** Upper bound for the raw CSV/text body accepted by the API. */
 export const AUTOPILOT_IMPORT_MAX_BYTES = 1_000_000;
 
@@ -52,8 +53,10 @@ const splitCsvLine = (line: string): string[] => {
   const fields: string[] = [];
   let current = "";
   let quoted = false;
+
   for (let index = 0; index < line.length; index++) {
     const character = line[index]!;
+
     if (quoted) {
       if (character === '"') {
         if (line[index + 1] === '"') {
@@ -74,7 +77,9 @@ const splitCsvLine = (line: string): string[] => {
       current += character;
     }
   }
+
   fields.push(current);
+
   return fields;
 };
 
@@ -91,6 +96,7 @@ const SERIAL_HEADERS = new Set([
   "hardwareserialnumber",
   "hardwareserial",
 ]);
+
 const HASH_HEADERS = new Set(["hardwarehash", "hardwareidentifier", "hash", "devicehardwarehash"]);
 const GROUP_TAG_HEADERS = new Set(["grouptag", "group", "devicegrouptag"]);
 
@@ -119,6 +125,7 @@ export const parseAutopilotCsv = (
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
+
   if (lines.length === 0) return { rows, errors, skipped, truncated };
 
   const firstFields = splitCsvLine(lines[0]!);
@@ -143,26 +150,32 @@ export const parseAutopilotCsv = (
       errors.push(`Line ${lineNumber}: missing device serial number`);
       continue;
     }
+
     if (serial.length > 255) {
       errors.push(`Line ${lineNumber}: serial number is longer than 255 characters`);
       continue;
     }
+
     if (!hardwareHash) {
       errors.push(`Line ${lineNumber}: missing hardware hash for ${serial}`);
       continue;
     }
+
     if (hardwareHash.length > 16_384 || !HARDWARE_HASH_PATTERN.test(hardwareHash)) {
       errors.push(`Line ${lineNumber}: hardware hash for ${serial} is not valid base64`);
       continue;
     }
+
     if (seen.has(serial)) {
       skipped++;
       continue;
     }
+
     if (rows.length >= maxRows) {
       truncated = true;
       break;
     }
+
     seen.add(serial);
     rows.push({
       serial,
@@ -194,7 +207,7 @@ const DEPLOYMENT_MODES = new Set(["userDriven", "selfDeploying", "preProvisioned
 const JOIN_TYPES = new Set(["azureADJoin", "azureADJoinUsingDeviceAuth", "hybridAzureADJoin"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
-const TIMEZONE_PATTERN = /^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+)+)$/;
+const TIMEZONE_PATTERN = /^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/;
 const DEVICE_NAME_PATTERN = /^[A-Za-z0-9%_\- ]+$/;
 
 /**
@@ -205,7 +218,9 @@ export const validateAutopilotProfileInput = (
   input: Partial<Record<keyof AutopilotProfileValues, unknown>>,
 ): AutopilotProfileValidation => {
   const name = typeof input.name === "string" ? input.name.trim() : "";
+
   if (!name) return { ok: false, message: "Profile name is required." };
+
   if (name.length > 255)
     return { ok: false, message: "Profile name must be 255 characters or fewer." };
 
@@ -213,11 +228,13 @@ export const validateAutopilotProfileInput = (
     typeof input.description === "string" && input.description.trim()
       ? input.description.trim()
       : undefined;
+
   if (description && description.length > 2_000)
     return { ok: false, message: "Profile description must be 2000 characters or fewer." };
 
   const deploymentMode =
     typeof input.deploymentMode === "string" ? input.deploymentMode : "userDriven";
+
   if (!DEPLOYMENT_MODES.has(deploymentMode))
     return {
       ok: false,
@@ -225,11 +242,13 @@ export const validateAutopilotProfileInput = (
     };
 
   const joinType = typeof input.joinType === "string" ? input.joinType : "azureADJoin";
+
   if (!JOIN_TYPES.has(joinType))
     return {
       ok: false,
       message: "Join type must be azureADJoin, azureADJoinUsingDeviceAuth or hybridAzureADJoin.",
     };
+
   if (joinType === "hybridAzureADJoin" && deploymentMode !== "userDriven")
     return {
       ok: false,
@@ -237,6 +256,7 @@ export const validateAutopilotProfileInput = (
     };
 
   const enableDevicePreparation = input.enableDevicePreparation === true;
+
   if (deploymentMode === "preProvisioned" && !enableDevicePreparation)
     return {
       ok: false,
@@ -247,9 +267,11 @@ export const validateAutopilotProfileInput = (
     typeof input.deviceNameTemplate === "string" && input.deviceNameTemplate.trim()
       ? input.deviceNameTemplate.trim()
       : undefined;
+
   if (deviceNameTemplate) {
     if (deviceNameTemplate.length > 60)
       return { ok: false, message: "Device name template must be 60 characters or fewer." };
+
     if (!DEVICE_NAME_PATTERN.test(deviceNameTemplate))
       return {
         ok: false,
@@ -260,11 +282,13 @@ export const validateAutopilotProfileInput = (
 
   const locale =
     typeof input.locale === "string" && input.locale.trim() ? input.locale.trim() : undefined;
+
   if (locale && !LOCALE_PATTERN.test(locale))
     return { ok: false, message: "Locale must look like en-US." };
 
   const timezone =
     typeof input.timezone === "string" && input.timezone.trim() ? input.timezone.trim() : undefined;
+
   if (timezone && !TIMEZONE_PATTERN.test(timezone))
     return { ok: false, message: "Timezone must be an IANA name such as Australia/Sydney." };
 
@@ -272,6 +296,7 @@ export const validateAutopilotProfileInput = (
     typeof input.assignedGroupId === "string" && input.assignedGroupId.trim()
       ? input.assignedGroupId.trim()
       : undefined;
+
   if (assignedGroupId && !UUID_PATTERN.test(assignedGroupId))
     return { ok: false, message: "Assigned group must be an Entra group object id." };
 
@@ -310,6 +335,7 @@ const graphFailure = (cause: unknown): AutopilotError => {
     typeof cause === "object" && cause !== null && "message" in cause
       ? String((cause as { message: unknown }).message)
       : String(cause);
+
   return fail("graph", message, cause);
 };
 
@@ -356,6 +382,7 @@ export const importAutopilotDevices = (options: {
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId, rows } = options;
     const timestamp = options.now ?? new Date();
+
     if (rows.length === 0)
       return {
         imported: 0,
@@ -377,11 +404,13 @@ export const importAutopilotDevices = (options: {
       .pipe(Effect.mapError(graphFailure));
 
     const bySerial = new Map<string, GraphAutopilotDevice>();
+
     for (const device of imported)
       if (device.serialNumber) bySerial.set(normalizeAutopilotSerial(device.serialNumber), device);
 
     for (const row of rows) {
       const device = bySerial.get(row.serial);
+
       const values = {
         organizationId,
         serial: row.serial,
@@ -396,6 +425,7 @@ export const importAutopilotDevices = (options: {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
+
       yield* db
         .insert(schema.autopilotDevice)
         .values(values)
@@ -450,32 +480,42 @@ export const syncAutopilotDevices = (options: {
       .select({ id: schema.device.id, serial: schema.device.serial })
       .from(schema.device)
       .where(eq(schema.device.organizationId, organizationId));
+
     const deviceBySerial = new Map<string, string>();
+
     for (const device of devices) {
       if (!device.serial) continue;
       const serial = normalizeAutopilotSerial(device.serial);
+
       if (!deviceBySerial.has(serial)) deviceBySerial.set(serial, device.id);
     }
 
     const graphDevices: GraphAutopilotDevice[] = [];
     let link: string | undefined;
     let pages = 0;
+
     while (pages < maxPages) {
       const page = yield* graph
         .listAutopilotDevices(azureTenantId, link)
         .pipe(Effect.mapError(graphFailure));
+
       pages++;
       graphDevices.push(...page.items);
+
       if (!page.nextLink) break;
       link = page.nextLink;
     }
 
     let linked = 0;
+
     for (const device of graphDevices) {
       const serial = device.serialNumber ? normalizeAutopilotSerial(device.serialNumber) : "";
+
       if (!serial) continue;
       const deviceId = deviceBySerial.get(serial) ?? null;
+
       if (deviceId) linked++;
+
       const values = {
         organizationId,
         serial,
@@ -493,6 +533,7 @@ export const syncAutopilotDevices = (options: {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
+
       yield* db
         .insert(schema.autopilotDevice)
         .values(values)
@@ -518,6 +559,7 @@ export const syncAutopilotDevices = (options: {
   }).pipe(finish);
 
 export type AutopilotDeviceRow = typeof schema.autopilotDevice.$inferSelect;
+
 export type AutopilotProfileRow = typeof schema.autopilotProfile.$inferSelect;
 
 /** Public device view. The hardware hash is deliberately omitted. */
@@ -577,9 +619,11 @@ export const createAutopilotProfile = (options: {
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId, values } = options;
     const timestamp = options.now ?? new Date();
+
     const profile = yield* graph
       .createAutopilotProfile(azureTenantId, graphProfileInput(values))
       .pipe(Effect.mapError(graphFailure));
+
     if (values.assignedGroupId && profile.id)
       yield* graph
         .assignAutopilotProfile(azureTenantId, profile.id, values.assignedGroupId)
@@ -603,6 +647,7 @@ export const createAutopilotProfile = (options: {
       createdAt: timestamp,
       updatedAt: timestamp,
     });
+
     const [row] = yield* db
       .select()
       .from(schema.autopilotProfile)
@@ -613,7 +658,9 @@ export const createAutopilotProfile = (options: {
         ),
       )
       .limit(1);
+
     if (!row) return yield* Effect.fail(fail("database", "The Autopilot profile was not saved."));
+
     return row;
   }).pipe(finish);
 
@@ -629,6 +676,7 @@ export const updateAutopilotProfile = (options: {
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId, profileId, values } = options;
     const timestamp = options.now ?? new Date();
+
     const [existing] = yield* db
       .select()
       .from(schema.autopilotProfile)
@@ -639,6 +687,7 @@ export const updateAutopilotProfile = (options: {
         ),
       )
       .limit(1);
+
     if (!existing) return yield* Effect.fail(fail("invalid", "Autopilot profile not found."));
 
     const profile = existing.graphProfileId
@@ -688,7 +737,9 @@ export const updateAutopilotProfile = (options: {
         ),
       )
       .limit(1);
+
     if (!row) return yield* Effect.fail(fail("database", "The Autopilot profile was not saved."));
+
     return row;
   }).pipe(finish);
 
@@ -704,6 +755,7 @@ export const assignAutopilotProfile = (options: {
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId, profileId, groupId } = options;
     const timestamp = options.now ?? new Date();
+
     const [existing] = yield* db
       .select()
       .from(schema.autopilotProfile)
@@ -714,7 +766,9 @@ export const assignAutopilotProfile = (options: {
         ),
       )
       .limit(1);
+
     if (!existing) return yield* Effect.fail(fail("invalid", "Autopilot profile not found."));
+
     if (!existing.graphProfileId)
       return yield* Effect.fail(
         fail("invalid", "The Autopilot profile has not been created in Microsoft Graph yet."),
@@ -749,7 +803,9 @@ export const assignAutopilotProfile = (options: {
         ),
       )
       .limit(1);
+
     if (!row) return yield* Effect.fail(fail("database", "The Autopilot profile was not saved."));
+
     return row;
   }).pipe(finish);
 
@@ -763,6 +819,7 @@ export const deleteAutopilotDevice = (options: {
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId } = options;
     const serial = normalizeAutopilotSerial(options.serial);
+
     const [existing] = yield* db
       .select()
       .from(schema.autopilotDevice)
@@ -773,6 +830,7 @@ export const deleteAutopilotDevice = (options: {
         ),
       )
       .limit(1);
+
     if (!existing) return false;
 
     if (existing.graphId)
@@ -788,5 +846,6 @@ export const deleteAutopilotDevice = (options: {
           eq(schema.autopilotDevice.serial, serial),
         ),
       );
+
     return true;
   }).pipe(finish);

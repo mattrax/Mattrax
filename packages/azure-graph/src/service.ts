@@ -235,16 +235,22 @@ function labelFor(url: string): string {
 
 function retryAfter(headers: Headers.Headers): { delayMs: number; seconds: number } | undefined {
   const raw = Option.getOrUndefined(Headers.get(headers, "retry-after"))?.trim();
+
   if (!raw) return undefined;
   const seconds = Number(raw);
+
   if (Number.isFinite(seconds) && seconds >= 0) {
     return { delayMs: seconds * 1_000, seconds };
   }
+
   const date = Date.parse(raw);
+
   if (!Number.isNaN(date)) {
     const delayMs = Math.max(0, date - Date.now());
+
     return { delayMs, seconds: Math.ceil(delayMs / 1_000) };
   }
+
   return undefined;
 }
 
@@ -258,7 +264,9 @@ function isSuccess(status: number): boolean {
 
 function consentRedirectUri(config: AzureGraphConfig): string | undefined {
   if (config.redirectUri) return config.redirectUri;
+
   if (!config.origin) return undefined;
+
   return `${trimTrailingSlashes(config.origin)}/api/v1/sso/azure/callback`;
 }
 
@@ -299,6 +307,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
                     ),
                 },
               );
+
               const text = yield* response.text.pipe(
                 Effect.mapError(
                   (cause) =>
@@ -317,14 +326,17 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
                     ),
                 }),
               );
+
               return { status: response.status, headers: response.headers, text };
             });
 
           const first = yield* send();
+
           if (!isRetryable(first.status)) return first;
 
           const retry = first.status === 429 ? retryAfter(first.headers) : undefined;
           yield* Effect.sleep(retry?.delayMs ?? retryDelayMs);
+
           return yield* send();
         });
 
@@ -356,6 +368,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const fetchToken = (tenantId: string): Effect.Effect<TokenEntry, AzureGraphError> =>
         Effect.gen(function* () {
           const url = `${loginBaseUrl}/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`;
+
           const result = yield* execute(() =>
             HttpClientRequest.post(url).pipe(
               HttpClientRequest.bodyUrlParams({
@@ -376,8 +389,10 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 429) {
             const retry = retryAfter(result.headers);
+
             return yield* Effect.fail(
               new AzureGraphThrottled({
                 message: "Microsoft Graph token request was throttled",
@@ -387,6 +402,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (!isSuccess(result.status)) {
             return yield* Effect.fail(
               new AzureGraphRequestFailed({
@@ -401,6 +417,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           const token = yield* decode(TokenResponse, json, "Microsoft Graph token endpoint");
           const rawExpiresIn = token.expires_in;
           const expiresIn = typeof rawExpiresIn === "string" ? Number(rawExpiresIn) : rawExpiresIn;
+
           const lifetime =
             typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0
               ? expiresIn
@@ -416,9 +433,11 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
           const cached = tokenCache.get(tenant);
+
           if (cached && cached.expiresAt > Date.now()) return cached.token;
           const entry = yield* fetchToken(tenant);
           tokenCache.set(tenant, entry);
+
           return entry.token;
         });
 
@@ -429,9 +448,11 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       ): Effect.Effect<T, AzureGraphError> =>
         Effect.gen(function* () {
           const token = yield* accessToken(tenantId);
+
           const result = yield* execute(() =>
             HttpClientRequest.get(url).pipe(HttpClientRequest.bearerToken(token)),
           );
+
           const label = labelFor(url);
 
           if (result.status === 401) {
@@ -443,6 +464,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 403) {
             return yield* Effect.fail(
               new AzureGraphConsentRequired({
@@ -452,6 +474,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 404) {
             return yield* Effect.fail(
               new AzureGraphNotFound({
@@ -461,8 +484,10 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 429) {
             const retry = retryAfter(result.headers);
+
             return yield* Effect.fail(
               new AzureGraphThrottled({
                 message: `Microsoft Graph request to ${label} was throttled`,
@@ -472,6 +497,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (!isSuccess(result.status)) {
             return yield* Effect.fail(
               new AzureGraphRequestFailed({
@@ -483,6 +509,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           const json = yield* parseJson(result.text, label);
+
           return yield* decode(schema, json, label);
         });
 
@@ -500,14 +527,17 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       ): Effect.Effect<T, AzureGraphError> =>
         Effect.gen(function* () {
           const token = yield* accessToken(tenantId);
+
           const result = yield* execute(() => {
             const base = HttpClientRequest.make(method)(url).pipe(
               HttpClientRequest.bearerToken(token),
             );
+
             return body === undefined
               ? base
               : base.pipe(HttpClientRequest.bodyText(JSON.stringify(body), "application/json"));
           });
+
           const label = labelFor(url);
 
           if (result.status === 401) {
@@ -519,6 +549,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 403) {
             return yield* Effect.fail(
               new AzureGraphConsentRequired({
@@ -528,6 +559,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 404) {
             return yield* Effect.fail(
               new AzureGraphNotFound({
@@ -537,8 +569,10 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (result.status === 429) {
             const retry = retryAfter(result.headers);
+
             return yield* Effect.fail(
               new AzureGraphThrottled({
                 message: `Microsoft Graph request to ${label} was throttled`,
@@ -548,6 +582,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               }),
             );
           }
+
           if (!isSuccess(result.status)) {
             return yield* Effect.fail(
               new AzureGraphRequestFailed({
@@ -561,6 +596,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           // DELETE and assignment calls return 204 with no body.
           if (schema === null) return undefined as T;
           const json = yield* parseJson(result.text, label);
+
           return yield* decode(schema, json, label);
         });
 
@@ -575,6 +611,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               `${graphBaseUrl}/users/delta?$select=id,displayName,mail,userPrincipalName,accountEnabled,givenName,surname,userType`,
             GraphUserDeltaResponse,
           );
+
           return {
             items: (page.value ?? []).map(graphUserFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
@@ -592,6 +629,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
             link ?? `${graphBaseUrl}/groups/delta?$select=displayName,description,members`,
             GraphGroupDeltaResponse,
           );
+
           return {
             items: (page.value ?? []).map(graphGroupFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
@@ -604,13 +642,16 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       ): Effect.Effect<ReadonlyArray<GraphDomain>, AzureGraphError> =>
         Effect.gen(function* () {
           const result: GraphDomain[] = [];
+
           let link: string | undefined =
             `${graphBaseUrl}/domains?$select=id,isVerified,isDefault,isInitial`;
+
           for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
             const page: GraphDomainsResponse = yield* get(tenantId, link, GraphDomainsResponse);
             result.push(...page.value);
             link = page["@odata.nextLink"] ?? undefined;
           }
+
           return result;
         });
 
@@ -618,9 +659,12 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         const url = new URL(
           `${loginBaseUrl}/${encodeURIComponent(normalizeTenantId(tenantId))}/v2.0/adminconsent`,
         );
+
         url.searchParams.set("client_id", config.clientId);
         const redirect = consentRedirectUri(config);
+
         if (redirect !== undefined) url.searchParams.set("redirect_uri", redirect);
+
         return url.toString();
       };
 
@@ -638,6 +682,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
             link ?? `${autopilotDeviceBase}?$top=100`,
             GraphAutopilotDevicesResponse,
           );
+
           return {
             items: (page.value ?? []).map(graphAutopilotDeviceFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
@@ -687,6 +732,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
             link ?? `${autopilotProfileBase}?$top=100`,
             GraphAutopilotProfilesResponse,
           );
+
           return {
             items: (page.value ?? []).map(graphAutopilotProfileFromWire),
             nextLink: page["@odata.nextLink"] ?? null,

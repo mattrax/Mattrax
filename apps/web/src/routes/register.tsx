@@ -33,14 +33,19 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
     setExistingAccount(null);
+
     if (password() !== confirm()) {
       setError("Passwords do not match");
+
       return;
     }
+
     if (password().length < 15) {
       setError("Choose a password of at least 15 characters");
+
       return;
     }
+
     setPending(true);
 
     const result = await authClient.signUp.email({
@@ -53,11 +58,13 @@ export default function RegisterPage() {
 
     if (result.error) {
       setError(errorMessage(result.error, "Could not create account"));
+
       return;
     }
 
     if (result.data?.status === "existing-account") {
       setExistingAccount(result.data.email);
+
       return;
     }
 

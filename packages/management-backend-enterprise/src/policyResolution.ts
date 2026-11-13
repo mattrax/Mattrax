@@ -26,12 +26,15 @@
  */
 
 export type PolicyAssignmentMode = "include" | "exclude";
+
 export type PolicyResolutionScope = "direct" | "group";
+
 export type PolicyOverrideReason =
   | "direct-device-include"
   | "lower-priority"
   | "older-updated-at"
   | "lexicographic-id";
+
 export type PolicyExclusionReason = "device-exclude" | "group-exclude";
 
 export type PolicyResolutionPolicy = {
@@ -144,6 +147,7 @@ const compareText = (left: string, right: string) => left.localeCompare(right);
 
 const timestamp = (value: Date | string): number => {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
+
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -154,9 +158,12 @@ const timestamp = (value: Date | string): number => {
  */
 const compareCandidates = (left: InternalCandidate, right: InternalCandidate): number => {
   const priority = (right.policy.priority ?? 0) - (left.policy.priority ?? 0);
+
   if (priority !== 0) return priority;
   const updated = timestamp(right.policy.updatedAt) - timestamp(left.policy.updatedAt);
+
   if (updated !== 0) return updated;
+
   return compareText(left.policy.id, right.policy.id);
 };
 
@@ -165,8 +172,10 @@ const overrideReason = (
   loser: InternalCandidate,
 ): PolicyOverrideReason => {
   if (loser.policy.priority !== winner.policy.priority) return "lower-priority";
+
   if (timestamp(loser.policy.updatedAt) !== timestamp(winner.policy.updatedAt))
     return "older-updated-at";
+
   return "lexicographic-id";
 };
 
@@ -178,6 +187,7 @@ const sortedGroups = (groups: ReadonlyArray<PolicyResolutionGroup>) =>
 export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectivePolicy => {
   const policies = new Map(input.policies.map((policy) => [policy.id, policy]));
   const configurations = new Map<string, Array<PolicyResolutionConfiguration>>();
+
   for (const configuration of input.configurations) {
     if (!policies.has(configuration.policyId)) continue;
     const list = configurations.get(configuration.policyId) ?? [];
@@ -187,19 +197,24 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
 
   const groups = new Map(input.groups.map((group) => [group.id, group]));
   const groupIncludes = new Map<string, Array<PolicyResolutionGroup>>();
+
   const groupExcludes = new Map<
     string,
     Array<{ group: PolicyResolutionGroup; policyId: string }>
   >();
+
   for (const assignment of input.groupAssignments) {
     const group = groups.get(assignment.groupId);
+
     if (!group || !policies.has(assignment.policyId)) continue;
+
     if ((assignment.mode ?? "include") === "exclude") {
       const list = groupExcludes.get(assignment.policyId) ?? [];
       list.push({ group, policyId: assignment.policyId });
       groupExcludes.set(assignment.policyId, list);
       continue;
     }
+
     const included = groupIncludes.get(assignment.policyId) ?? [];
     included.push(group);
     groupIncludes.set(assignment.policyId, included);
@@ -207,8 +222,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
 
   const directIncludes = new Set<string>();
   const directExcludes = new Set<string>();
+
   for (const assignment of input.deviceAssignments) {
     if (!policies.has(assignment.policyId)) continue;
+
     if ((assignment.mode ?? "include") === "exclude") directExcludes.add(assignment.policyId);
     else directIncludes.add(assignment.policyId);
   }
@@ -229,9 +246,11 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       (configurations.get(policyId) ?? []).find((configuration) => configuration.kind === kind);
 
     const directCandidates: Array<InternalCandidate> = [];
+
     for (const policyId of directIncludes) {
       if (directExcludes.has(policyId)) continue;
       const configuration = withKind(policyId);
+
       if (!configuration) continue;
       directCandidates.push({
         policy: policies.get(policyId)!,
@@ -242,11 +261,13 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     }
 
     const groupCandidates: Array<InternalCandidate> = [];
+
     for (const [policyId, includedGroups] of groupIncludes) {
       // A direct exclude is absolute, and any group exclusion vetoes group
       // delivery for that policy even when another group includes it.
       if (directExcludes.has(policyId) || groupExcludes.has(policyId)) continue;
       const configuration = withKind(policyId);
+
       if (!configuration) continue;
       groupCandidates.push({
         policy: policies.get(policyId)!,
@@ -257,6 +278,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     }
 
     const candidates = directCandidates.length > 0 ? directCandidates : groupCandidates;
+
     if (candidates.length === 0) continue;
 
     const sorted = [...candidates].sort(compareCandidates);
@@ -289,6 +311,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
         : sorted
             .slice(1)
             .map((candidate) => ({ candidate, reason: overrideReason(winner, candidate) }));
+
     for (const { candidate: loser, reason } of losers) {
       overridden.push({
         kind,
@@ -304,12 +327,15 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
   }
 
   const contributing = new Map<string, ContributingPolicy & { kinds: string[] }>();
+
   for (const configuration of resolved) {
     const existing = contributing.get(configuration.policyId);
+
     if (existing) {
       existing.kinds.push(configuration.kind);
       continue;
     }
+
     contributing.set(configuration.policyId, {
       policyId: configuration.policyId,
       policyName: configuration.policyName,
@@ -322,8 +348,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
   }
 
   const exclusions: Array<PolicyExclusion> = [];
+
   for (const policyId of directExcludes) {
     const policy = policies.get(policyId);
+
     if (!policy) continue;
     exclusions.push({
       policyId,
@@ -336,9 +364,12 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       reason: "device-exclude",
     });
   }
+
   for (const [policyId, excludedGroups] of groupExcludes) {
     const policy = policies.get(policyId);
+
     if (!policy) continue;
+
     for (const group of sortedGroups(excludedGroups.map((row) => row.group))) {
       exclusions.push({
         policyId,

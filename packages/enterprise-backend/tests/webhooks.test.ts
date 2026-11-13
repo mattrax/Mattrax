@@ -68,6 +68,7 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
   const auth = {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return headers.cookie
         ? Effect.succeed({ user: db.store.user[0], apiToken: undefined })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -102,6 +103,7 @@ const list = (service: any, tenantId = "org-1") =>
 describe("webhook endpoint CRUD", () => {
   it("creates an endpoint and returns the signing secret exactly once", async () => {
     const { db, service } = makeContext();
+
     const created = await create(service, {
       url: "https://hooks.example.com/mattrax",
       description: "SIEM",
@@ -132,6 +134,7 @@ describe("webhook endpoint CRUD", () => {
 
   it("rejects non-HTTPS, private and credential-bearing URLs", async () => {
     const { service } = makeContext();
+
     for (const url of [
       "http://hooks.example.com/mattrax",
       "https://127.0.0.1/mattrax",
@@ -146,6 +149,7 @@ describe("webhook endpoint CRUD", () => {
 
   it("updates, rotates and deletes an endpoint", async () => {
     const { db, service, headers } = makeContext();
+
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: ["device.enrolled"],
@@ -158,6 +162,7 @@ describe("webhook endpoint CRUD", () => {
         enabled: false,
       }),
     );
+
     expect(patched).toMatchObject({
       url: "https://hooks.example.com/b",
       events: ["device.unenrolled"],
@@ -167,6 +172,7 @@ describe("webhook endpoint CRUD", () => {
     const rotated = await runEffect(
       service.rotateWebhookSecret(request(headers) as any, "org-1", created.endpoint.id),
     );
+
     expect(rotated.secret).toMatch(/^whsec_/);
     expect(rotated.secret).not.toBe(created.secret);
     expect(db.store.webhook_endpoint[0]!.secretPrefix).toBe(rotated.secret.slice(-4));
@@ -182,6 +188,7 @@ describe("webhook endpoint CRUD", () => {
 
   it("is tenant-scoped for every operation", async () => {
     const { service, headers } = makeContext();
+
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: [],
@@ -231,6 +238,7 @@ describe("webhook test delivery", () => {
   it("sends a test event and records the outcome", async () => {
     const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
     const { db, service, headers } = makeContext({ fetch });
+
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: ["device.enrolled"],
@@ -239,6 +247,7 @@ describe("webhook test delivery", () => {
     const result = await runEffect(
       service.testWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id),
     );
+
     expect(result.status).toBe("succeeded");
     expect(result.responseStatus).toBe(200);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -257,13 +266,16 @@ describe("webhook test delivery", () => {
   it("reports a failing endpoint without throwing", async () => {
     const fetch = vi.fn(async () => new Response("nope", { status: 500 }));
     const { db, service, headers } = makeContext({ fetch });
+
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: [],
     });
+
     const result = await runEffect(
       service.testWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id),
     );
+
     expect(result).toMatchObject({
       status: "failed",
       responseStatus: 500,
@@ -324,6 +336,7 @@ describe("webhook event emission", () => {
     const result = await runEffect(
       service.getEnrollment("enr-1", "wrong-code", { platform: "apple", ip: "203.0.113.9" }),
     );
+
     expect(result.authenticated).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(db.store.webhook_delivery[0]).toMatchObject({

@@ -46,7 +46,9 @@ const setup = () => {
       { deviceId: "device-1", bootstrapTokenEscrowed: null, configured: true },
     ],
   });
+
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+
   return { db, backend };
 };
 
@@ -66,6 +68,7 @@ const commandResult = (queryResponses: Record<string, unknown>, commandUUID = "c
 });
 
 const secretRows = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schema.deviceSecret));
+
 const applicationRows = (db: ReturnType<typeof makeDb>) =>
   dbRows(db, tableName(schema.deviceApplication));
 
@@ -106,10 +109,12 @@ describe("SecurityInfo command results", () => {
 
   it("updates in place, rotating the timestamp only when the key changes", async () => {
     const { db, backend } = setup();
+
     const first = commandResult(
       { SecurityInfo: { FDE_Enabled: true, PersonalRecoveryKey: "KEY-ONE" } },
       "cmd-1",
     );
+
     await run(backend.appleDeviceEvent(scope, first));
     const before = secretRows(db)[0]!;
     expect(secretRows(db)).toHaveLength(1);
@@ -145,11 +150,13 @@ describe("SecurityInfo command results", () => {
 
   it("does not write a plaintext secret when AUTH_SECRET is absent", async () => {
     const { db } = setup();
+
     const backend = ManagementBackendEnterpriseLive.make({
       db: db as any,
       origin,
       authSecret: undefined,
     });
+
     await run(
       backend.appleDeviceEvent(
         scope,

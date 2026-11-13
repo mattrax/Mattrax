@@ -58,6 +58,7 @@ describe("normalizeAuditSearchQuery", () => {
       from: "2026-01-01T00:00:00.000Z",
       to: "2026-01-31T23:59:59.999Z",
     });
+
     expect(filters.from?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
     expect(filters.to?.toISOString()).toBe("2026-01-31T23:59:59.999Z");
   });
@@ -96,6 +97,7 @@ describe("audit cursors", () => {
       cursor: encodeAuditCursor({ createdAt: new Date("2026-11-11T10:00:00.000Z"), id: "x" }),
       offset: 900,
     });
+
     expect(filters.offset).toBe(0);
     expect(filters.offsetPaging).toBe(false);
     expect(filters.cursor?.id).toBe("x");
@@ -148,6 +150,7 @@ describe("audit export", () => {
     const csv = auditCsv([
       entry({ actorEmail: '=HYPERLINK("https://evil.example")', targetId: "+1" }),
     ]);
+
     expect(csv).toContain(`"'=HYPERLINK(""https://evil.example"")"`);
     expect(csv).toContain(",'+1,");
     expect(csv).not.toContain(",=HYPERLINK");

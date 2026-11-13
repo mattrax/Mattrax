@@ -37,12 +37,15 @@ import { errorPresentation } from "~/lib/errors";
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
   let body: unknown = text;
+
   try {
     body = text ? (JSON.parse(text) as unknown) : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
+
   const presentation = errorPresentation(body, fallback);
+
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
@@ -50,10 +53,12 @@ export default function GeneralSettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
   const tenant = useQuery(() => ({
     queryKey: enterpriseKeys.tenant(params.tenantId),
     queryFn: () => enterprise.getTenant(params.tenantId),
   }));
+
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
   const [displayName, setDisplayName] = createSignal("");
@@ -77,6 +82,7 @@ export default function GeneralSettingsPage() {
     () => tenant.data?.id,
     () => {
       const data = tenant.data;
+
       if (data) {
         setName(data.name);
         setSlug(data.slug);
@@ -96,8 +102,10 @@ export default function GeneralSettingsPage() {
       brandColor: brandColor() || null,
     }),
   );
+
   const hasBrandingErrors = () => Object.keys(brandingErrors()).length > 0;
   const colorValue = () => normalizeBrandColor(brandColor() || "") ?? DEFAULT_BRAND_COLOR;
+
   const preview = createMemo(() =>
     resolveTenantBranding({
       name: name() || "Tenant",
@@ -123,6 +131,7 @@ export default function GeneralSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
+
   const del = useMutation(() => ({
     mutationFn: () => enterprise.deleteTenant(params.tenantId),
     onSuccess: async () => {
@@ -132,6 +141,7 @@ export default function GeneralSettingsPage() {
   }));
 
   const isOwner = () => (tenant.data?.role ?? "").split(",").includes("owner");
+
   // Non-owners get a 403 from the API and the card stays hidden; avoiding an
   // `enabled` gate keeps query options out of a pending tenant-query read.
   const backups = useQuery(() => ({
@@ -140,35 +150,50 @@ export default function GeneralSettingsPage() {
     // Non-owners get a 403; do not retry it three times on every visit.
     retry: false,
   }));
+
   const [backupDownloadError, setBackupDownloadError] = createSignal<unknown>(null);
+
   const backupNow = useMutation(() => ({
     mutationFn: () => enterprise.runTenantBackup(params.tenantId),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.backups(params.tenantId) });
     },
   }));
+
   // Plain functions, not memos: a memo created in the component body would
   // eagerly read the query's pending async value and suspend the whole page.
   const latestBackup = () => backups.data?.backups?.[0];
+
   const backupWarning = () => {
     const latest = latestBackup();
+
     if (!latest) return "No backup has run yet.";
+
     if (latest.status === "failed")
       return "The most recent backup failed. Retry it or check the error below.";
+
     if (latest.status === "running") return "A backup is currently running.";
     const age = Date.now() - new Date(latest.startedAt).getTime();
+
     if (Number.isFinite(age) && age > 48 * 60 * 60 * 1000)
       return "The most recent successful backup is more than two days old.";
+
     return null;
   };
+
   const formatBackupSize = (bytes: number | null | undefined) => {
     if (bytes == null) return "—";
+
     if (bytes < 1024) return `${bytes} B`;
+
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
   const downloadBackup = async (id: string) => {
     setBackupDownloadError(null);
+
     try {
       const response = await withStepUp("backup-download", async (grant) => {
         const result = await fetch(
@@ -180,27 +205,34 @@ export default function GeneralSettingsPage() {
             ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
           },
         );
+
         if (result.status === 403) {
           const body = (await result.json().catch(() => null)) as {
             _tag?: string;
             action?: string;
             methods?: string[];
           } | null;
+
           if (body?._tag === "StepUpRequired") throw body;
         }
+
         return result;
       });
+
       if (!response.ok)
         throw await responseFailure(response, `Download failed (${response.status})`);
       const disposition = response.headers.get("Content-Disposition") ?? "";
+
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
         `tenant-${tenant.data?.slug ?? params.tenantId ?? "backup"}-backup.json`;
+
       download(await response.text(), filename);
     } catch (error) {
       setBackupDownloadError(error);
     }
   };
+
   const download = (body: string, filename: string) => {
     const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
     const link = document.createElement("a");
@@ -210,20 +242,26 @@ export default function GeneralSettingsPage() {
     link.remove();
     URL.revokeObjectURL(url);
   };
+
   const exportTenant = async () => {
     setExporting(true);
     setExportError(undefined);
+
     try {
       const suffix = includeAudit() ? "?includeAudit=true" : "";
+
       const response = await fetch(
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/export${suffix}`,
         { credentials: "include" },
       );
+
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const disposition = response.headers.get("Content-Disposition") ?? "";
+
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
         `tenant-${tenant.data?.slug ?? params.tenantId ?? "export"}.json`;
+
       download(await response.text(), filename);
     } catch (error) {
       setExportError(error);
@@ -237,25 +275,32 @@ export default function GeneralSettingsPage() {
     setImportBundle(null);
     setImportError(undefined);
     setImportResult(null);
+
     if (importFileInput) importFileInput.value = "";
   };
+
   const openImport = () => {
     resetImport();
     setImportOpen(true);
   };
+
   const chooseImportFile = () => importFileInput?.click();
+
   const readImportFile = async (file: File | undefined) => {
     setImportFileName(file?.name ?? "");
     setImportBundle(null);
     setImportResult(null);
     setImportError(undefined);
+
     if (!file) return;
+
     try {
       if (file.size > TENANT_IMPORT_MAX_BYTES)
         throw new Error(
           `The bundle is too large. The limit is ${TENANT_IMPORT_MAX_BYTES / 1024} KB.`,
         );
       const parsed = JSON.parse(await file.text()) as TenantImportRequest;
+
       if (
         !parsed ||
         typeof parsed !== "object" ||
@@ -268,11 +313,14 @@ export default function GeneralSettingsPage() {
       setImportError(error);
     }
   };
+
   const runImport = async () => {
     const bundle = importBundle();
+
     if (!bundle) return;
     setImporting(true);
     setImportError(undefined);
+
     try {
       const result = await enterprise.importTenant(bundle);
       setImportResult(result);
@@ -284,9 +332,12 @@ export default function GeneralSettingsPage() {
       setImporting(false);
     }
   };
+
   const importSummary = createMemo(() => {
     const bundle = importBundle();
+
     if (!bundle) return null;
+
     return {
       name: bundle.tenant.name,
       slug: bundle.tenant.slug ?? "",

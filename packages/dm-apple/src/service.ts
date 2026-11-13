@@ -21,6 +21,7 @@ function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
   const binary = atob(padded);
+
   return Array.from(binary)
     .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
     .join("");
@@ -33,9 +34,11 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
       const bytes = new Uint8Array(hash).slice(0, 16);
       bytes[6] = (bytes[6] & 0x0f) | 0x50;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
       const hex = Array.from(bytes)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
+
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     },
     catch: (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
@@ -66,6 +69,7 @@ export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmSe
       const config = yield* AppleMdmConfig;
       const topic = yield* AppleMdmTopic;
       const trust = yield* Effect.serviceOption(AppleMdmTrust);
+
       return AppleMdmService.make({
         backend,
         config,
@@ -180,11 +184,13 @@ export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.
 ) {
   static readonly make = (config: AppleMdmConfig.Service): AppleMdmTopic.Service => {
     let cached: string | undefined;
+
     return AppleMdmTopic.of({
       get: Effect.sync(() => {
         cached ??= config.cloudAppleVendorCert
           ? (extractTopicFromCertPem(config.cloudAppleVendorCert) ?? placeholderTopic)
           : placeholderTopic;
+
         return cached;
       }),
     });
@@ -194,6 +200,7 @@ export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.
     AppleMdmTopic,
     Effect.gen(function* () {
       const config = yield* AppleMdmConfig;
+
       return AppleMdmTopic.make(config);
     }),
   );
@@ -218,19 +225,25 @@ const makeAppleMdmService = (
       // Hosts that do not wire trust keep the historical behaviour. Once a
       // host opts in (Cloud), a missing signature or CA is fatal.
       if (!trust) return null;
+
       if (!input.signature) {
         if (trust.requireSignature)
           return yield* Effect.fail(new MdmError({ message: "Missing Mdm-Signature" }));
+
         return null;
       }
+
       const caCertPems = yield* trust.caCertPems;
+
       if (caCertPems.length === 0) {
         if (trust.requireSignature)
           return yield* Effect.fail(
             new MdmError({ message: "No SCEP CA configured to verify Mdm-Signature" }),
           );
+
         return null;
       }
+
       return yield* Effect.tryPromise({
         try: () =>
           verifyMdmSignature({
@@ -266,6 +279,7 @@ const makeAppleMdmService = (
       ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
       mdmOrigin,
     };
+
     return backend
       .appleDeviceEvent(scope, {
         _tag: "Authenticate",
@@ -307,7 +321,9 @@ const makeAppleMdmService = (
           ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           mdmOrigin,
         };
+
     const pushToken = base64ToHex(update.Token);
+
     return backend
       .appleDeviceEvent(scope, {
         _tag: "TokenUpdate",
@@ -358,6 +374,7 @@ const makeAppleMdmService = (
           ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
           mdmOrigin,
         };
+
     return backend
       .appleDeviceEvent(scope, {
         _tag: "CheckOut",
@@ -386,10 +403,13 @@ const makeAppleMdmService = (
       ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
       mdmOrigin,
     };
+
     const detail = result.ErrorChain
       ? result.ErrorChain.map((e) => `${e.ErrorDomain ?? ""}:${e.ErrorCode}`).join(", ")
       : undefined;
+
     if (!result.CommandUUID) return Effect.void;
+
     return backend
       .appleDeviceEvent(scope, {
         _tag: "CommandResult",
@@ -421,11 +441,13 @@ const makeAppleMdmService = (
             : new MdmError({ message: "Management backend checkin failed" }),
         ),
       );
+
       switch (manifest._tag) {
         case "Idle":
           return null;
         case "Command": {
           const payload = manifest.payload as Record<string, unknown> | null;
+
           if (
             manifest.requestType === "ClearPasscode" &&
             payload &&
@@ -434,14 +456,17 @@ const makeAppleMdmService = (
             const binary = atob(payload.UnlockToken);
             payload.UnlockToken = Uint8Array.from(binary, (char) => char.charCodeAt(0));
           }
+
           return {
             commandUUID: manifest.commandUUID,
             requestType: manifest.requestType,
             payload,
           };
         }
+
         case "DdmSync": {
           const uuid = yield* deterministicUuid(`dcm:${scope.udid}:${manifest.serverToken}`);
+
           return { commandUUID: uuid, requestType: "DeclarativeManagement", payload: {} };
         }
       }
@@ -457,6 +482,7 @@ const makeAppleMdmService = (
         ),
         Effect.mapError(toMdmError("Management backend cannot provide declaration tokens")),
       );
+
       return {
         SyncTokens: {
           DeclarationsToken: tokens.declarationsToken,
@@ -473,14 +499,17 @@ const makeAppleMdmService = (
         ),
         Effect.mapError(toMdmError("Management backend cannot provide declaration items")),
       );
+
       const tokens = yield* backend.getAppleDeclarationTokens(scope).pipe(
         Effect.catchTag("UnknownDevice", () =>
           Effect.fail(new MdmError({ message: "Unknown device" })),
         ),
         Effect.mapError(toMdmError("Management backend cannot provide declaration tokens")),
       );
+
       const toItems = (arr: typeof items.activations) =>
         arr.map((d) => ({ Identifier: d.identifier, ServerToken: d.serverToken }));
+
       return {
         Declarations: {
           Activations: toItems(items.activations),
@@ -504,8 +533,10 @@ const makeAppleMdmService = (
         ),
         Effect.mapError(toMdmError("Management backend cannot fetch declaration")),
       );
+
       if (!decl)
         return yield* Effect.fail(new MdmError({ message: `Declaration ${identifier} not found` }));
+
       return decl;
     });
 
@@ -530,15 +561,20 @@ const makeAppleMdmService = (
   ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
     Effect.gen(function* () {
       const secret = profileSecret();
+
       // DDM profile fetches are unauthenticated at the transport level, so a
       // valid signature is mandatory. Fail closed when the host has not
       // configured a secret.
       if (!secret || !token) return null;
+
       const valid = yield* Effect.promise(() =>
         verifyAppleProfileToken(secret, token, { policyId, kind, deviceToken }),
       );
+
       if (!valid) return null;
+
       if (!backend.getAppleProfile) return null;
+
       return yield* backend.getAppleProfile(policyId, kind).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
         Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
@@ -554,6 +590,7 @@ const makeAppleMdmService = (
   ): Effect.Effect<void, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return yield* new MdmError({ message: "Bootstrap token has no UDID" });
+
       const scope: CheckinScope = {
         _tag: "device",
         udid,
@@ -561,6 +598,7 @@ const makeAppleMdmService = (
         ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
         mdmOrigin,
       };
+
       yield* backend.appleDeviceEvent(scope, { _tag: "BootstrapToken", token }).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
@@ -575,6 +613,7 @@ const makeAppleMdmService = (
   ): Effect.Effect<string | null, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return null;
+
       const scope: CheckinScope = {
         _tag: "device",
         udid,
@@ -582,6 +621,7 @@ const makeAppleMdmService = (
         ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
         mdmOrigin,
       };
+
       return yield* backend.getAppleBootstrapToken(scope).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
         Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),

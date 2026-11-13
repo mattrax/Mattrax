@@ -241,6 +241,7 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 export function ErrorText(props: { error: unknown }) {
   const presentation = () => errorPresentation(props.error);
   const showTitle = () => !["validation", "server"].includes(presentation().variant);
+
   return (
     <Show when={props.error}>
       <p role="alert" aria-live="polite" class="text-sm text-destructive">
@@ -256,6 +257,7 @@ export function ErrorText(props: { error: unknown }) {
 /** A query failure with an optional retry, used by list and detail pages. */
 export function QueryError(props: { error: unknown; onRetry?: () => void; class?: string }) {
   const presentation = () => errorPresentation(props.error);
+
   return (
     <Show when={props.error}>
       <div
@@ -342,6 +344,7 @@ const healthStyles: Record<string, { class: string; label: string }> = {
 /** Health/compliance rollup derived by the backend. */
 export function DeviceHealthBadge(props: { level: string }) {
   const style = () => healthStyles[props.level] ?? healthStyles.unknown!;
+
   return (
     <span
       class={cn(
@@ -371,6 +374,7 @@ export function PlatformBadge(props: { proto: string }) {
     ) : (
       <TabletSmartphone class="size-3" />
     );
+
   const label = () =>
     props.proto === "apple"
       ? "Apple"
@@ -379,6 +383,7 @@ export function PlatformBadge(props: { proto: string }) {
         : props.proto === "android"
           ? "Android"
           : props.proto;
+
   return (
     <Badge variant="outline" class="gap-1.5 text-muted-foreground">
       {icon()}
@@ -390,7 +395,9 @@ export function PlatformBadge(props: { proto: string }) {
 export function formatDate(value?: string | null) {
   if (!value) return "Unknown";
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return value;
+
   return date.toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -400,14 +407,20 @@ export function formatDate(value?: string | null) {
 export function relativeTime(value?: string | null) {
   if (!value) return "Never";
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return value;
   const diff = Date.now() - date.getTime();
   const minutes = Math.round(diff / 60_000);
+
   if (minutes < 1) return "Just now";
+
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
+
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
+
   if (days < 30) return `${days}d ago`;
+
   return date.toLocaleDateString(undefined, { dateStyle: "medium" });
 }

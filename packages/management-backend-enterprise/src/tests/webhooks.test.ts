@@ -41,11 +41,13 @@ const endpoint = (overrides: Partial<WebhookEndpointRow> = {}): WebhookEndpointR
 
 const setup = async (overrides: Partial<WebhookEndpointRow> = {}) => {
   const secret = "whsec_test_secret";
+
   const db = makeDb({
     [tableName(schema.webhookEndpoint)]: [
       endpoint({ ...overrides, secret: await sealSecret(authSecret, secret) }),
     ],
   });
+
   return { db, secret };
 };
 
@@ -248,9 +250,11 @@ describe("webhook delivery", () => {
 
   it("swallows network errors instead of failing the caller", async () => {
     const { db } = await setup();
+
     const fetch = vi.fn(async () => {
       throw new Error("connection refused");
     });
+
     await expect(
       run(
         dispatchWebhookEvent(
@@ -284,6 +288,7 @@ describe("webhook delivery", () => {
     const { db } = await setup({ eventFilters: ["device.enrolled"] });
     const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
     const [row] = endpoints(db) as unknown as WebhookEndpointRow[];
+
     const outcome = await run(
       sendTestWebhook(
         db as never,
@@ -291,6 +296,7 @@ describe("webhook delivery", () => {
         { authSecret, fetch, now },
       ),
     );
+
     expect(outcome.status).toBe("succeeded");
     expect(deliveries(db)[0]).toMatchObject({ event: "webhook.test", status: "succeeded" });
   });
@@ -323,6 +329,7 @@ describe("webhook retries", () => {
       },
     ];
     const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+
     const result = await run(
       retryFailedWebhookDeliveries(db as never, {
         authSecret,
@@ -331,6 +338,7 @@ describe("webhook retries", () => {
         maxAttempts: 3,
       }),
     );
+
     expect(result).toEqual({ retried: 1, succeeded: 1, failed: 0 });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(deliveries(db)[0]).toMatchObject({
@@ -361,6 +369,7 @@ describe("webhook retries", () => {
       },
     ];
     const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+
     const result = await run(
       retryFailedWebhookDeliveries(db as never, {
         authSecret,
@@ -369,6 +378,7 @@ describe("webhook retries", () => {
         maxAttempts: 3,
       }),
     );
+
     expect(result.retried).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -35,6 +35,7 @@ describe("request ids", () => {
       new Response("ok", { status: 201, headers: { "content-type": "text/plain" } }),
       "req-12345678",
     );
+
     expect(response.status).toBe(201);
     expect(response.headers.get(REQUEST_ID_HEADER)).toBe("req-12345678");
     expect(response.headers.get("content-type")).toBe("text/plain");
@@ -59,6 +60,7 @@ describe("request logging", () => {
       tenantId: "org-1",
       errorTag: "EnterpriseDbError",
     });
+
     expect(JSON.parse(line)).toMatchObject({
       event: "http.request",
       requestId: "req-12345678",
@@ -81,6 +83,7 @@ describe("request logging", () => {
       path: "/api/v1/signIn",
       durationMs: 1,
     };
+
     expect(JSON.parse(formatRequestLog({ ...base, status: 429 })).outcome).toBe("rate_limited");
     expect(JSON.parse(formatRequestLog({ ...base, status: 401 })).outcome).toBe("client_error");
     expect(JSON.parse(formatRequestLog({ ...base, status: 204 })).outcome).toBe("ok");

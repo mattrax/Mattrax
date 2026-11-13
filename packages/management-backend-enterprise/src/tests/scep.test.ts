@@ -27,10 +27,12 @@ const request = (challengePassword: string | undefined) => ({ challengePassword 
 describe("ScepRepositoryLive challenge authentication", () => {
   it("accepts a valid challenge and resolves the tenant", async () => {
     const challenge = await createScepChallenge("enrollment-1", authSecret);
+
     const repository = ScepRepositoryLive.make(
       makeDb([{ id: "enrollment-1", organizationId: "tenant-1" }]),
       { authSecret },
     );
+
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
     ).resolves.toEqual({ organizationalUnit: "tenant-1", enrollmentId: "enrollment-1" });
@@ -41,6 +43,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
       makeDb([{ id: "enrollment-1", organizationId: "tenant-1" }]),
       { authSecret },
     );
+
     const wrong = await createScepChallenge("enrollment-1", "another-secret");
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(request(undefined))),
@@ -50,10 +53,12 @@ describe("ScepRepositoryLive challenge authentication", () => {
     ).rejects.toMatchObject({ _tag: "ScepError" });
 
     const now = 1_700_000_000;
+
     const expired = await createScepChallenge("enrollment-1", authSecret, {
       ttlSeconds: 60,
       now: now * 1000,
     });
+
     // The repository uses the real clock; this challenge expired in 2023.
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(request(expired))),
@@ -74,15 +79,18 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const previousLocal = process.env.MATTRAX_AUTH_SECRET;
     delete process.env.AUTH_SECRET;
     delete process.env.MATTRAX_AUTH_SECRET;
+
     try {
       const repository = ScepRepositoryLive.make(
         makeDb([{ id: "enrollment-1", organizationId: "tenant-1" }]),
       );
+
       await expect(
         Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
       ).rejects.toMatchObject({ _tag: "ScepError" });
     } finally {
       if (previous !== undefined) process.env.AUTH_SECRET = previous;
+
       if (previousLocal !== undefined) process.env.MATTRAX_AUTH_SECRET = previousLocal;
     }
   });
@@ -94,6 +102,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
  */
 const makeQueuedDb = (results: Array<Array<Record<string, unknown>>>) => {
   let index = 0;
+
   return {
     select: () => ({
       from: () => ({
@@ -122,6 +131,7 @@ describe("ScepRepositoryLive identity revocation", () => {
       makeQueuedDb([[issuedCertificate({ revokedAt: new Date() })]]),
       { authSecret },
     );
+
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
       _tag: "ScepError",
       message: expect.stringContaining("revoked"),
@@ -133,6 +143,7 @@ describe("ScepRepositoryLive identity revocation", () => {
       makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], [{ status: "unenrolled" }]]),
       { authSecret },
     );
+
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
       _tag: "ScepError",
       message: expect.stringContaining("no longer enrolled"),
@@ -144,6 +155,7 @@ describe("ScepRepositoryLive identity revocation", () => {
       makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], []]),
       { authSecret },
     );
+
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
       _tag: "ScepError",
       message: expect.stringContaining("no longer enrolled"),
@@ -155,6 +167,7 @@ describe("ScepRepositoryLive identity revocation", () => {
       makeQueuedDb([[issuedCertificate({ deviceId: "device-1" })], [{ status: "enrolled" }]]),
       { authSecret },
     );
+
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
       { serial: "01", organizationId: "tenant-1", deviceId: "device-1" },
     );
@@ -164,6 +177,7 @@ describe("ScepRepositoryLive identity revocation", () => {
     const repository = ScepRepositoryLive.make(makeQueuedDb([[issuedCertificate()]]), {
       authSecret,
     });
+
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
       { serial: "01" },
     );
@@ -196,6 +210,7 @@ describe("ScepRepositoryLive certificate linkage", () => {
         issuedCertificate({ deviceId: "internal-device-1" }),
       ],
     });
+
     seedDevice(db);
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
@@ -212,6 +227,7 @@ describe("ScepRepositoryLive certificate linkage", () => {
         issuedCertificate({ deviceId: "windows-device-id" }),
       ],
     });
+
     seedDevice(db);
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
@@ -228,6 +244,7 @@ describe("ScepRepositoryLive certificate linkage", () => {
         issuedCertificate({ deviceId: "internal-device-1" }),
       ],
     });
+
     seedDevice(db, { status: "unenrolled" });
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
@@ -258,11 +275,13 @@ describe("ScepRepositoryLive certificate recording", () => {
 
   it("keeps a revoked certificate revoked when the same identity is reissued", async () => {
     const revokedAt = new Date("2026-01-01T00:00:00Z");
+
     const db = makeStoreDb({
       [tableName(schema.scepIssuedCertificate)]: [
         issuedCertificate({ deviceId: "internal-device-1", revokedAt }),
       ],
     });
+
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await Effect.runPromise(repository.recordIssuedCertificate!(certificate()));
     const [row] = dbRows(db, tableName(schema.scepIssuedCertificate));
@@ -276,6 +295,7 @@ describe("ScepRepositoryLive certificate recording", () => {
         issuedCertificate({ deviceId: "other-device", organizationId: "tenant-2" }),
       ],
     });
+
     const repository = ScepRepositoryLive.make(db as never, { authSecret });
     await expect(
       Effect.runPromise(repository.recordIssuedCertificate!(certificate())),

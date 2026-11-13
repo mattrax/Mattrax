@@ -23,7 +23,9 @@ const otherOrganizationId = "org-2";
 
 const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -32,8 +34,10 @@ const makePrivateKeyPem = async (): Promise<string> => {
     "sign",
     "verify",
   ]);
+
   const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
   const body = bytesToBase64(new Uint8Array(pkcs8));
+
   return `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g)!.join("\n")}\n-----END PRIVATE KEY-----`;
 };
 
@@ -63,12 +67,15 @@ const makeFetch = (
   } = {},
 ) => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
+
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
+
     if (url.includes("/auth/oauth2/token")) {
       if (options.tokenStatus && options.tokenStatus !== 200)
         return jsonResponse({ error: "invalid_client" }, options.tokenStatus);
+
       return jsonResponse({
         access_token: "apple-access-token",
         token_type: "Bearer",
@@ -76,19 +83,23 @@ const makeFetch = (
         scope: "business.api",
       });
     }
+
     if (url.includes("/orgDevices")) {
       if (options.devicesStatus && options.devicesStatus !== 200)
         return jsonResponse({ errors: [{ detail: "Not authorized" }] }, options.devicesStatus);
+
       return jsonResponse({
         data: options.devices ?? [],
         ...(options.next ? { links: { next: options.next } } : {}),
       });
     }
+
     if (url.includes("/mdmServers") && init?.method === "POST")
       return jsonResponse(
         { data: { id: "mdm-server-created", attributes: { status: "ACTIVE" } } },
         201,
       );
+
     if (url.includes("/mdmServers"))
       return jsonResponse({
         data: [
@@ -98,12 +109,15 @@ const makeFetch = (
           },
         ],
       });
+
     if (url.includes("/orgDeviceActivities"))
       return jsonResponse({
         data: { id: "activity-1", attributes: { status: "IN_PROGRESS" } },
       });
+
     return jsonResponse({ errors: [{ detail: `Unexpected URL ${url}` }] }, 500);
   }) as typeof globalThis.fetch;
+
   return { fetchImpl, calls };
 };
 
@@ -124,6 +138,7 @@ const makeDbWithTenant = () => {
     createdAt: now,
     updatedAt: now,
   });
+
   return db;
 };
 
@@ -139,11 +154,13 @@ describe("Apple Business Manager credentials", () => {
     });
 
     const pem = await makePrivateKeyPem();
+
     const fromPem = await parseAbmTokenUpload({
       content: pem,
       clientId: "BUSINESSAPI.aaaa",
       keyId: "key-2",
     });
+
     expect(fromPem).toMatchObject({
       kind: "abm_api",
       clientId: "BUSINESSAPI.aaaa",
@@ -175,6 +192,7 @@ describe("Apple Business Manager credentials", () => {
         token_expiration_date: "2030-01-01T00:00:00+0000",
       }),
     });
+
     expect(parsed).toMatchObject({ kind: "legacy_dep", orgId: "dep-org", orgName: "Legacy Org" });
 
     await expect(
@@ -199,7 +217,9 @@ describe("Apple Business Manager credentials", () => {
         token_expiration_date: "2030-01-01T00:00:00+0000",
       }),
     );
+
     const bytes = new TextEncoder().encode(plist);
+
     const signedData = new pkijs.SignedData({
       version: 1,
       encapContentInfo: new pkijs.EncapsulatedContentInfo({
@@ -209,10 +229,12 @@ describe("Apple Business Manager credentials", () => {
       signerInfos: [],
       certificates: [],
     });
+
     const contentInfo = new pkijs.ContentInfo({
       contentType: pkijs.ContentInfo.SIGNED_DATA,
       content: signedData.toSchema(true),
     });
+
     const base64 = bytesToBase64(new Uint8Array(contentInfo.toSchema().toBER(false)));
     const parsed = await parseAbmTokenUpload({ content: base64, encoding: "base64" });
     expect(parsed).toMatchObject({ kind: "legacy_dep", orgId: "dep-org", orgName: "Legacy Org" });
@@ -222,6 +244,7 @@ describe("Apple Business Manager credentials", () => {
     const credential = await parseAbmTokenUpload({
       content: JSON.stringify(await credentialJson()),
     });
+
     const sealed = await sealAbmCredential(authSecret, credential);
     expect(sealed).not.toContain("PRIVATE KEY");
     expect(sealed).not.toContain("BUSINESSAPI");
@@ -313,6 +336,7 @@ describe("Apple Business Manager sync", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(info.status).toBe("active");
     expect(info.credentialType).toBe("abm_api");
     expect(db.store.apple_business_manager[0]).toMatchObject({ organizationId });
@@ -326,6 +350,7 @@ describe("Apple Business Manager sync", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(result).toMatchObject({ devices: 2, assigned: 1, unassigned: 1, removed: 1 });
 
     const devices = db.store.abm_device.filter((row) => row.organizationId === organizationId);
@@ -438,6 +463,7 @@ describe("Apple Business Manager sync", () => {
         config: { fetch: fetchImpl },
       }),
     );
+
     expect(result).toMatchObject({ serial: "SERIAL-1", mdmServerId: "mdm-server-1" });
     expect(calls.some((call) => call.url.includes("/orgDeviceActivities"))).toBe(true);
     expect(db.store.abm_device[0]).toMatchObject({
@@ -458,6 +484,7 @@ describe("ADE profile links", () => {
         ttlSeconds: 60,
       }),
     );
+
     const read = await runEffect(readAdeProfileToken({ authSecret, token: signed.token }));
     expect(read).toMatchObject({
       organizationId,

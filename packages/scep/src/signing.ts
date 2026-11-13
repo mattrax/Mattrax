@@ -21,6 +21,7 @@ export const MS_DEVICE_ID_OID = "1.3.6.1.4.1.311.66.1.0";
 const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
   if (typeof csr !== "string") return csr;
   const input = csr.trim();
+
   if (input.includes("CERTIFICATE REQUEST")) {
     // Accept both the PKCS#10 "CERTIFICATE REQUEST" and legacy "NEW
     // CERTIFICATE REQUEST" PEM labels.
@@ -28,22 +29,28 @@ const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
       .replace(/-----BEGIN [^-]+-----/g, "")
       .replace(/-----END [^-]+-----/g, "")
       .replace(/\s/g, "");
+
     return base64ToArrayBuffer(base64);
   }
+
   return base64ToArrayBuffer(input.replace(/\s/g, ""));
 };
 
 const subjectFromCsr = (csr: pkijs.CertificationRequest, fallback: string) => {
   const subject: Array<{ type: string; value: string }> = [];
+
   for (const rdn of csr.subject.typesAndValues) {
     const value = rdn.value.valueBlock as { value?: unknown } | undefined;
+
     if (typeof value?.value === "string") {
       subject.push({ type: rdn.type, value: value.value });
     }
   }
+
   if (!subject.some((item) => item.type === "2.5.4.3")) {
     subject.push({ type: "2.5.4.3", value: fallback });
   }
+
   return subject;
 };
 
@@ -87,6 +94,7 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
   Effect.tryPromise({
     try: async () => {
       const csr = pkijs.CertificationRequest.fromBER(decodeCsr(options.csr));
+
       if (!(await csr.verify())) {
         throw new Error("CSR signature is invalid");
       }
@@ -107,6 +115,7 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
       }
 
       const notBefore = options.notBefore ?? new Date();
+
       const notAfter =
         options.notAfter ?? new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
 

@@ -15,10 +15,12 @@ const extensions = ["js", "jsx", "ts", "tsx"];
 // self-signed certificate from `scripts/dev-cert.mjs`; the API's `ORIGIN` must
 // then be `https://localhost:9050` as well.
 const certDir = path.resolve(".certs");
+
 const httpsEnabled =
   process.env.DEV_HTTPS === "1" &&
   fs.existsSync(path.join(certDir, "localhost.pem")) &&
   fs.existsSync(path.join(certDir, "localhost-key.pem"));
+
 const https = httpsEnabled
   ? {
       key: fs.readFileSync(path.join(certDir, "localhost-key.pem")),

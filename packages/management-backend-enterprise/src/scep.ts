@@ -20,6 +20,7 @@ const databaseError =
 const processEnvSecret = (): string | undefined => {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
     ?.env;
+
   return env?.AUTH_SECRET ?? env?.MATTRAX_AUTH_SECRET;
 };
 
@@ -34,6 +35,7 @@ export const normalizeIssuedCertificateSerial = (value: string): string => {
     .replace(/^0x/i, "")
     .replace(/[^0-9a-f]/gi, "")
     .toLowerCase();
+
   return hex.replace(/^0+(?=.)/, "");
 };
 
@@ -50,6 +52,7 @@ export class ScepRepositoryLive extends ScepRepository {
     const authenticatePkcsReq = (req: ScepPkcsReq): Effect.Effect<ScepAuthentication, ScepError> =>
       Effect.gen(function* () {
         const secret = options.authSecret ?? processEnvSecret();
+
         if (!secret) {
           return yield* Effect.fail(
             new ScepError({
@@ -62,6 +65,7 @@ export class ScepRepositoryLive extends ScepRepository {
           try: () => verifyScepChallenge(req.challengePassword, secret),
           catch: (cause) => new ScepError({ message: "Failed to verify SCEP challenge", cause }),
         });
+
         if (!verification) {
           return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
         }
@@ -76,6 +80,7 @@ export class ScepRepositoryLive extends ScepRepository {
               (cause) => new ScepError({ message: "Failed to resolve SCEP enrollment", cause }),
             ),
           );
+
         if (!enrollment) {
           return yield* Effect.fail(new ScepError({ message: "Unknown SCEP enrollment" }));
         }
@@ -103,7 +108,9 @@ export class ScepRepositoryLive extends ScepRepository {
             and(eq(schema.device.organizationId, organizationId), eq(schema.device.id, identifier)),
           )
           .limit(1);
+
         if (byId) return byId;
+
         const [byDmIdentifier] = yield* db
           .select({ status: schema.device.status })
           .from(schema.device)
@@ -114,6 +121,7 @@ export class ScepRepositoryLive extends ScepRepository {
             ),
           )
           .limit(1);
+
         return byDmIdentifier ?? null;
       });
 
@@ -135,6 +143,7 @@ export class ScepRepositoryLive extends ScepRepository {
               ? new ScepError({ message: cause.message })
               : new ScepError({ message: "Failed to read the SCEP CA private key" }),
         });
+
         if (opened.migrated) {
           const sealed = opened.migrated;
           yield* db
@@ -151,6 +160,7 @@ export class ScepRepositoryLive extends ScepRepository {
               ),
             );
         }
+
         return opened.privateKeyJwk;
       });
 
@@ -162,8 +172,10 @@ export class ScepRepositoryLive extends ScepRepository {
             .from(schema.scepCa)
             .where(eq(schema.scepCa.id, 1))
             .limit(1);
+
           if (!row) return null;
           const privateKeyJwk = yield* loadCaPrivateKey(row.privateKeyJwk);
+
           return {
             certPem: row.certPem,
             privateKeyJwk,
@@ -179,6 +191,7 @@ export class ScepRepositoryLive extends ScepRepository {
                 ? new ScepError({ message: cause.message })
                 : new ScepError({ message: "Failed to encrypt the SCEP CA private key" }),
           });
+
           yield* db
             .insert(schema.scepCa)
             .values({
@@ -210,6 +223,7 @@ export class ScepRepositoryLive extends ScepRepository {
               notAfter: certificate.notAfter,
               createdAt: new Date(),
             });
+
             return;
           }
 
@@ -218,6 +232,7 @@ export class ScepRepositoryLive extends ScepRepository {
           // overwriting another tenant/device would make its renewals
           // authenticate as the wrong identity.
           const sameDevice = (existing.deviceId ?? null) === (certificate.deviceId ?? null);
+
           if (existing.organizationId !== certificate.organizationId || !sameDevice) {
             return yield* Effect.fail(
               new ScepError({
@@ -226,6 +241,7 @@ export class ScepRepositoryLive extends ScepRepository {
               }),
             );
           }
+
           yield* db
             .update(schema.scepIssuedCertificate)
             .set({
@@ -255,7 +271,9 @@ export class ScepRepositoryLive extends ScepRepository {
                 (cause) => new ScepError({ message: "Failed to read certificate", cause }),
               ),
             );
+
           if (!row) return null;
+
           // Revocation is checked before expiry so operators get an actionable
           // log line ("revoked") instead of a generic "unknown or expired".
           if (row.revokedAt) {
@@ -265,12 +283,14 @@ export class ScepRepositoryLive extends ScepRepository {
               }),
             );
           }
+
           if (row.deviceId) {
             // New rows store the internal `device.id`; legacy Windows rows
             // store the DeviceID (`device.dmIdentifier`). Accept both.
             const device = yield* findDeviceForCertificate(row.organizationId, row.deviceId).pipe(
               Effect.mapError(databaseError("Failed to read device")),
             );
+
             if (!device || device.status !== "enrolled") {
               return yield* Effect.fail(
                 new ScepError({
@@ -280,6 +300,7 @@ export class ScepRepositoryLive extends ScepRepository {
               );
             }
           }
+
           return {
             serial: row.serial,
             organizationId: row.organizationId,
@@ -300,6 +321,7 @@ export class ScepRepositoryLive extends ScepRepository {
     ScepRepository,
     Effect.gen(function* () {
       const db = yield* Db;
+
       return ScepRepositoryLive.make(db);
     }),
   );
@@ -311,6 +333,7 @@ export class ScepRepositoryLive extends ScepRepository {
       ScepRepository,
       Effect.gen(function* () {
         const db = yield* Db;
+
         return ScepRepositoryLive.make(db, options);
       }),
     );

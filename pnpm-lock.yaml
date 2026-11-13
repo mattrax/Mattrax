@@ -109,6 +109,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
+      '@oxlint/plugins':
+        specifier: 1.91.0
+        version: 1.91.0
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.65.0
@@ -118,6 +121,9 @@ importers:
       '@rspress/plugin-llms':
         specifier: 'catalog:'
         version: 2.1.2(@rspress/core@2.1.2(@rspack/core@2.3.2(@swc/helpers@0.5.24))(core-js@3.51.0)(micromark-util-types@2.0.3)(micromark@4.0.3))
+      oxlint:
+        specifier: 1.91.0
+        version: 1.91.0(oxlint-tsgolint@7.0.2005)(vite-plus@1.5.0(@types/node@26.6.6)(@vitest/ui@5.1.0(vitest@5.1.0))(esbuild@0.28.2)(jiti@2.7.0)(msw@2.14.6(@types/node@26.6.6)(typescript@7.0.2))(playwright@1.65.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.8.3))
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

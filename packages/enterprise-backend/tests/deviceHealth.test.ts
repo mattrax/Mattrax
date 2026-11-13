@@ -17,6 +17,7 @@ describe("deriveDeviceHealth", () => {
       lastSeenAt: daysAgo(1),
       now,
     });
+
     expect(health.level).toBe("healthy");
     expect(health.stale).toBe(false);
     expect(health.reasons).toEqual([]);
@@ -29,6 +30,7 @@ describe("deriveDeviceHealth", () => {
       lastSeenAt: daysAgo(DEVICE_STALE_AFTER_DAYS + 0.1),
       now,
     });
+
     expect(stale.level).toBe("attention");
     expect(stale.stale).toBe(true);
     expect(stale.reasons).toContainEqual(
@@ -40,6 +42,7 @@ describe("deriveDeviceHealth", () => {
       lastSeenAt: daysAgo(DEVICE_STALE_AFTER_DAYS),
       now,
     });
+
     expect(fresh.stale).toBe(false);
     expect(fresh.level).toBe("healthy");
   });
@@ -51,6 +54,7 @@ describe("deriveDeviceHealth", () => {
       now,
       staleAfterDays: 1,
     });
+
     expect(health.stale).toBe(true);
     expect(health.reasons.map((reason) => reason.code)).toContain("stale");
   });
@@ -61,6 +65,7 @@ describe("deriveDeviceHealth", () => {
       lastSeenAt: daysAgo(1),
       now,
     });
+
     expect(health.level).toBe("critical");
     expect(health.reasons[0]).toMatchObject({
       code: "enrollment_unenrolled",
@@ -90,6 +95,7 @@ describe("deriveDeviceHealth", () => {
         },
       ],
     });
+
     expect(health.level).toBe("attention");
     expect(health.reasons).toContainEqual(
       expect.objectContaining({
@@ -114,6 +120,7 @@ describe("deriveDeviceHealth", () => {
         },
       ],
     });
+
     expect(inactiveConfiguration.reasons.map((reason) => reason.code)).toContain(
       "declaration_inactive",
     );
@@ -126,6 +133,7 @@ describe("deriveDeviceHealth", () => {
         { identifier: "asset-1", declarationType: "assets", valid: "valid", active: false },
       ],
     });
+
     expect(inactiveAsset.level).toBe("healthy");
   });
 
@@ -137,6 +145,7 @@ describe("deriveDeviceHealth", () => {
       diskTotal: "100000",
       diskUsed: "92000",
     });
+
     expect(warning.level).toBe("attention");
     expect(warning.reasons.map((reason) => reason.code)).toContain("disk_low");
 
@@ -147,6 +156,7 @@ describe("deriveDeviceHealth", () => {
       diskTotal: 100000,
       diskUsed: 99000,
     });
+
     expect(critical.level).toBe("critical");
     expect(critical.reasons.map((reason) => reason.code)).toContain("disk_critical");
   });
@@ -161,6 +171,7 @@ describe("deriveDeviceHealth", () => {
       osEdition: "macOS",
       fileVaultEnabled: false,
     });
+
     expect(mac.level).toBe("attention");
     expect(mac.reasons).toContainEqual(
       expect.objectContaining({ code: "filevault_disabled", severity: "warning" }),
@@ -175,6 +186,7 @@ describe("deriveDeviceHealth", () => {
       osEdition: "iOS",
       fileVaultEnabled: false,
     });
+
     expect(ios.level).toBe("healthy");
 
     const encrypted = deriveDeviceHealth({
@@ -186,6 +198,7 @@ describe("deriveDeviceHealth", () => {
       osEdition: "macOS",
       fileVaultEnabled: true,
     });
+
     expect(encrypted.level).toBe("healthy");
   });
 
@@ -199,6 +212,7 @@ describe("deriveDeviceHealth", () => {
       osEdition: "macOS",
       batteryHealth: "Service Recommended",
     });
+
     expect(service.level).toBe("attention");
     expect(service.reasons).toContainEqual(
       expect.objectContaining({ code: "battery_service", severity: "warning" }),
@@ -211,6 +225,7 @@ describe("deriveDeviceHealth", () => {
       proto: "apple",
       batteryHealth: "Good",
     });
+
     expect(good.level).toBe("healthy");
   });
 
@@ -236,12 +251,14 @@ describe("countDeviceHealth", () => {
   it("aggregates levels and counts stale devices separately", () => {
     const health = (status: string, lastSeenAt: Date) =>
       deriveDeviceHealth({ status, lastSeenAt, now });
+
     const counts = countDeviceHealth([
       health("enrolled", daysAgo(1)),
       health("enrolled", daysAgo(30)),
       health("enrolling", daysAgo(1)),
       health("unenrolled", daysAgo(1)),
     ]);
+
     expect(counts).toEqual({
       total: 4,
       healthy: 1,
@@ -270,6 +287,7 @@ describe("groupDeviceHealthReasons", () => {
   it("groups stable rule codes and counts the devices they flag", () => {
     const health = (input: Parameters<typeof deriveDeviceHealth>[0]) =>
       deriveDeviceHealth({ now, ...input });
+
     const groups = groupDeviceHealthReasons([
       health({ status: "enrolled", lastSeenAt: daysAgo(1) }),
       health({ status: "enrolled", lastSeenAt: daysAgo(30) }),
@@ -281,6 +299,7 @@ describe("groupDeviceHealthReasons", () => {
         diskUsed: 98,
       }),
     ]);
+
     expect(groups).toEqual([
       { code: "disk_critical", label: "Storage full", severity: "critical", count: 1 },
       { code: "enrollment_unenrolled", label: "Unenrolled", severity: "critical", count: 1 },

@@ -35,11 +35,13 @@ test.describe("MCP", () => {
         redirect_uris: ["http://localhost:7777/callback"],
       },
     });
+
     expect(registration.status()).toBe(201);
     const client = (await registration.json()) as { client_id: string };
 
     const verifier = base64Url(randomBytes(32));
     const challenge = base64Url(createHash("sha256").update(verifier).digest());
+
     const authorize = await page.request.post("/api/oauth/authorize", {
       form: {
         response_type: "code",
@@ -53,6 +55,7 @@ test.describe("MCP", () => {
       },
       maxRedirects: 0,
     });
+
     expect(authorize.status()).toBe(302);
     const location = new URL(authorize.headers()["location"]!);
     expect(location.searchParams.get("state")).toBe("e2e");
@@ -67,6 +70,7 @@ test.describe("MCP", () => {
         code_verifier: verifier,
       },
     });
+
     expect(tokenResponse.status()).toBe(200);
     const tokens = (await tokenResponse.json()) as { access_token: string };
 
@@ -82,6 +86,7 @@ test.describe("MCP", () => {
       headers: { ...headers, authorization: "" },
       data: { jsonrpc: "2.0", id: 1, method: "tools/list", params: mcpMeta },
     });
+
     expect(unauthenticated.status()).toBe(401);
     expect(unauthenticated.headers()["www-authenticate"]).toContain("resource_metadata=");
 
@@ -89,10 +94,13 @@ test.describe("MCP", () => {
       headers,
       data: { jsonrpc: "2.0", id: 2, method: "tools/list", params: mcpMeta },
     });
+
     expect(list.status()).toBe(200);
+
     const listed = (await list.json()) as {
       result: { tools: Array<{ name: string }> };
     };
+
     expect(listed.result.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["list_tenants", "query_data", "list_devices", "patch_device"]),
     );
@@ -118,10 +126,13 @@ test.describe("MCP", () => {
         },
       },
     });
+
     expect(query.status()).toBe(200);
+
     const result = (await query.json()) as {
       result: { structuredContent: { total: number } };
     };
+
     expect(result.result.structuredContent.total).toBe(0);
 
     const devices = await page.request.post("/mcp", {
@@ -141,10 +152,13 @@ test.describe("MCP", () => {
         },
       },
     });
+
     expect(devices.status()).toBe(200);
+
     const devicesResult = (await devices.json()) as {
       result: { structuredContent: { status: number; body: { rows: unknown[] } } };
     };
+
     expect(devicesResult.result.structuredContent.status).toBe(200);
     expect(Array.isArray(devicesResult.result.structuredContent.body.rows)).toBe(true);
 
@@ -156,6 +170,7 @@ test.describe("MCP", () => {
         lastAction: string | null;
       }>;
     }>(page, "/api/v1/account/mcp-connections");
+
     const connection = connections.connections.find((item) => item.clientName === "E2E Agent");
     expect(connection).toBeDefined();
     expect(connection!.requestCount).toBeGreaterThan(0);
@@ -168,16 +183,19 @@ test.describe("MCP", () => {
     await api(page, `/api/v1/account/mcp-connections/${connection!.id}`, {
       method: "DELETE",
     });
+
     const afterRevoke = await page.request.post("/mcp", {
       headers,
       data: { jsonrpc: "2.0", id: 4, method: "tools/list", params: mcpMeta },
     });
+
     expect(afterRevoke.status()).toBe(401);
 
     const audit = await api<{
       entries?: Array<{ action: string; metadata?: unknown }>;
       rows?: Array<{ action: string; metadata?: unknown }>;
     }>(page, `/api/v1/tenants/${tenant.id}/audit-log?limit=20`);
+
     const entries = audit.entries ?? audit.rows ?? [];
     const toolAudit = entries.find((entry) => entry.action === "mcp.tool_called");
     expect(toolAudit).toBeDefined();
@@ -187,6 +205,7 @@ test.describe("MCP", () => {
   test("authenticates with an account API key and attributes actions to it", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "MCP Key Tenant");
     const grant = await stepUpGrant(page, "api-token-create");
+
     const created = await page.request.post("/api/v1/account/api-tokens", {
       data: { name: "Agent key", scopes: ["read", "write"] },
       headers: {
@@ -195,6 +214,7 @@ test.describe("MCP", () => {
         "x-mattrax-step-up": grant,
       },
     });
+
     expect(created.status()).toBe(200);
     const { token } = (await created.json()) as { token: string };
 
@@ -206,6 +226,7 @@ test.describe("MCP", () => {
       "mcp-method": "tools/call",
       "mcp-name": "list_tenants",
     };
+
     const call = await page.request.post("/mcp", {
       headers,
       data: {
@@ -215,9 +236,11 @@ test.describe("MCP", () => {
         params: { name: "list_tenants", arguments: {}, ...mcpMeta },
       },
     });
+
     expect(call.status()).toBe(200);
 
     const queryHeaders = { ...headers, "mcp-name": "query_data" };
+
     const query = await page.request.post("/mcp", {
       headers: queryHeaders,
       data: {
@@ -231,11 +254,13 @@ test.describe("MCP", () => {
         },
       },
     });
+
     expect(query.status()).toBe(200);
 
     const audit = await api<{
       entries: Array<{ action: string; metadata?: unknown }>;
     }>(page, `/api/v1/tenants/${tenant.id}/audit-log?limit=20`);
+
     const entry = audit.entries.find((item) => item.action === "mcp.tool_called");
     expect(entry).toBeDefined();
     expect(JSON.stringify(entry!.metadata)).toContain('"type":"api_token"');

@@ -18,11 +18,13 @@ type Captured = Parameters<AnalyticsClient["capture"]>[0];
 
 const fakeClient = () => {
   const events: Captured[] = [];
+
   const exceptions: Array<{
     error: unknown;
     distinctId?: string;
     properties?: Record<string, unknown>;
   }> = [];
+
   const client: AnalyticsClient = {
     capture: (message) => {
       events.push(message);
@@ -32,6 +34,7 @@ const fakeClient = () => {
     },
     flush: vi.fn(async () => {}),
   };
+
   return { client, events, exceptions };
 };
 
@@ -57,6 +60,7 @@ const analytics = (client: AnalyticsClient, overrides: Record<string, unknown> =
 describe("PostHog analytics", () => {
   it("is disabled without a key and never touches the client", async () => {
     const fake = fakeClient();
+
     const session = createRequestAnalytics({
       client: undefined,
       requestId: "req-1",
@@ -64,6 +68,7 @@ describe("PostHog analytics", () => {
       path: "/api/v1/me",
       headers: {},
     });
+
     expect(session.enabled).toBe(false);
     session.identify({ userId: "user-1" });
     session.capture("should_not_send");
@@ -122,10 +127,12 @@ describe("PostHog analytics", () => {
   it("redacts error messages and caps error events per isolate", () => {
     const fake = fakeClient();
     let clock = Date.parse("2026-11-11T03:17:00.000Z");
+
     const session = analytics(fake.client, {
       now: () => clock,
       maxErrorsPerMinute: 1,
     });
+
     session.captureError(new Error(`failed for owner@example.com token ${"z".repeat(40)}`), {
       status: 500,
       error_tag: "EnterpriseInternal",
@@ -157,9 +164,11 @@ describe("PostHog analytics", () => {
       throw new Error("network down");
     });
     const warnings: string[] = [];
+
     const failingSession = analytics(failing.client, {
       warn: (message: string) => warnings.push(message),
     });
+
     failingSession.capture("test_event");
     await failingSession.flush();
     expect(warnings[0]).toContain("PostHog flush failed");
@@ -170,6 +179,7 @@ describe("PostHog analytics", () => {
       "x-posthog-distinct-id": "anon-1",
       "x-posthog-session-id": sessionId,
     });
+
     expect(readClientDistinctId(headers)).toBe("anon-1");
     expect(readClientSessionId(headers)).toBe(sessionId);
     expect(
@@ -206,10 +216,12 @@ describe("PostHog analytics", () => {
       JSON.stringify({ _tag: "Success", value: { _tag: "Authenticated" } }),
       { headers: { "content-type": "application/json" } },
     );
+
     const pending = new Response(
       JSON.stringify({ _tag: "Success", value: { _tag: "PendingAuthentication" } }),
       { headers: { "content-type": "application/json" } },
     );
+
     await expect(authOutcomeFromResponse(authenticated)).resolves.toBe("authenticated");
     await expect(authOutcomeFromResponse(pending)).resolves.toBe("pending");
     await expect(authOutcomeFromResponse(new Response("no"))).resolves.toBeUndefined();

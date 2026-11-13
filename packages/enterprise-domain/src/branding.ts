@@ -7,6 +7,7 @@
 
 export const DEFAULT_BRAND_NAME = "Mattrax";
 export const DEFAULT_SUPPORT_EMAIL = "hello@mattrax.app";
+
 /** Stone-900, the colour used by the default dashboard chrome. */
 export const DEFAULT_BRAND_COLOR = "#1c1917";
 
@@ -32,6 +33,7 @@ export type ResolvedTenantBranding = {
 
 const nonEmpty = (value: string | null | undefined): string | undefined => {
   const trimmed = value?.trim();
+
   return trimmed ? trimmed : undefined;
 };
 
@@ -40,13 +42,16 @@ export const isBrandColor = (value: string): boolean => HEX_COLOR.test(value.tri
 /** Expand `#rgb` to `#rrggbb` and lowercase so stored values are canonical. */
 export const normalizeBrandColor = (value: string): string | null => {
   const trimmed = value.trim();
+
   if (!HEX_COLOR.test(trimmed)) return null;
+
   if (trimmed.length === 4)
     return `#${trimmed
       .slice(1)
       .split("")
       .map((char) => `${char}${char}`)
       .join("")}`.toLowerCase();
+
   return trimmed.toLowerCase();
 };
 
@@ -58,6 +63,7 @@ export const isSupportEmail = (value: string): boolean => EMAIL.test(value.trim(
  */
 export const isLogoUrl = (value: string): boolean => {
   const trimmed = value.trim();
+
   return (
     HTTP_URL.test(trimmed) ||
     LOGO_DATA_URL.test(trimmed) ||
@@ -81,17 +87,22 @@ export const validateTenantBranding = (input: {
 }): Partial<Record<"displayName" | "logo" | "supportEmail" | "brandColor", string>> => {
   const errors: Partial<Record<"displayName" | "logo" | "supportEmail" | "brandColor", string>> =
     {};
+
   if (input.displayName && input.displayName.trim().length > 255)
     errors.displayName = "Display name must be 255 characters or fewer";
+
   if (input.logo?.trim() && !isLogoUrl(input.logo))
     errors.logo = "Logo must be an http(s) URL, a data: image URL, or an absolute path";
+
   if (input.supportEmail?.trim()) {
     if (!isSupportEmail(input.supportEmail))
       errors.supportEmail = "Enter a valid support email address";
     else if (input.supportEmail.trim().length > 320)
       errors.supportEmail = "Support email must be 320 characters or fewer";
   }
+
   if (input.brandColor?.trim() && !isBrandColor(input.brandColor))
     errors.brandColor = "Brand colour must be a hex value like #1c1917";
+
   return errors;
 };

@@ -7,7 +7,7 @@ import { provisionEmailCredential, signToken, verifyToken } from "@mattrax/enter
 const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {
     status,
-    headers: { "cache-control": "no-store", ...(headers ?? {}) },
+    headers: { "cache-control": "no-store", ...headers },
   });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
@@ -21,6 +21,7 @@ const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: 
 /** Only internal, absolute-path destinations can be resumed after sign-in. */
 const safeReturnTo = (value: string | null | undefined) => {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+
   return value.slice(0, 2048);
 };
 
@@ -43,22 +44,28 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       const returnTo = safeReturnTo(url.searchParams.get("returnTo"));
       const db = yield* Db;
       const emailDomain = email?.slice(email.lastIndexOf("@") + 1).toLowerCase();
+
       if (!tenantId && emailDomain) {
         // Verified Entra domains route users before they have a Mattrax
         // account. Never route on an unverified/manual domain.
         const mapping = yield* db.query.ssoDomain.findFirst({
           where: { domain: emailDomain, isVerified: true, source: "entra" },
         });
+
         if (mapping) tenantId = mapping.organizationId;
       }
+
       if (!tenantId && email) {
         const user = yield* db.query.user.findFirst({ where: { email } });
+
         if (user) {
           const memberships = yield* db.query.member.findMany({ where: { userId: user.id } });
+
           for (const membership of memberships) {
             const candidate = yield* db.query.ssoConfig.findFirst({
               where: { organizationId: membership.organizationId, enabled: true },
             });
+
             if (candidate?.azureTenantId) {
               tenantId = membership.organizationId;
               break;
@@ -66,18 +73,24 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           }
         }
       }
+
       if (!tenantId) return json({ error: "No SSO tenant found for this email" }, 404);
+
       const config = yield* db.query.ssoConfig.findFirst({
         where: { organizationId: tenantId },
       });
+
       if (!config?.enabled || !config.azureTenantId)
         return json({ error: "SSO is not enabled for this tenant" }, 404);
+
       // The sign-in screen names the organisation so users can recognise the
       // account before leaving Mattrax.
       const organization = yield* db.query.organization.findFirst({
         where: { id: tenantId },
       });
+
       const organizationName = organization?.name ?? null;
+
       // Discovery is read-only: it must not mint a state token or overwrite
       // the cookie that a redirect already in flight depends on.
       if (url.searchParams.get("discover") === "1")
@@ -86,6 +99,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           organization: organizationName ? { name: organizationName } : null,
         });
       const nonce = crypto.randomUUID();
+
       const state = yield* signToken(options.authSecret!, {
         sub: tenantId,
         email: "sso-state",
@@ -94,9 +108,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         nonce,
         ...(returnTo ? { returnTo } : {}),
       });
+
       const authorize = new URL(
         `https://login.microsoftonline.com/${encodeURIComponent(config.azureTenantId)}/oauth2/v2.0/authorize`,
       );
+
       authorize.searchParams.set("client_id", options.clientId!);
       authorize.searchParams.set("response_type", "code");
       authorize.searchParams.set("response_mode", "query");
@@ -104,8 +120,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       authorize.searchParams.set("scope", "openid profile email");
       authorize.searchParams.set("state", state);
       authorize.searchParams.set("nonce", nonce);
+
       if (email) authorize.searchParams.set("login_hint", email);
+
       if (emailDomain) authorize.searchParams.set("domain_hint", emailDomain);
+
       return json(
         {
           url: authorize.toString(),
@@ -130,9 +149,12 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       const url = new URL(request.url, "http://localhost");
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
+
       if (!code || !state) return json({ error: "Missing OIDC code or state" }, 400);
+
       if (request.cookies["__Host-sso_state"] !== state)
         return json({ error: "SSO state does not match this browser" }, 400);
+
       const verified = yield* verifyToken(options.authSecret!, state).pipe(
         Effect.map((payload) => ({ ok: true as const, payload })),
         Effect.catchCause((cause) =>
@@ -141,20 +163,25 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           ),
         ),
       );
+
       if (!verified.ok) return json({ error: "SSO state is invalid" }, 400);
       const payload = verified.payload;
+
       if (payload.exp <= Date.now() || payload.purpose !== "sso-state")
         return json({ error: "SSO state expired" }, 400);
       const tenantId = payload.sub;
 
       const db = yield* Db;
+
       const config = yield* db.query.ssoConfig.findFirst({
         where: { organizationId: tenantId },
       });
+
       if (!config?.enabled || !config.azureTenantId)
         return json({ error: "SSO is not enabled for this tenant" }, 404);
 
       const oidc = yield* AzureOidc;
+
       const discovery = yield* oidc
         .discovery(config.azureTenantId)
         .pipe(
@@ -162,7 +189,9 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
             Effect.logError("Azure SSO discovery failed", cause).pipe(Effect.as(null)),
           ),
         );
+
       if (!discovery) return json({ error: "Could not contact the identity provider" }, 502);
+
       if (!discovery.token_endpoint)
         return json({ error: "Identity provider has no token endpoint" }, 502);
 
@@ -186,13 +215,17 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           Effect.logError("Azure SSO token exchange request failed", cause).pipe(Effect.as(null)),
         ),
       );
+
       if (!tokenResponse) return json({ error: "Could not contact the identity provider" }, 502);
+
       if (!tokenResponse.ok)
         return json({ error: "Identity provider rejected the token exchange" }, 502);
+
       const tokens = (yield* Effect.tryPromise({
         try: () => tokenResponse.json(),
         catch: () => null,
       })) as { id_token?: string } | null;
+
       if (!tokens?.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
 
       const claims = yield* oidc
@@ -205,12 +238,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
             Effect.logWarning("Azure SSO ID token validation failed", cause).pipe(Effect.as(null)),
           ),
         );
+
       if (!claims) return json({ error: "Identity provider token was rejected" }, 400);
+
       if (claims.nonce !== payload.nonce)
         return json({ error: "Identity provider nonce did not match" }, 400);
       const email = safeEmail(claims);
+
       if (!email) return json({ error: "Identity provider did not return an email" }, 400);
       const objectId = claims.oid ?? claims.sub;
+
       if (!objectId) return json({ error: "Identity provider did not return an object id" }, 400);
 
       const identity = yield* db.query.ssoIdentity.findFirst({
@@ -223,9 +260,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (identity) {
         if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
+
         const member = yield* db.query.member.findFirst({
           where: { userId: user.id, organizationId: tenantId },
         });
+
         if (!member) return json({ error: "You are not a member of this tenant" }, 403);
       } else if (user) {
         // Do not auto-link an existing account by email when it belongs to
@@ -233,7 +272,9 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         // multi-tenant user. Such users must link SSO explicitly.
         const memberships = yield* db.query.member.findMany({ where: { userId: user.id } });
         const member = memberships.find((item) => item.organizationId === tenantId);
+
         if (!member) return json({ error: "You are not a member of this tenant" }, 403);
+
         if (memberships.length > 1)
           return json(
             { error: "This account belongs to multiple tenants; ask an administrator to link SSO" },
@@ -278,6 +319,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
         user = yield* db.query.user.findFirst({ where: { id: userId } });
       }
+
       if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
       yield* provisionEmailCredential(db, "effect-auth/email", user.id);
 
@@ -288,10 +330,13 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         purpose: "sso-assertion",
         tenantId,
       });
+
       const afterSignIn = safeReturnTo(payload.returnTo);
+
       const location = `${options.origin}/sso/complete?token=${encodeURIComponent(assertion)}${
         afterSignIn ? `&returnTo=${encodeURIComponent(afterSignIn)}` : ""
       }`;
+
       return HttpServerResponse.empty({
         status: 302,
         headers: {

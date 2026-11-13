@@ -60,16 +60,21 @@ export default function ApplicationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
   const [conditions, setConditions] = createSignal<EntityCondition[]>(
     parseEntityQuery(param(searchParams.query), fields),
   );
+
   const updateConditions = (next: EntityCondition[]) => {
     setConditions(next);
     setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
   };
+
   const apps = useQuery(() => enterpriseQueries.applications(params.tenantId));
+
   const rows = () =>
     (apps.data?.applications ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
+
   const assignedCount = () =>
     rows().filter((row) => (row.groupsCount ?? 0) + (row.devicesCount ?? 0) > 0).length;
 
@@ -181,6 +186,7 @@ export default function ApplicationsPage() {
             cell: (row) => {
               const groups = row.groupsCount ?? 0;
               const devices = row.devicesCount ?? 0;
+
               return (
                 <Show
                   when={groups + devices > 0}

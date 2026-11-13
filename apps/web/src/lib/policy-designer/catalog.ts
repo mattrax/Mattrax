@@ -1,4 +1,5 @@
 export type PlatformId = "apple" | "android" | "windows";
+
 export type PropertyType =
   | "string"
   | "integer"
@@ -109,6 +110,7 @@ export type SearchIndex = {
 const fetchJson = <T>(url: string, label: string): Promise<T> =>
   fetch(url).then((response) => {
     if (!response.ok) throw new Error(`Could not load ${label} (${response.status})`);
+
     return response.json() as Promise<T>;
   });
 
@@ -126,6 +128,7 @@ export const loadManifest = () => {
     manifestPromise = undefined;
     throw error;
   });
+
   return manifestPromise;
 };
 
@@ -140,6 +143,7 @@ export const loadPlatform = (platform: PlatformId) => {
       new Error("Windows settings load incrementally; use loadPlatformIndex and loadCollection."),
     );
   let promise = platformPromises.get(platform);
+
   if (!promise) {
     promise = fetchJson<PlatformData>(`/catalog/${platform}.json`, `${platform} settings`).catch(
       (error) => {
@@ -149,6 +153,7 @@ export const loadPlatform = (platform: PlatformId) => {
     );
     platformPromises.set(platform, promise);
   }
+
   return promise;
 };
 
@@ -174,6 +179,7 @@ const summarizePlatform = (data: PlatformData): PlatformIndex => ({
 
 export const loadPlatformIndex = (platform: PlatformId) => {
   let promise = indexPromises.get(platform);
+
   if (!promise) {
     promise = (
       platform === "windows"
@@ -192,6 +198,7 @@ export const loadPlatformIndex = (platform: PlatformId) => {
     });
     indexPromises.set(platform, promise);
   }
+
   return promise;
 };
 
@@ -199,12 +206,14 @@ export const loadPlatformIndex = (platform: PlatformId) => {
 export const collectionFileKey = (collectionId: string) => {
   if (!/^[A-Za-z0-9._/-]+$/.test(collectionId))
     throw new Error(`Invalid collection id ${JSON.stringify(collectionId)}`);
+
   return collectionId.replaceAll("/", "--");
 };
 
 export const loadCollection = (platform: PlatformId, collectionId: string) => {
   const cacheKey = `${platform}:${collectionId}`;
   let promise = collectionPromises.get(cacheKey);
+
   if (!promise) {
     promise = (
       platform === "windows"
@@ -214,7 +223,9 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
           )
         : loadPlatform(platform).then((data) => {
             const collection = data.collections.find((item) => item.id === collectionId);
+
             if (!collection) throw new Error(`The catalogue does not include ${collectionId}`);
+
             return collection;
           })
     ).catch((error) => {
@@ -223,6 +234,7 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
     });
     collectionPromises.set(cacheKey, promise);
   }
+
   return promise;
 };
 
@@ -245,6 +257,7 @@ const buildSearchIndex = (data: PlatformData): SearchIndex => ({
 
 export const loadSearchIndex = (platform: PlatformId) => {
   let promise = searchIndexPromises.get(platform);
+
   if (!promise) {
     promise = (
       platform === "windows"
@@ -256,6 +269,7 @@ export const loadSearchIndex = (platform: PlatformId) => {
     });
     searchIndexPromises.set(platform, promise);
   }
+
   return promise;
 };
 
@@ -264,18 +278,24 @@ export const searchCollections = (
   query: string,
 ): CollectionSummary[] => {
   const term = query.trim().toLowerCase();
+
   if (!term) return collections;
   const tokens = term.split(/\s+/).filter(Boolean);
+
   return collections
     .map((collection) => {
       const text =
         `${collection.name} ${collection.identifier} ${collection.group ?? ""}`.toLowerCase();
+
       let score = 0;
+
       for (const token of tokens) {
         const index = text.indexOf(token);
+
         if (index === -1) return null;
         score += index === 0 ? 3 : 1;
       }
+
       return { collection, score };
     })
     .filter((value): value is { collection: CollectionSummary; score: number } => Boolean(value))
@@ -291,15 +311,20 @@ export const searchCollections = (
 export const searchIndexProperties = (index: SearchIndex, query: string) => {
   const term = query.trim().toLowerCase();
   const results = new Map<string, Set<string>>();
+
   if (!term) return results;
   const tokens = term.split(/\s+/).filter(Boolean);
+
   for (const [collectionId, properties] of Object.entries(index.collections)) {
     const matches = new Set<string>();
+
     for (const [key, text] of properties) {
       if (tokens.every((token) => text.includes(token))) matches.add(key);
     }
+
     if (matches.size > 0) results.set(collectionId, matches);
   }
+
   return results;
 };
 
@@ -307,6 +332,7 @@ export const resetPlatformCache = (platform: PlatformId) => {
   platformPromises.delete(platform);
   indexPromises.delete(platform);
   searchIndexPromises.delete(platform);
+
   for (const key of collectionPromises.keys())
     if (key.startsWith(`${platform}:`)) collectionPromises.delete(key);
 };
@@ -319,11 +345,14 @@ export const resetPlatformCache = (platform: PlatformId) => {
  */
 export const collectionProperties = (collection: { properties: Property[] }): Property[] => {
   const seen = new Set<string>();
+
   return collection.properties.filter((property) => {
     if (property.address && /[{}]/.test(property.address)) return false;
     const identity = property.address ?? property.key;
+
     if (seen.has(identity)) return false;
     seen.add(identity);
+
     return true;
   });
 };
@@ -338,7 +367,9 @@ export const searchableText = (property: Property) =>
 export const searchProperties = (collection: Collection, query: string): Property[] => {
   const term = query.trim().toLowerCase();
   const properties = collectionProperties(collection);
+
   if (!term) return properties;
+
   return properties.filter((property) => searchableText(property).includes(term));
 };
 

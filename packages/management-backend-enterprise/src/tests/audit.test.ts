@@ -52,7 +52,9 @@ const setup = () => {
     ],
     [tableName(schema.device)]: [device("device-1", "org-1"), device("device-2", "org-2")],
   });
+
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+
   return { db, backend };
 };
 
@@ -96,6 +98,7 @@ describe("system audit device lifecycle", () => {
       topic: "com.apple.mgmt.External.acme",
       channel: "device" as const,
     };
+
     await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
     expect(auditRows(db)).toHaveLength(1);
     expect(auditRows(db)[0]).toMatchObject({
@@ -146,6 +149,7 @@ describe("system audit device lifecycle", () => {
       status: "Error",
       errorDetail: "secret-looking device detail",
     };
+
     await run(backend.appleDeviceEvent(scope("udid-device-1"), failure));
     await run(backend.appleDeviceEvent(scope("udid-device-1"), failure));
 
@@ -160,10 +164,12 @@ describe("system audit device lifecycle", () => {
 
   it("records declaration failures only when the state changes", async () => {
     const { db, backend } = setup();
+
     // Compliance transitions also produce audit rows, so assertions here stay
     // scoped to declaration failures.
     const declarationRows = () =>
       auditRows(db).filter((row) => row.action === "device.declaration_invalid");
+
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
     expect(declarationRows()).toHaveLength(1);

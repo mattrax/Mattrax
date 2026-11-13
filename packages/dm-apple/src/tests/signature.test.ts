@@ -95,6 +95,7 @@ const createCertificate = async (options: {
       extnValue: new pkijs.BasicConstraints({ cA: options.isCa ?? false }).toSchema().toBER(false),
     }),
   ];
+
   if (options.clientAuthEku) {
     extensions.push(
       new pkijs.Extension({
@@ -106,16 +107,19 @@ const createCertificate = async (options: {
       }),
     );
   }
+
   cert.extensions = extensions;
 
   await cert.subjectPublicKeyInfo.importKey(options.publicKey);
   await cert.sign(options.signingKey, "SHA-256");
+
   return cert;
 };
 
 const createCa = async (name: string): Promise<TestCertificate> => {
   const keyPair = await generateKeyPair();
   const subject = distinguishedName([["CN", name]]);
+
   const cert = await createCertificate({
     subject,
     issuer: subject,
@@ -125,6 +129,7 @@ const createCa = async (name: string): Promise<TestCertificate> => {
     notBefore: new Date(Date.now() - DAY),
     notAfter: new Date(Date.now() + 10 * 365 * DAY),
   });
+
   return { cert, keyPair, pem: pemEncode("CERTIFICATE", cert.toSchema().toBER(false)) };
 };
 
@@ -137,11 +142,13 @@ const createLeaf = async (options: {
   notAfter?: Date;
 }): Promise<TestCertificate> => {
   const keyPair = await generateKeyPair();
+
   const subject = distinguishedName([
     ["O", "Acme Inc"],
     ["OU", options.ou ?? "org-123"],
     ["CN", options.cn ?? "Device 1"],
   ]);
+
   const cert = await createCertificate({
     subject,
     issuer: options.ca ? options.ca.cert.subject : subject,
@@ -151,6 +158,7 @@ const createLeaf = async (options: {
     notBefore: options.notBefore,
     notAfter: options.notAfter,
   });
+
   return { cert, keyPair, pem: pemEncode("CERTIFICATE", cert.toSchema().toBER(false)) };
 };
 
@@ -232,6 +240,7 @@ const buildCms = async (options: {
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(true),
   });
+
   return new Uint8Array(contentInfo.toSchema().toBER(false));
 };
 
@@ -270,6 +279,7 @@ describe("verifyMdmSignature", () => {
     const ca = await createCa("Test CA");
     const leaf = await createLeaf({ ca });
     const payload = body();
+
     const signature = toBase64(
       await buildCms({ signers: [{ certificate: leaf }], body: payload, eContent: payload }),
     );
@@ -282,6 +292,7 @@ describe("verifyMdmSignature", () => {
   it("rejects a tampered body", async () => {
     const ca = await createCa("Test CA");
     const leaf = await createLeaf({ ca });
+
     const signature = toBase64(
       await buildCms({ signers: [{ certificate: leaf }], body: body("original") }),
     );
@@ -307,6 +318,7 @@ describe("verifyMdmSignature", () => {
     const ca = await createCa("Test CA");
     const selfSigned = await createLeaf({ ou: "org-123" });
     const payload = body();
+
     const signature = toBase64(
       await buildCms({ signers: [{ certificate: selfSigned }], body: payload }),
     );
@@ -321,6 +333,7 @@ describe("verifyMdmSignature", () => {
     const first = await createLeaf({ ca, cn: "Device 1" });
     const second = await createLeaf({ ca, cn: "Device 2" });
     const payload = body();
+
     const signature = toBase64(
       await buildCms({ signers: [{ certificate: first }, { certificate: second }], body: payload }),
     );
@@ -334,6 +347,7 @@ describe("verifyMdmSignature", () => {
     const ca = await createCa("Test CA");
     const leaf = await createLeaf({ ca });
     const payload = body("request-body");
+
     const signature = toBase64(
       await buildCms({
         signers: [{ certificate: leaf }],
@@ -361,11 +375,13 @@ describe("verifyMdmSignature", () => {
 
   it("rejects an expired signer certificate", async () => {
     const ca = await createCa("Test CA");
+
     const leaf = await createLeaf({
       ca,
       notBefore: new Date(Date.now() - 2 * 365 * DAY),
       notAfter: new Date(Date.now() - 365 * DAY),
     });
+
     const payload = body();
     const signature = toBase64(await buildCms({ signers: [{ certificate: leaf }], body: payload }));
 
@@ -455,6 +471,7 @@ describe("verifyScepPkcsReqSignature", () => {
   it("accepts a self-signed PKCSReq and returns its eContent", async () => {
     const bootstrap = await createLeaf({ ou: "bootstrap" });
     const eContent = body("enveloped-csr");
+
     const signature = await buildCms({
       signers: [{ certificate: bootstrap }],
       body: eContent,
@@ -471,6 +488,7 @@ describe("verifyScepPkcsReqSignature", () => {
     const ca = await createCa("SCEP CA");
     const leaf = await createLeaf({ ca });
     const eContent = body("renewal-csr");
+
     const signature = await buildCms({
       signers: [{ certificate: leaf }],
       body: eContent,

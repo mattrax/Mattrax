@@ -36,6 +36,7 @@ const makeFakeApns = () => {
     certPem?: string;
     privateKeyPem?: string;
   }> = [];
+
   const apns = makeApnsService({
     name: "fake",
     available: true,
@@ -44,6 +45,7 @@ const makeFakeApns = () => {
         pushes.push(input);
       }),
   });
+
   return { apns, pushes };
 };
 
@@ -55,9 +57,11 @@ const testCertificate = async (options: {
 }) => {
   const attribute = (type: string, value: string) =>
     new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
+
   const certificate = new pkijs.Certificate();
   certificate.version = 2;
   certificate.serialNumber = new asn1js.Integer({ value: 1 });
+
   const name = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [
       attribute("2.5.4.10", "Acme"),
@@ -66,6 +70,7 @@ const testCertificate = async (options: {
       attribute("0.9.2342.19200300.100.1.1", options.topic ?? "com.apple.mgmt.External.acme"),
     ],
   });
+
   certificate.issuer = name;
   certificate.subject = name;
   const now = Date.now();
@@ -73,6 +78,7 @@ const testCertificate = async (options: {
   certificate.notAfter.value = options.notAfter ?? new Date(now + 86_400_000);
   await certificate.subjectPublicKeyInfo.importKey(options.keyPair.publicKey);
   await certificate.sign(options.keyPair.privateKey, "SHA-256");
+
   return pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false));
 };
 
@@ -90,12 +96,14 @@ const makeCsr = async (commonName = "DESKTOP-TEST") => {
   });
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
+
   return arrayBufferToBase64(csr.toSchema().toBER(false));
 };
 
 const sealedJwk = async (secret = authSecret) => {
   const keys = await generateCaKeyPair();
   const jwk = await exportPrivateKeyJwk(keys.privateKey);
+
   return { keyPair: keys, jwk, encrypted: await sealSecret(secret, JSON.stringify(jwk)) };
 };
 
@@ -113,6 +121,7 @@ const makeContext = async (
 ) => {
   const db = overrides.db ?? makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -122,11 +131,13 @@ const makeContext = async (
     createdAt: now,
     updatedAt: now,
   };
+
   db.store.user.push(user);
 
   const auth = {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return headers.cookie
         ? Effect.succeed({ user, apiToken: overrides.apiToken })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -166,6 +177,7 @@ describe("enterprise service tenant flow", () => {
 
   it("creates an organization, owner member, and enrollment row", async () => {
     const { db, service, headers } = await makeContext();
+
     const result = await runEffect(
       service.createTenant(request(headers), {
         name: "Acme",
@@ -188,6 +200,7 @@ describe("enterprise service tenant flow", () => {
 
   it("includes tenant members in cross-entity search", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -195,6 +208,7 @@ describe("enterprise service tenant flow", () => {
     const found = await runEffect(
       service.search(request(headers), tenant.id, { q: "owner", limit: 10 }),
     );
+
     expect(found.rows).toContainEqual(
       expect.objectContaining({
         name: "Owner",
@@ -206,6 +220,7 @@ describe("enterprise service tenant flow", () => {
 
   it("creates shared dashboards and applies partial widget updates", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -216,18 +231,22 @@ describe("enterprise service tenant flow", () => {
         template: "overview",
       }),
     );
+
     const dashboard = await runEffect(
       service.getDashboard(request(headers), tenant.id, created.id),
     );
+
     expect(dashboard).toMatchObject({ name: "Ops", isDefault: true });
     expect(dashboard.widgets.length).toBeGreaterThan(0);
 
     const widget = dashboard.widgets[0];
+
     const patched = await runEffect(
       service.patchDashboardWidget(request(headers), tenant.id, created.id, widget.id, {
         title: "Renamed widget",
       }),
     );
+
     expect(patched.title).toBe("Renamed widget");
     // Omitted fields keep their previous values.
     expect(patched.x).toBe(widget.x);
@@ -238,9 +257,11 @@ describe("enterprise service tenant flow", () => {
         widgets: [{ id: widget.id, x: 2 }],
       }),
     );
+
     const afterLayout = await runEffect(
       service.getDashboard(request(headers), tenant.id, created.id),
     );
+
     const moved = afterLayout.widgets.find((item: { id: string }) => item.id === widget.id);
     expect(moved.x).toBe(2);
     expect(moved.y).toBe(widget.y);
@@ -251,12 +272,14 @@ describe("enterprise service tenant flow", () => {
         query: { all: [] },
       }),
     );
+
     expect(query.total).toBe(0);
     expect(query.buckets).toEqual([]);
 
     const second = await runEffect(
       service.createDashboard(request(headers), tenant.id, { name: "Second" }),
     );
+
     await runEffect(
       service.patchDashboard(request(headers), tenant.id, second.id, { isDefault: true }),
     );
@@ -277,6 +300,7 @@ describe("enterprise service tenant flow", () => {
 
   it("lists only tenants for the authenticated user", async () => {
     const { service, headers } = await makeContext();
+
     const owned = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -298,6 +322,7 @@ describe("enterprise service tenant flow", () => {
 
   it("stores tenant branding and applies fallbacks for unconfigured tenants", async () => {
     const { service, headers } = await makeContext();
+
     const branded = await runEffect(
       service.createTenant(request(headers), {
         name: "Acme",
@@ -308,6 +333,7 @@ describe("enterprise service tenant flow", () => {
         brandColor: "#2563EB",
       }),
     );
+
     const plain = await runEffect(
       service.createTenant(request(headers), { name: "Plain", slug: "plain" }),
     );
@@ -339,6 +365,7 @@ describe("enterprise service tenant flow", () => {
 
   it("validates and normalises tenant branding writes", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -384,9 +411,11 @@ describe("enterprise service tenant flow", () => {
 
   it("keeps branding scoped to its tenant", async () => {
     const { service, headers } = await makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), {
         name: "Second",
@@ -394,6 +423,7 @@ describe("enterprise service tenant flow", () => {
         displayName: "Second Brand",
       }),
     );
+
     await runEffect(
       service.patchTenant(request(headers), first.id, {
         displayName: "First Brand",
@@ -418,15 +448,18 @@ describe("enterprise service tenant flow", () => {
   it("records product analytics for identified tenant operations", async () => {
     const identified: any[] = [];
     const captured: Array<{ event: string; properties: any }> = [];
+
     const { service, headers } = await makeContext({
       analytics: {
         identify: (identity: any) => identified.push(identity),
         capture: (event: string, properties: any) => captured.push({ event, properties }),
       },
     });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     expect(identified).toContainEqual(
       expect.objectContaining({
         userId: "user-1",
@@ -478,9 +511,11 @@ describe("enterprise service tenant flow", () => {
 
   it("enforces tenant role access", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.member[0].role = "member";
 
     await expect(
@@ -498,9 +533,11 @@ describe("enterprise service tenant flow", () => {
 
   it("allows auditors to read but not write or delete", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.member[0].role = "auditor";
 
     await expect(runEffect(service.getTenant(request(headers), tenant.id))).resolves.toMatchObject({
@@ -517,15 +554,18 @@ describe("enterprise service tenant flow", () => {
 
   it("enforces custom role permissions and audits the effective role", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const role = await runEffect(
       service.createTenantRole(request(headers), tenant.id, {
         name: "Helpdesk",
         permissions: ["tenant.read", "devices.read"],
       }),
     );
+
     db.store.member[0].customRoleId = role.id;
 
     await expect(
@@ -545,9 +585,11 @@ describe("enterprise service tenant flow", () => {
     );
     db.store.member[0].customRoleId = role.id;
     await runEffect(service.patchTenant(request(headers), tenant.id, { name: "Allowed" }));
+
     const entry = db.store.audit_log.find(
       (item: any) => item.action === "tenant.updated" && item.targetId === tenant.id,
     );
+
     expect(entry?.metadata).toMatchObject({
       rbac: {
         permission: "tenant.write",
@@ -559,9 +601,11 @@ describe("enterprise service tenant flow", () => {
 
   it("accepts auditor invitations and role changes", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await runEffect(
       service.inviteTenantUser(request(headers), tenant.id, {
         email: "auditor@example.com",
@@ -597,9 +641,11 @@ describe("enterprise service tenant flow", () => {
     const first = await makeContext({
       apiToken: { tenantId: null, scopes: ["read"] },
     });
+
     const firstTenant = await runEffect(
       first.service.createTenant(request(first.headers), { name: "First", slug: "first" }),
     );
+
     const secondTenant = await runEffect(
       first.service.createTenant(request(first.headers), { name: "Second", slug: "second" }),
     );
@@ -624,6 +670,7 @@ describe("enterprise service tenant flow", () => {
       db: first.db,
       apiToken: { tenantId: firstTenant.id, scopes: ["read", "write"] },
     });
+
     await expect(
       runEffect(bound.service.getTenant(request(bound.headers), secondTenant.id)),
     ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
@@ -633,6 +680,7 @@ describe("enterprise service tenant flow", () => {
       db: first.db,
       apiToken: { tenantId: firstTenant.id, scopes: ["read", "write"] },
     });
+
     await runEffect(
       writer.service.patchTenant(request(writer.headers), firstTenant.id, { name: "Allowed" }),
     );
@@ -645,6 +693,7 @@ describe("enterprise service tenant flow", () => {
       db: first.db,
       apiToken: { tenantId: null, scopes: null },
     });
+
     await runEffect(
       legacy.service.patchTenant(request(legacy.headers), firstTenant.id, { name: "Legacy" }),
     );
@@ -655,9 +704,11 @@ describe("enterprise service tenant flow", () => {
 
   it("prevents deleting tenants with more than one member", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.user.push({
       id: "user-2",
@@ -683,9 +734,11 @@ describe("enterprise service tenant flow", () => {
 
   it("supports invitation lifecycle", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const invitation = await runEffect(
       service.inviteTenantUser(request(headers), tenant.id, {
         email: "new@example.com",
@@ -722,6 +775,7 @@ describe("enterprise service tenant flow", () => {
       text?: string;
       html?: string;
     }> = [];
+
     const { service, headers } = await makeContext({
       email: {
         send: async (message) => {
@@ -729,6 +783,7 @@ describe("enterprise service tenant flow", () => {
         },
       },
     });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), {
         name: "Acme",
@@ -760,9 +815,11 @@ describe("enterprise service tenant flow", () => {
 
   it("supports tenant user role updates and removal while protecting the last user", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.user.push({
       id: "user-2",
@@ -796,9 +853,11 @@ describe("enterprise service tenant flow", () => {
 describe("enterprise service billing flow", () => {
   it("summarizes subscription and enrolled device usage", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.subscription.push({
       id: "sub-1",
@@ -850,10 +909,12 @@ describe("enterprise service billing flow", () => {
     const { db, auth, headers } = await makeContext();
     const createdCustomers: any[] = [];
     const portalSessions: any[] = [];
+
     const stripeClient = makeStripeClient({
       customers: {
         create: async (payload: any) => {
           createdCustomers.push(payload);
+
           return { id: "cus_new" };
         },
       },
@@ -861,11 +922,13 @@ describe("enterprise service billing flow", () => {
         sessions: {
           create: async (payload: any) => {
             portalSessions.push(payload);
+
             return { url: "https://billing.test/session" };
           },
         },
       },
     });
+
     const service = createEnterpriseService({
       db: db as any,
       schema,
@@ -874,6 +937,7 @@ describe("enterprise service billing flow", () => {
       storage: {} as any,
       auth: auth as any,
     });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -900,9 +964,11 @@ describe("enterprise service billing flow", () => {
 
   it("uses an existing Stripe customer and requires write access", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.organization[0].stripeCustomerId = "cus_existing";
     db.store.member[0].role = "member";
 
@@ -917,6 +983,7 @@ describe("enterprise service billing flow", () => {
 
   it("reports unconfigured billing without failing the summary", async () => {
     const { service, headers } = await makeContext({ stripeClient: null });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -946,6 +1013,7 @@ describe("enterprise service billing flow", () => {
         },
       }),
     });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -961,6 +1029,7 @@ describe("enterprise service billing flow", () => {
 
   it("bounds the customer-list fallback to one page", async () => {
     const { db, auth, headers } = await makeContext();
+
     const tenant = await runEffect(
       createEnterpriseService({
         db: db as any,
@@ -974,6 +1043,7 @@ describe("enterprise service billing flow", () => {
     );
 
     const listCalls: any[] = [];
+
     const boundedService = createEnterpriseService({
       db: db as any,
       schema,
@@ -985,6 +1055,7 @@ describe("enterprise service billing flow", () => {
           },
           list: async (args: any) => {
             listCalls.push(args);
+
             return {
               data: [
                 {
@@ -1018,9 +1089,11 @@ describe("enterprise service billing flow", () => {
 describe("enterprise service group flow", () => {
   it("creates groups with tenant-scoped device and policy assignments", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "device-1",
@@ -1059,9 +1132,11 @@ describe("enterprise service group flow", () => {
 
   it("rejects assignments outside the tenant", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "other-device",
@@ -1085,9 +1160,11 @@ describe("enterprise service group flow", () => {
 
   it("patches group metadata and membership assignments", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "device-1",
@@ -1107,6 +1184,7 @@ describe("enterprise service group flow", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Engineering",
@@ -1135,9 +1213,11 @@ describe("enterprise service group flow", () => {
 
   it("duplicates groups and deletes with partial failure reporting", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "device-1",
@@ -1148,6 +1228,7 @@ describe("enterprise service group flow", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Engineering",
@@ -1159,6 +1240,7 @@ describe("enterprise service group flow", () => {
     const duplicated = await runEffect(
       service.duplicateGroup(request(headers), tenant.id, group.id, { name: "Engineering Copy" }),
     );
+
     expect(db.store.enterprise_group.find((item: any) => item.id === duplicated.id)).toMatchObject({
       name: "Engineering Copy",
       notes: "Original",
@@ -1172,6 +1254,7 @@ describe("enterprise service group flow", () => {
     const result = await runEffect(
       service.deleteGroups(request(headers), tenant.id, [group.id, "missing-group"]),
     );
+
     expect(result).toEqual({
       deleted: [group.id],
       failed: [{ id: "missing-group", reason: "notFound" }],
@@ -1185,9 +1268,11 @@ describe("enterprise service group flow", () => {
 
   it("creates dynamic groups and materialises only matching devices", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push(
       {
@@ -1236,9 +1321,11 @@ describe("enterprise service group flow", () => {
 
   it("re-evaluates on group update and preserves manual exceptions", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push(
       {
@@ -1260,6 +1347,7 @@ describe("enterprise service group flow", () => {
         lastSeenAt: now,
       },
     );
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Macs",
@@ -1267,6 +1355,7 @@ describe("enterprise service group flow", () => {
         rules: dynamicRules,
       }),
     );
+
     db.store.group_device.push({ groupId: group.id, deviceId: "win-1", source: "manual" });
 
     await runEffect(
@@ -1289,9 +1378,11 @@ describe("enterprise service group flow", () => {
 
   it("rejects manual device assignment on dynamic groups", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "device-1",
@@ -1302,6 +1393,7 @@ describe("enterprise service group flow", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Macs",
@@ -1321,6 +1413,7 @@ describe("enterprise service group flow", () => {
 
   it("rejects dynamic rules without conditions and manual groups with rules", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -1350,9 +1443,11 @@ describe("enterprise service group flow", () => {
 describe("enterprise service policy flow", () => {
   it("creates, patches, and reads policy configurations", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const policy = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Baseline", notes: "Initial" }),
     );
@@ -1406,9 +1501,11 @@ describe("enterprise service policy flow", () => {
 
   it("rejects patching policies outside the tenant", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.policy.push({
       id: "other-policy",
@@ -1428,12 +1525,15 @@ describe("enterprise service policy flow", () => {
 
   it("duplicates policy configurations and deletes with partial failure reporting", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const policy = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Baseline", notes: "Original" }),
     );
+
     await runEffect(
       service.patchPolicy(request(headers), tenant.id, policy.id, {
         configurations: { "mttx.apple.device": { camera: false } },
@@ -1443,6 +1543,7 @@ describe("enterprise service policy flow", () => {
     const duplicated = await runEffect(
       service.duplicatePolicy(request(headers), tenant.id, policy.id, { name: "Baseline Copy" }),
     );
+
     expect(db.store.policy.find((item: any) => item.id === duplicated.id)).toMatchObject({
       name: "Baseline Copy",
       notes: "Original",
@@ -1458,6 +1559,7 @@ describe("enterprise service policy flow", () => {
     const result = await runEffect(
       service.deletePolicies(request(headers), tenant.id, [policy.id, "missing-policy"]),
     );
+
     expect(result).toEqual({
       deleted: [policy.id],
       failed: [{ id: "missing-policy", reason: "notFound" }],
@@ -1482,22 +1584,29 @@ describe("enterprise service effective policy", () => {
 
   it("resolves includes, priority and direct exclusions for a device", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, { name: "Engineering" }),
     );
+
     const low = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Low", priority: 1 }),
     );
+
     const high = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "High", priority: 10 }),
     );
+
     const excluded = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Excluded", priority: 100 }),
     );
+
     const kind = "mttx.apple.device";
+
     for (const [policyId, camera] of [
       [low.id, false],
       [high.id, true],
@@ -1509,6 +1618,7 @@ describe("enterprise service effective policy", () => {
         }),
       );
     }
+
     seedDevice(db, tenant.id, "device-1");
 
     await runEffect(
@@ -1560,12 +1670,15 @@ describe("enterprise service effective policy", () => {
 
   it("scopes the effective policy to the tenant", async () => {
     const { db, service, headers } = await makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );
+
     seedDevice(db, first.id, "device-1");
 
     await expect(
@@ -1615,6 +1728,7 @@ describe("enterprise service APNs", () => {
 
   it("generates a CSR plist and stores a pending key", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -1631,9 +1745,11 @@ describe("enterprise service APNs", () => {
 
   it("validates an uploaded certificate against the pending key", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const keys = await generateApnsKeyPair();
     const jwk = await exportPrivateKeyJwk(keys.privateKey);
     db.store.apple_push_key.push({
@@ -1672,6 +1788,7 @@ describe("enterprise service APNs", () => {
 
   it("rejects invalid and mismatched certificates", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -1686,11 +1803,13 @@ describe("enterprise service APNs", () => {
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
 
     const expired = await generateApnsKeyPair();
+
     const expiredPem = await testCertificate({
       keyPair: expired,
       notBefore: new Date(Date.now() - 10 * 86_400_000),
       notAfter: new Date(Date.now() - 86_400_000),
     });
+
     await expect(
       runEffect(
         service.uploadApns(request(headers), tenant.id, {
@@ -1723,9 +1842,11 @@ describe("enterprise service APNs", () => {
   it("pushes on device action and unenroll", async () => {
     const { apns, pushes } = makeFakeApns();
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
 
@@ -1749,14 +1870,18 @@ describe("enterprise service APNs", () => {
 
   it("revokes device-scoped SCEP identities when unenrolling", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
+
     const otherTenant = await runEffect(
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
+
     const future = new Date(Date.now() + 86_400_000);
     db.store.scep_issued_certificate.push(
       {
@@ -1794,9 +1919,11 @@ describe("enterprise service APNs", () => {
 
   it("revokes device-scoped SCEP identities when deleting a device", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     db.store.scep_issued_certificate.push({
       serial: "serial-1",
@@ -1815,9 +1942,11 @@ describe("enterprise service APNs", () => {
 
   it("supports an explicit identity revocation action", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     db.store.scep_issued_certificate.push({
       serial: "serial-1",
@@ -1832,6 +1961,7 @@ describe("enterprise service APNs", () => {
     const result = await runEffect(
       service.revokeDeviceIdentity(request(headers), tenant.id, "device-1"),
     );
+
     expect(result).toEqual({ status: "ok", revoked: 1 });
     expect(db.store.audit_log.at(-1)).toMatchObject({
       action: "device.identity_revoked",
@@ -1852,9 +1982,11 @@ describe("enterprise service APNs", () => {
 
   it("rejects identity revocation when no certificates are recorded", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     await expect(
       runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "device-1")),
@@ -1863,12 +1995,15 @@ describe("enterprise service APNs", () => {
 
   it("links Windows enrollment certificates to the internal device id end to end", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const enrollment = db.store.enterprise_enrollment.find(
       (row: any) => row.organizationId === tenant.id,
     )!;
+
     enrollment.enabledWindows = true;
     enrollment.maxDevices = 100;
 
@@ -1886,7 +2021,9 @@ describe("enterprise service APNs", () => {
       authSecret,
       windowsOrganizationId: tenant.id,
     });
+
     const policy = await runEffect(windows.getWindowsEnrollmentPolicy(""));
+
     const result = await runEffect(
       windows.windowsEnroll({
         authToken: policy.authToken,
@@ -1898,6 +2035,7 @@ describe("enterprise service APNs", () => {
         mdmOrigin: { url: origin } as any,
       }),
     );
+
     expect(result.deviceId).toBe("windows-device-1");
 
     const device = db.store.device.find((row: any) => row.organizationId === tenant.id)!;
@@ -1919,6 +2057,7 @@ describe("enterprise service APNs", () => {
     const revoked = await runEffect(
       service.revokeDeviceIdentity(request(headers), tenant.id, device.id),
     );
+
     expect(revoked).toEqual({ status: "ok", revoked: 1 });
     expect(certificate.revokedAt).toBeInstanceOf(Date);
 
@@ -1941,9 +2080,11 @@ describe("enterprise service APNs", () => {
 
   it("revokes legacy dmIdentifier-linked certificates when deleting a device", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     // Legacy Windows issuance recorded the DeviceID (dmIdentifier) instead of
     // the internal row id.
@@ -1972,9 +2113,11 @@ describe("enterprise service APNs", () => {
 
   it("derives device health and tenant-level counts", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2");
     db.store.device[1].lastSeenAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
@@ -1992,6 +2135,7 @@ describe("enterprise service APNs", () => {
     const detail = await runEffect(
       service.getDeviceHealth(request(headers), tenant.id, "device-1"),
     );
+
     expect(detail.health).toMatchObject({ level: "attention", stale: false });
     expect(detail.health.reasons).toContainEqual(
       expect.objectContaining({ code: "declaration_invalid" }),
@@ -2015,16 +2159,21 @@ describe("enterprise service APNs", () => {
     const attention = await runEffect(
       service.searchDevices(request(headers), tenant.id, { health: "attention" }),
     );
+
     expect(attention.total).toBe(summary.counts.attention);
     expect(attention.devices.map((row: any) => row.id).sort()).toEqual(["device-1", "device-2"]);
+
     const stale = await runEffect(
       service.searchDevices(request(headers), tenant.id, { health: "stale" }),
     );
+
     expect(stale.total).toBe(summary.counts.stale);
     expect(stale.devices.map((row: any) => row.id)).toEqual(["device-2"]);
+
     const healthy = await runEffect(
       service.searchDevices(request(headers), tenant.id, { health: "healthy" }),
     );
+
     expect(healthy.total).toBe(summary.counts.healthy);
     expect(healthy.devices).toHaveLength(0);
 
@@ -2036,9 +2185,11 @@ describe("enterprise service APNs", () => {
   it("pushes enrolled Apple devices when groups sync", async () => {
     const { apns, pushes } = makeFakeApns();
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2", { proto: "win" });
@@ -2057,14 +2208,18 @@ describe("enterprise service APNs", () => {
   it("pushes enrolled Apple devices when policies sync or change", async () => {
     const { apns, pushes } = makeFakeApns();
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
+
     const policy = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
     );
+
     await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Engineering",
@@ -2090,15 +2245,19 @@ describe("enterprise service APNs", () => {
   it("pushes devices affected by group membership and group deletion", async () => {
     const { apns, pushes } = makeFakeApns();
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2");
+
     const policy = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
     );
+
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
         name: "Engineering",
@@ -2123,6 +2282,7 @@ describe("enterprise service APNs", () => {
 
   it("records APNs outcomes, classifies invalid tokens and resets failures", async () => {
     let mode: "ok" | "fail" | "invalid" = "ok";
+
     const apns = makeApnsService({
       name: "fake",
       available: true,
@@ -2138,10 +2298,13 @@ describe("enterprise service APNs", () => {
               }),
             ),
     });
+
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
     const apple = () => db.store.device_apple.find((row: any) => row.deviceId === "device-1")!;
@@ -2177,6 +2340,7 @@ describe("enterprise service APNs", () => {
     const health = await runEffect(
       service.getDeviceHealth(request(headers), tenant.id, "device-1"),
     );
+
     expect(health.push).toMatchObject({
       configured: true,
       invalidToken: true,
@@ -2187,6 +2351,7 @@ describe("enterprise service APNs", () => {
 
   it("reports tenant-scoped push health and filters failing devices", async () => {
     let rejectDeviceOne = true;
+
     const apns = makeApnsService({
       name: "fake",
       available: true,
@@ -2199,10 +2364,13 @@ describe("enterprise service APNs", () => {
             )
           : Effect.void,
     });
+
     const { db, service, headers } = await makeContext({ apns });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2");
@@ -2210,6 +2378,7 @@ describe("enterprise service APNs", () => {
     const other = await runEffect(
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
+
     await seedCertificate(db, other.id);
     await seedDevice(db, other.id, "device-other");
 
@@ -2231,29 +2400,37 @@ describe("enterprise service APNs", () => {
     const failing = await runEffect(
       service.searchDevices(request(headers), tenant.id, { push: "failing" }),
     );
+
     expect(failing.devices.map((device) => device.id)).toEqual(["device-1"]);
+
     const invalid = await runEffect(
       service.searchDevices(request(headers), tenant.id, { push: "invalid" }),
     );
+
     expect(invalid.devices.map((device) => device.id)).toEqual(["device-1"]);
 
     // Recovery removes the device from both filters.
     rejectDeviceOne = false;
     await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+
     const none = await runEffect(
       service.searchDevices(request(headers), tenant.id, { push: "failing" }),
     );
+
     expect(none.devices).toEqual([]);
   });
 
   it("aggregates a tenant-scoped device activity timeline", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const other = await runEffect(
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
+
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2");
 
@@ -2317,6 +2494,7 @@ describe("enterprise service APNs", () => {
     const result = await runEffect(
       service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 50 }),
     );
+
     const ids = result.events.map((event) => event.id);
     expect(ids).toContain("audit:audit-own");
     expect(ids).toContain("command:command-1");
@@ -2332,6 +2510,7 @@ describe("enterprise service APNs", () => {
     const limited = await runEffect(
       service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 2 }),
     );
+
     expect(limited.events).toHaveLength(2);
 
     await expect(
@@ -2347,9 +2526,11 @@ describe("enterprise service APNs", () => {
 describe("enterprise policy validation and enrollment", () => {
   it("rejects undeployable policy configurations", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const policy = await runEffect(
       service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
     );
@@ -2373,9 +2554,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("embeds a per-enrollment SCEP challenge in the Apple profile", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     Object.assign(db.store.enterprise_enrollment[0], {
       enabledApple: true,
       enabledWindows: true,
@@ -2395,6 +2578,7 @@ describe("enterprise policy validation and enrollment", () => {
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
     const result = await runEffect(service.getEnrollment(enrollment.id, undefined));
     expect(result.authenticated).toBe(true);
+
     if (!result.authenticated || !("profile" in result.apple)) throw new Error("expected profile");
     const profile = result.apple.profile;
     expect(profile).toContain("com.apple.security.scep");
@@ -2408,6 +2592,7 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("brands the Apple enrollment profile and enrollment payload", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), {
         name: "Acme",
@@ -2418,6 +2603,7 @@ describe("enterprise policy validation and enrollment", () => {
         logo: "https://cdn.example.com/acme.png",
       }),
     );
+
     Object.assign(db.store.enterprise_enrollment[0], {
       enabledApple: true,
       enabledWindows: true,
@@ -2436,6 +2622,7 @@ describe("enterprise policy validation and enrollment", () => {
 
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
     const result = await runEffect(service.getEnrollment(enrollment.id, undefined));
+
     if (!result.authenticated || !("profile" in result.apple)) throw new Error("expected profile");
 
     expect(result.branding).toEqual({
@@ -2455,6 +2642,7 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("uses the display name for the downloaded profile filename", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), {
         name: "Acme",
@@ -2462,6 +2650,7 @@ describe("enterprise policy validation and enrollment", () => {
         displayName: "Acme Corp",
       }),
     );
+
     Object.assign(db.store.enterprise_enrollment[0], {
       enabledApple: true,
       maxDevices: 100,
@@ -2482,9 +2671,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("treats maxDevices=0 as unlimited when enrolling", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.device.push({
       id: "device-1",
@@ -2502,6 +2693,7 @@ describe("enterprise policy validation and enrollment", () => {
       maxDevices: 1,
     });
     const blocked = await runEffect(service.getEnrollment(tenant.id, undefined));
+
     if (!blocked.authenticated) throw new Error("expected authenticated enrollment");
     expect(blocked.windows).toEqual({
       error: "Windows enrollment is disabled! Contact your administrator.",
@@ -2510,8 +2702,10 @@ describe("enterprise policy validation and enrollment", () => {
     // 0 means unlimited, even with devices already enrolled.
     Object.assign(db.store.enterprise_enrollment[0], { maxDevices: 0 });
     const unlimited = await runEffect(service.getEnrollment(tenant.id, undefined));
+
     if (!unlimited.authenticated) throw new Error("expected authenticated enrollment");
     expect(unlimited.windows).toMatchObject({ tenantScoped: true });
+
     if (!("discoveryUrl" in unlimited.windows)) throw new Error("expected a Windows URL");
     expect(unlimited.windows.discoveryUrl).toMatch(
       new RegExp(`^${origin}/mdm/windows/discovery\\?tenant=mttxw1\\.`),
@@ -2530,13 +2724,17 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("scopes device search and CSV export to the tenant", async () => {
     const { db, service, headers } = await makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );
+
     const now = new Date("2026-11-10T12:00:00.000Z");
+
     const device = (id: string, organizationId: string, name: string) => ({
       id,
       organizationId,
@@ -2548,6 +2746,7 @@ describe("enterprise policy validation and enrollment", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
+
     db.store.device.push(
       device("device-first", first.id, "First Mac"),
       device("device-second", second.id, "Second Mac"),
@@ -2596,10 +2795,13 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("signals truncation and neutralises formula cells in CSV exports", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date("2026-11-10T12:00:00.000Z");
+
     for (let index = 0; index < 10_001; index++)
       db.store.device.push({
         id: `device-${index}`,
@@ -2623,9 +2825,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("records enrollment attempts with a secret-free diagnostic", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
     Object.assign(db.store.enterprise_enrollment[0], {
       enabledApple: true,
@@ -2640,6 +2844,7 @@ describe("enterprise policy validation and enrollment", () => {
         userAgent: `Windows NT 10.0 ${"x".repeat(400)}`,
       }),
     );
+
     expect(result.authenticated).toBe(true);
     expect(db.store.enrollment_attempt).toHaveLength(1);
     const attempt = db.store.enrollment_attempt[0];
@@ -2658,6 +2863,7 @@ describe("enterprise policy validation and enrollment", () => {
     const other = await runEffect(
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
+
     expect(
       (await runEffect(service.listEnrollmentAttempts(request(headers), tenant.id))).attempts,
     ).toHaveLength(1);
@@ -2668,9 +2874,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("dedupes repeated public enrollment visits within the short window", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
 
     const visit = () =>
@@ -2705,9 +2913,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("does not persist an address hash when no deployment secret is configured", async () => {
     const { db, service, headers } = await makeContext({ authSecret: null });
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
 
     await runEffect(
@@ -2723,9 +2933,11 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("classifies bad passwords, disabled platforms, limits and missing APNs", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
     Object.assign(db.store.enterprise_enrollment[0], {
       code: "secret-code",
@@ -2768,6 +2980,7 @@ describe("enterprise policy validation and enrollment", () => {
 
   it("previews a mobileconfig with friendly payload categories", async () => {
     const { service } = await makeContext();
+
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -2786,6 +2999,7 @@ describe("enterprise policy validation and enrollment", () => {
 </dict>
 </array>
 </dict></plist>`;
+
     const preview = await runEffect(service.previewMobileconfig({ mobileconfig: btoa(xml) }));
     expect(preview).toMatchObject({
       displayName: "Acme Profile",
@@ -2810,12 +3024,14 @@ describe("enterprise policy validation and enrollment", () => {
 describe("Apple enrollment profile download", () => {
   const setupEnrollment = async () => {
     const context = await makeContext();
+
     const tenant = await runEffect(
       context.service.createTenant(request(context.headers), {
         name: "Profile Tenant",
         slug: "profile-tenant",
       }),
     );
+
     Object.assign(context.db.store.enterprise_enrollment[0], {
       enabledApple: true,
       maxDevices: 100,
@@ -2828,17 +3044,21 @@ describe("Apple enrollment profile download", () => {
       encryptedKey: null,
       updatedAt: new Date(),
     });
+
     const enrollment = await runEffect(
       context.service.getTenantEnrollment(request(context.headers), tenant.id),
     );
+
     return { ...context, tenant, enrollment };
   };
 
   it("returns a plist and a safe tenant filename", async () => {
     const { service, enrollment } = await setupEnrollment();
+
     const result = await runEffect(
       service.getAppleEnrollmentProfile(enrollment.id, undefined, { ip: "profile-ok" }),
     );
+
     expect(result.filename).toBe("profile-tenant-enrollment.mobileconfig");
     expect(result.plist).toContain("<plist");
     expect(result.plist).toContain("com.apple.security.scep");
@@ -2891,27 +3111,33 @@ describe("Apple enrollment profile download", () => {
 describe("device pre-registration", () => {
   const setup = async () => {
     const context = await makeContext();
+
     const first = await runEffect(
       context.service.createTenant(request(context.headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       context.service.createTenant(request(context.headers), { name: "Second", slug: "second" }),
     );
+
     const firstGroup = await runEffect(
       context.service.createGroup(request(context.headers), first.id, {
         name: "Staff",
       }),
     );
+
     const secondGroup = await runEffect(
       context.service.createGroup(request(context.headers), second.id, {
         name: "Other Tenant",
       }),
     );
+
     return { ...context, first, second, firstGroup, secondGroup };
   };
 
   it("imports rows, resolves tenant groups and upserts by serial", async () => {
     const { db, service, headers, first, second, secondGroup } = await setup();
+
     const imported = await runEffect(
       service.importDevicePreRegistrations(request(headers), first.id, {
         rows: [
@@ -2927,6 +3153,7 @@ describe("device pre-registration", () => {
         ],
       }),
     );
+
     expect(imported).toMatchObject({ created: 1, updated: 0, failed: 2 });
     expect(imported.results.map((row) => row.status)).toEqual(["created", "error", "error"]);
     expect(db.store.device_pre_registration).toMatchObject([
@@ -2947,6 +3174,7 @@ describe("device pre-registration", () => {
         rows: [{ serial: "C02C", groupId: secondGroup.id }],
       }),
     );
+
     expect(crossTenant.failed).toBe(1);
 
     // Re-importing the same serial updates the row rather than duplicating it.
@@ -2955,6 +3183,7 @@ describe("device pre-registration", () => {
         rows: [{ serial: "C02A", name: "Alice MacBook", assetTag: "AT-2", groupName: "Staff" }],
       }),
     );
+
     expect(updated).toMatchObject({ created: 0, updated: 1, failed: 0 });
     expect(db.store.device_pre_registration).toHaveLength(1);
     expect(db.store.device_pre_registration[0]).toMatchObject({
@@ -2972,6 +3201,7 @@ describe("device pre-registration", () => {
     const otherList = await runEffect(
       service.listDevicePreRegistrations(request(headers), second.id),
     );
+
     expect(otherList.rows).toEqual([]);
     await expect(
       runEffect(
@@ -2982,11 +3212,13 @@ describe("device pre-registration", () => {
 
   it("bulk-deletes only rows in the requested tenant", async () => {
     const { db, service, headers, first } = await setup();
+
     const imported = await runEffect(
       service.importDevicePreRegistrations(request(headers), first.id, {
         rows: [{ serial: "C02A" }, { serial: "C02B" }],
       }),
     );
+
     expect(imported.created).toBe(2);
     const ids = db.store.device_pre_registration.map((row) => row.id as string);
     await runEffect(service.deleteDevicePreRegistrations(request(headers), first.id, ids));
@@ -3009,12 +3241,15 @@ describe("device pre-registration", () => {
 describe("audit search and export", () => {
   const setup = async () => {
     const context = await makeContext();
+
     const first = await runEffect(
       context.service.createTenant(request(context.headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       context.service.createTenant(request(context.headers), { name: "Second", slug: "second" }),
     );
+
     return { ...context, first, second };
   };
 
@@ -3050,6 +3285,7 @@ describe("audit search and export", () => {
     const firstPage = await runEffect(
       service.searchAuditLog(request(headers), first.id, { action: "device.action", limit: 2 }),
     );
+
     expect(firstPage.entries.map((entry: any) => entry.id)).toEqual(["audit-c", "audit-b"]);
     expect(firstPage.nextCursor).toBeTruthy();
     expect(firstPage.entries.every((entry: any) => entry.id !== "audit-other")).toBe(true);
@@ -3061,6 +3297,7 @@ describe("audit search and export", () => {
         cursor: firstPage.nextCursor!,
       }),
     );
+
     expect(secondPage.entries.map((entry: any) => entry.id)).toEqual(["audit-d", "audit-a"]);
     expect(secondPage.nextCursor).toBeNull();
 
@@ -3076,6 +3313,7 @@ describe("audit search and export", () => {
       auditRow(first.id, "audit-b", at(11)),
       auditRow(first.id, "audit-c", at(12)),
     );
+
     const page = await runEffect(
       service.searchAuditLog(request(headers), first.id, {
         action: "device.action",
@@ -3083,8 +3321,10 @@ describe("audit search and export", () => {
         limit: 1,
       }),
     );
+
     expect(page.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
     expect(page.nextCursor).toBeTruthy();
+
     const next = await runEffect(
       service.searchAuditLog(request(headers), first.id, {
         action: "device.action",
@@ -3092,6 +3332,7 @@ describe("audit search and export", () => {
         limit: 1,
       }),
     );
+
     expect(next.entries.map((entry: any) => entry.id)).toEqual(["audit-a"]);
   });
 
@@ -3117,22 +3358,26 @@ describe("audit search and export", () => {
     const byEmail = await runEffect(
       service.searchAuditLog(request(headers), first.id, { actor: "alice" }),
     );
+
     expect(byEmail.entries.map((entry: any) => entry.id)).toEqual(["audit-a"]);
 
     const byUserId = await runEffect(
       service.searchAuditLog(request(headers), first.id, { actor: "user-bob" }),
     );
+
     expect(byUserId.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
 
     // `%` in the filter is literal, not a wildcard.
     const byTarget = await runEffect(
       service.searchAuditLog(request(headers), first.id, { targetId: "dev%1" }),
     );
+
     expect(byTarget.entries.map((entry: any) => entry.id)).toEqual(["audit-b"]);
 
     const byType = await runEffect(
       service.searchAuditLog(request(headers), first.id, { targetType: "policy" }),
     );
+
     expect(byType.entries.map((entry: any) => entry.id)).toEqual(["audit-c"]);
 
     const byRange = await runEffect(
@@ -3142,6 +3387,7 @@ describe("audit search and export", () => {
         to: "2026-01-02T10:00:00.000Z",
       }),
     );
+
     expect(byRange.entries.map((entry: any) => entry.id)).toEqual(["audit-b", "audit-a"]);
 
     await expect(
@@ -3156,6 +3402,7 @@ describe("audit search and export", () => {
 
   it("caps CSV exports, signals truncation and neutralises formulas", async () => {
     const { db, service, headers, first } = await setup();
+
     for (let index = 0; index < 10_001; index++)
       db.store.audit_log.push(
         auditRow(first.id, `audit-${index}`, new Date(2026, 0, 1, 0, 0, index), {
@@ -3171,6 +3418,7 @@ describe("audit search and export", () => {
         format: "csv",
       }),
     );
+
     expect(exported.truncated).toBe(true);
     expect(exported.rowCount).toBe(10_000);
     expect(exported.body.trimEnd().split("\r\n")).toHaveLength(10_001);
@@ -3183,6 +3431,7 @@ describe("audit search and export", () => {
         format: "json",
       }),
     );
+
     const entries = JSON.parse(json.body) as Array<{ action: string; actorEmail: string }>;
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
@@ -3195,6 +3444,7 @@ describe("audit search and export", () => {
 describe("Autopilot service configuration", () => {
   it("reports Graph/federated state and fails closed when unconfigured", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -3234,6 +3484,7 @@ describe("Autopilot service configuration", () => {
 
   it("rejects an invalid profile before checking Graph configuration", async () => {
     const { service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );

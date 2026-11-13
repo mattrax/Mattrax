@@ -72,9 +72,11 @@ describe("mobileconfig preview", () => {
       /<array>[\s\S]*<\/array>/,
       `<dict><key>PayloadType</key><string>com.apple.mail.managed</string></dict>`,
     );
+
     const preview = await parseMobileconfigPreview(
       `data:application/x-apple-aspen-config;base64,${btoa(single)}`,
     );
+
     expect(preview.payloads).toEqual([
       expect.objectContaining({ type: "com.apple.mail.managed", category: "Email Account" }),
     ]);
@@ -109,6 +111,7 @@ describe("mobileconfig preview", () => {
         }),
       ],
     });
+
     const certificate = new pkijs.Certificate();
     certificate.version = 2;
     certificate.serialNumber = new asn1js.Integer({ value: 1 });
@@ -134,6 +137,7 @@ describe("mobileconfig preview", () => {
       certificates: [certificate],
       signerInfos: [],
     });
+
     signedData.signerInfos.push(
       new pkijs.SignerInfo({
         version: 1,
@@ -153,6 +157,7 @@ describe("mobileconfig preview", () => {
       }),
     );
     await signedData.sign(keyPair.privateKey, 0, "SHA-256");
+
     const der = new pkijs.ContentInfo({
       contentType: pkijs.ContentInfo.SIGNED_DATA,
       content: signedData.toSchema(),
@@ -163,6 +168,7 @@ describe("mobileconfig preview", () => {
     const preview = await parseMobileconfigPreview(
       btoa(String.fromCharCode(...new Uint8Array(der))),
     );
+
     expect(preview.displayName).toBe("Test Profile");
     expect(preview.payloads).toHaveLength(2);
   });

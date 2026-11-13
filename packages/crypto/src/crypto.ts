@@ -6,6 +6,7 @@ const ALGORITHM: any = {
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
 };
+
 const SIGN_ALGORITHM: any = { name: "RSASSA-PKCS1-v1_5" };
 
 export class CryptoError extends Data.TaggedError("CryptoError")<{
@@ -40,28 +41,35 @@ export async function sha256(data: ArrayBuffer): Promise<ArrayBuffer> {
 export function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let binary = "";
+
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
+
   return btoa(binary);
 }
 
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
+
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
+
   return bytes.buffer as ArrayBuffer;
 }
 
 export function pemEncode(label: string, der: ArrayBuffer): string {
   const base64 = arrayBufferToBase64(der);
   const lines = [`-----BEGIN ${label}-----`];
+
   for (let i = 0; i < base64.length; i += 64) {
     lines.push(base64.slice(i, i + 64));
   }
+
   lines.push(`-----END ${label}-----`);
+
   return lines.join("\n");
 }
 
@@ -70,10 +78,13 @@ export function pemDecode(label: string, pem: string): ArrayBuffer {
   const footer = `-----END ${label}-----`;
   const start = pem.indexOf(header);
   const end = pem.indexOf(footer);
+
   if (start === -1 || end === -1) {
     throw new Error(`PEM ${label} not found`);
   }
+
   const base64 = pem.slice(start + header.length, end).replace(/\s/g, "");
+
   return base64ToArrayBuffer(base64);
 }
 
@@ -98,6 +109,7 @@ export async function hmacSha256Hex(secret: string, message: string): Promise<st
     false,
     ["sign"],
   );
+
   return bytesToHex(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
 }
 
@@ -105,9 +117,12 @@ export async function hmacSha256Hex(secret: string, message: string): Promise<st
 export function constantTimeEqual(left: string, right: string): boolean {
   const a = encoder.encode(left);
   const b = encoder.encode(right);
+
   if (a.length !== b.length) return false;
   let difference = 0;
+
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+
   return difference === 0;
 }
 
@@ -140,19 +155,24 @@ export async function verifyProductKeyRequest(
 
 const sealKey = async (secret: string): Promise<CryptoKey> => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 };
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+
   return btoa(binary);
 };
 
 const base64ToBytes = (value: string): Uint8Array => {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
+
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
   return bytes;
 };
 
@@ -160,22 +180,27 @@ const base64ToBytes = (value: string): Uint8Array => {
 export async function sealSecret(secret: string, plaintext: string): Promise<string> {
   const key = await sealKey(secret);
   const iv = crypto.getRandomValues(new Uint8Array(12));
+
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext)),
   );
+
   const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
   combined.set(iv, 0);
   combined.set(ciphertext, iv.byteLength);
+
   return bytesToBase64(combined);
 }
 
 /** Decrypt a payload produced by {@link sealSecret}. */
 export async function openSecret(secret: string, sealed: string): Promise<string> {
   const combined = base64ToBytes(sealed);
+
   if (combined.byteLength <= 12) throw new Error("Sealed secret is malformed");
   const iv = combined.slice(0, 12);
   const ciphertext = combined.slice(12);
   const key = await sealKey(secret);
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+
   return new TextDecoder().decode(plaintext);
 }

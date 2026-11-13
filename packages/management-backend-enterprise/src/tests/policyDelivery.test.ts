@@ -60,6 +60,7 @@ const appleScope = {
 describe("Apple declaration delivery uses resolved policy", () => {
   it("delivers only the winning policy for a duplicated kind", async () => {
     const kind = "mttx.apple.declaration.wifi";
+
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "udid-1", "org-1")],
@@ -77,9 +78,11 @@ describe("Apple declaration delivery uses resolved policy", () => {
         configuration("high", kind, { kind: "com.apple.configuration.wifi" }, "hash-high"),
       ],
     });
+
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));
+
     const policyConfigurations = items.configurations.filter(
       (item) => item.identifier.startsWith("high:") || item.identifier.startsWith("low:"),
     );
@@ -90,6 +93,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
 
   it("removes a group include when the device directly excludes the policy", async () => {
     const kind = "mttx.apple.declaration.wifi";
+
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "udid-1", "org-1")],
@@ -108,6 +112,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
         configuration("policy-a", kind, { kind: "com.apple.configuration.wifi" }, "hash-a"),
       ],
     });
+
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));
@@ -120,6 +125,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
 describe("Windows command delivery uses resolved policy", () => {
   it("sends only the winning policy for a duplicated kind", async () => {
     const kind = "mttx.windows.custom.wifi";
+
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [{ ...device("device-1", "win-1", "org-1"), proto: "win" }],
@@ -147,6 +153,7 @@ describe("Windows command delivery uses resolved policy", () => {
         ),
       ],
     });
+
     const backend = makeWindowsBackend({
       db: db as any,
       origin,
@@ -167,6 +174,7 @@ describe("Windows command delivery uses resolved policy", () => {
         },
       ),
     );
+
     const policyCommands = response.commands.filter((command) =>
       command.locURI?.includes("/WiFi/Profile/Test"),
     );

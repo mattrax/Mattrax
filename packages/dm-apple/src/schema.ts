@@ -1,9 +1,13 @@
 import { Data, Schema } from "effect";
+
 export { PlistParseError, PlistSerializeError } from "@mattrax/plist";
 
 export class MdmError extends Data.TaggedError("MdmError")<{ message: string; cause?: unknown }> {}
+
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
+
 export class DeviceUnenrolled extends Data.TaggedError("DeviceUnenrolled")<{}> {}
+
 export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{
   declarationId: string;
 }> {}
@@ -19,6 +23,7 @@ export const AuthenticatePlist = Schema.Struct({
   ProductName: Schema.optional(Schema.String),
   EnrollmentID: Schema.optional(Schema.String),
 });
+
 export type AuthenticatePlist = typeof AuthenticatePlist.Type;
 
 export const TokenUpdatePlist = Schema.Struct({
@@ -34,6 +39,7 @@ export const TokenUpdatePlist = Schema.Struct({
   UserShortName: Schema.optional(Schema.String),
   UserLongName: Schema.optional(Schema.String),
 });
+
 export type TokenUpdatePlist = typeof TokenUpdatePlist.Type;
 
 export const CheckOutPlist = Schema.Struct({
@@ -43,6 +49,7 @@ export const CheckOutPlist = Schema.Struct({
   UserID: Schema.optional(Schema.String),
   EnrollmentID: Schema.optional(Schema.String),
 });
+
 export type CheckOutPlist = typeof CheckOutPlist.Type;
 
 export const CommandResultPlist = Schema.Struct({
@@ -65,6 +72,7 @@ export const CommandResultPlist = Schema.Struct({
     ),
   ),
 });
+
 export type CommandResultPlist = typeof CommandResultPlist.Type;
 
 export const SetBootstrapTokenPlist = Schema.Struct({
@@ -100,4 +108,5 @@ export const DDMStatusReport = Schema.Struct({
     ),
   ),
 });
+
 export type DDMStatusReport = typeof DDMStatusReport.Type;

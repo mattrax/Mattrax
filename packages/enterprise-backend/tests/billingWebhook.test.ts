@@ -68,6 +68,7 @@ const deliver = (
   overrides: Partial<Parameters<typeof processStripeWebhook>[0]> = {},
 ) => {
   const { signature } = signed(payload);
+
   return runEffect(
     processStripeWebhook({
       db: db as any,
@@ -225,6 +226,7 @@ describe("Stripe subscription lifecycle", () => {
         ],
       },
     });
+
     await deliverEvent(db, "customer.subscription.updated", updated);
     // Stripe retries events; applying the same payload twice must be a no-op
     // for row identity and deterministic fields.
@@ -267,6 +269,7 @@ describe("Stripe subscription lifecycle", () => {
       createdAt: now,
       updatedAt: now,
     });
+
     const invoice = {
       id: "in_1",
       object: "invoice",

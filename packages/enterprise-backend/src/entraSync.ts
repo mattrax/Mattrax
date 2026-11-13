@@ -57,17 +57,21 @@ export const acquireEntraSyncLock = (options: {
           createdAt: timestamp,
           updatedAt: timestamp,
         });
+
         return { acquired: true, stale: false, previousStatus: null, enabled: true };
       }
 
       const previousStatus = state.status as "idle" | "running" | "error";
+
       if (previousStatus === "running") {
         const updatedAt =
           state.updatedAt instanceof Date
             ? state.updatedAt.getTime()
             : Date.parse(String(state.updatedAt));
+
         const age = Number.isFinite(updatedAt) ? timestamp.getTime() - updatedAt : Number.NaN;
         const stale = !Number.isFinite(age) || age > staleAfterMs;
+
         if (!stale)
           return {
             acquired: false,
@@ -75,6 +79,7 @@ export const acquireEntraSyncLock = (options: {
             previousStatus,
             enabled: state.enabled,
           };
+
         // Conditional write: only one concurrent caller can take over a stale
         // lock, even if both read the same snapshot.
         const takeover = yield* tx
@@ -87,8 +92,10 @@ export const acquireEntraSyncLock = (options: {
               lt(schema.entraDirectorySync.updatedAt, new Date(timestamp.getTime() - staleAfterMs)),
             ),
           );
+
         if ((takeover as any)?.[0]?.affectedRows === 0)
           return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
+
         return { acquired: true, stale: true, previousStatus, enabled: state.enabled };
       }
 
@@ -106,8 +113,10 @@ export const acquireEntraSyncLock = (options: {
             ne(schema.entraDirectorySync.status, "running"),
           ),
         );
+
       if ((claimed as any)?.[0]?.affectedRows === 0)
         return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
+
       return { acquired: true, stale: false, previousStatus, enabled: state.enabled };
     }),
   );
@@ -129,6 +138,7 @@ const ownerCount = (database: EnterpriseDb, organizationId: string) =>
       .select({ role: schema.member.role })
       .from(schema.member)
       .where(eq(schema.member.organizationId, organizationId));
+
     return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
   });
 
@@ -160,11 +170,14 @@ const syncUsersPage = (
     for (const user of users) {
       const email = (user.mail ?? user.userPrincipalName)?.trim().toLowerCase();
       const identity = user.id ? yield* findIdentity(database, organizationId, user.id) : undefined;
+
       let existing = identity
         ? yield* database.query.user.findFirst({ where: { id: identity.userId } })
         : undefined;
+
       if (!existing && email) {
         const byEmail = yield* database.query.user.findFirst({ where: { email } });
+
         if (byEmail) {
           // Mirror the SSO guard: link an existing account by email only when
           // this is its sole tenant. Never pull another tenant's user into this
@@ -172,6 +185,7 @@ const syncUsersPage = (
           const memberships = yield* database.query.member.findMany({
             where: { userId: byEmail.id },
           });
+
           if (
             (memberships.length === 1 && memberships[0]?.organizationId === organizationId) ||
             (memberships.length === 0 && autoProvision)
@@ -180,11 +194,13 @@ const syncUsersPage = (
           else continue;
         }
       }
+
       if (user.removed || user.accountEnabled === false) {
         if (existing) {
           const membership = yield* database.query.member.findFirst({
             where: { organizationId, userId: existing.id },
           });
+
           if (
             membership &&
             isOwnerRole(membership.role) &&
@@ -199,10 +215,12 @@ const syncUsersPage = (
                 eq(schema.member.userId, existing.id),
               ),
             );
+
           const orgGroups = yield* database
             .select({ id: schema.userGroup.id })
             .from(schema.userGroup)
             .where(eq(schema.userGroup.organizationId, organizationId));
+
           if (orgGroups.length)
             yield* database.delete(schema.userGroupMember).where(
               and(
@@ -213,16 +231,19 @@ const syncUsersPage = (
                 ),
               ),
             );
+
           const remaining = yield* database
             .select()
             .from(schema.member)
             .where(eq(schema.member.userId, existing.id));
+
           if (remaining.length === 0)
             yield* database
               .update(schema.user)
               .set({ disabled: true, updatedAt: now() })
               .where(eq(schema.user.id, existing.id));
         }
+
         if (user.id)
           yield* database
             .delete(schema.ssoIdentity)
@@ -234,8 +255,10 @@ const syncUsersPage = (
             );
         continue;
       }
+
       if (!email || !user.id) continue;
       let userId = existing?.id;
+
       if (!userId) {
         if (!autoProvision) continue;
         userId = newId();
@@ -250,9 +273,11 @@ const syncUsersPage = (
           updatedAt: now(),
         });
       }
+
       const membership = yield* database.query.member.findFirst({
         where: { organizationId, userId },
       });
+
       if (!membership)
         yield* database.insert(schema.member).values({
           id: newId(),
@@ -262,11 +287,13 @@ const syncUsersPage = (
           createdAt: now(),
           updatedAt: now(),
         });
+
       if (existing?.disabled)
         yield* database
           .update(schema.user)
           .set({ disabled: false, updatedAt: now() })
           .where(eq(schema.user.id, userId));
+
       if (!identity)
         yield* database.insert(schema.ssoIdentity).values({
           organizationId,
@@ -298,12 +325,15 @@ const syncGroupsPage = (
       const existing = yield* database.query.userGroup.findFirst({
         where: { organizationId, externalId: group.id },
       });
+
       if (group.removed) {
         if (existing)
           yield* database.delete(schema.userGroup).where(eq(schema.userGroup.id, existing.id));
         continue;
       }
+
       let groupId = existing?.id;
+
       if (!groupId) {
         groupId = newId();
         yield* database.insert(schema.userGroup).values({
@@ -327,10 +357,13 @@ const syncGroupsPage = (
           })
           .where(eq(schema.userGroup.id, groupId));
       }
+
       for (const member of group.members ?? []) {
         if (member.type && member.type !== "user") continue;
         const identity = yield* findIdentity(database, organizationId, member.id);
+
         if (!identity) continue;
+
         if (member.removed) {
           yield* database
             .delete(schema.userGroupMember)
@@ -344,6 +377,7 @@ const syncGroupsPage = (
           const membership = yield* database.query.member.findFirst({
             where: { organizationId, userId: identity.userId },
           });
+
           if (!membership) continue;
           yield* database
             .insert(schema.userGroupMember)
@@ -351,6 +385,7 @@ const syncGroupsPage = (
             .values({ groupId, userId: identity.userId });
         }
       }
+
       seenGroupIds.add(group.id);
       context.onGroup();
     }
@@ -384,6 +419,7 @@ export const syncEntraDirectory = (options: {
     let groupsDelta: string | undefined;
 
     const graphDomains = yield* graph.domains(azureTenantId);
+
     const verified = graphDomains
       .map((domain) => ({ ...domain, id: normalizedDomain(domain.id) }))
       .filter(
@@ -393,15 +429,18 @@ export const syncEntraDirectory = (options: {
           domain.id.length > 0 &&
           !domain.id.endsWith(".onmicrosoft.com"),
       );
+
     for (const domain of verified) {
       const existing = yield* db.query.ssoDomain.findFirst({
         where: { domain: domain.id },
       });
+
       if (existing && existing.organizationId !== organizationId) {
         // Never reassign a verified domain between tenants. The first owner
         // keeps it; a conflicting sync is skipped.
         continue;
       }
+
       if (existing) {
         yield* db
           .update(schema.ssoDomain)
@@ -424,9 +463,12 @@ export const syncEntraDirectory = (options: {
           updatedAt: now(),
         });
       }
+
       counts.domains++;
     }
+
     const knownDomains = verified.map((domain) => domain.id);
+
     const staleDomains = yield* db
       .select()
       .from(schema.ssoDomain)
@@ -436,9 +478,11 @@ export const syncEntraDirectory = (options: {
           eq(schema.ssoDomain.source, "entra"),
         ),
       );
+
     const stale = staleDomains
       .map((row: { domain: string }) => row.domain)
       .filter((domain: string) => !knownDomains.includes(domain));
+
     if (stale.length)
       yield* db.delete(schema.ssoDomain).where(inArray(schema.ssoDomain.domain, stale));
 
@@ -446,32 +490,39 @@ export const syncEntraDirectory = (options: {
 
     const isExpiredDelta = (error: unknown) => {
       const value = error as { _tag?: string; status?: number; body?: string };
+
       return (
         value?._tag === "RequestFailed" &&
         (value.status === 410 || /syncStateNotFound|resyncRequired|resync/i.test(value.body ?? ""))
       );
     };
+
     // A full listing (first sync, or after Graph expires the delta cursor)
     // is authoritative: identities and groups that no longer appear must be
     // reconciled away. Delta pages only describe changes.
     let usersReset = false;
     let groupsReset = false;
+
     const usersDeltaPage = (link?: string) =>
       graph.usersDelta(azureTenantId, link).pipe(
         Effect.catchIf(isExpiredDelta, () => {
           usersReset = true;
+
           return graph.usersDelta(azureTenantId, undefined);
         }),
       );
+
     const groupsDeltaPage = (link?: string) =>
       graph.groupsDelta(azureTenantId, link).pipe(
         Effect.catchIf(isExpiredDelta, () => {
           groupsReset = true;
+
           return graph.groupsDelta(azureTenantId, undefined);
         }),
       );
 
     const seenObjectIds = new Set<string>();
+
     const userContext: UserPageContext = {
       organizationId,
       autoProvision,
@@ -480,8 +531,10 @@ export const syncEntraDirectory = (options: {
         counts.users++;
       },
     };
+
     let usersLink = options.usersDeltaLink ?? undefined;
     let usersComplete = false;
+
     for (let page = 0; page < 1000; page++) {
       const result = yield* usersDeltaPage(usersLink);
       // `tx` has the same query/builders as the outer db; the cast keeps the
@@ -489,13 +542,16 @@ export const syncEntraDirectory = (options: {
       yield* db.transaction((tx) =>
         syncUsersPage(tx as unknown as EnterpriseDb, result.items, userContext),
       );
+
       if (!result.nextLink) {
         usersDelta = result.deltaLink ?? undefined;
         usersComplete = true;
         break;
       }
+
       usersLink = result.nextLink;
     }
+
     if (!usersComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 user pages"));
 
@@ -512,15 +568,19 @@ export const syncEntraDirectory = (options: {
         .select()
         .from(schema.ssoIdentity)
         .where(eq(schema.ssoIdentity.organizationId, organizationId));
+
       const orgGroups = yield* db
         .select({ id: schema.userGroup.id })
         .from(schema.userGroup)
         .where(eq(schema.userGroup.organizationId, organizationId));
+
       for (const identity of identities as Array<{ objectId: string; userId: string }>) {
         if (seenObjectIds.has(identity.objectId)) continue;
+
         const membership = yield* db.query.member.findFirst({
           where: { organizationId, userId: identity.userId },
         });
+
         if (membership) {
           // Never strand a tenant without an owner during reconciliation.
           if (isOwnerRole(membership.role) && (yield* ownerCount(db, organizationId)) <= 1)
@@ -533,6 +593,7 @@ export const syncEntraDirectory = (options: {
                 eq(schema.member.userId, identity.userId),
               ),
             );
+
           if (orgGroups.length)
             yield* db.delete(schema.userGroupMember).where(
               and(
@@ -543,16 +604,19 @@ export const syncEntraDirectory = (options: {
                 ),
               ),
             );
+
           const remaining = yield* db
             .select({ id: schema.member.id })
             .from(schema.member)
             .where(eq(schema.member.userId, identity.userId));
+
           if (remaining.length === 0)
             yield* db
               .update(schema.user)
               .set({ disabled: true, updatedAt: now() })
               .where(eq(schema.user.id, identity.userId));
         }
+
         yield* db
           .delete(schema.ssoIdentity)
           .where(
@@ -565,6 +629,7 @@ export const syncEntraDirectory = (options: {
     }
 
     const seenGroupIds = new Set<string>();
+
     const groupContext: GroupPageContext = {
       organizationId,
       seenGroupIds,
@@ -572,20 +637,25 @@ export const syncEntraDirectory = (options: {
         counts.groups++;
       },
     };
+
     let groupsLink = options.groupsDeltaLink ?? undefined;
     let groupsComplete = false;
+
     for (let page = 0; page < 1000; page++) {
       const result = yield* groupsDeltaPage(groupsLink);
       yield* db.transaction((tx) =>
         syncGroupsPage(tx as unknown as EnterpriseDb, result.items, groupContext),
       );
+
       if (!result.nextLink) {
         groupsDelta = result.deltaLink ?? undefined;
         groupsComplete = true;
         break;
       }
+
       groupsLink = result.nextLink;
     }
+
     if (!groupsComplete)
       return yield* Effect.fail(new Error("Directory sync exceeded 1000 group pages"));
 
@@ -608,9 +678,11 @@ export const syncEntraDirectory = (options: {
             eq(schema.userGroup.source, "graph"),
           ),
         );
+
       const staleGroups = (graphGroups as Array<{ id: string; externalId: string | null }>)
         .filter((group) => group.externalId && !seenGroupIds.has(group.externalId))
         .map((group) => group.id);
+
       if (staleGroups.length)
         yield* db.delete(schema.userGroup).where(inArray(schema.userGroup.id, staleGroups));
     }
@@ -648,11 +720,15 @@ export type EntraSyncScheduleState = {
 
 const toTime = (value: unknown): number | null => {
   if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
+
   if (typeof value === "string") {
     const parsed = Date.parse(value);
+
     return Number.isFinite(parsed) ? parsed : null;
   }
+
   return null;
 };
 
@@ -667,12 +743,16 @@ const toTime = (value: unknown): number | null => {
 export const isEntraSyncDue = (state: EntraSyncScheduleState, at: Date = new Date()): boolean => {
   if (!state.enabled) return false;
   const interval = state.syncIntervalMinutes;
+
   if (!Number.isFinite(interval) || interval <= 0) return false;
   const nowMs = at.getTime();
   const next = toTime(state.nextSyncAt);
+
   if (next !== null) return next <= nowMs;
   const last = toTime(state.lastAttemptedAt);
+
   if (last === null) return true;
+
   return last + interval * 60_000 <= nowMs;
 };
 
@@ -706,6 +786,7 @@ export const runEntraDirectorySyncForTenant = (options: {
     const config = yield* db.query.ssoConfig.findFirst({
       where: { organizationId },
     });
+
     if (!config?.azureTenantId)
       return {
         status: "not_configured",
@@ -715,10 +796,12 @@ export const runEntraDirectorySyncForTenant = (options: {
     const state = yield* db.query.entraDirectorySync.findFirst({
       where: { organizationId },
     });
+
     const interval = state?.syncIntervalMinutes ?? 0;
     const nextSyncAt = nextSyncAtFor(interval, timestamp);
 
     const lock = yield* acquireEntraSyncLock({ db, organizationId, now: timestamp });
+
     if (!lock.acquired) return { status: "locked" } as const;
 
     const exit = yield* Effect.exit(
@@ -763,6 +846,7 @@ export const runEntraDirectorySyncForTenant = (options: {
           updatedAt: timestamp,
         })
         .where(eq(schema.entraDirectorySync.organizationId, organizationId));
+
       return { status: "error", message } as const;
     }
 
@@ -798,6 +882,7 @@ export const runEntraDirectorySyncForTenant = (options: {
     Effect.catch((cause) =>
       Effect.sync(() => {
         console.error("Entra directory sync failed", options.organizationId, cause);
+
         return {
           status: "error",
           message: String(cause).slice(0, 2000),
@@ -832,6 +917,7 @@ export const runScheduledEntraSync = (options: {
 }): Effect.Effect<ScheduledEntraSyncResult, unknown, never> => {
   const { db, graph } = options;
   const timestamp = options.now ?? now();
+
   const empty = {
     graphConfigured: false,
     due: 0,
@@ -861,6 +947,7 @@ export const runScheduledEntraSync = (options: {
     }>;
 
     const due = rows.filter((row) => isEntraSyncDue(row, timestamp));
+
     const outcomes = yield* Effect.forEach(
       due,
       (row) =>
@@ -874,6 +961,7 @@ export const runScheduledEntraSync = (options: {
           Effect.catch((cause) =>
             Effect.sync(() => {
               console.error("Scheduled Entra directory sync failed", row.organizationId, cause);
+
               return { status: "error", message: String(cause) } as const;
             }),
           ),

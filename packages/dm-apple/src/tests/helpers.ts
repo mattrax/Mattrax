@@ -104,6 +104,7 @@ export function buildTokenUpdatePlist(
   const userIdSection = overrides?.UserID
     ? `<key>UserID</key><string>${overrides.UserID}</string>`
     : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -259,6 +260,7 @@ export async function generateTestCertPem(topic: string, useUid = true): Promise
   // In a real test we'd generate it with WebCrypto, but for unit tests
   // we use a pre-baked minimal DER wrapped in PEM.
   const oidUid = useUid ? "0.9.2342.19200300.100.1.1" : "2.5.4.3";
+
   // Minimal self-signed cert with just the subject we need.
   // We'll generate a real one using WebCrypto for integration tests,
   // but for cert.ts unit tests a static PEM is fine.
@@ -272,6 +274,7 @@ async function generateRealTestCertPem(topic: string, oidUid: string): Promise<s
     modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]),
   };
+
   const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
   // Build a minimal self-signed cert with pkijs
@@ -302,5 +305,6 @@ async function generateRealTestCertPem(topic: string, oidUid: string): Promise<s
   await cert.sign(keyPair.privateKey, "SHA-256");
 
   const { pemEncode } = await import("@mattrax/crypto");
+
   return pemEncode("CERTIFICATE", cert.toSchema().toBER(false));
 }

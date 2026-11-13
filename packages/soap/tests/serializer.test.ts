@@ -105,6 +105,7 @@ describe("SOAP Serializer", () => {
     const xml = await runPromise(
       serializeSoapElement(Person, { name: "Alice", address: { city: "NYC", zip: "10001" } }),
     );
+
     expect(xml).toContain("<Person>");
     expect(xml).toContain("<Address>");
     expect(xml).toContain("<city>NYC</city>");

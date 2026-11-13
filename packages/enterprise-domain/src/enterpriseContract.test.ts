@@ -7,6 +7,7 @@ describe("enterprise API error contract", () => {
     const internal = new EnterpriseInternal({
       message: "Something went wrong on our side. Try again shortly.",
     });
+
     for (const [identifier, endpoint] of Object.entries(enterpriseApi.endpoints)) {
       const schemas = [...endpoint.error];
       expect(schemas.length, `${identifier} declares no errors`).toBeGreaterThan(0);

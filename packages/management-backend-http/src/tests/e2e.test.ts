@@ -42,10 +42,12 @@ async function makeHandler(
       ),
     ),
   );
+
   const appLayer = apiLayer.pipe(
     Layer.provideMerge(backendLayer),
     Layer.provide(HttpServer.layerServices),
   );
+
   const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
 
   /**
@@ -57,24 +59,31 @@ async function makeHandler(
     if (input.headers.get("x-mattrax-test-passthrough") === "1") {
       const headers = new Headers(input.headers);
       headers.delete("x-mattrax-test-passthrough");
+
       return handler(new Request(input, { headers }));
     }
+
     if (!secret) return handler(input);
     const operation = webhookOperations[new URL(input.url).pathname];
+
     if (!operation) return handler(input);
 
     const body = await input.clone().text();
     const payload = body ? JSON.parse(body) : null;
     const timestamp = Math.floor(Date.now() / 1000).toString();
+
     const digest = createHash("sha256")
       .update(JSON.stringify(payload ?? null))
       .digest("hex");
+
     const signature = createHmac("sha256", secret)
       .update(`${operation}.${timestamp}.${digest}`)
       .digest("hex");
+
     const headers = new Headers(input.headers);
     headers.set("x-mattrax-timestamp", timestamp);
     headers.set("x-mattrax-signature", signature);
+
     return handler(new Request(input, { headers }));
   };
 
@@ -90,6 +99,7 @@ const deviceScope = {
 describe("Management Backend HTTP E2E", () => {
   it("handles apple device event", async () => {
     let receivedEvent: unknown;
+
     const backend = mockManagementBackend({
       appleDeviceEvent: (_scope: any, event: any) =>
         Effect.sync(() => {
@@ -98,6 +108,7 @@ describe("Management Backend HTTP E2E", () => {
     });
 
     const { handler, dispose } = await makeHandler(backend);
+
     const event = {
       _tag: "Authenticate" as const,
       serialNumber: "SN001",
@@ -291,6 +302,7 @@ describe("Management Backend HTTP E2E", () => {
     });
 
     const { handler, dispose } = await makeHandler(backend);
+
     const res = await handler(
       new Request("http://localhost/webhook/apple/profile", {
         method: "POST",
@@ -318,6 +330,7 @@ describe("Management Backend HTTP E2E", () => {
     });
 
     const { handler, dispose } = await makeHandler(backend);
+
     const res = await handler(
       new Request("http://localhost/webhook/windows/discovery", {
         method: "POST",
@@ -346,6 +359,7 @@ describe("Management Backend HTTP E2E", () => {
     });
 
     const { handler, dispose } = await makeHandler(backend);
+
     const res = await handler(
       new Request("http://localhost/webhook/windows/checkin", {
         method: "POST",
@@ -375,6 +389,7 @@ describe("Management Backend HTTP E2E", () => {
     });
 
     const { handler, dispose } = await makeHandler(backend);
+
     const res = await handler(
       new Request("http://localhost/webhook/windows/discovery", {
         method: "POST",
@@ -420,14 +435,18 @@ describe("Management Backend HTTP E2E", () => {
 
 describe("Management webhook signing", () => {
   const secret = "test-webhook-secret";
+
   const sign = async (operation: string, payload: unknown) => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
+
     const digest = createHash("sha256")
       .update(JSON.stringify(payload ?? null))
       .digest("hex");
+
     const signature = createHmac("sha256", secret)
       .update(`${operation}.${timestamp}.${digest}`)
       .digest("hex");
+
     return {
       "x-mattrax-timestamp": timestamp,
       "x-mattrax-signature": signature,
@@ -436,18 +455,23 @@ describe("Management webhook signing", () => {
 
   it("accepts a correctly signed request", async () => {
     let received = false;
+
     const backend = mockManagementBackend({
       appleDeviceEvent: () =>
         Effect.sync(() => {
           received = true;
         }),
     });
+
     const { handler, dispose } = await makeHandler(backend, secret);
+
     const payload = {
       scope: deviceScope,
       event: { _tag: "CheckOut" as const },
     };
+
     const body = JSON.stringify(payload);
+
     const response = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
@@ -458,6 +482,7 @@ describe("Management webhook signing", () => {
         body,
       }),
     );
+
     expect(response.status).toBe(204);
     expect(received).toBe(true);
     await dispose();
@@ -467,6 +492,7 @@ describe("Management webhook signing", () => {
     const backend = mockManagementBackend({});
     const { handler, dispose } = await makeHandler(backend, secret);
     const payload = { scope: deviceScope, event: { _tag: "CheckOut" as const } };
+
     const unsigned = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
@@ -477,9 +503,11 @@ describe("Management webhook signing", () => {
         body: JSON.stringify(payload),
       }),
     );
+
     expect(unsigned.status).toBe(500);
 
     const headers = await sign("appleDeviceEvent", payload);
+
     const tampered = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
@@ -494,20 +522,24 @@ describe("Management webhook signing", () => {
         }),
       }),
     );
+
     expect(tampered.status).toBe(500);
     await dispose();
   });
 
   it("fails closed when no secret is configured", async () => {
     let received = false;
+
     const backend = mockManagementBackend({
       appleDeviceEvent: () =>
         Effect.sync(() => {
           received = true;
         }),
     });
+
     const { handler, dispose } = await makeHandler(backend, null);
     const payload = { scope: deviceScope, event: { _tag: "CheckOut" as const } };
+
     const response = await handler(
       new Request("http://localhost/webhook/apple/event", {
         method: "POST",
@@ -518,6 +550,7 @@ describe("Management webhook signing", () => {
         body: JSON.stringify(payload),
       }),
     );
+
     expect(response.status).toBe(500);
     expect(received).toBe(false);
     await dispose();

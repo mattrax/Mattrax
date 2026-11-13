@@ -10,13 +10,16 @@ describe("DDM status subscription token", () => {
 
   it("changes when the subscribed status items change", async () => {
     const current = await deviceInformationConfigurationToken();
+
     const added = await deviceInformationConfigurationToken([
       ...DEVICE_INFORMATION_STATUS_ITEMS,
       "device.power.battery-level",
     ]);
+
     const removed = await deviceInformationConfigurationToken(
       DEVICE_INFORMATION_STATUS_ITEMS.filter((item) => item !== "diskmanagement.storage.total"),
     );
+
     expect(added).not.toBe(current);
     expect(removed).not.toBe(current);
     expect(added).not.toBe(removed);

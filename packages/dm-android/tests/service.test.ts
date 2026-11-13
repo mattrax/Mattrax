@@ -36,16 +36,21 @@ function config(): AndroidManagementConfig {
 
 function router(request: RecordedRequest): Response {
   const { pathname, method } = request;
+
   if (pathname === "/token") {
     return jsonResponse({ access_token: "ya29.service", expires_in: 3600, token_type: "Bearer" });
   }
+
   if (method === "POST" && pathname === "/v1/signupUrls") {
     return jsonResponse({ name: "signups/abc123", url: "https://enterprise.google.com/signup" });
   }
+
   if (method === "POST" && pathname === "/v1/enterprises") {
     const body = jsonBody(request) as Record<string, unknown>;
+
     return jsonResponse({ name: enterprise, displayName: body["displayName"] });
   }
+
   if (method === "POST" && pathname === `/v1/${enterprise}/enrollmentTokens`) {
     return jsonResponse({
       name: `${enterprise}/enrollmentTokens/token-1`,
@@ -54,6 +59,7 @@ function router(request: RecordedRequest): Response {
       expirationTimestamp: "2026-11-11T00:00:00Z",
     });
   }
+
   if (method === "PATCH" && pathname === `/v1/${enterprise}/policies/default`) {
     return jsonResponse({
       ...(jsonBody(request) as Record<string, unknown>),
@@ -61,12 +67,16 @@ function router(request: RecordedRequest): Response {
       version: "7",
     });
   }
+
   if (method === "PATCH" && pathname === `/v1/${device}`) {
     const body = jsonBody(request) as Record<string, unknown>;
+
     return jsonResponse({ name: device, policyName: body["policyName"] });
   }
+
   if (method === "GET" && pathname === `/v1/${enterprise}/devices`) {
     const pageToken = request.searchParams.get("pageToken");
+
     return pageToken === "next"
       ? jsonResponse({ devices: [{ name: `${enterprise}/devices/device-2` }] })
       : jsonResponse({
@@ -74,20 +84,25 @@ function router(request: RecordedRequest): Response {
           nextPageToken: "next",
         });
   }
+
   if (method === "POST" && pathname === `/v1/${device}:issueCommand`) {
     return jsonResponse({ name: `${device}/operations/op-1`, done: false });
   }
+
   if (method === "DELETE" && pathname === `/v1/${device}`) {
     return emptyResponse(204);
   }
+
   return jsonResponse({ error: { code: 404, message: "Enterprise not found" } }, 404);
 }
 
 function harness() {
   const mock = mockFetch(router);
   const layer = AndroidManagementLive(config()).pipe(Layer.provide(mock.layer));
+
   const run = <A, E>(effect: Effect.Effect<A, E, AndroidManagement>) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)));
+
   return { mock, layer, run };
 }
 
@@ -102,9 +117,11 @@ describe("AndroidManagement service", () => {
 
   it("creates a signup URL with project and callback parameters", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.createSignupUrl({
           callbackUrl: "https://mattrax.test/android/callback",
         });
@@ -124,9 +141,11 @@ describe("AndroidManagement service", () => {
 
   it("creates an enterprise from a signup URL", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.createEnterprise({
           signupUrlName: "signups/abc123",
           enterpriseToken: "ENTERPRISE-TOKEN",
@@ -153,9 +172,11 @@ describe("AndroidManagement service", () => {
 
   it("creates an enrollment token and expands a bare policy ID", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.createEnrollmentToken({
           enterpriseName: enterprise,
           policyName: "default",
@@ -182,6 +203,7 @@ describe("AndroidManagement service", () => {
 
   it("patches a policy with updateMask=* and strips resource names", async () => {
     const { mock, run } = harness();
+
     const policy = {
       name: `${enterprise}/policies/other`,
       policyName: `${enterprise}/policies/other`,
@@ -192,6 +214,7 @@ describe("AndroidManagement service", () => {
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.patchPolicy({
           enterpriseName: enterprise,
           policyId: "default",
@@ -213,9 +236,11 @@ describe("AndroidManagement service", () => {
 
   it("patches a device policy", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.patchDevice({
           deviceName: device,
           policyName: "default",
@@ -233,14 +258,17 @@ describe("AndroidManagement service", () => {
 
   it("lists devices across pages", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
         const first = yield* android.listDevices({ enterpriseName: enterprise });
+
         const second = yield* android.listDevices({
           enterpriseName: enterprise,
           pageToken: first.nextPageToken,
         });
+
         return { first, second };
       }),
     );
@@ -255,15 +283,18 @@ describe("AndroidManagement service", () => {
     const listRequests = mock.requests.filter(
       (item) => item.method === "GET" && item.pathname === `/v1/${enterprise}/devices`,
     );
+
     expect(listRequests[0]?.searchParams.get("pageSize")).toBe("100");
     expect(listRequests[1]?.searchParams.get("pageToken")).toBe("next");
   });
 
   it("issues a device command without leaking the device name into the body", async () => {
     const { mock, run } = harness();
+
     const result = await run(
       Effect.gen(function* () {
         const android = yield* AndroidManagement;
+
         return yield* android.issueCommand({
           deviceName: device,
           type: "WIPE",
@@ -309,10 +340,12 @@ describe("AndroidManagement service", () => {
 
   it("surfaces Google API error statuses", async () => {
     const { run } = harness();
+
     const error = await run(
       Effect.flip(
         Effect.gen(function* () {
           const android = yield* AndroidManagement;
+
           return yield* android.patchPolicy({
             enterpriseName: "enterprises/LC999",
             policyId: "default",
@@ -328,10 +361,12 @@ describe("AndroidManagement service", () => {
 
   it("rejects device names that are not full resource names", async () => {
     const { run } = harness();
+
     const error = await run(
       Effect.flip(
         Effect.gen(function* () {
           const android = yield* AndroidManagement;
+
           return yield* android.deleteDevice({ deviceName: "device-1" });
         }),
       ),
@@ -345,10 +380,12 @@ describe("AndroidManagement service", () => {
 
   it("rejects path traversal in policy IDs", async () => {
     const { run } = harness();
+
     const error = await run(
       Effect.flip(
         Effect.gen(function* () {
           const android = yield* AndroidManagement;
+
           return yield* android.patchPolicy({
             enterpriseName: enterprise,
             policyId: "../other",

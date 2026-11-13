@@ -35,6 +35,7 @@ describe("google service account auth", () => {
 
   it("builds an RS256 JWT with the Android Management scope", async () => {
     const issuedAt = 1_700_000_000;
+
     const jwt = await Effect.runPromise(
       buildServiceAccountJwt({
         clientEmail: account.clientEmail,
@@ -65,6 +66,7 @@ describe("google service account auth", () => {
         audience: tokenUri,
       }),
     );
+
     await expect(verifyJwt(jwt, account.publicKey)).resolves.toBe(true);
   });
 
@@ -72,11 +74,14 @@ describe("google service account auth", () => {
     const mock = mockFetch(() =>
       jsonResponse({ access_token: "ya29.token", expires_in: 3600, token_type: "Bearer" }),
     );
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
       const first = yield* auth.accessToken();
       const second = yield* auth.accessToken();
+
       return { first, second };
     });
 
@@ -100,15 +105,20 @@ describe("google service account auth", () => {
 
   it("refreshes a token that is within 60 seconds of expiry", async () => {
     let issued = 0;
+
     const mock = mockFetch(() => {
       issued++;
+
       return jsonResponse({ access_token: `ya29.${issued}`, expires_in: 30 });
     });
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
       const first = yield* auth.accessToken();
       const second = yield* auth.accessToken();
+
       return { first: first.accessToken, second: second.accessToken };
     });
 
@@ -121,9 +131,12 @@ describe("google service account auth", () => {
     const mock = mockFetch(() =>
       jsonResponse({ error: "invalid_grant", error_description: "Invalid JWT" }, 401),
     );
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
+
       return yield* auth.accessToken();
     });
 
@@ -137,11 +150,15 @@ describe("google service account auth", () => {
       if (request.pathname === "/token") {
         return jsonResponse({ access_token: "ya29.abc", expires_in: 3600, token_type: "Bearer" });
       }
+
       return jsonResponse({ name: "enterprises/LC123" });
     });
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
+
       return yield* auth.authorizedFetch({
         method: "GET",
         url: "https://android.test/v1/enterprises/LC123",
@@ -152,9 +169,11 @@ describe("google service account auth", () => {
 
     const result = await Effect.runPromise(program.pipe(Effect.provide(layer)));
     expect(result.name).toBe("enterprises/LC123");
+
     const apiRequest = mock.requests.find(
       (request) => request.pathname === "/v1/enterprises/LC123",
     );
+
     expect(apiRequest?.headers.get("authorization")).toBe("Bearer ya29.abc");
   });
 
@@ -163,14 +182,18 @@ describe("google service account auth", () => {
       if (request.pathname === "/token") {
         return jsonResponse({ access_token: "ya29.abc", expires_in: 3600 });
       }
+
       return jsonResponse(
         { error: { code: 403, message: "Caller is not authorized", status: "PERMISSION_DENIED" } },
         403,
       );
     });
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
+
       return yield* auth.authorizedFetch({
         method: "GET",
         url: "https://android.test/v1/enterprises/LC123",
@@ -190,9 +213,12 @@ describe("google service account auth", () => {
         ? jsonResponse({ access_token: "ya29.abc", expires_in: 3600 })
         : new Response(null, { status: 200 }),
     );
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
+
       return yield* auth.authorizedFetch({
         method: "GET",
         url: "https://android.test/v1/empty",
@@ -211,7 +237,9 @@ describe("google service account auth", () => {
         ? jsonResponse({ access_token: "ya29.abc", expires_in: 3600 })
         : new Response(null, { status: 204 }),
     );
+
     const layer = GoogleAuthLive(config()).pipe(Layer.provide(mock.layer));
+
     const program = Effect.gen(function* () {
       const auth = yield* GoogleAuth;
       yield* auth.authorizedFetchVoid({
@@ -233,6 +261,7 @@ describe("google service account auth", () => {
         }),
       ),
     );
+
     expect(result).toMatchObject({ _tag: "GoogleAuthError" });
   });
 });

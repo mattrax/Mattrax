@@ -29,6 +29,7 @@ async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
+
   return handler;
 }
 
@@ -49,6 +50,7 @@ async function decryptEnvelopedData(
     true,
     ["sign"],
   );
+
   const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
@@ -60,12 +62,14 @@ async function decryptEnvelopedData(
   const ivHex = (
     envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
   )?.valueBlock?.valueHex as ArrayBuffer;
+
   const iv = Buffer.from(ivHex);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
     "decrypt",
   ]);
+
   return crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encryptedContent);
 }
 
@@ -76,6 +80,7 @@ describe("SCEP E2E", () => {
     const caCert = await createTestCaCert(caKeyPair, "E2E SCEP CA");
     const { certToPem } = await import("../pkcs7.js");
     const caCertPem = certToPem(caCert);
+
     const caPrivateKeyJwk = (await crypto.subtle.exportKey(
       "jwk",
       caKeyPair.privateKey,
@@ -93,6 +98,7 @@ describe("SCEP E2E", () => {
     const capsRes = await handler(
       new Request("http://localhost/mdm/apple/scep?operation=GetCACaps"),
     );
+
     expect(capsRes.status).toBe(200);
     const capsText = await capsRes.text();
     expect(capsText).toContain("SHA-256");
@@ -102,6 +108,7 @@ describe("SCEP E2E", () => {
     const certRes = await handler(
       new Request("http://localhost/mdm/apple/scep?operation=GetCACert"),
     );
+
     expect(certRes.status).toBe(200);
     const certDer = await certRes.arrayBuffer();
     expect(certDer.byteLength).toBeGreaterThan(0);
@@ -112,6 +119,7 @@ describe("SCEP E2E", () => {
     const csr = await buildTestCsr(deviceKeyPair, "E2EDevice");
     const senderNonce = crypto.getRandomValues(new Uint8Array(16));
     const txnId = "txn-e2e-001";
+
     const pkcsReq = await buildPkcsReq(
       csr,
       caCert,
@@ -129,6 +137,7 @@ describe("SCEP E2E", () => {
         body: pkcsReq,
       }),
     );
+
     expect(pkiRes.status).toBe(200);
     const certRepDer = await pkiRes.arrayBuffer();
     expect(certRepDer.byteLength).toBeGreaterThan(0);
@@ -162,6 +171,7 @@ describe("SCEP E2E", () => {
       "jwk",
       deviceKeyPair.privateKey,
     )) as JsonWebKey;
+
     const decryptedDer = await decryptEnvelopedData(envelopedDer, deviceJwk);
 
     // Decrypted bytes should be a degenerate PKCS#7 containing the device cert

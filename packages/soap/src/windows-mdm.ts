@@ -114,6 +114,7 @@ export const ContentAttr = Schema.Struct({
   ),
   content: Schema.optional(Schema.String).pipe(Schema.annotateKey({ soapTextContent: true })),
 }).pipe(Schema.annotate({ identifier: "ContentAttr" }));
+
 export type ContentAttr = typeof ContentAttr.Type;
 
 export const GenericNil = Schema.Struct({
@@ -331,6 +332,7 @@ export const ProvisioningParam = Schema.Struct({
     Schema.annotateKey({ soapAttribute: true, soapAttributeName: "datatype" }),
   ),
 }).pipe(Schema.annotate({ identifier: "parm" }));
+
 export type ProvisioningParam = typeof ProvisioningParam.Type;
 
 export interface ProvisioningCharacteristic {
@@ -359,18 +361,22 @@ export const WapProvisioningDoc = Schema.Struct({
     Schema.annotateKey({ soapElementName: "characteristic" }),
   ),
 }).pipe(Schema.annotate({ identifier: "wap-provisioningdoc", soapNamespace: EnrollmentNs }));
+
 export type WapProvisioningDoc = typeof WapProvisioningDoc.Type;
 
 export const SyncMLTarget = Schema.Struct({
   locURI: Schema.String.pipe(Schema.annotateKey({ soapElementName: "LocURI" })),
 }).pipe(Schema.annotate({ identifier: "Target" }));
+
 export const SyncMLSource = Schema.Struct({
   locURI: Schema.String.pipe(Schema.annotateKey({ soapElementName: "LocURI" })),
 }).pipe(Schema.annotate({ identifier: "Source" }));
+
 export const SyncMLMeta = Schema.Struct({
   format: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Format" }))),
   type: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Type" }))),
 }).pipe(Schema.annotate({ identifier: "Meta" }));
+
 export type SyncMLMeta = typeof SyncMLMeta.Type;
 
 export const SyncMLItem = Schema.Struct({
@@ -379,6 +385,7 @@ export const SyncMLItem = Schema.Struct({
   meta: Schema.optional(SyncMLMeta.pipe(Schema.annotateKey({ soapElementName: "Meta" }))),
   data: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Data" }))),
 }).pipe(Schema.annotate({ identifier: "Item" }));
+
 export type SyncMLItem = typeof SyncMLItem.Type;
 
 const SyncMLCommand = (identifier: string) =>
@@ -406,6 +413,7 @@ export const SyncMLAdd = SyncMLCommand("Add");
 export const SyncMLReplace = SyncMLCommand("Replace");
 export const SyncMLDelete = SyncMLCommand("Delete");
 export const SyncMLExec = SyncMLCommand("Exec");
+
 export const SyncMLAtomic = Schema.Struct({
   cmdID: Schema.String.pipe(Schema.annotateKey({ soapElementName: "CmdID" })),
   add: Schema.optional(

@@ -30,20 +30,25 @@ const daysFromNow = (days: number) => new Date(now.getTime() + days * DAY);
 
 const makeCertificate = async (notAfter: Date) => {
   const keys = await generateCaKeyPair();
+
   const attribute = (type: string, value: string) =>
     new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
+
   const certificate = new pkijs.Certificate();
   certificate.version = 2;
   certificate.serialNumber = new asn1js.Integer({ value: 1 });
+
   const name = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [attribute("2.5.4.3", "Test certificate")],
   });
+
   certificate.issuer = name;
   certificate.subject = name;
   certificate.notBefore.value = new Date(notAfter.getTime() - 365 * DAY);
   certificate.notAfter.value = notAfter;
   await certificate.subjectPublicKeyInfo.importKey(keys.publicKey);
   await certificate.sign(keys.privateKey, "SHA-256");
+
   return pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false));
 };
 
@@ -112,6 +117,7 @@ describe("summarizeDeviceCertificates", () => {
       { deviceId: "device-a", notAfter: daysFromNow(90), createdAt: daysFromNow(-1) },
       { deviceId: "device-b", notAfter: daysFromNow(-5), createdAt: daysFromNow(-6) },
     ];
+
     expect(summarizeDeviceCertificates(history, now)).toEqual({
       total: 2,
       expiringSoon: 0,
@@ -178,6 +184,7 @@ const build = async () => {
     { serial: "a-2", organizationId: "org-a", notAfter: daysFromNow(-1), createdAt: now },
     { serial: "b-1", organizationId: "org-b", notAfter: daysFromNow(200), createdAt: now },
   );
+
   return db;
 };
 
@@ -231,6 +238,7 @@ describe("loadCredentialHealth", () => {
 
   it("writes one credential alert per threshold per day", async () => {
     const db = await build();
+
     const run = (at: Date) =>
       runEffect(
         // Retention is disabled so the fake database's `lt` predicate cannot
@@ -257,6 +265,7 @@ describe("loadCredentialHealth", () => {
 
   it("reports again just after UTC midnight instead of skipping a day", async () => {
     const db = await build();
+
     const run = (at: Date) =>
       runEffect(
         runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(
@@ -297,6 +306,7 @@ describe("credential expiry notifications", () => {
       { id: "m-disabled", organizationId: "org-a", userId: "u-disabled", role: "owner" },
       { id: "m-other", organizationId: "org-b", userId: "u-member", role: "admin" },
     );
+
     return db;
   };
 
@@ -315,12 +325,14 @@ describe("credential expiry notifications", () => {
 
   it("notifies once per new alert with enabled owner/admin recipients only", async () => {
     const db = await withRecipients();
+
     const notifications: Array<{
       organizationId: string;
       organizationName: string;
       threshold: string;
       recipients: Array<{ email: string }>;
     }> = [];
+
     const notify = vi.fn((notification: any) =>
       Effect.sync(() => {
         notifications.push(notification);
@@ -354,6 +366,7 @@ describe("credential expiry notifications", () => {
   it("keeps maintenance running when the notifier fails or throws", async () => {
     const db = await withRecipients();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
     try {
       const failed = await run(db, () => Effect.fail(new Error("smtp unavailable")));
       expect(failed.credentialAlerts).toBe(2);
@@ -366,6 +379,7 @@ describe("credential expiry notifications", () => {
         }) as any,
         new Date(now.getTime() + DAY),
       );
+
       expect(thrown.credentialAlerts).toBe(2);
       expect(error).toHaveBeenCalled();
     } finally {

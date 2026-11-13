@@ -36,6 +36,7 @@ export const ScepService = Layer.effect(
 
     const ensureCa = Effect.gen(function* () {
       const existing = yield* repo.getCa();
+
       if (existing) {
         const caCert = yield* Effect.sync(() => {
           try {
@@ -44,8 +45,10 @@ export const ScepService = Layer.effect(
             return null;
           }
         });
+
         if (caCert) {
           const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
+
           return {
             privateKey,
             privateKeyJwk: existing.privateKeyJwk,
@@ -58,14 +61,17 @@ export const ScepService = Layer.effect(
 
       const keyPair = yield* generateCaKeyPair();
       const jwk = yield* exportPrivateKeyJwk(keyPair.privateKey);
+
       const caCert = yield* Effect.tryPromise({
         try: () => createCaCertificate(keyPair, "Mattrax SCEP CA"),
         catch: (cause) => new ScepError({ message: "Failed to create CA certificate", cause }),
       });
+
       const certPem = certToPem(caCert);
 
       yield* repo.saveCa(certPem, jwk);
       const privateKey = yield* importPrivateKeyJwk(jwk);
+
       return { privateKey, privateKeyJwk: jwk, caCert, certPem };
     });
 
@@ -76,6 +82,7 @@ export const ScepService = Layer.effect(
         const ca = yield* ensureCa;
         // Return raw DER for single CA cert (Apple expects this)
         const raw = ca.caCert.toSchema().toBER(false);
+
         return { raw, isPkcs7: false };
       });
 
@@ -103,32 +110,40 @@ export const ScepService = Layer.effect(
           try: () => req.csr.verify(),
           catch: (cause) => new ScepError({ message: "Failed to verify the CSR signature", cause }),
         });
+
         if (!csrValid) return yield* failureCertRep("1");
 
         // Renewals carry a currently-valid identity certificate signed by this
         // CA instead of the original enrollment challenge.
         let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
           undefined;
+
         let issued: ScepIssuedCertificate | null = null;
 
         if (req.renewal) {
           const signer = req.signerCerts[0];
+
           if (!signer) return yield* failureCertRep("1");
+
           const valid = yield* Effect.tryPromise({
             try: () => signer.verify(ca.caCert),
             catch: (cause) => new ScepError({ message: "Failed to verify renewal signer", cause }),
           }).pipe(Effect.match({ onFailure: () => false, onSuccess: (value) => value }));
+
           if (!valid) return yield* failureCertRep("1");
           const serial = certificateSerialHex(signer);
           issued = repo.findIssuedCertificate ? yield* repo.findIssuedCertificate(serial) : null;
+
           if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date()))
             return yield* failureCertRep("4");
           const ou = signer.subject.typesAndValues.find((item) => item.type === "2.5.4.11");
+
           const value = issued?.organizationId
             ? issued.organizationId
             : ou
               ? ((ou.value.valueBlock as { value?: string }).value ?? undefined)
               : undefined;
+
           authentication = value
             ? { organizationalUnit: value, enrollmentId: issued?.enrollmentId }
             : undefined;
@@ -137,6 +152,7 @@ export const ScepService = Layer.effect(
           const authenticated = yield* repo
             .authenticatePkcsReq(req)
             .pipe(Effect.match({ onFailure: () => null, onSuccess: (value) => value ?? {} }));
+
           if (authenticated === null) return yield* failureCertRep("2");
           authentication = authenticated;
         }
@@ -154,14 +170,18 @@ export const ScepService = Layer.effect(
         });
 
         const subject: Array<{ type: string; value: string }> = [];
+
         for (const rdn of req.csr.subject.typesAndValues) {
           const val = rdn.value.valueBlock as any;
+
           if (typeof val.value === "string") {
             subject.push({ type: rdn.type, value: val.value });
           }
         }
+
         if (!subject.some((item) => item.type === "2.5.4.3"))
           subject.push({ type: "2.5.4.3", value: "device" });
+
         // Pin the certificate to the authenticated tenant. This mirrors mttx's
         // SCEP challenge middleware, which overwrites the CSR subject OU with the
         // tenant id resolved from the challenge.
@@ -169,6 +189,7 @@ export const ScepService = Layer.effect(
           authentication && typeof authentication === "object"
             ? authentication.organizationalUnit
             : undefined;
+
         if (organizationalUnit) {
           const filtered = subject.filter((item) => item.type !== "2.5.4.11");
           filtered.push({ type: "2.5.4.11", value: organizationalUnit });
@@ -185,6 +206,7 @@ export const ScepService = Layer.effect(
           catch: (cause) =>
             new ScepError({ message: "Failed to create device certificate", cause }),
         });
+
         if (repo.recordIssuedCertificate && authentication?.organizationalUnit) {
           yield* repo.recordIssuedCertificate({
             serial: certificateSerialHex(deviceCert),

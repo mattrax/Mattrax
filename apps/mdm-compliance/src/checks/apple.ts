@@ -77,6 +77,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The profile must bind a per-enrollment SCEP challenge to the MDM check-in URL and advertise bootstrap-token support.",
     async () => {
       const harness = createAppleHarness();
+
       const raw = await Effect.runPromise(
         harness.service.generateEnrollmentProfile({
           challenge: "challenge-compliance",
@@ -84,15 +85,19 @@ export const appleChecks: ReadonlyArray<Check> = [
           organizationName: "Compliance Test",
         }),
       );
+
       const profile = (await parseAppleBody(raw)) as any;
       assert.equal(profile.PayloadType, "Configuration");
       assert.equal(profile.PayloadContent.length, 2);
+
       const scep = profile.PayloadContent.find(
         (payload: any) => payload.PayloadType === "com.apple.security.scep",
       );
+
       const mdm = profile.PayloadContent.find(
         (payload: any) => payload.PayloadType === "com.apple.mdm",
       );
+
       assert.ok(scep && mdm);
       assert.equal(scep.PayloadContent.Challenge, "challenge-compliance");
       assert.equal(scep.PayloadContent.URL, `${origin}/mdm/apple/scep`);
@@ -120,6 +125,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(recorded.event._tag, "Authenticate");
       assert.equal(recorded.scope._tag, "device");
       assert.equal(recorded.scope.udid, udid);
+
       if (recorded.event._tag === "Authenticate") {
         assert.equal(recorded.event.serialNumber, "C02COMPLIANCE");
         assert.equal(recorded.event.osVersion, "15.4");
@@ -134,9 +140,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Malformed check-in plists must be rejected with HTTP 400 rather than partially processed.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "Authenticate", UDID: udid }),
       );
+
       assert.equal(response.status, 400);
       assert.equal(harness.state.events.length, 0);
     },
@@ -148,12 +156,15 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The base64 APNs token must be converted to lowercase hexadecimal and recorded with PushMagic and topic.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(tokenUpdate({ EnrollmentID: "enrollment-1" })),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "TokenUpdate");
+
       if (event._tag !== "TokenUpdate") return;
       assert.equal(event.pushToken, "deadbeef");
       assert.equal(event.pushMagic, "push-magic");
@@ -169,6 +180,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "User-channel TokenUpdate must be attributed to the user scope with unlock token and user metadata.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(
           tokenUpdate({
@@ -180,12 +192,15 @@ export const appleChecks: ReadonlyArray<Check> = [
           }),
         ),
       );
+
       assert.equal(response.status, 200);
       const recorded = harness.state.events[0]!;
       assert.equal(recorded.scope._tag, "user");
+
       if (recorded.scope._tag === "user") assert.equal(recorded.scope.userId, "user-1");
       const event = recorded.event;
       assert.equal(event._tag, "TokenUpdate");
+
       if (event._tag !== "TokenUpdate") return;
       assert.equal(event.channel, "user");
       assert.equal(event.userId, "user-1");
@@ -202,6 +217,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A TokenUpdate missing the APNs token cannot be stored and must return HTTP 400.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({
           MessageType: "TokenUpdate",
@@ -210,6 +226,7 @@ export const appleChecks: ReadonlyArray<Check> = [
           PushMagic: "push-magic",
         }),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -220,9 +237,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Device CheckOut must be accepted and forwarded as a CheckOut event.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "CheckOut", Topic: topic, UDID: udid }),
       );
+
       assert.equal(response.status, 200);
       assert.equal(harness.state.events[0]!.event._tag, "CheckOut");
     },
@@ -234,6 +253,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A user-channel CheckOut must identify the user so only that user's management context is removed.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({
           MessageType: "CheckOut",
@@ -242,10 +262,12 @@ export const appleChecks: ReadonlyArray<Check> = [
           UserID: "user-1",
         }),
       );
+
       assert.equal(response.status, 200);
       assert.equal(harness.state.events[0]!.scope._tag, "user");
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "CheckOut");
+
       if (event._tag === "CheckOut") assert.equal(event.userId, "user-1");
     },
   ),
@@ -281,6 +303,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
       assert.equal(response.status, 200);
       const text = await response.text();
+
       if (text.trim() !== "") {
         const plist = (await parseAppleBody(text)) as Record<string, unknown>;
         assert.equal(Object.keys(plist).length, 0);
@@ -300,6 +323,7 @@ export const appleChecks: ReadonlyArray<Check> = [
         requestType: "SecurityInfo",
         payload: {},
       });
+
       const response = await harness.handler(
         await appleMdmRequest({
           UDID: udid,
@@ -309,14 +333,17 @@ export const appleChecks: ReadonlyArray<Check> = [
           QueryResponses: { DeviceName: "Mac" },
         }),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "CommandResult");
+
       if (event._tag === "CommandResult") {
         assert.equal(event.commandUUID, "command-1");
         assert.equal(event.status, "Acknowledged");
         assert.deepEqual(event.queryResponses, { DeviceName: "Mac" });
       }
+
       const plist = (await applePlistResponse(response)) as any;
       assert.equal(plist.CommandUUID, "command-2");
       assert.equal(plist.Command.RequestType, "SecurityInfo");
@@ -329,6 +356,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The server must record ErrorDomain and ErrorCode from a failed command result.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({
           UDID: udid,
@@ -340,9 +368,11 @@ export const appleChecks: ReadonlyArray<Check> = [
           ],
         }),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "CommandResult");
+
       if (event._tag === "CommandResult")
         assert.equal(event.errorDetail, "MCMDMErrorDomain:12013, MCMDMErrorDomain:12014");
     },
@@ -354,9 +384,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A Status payload with no CommandUUID must not be recorded as a command result.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ UDID: udid, Status: "Acknowledged" }),
       );
+
       assert.equal(response.status, 200);
       assert.equal(eventTags(harness).includes("CommandResult"), false);
     },
@@ -368,6 +400,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "NotNow means later, not never: the device status must be preserved for the backend to retry.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({
           UDID: udid,
@@ -375,9 +408,11 @@ export const appleChecks: ReadonlyArray<Check> = [
           CommandUUID: "command-not-now",
         }),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "CommandResult");
+
       if (event._tag === "CommandResult") {
         assert.equal(event.status, "NotNow");
         assert.equal(event.commandUUID, "command-not-now");
@@ -440,9 +475,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Activations, configurations, assets and management declarations must be returned in separate arrays with the current token.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("declaration-items")),
       );
+
       assert.equal(response.status, 200);
       const body = (await response.json()) as any;
       assert.equal(body.DeclarationsToken, "declarations-token");
@@ -465,9 +502,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A declaration fetch must return the exact declaration object for the requested identifier.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("declaration/configuration/configuration.one")),
       );
+
       assert.equal(response.status, 200);
       const body = (await response.json()) as any;
       assert.equal(body.Identifier, "configuration.one");
@@ -482,9 +521,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Only activation, configuration, asset and management declaration types are valid.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("declaration/unknown/configuration.one")),
       );
+
       assert.equal(response.status, 404);
     },
   ),
@@ -495,6 +536,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The base64 JSON status report must be decoded and forwarded with mapped error reasons.",
     async () => {
       const harness = createAppleHarness();
+
       const report = {
         StatusItems: { "device.operating-system.version": "15.4" },
         Errors: [
@@ -504,12 +546,15 @@ export const appleChecks: ReadonlyArray<Check> = [
           },
         ],
       };
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("status", { Data: base64Utf8(JSON.stringify(report)) })),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "DeclarationStatus");
+
       if (event._tag === "DeclarationStatus") {
         assert.deepEqual(event.statusItems, report.StatusItems);
         assert.equal(event.errors?.[0]?.statusItem, "configuration.one");
@@ -524,9 +569,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A status Data value that is not base64 JSON must return HTTP 400.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("status", { Data: "bm90LWpzb24=" })),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -537,9 +584,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Unknown DeclarativeManagement endpoints must not be treated as commands.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest(declarative("not-a-real-endpoint")),
       );
+
       assert.equal(response.status, 404);
     },
   ),
@@ -550,6 +599,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A SetBootstrapToken check-in must forward the opaque bootstrap token with the device UDID.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({
           MessageType: "SetBootstrapToken",
@@ -557,9 +607,11 @@ export const appleChecks: ReadonlyArray<Check> = [
           BootstrapToken: "Ym9vdHN0cmFwLXRva2Vu",
         }),
       );
+
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
       assert.equal(event._tag, "BootstrapToken");
+
       if (event._tag === "BootstrapToken") assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
     },
   ),
@@ -570,9 +622,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A GetBootstrapToken request must return the escrowed token as binary plist data.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid }),
       );
+
       assert.equal(response.status, 200);
       const text = await response.text();
       assert.match(text, /<key>BootstrapToken<\/key><data>/);
@@ -588,9 +642,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createAppleHarness();
       harness.state.bootstrapToken = null;
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid }),
       );
+
       assert.equal(response.status, 200);
       assert.equal((await response.text()).trim(), "");
     },
@@ -602,9 +658,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Bootstrap token lookup cannot be ambiguous; a missing UDID must return HTTP 400.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "GetBootstrapToken" }),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -615,9 +673,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The user channel must not be issued an MDM identity through the device endpoint.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid }),
       );
+
       assert.equal(response.status, 410);
     },
   ),
@@ -628,9 +688,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "GetToken is not supported and must return HTTP 400.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "GetToken", UDID: udid }),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -641,9 +703,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Unrecognised MessageType values must not fall through to command polling.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         await appleMdmRequest({ MessageType: "SomethingElse", UDID: udid }),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -667,6 +731,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       const harness = createAppleHarness({
         trust: { requireSignature: true, caCertPems: Effect.succeed([]) },
       });
+
       const response = await harness.handler(await appleMdmRequest(authenticate()));
       assert.equal(response.status, 400);
     },
@@ -682,11 +747,13 @@ export const appleChecks: ReadonlyArray<Check> = [
         content: new TextEncoder().encode("asset-content"),
         contentType: "application/octet-stream",
       });
+
       const response = await harness.handler(
         new Request(`${origin}/mdm/apple/assets/asset-1?token=asset-token`, {
           headers: { "x-device-identity-certificate": "device-cert" },
         }),
       );
+
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("content-type"), "application/octet-stream");
       assert.equal(await response.text(), "asset-content");
@@ -714,16 +781,19 @@ export const appleChecks: ReadonlyArray<Check> = [
         content: new TextEncoder().encode("profile-content"),
         contentType: "application/x-apple-aspen-config",
       };
+
       const token = await signAppleProfileToken(harness.config.authSecret, {
         deviceToken: "device-token",
         policyId: "policy-1",
         kind: "configuration",
       });
+
       const response = await harness.handler(
         new Request(
           `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}`,
         ),
       );
+
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("content-type"), "application/x-apple-aspen-config");
       assert.match(response.headers.get("content-disposition") ?? "", /policy-1\.mobileconfig/);
@@ -741,9 +811,11 @@ export const appleChecks: ReadonlyArray<Check> = [
         content: new TextEncoder().encode("secret-profile"),
         contentType: "application/x-apple-aspen-config",
       };
+
       const response = await harness.handler(
         new Request(`${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=bad`),
       );
+
       assert.equal(response.status, 404);
     },
   ),
@@ -754,9 +826,11 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Profile URLs must include device token, policy id and kind.",
     async () => {
       const harness = createAppleHarness();
+
       const response = await harness.handler(
         new Request(`${origin}/mdm/apple/profiles/only-a-token`),
       );
+
       assert.equal(response.status, 404);
     },
   ),
@@ -771,12 +845,15 @@ export const appleChecks: ReadonlyArray<Check> = [
         { _tag: "DdmSync", serverToken: "server-token-a" },
         { _tag: "DdmSync", serverToken: "server-token-b" },
       );
+
       const first = (await applePlistResponse(
         await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
       )) as any;
+
       const second = (await applePlistResponse(
         await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
       )) as any;
+
       assert.equal(first.Command.RequestType, "DeclarativeManagement");
       assert.equal(second.Command.RequestType, "DeclarativeManagement");
       assert.notEqual(first.CommandUUID, second.CommandUUID);
@@ -808,10 +885,12 @@ export const appleChecks: ReadonlyArray<Check> = [
           }),
         ),
       );
+
       const tokens = harness.state.events
         .map((entry) => entry.event)
         .filter((event) => event._tag === "TokenUpdate")
         .map((event) => event.pushToken);
+
       assert.deepEqual(tokens, ["01010101", "02020202"]);
     },
     true,

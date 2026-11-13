@@ -35,15 +35,19 @@ export function MobileconfigPreview(props: { content: string }) {
   const preview = useMutation(() => ({
     mutationFn: () => enterprise.previewMobileconfig(props.content) as unknown as Promise<Preview>,
   }));
+
   createEffect(
     () => props.content,
     (content) => {
       if (content) preview.mutate();
     },
   );
+
   const rows = () => {
     const data = preview.data;
+
     if (!data) return [];
+
     if (data.payloads)
       return data.payloads.map((item) => ({
         category: item.category,
@@ -52,6 +56,7 @@ export function MobileconfigPreview(props: { content: string }) {
         type: item.type ?? item.payloadType,
         identifier: item.identifier ?? item.payloadIdentifier,
       }));
+
     return (data.payload_categories ?? []).map((item) => ({
       category: item.category,
       displayName: item.payload_display_name,
@@ -60,12 +65,16 @@ export function MobileconfigPreview(props: { content: string }) {
       identifier: item.payload_identifier,
     }));
   };
+
   const description = () => {
     const data = preview.data;
+
     return data ? (data.payloadDescription ?? data.payload_description) : undefined;
   };
+
   const organization = () => {
     const data = preview.data;
+
     return data ? (data.payloadOrganization ?? data.payload_organization) : undefined;
   };
 

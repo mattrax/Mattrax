@@ -17,6 +17,7 @@ const profile = yieldedProfile();
 
 function yieldedProfile() {
   const derived = passkeyProfile(origin);
+
   return {
     profileId: "default",
     rpId: derived.id,
@@ -42,17 +43,22 @@ const protocol = () =>
 
 const b64 = (bytes: Uint8Array) => Base64Url.encode(bytes);
 const utf8 = (value: string) => new TextEncoder().encode(value);
+
 const concat = (...parts: ReadonlyArray<Uint8Array>) => {
   const total = parts.reduce((sum, part) => sum + part.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;
+
   for (const part of parts) {
     out.set(part, offset);
     offset += part.length;
   }
+
   return out;
 };
+
 const u16 = (value: number) => new Uint8Array([(value >> 8) & 0xff, value & 0xff]);
+
 const u32 = (value: number) =>
   new Uint8Array([
     (value >>> 24) & 0xff,
@@ -60,6 +66,7 @@ const u32 = (value: number) =>
     (value >>> 8) & 0xff,
     value & 0xff,
   ]);
+
 const sha256 = (bytes: Uint8Array) => crypto.subtle.digest("SHA-256", bytes);
 
 const flags = { up: 0x01, uv: 0x04, at: 0x40, be: 0x08, bs: 0x10 };
@@ -71,12 +78,17 @@ const flags = { up: 0x01, uv: 0x04, at: 0x40, be: 0x08, bs: 0x10 };
 const derSignature = (raw: Uint8Array) => {
   const integer = (bytes: Uint8Array) => {
     let start = 0;
+
     while (start < bytes.length - 1 && bytes[start] === 0) start++;
     let value = bytes.slice(start);
+
     if ((value[0]! & 0x80) !== 0) value = concat(new Uint8Array([0]), value);
+
     return concat(new Uint8Array([0x02, value.length]), value);
   };
+
   const body = concat(integer(raw.slice(0, 32)), integer(raw.slice(32)));
+
   return concat(new Uint8Array([0x30, body.length]), body);
 };
 
@@ -85,14 +97,19 @@ const makeKey = () =>
 
 const cosePublicKey = async (key: CryptoKey) => {
   const jwk = await crypto.subtle.exportKey("jwk", key);
+
   const x = Base64Url.decode(jwk.x!).pipe((result) => {
     if (result._tag !== "Success") throw new Error("invalid x");
+
     return new Uint8Array(result.success);
   });
+
   const y = Base64Url.decode(jwk.y!).pipe((result) => {
     if (result._tag !== "Success") throw new Error("invalid y");
+
     return new Uint8Array(result.success);
   });
+
   return new Uint8Array(
     isoCBOR.encode(
       new Map<number, unknown>([
@@ -162,6 +179,7 @@ describe("WebAuthn ceremonies", () => {
     const verifier = await Effect.runPromise(protocol());
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = registrationCeremony(challenge);
+
     const started = await Effect.runPromise(
       verifier.prepareRegistration({
         profile,
@@ -173,11 +191,13 @@ describe("WebAuthn ceremonies", () => {
         excludedCredentials: [],
       }),
     );
+
     expect(started.challenge).toBe(challenge);
 
     const key = await makeKey();
     const credentialId = crypto.getRandomValues(new Uint8Array(32));
     const rpIdHash = new Uint8Array(await sha256(utf8(profile.rpId)));
+
     const authData = concat(
       rpIdHash,
       new Uint8Array([flags.up | flags.uv | flags.at]),
@@ -187,6 +207,7 @@ describe("WebAuthn ceremonies", () => {
       credentialId,
       await cosePublicKey(key.publicKey),
     );
+
     const attestationObject = new Uint8Array(
       isoCBOR.encode(
         new Map<string, unknown>([
@@ -196,6 +217,7 @@ describe("WebAuthn ceremonies", () => {
         ]),
       ),
     );
+
     const clientDataJSON = utf8(
       JSON.stringify({ type: "webauthn.create", challenge, origin, crossOrigin: false }),
     );
@@ -227,6 +249,7 @@ describe("WebAuthn ceremonies", () => {
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const credentialId = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = stepUpCeremony(challenge, credentialId);
+
     const started = await Effect.runPromise(
       verifier.prepareAuthentication({
         profile,
@@ -235,15 +258,18 @@ describe("WebAuthn ceremonies", () => {
         allowedCredentials: ceremony.allowedCredentials,
       }),
     );
+
     expect(started.allowCredentials.map((item) => item.id)).toEqual([credentialId]);
 
     const key = await makeKey();
     const publicKey = await cosePublicKey(key.publicKey);
     const rpIdHash = new Uint8Array(await sha256(utf8(profile.rpId)));
     const authData = concat(rpIdHash, new Uint8Array([flags.up | flags.uv]), u32(1));
+
     const clientDataJSON = utf8(
       JSON.stringify({ type: "webauthn.get", challenge, origin, crossOrigin: false }),
     );
+
     const signature = derSignature(
       new Uint8Array(
         await crypto.subtle.sign(
@@ -319,11 +345,13 @@ describe("WebAuthn ceremonies", () => {
     const ceremony = stepUpCeremony(challenge, credentialId);
     const key = await makeKey();
     const publicKey = await cosePublicKey(key.publicKey);
+
     const authData = concat(
       new Uint8Array(await sha256(utf8(profile.rpId))),
       new Uint8Array([flags.up | flags.uv]),
       u32(1),
     );
+
     const clientDataJSON = utf8(
       JSON.stringify({
         type: "webauthn.get",
@@ -332,6 +360,7 @@ describe("WebAuthn ceremonies", () => {
         crossOrigin: false,
       }),
     );
+
     const signature = derSignature(
       new Uint8Array(
         await crypto.subtle.sign(
@@ -341,6 +370,7 @@ describe("WebAuthn ceremonies", () => {
         ),
       ),
     );
+
     const credential = await Effect.runPromise(
       Schema.decodeUnknownEffect(Passkey.PasskeyCredential)({
         requirement: {

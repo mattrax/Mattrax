@@ -167,10 +167,13 @@ function resourceName(
 ): Effect.Effect<string, AndroidManagementValidationError> {
   return Effect.gen(function* () {
     const trimmed = value.trim().replace(/^\/+|\/+$/g, "");
+
     if (trimmed === "") {
       return yield* Effect.fail(invalid(field, `${field} must not be empty`));
     }
+
     const segments = trimmed.split("/");
+
     for (const segment of segments) {
       if (!SEGMENT_PATTERN.test(segment) || segment === "." || segment === "..") {
         return yield* Effect.fail(
@@ -178,6 +181,7 @@ function resourceName(
         );
       }
     }
+
     return segments.join("/");
   });
 }
@@ -217,12 +221,15 @@ function policyResourceName(
 ): Effect.Effect<string, AndroidManagementValidationError> {
   return Effect.gen(function* () {
     const policy = yield* resourceName(policyName, "policyName");
+
     if (policy.includes("/policies/")) return policy;
+
     if (policy.includes("/")) {
       return yield* Effect.fail(
         invalid("policyName", "policyName must be a policy ID or enterprises/{id}/policies/{id}"),
       );
     }
+
     return `${enterpriseName}/policies/${policy}`;
   });
 }
@@ -234,10 +241,12 @@ function policyResourceName(
  */
 function policyBody(policy: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = {};
+
   for (const [key, value] of Object.entries(policy)) {
     if (key === "name" || key === "policyName") continue;
     body[key] = value;
   }
+
   return body;
 }
 
@@ -250,9 +259,11 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
     query?: Readonly<Record<string, string | number | undefined>>,
   ): string => {
     const url = new URL(`${baseUrl}/${path.replace(/^\/+/, "")}`);
+
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
+
     return url.toString();
   };
 
@@ -264,12 +275,15 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
       const createSignupUrl: AndroidManagementShape["createSignupUrl"] = (input) =>
         Effect.gen(function* () {
           const projectId = input.projectId ?? defaultProjectId;
+
           if (projectId.trim() === "") {
             return yield* Effect.fail(invalid("projectId", "projectId must not be empty"));
           }
+
           if (input.callbackUrl.trim() === "") {
             return yield* Effect.fail(invalid("callbackUrl", "callbackUrl must not be empty"));
           }
+
           return yield* auth.authorizedFetch({
             method: "POST",
             url: apiUrl("signupUrls", {
@@ -284,10 +298,13 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
       const createEnterprise: AndroidManagementShape["createEnterprise"] = (input) =>
         Effect.gen(function* () {
           const projectId = input.projectId ?? defaultProjectId;
+
           if (projectId.trim() === "") {
             return yield* Effect.fail(invalid("projectId", "projectId must not be empty"));
           }
+
           const signupUrlName = yield* resourceName(input.signupUrlName, "signupUrlName");
+
           const enterprise = yield* auth.authorizedFetch({
             method: "POST",
             url: apiUrl("enterprises", {
@@ -304,6 +321,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             schema: Enterprise,
             label: "createEnterprise",
           });
+
           return { name: enterprise.name };
         });
 
@@ -313,7 +331,9 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             input.enterpriseName,
             "enterpriseName",
           );
+
           const policyName = yield* policyResourceName(enterpriseName, input.policyName);
+
           const token = yield* auth.authorizedFetch({
             method: "POST",
             url: apiUrl(`${enterpriseName}/enrollmentTokens`),
@@ -325,6 +345,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             schema: EnrollmentToken,
             label: "createEnrollmentToken",
           });
+
           return {
             name: token.name,
             value: token.value,
@@ -339,18 +360,22 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             input.enterpriseName,
             "enterpriseName",
           );
+
           const policyId = yield* resourceName(input.policyId, "policyId");
+
           if (policyId.includes("/")) {
             return yield* Effect.fail(
               invalid("policyId", "policyId must be a single path segment"),
             );
           }
+
           const body = yield* (
             Schema.decodeUnknownEffect(Policy)(policyBody(input.policy)) as Effect.Effect<
               Policy,
               unknown
             >
           ).pipe(Effect.mapError(() => invalid("policy", "policy must be a JSON object")));
+
           return yield* auth.authorizedFetch({
             method: "PATCH",
             url: apiUrl(`${enterpriseName}/policies/${policyId}`, {
@@ -367,6 +392,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           const deviceName = yield* deviceResourceName(input.deviceName);
           const enterpriseName = deviceName.split("/").slice(0, 2).join("/");
           const policyName = yield* policyResourceName(enterpriseName, input.policyName);
+
           return yield* auth.authorizedFetch({
             method: "PATCH",
             url: apiUrl(deviceName, { updateMask: "policyName" }),
@@ -382,6 +408,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             input.enterpriseName,
             "enterpriseName",
           );
+
           const list = yield* auth.authorizedFetch({
             method: "GET",
             url: apiUrl(`${enterpriseName}/devices`, {
@@ -391,6 +418,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             schema: DeviceList,
             label: "listDevices",
           });
+
           return {
             devices: list.devices ?? [],
             nextPageToken: list.nextPageToken,
@@ -400,9 +428,11 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
       const issueCommand: AndroidManagementShape["issueCommand"] = (input) =>
         Effect.gen(function* () {
           const deviceName = yield* deviceResourceName(input.deviceName);
+
           if (input.type.trim() === "") {
             return yield* Effect.fail(invalid("type", "command type must not be empty"));
           }
+
           const operation = yield* auth.authorizedFetch({
             method: "POST",
             url: apiUrl(`${deviceName}:issueCommand`),
@@ -422,6 +452,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             schema: Operation,
             label: "issueCommand",
           });
+
           return { operationName: operation.name };
         });
 

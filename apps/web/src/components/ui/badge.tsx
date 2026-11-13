@@ -29,6 +29,7 @@ type BadgeProps<T extends ValidComponent = "span"> = PolymorphicProps<T, BadgeRo
 
 const Badge = <T extends ValidComponent = "span">(props: BadgeProps<T>) => {
   const [local, others] = splitProps(props as BadgeProps, ["class", "variant"]);
+
   return (
     <Root
       class={cn(badgeVariants({ variant: local.variant }), local.class)}

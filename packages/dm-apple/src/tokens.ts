@@ -11,7 +11,9 @@ const encoder = new TextEncoder();
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
@@ -23,16 +25,21 @@ const sign = async (secret: string, message: string): Promise<string> => {
     false,
     ["sign"],
   );
+
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+
   return toBase64Url(new Uint8Array(signature));
 };
 
 const timingSafeEqual = (left: string, right: string): boolean => {
   const a = encoder.encode(left);
   const b = encoder.encode(right);
+
   if (a.length !== b.length) return false;
   let difference = 0;
+
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+
   return difference === 0;
 };
 

@@ -11,6 +11,7 @@ async function generateTestCertWithTopic(topic: string, useUid = true): Promise<
     modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]),
   };
+
   const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
   const cert = new pkijs.Certificate();
@@ -18,6 +19,7 @@ async function generateTestCertWithTopic(topic: string, useUid = true): Promise<
   cert.serialNumber = new asn1js.Integer({ value: 1 });
 
   const subjectOid = useUid ? "0.9.2342.19200300.100.1.1" : "2.5.4.3";
+
   const subjectRdn = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [
       new pkijs.AttributeTypeAndValue({
@@ -66,6 +68,7 @@ describe("cert", () => {
         modulusLength: 2048,
         publicExponent: new Uint8Array([1, 0, 1]),
       };
+
       const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
       const cert = new pkijs.Certificate();

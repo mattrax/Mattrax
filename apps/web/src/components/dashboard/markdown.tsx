@@ -3,13 +3,17 @@ import type { JSX } from "@solidjs/web";
 
 const safeHref = (value: string) => {
   const url = value.trim();
+
   if (/^(https?:\/\/|mailto:|\/|#)/i.test(url)) return url;
+
   return null;
 };
 
 const safeImage = (value: string) => {
   const url = value.trim();
+
   if (/^(https?:\/\/|\/)/i.test(url)) return url;
+
   return null;
 };
 
@@ -19,10 +23,13 @@ const INLINE =
 const inline = (text: string): JSX.Element[] => {
   const nodes: JSX.Element[] = [];
   let last = 0;
+
   for (const match of text.matchAll(INLINE)) {
     const index = match.index ?? 0;
+
     if (index > last) nodes.push(text.slice(last, index));
     const token = match[0];
+
     if (token.startsWith("![")) {
       const parts = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
       const src = parts ? safeImage(parts[2]!) : null;
@@ -66,9 +73,12 @@ const inline = (text: string): JSX.Element[] => {
     } else {
       nodes.push(<em class="italic">{token.slice(1, -1)}</em>);
     }
+
     last = index + token.length;
   }
+
   if (last < text.length) nodes.push(text.slice(last));
+
   return nodes;
 };
 
@@ -81,20 +91,25 @@ export function Markdown(props: { content: string }) {
     const lines = props.content.replaceAll("\r\n", "\n").split("\n");
     const output: Array<() => JSX.Element> = [];
     let index = 0;
+
     while (index < lines.length) {
       const line = lines[index]!;
+
       if (!line.trim()) {
         index++;
         continue;
       }
+
       if (line.startsWith("```")) {
         const language = line.slice(3).trim();
         const body: string[] = [];
         index++;
+
         while (index < lines.length && !lines[index]!.startsWith("```")) {
           body.push(lines[index]!);
           index++;
         }
+
         index++;
         output.push(() => (
           <pre class="my-2 overflow-x-auto rounded-lg border border-white/[0.07] bg-black/30 p-3 text-[11.5px] leading-relaxed">
@@ -103,7 +118,9 @@ export function Markdown(props: { content: string }) {
         ));
         continue;
       }
+
       const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+
       if (heading) {
         const level = heading[1]!.length;
         const content = inline(heading[2]!);
@@ -125,17 +142,21 @@ export function Markdown(props: { content: string }) {
         index++;
         continue;
       }
+
       if (/^([-*_])\1{2,}$/.test(line.trim())) {
         output.push(() => <hr class="my-3 border-white/[0.08]" />);
         index++;
         continue;
       }
+
       if (/^\s*[-*+]\s+/.test(line)) {
         const items: string[] = [];
+
         while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index]!)) {
           items.push(lines[index]!.replace(/^\s*[-*+]\s+/, ""));
           index++;
         }
+
         output.push(() => (
           <ul class="my-1.5 list-disc space-y-1 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
             <For each={items}>{(item) => <li>{inline(item)}</li>}</For>
@@ -143,12 +164,15 @@ export function Markdown(props: { content: string }) {
         ));
         continue;
       }
+
       if (/^\s*\d+\.\s+/.test(line)) {
         const items: string[] = [];
+
         while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index]!)) {
           items.push(lines[index]!.replace(/^\s*\d+\.\s+/, ""));
           index++;
         }
+
         output.push(() => (
           <ol class="my-1.5 list-decimal space-y-1 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
             <For each={items}>{(item) => <li>{inline(item)}</li>}</For>
@@ -156,12 +180,15 @@ export function Markdown(props: { content: string }) {
         ));
         continue;
       }
+
       if (line.startsWith("> ")) {
         const quoted: string[] = [];
+
         while (index < lines.length && lines[index]!.startsWith("> ")) {
           quoted.push(lines[index]!.slice(2));
           index++;
         }
+
         output.push(() => (
           <blockquote class="my-2 border-l-2 border-white/[0.12] pl-3 text-[12.5px] italic text-muted-foreground">
             {inline(quoted.join(" "))}
@@ -169,8 +196,10 @@ export function Markdown(props: { content: string }) {
         ));
         continue;
       }
+
       const paragraph: string[] = [line];
       index++;
+
       while (
         index < lines.length &&
         lines[index]!.trim() &&
@@ -179,12 +208,14 @@ export function Markdown(props: { content: string }) {
         paragraph.push(lines[index]!);
         index++;
       }
+
       output.push(() => (
         <p class="my-1.5 text-[12.5px] leading-relaxed text-muted-foreground first:mt-0 last:mb-0">
           {inline(paragraph.join(" "))}
         </p>
       ));
     }
+
     return output;
   };
 

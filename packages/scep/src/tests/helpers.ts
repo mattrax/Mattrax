@@ -49,6 +49,7 @@ export async function createTestCaCert(
       }),
     ],
   });
+
   cert.issuer = name;
   cert.subject = name;
 
@@ -80,6 +81,7 @@ export async function createTestCaCert(
 
   await cert.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await cert.sign(keyPair.privateKey, "SHA-256");
+
   return cert;
 }
 
@@ -99,6 +101,7 @@ export async function createTestSignerCert(
       }),
     ],
   });
+
   cert.issuer = name;
   cert.subject = name;
 
@@ -108,6 +111,7 @@ export async function createTestSignerCert(
 
   await cert.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await cert.sign(keyPair.privateKey, "SHA-256");
+
   return cert;
 }
 
@@ -118,12 +122,14 @@ export async function buildTestCsr(
 ): Promise<pkijs.CertificationRequest> {
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
+
   const typesAndValues = [
     new pkijs.AttributeTypeAndValue({
       type: "2.5.4.3",
       value: new asn1js.Utf8String({ value: cn }),
     }),
   ];
+
   if (options.organizationalUnit) {
     typesAndValues.push(
       new pkijs.AttributeTypeAndValue({
@@ -132,6 +138,7 @@ export async function buildTestCsr(
       }),
     );
   }
+
   if (options.organization) {
     typesAndValues.push(
       new pkijs.AttributeTypeAndValue({
@@ -140,7 +147,9 @@ export async function buildTestCsr(
       }),
     );
   }
+
   csr.subject = new pkijs.RelativeDistinguishedNames({ typesAndValues });
+
   if (options.challengePassword) {
     csr.attributes = [
       new pkijs.Attribute({
@@ -149,8 +158,10 @@ export async function buildTestCsr(
       }),
     ];
   }
+
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
+
   return csr;
 }
 
@@ -164,10 +175,12 @@ export async function encryptEnvelopedData(
   const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, [
     "encrypt",
   ]);
+
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
 
   const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
   const spkiPem = pemEncode("PUBLIC KEY", spkiDer);
+
   const encryptedSessionKey = publicEncrypt(
     { key: spkiPem, padding: constants.RSA_PKCS1_PADDING },
     Buffer.from(sessionKey),
@@ -224,6 +237,7 @@ export async function buildPkcsReq(
 ): Promise<ArrayBuffer> {
   const csrDer = csr.toSchema().toBER(false);
   const innerContent = encryptCsr ? await encryptEnvelopedData(csrDer, caCert) : csrDer;
+
   const innerDigest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", innerContent as ArrayBuffer),
   );

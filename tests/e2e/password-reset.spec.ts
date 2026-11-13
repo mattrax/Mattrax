@@ -17,6 +17,7 @@ test.describe("password reset delivery", () => {
       },
       headers: { origin, "x-effect-auth-csrf": "1" },
     });
+
     expect(response.ok()).toBe(true);
 
     let resetLink = "";
@@ -24,16 +25,21 @@ test.describe("password reset delivery", () => {
       .poll(
         async () => {
           const mailbox = await page.request.get("/api/debug/emails");
+
           if (!mailbox.ok()) return "";
+
           const messages = (await mailbox.json()) as Array<{
             to: string;
             subject: string;
             text: string;
           }>;
+
           const message = messages.find(
             (item) => item.to === email && item.subject === "Your password reset link",
           );
+
           resetLink = message?.text.match(/(https?:\/\/[^\s]*reset-password[^\s]*)/)?.[1] ?? "";
+
           return resetLink;
         },
         { timeout: 20_000 },

@@ -38,6 +38,7 @@ export const generateKeyPair = async (): Promise<CryptoKeyPair> =>
 export const createCaFixture = async (): Promise<ScepCaFixture> => {
   const keyPair = await generateKeyPair();
   const cert = await createCaCertificate(keyPair, "Compliance SCEP CA");
+
   return {
     keyPair,
     cert,
@@ -56,6 +57,7 @@ export const createSelfSignedCertificate = async (
   cert.serialNumber = new asn1js.Integer({
     valueHex: crypto.getRandomValues(new Uint8Array(8)).buffer,
   });
+
   const name = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [
       new pkijs.AttributeTypeAndValue({
@@ -64,6 +66,7 @@ export const createSelfSignedCertificate = async (
       }),
     ],
   });
+
   cert.issuer = name;
   cert.subject = name;
   const now = new Date();
@@ -71,6 +74,7 @@ export const createSelfSignedCertificate = async (
   cert.notAfter.value = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
   await cert.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await cert.sign(keyPair.privateKey, "SHA-256");
+
   return cert;
 };
 
@@ -85,12 +89,14 @@ export const createCsr = async (
 ): Promise<pkijs.CertificationRequest> => {
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
+
   const values = [
     new pkijs.AttributeTypeAndValue({
       type: "2.5.4.3",
       value: new asn1js.Utf8String({ value: options.commonName ?? "Compliance Device" }),
     }),
   ];
+
   if (options.organizationalUnit) {
     values.push(
       new pkijs.AttributeTypeAndValue({
@@ -99,6 +105,7 @@ export const createCsr = async (
       }),
     );
   }
+
   if (options.organization) {
     values.push(
       new pkijs.AttributeTypeAndValue({
@@ -107,7 +114,9 @@ export const createCsr = async (
       }),
     );
   }
+
   csr.subject = new pkijs.RelativeDistinguishedNames({ typesAndValues: values });
+
   if (options.challengePassword) {
     csr.attributes = [
       new pkijs.Attribute({
@@ -116,8 +125,10 @@ export const createCsr = async (
       }),
     ];
   }
+
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
+
   return csr;
 };
 
@@ -127,16 +138,20 @@ export const encryptEnvelopedData = async (
 ): Promise<ArrayBuffer> => {
   const sessionKey = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(16));
+
   const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, [
     "encrypt",
   ]);
+
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
   const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
   const spkiPem = pemEncode("PUBLIC KEY", spkiDer);
+
   const encryptedSessionKey = publicEncrypt(
     { key: spkiPem, padding: constants.RSA_PKCS1_PADDING },
     Buffer.from(sessionKey),
   );
+
   const ktri = new pkijs.KeyTransRecipientInfo({
     version: 0,
     rid: new pkijs.IssuerAndSerialNumber({
@@ -154,6 +169,7 @@ export const encryptEnvelopedData = async (
       ) as ArrayBuffer,
     }),
   });
+
   const envelopedData = new pkijs.EnvelopedData({
     version: 0,
     recipientInfos: [new pkijs.RecipientInfo({ variant: 1, value: ktri })],
@@ -166,6 +182,7 @@ export const encryptEnvelopedData = async (
       encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
     }),
   });
+
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.ENVELOPED_DATA,
     content: envelopedData.toSchema(),
@@ -181,7 +198,9 @@ const stringValue = (attribute: pkijs.Attribute | undefined): string | undefined
   const value = attribute?.values[0] as
     | { valueBlock?: { value?: string; valueDec?: number } }
     | undefined;
+
   if (!value?.valueBlock) return undefined;
+
   return (
     value.valueBlock.value ??
     (value.valueBlock.valueDec === undefined ? undefined : String(value.valueBlock.valueDec))
@@ -204,19 +223,25 @@ export type ParsedCertRep = {
 
 export const parseCertRep = async (der: ArrayBuffer): Promise<ParsedCertRep> => {
   let signedData: pkijs.SignedData | undefined;
+
   try {
     const contentInfo = pkijs.ContentInfo.fromBER(der);
+
     if (contentInfo.contentType === pkijs.ContentInfo.SIGNED_DATA)
       signedData = new pkijs.SignedData({ schema: contentInfo.content });
   } catch {
     // Failure CertReps are encoded as a bare SignedData rather than ContentInfo.
   }
+
   if (!signedData) {
     const parsed = asn1js.fromBER(der);
+
     if (parsed.offset === -1) throw new Error("SCEP CertRep is not valid DER");
     signedData = new pkijs.SignedData({ schema: parsed.result });
   }
+
   const verified = await signedData.verify({ signer: 0, checkChain: false });
+
   return {
     signedData,
     certificates: (signedData.certificates ?? []).filter(
@@ -236,12 +261,14 @@ export const decryptCertRep = async (
   devicePrivateKeyJwk: JsonWebKey,
 ): Promise<pkijs.Certificate> => {
   const eContent = certRep.signedData.encapContentInfo.eContent;
+
   if (!eContent) throw new Error("CertRep has no eContent");
   const envelopedDer = (eContent as asn1js.OctetString).getValue() as ArrayBuffer;
   const contentInfo = pkijs.ContentInfo.fromBER(envelopedDer);
   const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
   const recipientInfo = envelopedData.recipientInfos[0]!.value as pkijs.KeyTransRecipientInfo;
   const encryptedKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+
   const signingKey = await crypto.subtle.importKey(
     "jwk",
     devicePrivateKeyJwk,
@@ -249,31 +276,40 @@ export const decryptCertRep = async (
     true,
     ["sign"],
   );
+
   const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
+
   const sessionKeyBytes = privateDecrypt(
     { key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING },
     encryptedKey,
   );
+
   const ivHex = (
     envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as {
       valueBlock?: { valueHex?: ArrayBuffer };
     }
   )?.valueBlock?.valueHex;
+
   if (!ivHex) throw new Error("CertRep has no content encryption IV");
+
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
     "decrypt",
   ]);
+
   const decrypted = await crypto.subtle.decrypt(
     { name: "AES-CBC", iv: Buffer.from(ivHex) },
     aesKey,
     envelopedData.encryptedContentInfo.getEncryptedContent(),
   );
+
   const degenerate = pkijs.ContentInfo.fromBER(decrypted);
   const signed = new pkijs.SignedData({ schema: degenerate.content });
   const certificate = signed.certificates?.[0];
+
   if (!(certificate instanceof pkijs.Certificate))
     throw new Error("CertRep does not contain an issued certificate");
+
   return certificate;
 };
 
@@ -289,11 +325,14 @@ export const buildPkcsReq = async (options: {
   readonly messageType?: string;
 }): Promise<ArrayBuffer> => {
   const csrDer = options.csrDer ?? options.csr.toSchema().toBER(false);
+
   const innerContent =
     options.encryptCsr === false ? csrDer : await encryptEnvelopedData(csrDer, options.caCert);
+
   const innerDigest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", innerContent as ArrayBuffer),
   );
+
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [
@@ -309,6 +348,7 @@ export const buildPkcsReq = async (options: {
     certificates: [options.signerCert],
     signerInfos: [],
   });
+
   const signerInfo = new pkijs.SignerInfo({
     version: 1,
     sid: new pkijs.IssuerAndSerialNumber({
@@ -350,8 +390,10 @@ export const buildPkcsReq = async (options: {
     }),
     signature: new asn1js.OctetString({ valueHex: new ArrayBuffer(0) }),
   });
+
   signedData.signerInfos.push(signerInfo);
   await signedData.sign(options.signerPrivateKey, 0, "SHA-256");
+
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
@@ -368,12 +410,14 @@ export const issueIdentity = async (options: {
 }): Promise<{ keyPair: CryptoKeyPair; certificate: pkijs.Certificate; serial: string }> => {
   const keyPair = await generateKeyPair();
   const now = new Date();
+
   const subject = [
     { type: "2.5.4.3", value: options.commonName },
     ...(options.organizationalUnit
       ? [{ type: "2.5.4.11", value: options.organizationalUnit }]
       : []),
   ];
+
   const certificate = await createDeviceCertificate(
     crypto.getRandomValues(new Uint8Array(8)).buffer,
     subject,
@@ -385,6 +429,7 @@ export const issueIdentity = async (options: {
       notAfter: options.notAfter ?? new Date(now.getTime() + 86_400_000),
     },
   );
+
   return { keyPair, certificate, serial: certificateSerialHex(certificate) };
 };
 
@@ -394,5 +439,6 @@ export const certificateValue = (
 ): string | undefined => {
   const attribute = certificate.subject.typesAndValues.find((item) => item.type === oid);
   const value = attribute?.value.valueBlock as { value?: string } | undefined;
+
   return value?.value;
 };

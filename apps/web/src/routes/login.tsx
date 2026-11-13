@@ -38,8 +38,10 @@ const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+$/.test(value.trim())
 
 const peekSso = (key: string, force = false): SsoDiscovery | null => {
   const cached = ssoCache.get(key);
+
   if (!cached || force) return null;
   const ttl = cached.value.status === "available" ? SSO_CACHE_TTL : SSO_NEGATIVE_TTL;
+
   return Date.now() - cached.at < ttl ? cached.value : null;
 };
 
@@ -50,8 +52,10 @@ const peekSso = (key: string, force = false): SsoDiscovery | null => {
 const fetchSso = (email: string, force = false): Promise<SsoDiscovery> => {
   const key = emailKeyOf(email);
   const cached = peekSso(key, force);
+
   if (cached) return Promise.resolve(cached);
   const inflight = ssoInflight.get(key);
+
   if (inflight) return inflight;
 
   const request = (async (): Promise<SsoDiscovery> => {
@@ -60,11 +64,13 @@ const fetchSso = (email: string, force = false): Promise<SsoDiscovery> => {
         `/api/v1/sso/azure/start?email=${encodeURIComponent(key)}&discover=1`,
         { headers: { accept: "application/json" } },
       );
+
       const body = (await response.json().catch(() => ({}))) as {
         available?: boolean;
         error?: string;
         organization?: { name?: string } | null;
       };
+
       const value: SsoDiscovery = body.available
         ? {
             status: "available",
@@ -77,7 +83,9 @@ const fetchSso = (email: string, force = false): Promise<SsoDiscovery> => {
             // a gateway or upstream failure might recover.
             retryable: response.status >= 500 && response.status !== 503,
           };
+
       ssoCache.set(key, { at: Date.now(), value });
+
       return value;
     } catch {
       return {
@@ -91,32 +99,40 @@ const fetchSso = (email: string, force = false): Promise<SsoDiscovery> => {
   })();
 
   ssoInflight.set(key, request);
+
   return request;
 };
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
   // A one-off seed for the field, not a reactive dependency: read it outside
   // tracking so the component does not warn about an untracked reactive read.
   const initialEmail = untrack(() => {
     const value = searchParams.email;
+
     return Array.isArray(value) ? value[0] : value;
   });
+
   const [email, setEmail] = createSignal(initialEmail ?? "");
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
   const [showPassword, setShowPassword] = createSignal(false);
+
   const [step, setStep] = createSignal<Step>(
     initialEmail && looksLikeEmail(initialEmail) ? "password" : "email",
   );
+
   const [mode, setMode] = createSignal<"password" | "emailCode">("password");
+
   const [flow, setFlow] = createSignal<{
     flowId: string;
     email: string;
     reference: { proofId: string; purpose: string; keyId: string };
   } | null>(null);
+
   const [code, setCode] = createSignal("");
   const [mfaPending, setMfaPending] = createSignal(false);
   const [passkeyPending, setPasskeyPending] = createSignal(false);
@@ -133,6 +149,7 @@ export default function LoginPage() {
 
   onSettled(() => {
     document.title = "Sign in · Mattrax";
+
     if (step() === "password") {
       void discover(email());
       queueMicrotask(() => passwordInput?.focus());
@@ -159,6 +176,7 @@ export default function LoginPage() {
    */
   const finishSignIn = () => {
     const destination = returnTo() ?? "/dashboard";
+
     if (destination.startsWith("/api/")) window.location.assign(destination);
     else navigate(destination, { replace: true });
   };
@@ -167,16 +185,22 @@ export default function LoginPage() {
   const discover = (value: string, force = false) => {
     const key = emailKeyOf(value);
     setSsoFor(key);
+
     if (!looksLikeEmail(key)) {
       setSso({ status: "idle" });
+
       return;
     }
+
     const sequence = ++discoverySequence;
     const cached = peekSso(key, force);
+
     if (cached) {
       setSso(cached);
+
       return;
     }
+
     setSso({ status: "checking" });
     void fetchSso(key, force).then((value) => {
       if (sequence === discoverySequence) setSso(value);
@@ -187,6 +211,7 @@ export default function LoginPage() {
     setEmail(value);
     setError(null);
     clearTimeout(prefetchTimer);
+
     // Give the address a moment to settle while it is being typed, so the
     // second screen usually already knows whether the organisation uses SSO.
     if (looksLikeEmail(value)) {
@@ -209,10 +234,13 @@ export default function LoginPage() {
     event.preventDefault();
     clearTimeout(prefetchTimer);
     const value = email().trim();
+
     if (!looksLikeEmail(value)) {
       setError("Enter a valid email address.");
+
       return;
     }
+
     setEmail(value);
     setError(null);
     setMode("password");
@@ -230,14 +258,19 @@ export default function LoginPage() {
     setPasskeyPending(true);
     const result = await authClient.passkeySignIn();
     setPasskeyPending(false);
+
     if (result.error) {
       setError(errorMessage(result.error, "That passkey wasn't accepted"));
+
       return;
     }
+
     if (result.data?.pending) {
       setMfaPending(true);
+
       return;
     }
+
     finishSignIn();
   };
 
@@ -245,15 +278,20 @@ export default function LoginPage() {
     event?.preventDefault();
     setError(null);
     setPending(true);
+
     const result = await authClient.emailCode.request({
       email: email(),
       returnTo: returnTo() ?? "/dashboard",
     });
+
     setPending(false);
+
     if (result.error) {
       setError(errorMessage(result.error, "Could not send a sign-in code"));
+
       return;
     }
+
     setFlow(result.data!);
     queueMicrotask(() => codeInput?.focus());
   };
@@ -262,51 +300,68 @@ export default function LoginPage() {
     event.preventDefault();
     setError(null);
     const current = flow();
+
     if (!current) return;
     setPending(true);
+
     const result = await authClient.emailCode.complete({
       ...current,
       returnTarget: returnTo() ?? "/dashboard",
       code: code(),
     });
+
     setPending(false);
+
     if (result.error) {
       setError(errorMessage(result.error, "That code is not valid"));
+
       return;
     }
+
     if (result.data?.pending) {
       setMfaPending(true);
+
       return;
     }
+
     finishSignIn();
   };
 
   const startSso = async () => {
     setError(null);
     const value = email().trim();
+
     if (!looksLikeEmail(value)) {
       setError("Enter your work email to use organisation sign-in.");
+
       return;
     }
+
     setSsoPending(true);
     // Always obtain a fresh state token here. Prefetching one would be faster
     // but would let a later lookup overwrite the cookie this redirect needs.
     const query = new URLSearchParams({ email: value });
     const target = returnTo();
+
     if (target) query.set("returnTo", target);
+
     try {
       const response = await fetch(`/api/v1/sso/azure/start?${query.toString()}`, {
         headers: { accept: "application/json" },
       });
+
       const body = (await response.json().catch(() => ({}))) as {
         url?: string;
         error?: string;
         organization?: { name?: string } | null;
       };
+
       if (body.url) {
         window.location.assign(body.url);
+
         return;
       }
+
       setSso({
         status: "unavailable",
         reason: body.error ?? "Single sign-on is not available for that email",
@@ -334,11 +389,13 @@ export default function LoginPage() {
 
     if (result.error) {
       setError(errorMessage(result.error, "Invalid email or password"));
+
       return;
     }
 
     if (result.data?.pending) {
       setMfaPending(true);
+
       return;
     }
 
@@ -347,15 +404,21 @@ export default function LoginPage() {
 
   const ssoAvailable = () => {
     const value = sso();
+
     return ssoFor() === emailKey() && value.status === "available";
   };
+
   const ssoRetryable = () => {
     const value = sso();
+
     return ssoFor() === emailKey() && value.status === "unavailable" && Boolean(value.retryable);
   };
+
   const ssoLabel = () => {
     const value = sso();
+
     if (ssoPending()) return "Redirecting…";
+
     return value.status === "available" && value.organization
       ? `Continue with ${value.organization}`
       : "Continue with organisation SSO";

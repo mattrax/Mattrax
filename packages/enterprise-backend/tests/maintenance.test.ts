@@ -18,6 +18,7 @@ const run = (db: ReturnType<typeof makeDb>) =>
 describe("maintenance enrollment-attempt retention", () => {
   it("deletes attempts older than 30 days and keeps newer ones", async () => {
     const db = makeDb();
+
     const attempt = (id: string, ageDays: number) => ({
       id,
       organizationId: "org-1",
@@ -29,6 +30,7 @@ describe("maintenance enrollment-attempt retention", () => {
       userAgent: null,
       createdAt: new Date(now.getTime() - ageDays * DAY),
     });
+
     db.store.enrollment_attempt.push(
       attempt("old", 31),
       attempt("boundary", 30),
@@ -62,6 +64,7 @@ describe("maintenance enrollment-attempt retention", () => {
         credentialAlerts: false,
       }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
     );
+
     expect(result.purgedEnrollmentAttempts).toBe(0);
     expect(db.store.enrollment_attempt).toHaveLength(1);
   });
@@ -141,6 +144,7 @@ describe("maintenance dynamic groups", () => {
         dynamicGroups: false,
       }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
     );
+
     expect(result.dynamicGroupsEvaluated).toBe(0);
   });
 });
@@ -165,6 +169,7 @@ describe("maintenance webhook deliveries", () => {
 
   it("prunes delivery rows older than 30 days", async () => {
     const db = makeDb();
+
     const row = (id: string, ageDays: number) => ({
       id,
       endpointId: "wh-1",
@@ -178,6 +183,7 @@ describe("maintenance webhook deliveries", () => {
       error: null,
       createdAt: new Date(now.getTime() - ageDays * DAY),
     });
+
     db.store.webhook_delivery.push(row("old", 31), row("boundary", 30), row("fresh", 2));
 
     const result = await run(db);

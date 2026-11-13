@@ -7,29 +7,51 @@ import { schema as coreSchema, type EnterpriseDb } from "@mattrax/enterprise-cor
 export const schema = coreSchema;
 
 export type EnterpriseSchema = typeof schema;
+
 export type { EnterpriseDb };
 
 export type EnterpriseUser = typeof schema.user.$inferSelect;
+
 export type EnterpriseApiToken = typeof schema.accountApiToken.$inferSelect;
+
 export type EnterpriseOrganization = typeof schema.organization.$inferSelect;
+
 export type EnterpriseDevice = typeof schema.device.$inferSelect;
+
 export type EnterpriseEnrollment = typeof schema.enterpriseEnrollment.$inferSelect;
+
 export type EnterpriseGroup = typeof schema.enterpriseGroup.$inferSelect;
+
 export type EnterpriseGroupDevice = typeof schema.groupDevice.$inferSelect;
+
 export type EnterpriseGroupPolicy = typeof schema.groupPolicy.$inferSelect;
+
 export type EnterprisePolicy = typeof schema.policy.$inferSelect;
+
 export type EnterpriseConfiguration = typeof schema.configuration.$inferSelect;
+
 export type EnterpriseApplication = typeof schema.application.$inferSelect;
+
 export type EnterpriseApplicationGroup = typeof schema.applicationGroup.$inferSelect;
+
 export type EnterpriseApplicationDevice = typeof schema.applicationDevice.$inferSelect;
+
 export type EnterpriseDevicePolicy = typeof schema.devicePolicy.$inferSelect;
+
 export type EnterpriseBackupRun = typeof schema.backupRun.$inferSelect;
+
 export type EnterpriseApplePushCertificate = typeof schema.applePushCertificate.$inferSelect;
+
 export type EnterpriseApplePushKey = typeof schema.applePushKey.$inferSelect;
+
 export type EnterpriseAppleBusinessManager = typeof schema.appleBusinessManager.$inferSelect;
+
 export type EnterpriseAbmDevice = typeof schema.abmDevice.$inferSelect;
+
 export type EnterpriseVppToken = typeof schema.vppToken.$inferSelect;
+
 export type EnterpriseVppAsset = typeof schema.vppAsset.$inferSelect;
+
 export type EnterpriseDeviceVppAssignment = typeof schema.deviceVppAssignment.$inferSelect;
 
 /** Used by tests to construct a schema-aware in-memory database. */

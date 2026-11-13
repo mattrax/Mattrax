@@ -10,6 +10,7 @@ const key = "AAAA-BBBB-CCCC-DDDD-EEEE";
 
 const deviceRow = (id: string, organizationId: string, overrides: Record<string, unknown> = {}) => {
   const now = new Date();
+
   return {
     id,
     organizationId,
@@ -28,6 +29,7 @@ const deviceRow = (id: string, organizationId: string, overrides: Record<string,
 const makeContext = async () => {
   const db = makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -37,12 +39,16 @@ const makeContext = async () => {
     createdAt: now,
     updatedAt: now,
   };
+
   db.store.user.push(user);
+
   const auth = {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       if (!headers.cookie) return Effect.fail({ _tag: "EnterpriseUnauthorized" });
       const member = headers.cookie.includes("member") ? db.store.user[1] : user;
+
       return Effect.succeed({ user: member, apiToken: undefined });
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -52,6 +58,7 @@ const makeContext = async () => {
     requireStepUp: () => Effect.void,
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
   };
+
   const service = createEnterpriseService({
     db: db as any,
     schema,
@@ -61,6 +68,7 @@ const makeContext = async () => {
     auth: auth as any,
     authSecret,
   });
+
   return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
 };
 
@@ -84,9 +92,11 @@ const seedSecret = async (
 describe("device recovery key reveal", () => {
   it("returns the decrypted key to an owner and records an audit event without the key", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.device.push(deviceRow("device-1", tenant.id));
     await seedSecret(db, "device-1", tenant.id);
 
@@ -101,11 +111,13 @@ describe("device recovery key reveal", () => {
     const revealed = await runEffect(
       service.getDeviceRecoveryKey(request(headers), tenant.id, "device-1"),
     );
+
     expect(revealed.recoveryKey).toBe(key);
 
     const audit = db.store.audit_log.find(
       (entry: any) => entry.action === "device.recovery_key_viewed",
     );
+
     expect(audit).toMatchObject({
       organizationId: tenant.id,
       targetType: "device",
@@ -116,9 +128,11 @@ describe("device recovery key reveal", () => {
 
   it("rejects members and auditors while leaving the key unread", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.device.push(deviceRow("device-1", tenant.id));
     await seedSecret(db, "device-1", tenant.id);
     const now = new Date();
@@ -156,12 +170,15 @@ describe("device recovery key reveal", () => {
 
   it("does not reveal another tenant's key", async () => {
     const { db, service, headers } = await makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );
+
     db.store.device.push(deviceRow("device-2", second.id));
     await seedSecret(db, "device-2", second.id);
 
@@ -174,9 +191,11 @@ describe("device recovery key reveal", () => {
 describe("device security and software actions", () => {
   it("queues SecurityInfo and InstalledApplicationList commands", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.device.push(deviceRow("device-1", tenant.id));
 
     await runEffect(
@@ -204,9 +223,11 @@ describe("device security and software actions", () => {
 describe("installed application inventory", () => {
   it("lists a device's applications within its tenant", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.device.push(deviceRow("device-1", tenant.id));
     const now = new Date();
     db.store.device_application.push(
@@ -241,6 +262,7 @@ describe("installed application inventory", () => {
     const response = await runEffect(
       service.listDeviceApplications(request(headers), tenant.id, "device-1"),
     );
+
     expect(response.applications).toHaveLength(2);
     expect(response.applications[0]).toMatchObject({
       bundleId: "com.apple.Safari",
@@ -251,15 +273,19 @@ describe("installed application inventory", () => {
 
   it("aggregates inventory per tenant and excludes other tenants", async () => {
     const { db, service, headers } = await makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );
+
     const now = new Date();
     db.store.device.push(deviceRow("device-1", first.id), deviceRow("device-2", first.id));
     db.store.device.push(deviceRow("device-3", second.id));
+
     const app = (deviceId: string, organizationId: string, bundleId: string) => ({
       deviceId,
       organizationId,
@@ -273,6 +299,7 @@ describe("installed application inventory", () => {
       isManaged: true,
       lastReportedAt: now,
     });
+
     db.store.device_application.push(
       app("device-1", first.id, "com.example.Shared"),
       app("device-2", first.id, "com.example.Shared"),
@@ -283,6 +310,7 @@ describe("installed application inventory", () => {
     const inventory = await runEffect(
       service.getApplicationInventory(request(headers), first.id, {}),
     );
+
     expect(inventory.total).toBe(1);
     expect(inventory.applications).toEqual([
       expect.objectContaining({
@@ -300,11 +328,14 @@ describe("installed application inventory", () => {
 
   it("supports search, managed and update filters", async () => {
     const { db, service, headers } = await makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     db.store.device.push(deviceRow("device-1", tenant.id));
     const now = new Date();
+
     const app = (
       bundleId: string,
       name: string,
@@ -323,6 +354,7 @@ describe("installed application inventory", () => {
       isManaged,
       lastReportedAt: now,
     });
+
     db.store.device_application.push(
       app("com.apple.Safari", "Safari", false, true),
       app("com.example.Slack", "Slack", true, false),

@@ -51,12 +51,15 @@ const PAGE_SIZE = 50;
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
   let body: unknown = text;
+
   try {
     body = text ? (JSON.parse(text) as unknown) : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
+
   const presentation = errorPresentation(body, fallback);
+
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
@@ -72,6 +75,7 @@ const FILTER_PARAM_KEYS = [
   "direction",
   "query",
 ] as const;
+
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
 const emptyFilterParams = () =>
   Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""])) as Record<string, string>;
@@ -128,8 +132,10 @@ export default function DevicesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
   const initialStatus = (): DeviceRow["status"] | "" => {
     const value = param(searchParams.status);
+
     return value === "enrolling" ||
       value === "enrolled" ||
       value === "unenrolling" ||
@@ -137,16 +143,22 @@ export default function DevicesPage() {
       ? value
       : "";
   };
+
   const initialProto = (): DeviceRow["proto"] | "" => {
     const value = param(searchParams.proto);
+
     return value === "apple" || value === "win" || value === "android" ? value : "";
   };
+
   const initialStale = (): "" | "7" | "30" | "90" => {
     const value = param(searchParams.staleDays);
+
     return value === "7" || value === "30" || value === "90" ? value : "";
   };
+
   const initialHealth = (): DeviceHealthFilter | "" => {
     const value = param(searchParams.health);
+
     return value === "healthy" ||
       value === "attention" ||
       value === "critical" ||
@@ -155,13 +167,17 @@ export default function DevicesPage() {
       ? value
       : "";
   };
+
   const initialPush = (): "failing" | "invalid" | "" => {
     const value = param(searchParams.push);
+
     return value === "failing" || value === "invalid" ? value : "";
   };
+
   const initialSort = (): MdmSortState => {
     const value = param(searchParams.sort);
     const dir = param(searchParams.direction) === "desc" ? "desc" : "asc";
+
     return {
       id: value === "lastSeenAt" || value === "enrolledAt" || value === "status" ? value : "name",
       dir,
@@ -177,9 +193,11 @@ export default function DevicesPage() {
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
   const [sort, setSort] = createSignal<MdmSortState>(initialSort());
+
   const [deviceQuery, setDeviceQuery] = createSignal<DeviceQuery | null>(
     parseDeviceQueryText(param(searchParams.query)),
   );
+
   const [queryOpen, setQueryOpen] = createSignal(false);
   const [page, setPage] = createSignal(0);
   const [exporting, setExporting] = createSignal(false);
@@ -190,12 +208,14 @@ export default function DevicesPage() {
   const [importOpen, setImportOpen] = createSignal(param(searchParams.import) === "1");
   const [importFileName, setImportFileName] = createSignal("");
   const [importParsed, setImportParsed] = createSignal<DeviceImportParseResult | null>(null);
+
   const [importResult, setImportResult] = createSignal<{
     created: number;
     updated: number;
     failed: number;
     results: ReadonlyArray<{ serial: string; status: string; error?: string | null }>;
   } | null>(null);
+
   const [importing, setImporting] = createSignal(false);
   const [importError, setImportError] = createSignal<unknown>();
   let importFileInput: HTMLInputElement | undefined;
@@ -205,37 +225,49 @@ export default function DevicesPage() {
     setImportParsed(null);
     setImportResult(null);
     setImportError(undefined);
+
     if (importFileInput) importFileInput.value = "";
   };
+
   const openImport = () => {
     resetImport();
     setImportOpen(true);
   };
+
   const closeImport = () => {
     setImportOpen(false);
+
     if (param(searchParams.import) === "1") setSearchParams({ import: "" }, { replace: true });
   };
+
   const chooseImportFile = () => importFileInput?.click();
+
   const readImportFile = async (file: File | undefined) => {
     resetImport();
+
     if (!file) return;
     setImportFileName(file.name);
+
     try {
       setImportParsed(parseDeviceImportCsv(await file.text()));
     } catch (error) {
       setImportError(error);
     }
   };
+
   const runImport = async () => {
     const parsed = importParsed();
+
     if (!parsed || parsed.issues.length > 0 || parsed.rows.length === 0) return;
     setImporting(true);
     setImportError(undefined);
+
     try {
       const result = await enterprise.importDevicePreRegistrations(
         params.tenantId,
         toDeviceImportPayload(parsed.rows),
       );
+
       setImportResult(result);
       await queryClient.invalidateQueries({
         queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
@@ -249,9 +281,11 @@ export default function DevicesPage() {
       setImporting(false);
     }
   };
+
   const downloadImportTemplate = () => {
     const csv =
       "serial,name,asset_tag,group,notes\r\nC02EXAMPLE001,Alice's MacBook,AT-1001,Staff,Assigned at intake\r\n";
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -297,18 +331,30 @@ export default function DevicesPage() {
     (state) => {
       if (!urlInitialised) {
         urlInitialised = true;
+
         return;
       }
+
       const next = emptyFilterParams();
+
       if (state.q) next.q = state.q;
+
       if (state.status) next.status = state.status;
+
       if (state.proto) next.proto = state.proto;
+
       if (state.groupId) next.groupId = state.groupId;
+
       if (state.staleDays) next.staleDays = state.staleDays;
+
       if (state.health) next.health = state.health;
+
       if (state.push) next.push = state.push;
+
       if (state.sort && state.sort !== "name") next.sort = state.sort;
+
       if (state.direction === "desc") next.direction = state.direction;
+
       if (state.query) next.query = state.query;
       setSearchParams(next, { replace: true });
     },
@@ -329,6 +375,7 @@ export default function DevicesPage() {
     sort: initialSort(),
     query: param(searchParams.query) ?? "",
   }));
+
   createEffect(
     urlFilters,
     (filters) => {
@@ -346,23 +393,32 @@ export default function DevicesPage() {
         sort: sort(),
         deviceQuery: deviceQuery(),
       }));
+
       if (filters.q !== local.q) {
         setQ(filters.q);
         setDebouncedQ(filters.q);
         setPage(0);
       }
+
       if (filters.status !== local.status) setStatus(filters.status);
+
       if (filters.proto !== local.proto) setProto(filters.proto);
+
       if (filters.groupId !== local.groupId) setGroupId(filters.groupId);
+
       if (filters.staleDays !== local.staleDays) setStaleDays(filters.staleDays);
+
       if (filters.health !== local.health) setHealth(filters.health);
+
       if (filters.push !== local.push) setPush(filters.push);
+
       if (
         local.sort?.id !== filters.sort?.id ||
         (local.sort?.dir ?? "asc") !== (filters.sort?.dir ?? "asc")
       )
         setSort(filters.sort ?? { id: "name", dir: "asc" });
       const nextQuery = parseDeviceQueryText(filters.query);
+
       if (formatDeviceQueryText(nextQuery) !== formatDeviceQueryText(local.deviceQuery)) {
         setDeviceQuery(nextQuery);
         setPage(0);
@@ -411,9 +467,11 @@ export default function DevicesPage() {
     () => ({ total: total(), page: page() }),
     ({ total, page }) => {
       const last = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+
       if (page > last) setPage(last);
     },
   );
+
   const hasFilters = () =>
     Boolean(
       debouncedQ() ||
@@ -425,6 +483,7 @@ export default function DevicesPage() {
       push() ||
       deviceQuery(),
     );
+
   const clearFilters = () => {
     setQ("");
     setDebouncedQ("");
@@ -446,10 +505,13 @@ export default function DevicesPage() {
   // issues another request; the totals come from the existing search response.
   const fleet = () => {
     const rows = devices.data?.devices ?? [];
+
     const stale = rows.filter((row) => {
       const seen = row.lastSeenAt ? new Date(row.lastSeenAt).getTime() : Number.NaN;
+
       return Number.isFinite(seen) && Date.now() - seen > 7 * 24 * 60 * 60 * 1000;
     }).length;
+
     return [
       {
         label: "Devices",
@@ -482,18 +544,22 @@ export default function DevicesPage() {
     setExporting(true);
     setExportError(undefined);
     setExportTruncated(false);
+
     try {
       // Use the raw response rather than the typed client so the
       // `X-Export-Truncated` header can drive an in-page notice.
       const query = new URLSearchParams();
+
       for (const [key, value] of Object.entries(filters()))
         if (value !== undefined) query.set(key, String(value));
       const search = query.toString();
       const suffix = search ? `?${search}` : "";
+
       const response = await fetch(
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/devices/export${suffix}`,
         { credentials: "include" },
       );
+
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const csv = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
@@ -876,6 +942,7 @@ export default function DevicesPage() {
             header: "Groups",
             cell: (row) => {
               const groups = rowGroups(row);
+
               return groups.length > 0 ? groups.map((group) => group.name).join(", ") : "—";
             },
             defaultHidden: true,

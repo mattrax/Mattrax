@@ -26,6 +26,7 @@ export async function createTestApnsCertificate(options: {
   const certificate = new pkijs.Certificate();
   certificate.version = 2;
   certificate.serialNumber = new asn1js.Integer({ value: 1 });
+
   const name = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [
       attribute("2.5.4.10", options.organization ?? "Mattrax"),
@@ -35,6 +36,7 @@ export async function createTestApnsCertificate(options: {
       attribute("0.9.2342.19200300.100.1.1", options.topic),
     ],
   });
+
   certificate.issuer = name;
   certificate.subject = name;
 
@@ -47,6 +49,7 @@ export async function createTestApnsCertificate(options: {
   await certificate.sign(options.keyPair.privateKey, "SHA-256");
 
   const pem = pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false));
+
   return { certificate, pem };
 }
 

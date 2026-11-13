@@ -21,6 +21,7 @@ export default function EnrollPage() {
   const [search, setSearch] = useSearchParams();
   const searchCode = () => (Array.isArray(search.code) ? search.code[0] : search.code);
   const [code, setCode] = createSignal(searchCode() ?? "");
+
   const enrollment = useQuery(() => ({
     queryKey: ["enterprise", "public-enrollment", params.id, searchCode()],
     queryFn: () => enterprise.getEnrollment(params.id, searchCode()),
@@ -31,15 +32,19 @@ export default function EnrollPage() {
     event.preventDefault();
     setSearch({ code: code() });
   };
+
   const enrollmentUrl = createMemo(
     () => `${globalThis.location?.origin ?? ""}/enroll/${params.id}`,
   );
+
   const branding = () => enrollment.data?.branding;
   const brandName = () => branding()?.displayName ?? "Mattrax";
   const brandColor = () => branding()?.brandColor ?? DEFAULT_BRAND_COLOR;
   const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
+
   const deviceLimit = () => {
     const data = enrollment.data;
+
     return data?.authenticated === true ? data.deviceLimit : undefined;
   };
 
@@ -157,6 +162,7 @@ function EnrollmentOptions(props: {
   // Always show every platform tab so an administrator can explain why a
   // platform is unavailable (the payload carries the backend error).
   const platforms = (): Platform[] => ["apple", "windows", "android"];
+
   const firstAvailable = () =>
     (
       [
@@ -165,8 +171,10 @@ function EnrollmentOptions(props: {
         ["android", props.enrollment.android],
       ] as const
     ).find(([, value]) => isAvailable(value))?.[0] ?? "apple";
+
   const [tab, setTab] = createSignal<Platform>(firstAvailable());
   const active = () => tab();
+
   return (
     <div class="space-y-4">
       <div class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1">
@@ -222,14 +230,18 @@ function ApplePane(props: {
 }) {
   if (typeof props.apple === "object" && "error" in props.apple)
     return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
+
   if (typeof props.apple !== "object" || !("profile" in props.apple))
     return (
       <p class="text-center text-sm text-muted-foreground">Apple enrollment is unavailable.</p>
     );
+
   const downloadUrl = createMemo(() => {
     const base = `/api/v1/enrollment/${encodeURIComponent(props.id ?? "")}/apple.mobileconfig`;
+
     return props.code ? `${base}?code=${encodeURIComponent(props.code)}` : base;
   });
+
   return (
     <div class="space-y-4">
       <Button
@@ -260,12 +272,14 @@ function ApplePane(props: {
 function WindowsPane(props: { windows: WindowsEnrollment }) {
   if (typeof props.windows === "object" && "error" in props.windows)
     return <p class="text-center text-sm text-red-600">{props.windows.error}</p>;
+
   if (typeof props.windows !== "object" || !("discoveryUrl" in props.windows))
     return (
       <p class="text-center text-sm text-muted-foreground">Windows enrollment is unavailable.</p>
     );
   const url = props.windows.discoveryUrl;
   const [copied, setCopied] = createSignal(false);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(url);
@@ -275,7 +289,9 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
       // Clipboard access can be denied; the input is selectable as a fallback.
     }
   };
+
   const autopilot = props.windows.autopilot;
+
   return (
     <div class="space-y-3">
       <p class="text-sm text-muted-foreground">
@@ -323,6 +339,7 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
 function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment }) {
   if (typeof props.android === "object" && "error" in props.android)
     return <p class="text-center text-sm text-red-600">{props.android.error}</p>;
+
   if (typeof props.android !== "object" || !("enrollmentToken" in props.android))
     return (
       <div class="space-y-3 text-center text-sm text-muted-foreground">
@@ -334,6 +351,7 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
     );
   const [copied, setCopied] = createSignal(false);
   const android = props.android;
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(android.enrollmentToken);
@@ -343,6 +361,7 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
       // Clipboard access can be denied; the input is selectable as a fallback.
     }
   };
+
   return (
     <div class="space-y-4">
       <Show when={android.qrCode}>

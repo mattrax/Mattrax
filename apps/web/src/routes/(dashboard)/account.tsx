@@ -28,12 +28,16 @@ export default function AccountPage() {
   onSettled(() => {
     void (async () => {
       const token = searchParams.emailToken;
+
       if (!token || Array.isArray(token)) return;
       const result = await authClient.verifyEmailChange({ token });
+
       if (result.error) {
         setEmailError(errorMessage(result.error, "That email change link is invalid or expired."));
+
         return;
       }
+
       setSearchParams({ emailToken: undefined }, { replace: true });
       await session().refetch();
     })();
@@ -41,21 +45,27 @@ export default function AccountPage() {
 
   const [deleteConfirm, setDeleteConfirm] = createSignal("");
   const [deleteError, setDeleteError] = createSignal<string | null>(null);
+
   const deleteAccount = async () => {
     setDeleteError(null);
+
     try {
       const response = await fetch("/api/v1/me", {
         method: "DELETE",
         credentials: "include",
         headers: { "x-effect-auth-csrf": "1" },
       });
+
       if (!response.ok) {
         const body = (await response.json().catch(() => undefined)) as
           | { message?: string; error?: { message?: string } }
           | undefined;
+
         setDeleteError(errorMessage(body ?? { message: `Request failed (${response.status})` }));
+
         return;
       }
+
       window.location.href = "/";
     } catch (error) {
       setDeleteError(errorMessage(error, "Could not delete your account. Try again."));
@@ -106,6 +116,7 @@ export default function AccountPage() {
       newEmail: newEmail(),
       callbackURL: "/account",
     });
+
     setEmailPending(false);
 
     if (result.error) {
@@ -122,14 +133,18 @@ export default function AccountPage() {
   const [passwordPending, setPasswordPending] = createSignal(false);
   const [passwordError, setPasswordError] = createSignal<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = createSignal(false);
+
   type ApiTokens = Awaited<ReturnType<typeof authClient.listApiTokens>>;
+
   const [tokens, setTokens] = createSignal<ApiTokens>();
   const [tokensPending, setTokensPending] = createSignal(false);
   const [tokensError, setTokensError] = createSignal<string | null>(null);
   const [revokingToken, setRevokingToken] = createSignal<string | null>(null);
+
   const refetchTokens = async () => {
     setTokensPending(true);
     setTokensError(null);
+
     try {
       setTokens(await authClient.listApiTokens());
     } catch (error) {
@@ -139,9 +154,11 @@ export default function AccountPage() {
       setTokensPending(false);
     }
   };
+
   onSettled(() => {
     if (!isServer) void refetchTokens();
   });
+
   type Sessions = {
     sessions: Array<{
       id: string;
@@ -151,50 +168,68 @@ export default function AccountPage() {
       method?: string;
     }>;
   };
+
   const [sessions, setSessions] = createSignal<Sessions>();
   const [sessionsError, setSessionsError] = createSignal<string | null>(null);
+
   const refetchSessions = async () => {
     setSessionsError(null);
+
     try {
       const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
+
       if (!response.ok) {
         setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+
         return;
       }
+
       setSessions((await response.json()) as Sessions);
     } catch (error) {
       setSessionsError(errorMessage(error));
     }
   };
+
   onSettled(() => {
     if (!isServer) void refetchSessions();
   });
+
   const revokeSession = async (id: string, current: boolean) => {
     setSessionsError(null);
+
     if (current) {
       try {
         const result = await authClient.signOut();
+
         if (result.error) {
           setSessionsError(errorMessage(result.error, "Could not sign out. Try again."));
+
           return;
         }
       } catch (error) {
         setSessionsError(errorMessage(error, "Could not sign out. Try again."));
+
         return;
       }
+
       navigate("/login", { replace: true });
+
       return;
     }
+
     try {
       const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
         credentials: "include",
         headers: { "x-effect-auth-csrf": "1" },
       });
+
       if (!response.ok) {
         setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+
         return;
       }
+
       await refetchSessions();
     } catch (error) {
       setSessionsError(errorMessage(error, "Could not revoke that session. Try again."));
@@ -204,9 +239,11 @@ export default function AccountPage() {
   const connections = useQuery(() => enterpriseQueries.mcpConnections());
   const [revoking, setRevoking] = createSignal<string | null>(null);
   const [connectionError, setConnectionError] = createSignal<string | null>(null);
+
   const revokeConnection = async (connectionId: string) => {
     setRevoking(connectionId);
     setConnectionError(null);
+
     try {
       await enterprise.revokeMcpConnection(connectionId);
       await connections.refetch();
@@ -226,18 +263,22 @@ export default function AccountPage() {
   const [tokenTenantId, setTokenTenantId] = createSignal("");
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
   const tenants = () => me.data?.tenants ?? [];
+
   const tenantLabel = (tenantId?: string | null) =>
     tenantId
       ? (tenants().find((tenant) => tenant.id === tenantId)?.displayName ??
         tenants().find((tenant) => tenant.id === tenantId)?.name ??
         "Unknown tenant")
       : "All tenants";
+
   const scopeLabel = (scopes?: string[]) =>
     !scopes || scopes.includes("write") ? "Read & write" : "Read only";
 
   const tokenExpiresAt = () => {
     const days = Number(tokenExpiry());
+
     if (!Number.isFinite(days) || days <= 0) return null;
+
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   };
 
@@ -245,6 +286,7 @@ export default function AccountPage() {
     e.preventDefault();
     setTokenError(null);
     setNewToken(null);
+
     try {
       const result = await authClient.createApiToken({
         name: tokenName(),
@@ -252,6 +294,7 @@ export default function AccountPage() {
         scopes: tokenScope() === "read" ? ["read"] : ["read", "write"],
         tenantId: tokenTenantId() || null,
       });
+
       setNewToken(result.token);
       setTokenName("");
       setTokenOpen(false);
@@ -264,6 +307,7 @@ export default function AccountPage() {
   const revokeToken = async (tokenId: string) => {
     setTokenError(null);
     setRevokingToken(tokenId);
+
     try {
       await authClient.revokeApiToken(tokenId);
       await refetchTokens();
@@ -281,19 +325,24 @@ export default function AccountPage() {
 
     if (newPassword() !== confirmPassword()) {
       setPasswordError("New passwords do not match");
+
       return;
     }
+
     if (newPassword().length < 8) {
       setPasswordError("Password must be at least 15 characters");
+
       return;
     }
 
     setPasswordPending(true);
+
     const result = await authClient.changePassword({
       currentPassword: currentPassword(),
       newPassword: newPassword(),
       revokeOtherSessions: false,
     });
+
     setPasswordPending(false);
 
     if (result.error) {

@@ -40,6 +40,7 @@ export function AccountSecurity(props: {
     uri: string;
     expiresAtMillis: number;
   } | null>(null);
+
   const [enrollCode, setEnrollCode] = createSignal("");
   const [enrollError, setEnrollError] = createSignal<string | null>(null);
   const [enrollPending, setEnrollPending] = createSignal(false);
@@ -65,10 +66,13 @@ export function AccountSecurity(props: {
   const loadPasskeys = async () => {
     const result = await authClient.listPasskeys();
     setPasskeysLoaded(true);
+
     if (result.error || !result.data) {
       setPasskeyError(errorMessage(result.error, "Could not load your passkeys"));
+
       return;
     }
+
     setPasskeys(result.data.credentials);
   };
 
@@ -82,28 +86,37 @@ export function AccountSecurity(props: {
     setEnrollPending(true);
     const result = await authClient.beginTotpEnrollment(props.email);
     setEnrollPending(false);
+
     if (result.error || !result.data) {
       setEnrollError(errorMessage(result.error, "Could not start authenticator setup"));
+
       return;
     }
+
     setEnrollment(result.data);
   };
 
   const confirm = async (event: SubmitEvent) => {
     event.preventDefault();
     const current = enrollment();
+
     if (!current) return;
     setEnrollError(null);
     setEnrollPending(true);
+
     const result = await authClient.confirmTotpEnrollment({
       enrollmentId: current.enrollmentId,
       code: enrollCode().trim(),
     });
+
     setEnrollPending(false);
+
     if (result.error || !result.data) {
       setEnrollError(errorMessage(result.error, "That code is not valid. Try the current code."));
+
       return;
     }
+
     setEnrollment(null);
     setEnrollCode("");
     setRecoveryCodes(result.data.recoveryCodes);
@@ -114,15 +127,20 @@ export function AccountSecurity(props: {
     event.preventDefault();
     setDisableError(null);
     setDisablePending(true);
+
     const result = await authClient.disableTotp({
       password: disablePassword(),
       code: disableCode().trim(),
     });
+
     setDisablePending(false);
+
     if (result.error) {
       setDisableError(errorMessage(result.error, "That code is not valid. Try the current code."));
+
       return;
     }
+
     setDisableCode("");
     setDisablePassword("");
     setSignedOut(true);
@@ -132,17 +150,22 @@ export function AccountSecurity(props: {
     event.preventDefault();
     setRegenerateError(null);
     setRegeneratePending(true);
+
     const result = await authClient.regenerateTotpRecoveryCodes({
       password: regeneratePassword(),
       code: regenerateCode().trim(),
     });
+
     setRegeneratePending(false);
+
     if (result.error || !result.data) {
       setRegenerateError(
         errorMessage(result.error, "That code is not valid. Try the current code."),
       );
+
       return;
     }
+
     setRegenerateCode("");
     setRegeneratePassword("");
     setRecoveryCodes(result.data.recoveryCodes);
@@ -154,10 +177,13 @@ export function AccountSecurity(props: {
     setPasskeyPending(true);
     const result = await authClient.addPasskey(passkeyName().trim() || "Passkey");
     setPasskeyPending(false);
+
     if (result.error) {
       setPasskeyError(errorMessage(result.error, "That passkey could not be added."));
+
       return;
     }
+
     setPasskeyName("");
     await loadPasskeys();
   };
@@ -167,10 +193,13 @@ export function AccountSecurity(props: {
     setRemovingId(credentialId);
     const result = await authClient.removePasskey(credentialId);
     setRemovingId(null);
+
     if (result.error) {
       setPasskeyError(errorMessage(result.error, "That passkey could not be removed."));
+
       return;
     }
+
     // Removal invalidates other sessions, including this one.
     setSignedOut(true);
   };

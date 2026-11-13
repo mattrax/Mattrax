@@ -36,9 +36,12 @@ const INVALID_TOKEN_MARKERS = [
 
 const apnsErrorText = (error: unknown): string => {
   if (error == null) return "";
+
   if (typeof error === "string") return error;
+
   if (error instanceof Error) return `${error.message} ${String(error.cause ?? "")}`;
   const record = error as { readonly message?: unknown; readonly cause?: unknown };
+
   return [record.message, record.cause]
     .filter((part) => part != null)
     .map((part) => String(part))
@@ -53,15 +56,19 @@ const apnsErrorText = (error: unknown): string => {
  */
 export const classifyApplePushFailure = (error: unknown): ApplePushFailureCode => {
   const text = apnsErrorText(error).toLowerCase();
+
   if (/http\s*410\b/.test(text)) return "invalid_token";
+
   if (INVALID_TOKEN_MARKERS.some((marker) => text.includes(marker.toLowerCase())))
     return "invalid_token";
+
   return "delivery_failed";
 };
 
 /** Condense an error into the short, secret-free string stored on the device. */
 export const describeApplePushFailure = (error: unknown, limit = 255) => {
   const text = apnsErrorText(error).replace(/\s+/g, " ").trim();
+
   return (text || "APNs push failed").slice(0, limit);
 };
 
@@ -81,14 +88,19 @@ export type ApplePushHealthRow = {
  */
 export const summarizeApplePushHealth = (rows: ReadonlyArray<ApplePushHealthRow>) => {
   const counts = { configured: 0, attempted: 0, succeeded: 0, failing: 0, invalidToken: 0 };
+
   for (const row of rows) {
     if (row.token && row.pushMagic) counts.configured++;
+
     if (row.lastPushAt) counts.attempted++;
     const failures = row.consecutivePushFailures ?? 0;
+
     if (failures > 0) counts.failing++;
     else if (row.lastPushOkAt) counts.succeeded++;
+
     if (row.lastPushErrorCode === "invalid_token") counts.invalidToken++;
   }
+
   return counts;
 };
 
@@ -148,6 +160,7 @@ export const makeApplePush = ({
   const backstopMs = pushTimeoutMs ?? APNS_PUSH_BACKSTOP_MS;
   const concurrency = Math.max(1, Math.floor(pushConcurrency));
   const chunkSize = Math.max(concurrency, Math.floor(pushChunkSize ?? concurrency * 2));
+
   const privateKeyPem = (encryptedKey: string) =>
     Effect.tryPromise({
       try: async () => {
@@ -155,6 +168,7 @@ export const makeApplePush = ({
         const jwk = JSON.parse(await openSecret(authSecret, encryptedKey)) as JsonWebKey;
         const key = await importPrivateKeyJwk(jwk);
         const der = await crypto.subtle.exportKey("pkcs8", key);
+
         return pemEncode("PRIVATE KEY", der);
       },
       catch: (cause) => new ApnsError({ message: "Failed to decrypt APNs private key", cause }),
@@ -172,8 +186,10 @@ export const makeApplePush = ({
   ) =>
     Effect.gen(function* () {
       const apple = yield* db.query.deviceApple.findFirst({ where: { deviceId } });
+
       if (!apple) return;
       const at = new Date();
+
       if (outcome.ok) {
         yield* db
           .update(schema.deviceApple)
@@ -185,8 +201,10 @@ export const makeApplePush = ({
             consecutivePushFailures: 0,
           })
           .where(eq(schema.deviceApple.deviceId, deviceId));
+
         return;
       }
+
       const errorCode = classifyApplePushFailure(outcome.error);
       yield* db
         .update(schema.deviceApple)
@@ -197,6 +215,7 @@ export const makeApplePush = ({
           consecutivePushFailures: (apple.consecutivePushFailures ?? 0) + 1,
         })
         .where(eq(schema.deviceApple.deviceId, deviceId));
+
       // A dead token stays dead until the device re-enrols. Audit only the
       // transition so every subsequent failed push does not create an event.
       if (pushInvalidTokenTransition(apple.lastPushErrorCode, errorCode))
@@ -225,20 +244,25 @@ export const makeApplePush = ({
   ): Effect.Effect<PushOutcome> =>
     Effect.gen(function* () {
       const device = yield* db.query.device.findFirst({ where: { id: deviceId } });
+
       const pushable =
         device?.proto === "apple" &&
         (device.status === "enrolled" || (allowUnenrolling && device.status === "unenrolling"));
+
       if (!device || !pushable) return { status: "skipped" as const };
 
       const apple = yield* db.query.deviceApple.findFirst({ where: { deviceId } });
+
       if (!apple?.token || !apple.pushMagic) return { status: "skipped" as const };
 
       const certificate = yield* db.query.applePushCertificate.findFirst({
         where: { organizationId: device.organizationId },
       });
+
       if (!certificate?.encryptedKey) return { status: "skipped" as const };
 
       const keyPem = yield* privateKeyPem(certificate.encryptedKey);
+
       const outcome = yield* Effect.match(
         apns
           .push({
@@ -262,18 +286,23 @@ export const makeApplePush = ({
           onFailure: (error) => ({ ok: false as const, error }),
         },
       );
+
       yield* recordPushOutcome(device.id, device.organizationId, outcome);
+
       if (!outcome.ok) {
         const error = describeApplePushFailure(outcome.error);
         yield* Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${error}`);
+
         return { status: "failed" as const, error };
       }
+
       return { status: "pushed" as const };
     }).pipe(
       // A DB/decrypt failure is per-device: report it to the batch instead of
       // aborting every other device.
       Effect.catchCause((cause) => {
         const error = describeApplePushFailure(cause);
+
         return Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${error}`).pipe(
           Effect.as({ status: "failed" as const, error }),
         );
@@ -310,17 +339,21 @@ export const makeApplePush = ({
         failed: Array<{ deviceId: string; error: string }>;
         skipped: string[];
       } = { requested: ids.length, succeeded: [], failed: [], skipped: [] };
+
       ids.forEach((deviceId, index) => {
         const outcome = outcomes[index];
+
         if (!outcome || outcome.status === "skipped") result.skipped.push(deviceId);
         else if (outcome.status === "failed")
           result.failed.push({ deviceId, error: outcome.error });
         else result.succeeded.push(deviceId);
       });
+
       if (result.failed.length > 0)
         yield* Effect.logWarning(
           `APNs push batch completed with ${result.failed.length}/${result.requested} failures`,
         );
+
       return result;
     });
 
@@ -330,10 +363,12 @@ export const makeApplePush = ({
   ): Effect.Effect<Array<string>, unknown> =>
     Effect.gen(function* () {
       if (groupIds.length === 0) return [];
+
       const rows = yield* db
         .select()
         .from(schema.groupDevice)
         .where(inArray(schema.groupDevice.groupId, [...groupIds]));
+
       return [...new Set(rows.map((row: { deviceId: string }) => row.deviceId))];
     });
 
@@ -343,17 +378,21 @@ export const makeApplePush = ({
   ): Effect.Effect<Array<string>, unknown> =>
     Effect.gen(function* () {
       if (policyIds.length === 0) return [];
+
       const associations = yield* db
         .select()
         .from(schema.groupPolicy)
         .where(inArray(schema.groupPolicy.policyId, [...policyIds]));
+
       const direct = yield* db
         .select()
         .from(schema.devicePolicy)
         .where(inArray(schema.devicePolicy.policyId, [...policyIds]));
+
       const grouped = yield* deviceIdsInGroups(
         associations.map((row: { groupId: string }) => row.groupId),
       );
+
       return [...new Set([...grouped, ...direct.map((row: { deviceId: string }) => row.deviceId)])];
     });
 

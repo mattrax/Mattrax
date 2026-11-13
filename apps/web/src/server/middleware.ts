@@ -22,15 +22,19 @@ const api = createAPIHandler(routes);
  */
 async function preloadSession(request: Request): Promise<void> {
   if (request.method !== "GET") return;
+
   if (!(request.headers.get("accept") ?? "").includes("text/html")) return;
 
   const url = new URL(request.url);
+
   const headers = new Headers({
     "content-type": "application/json",
     "x-effect-auth-csrf": "1",
     origin: url.origin,
   });
+
   const cookie = request.headers.get("cookie");
+
   if (cookie) headers.set("cookie", cookie);
 
   try {
@@ -42,8 +46,10 @@ async function preloadSession(request: Request): Promise<void> {
         signal: AbortSignal.timeout(2_000),
       }),
     );
+
     if (!response.ok) return;
     const data = (await response.json()) as { _tag?: string; value?: unknown } | null;
+
     if (data?._tag === "Success") {
       setPreloadedSession(request, (data.value ?? null) as PreloadedSession);
     }
@@ -60,6 +66,7 @@ async function preloadSession(request: Request): Promise<void> {
  */
 const oauthMetadata = (url: URL): Response | undefined => {
   const origin = url.origin;
+
   const json = (body: unknown) =>
     Response.json(body, {
       headers: {
@@ -104,8 +111,10 @@ const oauthMetadata = (url: URL): Response | undefined => {
 
 const middleware: StartMiddleware = async (event, next) => {
   const metadata = oauthMetadata(new URL(event.request.url));
+
   if (metadata) return metadata;
   const posthogKey = (env as { POSTHOG_KEY?: string }).POSTHOG_KEY?.trim();
+
   if (posthogKey)
     setPostHogConfig(event.request, {
       key: posthogKey,
@@ -122,6 +131,7 @@ const middleware: StartMiddleware = async (event, next) => {
   )
     return response;
   const presence = getPreloadedSession(event.request);
+
   if (presence === undefined) return response;
   const secure = new URL(event.request.url).protocol === "https:";
   const headers = new Headers(response.headers);
@@ -132,6 +142,7 @@ const middleware: StartMiddleware = async (event, next) => {
       secure,
     ),
   );
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

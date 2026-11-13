@@ -26,6 +26,7 @@ export const resolveEffectivePolicyForDevice = (
       .select()
       .from(s.groupDevice)
       .where(eq(s.groupDevice.deviceId, device.id));
+
     const groupIds = unique(groupLinks.map((link) => link.groupId));
 
     const groups: Array<PolicyResolutionGroup> = groupIds.length
@@ -67,6 +68,7 @@ export const resolveEffectivePolicyForDevice = (
       : [];
 
     const knownPolicyIds = new Set(policies.map((policy) => policy.id));
+
     const configurations = knownPolicyIds.size
       ? yield* db
           .select()

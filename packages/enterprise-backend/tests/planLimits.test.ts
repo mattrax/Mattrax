@@ -18,6 +18,7 @@ const planConfig = () =>
 const makeContext = (planLimits = planConfig()) => {
   const db = makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -27,11 +28,13 @@ const makeContext = (planLimits = planConfig()) => {
     createdAt: now,
     updatedAt: now,
   };
+
   db.store.user.push(user);
 
   const auth = {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return headers.cookie
         ? Effect.succeed({ user })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -79,6 +82,7 @@ describe("MATTRAX_PLAN_LIMITS parsing", () => {
         device: { devices: null, tenants: null },
       }),
     );
+
     expect(config.configured).toBe(true);
     expect(config.defaultPlan).toBe("free");
     expect(config.warnings).toEqual([]);
@@ -95,6 +99,7 @@ describe("MATTRAX_PLAN_LIMITS parsing", () => {
         plans: { team: { devices: 10 }, legacy: { tenants: 2 } },
       }),
     );
+
     expect(config.configured).toBe(true);
     expect(config.defaultPlan).toBe("team");
     // Missing limits are unlimited.
@@ -126,6 +131,7 @@ describe("MATTRAX_PLAN_LIMITS parsing", () => {
         broken: "nope",
       }),
     );
+
     expect(config.configured).toBe(true);
     expect(config.plans.free).toEqual({ devices: null, tenants: null });
     expect(config.plans.broken).toBeUndefined();
@@ -154,9 +160,11 @@ describe("enterprise service plan limits", () => {
 
   it("uses the most permissive owned plan for tenant creation", async () => {
     const { db, service, headers } = makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.subscription.push({
       id: "sub-1",
@@ -174,9 +182,11 @@ describe("enterprise service plan limits", () => {
 
   it("downgrades a canceled subscription to the default plan", async () => {
     const { db, service, headers } = makeContext();
+
     const first = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
     db.store.subscription.push({
       id: "sub-1",
@@ -194,15 +204,18 @@ describe("enterprise service plan limits", () => {
 
   it("blocks new enrollments once the device limit is reached", async () => {
     const { db, service } = makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request({ cookie: "mattrax_session=test" }), {
         name: "Acme",
         slug: "acme",
       }),
     );
+
     Object.assign(db.store.enterprise_enrollment[0], { enabledWindows: true, maxDevices: 100 });
 
     const allowed = await runEffect(service.getEnrollment(tenant.id, undefined));
+
     if (!allowed.authenticated) throw new Error("expected authenticated enrollment");
     expect(allowed.deviceLimit).toEqual({ reached: false, plan: "free", limit: 1, used: 0 });
     expect(allowed.windows).toMatchObject({ tenantScoped: true });
@@ -210,6 +223,7 @@ describe("enterprise service plan limits", () => {
     // One device fills the plan's single slot; adding another is blocked.
     addDevice(db, tenant.id, "device-1");
     const blocked = await runEffect(service.getEnrollment(tenant.id, undefined));
+
     if (!blocked.authenticated) throw new Error("expected authenticated enrollment");
     expect(blocked.deviceLimit).toEqual({ reached: true, plan: "free", limit: 1, used: 1 });
     expect(blocked.windows).toEqual({
@@ -221,9 +235,11 @@ describe("enterprise service plan limits", () => {
 
   it("keeps existing devices manageable after the limit is lowered", async () => {
     const { db, service, headers } = makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     addDevice(db, tenant.id, "device-1");
     addDevice(db, tenant.id, "device-2");
 
@@ -245,10 +261,13 @@ describe("enterprise service plan limits", () => {
     const { db, service, headers } = makeContext(
       parsePlanLimits(JSON.stringify({ free: { devices: 1 }, team: { devices: 3 } })),
     );
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const now = new Date();
+
     const subscription = {
       id: "sub-1",
       plan: "team",
@@ -257,6 +276,7 @@ describe("enterprise service plan limits", () => {
       createdAt: now,
       updatedAt: now,
     };
+
     db.store.subscription.push(subscription);
     addDevice(db, tenant.id, "device-1");
     addDevice(db, tenant.id, "device-2");
@@ -281,9 +301,11 @@ describe("enterprise service plan limits", () => {
     const { db, service, headers } = makeContext(
       parsePlanLimits(JSON.stringify({ free: { devices: 5, tenants: 3 } })),
     );
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     addDevice(db, tenant.id, "device-1");
 
     await expect(runEffect(service.billing(request(headers), tenant.id))).resolves.toMatchObject({
@@ -301,6 +323,7 @@ describe("enterprise service plan limits", () => {
 
   it("limits pre-registration imports to the remaining device capacity", async () => {
     const { db, service, headers } = makeContext();
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
@@ -310,6 +333,7 @@ describe("enterprise service plan limits", () => {
         rows: [{ serial: "AAA" }, { serial: "BBB" }],
       }),
     );
+
     expect(result).toMatchObject({ created: 1, failed: 1, updated: 0 });
     expect(result.results[1]).toMatchObject({
       serial: "BBB",
@@ -332,6 +356,7 @@ describe("enterprise service plan limits", () => {
     const { db, service, headers } = makeContext(
       parsePlanLimits(JSON.stringify({ free: { devices: 2, tenants: 1 } })),
     );
+
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme-consumed" }),
     );
@@ -351,6 +376,7 @@ describe("enterprise service plan limits", () => {
         rows: [{ serial: "BBB" }],
       }),
     );
+
     // One seat remains (2 - 1 used - 0 unconsumed). The consumed AAA row must
     // not reserve a second seat.
     expect(result).toMatchObject({ created: 1, updated: 0, failed: 0 });

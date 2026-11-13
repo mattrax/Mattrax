@@ -13,20 +13,25 @@ export default function VerifyEmailPage() {
 
   const token = () =>
     Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
+
   const returnTo = () =>
     Array.isArray(searchParams.returnTo) ? searchParams.returnTo[0] : searchParams.returnTo;
 
   onSettled(() => {
     document.title = "Verify email · Mattrax";
+
     if (!token()) return;
     setTokenStatus("pending");
     void (async () => {
       const result = await authClient.verifyEmail({ token: token()! });
+
       if (result.error) {
         setTokenStatus("error");
         setMessage(errorMessage(result.error, "This verification link is invalid or expired."));
+
         return;
       }
+
       await session().refetch();
       setTokenStatus("ok");
       setMessage("Your email address is verified.");

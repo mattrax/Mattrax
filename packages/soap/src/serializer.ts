@@ -25,6 +25,7 @@ export function escapeAttr(value: string): string {
 
 function indentLine(depth: number, text: string, options: SerializeOptions): string {
   if (!options.pretty) return text;
+
   return options.indent.repeat(depth) + text;
 }
 
@@ -34,7 +35,9 @@ function isPrimitiveAst(ast: AST.AST): boolean {
 
 function serializePrimitiveValue(value: unknown): string {
   if (value === null || value === undefined) return "";
+
   if (typeof value === "bigint") return value.toString();
+
   return String(value);
 }
 
@@ -46,9 +49,11 @@ function buildTag(
 ): { open: string; close: string; selfClose: string } {
   const tagName = prefix ? `${prefix}:${name}` : name;
   let attrs = attributes.map((a) => ` ${a.name}="${escapeAttr(a.value)}"`).join("");
+
   if (ns) {
     attrs += prefix ? ` xmlns:${prefix}="${escapeAttr(ns)}"` : ` xmlns="${escapeAttr(ns)}"`;
   }
+
   return {
     open: `<${tagName}${attrs}>`,
     close: `</${tagName}>`,
@@ -72,6 +77,7 @@ function serializeAst(
       const ns = annotations?.soapNamespace;
       const prefix = annotations?.soapNamespacePrefix;
       const tag = buildTag(name, [], ns, prefix);
+
       return tag.open + escapeXml(serializePrimitiveValue(value)) + tag.close;
     }
 
@@ -82,6 +88,7 @@ function serializeAst(
       const annotations = resolveAnnotations(ast);
       const ns = annotations?.soapNamespace;
       const prefix = annotations?.soapNamespacePrefix;
+
       return buildTag(name, [], ns, prefix).selfClose;
     }
 
@@ -91,6 +98,7 @@ function serializeAst(
       const ns = annotations?.soapNamespace;
       const prefix = annotations?.soapNamespacePrefix;
       const tag = buildTag(name, [], ns, prefix);
+
       return tag.open + escapeXml(serializePrimitiveValue(value)) + tag.close;
     }
 
@@ -103,6 +111,7 @@ function serializeAst(
       ) {
         throw new Error(`Expected object for ${ast._tag}, got ${typeof value}`);
       }
+
       const obj = value as Record<string, unknown>;
       const name = getSoapElementName(ast, fallbackName);
       const annotations = resolveAnnotations(ast);
@@ -123,29 +132,36 @@ function serializeAst(
           // Allow null/undefined for Null, Void, Undefined AST types
           const allowsNull =
             ps.type._tag === "Null" || ps.type._tag === "Void" || ps.type._tag === "Undefined";
+
           if (allowsNull) {
             const elName =
               (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
+
             const ns = propAnnotations?.soapNamespace as string | undefined;
             const prefix = propAnnotations?.soapNamespacePrefix as string | undefined;
             const tag = buildTag(elName, [], ns, prefix);
             children.push(indentLine(options.depth + 1, tag.selfClose, options));
             continue;
           }
+
           if (isOptional) {
             if (isNil) {
               const elName =
                 (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
+
               children.push(indentLine(options.depth + 1, `<${elName} xsi:nil="true"/>`, options));
             }
+
             continue;
           }
+
           throw new Error(`Missing required property: ${String(ps.name)}`);
         }
 
         if (propAnnotations?.soapAttribute === true) {
           const attrName =
             (propAnnotations?.soapAttributeName as string | undefined) ?? String(ps.name);
+
           attributes.push({ name: attrName, value: serializePrimitiveValue(propValue) });
         } else if (propAnnotations?.soapTextContent === true) {
           textContent = serializePrimitiveValue(propValue);
@@ -156,6 +172,7 @@ function serializeAst(
             { ...options, depth: options.depth + 1 },
             String(ps.name),
           );
+
           children.push(indentLine(options.depth + 1, child, options));
         }
       }
@@ -175,6 +192,7 @@ function serializeAst(
         ...children,
         indentLine(options.depth, tag.close, options),
       ];
+
       return lines.join("\n");
     }
 
@@ -182,6 +200,7 @@ function serializeAst(
       if (!Array.isArray(value)) {
         throw new Error(`Expected array, got ${typeof value}`);
       }
+
       const arr = value as ReadonlyArray<unknown>;
       const name = getSoapElementName(ast, fallbackName);
       const annotations = resolveAnnotations(ast);
@@ -190,6 +209,7 @@ function serializeAst(
 
       // Determine item AST
       let itemAst: AST.AST | undefined;
+
       if (ast.rest.length > 0) {
         itemAst = ast.rest[0];
       } else if (ast.elements.length > 0) {
@@ -202,6 +222,7 @@ function serializeAst(
       const itemPrefix = itemAnnotations?.soapNamespacePrefix;
 
       const children: Array<string> = [];
+
       for (const item of arr) {
         if (itemAst && isPrimitiveAst(itemAst)) {
           const tag = buildTag(itemName, [], itemNs, itemPrefix);
@@ -219,6 +240,7 @@ function serializeAst(
             { ...options, depth: options.depth + 1 },
             itemName,
           );
+
           children.push(child);
         } else {
           const tag = buildTag(itemName, [], undefined, undefined);
@@ -233,9 +255,11 @@ function serializeAst(
       }
 
       const tag = buildTag(name, [], ns, prefix);
+
       if (name === itemName) {
         return children.join(options.pretty ? "\n" : "");
       }
+
       if (children.length === 0) {
         return indentLine(options.depth, tag.selfClose, options);
       }
@@ -249,12 +273,14 @@ function serializeAst(
         ...children,
         indentLine(options.depth, tag.close, options),
       ];
+
       return lines.join("\n");
     }
 
     case "Union": {
       // Try each union member until one serializes successfully
       const unionName = getSoapElementName(ast, fallbackName);
+
       for (const member of ast.types) {
         try {
           return serializeAst(member, value, options, unionName);
@@ -262,6 +288,7 @@ function serializeAst(
           // continue to next member
         }
       }
+
       throw new Error(`Could not serialize union value: ${JSON.stringify(value)}`);
     }
 
@@ -275,6 +302,7 @@ function serializeAst(
       const ns = annotations?.soapNamespace;
       const prefix = annotations?.soapNamespacePrefix;
       const tag = buildTag(name, [], ns, prefix);
+
       return tag.open + escapeXml(serializePrimitiveValue(value)) + tag.close;
     }
 
@@ -285,6 +313,7 @@ function serializeAst(
       const ns = annotations?.soapNamespace;
       const prefix = annotations?.soapNamespacePrefix;
       const tag = buildTag(name, [], ns, prefix);
+
       return tag.open + escapeXml(serializePrimitiveValue(value)) + tag.close;
     }
 

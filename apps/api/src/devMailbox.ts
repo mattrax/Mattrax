@@ -13,6 +13,7 @@ const inbox: Array<DevEmail> = [];
 
 export const recordDevEmail = (message: Omit<DevEmail, "sentAt">) => {
   inbox.unshift({ ...message, sentAt: new Date().toISOString() });
+
   if (inbox.length > 50) inbox.length = 50;
 };
 
@@ -20,6 +21,7 @@ export const listDevEmails = (): ReadonlyArray<DevEmail> => inbox;
 
 export const isLoopbackHost = (hostname: string) => {
   const host = hostname.toLowerCase();
+
   return (
     host === "localhost" ||
     host === "127.0.0.1" ||
@@ -41,9 +43,12 @@ export const timingSafeStringEqual = (left: string, right: string) => {
   const encoder = new TextEncoder();
   const a = encoder.encode(left);
   const b = encoder.encode(right);
+
   if (a.length !== b.length) return false;
   let difference = 0;
+
   for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+
   return difference === 0;
 };
 
@@ -66,12 +71,15 @@ export const isDevMailboxEnabled = (
   requestUrl: string,
 ) => {
   if (config.DEV_MAILBOX !== "true") return false;
+
   if (config.DEV_MAILBOX_ALLOW_REMOTE === "true") return Boolean(config.DEV_MAILBOX_SECRET?.trim());
   let requestHost: string;
+
   try {
     requestHost = new URL(requestUrl).hostname;
   } catch {
     return false;
   }
+
   return isLoopbackOrigin(origin) && isLoopbackHost(requestHost);
 };

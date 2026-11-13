@@ -8,6 +8,7 @@ import { qrPath } from "~/lib/qr";
  */
 export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
+
   return (
     <Show when={qr()}>
       {(code) => (

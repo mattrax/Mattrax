@@ -12,7 +12,9 @@ import {
 function base64Json(value: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 }
 
@@ -87,6 +89,7 @@ describe("decodePubSubPush", () => {
     const push = await Effect.runPromise(
       decodePubSubPush(JSON.stringify(pushOf(device, { notificationType: "STATUS_REPORT" }))),
     );
+
     expect(push.notificationType).toBe("STATUS_REPORT");
     expect(push.data).toEqual(device);
   });
@@ -100,6 +103,7 @@ describe("decodePubSubPush", () => {
         }),
       ),
     );
+
     expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
     expect(error.message).toContain("no data");
   });
@@ -119,6 +123,7 @@ describe("decodePubSubPush", () => {
         }),
       ),
     );
+
     expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
     expect(error.message).toContain("base64");
   });

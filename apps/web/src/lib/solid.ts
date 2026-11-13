@@ -18,6 +18,7 @@ export function splitProps<T extends Record<string, any>, K extends keyof T>(
   keys: readonly K[],
 ): [Pick<T, K>, Omit<T, K>] {
   const picked = {} as Pick<T, K>;
+
   for (const key of keys) {
     Object.defineProperty(picked, key, {
       enumerable: true,
@@ -25,5 +26,6 @@ export function splitProps<T extends Record<string, any>, K extends keyof T>(
       get: () => props[key],
     });
   }
+
   return [picked, omit(props, ...keys) as unknown as Omit<T, K>];
 }

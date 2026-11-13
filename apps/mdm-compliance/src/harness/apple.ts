@@ -103,6 +103,7 @@ export const createAppleHarness = (
     bootstrapToken: "Ym9vdHN0cmFwLXRva2Vu",
     mdmOrigin: { url: origin } as MdmOrigin,
   };
+
   const config = {
     origin,
     authSecret,
@@ -110,6 +111,7 @@ export const createAppleHarness = (
     organizationName: "Compliance Test",
     supportEmail: "support@example.test",
   };
+
   const backend = ManagementBackend.of({
     appleDeviceEvent: (scope, event) =>
       Effect.sync(() => {
@@ -119,10 +121,13 @@ export const createAppleHarness = (
     appleManagementCheckin: () => {
       if (state.checkinError === "unenrolled")
         return Effect.fail(new ServerInitiatedUnenrollment());
+
       if (state.checkinError === "unknown") return Effect.fail(new ManagementNotSupported());
+
       if (state.checkinError === "internal")
         return Effect.fail({ _tag: "InternalServerError" } as never);
       const next = state.checkinQueue.shift();
+
       return Effect.succeed(next ?? ({ _tag: "Idle" } as ManagementManifest));
     },
     getAppleDeclarationTokens: () => Effect.succeed(state.tokens),
@@ -138,14 +143,17 @@ export const createAppleHarness = (
     windowsManagementCheckin: () => Effect.fail(new ManagementNotSupported()),
     windowsDeviceEvent: () => Effect.void,
   });
+
   const service = AppleMdmService.make({
     backend,
     config,
     topic: "com.apple.mgmt.External.compliance",
     ...(options.trust ? { trust: options.trust } : {}),
   });
+
   const layer = appleMdmRoutes.pipe(Layer.provideMerge(Layer.succeed(AppleMdmService, service)));
   const { handler } = HttpRouter.toWebHandler(layer, { disableLogger: true });
+
   return { handler, state, service, config };
 };
 
@@ -163,7 +171,7 @@ export const appleMdmRequest = async (
     method: options.method ?? "PUT",
     headers: {
       "content-type": "application/x-apple-aspen-mdm",
-      ...(options.headers ?? {}),
+      ...options.headers,
     },
     body: await serializeAppleBody(body),
   });
@@ -174,6 +182,8 @@ export const applePlistResponse = async (response: Response): Promise<any> =>
 export const base64Utf8 = (value: string): string => {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };

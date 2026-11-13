@@ -34,20 +34,25 @@ test.describe("authenticator MFA", () => {
     await page.getByRole("button", { name: /^sign in$/i }).click();
 
     await expect(page.getByText(/two-factor authentication required/i)).toBeVisible();
+
     const beforeMfa = await page.evaluate(async () => {
       const response = await fetch("/api/v1/me");
+
       return response.status;
     });
+
     expect(beforeMfa).toBe(401);
     await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
     await page.getByRole("button", { name: /^continue$/i }).click();
     await page.waitForTimeout(600);
+
     // A code can land on a replay-protected step boundary; retry once the way
     // a real user would.
     if (page.url().includes("/login")) {
       await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
+
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // A recovery code completes the same pending flow and is single use.
@@ -65,10 +70,12 @@ test.describe("authenticator MFA", () => {
     await page.locator("#mfa-code").fill(recoveryCodes[0]!);
     await page.getByRole("button", { name: /^continue$/i }).click();
     await page.waitForTimeout(600);
+
     if (page.url().includes("/login")) {
       await page.locator("#mfa-code").fill(recoveryCodes[1]!);
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
+
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // Disabling requires the password and a fresh authenticator code.
@@ -79,6 +86,7 @@ test.describe("authenticator MFA", () => {
     const regenerateForm = enabledCard.locator("form", {
       hasText: /regenerate recovery codes/i,
     });
+
     await regenerateForm.getByPlaceholder("Current password").fill(PASSWORD);
     await regenerateForm.getByPlaceholder("000000").fill(await freshTotpCode(manualKey));
     await regenerateForm.getByRole("button", { name: /^regenerate$/i }).click();
@@ -103,6 +111,7 @@ test.describe("authenticator MFA", () => {
 
   test("refuses to require MFA until privileged users enrol", async ({ page }) => {
     const { email } = await register(page);
+
     const tenantId = await page.evaluate(async () => {
       const response = await fetch("/api/v1/tenants", {
         method: "POST",
@@ -112,7 +121,9 @@ test.describe("authenticator MFA", () => {
           slug: `mfa-${Math.random().toString(36).slice(2, 8)}`,
         }),
       });
+
       if (!response.ok) throw new Error(await response.text());
+
       return ((await response.json()) as { id: string }).id;
     });
 
@@ -124,8 +135,10 @@ test.describe("authenticator MFA", () => {
           headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
           body: JSON.stringify({ password, action: "sso-policy" }),
         });
+
         if (!stepUp.ok) return { status: stepUp.status, body: await stepUp.text() };
         const { grant } = (await stepUp.json()) as { grant: string };
+
         const response = await fetch(`/api/v1/tenants/${id}/sso`, {
           method: "PATCH",
           headers: {
@@ -135,10 +148,12 @@ test.describe("authenticator MFA", () => {
           },
           body: JSON.stringify({ requireMfa: true }),
         });
+
         return { status: response.status, body: await response.text() };
       },
       { id: tenantId, password: PASSWORD },
     );
+
     expect(enable.status).toBe(400);
     expect(enable.body).toContain("Enable an authenticator app");
 

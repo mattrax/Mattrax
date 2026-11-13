@@ -8,6 +8,7 @@ describe("plist", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><string>hello</string></plist>`;
+
       const result = await parsePlist(xml).pipe(Effect.runPromise);
       expect(result).toBe("hello");
     });
@@ -27,6 +28,7 @@ describe("plist", () => {
   <real>3.14</real>
 </dict>
 </plist>`;
+
       const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(result.name).toBe("Test");
       expect(result.count).toBe(42);
@@ -46,6 +48,7 @@ describe("plist", () => {
   </array>
 </dict>
 </plist>`;
+
       const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(result.items).toEqual(["one", "two"]);
     });
@@ -59,6 +62,7 @@ describe("plist", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><data>SGVsbG8=</data></plist>`;
+
       const result = await parsePlist(xml).pipe(Effect.runPromise);
       expect(result).toBe("SGVsbG8=");
     });
@@ -67,6 +71,7 @@ describe("plist", () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><date>2024-01-15T10:30:00Z</date></plist>`;
+
       const result = await parsePlist(xml).pipe(Effect.runPromise);
       expect(result).toBeInstanceOf(Date);
       expect((result as Date).toISOString()).toBe("2024-01-15T10:30:00.000Z");
@@ -114,6 +119,7 @@ describe("plist", () => {
       const result = await serializePlist(`<script>alert("xss'or'1'='1")</script>`).pipe(
         Effect.runPromise,
       );
+
       expect(result).not.toContain("<script>");
       expect(result).toContain("&apos;or&apos;");
       expect(result).toContain("&quot;");
@@ -130,6 +136,7 @@ describe("plist", () => {
       const result = await serializePlist(new Uint8Array([72, 101, 108, 108, 111])).pipe(
         Effect.runPromise,
       );
+
       expect(result).toContain("<data>SGVsbG8=</data>");
     });
 
@@ -137,6 +144,7 @@ describe("plist", () => {
       const result = await serializePlist(new Date("2024-01-15T10:30:00.000Z")).pipe(
         Effect.runPromise,
       );
+
       expect(result).toContain("<date>2024-01-15T10:30:00Z</date>");
     });
 
@@ -154,6 +162,7 @@ describe("plist", () => {
         Tokens: ["one", "two"],
         Nested: { key: "value" },
       };
+
       const plist = await serializePlist(original).pipe(Effect.runPromise);
       const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(parsed.MessageType).toBe("Authenticate");

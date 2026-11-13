@@ -27,6 +27,7 @@ describe("fetchWithTimeout", () => {
         fetch: (async () => new Response("ok", { status: 200 })) as typeof fetch,
       },
     );
+
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("ok");
   });
@@ -34,6 +35,7 @@ describe("fetchWithTimeout", () => {
   it("aborts a hung request and reports the deadline", async () => {
     const seen: { signal?: AbortSignal } = {};
     const started = Date.now();
+
     const error = await fetchWithTimeout(
       "https://example.test/hang",
       {},
@@ -49,11 +51,13 @@ describe("fetchWithTimeout", () => {
 
   it("honours a caller-provided abort signal without masking it as a timeout", async () => {
     const controller = new AbortController();
+
     const promise = fetchWithTimeout(
       "https://example.test/abort",
       { signal: controller.signal },
       { timeoutMs: 10_000, fetch: hangingFetch() },
     );
+
     controller.abort();
     const error = await promise.catch((cause: unknown) => cause);
     expect(error).not.toBeInstanceOf(OutboundTimeoutError);
@@ -62,6 +66,7 @@ describe("fetchWithTimeout", () => {
 
   it("does not turn an upstream failure into a timeout", async () => {
     const failure = new Error("connection refused");
+
     const error = await fetchWithTimeout(
       "https://example.test/fail",
       {},
@@ -72,6 +77,7 @@ describe("fetchWithTimeout", () => {
         }) as typeof fetch,
       },
     ).catch((cause: unknown) => cause);
+
     expect(error).toBe(failure);
   });
 

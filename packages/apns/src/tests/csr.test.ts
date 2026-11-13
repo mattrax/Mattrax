@@ -12,12 +12,14 @@ import { createTestApnsCertificate, createTestApnsKeys } from "./helpers.js";
 
 const decodePlist = async (base64: string) => {
   const xml = atob(base64);
+
   return (await Effect.runPromise(parsePlist(xml))) as Record<string, unknown>;
 };
 
 describe("APNs CSR generation", () => {
   it("creates a PKCS#10 request with the tenant subject", async () => {
     const keyPair = await createTestApnsKeys();
+
     const der = await createApnsCsrDer(keyPair, {
       organization: "Acme",
       organizationalUnit: "tenant-123",
@@ -32,6 +34,7 @@ describe("APNs CSR generation", () => {
 
   it("builds the Apple plist without a vendor certificate", async () => {
     const keyPair = await createTestApnsKeys();
+
     const result = await buildApnsCsr({
       keyPair,
       subject: { organization: "Acme", organizationalUnit: "tenant-123" },
@@ -54,11 +57,13 @@ describe("APNs CSR generation", () => {
   it("signs the CSR and includes the Apple chain when a vendor key is configured", async () => {
     const keyPair = await createTestApnsKeys();
     const vendorKeys = await createTestApnsKeys();
+
     const vendor = await createTestApnsCertificate({
       keyPair: vendorKeys,
       topic: "com.apple.mgmt.External.vendor",
       commonName: "MDM Vendor",
     });
+
     const vendorKeyPem = pemEncode(
       "PRIVATE KEY",
       await crypto.subtle.exportKey("pkcs8", vendorKeys.privateKey),
@@ -81,16 +86,20 @@ describe("APNs CSR generation", () => {
     const signature = Uint8Array.from(atob(plist.PushCertSignature as string), (c) =>
       c.charCodeAt(0),
     );
+
     const csrDer = Uint8Array.from(atob(plist.PushCertRequestCSR as string), (c) =>
       c.charCodeAt(0),
     );
+
     const publicKey = await vendor.certificate.getPublicKey();
+
     const valid = await crypto.subtle.verify(
       { name: "RSASSA-PKCS1-v1_5" },
       publicKey,
       signature,
       csrDer,
     );
+
     expect(valid).toBe(true);
   });
 });

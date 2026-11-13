@@ -16,30 +16,38 @@ child.on("error", (error) => {
   console.error("Failed to start the dev server", error);
   process.exit(1);
 });
+
 child.on("exit", (code) => process.exit(code ?? 1));
 
 const stop = () => {
   if (child.exitCode === null) child.kill("SIGTERM");
 };
+
 process.on("SIGINT", stop);
+
 process.on("SIGTERM", stop);
 
 const waitForServer = async (timeoutMs = 90_000) => {
   const started = Date.now();
+
   while (Date.now() - started < timeoutMs) {
     try {
       const health = await fetch("http://localhost:9050/api/health");
       const page = await fetch("http://localhost:9050/login");
+
       if (health.ok && page.ok) return;
     } catch {
       // Not up yet.
     }
+
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+
   throw new Error("dev server did not become healthy in time");
 };
 
 await waitForServer();
+
 // Let the client and SSR optimizers finish writing their caches before
 // Playwright starts driving the browser.
 await new Promise((resolve) => setTimeout(resolve, 10_000));

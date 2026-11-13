@@ -43,6 +43,7 @@ type DialogOverlayProps<T extends ValidComponent = "div"> = PolymorphicProps<
 
 const DialogOverlay = <T extends ValidComponent = "div">(props: DialogOverlayProps<T>) => {
   const [local, others] = splitProps(props as DialogOverlayProps, ["class"]);
+
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
@@ -65,6 +66,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
   const context = DialogPrimitive.useDialogContext();
   let opener: HTMLElement | null = null;
+
   return (
     <DialogPrimitive.Portal>
       <DialogOverlay />
@@ -116,6 +118,7 @@ type DialogHeaderProps = ComponentProps<"div">;
 
 const DialogHeader = (props: DialogHeaderProps) => {
   const [local, others] = splitProps(props, ["class"]);
+
   return (
     <div
       data-slot="dialog-header"
@@ -136,6 +139,7 @@ type DialogFooterProps<T extends ValidComponent = "div"> = PolymorphicProps<
 const DialogFooter = <T extends ValidComponent = "div">(props: DialogFooterProps<T>) => {
   const mergedProps = mergeProps({ showCloseButton: false } as DialogFooterProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
+
   return (
     <div
       data-slot="dialog-footer"
@@ -163,6 +167,7 @@ type DialogTitleProps<T extends ValidComponent = "h2"> = PolymorphicProps<
 
 const DialogTitle = <T extends ValidComponent = "h2">(props: DialogTitleProps<T>) => {
   const [local, others] = splitProps(props as DialogTitleProps, ["class"]);
+
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
@@ -180,6 +185,7 @@ type DialogDescriptionProps<T extends ValidComponent = "p"> = PolymorphicProps<
 
 const DialogDescription = <T extends ValidComponent = "p">(props: DialogDescriptionProps<T>) => {
   const [local, others] = splitProps(props as DialogDescriptionProps, ["class"]);
+
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"

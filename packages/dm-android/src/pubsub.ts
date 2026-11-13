@@ -12,6 +12,7 @@ export const NOTIFICATION_TYPES = [
   "USAGE_LOGS",
   "ENTERPRISE_UPGRADE",
 ] as const;
+
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /** Device states carried by `ENROLLMENT` / `STATUS_REPORT` notifications. */
@@ -23,6 +24,7 @@ export const ENROLLMENT_STATES = [
   "LOST",
   "PRE_PROVISIONING",
 ] as const;
+
 export type EnrollmentState = (typeof ENROLLMENT_STATES)[number];
 
 /** Values seen on `commandStatus` in command notifications. */
@@ -33,6 +35,7 @@ export const COMMAND_STATUSES = [
   "FAILED",
   "CANCELLED",
 ] as const;
+
 export type CommandStatus = (typeof COMMAND_STATUSES)[number];
 
 /** Attribute key Google uses to label the notification type. */
@@ -69,7 +72,9 @@ function decodeBase64Utf8(data: string): string {
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
+
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
   return new TextDecoder().decode(bytes);
 }
 
@@ -82,6 +87,7 @@ function parsePushBody(input: unknown): Effect.Effect<PubSubPushEnvelope, PubSub
             new PubSubDecodeError({ message: "Push body is not valid JSON", cause }),
         })
       : Effect.succeed(input);
+
   return json.pipe(
     Effect.flatMap((value) =>
       (
@@ -106,6 +112,7 @@ export function decodePubSubData(data: string): Effect.Effect<unknown, PubSubDec
       catch: (cause) =>
         new PubSubDecodeError({ message: "Pub/Sub message data is not valid base64", cause }),
     });
+
     return yield* Effect.try({
       try: () => JSON.parse(json) as unknown,
       catch: (cause) =>
@@ -127,18 +134,23 @@ export function decodePubSubPush(
 ): Effect.Effect<DecodedPubSubPush, PubSubDecodeError> {
   return Effect.gen(function* () {
     const envelope = yield* parsePushBody(input);
+
     if (envelope.message.data === undefined) {
       return yield* Effect.fail(
         new PubSubDecodeError({ message: "Pub/Sub message has no data field" }),
       );
     }
+
     const data = yield* decodePubSubData(envelope.message.data);
     const attributes = envelope.message.attributes ?? {};
+
     const dataRecord =
       typeof data === "object" && data !== null && !Array.isArray(data)
         ? (data as Record<string, unknown>)
         : undefined;
+
     const inlineType = dataRecord?.["notificationType"];
+
     return {
       notificationType:
         attributes[NOTIFICATION_TYPE_ATTRIBUTE] ??
@@ -161,6 +173,7 @@ export function decodePubSubNotification(
 function readString(source: unknown, key: string): string | undefined {
   if (typeof source !== "object" || source === null) return undefined;
   const value = (source as Record<string, unknown>)[key];
+
   return typeof value === "string" ? value : undefined;
 }
 
@@ -193,12 +206,17 @@ export function enrollmentState(notification: NotificationLike): string | undefi
 export function commandStatus(notification: NotificationLike): string | undefined {
   if (typeof notification.data !== "object" || notification.data === null) return undefined;
   const operation = notification.data as Record<string, unknown>;
+
   const metadata =
     typeof operation.metadata === "object" && operation.metadata !== null
       ? (operation.metadata as Record<string, unknown>)
       : undefined;
+
   if (metadata && typeof metadata.errorCode === "string") return "FAILED";
+
   if (operation.error !== undefined) return "FAILED";
+
   if (typeof operation.done === "boolean") return operation.done ? "COMPLETED" : "PENDING";
+
   return undefined;
 }

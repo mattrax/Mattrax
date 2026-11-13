@@ -32,11 +32,13 @@ const installFetchHeaders = (): void => {
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
     let url: URL;
+
     try {
       url = new URL(String(raw), window.location.href);
     } catch {
       return originalFetch(input, init);
     }
+
     if (
       url.origin !== window.location.origin ||
       !(url.pathname === "/api" || url.pathname.startsWith("/api/"))
@@ -46,10 +48,13 @@ const installFetchHeaders = (): void => {
     if (input instanceof Request) {
       const headers = new Headers(init?.headers ?? input.headers);
       applyAnalyticsHeaders(headers);
+
       return originalFetch(new Request(input, { ...init, headers }));
     }
+
     const headers = new Headers(init?.headers);
     applyAnalyticsHeaders(headers);
+
     return originalFetch(input, { ...init, headers });
   }) as typeof window.fetch;
 };
@@ -61,10 +66,12 @@ const redact = (value: string): string =>
 
 const withoutQuery = (value: unknown): unknown => {
   if (typeof value !== "string") return value;
+
   try {
     const url = new URL(value, window.location.href);
     url.search = "";
     url.hash = "";
+
     return url.toString();
   } catch {
     return value;
@@ -73,22 +80,28 @@ const withoutQuery = (value: unknown): unknown => {
 
 const sanitizeCapture = <T extends { properties?: Record<string, any> }>(capture: T): T => {
   const properties = capture.properties;
+
   if (!properties) return capture;
+
   for (const key of ["$current_url", "$referrer"]) {
     if (key in properties) properties[key] = withoutQuery(properties[key]);
   }
+
   const exceptionValues = properties.$exception_values;
+
   if (Array.isArray(exceptionValues))
     properties.$exception_values = exceptionValues.map((item) =>
       typeof item === "string" ? redact(item) : item,
     );
   const exceptions = properties.$exception_list;
+
   if (Array.isArray(exceptions))
     properties.$exception_list = exceptions.map((item) =>
       item && typeof item === "object" && typeof item.value === "string"
         ? { ...item, value: redact(item.value) }
         : item,
     );
+
   return capture;
 };
 
@@ -96,7 +109,9 @@ const sanitizeCapture = <T extends { properties?: Record<string, any> }>(capture
 export const initPostHog = (): boolean => {
   if (isServer || initialized) return initialized;
   const config = window.__MATTRAX_POSTHOG__;
+
   if (!config?.key) return false;
+
   try {
     posthog.init(config.key, {
       api_host: config.host,
@@ -115,9 +130,11 @@ export const initPostHog = (): boolean => {
       sessionId: posthog.get_session_id(),
     }));
     installFetchHeaders();
+
     return true;
   } catch (error) {
     console.warn("PostHog initialisation failed", error);
+
     return false;
   }
 };
@@ -125,7 +142,9 @@ export const initPostHog = (): boolean => {
 /** Keep the PostHog person in sync with the dashboard's authenticated user. */
 export const syncPostHogUser = (user: PostHogUser | null): void => {
   initPostHog();
+
   if (!initialized) return;
+
   if (user) {
     if (lastUserId === user.id) return;
     posthog.identify(user.id, {
@@ -134,8 +153,10 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
       ...(user.emailVerified === undefined ? {} : { email_verified: user.emailVerified }),
     });
     lastUserId = user.id;
+
     return;
   }
+
   // A first-time signed-out visitor keeps their anonymous id. Only a real
   // sign-out (identified -> signed out) starts a fresh anonymous session.
   if (typeof lastUserId === "string") posthog.reset();
@@ -145,8 +166,11 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
 /** Group browser pageviews and interactions by the current tenant. */
 export const syncPostHogTenant = (tenantId?: string | null): void => {
   initPostHog();
+
   if (!initialized) return;
+
   if (lastTenantId === tenantId) return;
+
   if (tenantId) posthog.group("tenant", tenantId);
   else posthog.resetGroups();
   lastTenantId = tenantId ?? null;
@@ -155,6 +179,7 @@ export const syncPostHogTenant = (tenantId?: string | null): void => {
 /** Capture a product event from the dashboard when server capture is not the source. */
 export const capturePostHog = (event: string, properties?: Record<string, unknown>): void => {
   initPostHog();
+
   if (initialized) posthog.capture(event, properties);
 };
 

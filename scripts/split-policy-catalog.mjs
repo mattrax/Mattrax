@@ -34,6 +34,7 @@ export const DEFAULT_OUT = path.join(ROOT, "apps/web/public/catalog/windows");
 export const collectionFileKey = (id) => {
   if (!/^[A-Za-z0-9._/-]+$/.test(id))
     throw new Error(`Collection id ${JSON.stringify(id)} cannot be used as a file name`);
+
   return id.replaceAll("/", "--");
 };
 
@@ -46,11 +47,14 @@ export const collectionFileKey = (id) => {
  */
 const usableProperties = (collection) => {
   const seen = new Set();
+
   return (collection.properties ?? []).filter((property) => {
     if (property.address && /[{}]/.test(property.address)) return false;
     const identity = property.address ?? property.key;
+
     if (seen.has(identity)) return false;
     seen.add(identity);
+
     return true;
   });
 };
@@ -74,12 +78,16 @@ const summarize = (collection) => {
     name: collection.name,
     propertyCount: usableProperties(collection).length,
   };
+
   // Optional fields are omitted rather than written as null so the index stays
   // small and diff-friendly. Collection descriptions stay in the per-collection
   // payload: browse never needs them.
   if (collection.group) summary.group = collection.group;
+
   if (collection.deprecated) summary.deprecated = true;
+
   if (collection.minOs) summary.minOs = collection.minOs;
+
   return summary;
 };
 
@@ -94,6 +102,7 @@ export const splitWindowsCatalog = (catalogue) => {
 
   const collections = [...catalogue.collections].sort((a, b) => a.id.localeCompare(b.id));
   const seen = new Set();
+
   for (const collection of collections) {
     if (seen.has(collection.id))
       throw new Error(`Duplicate collection id ${JSON.stringify(collection.id)}`);
@@ -112,6 +121,7 @@ export const splitWindowsCatalog = (catalogue) => {
       property.address ?? property.key,
       searchableText(property),
     ]);
+
     search.collections[collection.id] = properties;
     propertyCount += properties.length;
   }
@@ -124,6 +134,7 @@ export const splitWindowsCatalog = (catalogue) => {
 
   files.set("index.json", `${JSON.stringify(index)}\n`);
   files.set("search.json", `${JSON.stringify(search)}\n`);
+
   return { files, index, stats: index.stats };
 };
 
@@ -134,9 +145,11 @@ export const writeSplit = async ({ source = DEFAULT_SOURCE, out = DEFAULT_OUT } 
 
   await mkdir(out, { recursive: true });
   const existing = await readdir(out);
+
   for (const name of existing) {
     if (name.endsWith(".json") && !files.has(name)) await rm(path.join(out, name));
   }
+
   for (const [name, contents] of files) await writeFile(path.join(out, name), contents);
 
   return { files, stats, out };
@@ -154,9 +167,12 @@ export const checkSplit = async ({ source = DEFAULT_SOURCE, out = DEFAULT_OUT } 
       problems.push(`missing ${name}`);
       continue;
     }
+
     const current = await readFile(path.join(out, name), "utf8");
+
     if (current !== contents) problems.push(`stale ${name}`);
   }
+
   for (const name of existing) if (!files.has(name)) problems.push(`unexpected ${name}`);
 
   return problems;
@@ -169,25 +185,32 @@ const formatBytes = (bytes) =>
 
 const parseArgs = (argv) => {
   const options = { source: DEFAULT_SOURCE, out: DEFAULT_OUT, check: false };
+
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+
     if (arg === "--check") options.check = true;
     else if (arg === "--source") options.source = path.resolve(argv[++index]);
     else if (arg === "--out") options.out = path.resolve(argv[++index]);
     else throw new Error(`Unknown argument ${arg}`);
   }
+
   return options;
 };
 
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
+
   if (options.check) {
     const problems = await checkSplit(options);
+
     if (problems.length > 0) {
       console.error(`The split Windows catalogue is out of date:\n  ${problems.join("\n  ")}`);
       process.exit(1);
     }
+
     console.log("The split Windows catalogue is up to date.");
+
     return;
   }
 
@@ -207,6 +230,7 @@ const main = async () => {
 
 const isMain =
   process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
 if (isMain) {
   main().catch((error) => {
     console.error(error);

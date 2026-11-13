@@ -20,6 +20,7 @@ export const ComAppleAdcertificateManaged = Schema.Struct({
   Keysize: Schema.optional(Schema.Int),
   EnableAutoRenewal: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleAdcertificateManaged = typeof ComAppleAdcertificateManaged.Type;
 
 /**
@@ -39,6 +40,7 @@ export const ComAppleAimAccount = Schema.Struct({
   ),
   AIMAuthentication: Schema.Literal("AIMAuthPassword"),
 });
+
 export type ComAppleAimAccount = typeof ComAppleAimAccount.Type;
 
 /**
@@ -80,6 +82,7 @@ export const ComAppleAirplay = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleAirplay = typeof ComAppleAirplay.Type;
 
 /**
@@ -91,6 +94,7 @@ export const ComAppleAirplaySecurity = Schema.Struct({
   AccessType: Schema.Literals(["ANY", "WIFI_ONLY"]),
   Password: Schema.optional(Schema.String),
 });
+
 export type ComAppleAirplaySecurity = typeof ComAppleAirplaySecurity.Type;
 
 /**
@@ -111,6 +115,7 @@ export const ComAppleAirprint = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleAirprint = typeof ComAppleAirprint.Type;
 
 /**
@@ -131,6 +136,7 @@ export const ComAppleApnManaged = Schema.Struct({
   }),
   DefaultsDomainName: Schema.Literal("com.apple.managedCarrier"),
 });
+
 export type ComAppleApnManaged = typeof ComAppleApnManaged.Type;
 
 /**
@@ -370,6 +376,7 @@ export const ComAppleApplicationaccess = Schema.Struct({
   safariForceFraudWarning: Schema.optional(Schema.Boolean),
   whitelistedAppBundleIDs: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleApplicationaccess = typeof ComAppleApplicationaccess.Type;
 
 const makeWhitelistSubapps = (): Schema.Schema<any> =>
@@ -381,7 +388,9 @@ const makeWhitelistSubapps = (): Schema.Schema<any> =>
     subApps: Schema.optional(Schema.Array(Schema.suspend(() => WhitelistSubapps))),
     displayName: Schema.optional(Schema.String),
   });
+
 export const WhitelistSubapps = makeWhitelistSubapps();
+
 export type WhitelistSubapps = typeof WhitelistSubapps.Type;
 
 /**
@@ -405,6 +414,7 @@ export const ComAppleApplicationaccessNew = Schema.Struct({
   pathBlackList: Schema.optional(Schema.Array(Schema.String)),
   pathWhiteList: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleApplicationaccessNew = typeof ComAppleApplicationaccessNew.Type;
 
 /**
@@ -442,6 +452,7 @@ export const ComAppleAppLock = Schema.Struct({
     ),
   }),
 });
+
 export type ComAppleAppLock = typeof ComAppleAppLock.Type;
 
 /**
@@ -454,6 +465,7 @@ export const ComAppleAppstore = Schema.Struct({
   "restrict-store-disable-app-adoption": Schema.optional(Schema.Boolean),
   DisableSoftwareUpdateNotifications: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleAppstore = typeof ComAppleAppstore.Type;
 
 /**
@@ -468,6 +480,7 @@ export const ComAppleAsam = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleAsam = typeof ComAppleAsam.Type;
 
 /**
@@ -538,6 +551,7 @@ export const ComAppleAssetcacheManaged = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleAssetcacheManaged = typeof ComAppleAssetcacheManaged.Type;
 
 /**
@@ -553,6 +567,7 @@ export const ComAppleAssociatedDomains = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleAssociatedDomains = typeof ComAppleAssociatedDomains.Type;
 
 /**
@@ -569,6 +584,7 @@ export const ComAppleCaldavAccount = Schema.Struct({
   CalDAVPort: Schema.optional(Schema.Int),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleCaldavAccount = typeof ComAppleCaldavAccount.Type;
 
 /**
@@ -594,6 +610,7 @@ export const ComAppleCarddavAccount = Schema.Struct({
   ),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleCarddavAccount = typeof ComAppleCarddavAccount.Type;
 
 /**
@@ -628,6 +645,7 @@ export const ComAppleCellular = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleCellular = typeof ComAppleCellular.Type;
 
 /**
@@ -658,6 +676,7 @@ export const ComAppleCellularprivatenetworkManaged = Schema.Struct({
   NetworkIdentifier: Schema.optional(Schema.String),
   CsgNetworkIdentifier: Schema.optional(Schema.String),
 });
+
 export type ComAppleCellularprivatenetworkManaged =
   typeof ComAppleCellularprivatenetworkManaged.Type;
 
@@ -668,6 +687,7 @@ export type ComAppleCellularprivatenetworkManaged =
 export const ComAppleConferenceroomdisplay = Schema.Struct({
   Message: Schema.optional(Schema.String),
 });
+
 export type ComAppleConferenceroomdisplay = typeof ComAppleConferenceroomdisplay.Type;
 
 /**
@@ -685,6 +705,7 @@ export const ComAppleConfigurationprofileIdentification = Schema.Struct({
     PromptMessage: Schema.optional(Schema.String),
   }),
 });
+
 export type ComAppleConfigurationprofileIdentification =
   typeof ComAppleConfigurationprofileIdentification.Type;
 
@@ -701,6 +722,7 @@ export const ComAppleDashboard = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleDashboard = typeof ComAppleDashboard.Type;
 
 /**
@@ -710,6 +732,7 @@ export type ComAppleDashboard = typeof ComAppleDashboard.Type;
 export const ComAppleDeclarations = Schema.Struct({
   Declarations: Schema.Array(Schema.String),
 });
+
 export type ComAppleDeclarations = typeof ComAppleDeclarations.Type;
 
 /**
@@ -720,6 +743,7 @@ export const ComAppleDesktop = Schema.Struct({
   locked: Schema.optional(Schema.Boolean),
   "override-picture-path": Schema.optional(Schema.String),
 });
+
 export type ComAppleDesktop = typeof ComAppleDesktop.Type;
 
 /**
@@ -729,6 +753,7 @@ export type ComAppleDesktop = typeof ComAppleDesktop.Type;
 export const ComAppleDictionary = Schema.Struct({
   parentalControl: Schema.Boolean,
 });
+
 export type ComAppleDictionary = typeof ComAppleDictionary.Type;
 
 /**
@@ -776,6 +801,7 @@ export const ComAppleDirectoryserviceManaged = Schema.Struct({
   ADTrustChangePassIntervalDaysFlag: Schema.optional(Schema.Boolean),
   ADTrustChangePassIntervalDays: Schema.optional(Schema.Int),
 });
+
 export type ComAppleDirectoryserviceManaged = typeof ComAppleDirectoryserviceManaged.Type;
 
 /**
@@ -785,6 +811,7 @@ export type ComAppleDirectoryserviceManaged = typeof ComAppleDirectoryserviceMan
 export const ComAppleDiscrecording = Schema.Struct({
   BurnSupport: Schema.Literals(["off", "authenticate", "on"]),
 });
+
 export type ComAppleDiscrecording = typeof ComAppleDiscrecording.Type;
 
 /**
@@ -801,6 +828,7 @@ export const ComAppleDnsproxyManaged = Schema.Struct({
   ),
   DNSProxyUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleDnsproxyManaged = typeof ComAppleDnsproxyManaged.Type;
 
 /**
@@ -847,6 +875,7 @@ export const ComAppleDnssettingsManaged = Schema.Struct({
   ),
   ProhibitDisablement: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleDnssettingsManaged = typeof ComAppleDnssettingsManaged.Type;
 
 /**
@@ -968,6 +997,7 @@ export const ComAppleDock = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleDock = typeof ComAppleDock.Type;
 
 /**
@@ -981,6 +1011,7 @@ export const ComAppleDomains = Schema.Struct({
   CrossSiteTrackingPreventionRelaxedDomains: Schema.optional(Schema.Array(Schema.String)),
   CrossSiteTrackingPreventionRelaxedApps: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleDomains = typeof ComAppleDomains.Type;
 
 /**
@@ -1064,6 +1095,7 @@ export const ComAppleEasAccount = Schema.Struct({
   OverridePreviousPassword: Schema.optional(Schema.Boolean),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleEasAccount = typeof ComAppleEasAccount.Type;
 
 /**
@@ -1123,6 +1155,7 @@ export const ComAppleEducation = Schema.Struct({
   ),
   ScreenObservationPermissionModificationAllowed: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleEducation = typeof ComAppleEducation.Type;
 
 /**
@@ -1155,6 +1188,7 @@ export const ComAppleEwsAccount = Schema.Struct({
   ExternalPath: Schema.optional(Schema.String),
   ExternalPort: Schema.optional(Schema.Int),
 });
+
 export type ComAppleEwsAccount = typeof ComAppleEwsAccount.Type;
 
 /**
@@ -1216,6 +1250,7 @@ export const ComAppleExtensiblesso = Schema.Struct({
   ),
   Hosts: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleExtensiblesso = typeof ComAppleExtensiblesso.Type;
 
 /**
@@ -1316,6 +1351,7 @@ export const ComAppleExtensiblesso1 = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleExtensiblesso1 = typeof ComAppleExtensiblesso1.Type;
 
 /**
@@ -1348,6 +1384,7 @@ export const ComAppleFamilycontrolsContentfilter = Schema.Struct({
   filterDenyList: Schema.optional(Schema.Array(Schema.String)),
   filterBlacklist: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleFamilycontrolsContentfilter = typeof ComAppleFamilycontrolsContentfilter.Type;
 
 /**
@@ -1397,6 +1434,7 @@ export const ComAppleFamilycontrolsTimelimitsV2 = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleFamilycontrolsTimelimitsV2 = typeof ComAppleFamilycontrolsTimelimitsV2.Type;
 
 /**
@@ -1413,6 +1451,7 @@ export const ComAppleFileproviderd = Schema.Struct({
   ManagementExternalVolumeSyncingAllowList: Schema.optional(Schema.Array(Schema.String)),
   ManagementDomainAutoEnablementList: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleFileproviderd = typeof ComAppleFileproviderd.Type;
 
 /**
@@ -1431,6 +1470,7 @@ export const ComAppleFinder = Schema.Struct({
   ShowRemovableMediaOnDesktop: Schema.optional(Schema.Boolean),
   WarnOnEmptyTrash: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleFinder = typeof ComAppleFinder.Type;
 
 /**
@@ -1440,6 +1480,7 @@ export type ComAppleFinder = typeof ComAppleFinder.Type;
 export const ComAppleFirstactiveethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleFirstactiveethernetManaged = typeof ComAppleFirstactiveethernetManaged.Type;
 
 /**
@@ -1449,6 +1490,7 @@ export type ComAppleFirstactiveethernetManaged = typeof ComAppleFirstactiveether
 export const ComAppleFirstethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleFirstethernetManaged = typeof ComAppleFirstethernetManaged.Type;
 
 /**
@@ -1459,6 +1501,7 @@ export const ComAppleFont = Schema.Struct({
   Name: Schema.optional(Schema.String),
   Font: Schema.String,
 });
+
 export type ComAppleFont = typeof ComAppleFont.Type;
 
 /**
@@ -1471,6 +1514,7 @@ export const ComAppleGamed = Schema.Struct({
   GKFeatureAddingGameCenterFriendsAllowed: Schema.optional(Schema.Boolean),
   GKFeatureMultiplayerGamingAllowed: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleGamed = typeof ComAppleGamed.Type;
 
 /**
@@ -1480,6 +1524,7 @@ export type ComAppleGamed = typeof ComAppleGamed.Type;
 export const ComAppleGlobalethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleGlobalethernetManaged = typeof ComAppleGlobalethernetManaged.Type;
 
 /**
@@ -1501,6 +1546,7 @@ export const ComAppleGoogleOauth = Schema.Struct({
   ),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleGoogleOauth = typeof ComAppleGoogleOauth.Type;
 
 const makeDockPages = (): Schema.Schema<any> =>
@@ -1511,7 +1557,9 @@ const makeDockPages = (): Schema.Schema<any> =>
     Pages: Schema.optional(Schema.Array(Schema.Array(Schema.suspend(() => DockPages)))),
     URL: Schema.optional(Schema.String),
   });
+
 export const DockPages = makeDockPages();
+
 export type DockPages = typeof DockPages.Type;
 
 /**
@@ -1542,6 +1590,7 @@ export const ComAppleHomescreenlayout = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleHomescreenlayout = typeof ComAppleHomescreenlayout.Type;
 
 /**
@@ -1552,6 +1601,7 @@ export const ComAppleIronwoodSupport = Schema.Struct({
   "Profanity Allowed": Schema.optional(Schema.Boolean),
   "Ironwood Allowed": Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleIronwoodSupport = typeof ComAppleIronwoodSupport.Type;
 
 /**
@@ -1571,6 +1621,7 @@ export const ComAppleJabberAccount = Schema.Struct({
   ),
   JabberAuthentication: Schema.Literal("JabberAuthPassword"),
 });
+
 export type ComAppleJabberAccount = typeof ComAppleJabberAccount.Type;
 
 /**
@@ -1600,6 +1651,7 @@ export const ComAppleLdapAccount = Schema.Struct({
   ),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleLdapAccount = typeof ComAppleLdapAccount.Type;
 
 /**
@@ -1614,6 +1666,7 @@ export const ComAppleLoginitemsManaged = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleLoginitemsManaged = typeof ComAppleLoginitemsManaged.Type;
 
 /**
@@ -1645,6 +1698,7 @@ export const ComAppleLoginwindow = Schema.Struct({
   AutologinUsername: Schema.optional(Schema.String),
   AutologinPassword: Schema.optional(Schema.String),
 });
+
 export type ComAppleLoginwindow = typeof ComAppleLoginwindow.Type;
 
 /**
@@ -1657,6 +1711,7 @@ export const ComAppleLom = Schema.Struct({
   DeviceCACertificateUUIDs: Schema.optional(Schema.Array(Schema.String)),
   ControllerCACertificateUUIDs: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleLom = typeof ComAppleLom.Type;
 
 /**
@@ -1728,6 +1783,7 @@ export const ComAppleMailManaged = Schema.Struct({
   SMIMEEnableEncryptionPerMessageSwitch: Schema.optional(Schema.Boolean),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleMailManaged = typeof ComAppleMailManaged.Type;
 
 /**
@@ -1758,6 +1814,7 @@ export const ComAppleManagedclientPreferences = Schema.Struct({
     }),
   }),
 });
+
 export type ComAppleManagedclientPreferences = typeof ComAppleManagedclientPreferences.Type;
 
 /**
@@ -1768,6 +1825,7 @@ export const ComAppleMcx = Schema.Struct({
   EnableGuestAccount: Schema.optional(Schema.Boolean),
   DisableGuestAccount: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcx = typeof ComAppleMcx.Type;
 
 /**
@@ -1881,6 +1939,7 @@ export const ComAppleMcx1 = Schema.Struct({
   ),
   SleepDisabled: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcx1 = typeof ComAppleMcx1.Type;
 
 /**
@@ -1892,6 +1951,7 @@ export const ComAppleMcx2 = Schema.Struct({
   dontAllowFDEEnable: Schema.optional(Schema.Boolean),
   DestroyFVKeyOnStandby: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcx2 = typeof ComAppleMcx2.Type;
 
 /**
@@ -1905,6 +1965,7 @@ export const ComAppleMcx3 = Schema.Struct({
   "cachedaccounts.expiry.delete.disusedSeconds": Schema.optional(Schema.Int),
   "cachedaccounts.askForSecureTokenAuthBypass": Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcx3 = typeof ComAppleMcx3.Type;
 
 /**
@@ -1915,6 +1976,7 @@ export const ComAppleMcx4 = Schema.Struct({
   timeServer: Schema.optional(Schema.String),
   timeZone: Schema.optional(Schema.String),
 });
+
 export type ComAppleMcx4 = typeof ComAppleMcx4.Type;
 
 /**
@@ -1926,6 +1988,7 @@ export const ComAppleMcx5 = Schema.Struct({
   RequireAdminForAirPortNetworkChange: Schema.optional(Schema.Boolean),
   RequireAdminToTurnAirPortOnOff: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcx5 = typeof ComAppleMcx5.Type;
 
 /**
@@ -1952,6 +2015,7 @@ export const ComAppleMcxFilevault2 = Schema.Struct({
   DeferDontAskAtUserLogout: Schema.optional(Schema.Boolean),
   ForceEnableInSetupAssistant: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcxFilevault2 = typeof ComAppleMcxFilevault2.Type;
 
 /**
@@ -1978,6 +2042,7 @@ export const ComAppleMcxloginscripts = Schema.Struct({
   skipLoginHook: Schema.optional(Schema.Boolean),
   skipLogoutHook: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcxloginscripts = typeof ComAppleMcxloginscripts.Type;
 
 /**
@@ -2014,6 +2079,7 @@ export const ComAppleMcxmenuextras = Schema.Struct({
   "Volume.menu": Schema.optional(Schema.Boolean),
   "WWAN.menu": Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMcxmenuextras = typeof ComAppleMcxmenuextras.Type;
 
 /**
@@ -2050,6 +2116,7 @@ export const ComAppleMcxprinting = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleMcxprinting = typeof ComAppleMcxprinting.Type;
 
 /**
@@ -2066,6 +2133,7 @@ export const ComAppleMcxTimemachine = Schema.Struct({
   BasePaths: Schema.optional(Schema.Array(Schema.String)),
   SkipPaths: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleMcxTimemachine = typeof ComAppleMcxTimemachine.Type;
 
 /**
@@ -2105,6 +2173,7 @@ export const ComAppleMdm = Schema.Struct({
   RequiredAppIDForMDM: Schema.optional(Schema.Int),
   PromptUserToAllowBootstrapTokenForAuthentication: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleMdm = typeof ComAppleMdm.Type;
 
 /**
@@ -2149,6 +2218,7 @@ export const ComAppleMobiledevicePasswordpolicy = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleMobiledevicePasswordpolicy = typeof ComAppleMobiledevicePasswordpolicy.Type;
 
 /**
@@ -2174,6 +2244,7 @@ export const ComAppleNetworkusagerules = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleNetworkusagerules = typeof ComAppleNetworkusagerules.Type;
 
 /**
@@ -2197,6 +2268,7 @@ export const ComAppleNotificationsettings = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleNotificationsettings = typeof ComAppleNotificationsettings.Type;
 
 /**
@@ -2208,6 +2280,7 @@ export const ComAppleNsextension = Schema.Struct({
   DeniedExtensions: Schema.optional(Schema.Array(Schema.String)),
   DeniedExtensionPoints: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleNsextension = typeof ComAppleNsextension.Type;
 
 /**
@@ -2226,6 +2299,7 @@ export const ComAppleOsxserverAccount = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleOsxserverAccount = typeof ComAppleOsxserverAccount.Type;
 
 /**
@@ -2237,6 +2311,7 @@ export const ComApplePreferenceSecurity = Schema.Struct({
   dontAllowLockMessageUI: Schema.optional(Schema.Boolean),
   dontAllowFireWallUI: Schema.optional(Schema.Boolean),
 });
+
 export type ComApplePreferenceSecurity = typeof ComApplePreferenceSecurity.Type;
 
 /**
@@ -2246,6 +2321,7 @@ export type ComApplePreferenceSecurity = typeof ComApplePreferenceSecurity.Type;
 export const ComApplePreferenceUsers = Schema.Struct({
   DisableUsingiCloudPassword: Schema.optional(Schema.Boolean),
 });
+
 export type ComApplePreferenceUsers = typeof ComApplePreferenceUsers.Type;
 
 /**
@@ -2255,6 +2331,7 @@ export type ComApplePreferenceUsers = typeof ComApplePreferenceUsers.Type;
 export const ComAppleProfileremovalpassword = Schema.Struct({
   RemovalPassword: Schema.optional(Schema.String),
 });
+
 export type ComAppleProfileremovalpassword = typeof ComAppleProfileremovalpassword.Type;
 
 /**
@@ -2271,6 +2348,7 @@ export const ComAppleProxyHttpGlobal = Schema.Struct({
   ProxyPACFallbackAllowed: Schema.optional(Schema.Boolean),
   ProxyCaptiveLoginAllowed: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleProxyHttpGlobal = typeof ComAppleProxyHttpGlobal.Type;
 
 /**
@@ -2307,6 +2385,7 @@ export const ComAppleRelayManaged = Schema.Struct({
   UIToggleEnabled: Schema.optional(Schema.Boolean),
   AllowDNSFailover: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleRelayManaged = typeof ComAppleRelayManaged.Type;
 
 /**
@@ -2320,6 +2399,7 @@ export const ComAppleScreensaver = Schema.Struct({
   loginWindowModulePath: Schema.optional(Schema.String),
   moduleName: Schema.String,
 });
+
 export type ComAppleScreensaver = typeof ComAppleScreensaver.Type;
 
 /**
@@ -2331,6 +2411,7 @@ export const ComAppleScreensaverUser = Schema.Struct({
   modulePath: Schema.optional(Schema.String),
   idleTime: Schema.optional(Schema.Int),
 });
+
 export type ComAppleScreensaverUser = typeof ComAppleScreensaverUser.Type;
 
 /**
@@ -2340,6 +2421,7 @@ export type ComAppleScreensaverUser = typeof ComAppleScreensaverUser.Type;
 export const ComAppleSecondactiveethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleSecondactiveethernetManaged = typeof ComAppleSecondactiveethernetManaged.Type;
 
 /**
@@ -2349,6 +2431,7 @@ export type ComAppleSecondactiveethernetManaged = typeof ComAppleSecondactiveeth
 export const ComAppleSecondethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleSecondethernetManaged = typeof ComAppleSecondethernetManaged.Type;
 
 /**
@@ -2376,6 +2459,7 @@ export const ComAppleSecurityAcme = Schema.Struct({
   KeyIsExtractable: Schema.optional(Schema.Boolean),
   AllowAllAppsAccess: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSecurityAcme = typeof ComAppleSecurityAcme.Type;
 
 /**
@@ -2386,6 +2470,7 @@ export const ComAppleSecurityCertificatepreference = Schema.Struct({
   Name: Schema.String,
   PayloadCertificateUUID: Schema.String,
 });
+
 export type ComAppleSecurityCertificatepreference =
   typeof ComAppleSecurityCertificatepreference.Type;
 
@@ -2403,6 +2488,7 @@ export const ComAppleSecurityCertificaterevocation = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleSecurityCertificaterevocation =
   typeof ComAppleSecurityCertificaterevocation.Type;
 
@@ -2421,6 +2507,7 @@ export const ComAppleSecurityCertificatetransparency = Schema.Struct({
   ),
   DisabledForDomains: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleSecurityCertificatetransparency =
   typeof ComAppleSecurityCertificatetransparency.Type;
 
@@ -2433,6 +2520,7 @@ export const ComAppleSecurityFderecoverykeyescrow = Schema.Struct({
   EncryptCertPayloadUUID: Schema.String,
   DeviceKey: Schema.optional(Schema.String),
 });
+
 export type ComAppleSecurityFderecoverykeyescrow = typeof ComAppleSecurityFderecoverykeyescrow.Type;
 
 /**
@@ -2443,6 +2531,7 @@ export const ComAppleSecurityFderecoveryredirect = Schema.Struct({
   RedirectURL: Schema.String,
   EncryptCertPayloadUUID: Schema.String,
 });
+
 export type ComAppleSecurityFderecoveryredirect = typeof ComAppleSecurityFderecoveryredirect.Type;
 
 /**
@@ -2466,6 +2555,7 @@ export const ComAppleSecurityFirewall = Schema.Struct({
   AllowSigned: Schema.optional(Schema.Boolean),
   AllowSignedApp: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSecurityFirewall = typeof ComAppleSecurityFirewall.Type;
 
 /**
@@ -2476,6 +2566,7 @@ export const ComAppleSecurityIdentitypreference = Schema.Struct({
   Name: Schema.String,
   PayloadCertificateUUID: Schema.String,
 });
+
 export type ComAppleSecurityIdentitypreference = typeof ComAppleSecurityIdentitypreference.Type;
 
 /**
@@ -2486,6 +2577,7 @@ export const ComAppleSecurityPem = Schema.Struct({
   PayloadCertificateFileName: Schema.optional(Schema.String),
   PayloadContent: Schema.String,
 });
+
 export type ComAppleSecurityPem = typeof ComAppleSecurityPem.Type;
 
 /**
@@ -2496,6 +2588,7 @@ export const ComAppleSecurityPkcs1 = Schema.Struct({
   PayloadCertificateFileName: Schema.optional(Schema.String),
   PayloadContent: Schema.String,
 });
+
 export type ComAppleSecurityPkcs1 = typeof ComAppleSecurityPkcs1.Type;
 
 /**
@@ -2509,6 +2602,7 @@ export const ComAppleSecurityPkcs12 = Schema.Struct({
   AllowAllAppsAccess: Schema.optional(Schema.Boolean),
   KeyIsExtractable: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSecurityPkcs12 = typeof ComAppleSecurityPkcs12.Type;
 
 /**
@@ -2519,6 +2613,7 @@ export const ComAppleSecurityRoot = Schema.Struct({
   PayloadCertificateFileName: Schema.optional(Schema.String),
   PayloadContent: Schema.String,
 });
+
 export type ComAppleSecurityRoot = typeof ComAppleSecurityRoot.Type;
 
 /**
@@ -2549,6 +2644,7 @@ export const ComAppleSecurityScep = Schema.Struct({
     AllowAllAppsAccess: Schema.optional(Schema.Boolean),
   }),
 });
+
 export type ComAppleSecurityScep = typeof ComAppleSecurityScep.Type;
 
 /**
@@ -2563,6 +2659,7 @@ export const ComAppleSecuritySmartcard = Schema.Struct({
   tokenRemovalAction: Schema.optional(Schema.Literals([0, 1])),
   enforceSmartCard: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSecuritySmartcard = typeof ComAppleSecuritySmartcard.Type;
 
 /**
@@ -2585,6 +2682,7 @@ export const ComAppleServicemanagement = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleServicemanagement = typeof ComAppleServicemanagement.Type;
 
 /**
@@ -2605,6 +2703,7 @@ export const ComAppleSetupassistantManaged = Schema.Struct({
   SkipUnlockWithWatch: Schema.optional(Schema.Boolean),
   SkipWallpaper: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSetupassistantManaged = typeof ComAppleSetupassistantManaged.Type;
 
 /**
@@ -2616,6 +2715,7 @@ export const ComAppleShareddeviceconfiguration = Schema.Struct({
   IfLostReturnToMessage: Schema.optional(Schema.String),
   LockScreenFootnote: Schema.optional(Schema.String),
 });
+
 export type ComAppleShareddeviceconfiguration = typeof ComAppleShareddeviceconfiguration.Type;
 
 /**
@@ -2626,6 +2726,7 @@ export const ComAppleSharekithelper = Schema.Struct({
   SHKAllowedShareServices: Schema.optional(Schema.Array(Schema.String)),
   SHKDeniedShareServices: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleSharekithelper = typeof ComAppleSharekithelper.Type;
 
 /**
@@ -2643,6 +2744,7 @@ export const ComAppleSoftwareupdate = Schema.Struct({
   CriticalUpdateInstall: Schema.optional(Schema.Boolean),
   ConfigDataInstall: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSoftwareupdate = typeof ComAppleSoftwareupdate.Type;
 
 /**
@@ -2661,6 +2763,7 @@ export const ComAppleSso = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleSso = typeof ComAppleSso.Type;
 
 /**
@@ -2675,6 +2778,7 @@ export const ComAppleSubscribedcalendarAccount = Schema.Struct({
   SubCalAccountUseSSL: Schema.optional(Schema.Boolean),
   VPNUUID: Schema.optional(Schema.String),
 });
+
 export type ComAppleSubscribedcalendarAccount = typeof ComAppleSubscribedcalendarAccount.Type;
 
 /**
@@ -2691,6 +2795,7 @@ export const ComAppleSyspolicyKernelExtensionPolicy = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleSyspolicyKernelExtensionPolicy =
   typeof ComAppleSyspolicyKernelExtensionPolicy.Type;
 
@@ -2726,6 +2831,7 @@ export const ComAppleSystemconfiguration = Schema.Struct({
     ExceptionsList: Schema.optional(Schema.Array(Schema.String)),
   }),
 });
+
 export type ComAppleSystemconfiguration = typeof ComAppleSystemconfiguration.Type;
 
 /**
@@ -2761,6 +2867,7 @@ export const ComAppleSystemExtensionPolicy = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleSystemExtensionPolicy = typeof ComAppleSystemExtensionPolicy.Type;
 
 /**
@@ -2784,6 +2891,7 @@ export const ComAppleSystemLogging = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleSystemLogging = typeof ComAppleSystemLogging.Type;
 
 /**
@@ -2807,6 +2915,7 @@ export const ComAppleSystemmigration = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleSystemmigration = typeof ComAppleSystemmigration.Type;
 
 /**
@@ -2818,6 +2927,7 @@ export const ComAppleSystempolicyControl = Schema.Struct({
   AllowIdentifiedDevelopers: Schema.optional(Schema.Boolean),
   EnableXProtectMalwareUpload: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSystempolicyControl = typeof ComAppleSystempolicyControl.Type;
 
 /**
@@ -2827,6 +2937,7 @@ export type ComAppleSystempolicyControl = typeof ComAppleSystempolicyControl.Typ
 export const ComAppleSystempolicyManaged = Schema.Struct({
   DisableOverride: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleSystempolicyManaged = typeof ComAppleSystempolicyManaged.Type;
 
 /**
@@ -2843,6 +2954,7 @@ export const ComAppleSystempolicyRule = Schema.Struct({
   ),
   LeafCertificate: Schema.optional(Schema.String),
 });
+
 export type ComAppleSystempolicyRule = typeof ComAppleSystempolicyRule.Type;
 
 /**
@@ -2998,6 +3110,7 @@ export const ComAppleSystempreferences = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleSystempreferences = typeof ComAppleSystempreferences.Type;
 
 /**
@@ -3120,6 +3233,7 @@ export const ComAppleSystemuiserver = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleSystemuiserver = typeof ComAppleSystemuiserver.Type;
 
 /**
@@ -3562,6 +3676,7 @@ export const ComAppleTccConfigurationProfilePolicy = Schema.Struct({
     ),
   }),
 });
+
 export type ComAppleTccConfigurationProfilePolicy =
   typeof ComAppleTccConfigurationProfilePolicy.Type;
 
@@ -3572,6 +3687,7 @@ export type ComAppleTccConfigurationProfilePolicy =
 export const ComAppleThirdactiveethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleThirdactiveethernetManaged = typeof ComAppleThirdactiveethernetManaged.Type;
 
 /**
@@ -3581,6 +3697,7 @@ export type ComAppleThirdactiveethernetManaged = typeof ComAppleThirdactiveether
 export const ComAppleThirdethernetManaged = Schema.Struct({
   ANY: Schema.optional(Schema.Unknown /* <any> */),
 });
+
 export type ComAppleThirdethernetManaged = typeof ComAppleThirdethernetManaged.Type;
 
 /**
@@ -3604,6 +3721,7 @@ export const ComAppleTvremote = Schema.Struct({
     ),
   ),
 });
+
 export type ComAppleTvremote = typeof ComAppleTvremote.Type;
 
 /**
@@ -3639,6 +3757,7 @@ export const ComAppleUniversalaccess = Schema.Struct({
   voiceOverOnOffKey: Schema.optional(Schema.Boolean),
   whiteOnBlack: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleUniversalaccess = typeof ComAppleUniversalaccess.Type;
 
 /**
@@ -4054,6 +4173,7 @@ export const ComAppleVpnManaged = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleVpnManaged = typeof ComAppleVpnManaged.Type;
 
 /**
@@ -4072,6 +4192,7 @@ export const ComAppleVpnManagedApplayer = Schema.Struct({
   OnDemandMatchAppEnabled: Schema.optional(Schema.Boolean),
   SMBDomains: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ComAppleVpnManagedApplayer = typeof ComAppleVpnManagedApplayer.Type;
 
 /**
@@ -4098,6 +4219,7 @@ export const ComAppleVpnManagedAppmapping = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleVpnManagedAppmapping = typeof ComAppleVpnManagedAppmapping.Type;
 
 /**
@@ -4114,6 +4236,7 @@ export const ComAppleWebclipManaged = Schema.Struct({
   IgnoreManifestScope: Schema.optional(Schema.Boolean),
   TargetApplicationBundleIdentifier: Schema.optional(Schema.String),
 });
+
 export type ComAppleWebclipManaged = typeof ComAppleWebclipManaged.Type;
 
 /**
@@ -4188,6 +4311,7 @@ export const ComAppleWebcontentFilter = Schema.Struct({
     }),
   ),
 });
+
 export type ComAppleWebcontentFilter = typeof ComAppleWebcontentFilter.Type;
 
 /**
@@ -4284,6 +4408,7 @@ export const ComAppleWifiManaged = Schema.Struct({
   DisableAssociationMACRandomization: Schema.optional(Schema.Boolean),
   AllowJoinBeforeFirstUnlock: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleWifiManaged = typeof ComAppleWifiManaged.Type;
 
 /**
@@ -4297,6 +4422,7 @@ export const ComAppleXsan = Schema.Struct({
   sanAuthMethod: Schema.optional(Schema.Literal("auth_secret")),
   sharedSecret: Schema.String,
 });
+
 export type ComAppleXsan = typeof ComAppleXsan.Type;
 
 /**
@@ -4310,6 +4436,7 @@ export const ComAppleXsanPreferences = Schema.Struct({
   preferDLC: Schema.optional(Schema.Array(Schema.String)),
   useDLC: Schema.optional(Schema.Boolean),
 });
+
 export type ComAppleXsanPreferences = typeof ComAppleXsanPreferences.Type;
 
 /**
@@ -4325,6 +4452,7 @@ export const Commonpayloadkeys = Schema.Struct({
   PayloadDisplayName: Schema.optional(Schema.String),
   PayloadOrganization: Schema.optional(Schema.String),
 });
+
 export type Commonpayloadkeys = typeof Commonpayloadkeys.Type;
 
 /**
@@ -4335,6 +4463,7 @@ export const Globalpreferences = Schema.Struct({
   MultipleSessionEnabled: Schema.optional(Schema.Boolean),
   "com.apple.autologout.AutoLogOutDelay": Schema.optional(Schema.Number),
 });
+
 export type Globalpreferences = typeof Globalpreferences.Type;
 
 /**
@@ -4344,6 +4473,7 @@ export type Globalpreferences = typeof Globalpreferences.Type;
 export const Loginwindow = Schema.Struct({
   DisableLoginItemsSuppression: Schema.optional(Schema.Boolean),
 });
+
 export type Loginwindow = typeof Loginwindow.Type;
 
 /**
@@ -4378,4 +4508,5 @@ export const Toplevel = Schema.Struct({
     }),
   ),
 });
+
 export type Toplevel = typeof Toplevel.Type;

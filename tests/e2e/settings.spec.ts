@@ -29,6 +29,7 @@ test.describe("tenant settings", () => {
     const invalidRange = await page.request.get(
       `/api/v1/tenants/${tenant.id}/audit/search?from=not-a-date`,
     );
+
     expect(invalidRange.status()).toBe(400);
   });
 
@@ -37,6 +38,7 @@ test.describe("tenant settings", () => {
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
+
     for (const [tab, text] of [
       ["Members", /Invite an administrator/],
       ["Identity", /Single sign-on/],
@@ -82,10 +84,12 @@ test.describe("tenant settings", () => {
     await page.getByRole("button", { name: "Create role" }).last().click();
     await expect(page.locator("p").filter({ hasText: "Helpdesk" }).first()).toBeVisible();
     await expect(page.getByText(/Front-line support/)).toBeVisible();
+
     const roles = await api<{ roles: Array<{ name: string; builtIn: boolean }> }>(
       page,
       `/api/v1/tenants/${tenant.id}/roles`,
     );
+
     expect(roles.roles).toContainEqual(
       expect.objectContaining({ name: "Helpdesk", builtIn: false }),
     );
@@ -115,6 +119,7 @@ test.describe("tenant settings", () => {
       brandColor: string;
       logo: string;
     }>(page, `/api/v1/tenants/${tenant.id}`);
+
     expect(saved).toMatchObject({
       displayName: "Acme Corp",
       supportEmail: "help@acme.test",

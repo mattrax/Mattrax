@@ -125,6 +125,7 @@ describe("buildDeviceActivity", () => {
         },
       ],
     });
+
     expect(events.some((event) => event.id === "audit:audit-bad")).toBe(false);
   });
 });

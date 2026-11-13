@@ -28,6 +28,7 @@ test.describe("mobileconfig preview", () => {
   test("parses a plist and reports friendly payload categories", async ({ page }) => {
     await bootstrapTenant(page, "Preview Tenant");
     const encoded = Buffer.from(mobileconfig).toString("base64");
+
     const preview = await api<{
       payloads?: Array<{ type?: string }>;
       payload_categories?: Array<{ payload_type?: string }>;
@@ -35,10 +36,12 @@ test.describe("mobileconfig preview", () => {
       method: "POST",
       body: JSON.stringify({ mobileconfig: encoded }),
     });
+
     const types = [
       ...(preview.payloads ?? []).map((item) => item.type),
       ...(preview.payload_categories ?? []).map((item) => item.payload_type),
     ];
+
     expect(types).toContain("com.apple.wifi.managed");
   });
 });

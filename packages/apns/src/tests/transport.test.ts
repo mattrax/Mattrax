@@ -35,9 +35,11 @@ describe("APNs push request", () => {
 
   it("delivers through an mTLS Fetcher binding", async () => {
     let captured: Request | undefined;
+
     const transport = MtlsPushTransport({
       fetch: async (request) => {
         captured = request;
+
         return new Response(null, { status: 200 });
       },
     });
@@ -59,6 +61,7 @@ describe("APNs push request", () => {
     const transport = MtlsPushTransport({
       fetch: async () => new Response("BadDeviceToken", { status: 400 }),
     });
+
     const error = await Effect.runPromise(
       Effect.flip(
         transport.push({
@@ -68,6 +71,7 @@ describe("APNs push request", () => {
         }),
       ),
     );
+
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("400");
   });
@@ -86,12 +90,14 @@ describe("APNs relay transport", () => {
 
   it("posts an HMAC-signed request to the relay", async () => {
     let captured: { url: string; init: RequestInit } | undefined;
+
     const transport = RelayPushTransport({
       url: "https://relay.test/apns",
       secret: "relay-secret",
       now: () => 1_700_000_000,
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         captured = { url: String(input), init: init ?? {} };
+
         return new Response("", { status: 200 });
       }) as typeof fetch,
     });
@@ -119,9 +125,11 @@ describe("APNs relay transport", () => {
       certPem: "CERT",
       privateKeyPem: "KEY",
     });
+
     const expected = createHmac("sha256", "relay-secret")
       .update(`1700000000.${body}`)
       .digest("hex");
+
     expect(headers["x-apns-timestamp"]).toBe("1700000000");
     expect(headers["x-apns-signature"]).toBe(expected);
   });
@@ -132,6 +140,7 @@ describe("APNs relay transport", () => {
       secret: "relay-secret",
       fetch: (async () => new Response("nope", { status: 502 })) as typeof fetch,
     });
+
     const error = await Effect.runPromise(
       Effect.flip(
         transport.push({
@@ -141,6 +150,7 @@ describe("APNs relay transport", () => {
         }),
       ),
     );
+
     expect(error.message).toContain("502");
   });
 });
@@ -159,6 +169,7 @@ describe("APNs outbound timeouts", () => {
 
   it("aborts a hung mTLS fetch", async () => {
     let aborted: AbortSignal | undefined;
+
     const transport = MtlsPushTransport({
       timeoutMs: 25,
       fetch: ((_request: Request, init?: RequestInit) =>
@@ -200,18 +211,22 @@ describe("APNs outbound timeouts", () => {
     // A TCP server that accepts the connection but never completes the TLS
     // handshake. Without a deadline this promise would never settle.
     const sockets: Array<import("node:net").Socket> = [];
+
     const server = createServer((socket) => {
       sockets.push(socket);
     });
+
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 0;
 
     const keys = await createTestApnsKeys();
+
     const certificate = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.apple.mgmt.External.tenant",
     });
+
     const privateKeyPem = pemEncode(
       "PRIVATE KEY",
       await crypto.subtle.exportKey("pkcs8", keys.privateKey),
@@ -224,7 +239,9 @@ describe("APNs outbound timeouts", () => {
         timeoutMs: 150,
         endpoint: `https://127.0.0.1:${port}`,
       });
+
       const started = Date.now();
+
       const error = await Effect.runPromise(
         Effect.flip(
           transport.push({
@@ -234,6 +251,7 @@ describe("APNs outbound timeouts", () => {
           }),
         ),
       );
+
       expect(error).toBeInstanceOf(ApnsError);
       expect(error.message).toContain("timed out");
       expect(Date.now() - started).toBeLessThan(2_000);
@@ -248,6 +266,7 @@ describe("APNs noop transport", () => {
   it("reports unavailable with a clear error", async () => {
     const transport = NoopPushTransport("relay not configured");
     expect(transport.available).toBe(false);
+
     const error = await Effect.runPromise(
       Effect.flip(
         transport.push({
@@ -257,6 +276,7 @@ describe("APNs noop transport", () => {
         }),
       ),
     );
+
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toBe("relay not configured");
   });

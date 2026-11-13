@@ -65,9 +65,12 @@ function base64UrlToBytes(input: string): Uint8Array {
     .replace(/-/g, "+")
     .replace(/_/g, "/")
     .padEnd(input.length + ((4 - (input.length % 4)) % 4), "=");
+
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
+
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
   return bytes;
 }
 
@@ -78,11 +81,13 @@ function base64UrlJson(input: string): unknown {
 function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
   return Effect.gen(function* () {
     const parts = token.split(".");
+
     if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
       return yield* Effect.fail(
         new AzureOidcError({ message: "JWT must have header, payload, and signature" }),
       );
     }
+
     const header = yield* (
       Schema.decodeUnknownEffect(JwtHeader)(base64UrlJson(parts[0])) as Effect.Effect<
         JwtHeader,
@@ -91,6 +96,7 @@ function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
     ).pipe(
       Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT header", cause })),
     );
+
     const claims = yield* (
       Schema.decodeUnknownEffect(AzureJwtClaims)(base64UrlJson(parts[1])) as Effect.Effect<
         AzureJwtClaims,
@@ -99,6 +105,7 @@ function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
     ).pipe(
       Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT claims", cause })),
     );
+
     return {
       header,
       claims,
@@ -127,22 +134,30 @@ function validateClaims(
   const tolerance = options.clockToleranceSeconds ?? DEFAULT_CLOCK_TOLERANCE_SECONDS;
   const now = Math.floor(Date.now() / 1000);
   const tenantIds = options.tenantIds.map(normalizeTenantId).filter(Boolean);
+
   if (tenantIds.length === 0)
     return Effect.fail(new AzureOidcError({ message: "At least one Azure tenant ID is required" }));
+
   if (!tenantIds.includes(claims.tid))
     return Effect.fail(new AzureOidcError({ message: "JWT tenant is not allowed" }));
+
   if (claims.iss !== azureIssuer(claims.tid))
     return Effect.fail(new AzureOidcError({ message: "JWT issuer is not allowed" }));
+
   if (claims.exp + tolerance < now)
     return Effect.fail(new AzureOidcError({ message: "JWT is expired" }));
+
   if (claims.nbf !== undefined && claims.nbf - tolerance > now)
     return Effect.fail(new AzureOidcError({ message: "JWT is not active yet" }));
+
   if (options.audience !== undefined) {
     const audiences = Array.isArray(options.audience) ? options.audience : [options.audience];
+
     if (!audiences.some((audience) => hasAudience(claims, audience))) {
       return Effect.fail(new AzureOidcError({ message: "JWT audience is not allowed" }));
     }
   }
+
   return Effect.void;
 }
 
@@ -151,7 +166,9 @@ function verifyRs256(decoded: DecodedJwt, jwk: JsonWebKey): Effect.Effect<void, 
     try: async () => {
       if (decoded.header.alg !== "RS256")
         throw new Error(`Unsupported JWT algorithm: ${decoded.header.alg}`);
+
       if (jwk.kty !== "RSA") throw new Error(`Unsupported JWK type: ${jwk.kty}`);
+
       const key = await crypto.subtle.importKey(
         "jwk",
         { kty: jwk.kty, n: jwk.n, e: jwk.e, ext: true },
@@ -159,12 +176,14 @@ function verifyRs256(decoded: DecodedJwt, jwk: JsonWebKey): Effect.Effect<void, 
         false,
         ["verify"],
       );
+
       const valid = await crypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
         key,
         decoded.signature as BufferSource,
         textEncoder.encode(decoded.signingInput) as BufferSource,
       );
+
       if (!valid) throw new Error("Invalid JWT signature");
     },
     catch: (cause) => new AzureOidcError({ message: "JWT signature validation failed", cause }),
@@ -187,6 +206,7 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
       ): Effect.Effect<A, AzureOidcError> =>
         Effect.gen(function* () {
           const request = HttpClientRequest.get(url);
+
           const response = yield* client
             .execute(request)
             .pipe(
@@ -194,11 +214,13 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
                 (cause) => new AzureOidcError({ message: `${label} request failed`, cause }),
               ),
             );
+
           const text = yield* response.text.pipe(
             Effect.mapError(
               (cause) => new AzureOidcError({ message: `Failed to read ${label} response`, cause }),
             ),
           );
+
           if (response.status < 200 || response.status > 299) {
             return yield* Effect.fail(
               new AzureOidcError({
@@ -206,10 +228,12 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
               }),
             );
           }
+
           const json = yield* Effect.try({
             try: () => JSON.parse(text) as unknown,
             catch: (cause) => new AzureOidcError({ message: `Invalid ${label} JSON`, cause }),
           });
+
           return yield* (
             Schema.decodeUnknownEffect(schema)(json) as Effect.Effect<A, unknown>
           ).pipe(
@@ -223,13 +247,17 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
           const cached = discoveryCache.get(tenant);
+
           if (cached && cached.expiresAt > Date.now()) return cached.value;
+
           const value = yield* getJson(
             discoveryUrl(tenant),
             AzureOidcDiscovery,
             "Azure OIDC discovery",
           );
+
           discoveryCache.set(tenant, { value, expiresAt: Date.now() + ttl });
+
           return value;
         });
 
@@ -239,6 +267,7 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
           const discovered = yield* discovery(tenant);
           const value = yield* getJson(discovered.jwks_uri, JsonWebKeySet, "Azure OIDC JWKS");
           jwksCache.set(tenant, { value, expiresAt: Date.now() + ttl });
+
           return value;
         });
 
@@ -246,7 +275,9 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
           const cached = jwksCache.get(tenant);
+
           if (cached && cached.expiresAt > Date.now()) return cached.value;
+
           return yield* fetchJwks(tenant);
         });
 
@@ -259,15 +290,18 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
           yield* validateClaims(decoded.claims, options);
           let keys = yield* jwks(decoded.claims.tid);
           let key = keyForToken(keys, decoded.header.kid);
+
           if (!key) {
             keys = yield* fetchJwks(decoded.claims.tid);
             key = keyForToken(keys, decoded.header.kid);
           }
+
           if (!key)
             return yield* Effect.fail(
               new AzureOidcError({ message: "JWT signing key was not found" }),
             );
           yield* verifyRs256(decoded, key);
+
           return decoded.claims;
         });
 

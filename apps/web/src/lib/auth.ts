@@ -59,13 +59,18 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
   const url = path.startsWith("/v1/") ? `/api${path}` : `/api/v1${path}`;
   const event = isServer ? getRequestEvent() : undefined;
   const headers = new Headers(init.headers);
+
   if (init.body) headers.set("content-type", "application/json");
+
   if (init.method && init.method !== "GET") headers.set("x-effect-auth-csrf", "1");
+
   if (event) headers.set("origin", new URL(event.request.url).origin);
 
   let response: Response;
+
   if (event) {
     const cookie = event.request.headers.get("cookie");
+
     if (cookie) headers.set("cookie", cookie);
     response = await apiFetch(new Request(new URL(url, event.request.url), { ...init, headers }));
   } else {
@@ -92,6 +97,7 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
     const tag = data?.error?._tag ?? direct;
     const message = data?.error?.message ?? data?.message;
     const reason = data?.error?.reason ?? data?.reason;
+
     const error = new Error(
       errorMessage(
         { _tag: tag, message, reason },
@@ -100,12 +106,17 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
           : "We couldn't complete that request. Try again.",
       ),
     ) as Error & { _tag?: string; reason?: string; action?: string; methods?: string[] };
+
     if (tag) error._tag = tag;
+
     if (reason) error.reason = reason;
+
     if (data?.action) error.action = data.action;
+
     if (data?.methods) error.methods = data.methods;
     throw error;
   }
+
   return {
     value: (data && "_tag" in data && data._tag === "Success" ? data.value : data) as T,
     private: data?.private,
@@ -128,8 +139,10 @@ type CompletionState = { user?: AuthUser; session?: Session; pending?: boolean }
 
 const completionState = (completion: unknown): CompletionState => {
   const value = completion as { _tag?: string; session?: Session } | undefined;
+
   if (value?._tag === "Authenticated")
     return { user: userFromSession(value.session), session: value.session };
+
   if (value?._tag === "PendingAuthentication") return { pending: true };
   throw new Error("Authentication did not complete");
 };
@@ -149,9 +162,11 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
 
   const load = async () => {
     if (data() === undefined) setPending(true);
+
     try {
       const next = await request<Session | null>("/getSession", { method: "POST", body: "{}" });
       setData(next);
+
       if (next === null) {
         clearMeCache();
         clearSessionPresence();
@@ -171,6 +186,7 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
     ensureLoaded: () => {
       if (started) return;
       started = true;
+
       // A preloaded answer (including a signed-out one) already matches the
       // server render. Only ask the API when the server could not preload.
       if (data() === undefined) void load();
@@ -187,10 +203,12 @@ function sessionStore(): SessionStore {
       getPreloadedSession(getRequestEvent()!.request) as Session | null | undefined,
     );
   }
+
   if (!clientSessionStore) {
     const initial = (globalThis as { __MATTRAX_SESSION__?: Session | null }).__MATTRAX_SESSION__;
     clientSessionStore = createSessionStore(initial);
   }
+
   return clientSessionStore;
 }
 
@@ -215,6 +233,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 function commitSession(session: Session | null): void {
   if (isServer) return;
   sessionStore().set(session);
+
   if (session === null) {
     clearMeCache();
     clearSessionPresence();
@@ -234,6 +253,7 @@ export const authClient = {
       isPending: store.pending(),
       refetch: store.load,
     });
+
     return accessor;
   },
   signIn: {
@@ -244,10 +264,14 @@ export const authClient = {
             method: "POST",
             body: authBody(payload),
           });
+
           const state = completionState(completion);
+
           if (!state.user && !state.pending)
             throw new Error("Additional authentication is required");
+
           if (state.session) commitSession(state.session);
+
           return state;
         };
 
@@ -259,16 +283,19 @@ export const authClient = {
             !isRecentRegistration(payload.email)
           )
             throw error;
+
           // Registration just succeeded; retry the first sign-in until the
           // credential write is visible to this read.
           for (let retry = 0; retry < 5; retry++) {
             await sleep(400 * (retry + 1));
+
             try {
               return await attempt();
             } catch (retryError) {
               if ((retryError as { _tag?: string })._tag !== "PasswordRejected") throw retryError;
             }
           }
+
           throw error;
         }
       }),
@@ -282,6 +309,7 @@ export const authClient = {
           method: "POST",
           body: authBody({ flowId }),
         });
+
         const receipt = await request<{
           requestId: string;
           reference: { proofId: string; purpose: string; keyId: string };
@@ -295,6 +323,7 @@ export const authClient = {
             locale: "en",
           }),
         });
+
         return { flowId, email: payload.email, reference: receipt.reference };
       }),
     complete: (payload: {
@@ -315,9 +344,13 @@ export const authClient = {
             secret: payload.code,
           }),
         });
+
         const state = completionState(response.completion);
+
         if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+
         if (state.session) commitSession(state.session);
+
         return state;
       }),
   },
@@ -344,6 +377,7 @@ export const authClient = {
               registration: { name: payload.name },
             }),
           });
+
           // Registration and password writes can be briefly invisible to the
           // sign-in read (the API uses a pool). Retry a fresh credential once or
           // twice before concluding the address already belonged to someone.
@@ -353,19 +387,26 @@ export const authClient = {
                 method: "POST",
                 body: authBody({ email: payload.email, password: payload.password }),
               });
+
               const state = completionState(completion);
+
               if (!state.user && !state.pending)
                 throw new Error("Additional authentication is required");
+
               if (state.session) commitSession(state.session);
               capturePostHog("auth_registered", { method: "password" });
+
               return { status: "signed-in" };
             } catch (error) {
               const tag = (error as { _tag?: string })._tag;
+
               if (tag !== "PasswordRejected") throw error;
+
               if (attempt === 4) return { status: "existing-account", email: payload.email };
               await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
             }
           }
+
           return { status: "existing-account", email: payload.email };
         },
       ),
@@ -376,15 +417,20 @@ export const authClient = {
         method: "POST",
         body: authBody({ token }),
       });
+
       const state = completionState(completion);
+
       if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+
       if (state.session) commitSession(state.session);
+
       return state;
     }),
   signOut: (_options?: unknown) =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });
       commitSession(null);
+
       return { status: "ok" as const };
     }),
   verifyTotpPending: (code: string) =>
@@ -393,8 +439,11 @@ export const authClient = {
         method: "POST",
         body: authBody({ code }),
       });
+
       const state = completionState(completion);
+
       if (state.session) commitSession(state.session);
+
       return state;
     }),
   /**
@@ -415,7 +464,9 @@ export const authClient = {
           profileId: "default",
         }),
       });
+
       let response: unknown;
+
       try {
         const { startAuthentication } = await import("@simplewebauthn/browser");
         response = await startAuthentication({
@@ -425,13 +476,18 @@ export const authClient = {
       } catch {
         throw new Error("That passkey wasn't confirmed. Try again or use another method.");
       }
+
       const completion = await request<unknown>("/completePasskeySignIn", {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
+
       const state = completionState(completion);
+
       if (!state.user && !state.pending) throw new Error("Authentication did not complete");
+
       if (state.session) commitSession(state.session);
+
       return state;
     }),
   /** Complete a pending password/email/SSO sign-in with a passkey. */
@@ -449,7 +505,9 @@ export const authClient = {
           profileId: "default",
         }),
       });
+
       let response: unknown;
+
       try {
         const { startAuthentication } = await import("@simplewebauthn/browser");
         response = await startAuthentication({
@@ -459,12 +517,16 @@ export const authClient = {
       } catch {
         throw new Error("That passkey wasn't confirmed. Try again or use a code.");
       }
+
       const completion = await request<unknown>("/completePasskeyPending", {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
+
       const state = completionState(completion);
+
       if (state.session) commitSession(state.session);
+
       return state;
     }),
   listPasskeys: () =>
@@ -487,6 +549,7 @@ export const authClient = {
   addPasskey: (name: string) =>
     result(async () => {
       const actionProof = await requireStepUpGrant("passkey-enroll");
+
       const started = await request<{
         flowId: string;
         expiresAtMillis: number;
@@ -501,13 +564,16 @@ export const authClient = {
           actionProof,
         }),
       });
+
       let response: unknown;
+
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
         response = await startRegistration({ optionsJSON: started.options as never });
       } catch {
         throw new Error("That passkey wasn't created. Try again.");
       }
+
       return request<{
         credential: {
           credentialId: string;
@@ -543,8 +609,11 @@ export const authClient = {
         method: "POST",
         body: authBody({ code }),
       });
+
       const state = completionState(completion);
+
       if (state.session) commitSession(state.session);
+
       return state;
     }),
   beginTotpEnrollment: (accountName: string) =>
@@ -556,8 +625,11 @@ export const authClient = {
           body: authBody({ commandId: crypto.randomUUID(), accountName }),
         },
       );
+
       const reveal = revealOf<{ manualKey: string; uri: string }>(envelope, "totp-enrollment");
+
       if (!reveal) throw new Error("The authenticator enrollment details were not returned");
+
       return { ...envelope.value, ...reveal };
     }),
   confirmTotpEnrollment: (payload: { enrollmentId: string; code: string }) =>
@@ -569,6 +641,7 @@ export const authClient = {
         method: "POST",
         body: authBody({ commandId: crypto.randomUUID(), ...payload }),
       });
+
       return {
         ...envelope.value,
         recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
@@ -580,6 +653,7 @@ export const authClient = {
         method: "POST",
         body: authBody({ commandId: crypto.randomUUID(), actionProof: JSON.stringify(proof) }),
       });
+
       return {
         ...envelope.value,
         recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
@@ -649,8 +723,10 @@ export const authClient = {
           locale: "en",
         }),
       });
+
       if (!isServer && typeof localStorage !== "undefined")
         localStorage.setItem(resetFlowKey, JSON.stringify({ flowId, email: payload.email }));
+
       return { status: "ok" as const };
     }),
   resetPassword: (payload: {
@@ -676,7 +752,9 @@ export const authClient = {
   resetFlow: () => {
     if (isServer || typeof localStorage === "undefined") return undefined;
     const value = localStorage.getItem(resetFlowKey);
+
     if (!value) return undefined;
+
     try {
       return JSON.parse(value) as { flowId: string; email: string };
     } catch {

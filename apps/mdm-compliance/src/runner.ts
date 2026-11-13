@@ -14,12 +14,17 @@ export const filterChecks = (
 ): ReadonlyArray<Check> => {
   const platforms =
     options.platforms && options.platforms.length > 0 ? new Set(options.platforms) : undefined;
+
   const categories =
     options.categories && options.categories.length > 0 ? new Set(options.categories) : undefined;
+
   const search = options.search?.trim().toLowerCase();
+
   return checks.filter((check) => {
     if (platforms && !platforms.has(check.platform)) return false;
+
     if (categories && !categories.has(check.category)) return false;
+
     if (
       search &&
       ![check.id, check.name, check.description, check.category, check.platform]
@@ -28,13 +33,16 @@ export const filterChecks = (
         .includes(search)
     )
       return false;
+
     return true;
   });
 };
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
+
   if (typeof error === "string") return error;
+
   try {
     return JSON.stringify(error);
   } catch {
@@ -49,6 +57,7 @@ const withTimeout = async <A>(
 ): Promise<A> => {
   if (!timeoutMs || timeoutMs <= 0) return work;
   let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     return await Promise.race([
       work,
@@ -91,6 +100,7 @@ export async function runChecks(
     // The report carries the useful failure, so keep CLI output deterministic.
     const originalConsoleError = console.error;
     console.error = () => {};
+
     try {
       await withTimeout(check.run(), options.timeoutMs, check.id);
     } catch (cause) {
@@ -99,9 +109,12 @@ export async function runChecks(
     } finally {
       console.error = originalConsoleError;
     }
+
     const durationMs = Math.round((performance.now() - before) * 100) / 100;
+
     if (status === "passed") byPlatform[check.platform].passed++;
     else byPlatform[check.platform].failed++;
+
     const result: CheckResult = {
       id: check.id,
       platform: check.platform,
@@ -113,8 +126,10 @@ export async function runChecks(
       durationMs,
       ...(error ? { error } : {}),
     };
+
     results.push(result);
     onResult?.(result);
+
     if (status === "failed" && options.failFast) break;
   }
 
@@ -122,6 +137,7 @@ export async function runChecks(
   const passed = results.filter((result) => result.status === "passed").length;
   const failed = results.filter((result) => result.status === "failed").length;
   const skipped = results.filter((result) => result.status === "skipped").length;
+
   return {
     suite: "mdm-compliance",
     version: SUITE_VERSION,
@@ -143,8 +159,11 @@ export const formatResult = (result: CheckResult, verbose = false): string => {
   const badge = result.status === "passed" ? "PASS" : result.status === "failed" ? "FAIL" : "SKIP";
   const dayN = result.dayN ? " [day-N]" : "";
   const line = `${badge}  ${result.id}${dayN}  ${result.name} (${result.durationMs}ms)`;
+
   if (result.status === "failed") return `${line}\n      ${result.error ?? "unknown failure"}`;
+
   if (verbose) return `${line}\n      ${result.description}`;
+
   return line;
 };
 
@@ -154,28 +173,36 @@ export const formatReport = (report: RunReport, verbose = false): string => {
     `Started ${report.startedAt} · finished ${report.finishedAt}`,
     "",
   ];
+
   if (verbose) {
     for (const platform of PLATFORMS) {
       const checks = report.checks.filter((check) => check.platform === platform);
+
       if (checks.length === 0) continue;
       lines.push(`${platformName(platform)}`);
+
       for (const check of checks)
         lines.push(`  ${formatResult(check, true).replaceAll("\n", "\n  ")}`);
       lines.push("");
     }
   } else {
     for (const check of report.checks) lines.push(formatResult(check, false));
+
     if (report.checks.length > 0) lines.push("");
   }
+
   lines.push(
     `${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.skipped} skipped · ${report.summary.total} checks · ${report.summary.durationMs}ms`,
   );
+
   for (const platform of PLATFORMS) {
     const counts = report.summary.byPlatform[platform];
+
     if (counts.total === 0) continue;
     lines.push(
       `  ${platformName(platform).padEnd(8)} ${String(counts.passed).padStart(3)} passed  ${String(counts.failed).padStart(3)} failed  ${String(counts.total).padStart(3)} total`,
     );
   }
+
   return lines.join("\n");
 };

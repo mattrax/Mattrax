@@ -10,6 +10,7 @@ const headers = { cookie: "mattrax_session=test" };
 const makeContext = () => {
   const db = makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -19,12 +20,14 @@ const makeContext = () => {
     createdAt: now,
     updatedAt: now,
   };
+
   db.store.user.push(user);
 
   const auth = {
     requireUser: (input: any) => {
       const inputHeaders =
         input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+
       return inputHeaders.cookie
         ? Effect.succeed({ user })
         : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
@@ -52,6 +55,7 @@ const makeContext = () => {
 
 const seedTenant = async (context: ReturnType<typeof makeContext>) => {
   const { service } = context;
+
   const tenant = await runEffect(
     service.createTenant(request(headers), {
       name: "Acme",
@@ -63,17 +67,20 @@ const seedTenant = async (context: ReturnType<typeof makeContext>) => {
       metadata: { tier: "pro" },
     }),
   );
+
   const policy = await runEffect(
     service.createPolicy(request(headers), tenant.id, {
       name: "Baseline",
       notes: "Managed settings",
     }),
   );
+
   await runEffect(
     service.patchPolicy(request(headers), tenant.id, policy.id, {
       configurations: { "mttx.apple.device": { camera: false } },
     }),
   );
+
   const group = await runEffect(
     service.createGroup(request(headers), tenant.id, {
       name: "Staff",
@@ -81,6 +88,7 @@ const seedTenant = async (context: ReturnType<typeof makeContext>) => {
       policies: [policy.id],
     }),
   );
+
   const application = await runEffect(
     service.createApplication(request(headers), tenant.id, {
       name: "Slack",
@@ -90,6 +98,7 @@ const seedTenant = async (context: ReturnType<typeof makeContext>) => {
       notes: "Chat",
     }),
   );
+
   await runEffect(
     service.patchApplicationAssignments(request(headers), tenant.id, application.id, {
       assign: { groups: [group.id] },
@@ -107,6 +116,7 @@ const seedTenant = async (context: ReturnType<typeof makeContext>) => {
       rows: [{ serial: "C02ACMEMAC", name: "Alice's Mac", groupName: "Staff" }],
     }),
   );
+
   return { tenant, policy, group, application };
 };
 
@@ -114,6 +124,7 @@ const exportBundle = async (context: ReturnType<typeof makeContext>, tenantId: s
   const result = await runEffect(
     context.service.exportTenant(request(headers), tenantId, { includeAudit: "true" }),
   );
+
   return {
     ...result,
     bundle: JSON.parse(result.body) as TenantImportRequest,
@@ -233,6 +244,7 @@ describe("tenant export", () => {
     expect(bundle.auditLog?.length).toBeGreaterThan(0);
 
     const serialized = JSON.stringify(bundle);
+
     for (const secret of [
       "SECRET-APNS-CERT",
       "SECRET-APNS-KEY",
@@ -251,12 +263,15 @@ describe("tenant export", () => {
   it("only exports rows belonging to the requested tenant", async () => {
     const context = makeContext();
     const first = await seedTenant(context);
+
     const second = await runEffect(
       context.service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
+
     const secondPolicy = await runEffect(
       context.service.createPolicy(request(headers), second.id, { name: "Other policy" }),
     );
+
     await runEffect(
       context.service.createGroup(request(headers), second.id, {
         name: "Other group",
@@ -274,9 +289,11 @@ describe("tenant export", () => {
   it("requires the owner role", async () => {
     const context = makeContext();
     const { tenant } = await seedTenant(context);
+
     const membership = context.db.store.member.find(
       (row: any) => row.organizationId === tenant.id && row.userId === context.user.id,
     );
+
     expect(membership).toBeDefined();
     membership!.role = "admin";
 
@@ -315,6 +332,7 @@ describe("tenant import", () => {
     const importedOrganization = context.db.store.organization.find(
       (row: any) => row.id === result.tenantId,
     );
+
     expect(importedOrganization).toMatchObject({
       name: "Acme",
       slug: "acme-2",
@@ -329,16 +347,20 @@ describe("tenant import", () => {
     const importedMembers = context.db.store.member.filter(
       (row: any) => row.organizationId === result.tenantId,
     );
+
     expect(importedMembers).toMatchObject([{ userId: context.user.id, role: "owner" }]);
 
     const importedPolicy = context.db.store.policy.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;
+
     expect(importedPolicy.id).not.toBe(source.policy.id);
     expect(importedPolicy.name).toBe("Baseline");
+
     const importedConfiguration = context.db.store.configuration.find(
       (row: any) => row.policyId === importedPolicy.id,
     );
+
     expect(importedConfiguration).toMatchObject({
       kind: "mttx.apple.device",
       data: { camera: false },
@@ -347,6 +369,7 @@ describe("tenant import", () => {
     const importedGroup = context.db.store.enterprise_group.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;
+
     expect(importedGroup.id).not.toBe(source.group.id);
     expect(importedGroup.name).toBe("Staff");
     // Group/policy references now point at the new ids.
@@ -363,6 +386,7 @@ describe("tenant import", () => {
     const importedApplication = context.db.store.application.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;
+
     expect(importedApplication.id).not.toBe(source.application.id);
     expect(importedApplication).toMatchObject({
       name: "Slack",
@@ -379,6 +403,7 @@ describe("tenant import", () => {
     const importedEnrollment = context.db.store.enterprise_enrollment.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;
+
     expect(importedEnrollment).toMatchObject({
       id: result.tenantId,
       code: "enroll-acme",
@@ -389,6 +414,7 @@ describe("tenant import", () => {
     const importedPreRegistration = context.db.store.device_pre_registration.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;
+
     expect(importedPreRegistration).toMatchObject({
       serial: "C02ACMEMAC",
       groupId: importedGroup.id,

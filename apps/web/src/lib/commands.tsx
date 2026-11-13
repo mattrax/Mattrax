@@ -78,6 +78,7 @@ export function useCommands(source: Command[] | (() => Command[])) {
 export const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
+
   return (
     tag === "INPUT" ||
     tag === "TEXTAREA" ||
@@ -95,9 +96,13 @@ export type ShortcutEvent = Pick<
 export const matchesChord = (shortcut: CommandShortcut, event: ShortcutEvent): boolean => {
   if (shortcut.kind !== "chord") return false;
   const mod = event.metaKey || event.ctrlKey;
+
   if (Boolean(shortcut.mod) !== mod) return false;
+
   if (Boolean(shortcut.shift) !== event.shiftKey) return false;
+
   if (Boolean(shortcut.alt) !== event.altKey) return false;
+
   return shortcut.key.toLowerCase() === event.key.toLowerCase();
 };
 
@@ -109,9 +114,13 @@ export const shortcutLabel = (shortcut: CommandShortcut): string => {
   if (shortcut.kind === "sequence")
     return shortcut.keys.map((key) => key.toUpperCase()).join(" then ");
   const parts: string[] = [];
+
   if (shortcut.mod) parts.push(isMac() ? "⌘" : "Ctrl");
+
   if (shortcut.shift) parts.push(isMac() ? "⇧" : "Shift");
+
   if (shortcut.alt) parts.push(isMac() ? "⌥" : "Alt");
   parts.push(shortcut.key === " " ? "Space" : shortcut.key.toUpperCase());
+
   return parts.join("");
 };

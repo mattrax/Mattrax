@@ -10,6 +10,7 @@ type SeparatorProps<T extends ValidComponent = "hr"> = PolymorphicProps<T, Separ
 const Separator = <T extends ValidComponent = "hr">(props: SeparatorProps<T>) => {
   const mergedProps = mergeProps({ orientation: "horizontal" } as const, props);
   const [local, others] = splitProps(mergedProps as SeparatorProps, ["class"]);
+
   return (
     <SeparatorPrimitive
       data-slot="separator"

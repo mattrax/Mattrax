@@ -11,6 +11,7 @@ export default function DomainsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const domains = useQuery(() => enterpriseQueries.domains(params.tenantId));
+
   const refresh = useMutation(() => ({
     mutationFn: () => enterprise.refreshEntraDomains(params.tenantId),
     onSuccess: async () => {

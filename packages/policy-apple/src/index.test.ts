@@ -13,6 +13,7 @@ describe("declaration schemas", () => {
       RequirePasscode: true,
       MinimumLength: 6,
     };
+
     const result = Schema.decodeUnknownExit(ComAppleConfigurationPasscodeSettings)(valid);
     expect(result._tag).toBe("Success");
   });
@@ -21,6 +22,7 @@ describe("declaration schemas", () => {
     const invalid = {
       MinimumLength: 20, // exceeds max of 16
     };
+
     const result = Schema.decodeUnknownExit(ComAppleConfigurationPasscodeSettings)(invalid);
     expect(result._tag).toBe("Failure");
   });
@@ -33,6 +35,7 @@ describe("profile schemas", () => {
       AutoJoin: true,
       EncryptionType: "WPA3",
     };
+
     const result = Schema.decodeUnknownExit(ComAppleWifiManaged)(valid);
     expect(result._tag).toBe("Success");
   });
@@ -42,6 +45,7 @@ describe("profile schemas", () => {
       SSID_STR: "MyNetwork",
       EncryptionType: "INVALID",
     };
+
     const result = Schema.decodeUnknownExit(ComAppleWifiManaged)(invalid);
     expect(result._tag).toBe("Failure");
   });
@@ -52,6 +56,7 @@ describe("command schemas", () => {
     const valid = {
       PreserveDataPlan: true,
     };
+
     const result = Schema.decodeUnknownExit(Erasedevice)(valid);
     expect(result._tag).toBe("Success");
   });
@@ -70,6 +75,7 @@ describe("checkin schemas", () => {
       PushMagic: "magic",
       Token: "token",
     };
+
     const result = Schema.decodeUnknownExit(Tokenupdate)(valid);
     expect(result._tag).toBe("Success");
   });

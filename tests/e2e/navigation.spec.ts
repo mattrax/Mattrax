@@ -20,6 +20,7 @@ test.describe("top navigation", () => {
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();
       await expect(page).toHaveURL(new RegExp(path.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
+
       if (typeof heading === "string") {
         await expect(
           page.getByRole("heading", { name: heading, exact: true }).first(),
@@ -57,17 +58,22 @@ test.describe("top navigation", () => {
     // The API refuses tenant work until the address is verified.
     const blocked = await page.evaluate(async () => {
       const response = await fetch("/api/v1/tenants", { method: "GET" });
+
       return response.status;
     });
+
     expect(blocked).toBe(403);
+
     const blockedCreate = await page.evaluate(async () => {
       const response = await fetch("/api/v1/tenants", {
         method: "POST",
         headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
         body: JSON.stringify({ name: "Blocked", slug: `blocked-${Date.now()}` }),
       });
+
       return response.status;
     });
+
     expect(blockedCreate).toBe(403);
 
     await gotoHydrated(page, "/dashboard");

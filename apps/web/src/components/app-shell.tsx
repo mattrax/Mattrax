@@ -38,7 +38,9 @@ const LAST_TENANT_KEY = "mattrax:last-tenant";
 function initials(name: string | undefined | null) {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
+
   if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+
   return parts[0]?.[0]?.toUpperCase() ?? "?";
 }
 
@@ -52,6 +54,7 @@ function tenantInitials(name: string) {
 
 function prefersReducedMotion() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
+
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
@@ -59,6 +62,7 @@ function prefersReducedMotion() {
  * have somewhere to go without guessing from the server's order. */
 export function readLastTenant(): string | undefined {
   if (typeof localStorage === "undefined") return undefined;
+
   return localStorage.getItem(LAST_TENANT_KEY) ?? undefined;
 }
 
@@ -275,6 +279,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
 function navFor(tenantId: string | undefined): NavItem[] {
   if (!tenantId) return [];
   const base = `/t/${tenantId}`;
+
   return [
     { id: "overview", label: "Overview", href: base, match: (value) => value === base },
     {
@@ -343,10 +348,13 @@ export function AppShell(props: {
 
   const activeId = createMemo(() => {
     const routeId = routeTenantId();
+
     if (routeId) return routeId;
     const known = me.data?.tenants ?? [];
     const remembered = lastTenant();
+
     if (remembered && known.some((tenant) => tenant.id === remembered)) return remembered;
+
     return known[0]?.id;
   });
 
@@ -361,12 +369,18 @@ export function AppShell(props: {
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const navItems = createMemo(() => navFor(scopedTenant()));
+
   const pageLabel = createMemo(() => {
     const path = location.pathname;
+
     if (path === "/account") return "Account";
+
     if (path === "/tenants/new") return "Create tenant";
+
     if (path === "/dashboard") return "Tenant";
+
     if (path.startsWith("/docs")) return "Documentation";
+
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";
   });
 
@@ -385,10 +399,13 @@ export function AppShell(props: {
   const measureIndicator = () => {
     if (!navRef) return;
     const activeLink = navRef.querySelector<HTMLElement>('[aria-current="page"]');
+
     if (!activeLink) {
       setIndicator(null);
+
       return;
     }
+
     setIndicator({
       left: activeLink.offsetLeft + 12,
       width: Math.max(0, activeLink.offsetWidth - 24),
@@ -397,6 +414,7 @@ export function AppShell(props: {
 
   const queueMeasure = () => {
     if (typeof window === "undefined") return;
+
     if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
     indicatorFrame = requestAnimationFrame(() => {
       indicatorFrame = undefined;
@@ -408,11 +426,14 @@ export function AppShell(props: {
     queueMeasure();
     requestAnimationFrame(() => setIndicatorReady(true));
     const observer = new ResizeObserver(queueMeasure);
+
     if (navRef) observer.observe(navRef);
     window.addEventListener("resize", queueMeasure);
+
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", queueMeasure);
+
       if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
     };
   });
@@ -481,6 +502,7 @@ export function AppShell(props: {
               <For each={navItems()}>
                 {(item) => {
                   const active = () => item.match(location.pathname);
+
                   return (
                     <a
                       href={item.href}
@@ -547,6 +569,7 @@ export function AppShell(props: {
             const value = typeof error === "function" ? (error as () => unknown)() : error;
             console.error("Mattrax page render error", value);
             const presentation = errorPresentation(value);
+
             return (
               <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
                 <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">

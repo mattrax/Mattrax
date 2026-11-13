@@ -8,5 +8,6 @@ export default function EnrollmentRedirectPage() {
   onSettled(() => {
     if (params.tenantId) navigate(`/t/${params.tenantId}/settings/enrollment`, { replace: true });
   });
+
   return null;
 }

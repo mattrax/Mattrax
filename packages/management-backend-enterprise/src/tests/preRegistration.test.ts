@@ -95,7 +95,9 @@ const setup = () => {
       },
     ],
   });
+
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+
   return { db, backend };
 };
 

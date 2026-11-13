@@ -39,9 +39,11 @@ const mobileconfig = (payloadTypes: string[]) => {
         `<dict><key>PayloadType</key><string>${type}</string><key>PayloadIdentifier</key><string>test.${type}</string></dict>`,
     )
     .join("");
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>PayloadType</key><string>Configuration</string><key>PayloadIdentifier</key><string>test.profile</string><key>PayloadDisplayName</key><string>Test profile</string><key>PayloadUUID</key><string>11111111-1111-1111-1111-111111111111</string><key>PayloadVersion</key><integer>1</integer><key>PayloadContent</key><array>${payloads}</array></dict></plist>`;
+
   return btoa(xml);
 };
 
@@ -81,6 +83,7 @@ describe("enterprise policy compiler", () => {
       data: { pem: certificatePem },
       hash: "cert-hash",
     });
+
     const declaration = await buildConfigurationDeclaration(certificate, context);
     expect(declaration).toMatchObject({
       Type: "com.apple.configuration.security.certificate",
@@ -122,6 +125,7 @@ describe("enterprise policy compiler", () => {
       }),
       context,
     );
+
     expect(declaration).toMatchObject({
       Type: "com.apple.configuration.services.configuration-files",
       Payload: { ServiceType: "com.apple.servicemanagement" },
@@ -154,9 +158,11 @@ describe("enterprise policy compiler", () => {
 
   it("renders custom mobileconfigs verbatim", async () => {
     const content = mobileconfig(["com.apple.wifi.managed"]);
+
     const profile = await buildLegacyProfile(
       row({ kind: "mttx.apple.custom.wifi", data: { content } }),
     );
+
     const text = new TextDecoder().decode(profile!.content);
     expect(text).toContain("com.apple.wifi.managed");
     expect(profile?.contentType).toBe("application/x-apple-aspen-config");
@@ -258,17 +264,21 @@ describe("policy configuration validation", () => {
 
   it("rejects mobileconfigs missing required top-level fields", async () => {
     const valid = atob(mobileconfig([]));
+
     const withoutDisplayName = valid.replace(
       "<key>PayloadDisplayName</key><string>Test profile</string>",
       "",
     );
+
     await expect(
       validate("mttx.apple.custom.profile", { content: btoa(withoutDisplayName) }),
     ).resolves.toContain("PayloadDisplayName");
+
     const badScope = valid.replace(
       "<key>PayloadIdentifier</key><string>test.profile</string>",
       "<key>PayloadIdentifier</key><string>test.profile</string><key>PayloadScope</key><string>Device</string>",
     );
+
     await expect(
       validate("mttx.apple.custom.profile", { content: btoa(badScope) }),
     ).resolves.toContain("PayloadScope");

@@ -17,12 +17,16 @@ export class WstepError {
 
 export const TOKEN_TYPE =
   "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken";
+
 export const PROVISION_DOC_TYPE =
   "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentProvisionDoc";
+
 export const PKCS10_VALUE_TYPE =
   "http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10";
+
 export const BASE64_ENCODING_TYPE =
   "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary";
+
 export const ISSUE_REQUEST_TYPE = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue";
 
 const certificateDer = (certificate: string): ArrayBuffer | null => {
@@ -44,6 +48,7 @@ export function certificateFingerprint(certificate: string): Effect.Effect<strin
       const der = certificateDer(certificate);
       const bytes = der ?? (new TextEncoder().encode(certificate).buffer as ArrayBuffer);
       const digest = await crypto.subtle.digest("SHA-1", bytes);
+
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
         .join("")
         .toUpperCase();
@@ -58,6 +63,7 @@ export function certificateFingerprint(certificate: string): Effect.Effect<strin
  */
 export function encodedCertificate(certificate: string): string {
   const der = certificateDer(certificate);
+
   return der ? arrayBufferToBase64(der) : certificate;
 }
 
@@ -68,6 +74,7 @@ export function buildProvisioningDoc(
   return Effect.gen(function* () {
     const rootFingerprint = yield* certificateFingerprint(result.identityCertificate);
     const clientFingerprint = yield* certificateFingerprint(result.signedCertificate);
+
     const doc: WapProvisioningDocType = {
       version: "1.1",
       characteristics: [
@@ -188,6 +195,7 @@ export function buildProvisioningDoc(
         },
       ],
     };
+
     return yield* serializeSoapElement(WapProvisioningDoc, doc).pipe(
       Effect.mapError(
         (cause) => new WstepError("Failed to serialize provisioning document", cause),

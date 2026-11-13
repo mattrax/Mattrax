@@ -37,24 +37,32 @@ export default function DashboardLayout(props: ParentProps) {
     const recheck = () => setPresenceTick((value) => value + 1);
     window.addEventListener("focus", recheck);
     document.addEventListener("visibilitychange", recheck);
+
     return () => {
       window.removeEventListener("focus", recheck);
       document.removeEventListener("visibilitychange", recheck);
     };
   });
+
   const presenceState = () => {
     presenceTick();
+
     return readSessionPresence().state;
   };
+
   const presenceActive = () => presenceState() === "active";
+
   const canLoadSession = () =>
     Boolean(session().data?.user) || (session().isPending && presenceActive());
+
   // Session claims are a snapshot from sign-in. `me` reads the user row so a
   // verification completed in this tab takes effect without signing out.
   const me = useQuery(() =>
     meQueryOptions(session().data?.user?.id, !isServer && canLoadSession()),
   );
+
   const unauthorized = () => me.isError && errorTag(me.error) === "EnterpriseUnauthorized";
+
   const shellUser = () =>
     session().data?.user ?? (session().isPending && presenceActive() ? me.data?.user : undefined);
 
@@ -74,27 +82,37 @@ export default function DashboardLayout(props: ParentProps) {
         queryClient.clear();
         navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
       };
+
       if (presence === "expired") {
         void session().refetch();
         login();
+
         return;
       }
+
       if (pending) {
         // The shadow cookie is a fast path only: a present session still wins.
         // Without one there is no reason to wait for a session HTTP request.
         if (presence !== "active") login();
+
         return;
       }
+
       if (!user) {
         login();
+
         return;
       }
+
       if (unauthorized) {
         void session().refetch();
         login();
+
         return;
       }
+
       if (verified === undefined) return;
+
       if (!verified) {
         navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
       }
@@ -109,14 +127,18 @@ export default function DashboardLayout(props: ParentProps) {
   const handleSignOut = async () => {
     try {
       const result = await authClient.signOut();
+
       if (result.error) {
         reportGlobalError(result.error);
+
         return;
       }
     } catch (error) {
       reportGlobalError(error);
+
       return;
     }
+
     queryClient.clear();
     navigate("/login", { replace: true });
   };

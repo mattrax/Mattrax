@@ -40,6 +40,7 @@ describe("split Windows policy catalogue", () => {
 
     const ids = new Set<string>();
     const keys = new Set<string>();
+
     for (const summary of summaries) {
       expect(summary.id).toBeTruthy();
       expect(summary.name).toBeTruthy();
@@ -61,6 +62,7 @@ describe("split Windows policy catalogue", () => {
 
   it("ships one file per collection with matching properties", () => {
     let properties = 0;
+
     for (const summary of summaries) {
       const collection = collectionFile(summary);
       expect(collection.id).toBe(summary.id);
@@ -74,6 +76,7 @@ describe("split Windows policy catalogue", () => {
       );
       properties += usable.length;
     }
+
     expect(properties).toBe(index.stats.properties);
   });
 
@@ -85,10 +88,13 @@ describe("split Windows policy catalogue", () => {
     for (const summary of summaries) {
       const entries = search.collections[summary.id] ?? [];
       const collection = collectionFile(summary);
+
       const expected = new Set(
         collectionProperties(collection).map((property) => property.address ?? property.key),
       );
+
       expect(new Set(entries.map(([key]) => key))).toEqual(expected);
+
       for (const [, text] of entries) {
         expect(text).toBe(text.toLowerCase());
         expect(text).not.toMatch(/\s{2}/);
@@ -104,6 +110,7 @@ describe("split Windows policy catalogue", () => {
     const collections = readdirSync(catalogDir).filter(
       (name) => name.endsWith(".json") && !["index.json", "search.json"].includes(name),
     );
+
     expect(collections).toHaveLength(summaries.length);
     // The old single file was ~17 MB; the split must not grow the payload.
     const total = collections.reduce((sum, name) => sum + size(name), 0);

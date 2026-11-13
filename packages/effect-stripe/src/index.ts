@@ -14,28 +14,37 @@ export interface StripeErrorDetails {
 }
 
 export class StripeCardError extends Data.TaggedError("StripeCardError")<StripeErrorDetails> {}
+
 export class StripeRateLimitError extends Data.TaggedError(
   "StripeRateLimitError",
 )<StripeErrorDetails> {}
+
 export class StripeInvalidRequestError extends Data.TaggedError(
   "StripeInvalidRequestError",
 )<StripeErrorDetails> {}
+
 export class StripeApiError extends Data.TaggedError("StripeApiError")<StripeErrorDetails> {}
+
 export class StripeConnectionError extends Data.TaggedError(
   "StripeConnectionError",
 )<StripeErrorDetails> {}
+
 export class StripeAuthenticationError extends Data.TaggedError(
   "StripeAuthenticationError",
 )<StripeErrorDetails> {}
+
 export class StripePermissionError extends Data.TaggedError(
   "StripePermissionError",
 )<StripeErrorDetails> {}
+
 export class StripeIdempotencyError extends Data.TaggedError(
   "StripeIdempotencyError",
 )<StripeErrorDetails> {}
+
 export class StripeSignatureVerificationError extends Data.TaggedError(
   "StripeSignatureVerificationError",
 )<StripeErrorDetails> {}
+
 export class StripeUnknownError extends Data.TaggedError(
   "StripeUnknownError",
 )<StripeErrorDetails> {}
@@ -53,10 +62,15 @@ export type StripeError =
   | StripeUnknownError;
 
 type StripeClient = Stripe;
+
 type StripeConfig = ConstructorParameters<typeof Stripe>[1];
+
 type CustomerCreate = StripeClient["customers"]["create"];
+
 type CustomerSearch = StripeClient["customers"]["search"];
+
 type CustomerList = StripeClient["customers"]["list"];
+
 type BillingPortalSessionCreate = StripeClient["billingPortal"]["sessions"]["create"];
 
 export interface EffectStripeClient {
@@ -86,11 +100,13 @@ export interface EffectStripeClient {
 
 const getString = (value: Record<string, unknown>, key: string) => {
   const field = value[key];
+
   return typeof field === "string" ? field : undefined;
 };
 
 const getNumber = (value: Record<string, unknown>, key: string) => {
   const field = value[key];
+
   return typeof field === "number" ? field : undefined;
 };
 
@@ -100,6 +116,7 @@ const errorDetails = (error: unknown): StripeErrorDetails => {
   }
 
   const value = error as Record<string, unknown>;
+
   const raw =
     typeof value.raw === "object" && value.raw !== null
       ? (value.raw as Record<string, unknown>)

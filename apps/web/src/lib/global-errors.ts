@@ -15,4 +15,5 @@ export const reportGlobalError = (error: unknown) => {
 };
 
 export const dismissGlobalError = () => setGlobalError(null);
+
 export { globalError };

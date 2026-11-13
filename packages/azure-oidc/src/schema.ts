@@ -6,6 +6,7 @@ export const AzureOidcDiscovery = Schema.Struct({
   authorization_endpoint: Schema.optional(Schema.String),
   token_endpoint: Schema.optional(Schema.String),
 });
+
 export type AzureOidcDiscovery = typeof AzureOidcDiscovery.Type;
 
 export const JsonWebKey = Schema.Struct({
@@ -17,11 +18,13 @@ export const JsonWebKey = Schema.Struct({
   e: Schema.String,
   alg: Schema.optional(Schema.String),
 });
+
 export type JsonWebKey = typeof JsonWebKey.Type;
 
 export const JsonWebKeySet = Schema.Struct({
   keys: Schema.Array(JsonWebKey),
 });
+
 export type JsonWebKeySet = typeof JsonWebKeySet.Type;
 
 export const JwtHeader = Schema.Struct({
@@ -29,6 +32,7 @@ export const JwtHeader = Schema.Struct({
   kid: Schema.String,
   typ: Schema.optional(Schema.String),
 });
+
 export type JwtHeader = typeof JwtHeader.Type;
 
 export const AzureJwtClaims = Schema.Struct({
@@ -47,4 +51,5 @@ export const AzureJwtClaims = Schema.Struct({
   nonce: Schema.optional(Schema.String),
   xms_edov: Schema.optional(Schema.Boolean),
 });
+
 export type AzureJwtClaims = typeof AzureJwtClaims.Type;

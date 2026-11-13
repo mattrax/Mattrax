@@ -43,10 +43,12 @@ describe("SCEP challenge", () => {
 
   it("rejects expired challenges", async () => {
     const now = 1_700_000_000;
+
     const challenge = await createScepChallenge("enrollment-1", SECRET, {
       ttlSeconds: 60,
       now: now * 1000,
     });
+
     await expect(
       verifyScepChallenge(challenge, SECRET, { now: now * 1000 + 1_000 }),
     ).resolves.toEqual(expect.objectContaining({ enrollmentId: "enrollment-1" }));
@@ -60,6 +62,7 @@ async function makeScepHandler(secret: string) {
   const caKeyPair = await generateKeyPair();
   const caCert = await createTestCaCert(caKeyPair, "Challenge SCEP CA");
   const { certToPem } = await import("../pkcs7.js");
+
   const caPrivateKeyJwk = (await crypto.subtle.exportKey(
     "jwk",
     caKeyPair.privateKey,
@@ -74,16 +77,20 @@ async function makeScepHandler(secret: string) {
           try: () => verifyScepChallenge(req.challengePassword, secret),
           catch: (cause) => new ScepError({ message: "Failed to verify challenge", cause }),
         });
+
         if (!verification)
           return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+
         return { organizationalUnit: "tenant-from-challenge" };
       }),
   });
 
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
+
   const { handler } = HttpRouter.toWebHandler(
     (await import("../routes.js")).scepRoutes.pipe(Layer.provideMerge(serviceLayer)),
   );
+
   return { handler, caCert, caKeyPair };
 }
 
@@ -94,6 +101,7 @@ const pkiOperation = async (
   deviceKeyPair: CryptoKeyPair,
 ) => {
   const signerCert = await createTestSignerCert(deviceKeyPair, "DeviceSigner");
+
   const request = await buildPkcsReq(
     csr,
     caCert,
@@ -103,6 +111,7 @@ const pkiOperation = async (
     crypto.getRandomValues(new Uint8Array(16)),
     true,
   );
+
   return handler(
     new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
       method: "POST",
@@ -116,6 +125,7 @@ describe("SCEP PKCSReq authentication", () => {
     const { handler, caCert } = await makeScepHandler(SECRET);
     const deviceKeyPair = await generateKeyPair();
     const challenge = await createScepChallenge("enrollment-1", SECRET);
+
     const csr = await buildTestCsr(deviceKeyPair, "Device", {
       challengePassword: challenge,
       organizationalUnit: "attacker-tenant",
@@ -127,11 +137,13 @@ describe("SCEP PKCSReq authentication", () => {
     const signedData = new pkijs.SignedData({
       schema: pkijs.ContentInfo.fromBER(await response.arrayBuffer()).content,
     });
+
     const issued = signedData.certificates?.find(
       (certificate): certificate is pkijs.Certificate =>
         certificate instanceof pkijs.Certificate &&
         certificate.subject.typesAndValues.some((attribute) => attribute.type === "2.5.4.3"),
     )!;
+
     const ou = issued.subject.typesAndValues.find((attribute) => attribute.type === "2.5.4.11");
     expect((ou?.value as any).valueBlock.value).toBe("tenant-from-challenge");
     expect(
@@ -153,9 +165,11 @@ describe("SCEP PKCSReq authentication", () => {
   it("rejects a wrong challenge", async () => {
     const { handler, caCert } = await makeScepHandler(SECRET);
     const deviceKeyPair = await generateKeyPair();
+
     const csr = await buildTestCsr(deviceKeyPair, "Device", {
       challengePassword: "enrollment-1.wrong-signature",
     });
+
     const response = await pkiOperation(handler, csr, caCert, deviceKeyPair);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/x-pki-message");

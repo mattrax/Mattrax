@@ -8,6 +8,7 @@ describe("enterprise error diagnostics", () => {
       code: "invitation_expired",
       details: { invitationId: "inv-1", sql: "secret" },
     });
+
     expect(errorDiagnostic(error)).toMatchObject({
       code: "invitation_expired",
       details: { invitationId: "inv-1" },

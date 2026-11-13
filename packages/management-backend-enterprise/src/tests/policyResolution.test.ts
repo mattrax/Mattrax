@@ -166,6 +166,7 @@ describe("policy resolution", () => {
       ],
       configurations: [configuration("older"), configuration("newer")],
     });
+
     expect(newest.configurations[0]!.policyId).toBe("newer");
 
     const lexical = resolve({
@@ -180,6 +181,7 @@ describe("policy resolution", () => {
       ],
       configurations: [configuration("policy-b"), configuration("policy-a")],
     });
+
     expect(lexical.configurations[0]!.policyId).toBe("policy-a");
     expect(lexical.overridden).toEqual([
       expect.objectContaining({ policyId: "policy-b", reason: "lexicographic-id" }),

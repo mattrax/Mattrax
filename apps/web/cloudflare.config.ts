@@ -18,6 +18,7 @@ export const webWorker = {
 };
 
 export type WebConfig = UnwrapConfig<typeof webWorker>;
+
 export type WebEnv = InferEnv<WebConfig>;
 
 export default defineConfig({ worker: webWorker });

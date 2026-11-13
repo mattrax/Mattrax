@@ -41,6 +41,7 @@ describe("passkey relying party", () => {
       "http://mattrax.example.com",
       "not a url",
     ]);
+
     expect([...profile.origins].sort()).toEqual([
       "https://app.mattrax.example.com",
       "https://mattrax.example.com",
@@ -75,6 +76,7 @@ describe("passkey as an MFA factor", () => {
       totpEnabled: false,
       passkeyEnabled: true,
     });
+
     expect(
       requirement.alternatives.some(
         (item) =>
@@ -92,6 +94,7 @@ describe("passkey as an MFA factor", () => {
       totpEnabled: true,
       passkeyEnabled: false,
     });
+
     expect(
       requirement.alternatives.some(
         (item) =>

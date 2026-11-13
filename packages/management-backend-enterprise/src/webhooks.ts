@@ -85,10 +85,14 @@ const errorText = (cause: unknown): string => {
   if (cause instanceof Error) {
     const name = cause.name;
     const message = cause.message?.trim();
+
     if (message) return truncate(`${name}: ${message}`);
+
     return truncate(name || "Delivery failed");
   }
+
   const text = String(cause ?? "").trim();
+
   return truncate(text || "Delivery failed");
 };
 
@@ -96,7 +100,9 @@ const errorText = (cause: unknown): string => {
 export const generateWebhookSecret = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return `whsec_${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
 };
 
@@ -123,11 +129,14 @@ export const verifyWebhookSignature = async (input: {
   readonly toleranceSeconds?: number;
 }): Promise<boolean> => {
   const parsed = parseWebhookSignatureHeader(input.signatureHeader);
+
   if (parsed.timestamp === null || parsed.signatures.length === 0) return false;
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const tolerance = input.toleranceSeconds ?? WEBHOOK_SIGNATURE_TOLERANCE_SECONDS;
+
   if (Math.abs(now - parsed.timestamp) > tolerance) return false;
   const expected = await signWebhookDelivery(input.secret, parsed.timestamp, input.body);
+
   return parsed.signatures.some((signature) => constantTimeEqual(signature, expected));
 };
 
@@ -146,7 +155,9 @@ const eventMatchesFilters = (endpoint: WebhookEndpointRow, type: string): boolea
   // A test delivery is explicit and ignores filters.
   if (type === WEBHOOK_TEST_EVENT) return true;
   const filters = endpoint.eventFilters;
+
   if (!Array.isArray(filters) || filters.length === 0) return true;
+
   return filters.includes(type);
 };
 
@@ -169,6 +180,7 @@ export const toWebhookEndpointInfo = endpointSummary;
 /** A URL is only deliverable when it passes the guard and we have a secret. */
 const deliveryUrlProblem = (endpoint: WebhookEndpointRow, allowUnsafeUrl?: boolean) => {
   if (allowUnsafeUrl) return null;
+
   return webhookUrlProblem(endpoint.url);
 };
 
@@ -182,6 +194,7 @@ const postWebhook = async (input: {
   const body = JSON.stringify(input.payload);
   const timestamp = Math.floor(Date.now() / 1000);
   const signature = await signWebhookDelivery(input.secret, timestamp, body);
+
   const response = await fetchWithTimeout(
     input.url,
     {
@@ -201,9 +214,11 @@ const postWebhook = async (input: {
     },
     { timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS, fetch: input.fetch },
   );
+
   // Drain the body so the connection is released; the response text is never
   // stored because it may contain customer data.
   const text = await response.text().catch(() => "");
+
   return { responseStatus: response.status, body: text };
 };
 
@@ -217,6 +232,7 @@ const attemptDelivery = async (input: {
 }): Promise<WebhookDeliveryOutcome> => {
   const startedAt = Date.now();
   const urlProblem = deliveryUrlProblem(input.endpoint, input.allowUnsafeUrl);
+
   if (urlProblem) {
     return {
       status: "failed",
@@ -225,7 +241,9 @@ const attemptDelivery = async (input: {
       durationMs: Date.now() - startedAt,
     };
   }
+
   let secret: string;
+
   try {
     secret = await openSecret(input.authSecret, input.endpoint.secret);
   } catch {
@@ -236,6 +254,7 @@ const attemptDelivery = async (input: {
       durationMs: Date.now() - startedAt,
     };
   }
+
   try {
     const { responseStatus } = await postWebhook({
       url: input.endpoint.url,
@@ -244,7 +263,9 @@ const attemptDelivery = async (input: {
       fetch: input.fetch,
       timeoutMs: input.timeoutMs,
     });
+
     const ok = responseStatus >= 200 && responseStatus < 300;
+
     return {
       status: ok ? "succeeded" : "failed",
       responseStatus,
@@ -318,13 +339,16 @@ const deliverToEndpoint = (
     if (!options.authSecret) return;
     const now = options.now ?? new Date();
     const attempts = Math.max(1, Math.floor(options.attempts ?? 1));
+
     let outcome: WebhookDeliveryOutcome = {
       status: "failed",
       responseStatus: null,
       error: "Delivery was not attempted",
       durationMs: 0,
     };
+
     let usedAttempt = 1;
+
     for (let attempt = 1; attempt <= attempts; attempt++) {
       usedAttempt = attempt;
       outcome = yield* Effect.promise(() =>
@@ -337,8 +361,10 @@ const deliverToEndpoint = (
           allowUnsafeUrl: options.allowUnsafeUrl,
         }),
       );
+
       if (outcome.status === "succeeded") break;
     }
+
     yield* recordDelivery(db, { endpoint, payload, outcome, attempt: usedAttempt, now });
   });
 
@@ -354,6 +380,7 @@ export const dispatchWebhookEvent = (
   Effect.gen(function* () {
     if (!options.authSecret) return;
     const payload = buildWebhookPayload(event, options.now);
+
     const endpoints = (yield* db
       .select()
       .from(s.webhookEndpoint)
@@ -363,7 +390,9 @@ export const dispatchWebhookEvent = (
           eq(s.webhookEndpoint.enabled, true),
         ),
       )) as WebhookEndpointRow[];
+
     const matching = endpoints.filter((endpoint) => eventMatchesFilters(endpoint, payload.type));
+
     if (matching.length === 0) return;
     yield* Effect.forEach(
       matching,
@@ -390,6 +419,7 @@ export const sendTestWebhook = (
 ): Effect.Effect<WebhookDeliveryOutcome> =>
   Effect.gen(function* () {
     const now = options.now ?? new Date();
+
     const payload = buildWebhookPayload(
       {
         organizationId: endpoint.organizationId,
@@ -403,6 +433,7 @@ export const sendTestWebhook = (
       },
       now,
     );
+
     if (!options.authSecret) {
       const outcome: WebhookDeliveryOutcome = {
         status: "failed",
@@ -410,9 +441,12 @@ export const sendTestWebhook = (
         error: "Webhook signing is not configured on this deployment",
         durationMs: 0,
       };
+
       yield* recordDelivery(db, { endpoint, payload, outcome, attempt: 1, now });
+
       return outcome;
     }
+
     const outcome = yield* Effect.promise(() =>
       attemptDelivery({
         endpoint,
@@ -423,7 +457,9 @@ export const sendTestWebhook = (
         allowUnsafeUrl: options.allowUnsafeUrl,
       }),
     );
+
     yield* recordDelivery(db, { endpoint, payload, outcome, attempt: 1, now });
+
     return outcome;
   });
 
@@ -452,11 +488,13 @@ export const retryFailedWebhookDeliveries = (
 ): Effect.Effect<WebhookRetryResult> =>
   Effect.gen(function* () {
     const result = { retried: 0, succeeded: 0, failed: 0 };
+
     if (!options.authSecret) return result;
     const now = options.now ?? new Date();
     const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? MAX_ATTEMPTS));
     const limit = Math.max(1, Math.floor(options.limit ?? 100));
     const cutoff = new Date(now.getTime() - (options.maxAgeHours ?? 24) * 60 * 60 * 1000);
+
     const rows = (yield* db
       .select()
       .from(s.webhookDelivery)
@@ -484,10 +522,13 @@ export const retryFailedWebhookDeliveries = (
               ),
             )
             .limit(1)) as WebhookEndpointRow[];
+
           if (!endpoint || !endpoint.enabled) return;
           const payload = row.payload as WebhookPayload | null;
+
           if (!payload || typeof payload !== "object" || !payload.type) return;
           result.retried += 1;
+
           const outcome = yield* Effect.promise(() =>
             attemptDelivery({
               endpoint,
@@ -498,7 +539,9 @@ export const retryFailedWebhookDeliveries = (
               allowUnsafeUrl: options.allowUnsafeUrl,
             }),
           );
+
           const attempt = row.attempt + 1;
+
           if (outcome.status === "succeeded") result.succeeded += 1;
           else result.failed += 1;
           yield* db
@@ -532,6 +575,7 @@ export const retryFailedWebhookDeliveries = (
         discard: true,
       },
     );
+
     return result;
   }).pipe(
     Effect.catchCause((cause) =>
@@ -548,15 +592,19 @@ export const pruneWebhookDeliveries = (
 ): Effect.Effect<number> =>
   Effect.gen(function* () {
     const retentionDays = options.retentionDays ?? RETENTION_DAYS;
+
     if (retentionDays <= 0) return 0;
     const now = options.now ?? new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+
     const stale = (yield* db
       .select({ id: s.webhookDelivery.id })
       .from(s.webhookDelivery)
       .where(lt(s.webhookDelivery.createdAt, cutoff))) as Array<{ id: string }>;
+
     if (stale.length === 0) return 0;
     yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));
+
     return stale.length;
   }).pipe(Effect.catchCause(() => Effect.succeed(0)));
 

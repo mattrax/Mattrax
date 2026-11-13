@@ -37,6 +37,7 @@ describe("normalizeDeviceSearchQuery", () => {
       { limit: "25" as unknown as number, offset: "50" as unknown as number },
       now,
     );
+
     expect(filters.limit).toBe(25);
     expect(filters.offset).toBe(50);
   });

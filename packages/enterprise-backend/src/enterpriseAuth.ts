@@ -34,6 +34,7 @@ const parseCookies = (header: string | null | undefined) =>
       .filter(Boolean)
       .map((part) => {
         const index = part.indexOf("=");
+
         return index === -1
           ? [part, ""]
           : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
@@ -42,6 +43,7 @@ const parseCookies = (header: string | null | undefined) =>
 
 const headersFromRecord = (record: HeadersRecord) => {
   const headers = new Headers();
+
   for (const [key, value] of Object.entries(record)) {
     if (Array.isArray(value)) {
       for (const item of value) headers.append(key, item);
@@ -49,6 +51,7 @@ const headersFromRecord = (record: HeadersRecord) => {
       headers.set(key, value);
     }
   }
+
   return headers;
 };
 
@@ -71,6 +74,7 @@ const tokenInfo = (item: any) => ({
 });
 
 export const API_TOKEN_SCOPES = ["read", "write"] as const;
+
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
 
 /**
@@ -79,18 +83,21 @@ export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
  */
 export const tokenScopes = (value: unknown): Set<ApiTokenScope> => {
   if (value == null) return new Set(API_TOKEN_SCOPES);
+
   const raw = Array.isArray(value)
     ? value
     : typeof value === "string"
       ? (() => {
           try {
             const parsed = JSON.parse(value);
+
             return Array.isArray(parsed) ? parsed : [];
           } catch {
             return [];
           }
         })()
       : [];
+
   return new Set(
     raw.filter((scope): scope is ApiTokenScope =>
       (API_TOKEN_SCOPES as readonly string[]).includes(scope),
@@ -102,11 +109,15 @@ export const tokenScopes = (value: unknown): Set<ApiTokenScope> => {
 const normalizeTokenScopes = (scopes: readonly string[] | undefined) => {
   if (scopes === undefined) return [...API_TOKEN_SCOPES] as ApiTokenScope[];
   const requested = new Set(scopes);
+
   if (requested.size === 0) return undefined;
+
   if ([...requested].some((scope) => !(API_TOKEN_SCOPES as readonly string[]).includes(scope)))
     return undefined;
+
   // `write` means read + mutate, so a write token always carries `read`.
   if (requested.has("write")) requested.add("read");
+
   return API_TOKEN_SCOPES.filter((scope) => requested.has(scope));
 };
 
@@ -139,6 +150,7 @@ const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
 /** Six digits, zero padded. Randomness comes from the platform CSPRNG. */
 const generateEmailCode = () => {
   const bytes = crypto.getRandomValues(new Uint32Array(1));
+
   return String(bytes[0]! % 1_000_000).padStart(6, "0");
 };
 
@@ -172,6 +184,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       // (tests, or an embedding that only uses bearer tokens) fails closed for
       // every interactive factor instead of skipping the check.
       const stepUpOption = yield* Effect.serviceOption(StepUpService);
+
       const stepUp: StepUpService["Service"] = Option.isSome(stepUpOption)
         ? stepUpOption.value
         : {
@@ -186,12 +199,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               ),
             completePasskey: () => Effect.succeed(false),
           };
+
       const { origin, authSecret, email } = options;
 
       const resolveSession = (request: Request) =>
         Effect.gen(function* () {
           const cookie = parseCookies(request.headers.get("cookie"))[sessionCookie];
+
           if (!cookie) return undefined;
+
           return yield* auth
             .verifySession(Redacted.make(cookie))
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
@@ -203,17 +219,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             request.headers.get("authorization") ??
             request.headers.get("x-mattrax-mcp-authorization") ??
             "";
+
           const match = authorization.match(/^Bearer\s+(.+)$/i);
+
           if (!match) return undefined;
           const tokenHash = yield* sha256(match[1]);
+
           const item = yield* db.query.accountApiToken.findFirst({
             where: { tokenHash, revokedAt: { isNull: true } },
           });
+
           if (!item || (item.expiresAt && item.expiresAt <= new Date())) return undefined;
           yield* db
             .update(schema.accountApiToken)
             .set({ lastUsedAt: new Date(), updatedAt: new Date() })
             .where(eq(schema.accountApiToken.id, item.id));
+
           return item;
         });
 
@@ -228,9 +249,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             request.headers.get("authorization") ??
             request.headers.get("x-mattrax-mcp-authorization") ??
             "";
+
           const match = authorization.match(/^Bearer\s+(.+)$/i);
+
           if (!match) return undefined;
           const tokenHash = yield* sha256Base64Url(match[1]);
+
           const [row] = yield* db
             .select({
               tokenId: schema.mcpOAuthToken.id,
@@ -259,6 +283,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               ),
             )
             .limit(1);
+
           if (!row) return undefined;
           const now = new Date();
           yield* db
@@ -269,6 +294,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .update(schema.mcpOAuthConnection)
             .set({ lastUsedAt: now })
             .where(eq(schema.mcpOAuthConnection.id, row.connectionId));
+
           return {
             userId: row.userId,
             connectionId: row.connectionId,
@@ -284,15 +310,18 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const session = yield* resolveSession(request);
           const apiToken = session ? undefined : yield* resolveApiToken(request);
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
+
           if (oauth) {
             const path = new URL(request.url).pathname;
             const method = request.method.toUpperCase();
+
             const accountPath =
               path.startsWith("/api/v1/account") ||
               (path === "/api/v1/me" && method !== "GET") ||
               path.includes("email-change") ||
               path.includes("email-verification") ||
               path === "/api/v1/verify-email";
+
             if (accountPath)
               return yield* Effect.fail(
                 diagnoseError(
@@ -303,18 +332,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 ),
               );
           }
+
           const userId = session?.subjectId ?? apiToken?.userId ?? oauth?.userId;
+
           if (!userId)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
           const user = yield* db.query.user.findFirst({ where: { id: userId } });
+
           if (!user || user.disabled)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
+
           return { user, session, apiToken, oauth };
         });
 
       const listMcpConnections = (request: Request) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+
           const rows = yield* db
             .select({
               id: schema.mcpOAuthConnection.id,
@@ -334,6 +368,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             )
             .where(eq(schema.mcpOAuthConnection.userId, user.id))
             .orderBy(desc(schema.mcpOAuthConnection.createdAt));
+
           return {
             connections: rows.map((row) => ({
               id: row.id,
@@ -352,9 +387,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const revokeMcpConnection = (request: Request, connectionId: string) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+
           const connection = yield* db.query.mcpOAuthConnection.findFirst({
             where: { id: connectionId, userId: user.id },
           });
+
           if (!connection)
             return yield* Effect.fail(
               diagnoseError(new EnterpriseNotFound({ message: "MCP connection not found" }), {
@@ -374,16 +411,19 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .update(schema.mcpOAuthCode)
             .set({ consumedAt: revokedAt })
             .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
           return { status: "ok" as const };
         });
 
       const listApiTokens = (request: Request) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+
           const rows = yield* db
             .select()
             .from(schema.accountApiToken)
             .where(eq(schema.accountApiToken.userId, user.id));
+
           return { tokens: rows.map(tokenInfo) };
         });
 
@@ -399,18 +439,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const request = requestFrom(requestLike);
           const resolved = yield* requireUser(request);
+
           if (resolved.apiToken || resolved.oauth) return resolved;
           const sessionId = resolved.session?.sessionId as string | undefined;
           const grant = request.headers.get("x-mattrax-step-up");
+
           if (grant && sessionId) {
             const valid = yield* verifyStepUpGrant(authSecret, grant, {
               subjectId: resolved.user.id,
               sessionId,
               action,
             });
+
             if (valid) return resolved;
           }
+
           const methods = yield* stepUp.methods(resolved.user.id);
+
           return yield* Effect.fail(
             new StepUpRequired({
               message: "Confirm this action with your password, authenticator or passkey.",
@@ -430,6 +475,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       ) =>
         Effect.gen(function* () {
           const expiresAtMillis = Date.now() + STEP_UP_WINDOW_MILLIS;
+
           const token = yield* signStepUpGrant(authSecret, {
             subjectId: user.id,
             email: user.email,
@@ -437,12 +483,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             action,
             expiresAtMillis,
           });
+
           return { grant: token, expiresAtMillis, method };
         });
 
       const stepUpMethods = (requestLike: Request | { headers: HeadersRecord }) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(requestFrom(requestLike));
+
           return yield* stepUp.methods(user.id);
         });
 
@@ -451,12 +499,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const resolved = yield* requireUser(request);
           const sessionId = resolved.session?.sessionId as string | undefined;
+
           if (!sessionId)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: "Step-up is only available for browser sessions",
               }),
             );
+
           return { user: resolved.user, sessionId };
         });
 
@@ -464,10 +514,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const { user, sessionId } = yield* stepUpSession(request);
           const verified = yield* stepUp.verifyPassword(user.id, body.password);
+
           if (!verified) {
             const error = yield* invalidStepUp(user.id, body.action);
+
             return yield* Effect.fail(error);
           }
+
           return yield* grant(user, sessionId, body.action, "password");
         });
 
@@ -475,10 +528,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const { user, sessionId } = yield* stepUpSession(request);
           const verified = yield* stepUp.verifyTotp(user.id, body.code);
+
           if (!verified) {
             const error = yield* invalidStepUp(user.id, body.action);
+
             return yield* Effect.fail(error);
           }
+
           return yield* grant(user, sessionId, body.action, "totp");
         });
 
@@ -486,6 +542,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const { user, sessionId } = yield* stepUpSession(request);
           const started = yield* stepUp.beginPasskey(user.id);
+
           const stepUpToken = yield* signStepUpFlow(authSecret, {
             subjectId: user.id,
             email: user.email,
@@ -495,6 +552,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             requestBindingVerifier: started.requestBindingVerifier,
             requestBindingExpiresAtMillis: started.requestBindingExpiresAtMillis,
           });
+
           return {
             stepUpToken,
             expiresAtMillis: started.expiresAtMillis,
@@ -508,18 +566,21 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       ) =>
         Effect.gen(function* () {
           const { user, sessionId } = yield* stepUpSession(request);
+
           // The action is carried inside the signed flow token, so a caller
           // cannot complete one action's ceremony to authorise another.
           const bound = yield* verifyAnyStepUpFlow(authSecret, body.stepUpToken, {
             subjectId: user.id,
             sessionId,
           });
+
           if (!bound)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: "This confirmation expired. Start again.",
               }),
             );
+
           const verified = yield* stepUp.completePasskey({
             subjectId: user.id,
             flowId: bound.flowId,
@@ -527,10 +588,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             requestBindingExpiresAtMillis: bound.requestBindingExpiresAtMillis,
             response: body.response,
           });
+
           if (!verified) {
             const error = yield* invalidStepUp(user.id, bound.action);
+
             return yield* Effect.fail(error);
           }
+
           return yield* grant(user, sessionId, bound.action, "passkey");
         });
 
@@ -538,6 +602,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const invalidStepUp = (subjectId: string, action: StepUpAction) =>
         Effect.gen(function* () {
           const methods = yield* stepUp.methods(subjectId);
+
           return new StepUpRequired({
             message: "That confirmation was not accepted. Try again.",
             action,
@@ -558,6 +623,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       ) =>
         Effect.gen(function* () {
           const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
+
           if (!user.emailVerified)
             return yield* Effect.fail(
               new EnterpriseForbidden({
@@ -565,12 +631,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
           const name = body.name?.trim();
+
           if (!name)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Enter a name for the token" }),
             );
 
           const scopes = normalizeTokenScopes(body.scopes);
+
           if (!scopes)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Choose valid token scopes" }),
@@ -580,6 +648,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           // already has, otherwise read-only tenants could be bypassed.
           if (apiToken) {
             const ownScopes = tokenScopes(apiToken.scopes);
+
             if (!scopes.every((scope) => ownScopes.has(scope)))
               return yield* Effect.fail(
                 diagnoseError(
@@ -590,6 +659,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 ),
               );
             const tokenTenantId = body.tenantId ?? null;
+
             if (apiToken.tenantId && apiToken.tenantId !== tokenTenantId)
               return yield* Effect.fail(
                 diagnoseError(
@@ -602,10 +672,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           const tenantId = body.tenantId ?? null;
+
           if (tenantId) {
             const member = yield* db.query.member.findFirst({
               where: { userId: user.id, organizationId: tenantId },
             });
+
             if (!member)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "Choose a tenant you belong to" }),
@@ -613,12 +685,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           let expiresAt: Date | null = null;
+
           if (body.expiresAt) {
             const parsed = new Date(body.expiresAt);
+
             if (Number.isNaN(parsed.getTime()))
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "Choose a valid expiry date" }),
               );
+
             if (parsed <= new Date())
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "The expiry date must be in the future" }),
@@ -629,6 +704,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const raw = randomToken("mtx_");
           const now = new Date();
           const tokenHash = yield* sha256(raw);
+
           const item = {
             id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
             userId: user.id,
@@ -643,7 +719,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             createdAt: now,
             updatedAt: now,
           };
+
           yield* db.insert(schema.accountApiToken).values(item);
+
           return { token: raw, item: tokenInfo(item) };
         });
 
@@ -659,12 +737,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 eq(schema.accountApiToken.userId, user.id),
               ),
             );
+
           return { status: "ok" as const };
         });
 
       const requestEmailChange = (request: Request, body: { newEmail: string }) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+
           if (!user.emailVerified)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -672,11 +752,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
           const newEmail = body.newEmail.trim().toLowerCase();
+
           if (!newEmail || !newEmail.includes("@"))
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Enter a valid email address" }),
             );
           const existing = yield* db.query.user.findFirst({ where: { email: newEmail } });
+
           if (existing && existing.id !== user.id)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "That email address is already in use" }),
@@ -688,7 +770,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             exp: Date.now() + 60 * 60 * 1000,
             purpose: "email-change",
           });
+
           const link = `${origin}/account?emailToken=${encodeURIComponent(token)}`;
+
           if (email) {
             yield* Effect.tryPromise({
               try: () =>
@@ -705,15 +789,18 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           } else {
             console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, link);
           }
+
           return { status: "ok" as const };
         });
 
       const requestEmailVerification = (request: Request) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+
           if (user.emailVerified) return verified;
 
           const code = generateEmailCode();
+
           const challenge = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
@@ -721,13 +808,16 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             purpose: "email-verify-code",
             codeHash: yield* emailCodeHash(authSecret, user.id, code),
           });
+
           const token = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
             exp: Date.now() + 24 * 60 * 60 * 1000,
             purpose: "email-verify",
           });
+
           const link = `${origin}/verify-email?token=${encodeURIComponent(token)}`;
+
           if (email) {
             yield* Effect.tryPromise({
               try: () =>
@@ -744,6 +834,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           } else {
             console.log("VERIFY EMAIL CODE", user.email, code, link);
           }
+
           return { status: "ok" as const, challenge };
         });
 
@@ -754,12 +845,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           if (body.code !== undefined) {
             const { user } = yield* requireUser(request);
+
             if (user.emailVerified) return verified;
             const code = body.code.trim();
+
             if (!/^\d{6}$/.test(code))
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "Enter the six-digit code" }),
               );
+
             const challenge = yield* verifyToken(authSecret, body.challenge ?? "").pipe(
               Effect.catch(() =>
                 Effect.fail(
@@ -769,7 +863,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 ),
               ),
             );
+
             const codeHash = (challenge as typeof challenge & { codeHash?: unknown }).codeHash;
+
             if (
               challenge.exp <= Date.now() ||
               challenge.purpose !== "email-verify-code" ||
@@ -783,6 +879,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 }),
               );
             const hash = yield* emailCodeHash(authSecret, user.id, code);
+
             if (hash !== codeHash)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({
@@ -807,6 +904,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               options.appAuth.strategies.email.persistence.moduleId as string,
               user.id,
             );
+
             return { status: "ok" as const };
           }
 
@@ -815,11 +913,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
+
           if (payload.exp <= Date.now() || payload.purpose !== "email-verify")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
           const user = yield* db.query.user.findFirst({ where: { id: payload.sub } });
+
           if (!user || user.email.toLowerCase() !== payload.email.toLowerCase())
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
@@ -842,6 +942,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             options.appAuth.strategies.email.persistence.moduleId as string,
             user.id,
           );
+
           return { status: "ok" as const };
         });
 
@@ -852,12 +953,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
+
           if (payload.exp <= Date.now() || payload.purpose !== "email-change")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
 
           const user = yield* db.query.user.findFirst({ where: { id: payload.sub } });
+
           if (!user)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
@@ -880,6 +983,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .update(schema.authEmailCredentials)
             .set({ identifierValue: payload.email })
             .where(eq(schema.authEmailCredentials.subjectId, user.id));
+
           return { status: "ok" as const };
         });
 

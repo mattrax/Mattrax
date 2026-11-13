@@ -127,15 +127,20 @@ export const startOfUtcDay = (now: Date): Date =>
 
 const alertThreshold = (health: CredentialHealth): CredentialAlertThreshold | null => {
   const credentials = [health.apns, health.scepCa];
+
   if (credentials.some((credential) => credential.level === "expired")) return "expired";
+
   if (credentials.some((credential) => credential.level === "critical")) return "7d";
+
   if (credentials.some((credential) => credential.level === "warning")) return "30d";
+
   return null;
 };
 
 const thresholdFromMetadata = (metadata: unknown): CredentialAlertThreshold | null => {
   if (typeof metadata !== "object" || metadata === null) return null;
   const value = (metadata as Record<string, unknown>).threshold;
+
   return value === "expired" || value === "7d" || value === "30d" ? value : null;
 };
 
@@ -165,11 +170,14 @@ export const loadCredentialAlertRecipients = (
       userId: string;
       role: string;
     }>;
+
     const roles = new Map<string, string>();
+
     for (const member of members) {
       if (!isOwnerOrAdmin(member.role)) continue;
       roles.set(member.userId, member.role);
     }
+
     if (roles.size === 0) return [];
 
     const users = (yield* db
@@ -184,10 +192,12 @@ export const loadCredentialAlertRecipients = (
 
     const seen = new Set<string>();
     const recipients: CredentialAlertRecipient[] = [];
+
     for (const user of users) {
       if (user.disabled) continue;
       const email = user.email.trim();
       const key = email.toLowerCase();
+
       if (!email || seen.has(key)) continue;
       seen.add(key);
       recipients.push({
@@ -197,6 +207,7 @@ export const loadCredentialAlertRecipients = (
         role: roles.get(user.id) ?? "",
       });
     }
+
     return recipients.sort((left, right) => left.email.localeCompare(right.email));
   });
 
@@ -244,6 +255,7 @@ export const runMaintenance = (
       .select({ id: s.invitation.id })
       .from(s.invitation)
       .where(and(eq(s.invitation.status, "pending"), lt(s.invitation.expiresAt, now)));
+
     if (expiredInvitations.length > 0) {
       yield* db
         .update(s.invitation)
@@ -261,6 +273,7 @@ export const runMaintenance = (
     //    inventory and audit history intact and lets an operator re-enrol.
     if (staleDeviceDays > 0) {
       const staleCutoff = new Date(now.getTime() - staleDeviceDays * day);
+
       const staleDevices = (yield* db
         .select({ id: s.device.id, organizationId: s.device.organizationId })
         .from(s.device)
@@ -270,6 +283,7 @@ export const runMaintenance = (
         id: string;
         organizationId: string;
       }>;
+
       if (staleDevices.length > 0) {
         yield* db
           .update(s.device)
@@ -313,10 +327,12 @@ export const runMaintenance = (
     //    aliases rather than duplicated table definitions. Their expiry columns
     //    are BIGINT epoch milliseconds, not DATETIME, so compare with millis.
     const nowMillis = now.getTime();
+
     const expiredProofs = yield* db
       .select({ proofId: s.authProofs.proofId })
       .from(s.authProofs)
       .where(lt(s.authProofs.expiresAt, nowMillis));
+
     if (expiredProofs.length > 0) {
       yield* db.delete(s.authProofs).where(lt(s.authProofs.expiresAt, nowMillis));
       result.expiredAuthProofs = expiredProofs.length;
@@ -326,6 +342,7 @@ export const runMaintenance = (
       .select({ sessionId: s.authSessions.sessionId })
       .from(s.authSessions)
       .where(lt(s.authSessions.expiresAt, nowMillis));
+
     if (expiredSessions.length > 0) {
       yield* db.delete(s.authSessions).where(lt(s.authSessions.expiresAt, nowMillis));
       result.expiredAuthSessions = expiredSessions.length;
@@ -334,10 +351,12 @@ export const runMaintenance = (
     // 4. Audit retention. Opt out with `auditRetentionDays: 0`.
     if (auditRetentionDays > 0) {
       const auditCutoff = new Date(now.getTime() - auditRetentionDays * day);
+
       const staleAudit = yield* db
         .select({ id: s.auditLog.id })
         .from(s.auditLog)
         .where(lt(s.auditLog.createdAt, auditCutoff));
+
       if (staleAudit.length > 0) {
         yield* db.delete(s.auditLog).where(lt(s.auditLog.createdAt, auditCutoff));
         result.purgedAuditEntries = staleAudit.length;
@@ -347,10 +366,12 @@ export const runMaintenance = (
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {
       const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);
+
       const staleAttempts = yield* db
         .select({ id: s.enrollmentAttempt.id })
         .from(s.enrollmentAttempt)
         .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
+
       if (staleAttempts.length > 0) {
         yield* db
           .delete(s.enrollmentAttempt)
@@ -363,10 +384,12 @@ export const runMaintenance = (
     //     only needs to outlive Pub/Sub's redelivery window.
     if (androidPubSubRetentionDays > 0) {
       const androidCutoff = new Date(now.getTime() - androidPubSubRetentionDays * day);
+
       const staleMessages = yield* db
         .select({ messageId: s.androidPubSubMessage.messageId })
         .from(s.androidPubSubMessage)
         .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
+
       if (staleMessages.length > 0) {
         yield* db
           .delete(s.androidPubSubMessage)
@@ -386,9 +409,11 @@ export const runMaintenance = (
     if (options.credentialAlerts !== false) {
       const alertDay = credentialAlertDay(now);
       const alertCutoff = startOfUtcDay(now);
+
       const organizations = (yield* db
         .select({ id: s.organization.id, name: s.organization.name })
         .from(s.organization)) as Array<{ id: string; name: string }>;
+
       for (const organization of organizations) {
         const existingAlerts = (yield* db
           .select()
@@ -403,17 +428,22 @@ export const runMaintenance = (
           metadata: unknown;
           createdAt: Date;
         }>;
+
         const alerted = new Set<string>();
+
         for (const entry of existingAlerts) {
           const createdAt =
             entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt);
+
           if (Number.isNaN(createdAt.getTime()) || createdAt < alertCutoff) continue;
           const threshold = thresholdFromMetadata(entry.metadata);
+
           if (threshold) alerted.add(threshold);
         }
 
         const health = yield* loadCredentialHealth(db, organization.id, now);
         const threshold = alertThreshold(health);
+
         if (!threshold || alerted.has(threshold)) continue;
         yield* db.insert(s.auditLog).values({
           id: id(),
@@ -436,6 +466,7 @@ export const runMaintenance = (
 
         if (options.notifyCredentialExpiry) {
           const recipients = yield* loadCredentialAlertRecipients(db, organization.id);
+
           const notification: CredentialExpiryNotification = {
             organizationId: organization.id,
             organizationName: organization.name,
@@ -444,6 +475,7 @@ export const runMaintenance = (
             day: alertDay,
             recipients,
           };
+
           // A notification transport is best-effort: log and keep going so a
           // mail outage cannot abort the rest of maintenance.
           yield* Effect.suspend(() => options.notifyCredentialExpiry!(notification)).pipe(
@@ -471,6 +503,7 @@ export const runMaintenance = (
         now,
         retentionDays: webhookDeliveryRetentionDays,
       });
+
     if (options.webhookRetry !== false && options.webhookAuthSecret) {
       const retried = yield* retryFailedWebhookDeliveries(db, {
         now,
@@ -478,6 +511,7 @@ export const runMaintenance = (
         fetch: options.webhookFetch,
         maxAttempts: options.webhookMaxAttempts,
       });
+
       result.webhookRetries = retried.retried;
       result.webhookRetrySucceeded = retried.succeeded;
       result.webhookRetryFailed = retried.failed;
@@ -488,6 +522,7 @@ export const runMaintenance = (
     //    device never checks in again. Tenant-scoped: one pass per tenant.
     if (options.dynamicGroups !== false) {
       const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
+
       for (const organization of organizations) {
         const evaluated = yield* syncDynamicGroupsForTenant(db, organization.id, { now });
         result.dynamicGroupsEvaluated += evaluated.length;

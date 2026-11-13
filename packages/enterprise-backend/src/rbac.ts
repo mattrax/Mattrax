@@ -42,6 +42,7 @@ const DEVICE_WRITE = new Set([
 ]);
 
 const GROUP_READ = new Set(["listGroups", "getGroup", "previewGroup"]);
+
 const GROUP_WRITE = new Set([
   "createGroup",
   "deleteGroups",
@@ -58,6 +59,7 @@ const POLICY_READ = new Set([
   "getPolicyAssignments",
   "downloadPolicyApplication",
 ]);
+
 const POLICY_WRITE = new Set([
   "createPolicy",
   "deletePolicies",
@@ -75,6 +77,7 @@ const APPLICATION_READ = new Set([
   "getApplicationInventory",
   "downloadApplication",
 ]);
+
 const APPLICATION_WRITE = new Set([
   "createApplication",
   "patchApplication",
@@ -85,6 +88,7 @@ const APPLICATION_WRITE = new Set([
 ]);
 
 const DASHBOARD_READ = new Set(["listDashboards", "getDashboard", "queryDashboard"]);
+
 const DASHBOARD_WRITE = new Set([
   "createDashboard",
   "patchDashboard",
@@ -101,6 +105,7 @@ const ENROLLMENT_READ = new Set([
   "getAppleEnrollmentProfile",
   "getAdeEnrollmentProfile",
 ]);
+
 const ENROLLMENT_WRITE = new Set(["patchTenantEnrollment", "resetTenantEnrollment"]);
 
 const IDENTITY_READ = new Set([
@@ -109,6 +114,7 @@ const IDENTITY_READ = new Set([
   "listEntraDomains",
   "listScimTokens",
 ]);
+
 const IDENTITY_WRITE = new Set([
   "patchSsoConfig",
   "patchEntraDirectorySync",
@@ -133,6 +139,7 @@ const MANAGEMENT_READ = new Set([
   "getApns",
   "getApnsCsr",
 ]);
+
 const MANAGEMENT_WRITE = new Set([
   "importAutopilotDevices",
   "syncAutopilotDevices",
@@ -157,6 +164,7 @@ const MANAGEMENT_WRITE = new Set([
 ]);
 
 const WEBHOOK_READ = new Set(["listWebhookEndpoints"]);
+
 const WEBHOOK_WRITE = new Set([
   "createWebhookEndpoint",
   "patchWebhookEndpoint",
@@ -166,6 +174,7 @@ const WEBHOOK_WRITE = new Set([
 ]);
 
 const MEMBER_READ = new Set(["listTenantUsers", "listTenantInvitations"]);
+
 const MEMBER_WRITE = new Set([
   "inviteTenantUser",
   "cancelTenantInvitation",
@@ -200,32 +209,57 @@ const EXPLICIT: Record<string, Permission> = {
 
 export const permissionForMethod = (method: string): Permission | undefined => {
   if (EXPLICIT[method]) return EXPLICIT[method];
+
   if (DEVICE_READ.has(method)) return "devices.read";
+
   if (DEVICE_WRITE.has(method)) return "devices.write";
+
   if (GROUP_READ.has(method)) return "groups.read";
+
   if (GROUP_WRITE.has(method)) return "groups.write";
+
   if (POLICY_READ.has(method)) return "policies.read";
+
   if (POLICY_WRITE.has(method)) return "policies.write";
+
   if (APPLICATION_READ.has(method)) return "applications.read";
+
   if (APPLICATION_WRITE.has(method)) return "applications.write";
+
   if (DASHBOARD_READ.has(method)) return "dashboards.read";
+
   if (DASHBOARD_WRITE.has(method)) return "dashboards.write";
+
   if (ENROLLMENT_READ.has(method)) return "enrollment.read";
+
   if (ENROLLMENT_WRITE.has(method)) return "enrollment.write";
+
   if (IDENTITY_READ.has(method)) return "identity.read";
+
   if (IDENTITY_WRITE.has(method)) return "identity.write";
+
   if (MANAGEMENT_READ.has(method)) return "management.read";
+
   if (MANAGEMENT_WRITE.has(method)) return "management.write";
+
   if (WEBHOOK_READ.has(method)) return "webhooks.read";
+
   if (WEBHOOK_WRITE.has(method)) return "webhooks.write";
+
   if (MEMBER_READ.has(method)) return "members.read";
+
   if (MEMBER_WRITE.has(method)) return "members.write";
+
   if (ROLE_READ.has(method)) return "roles.read";
+
   if (ROLE_WRITE.has(method)) return "roles.write";
+
   // Unknown methods fail safe to tenant write for mutations and tenant read for
   // obvious reads. This keeps future endpoints permission-checked by default.
   if (/^(list|get|search|export|preview|download)/.test(method)) return "tenant.read";
+
   if (method === "acceptInvitation" || method === "getEnrollment") return undefined;
+
   return "tenant.write";
 };
 
@@ -252,8 +286,10 @@ export const resolveTenantRole = (
       const role = yield* db.query.tenantRole.findFirst({
         where: { id: member.customRoleId, organizationId: member.organizationId },
       });
+
       if (role) {
         const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+
         return {
           roleName: role.name,
           roleKey: role.id,
@@ -267,11 +303,13 @@ export const resolveTenantRole = (
         };
       }
     }
+
     return {
       roleName: member.role
         .split(",")
         .map((raw) => {
           const part = raw.trim();
+
           return isBuiltInTenantRole(part) ? BUILT_IN_ROLE_LABELS[part] : part;
         })
         .join(", "),

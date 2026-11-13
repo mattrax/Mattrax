@@ -29,48 +29,59 @@ const textareaClass =
 export default function ManagementSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(params.tenantId),
     queryFn: () => enterprise.getApns(params.tenantId),
   }));
+
   const android = useQuery(() => ({
     queryKey: enterpriseKeys.android(params.tenantId),
     queryFn: () => enterprise.getTenantAndroid(params.tenantId),
   }));
+
   const abm = useQuery(() => ({
     queryKey: enterpriseKeys.abm(params.tenantId),
     queryFn: () => enterprise.getAppleBusinessManager(params.tenantId),
   }));
+
   const vpp = useQuery(() => ({
     queryKey: enterpriseKeys.vpp(params.tenantId),
     queryFn: () => enterprise.getVpp(params.tenantId),
   }));
+
   const autopilot = useQuery(() => ({
     queryKey: enterpriseKeys.autopilot(params.tenantId),
     queryFn: () => enterprise.getAutopilotSettings(params.tenantId),
   }));
+
   const autopilotDevices = useQuery(() => ({
     queryKey: enterpriseKeys.autopilotDevices(params.tenantId),
     queryFn: () => enterprise.listAutopilotDevices(params.tenantId),
   }));
+
   const autopilotProfiles = useQuery(() => ({
     queryKey: enterpriseKeys.autopilotProfiles(params.tenantId),
     queryFn: () => enterprise.listAutopilotProfiles(params.tenantId),
   }));
+
   const connectAndroid = useMutation(() => ({
     mutationFn: () => enterprise.createAndroidSignup(params.tenantId),
     onSuccess: (result) => {
       window.location.href = result.url;
     },
   }));
+
   const syncAndroid = useMutation(() => ({
     mutationFn: () => enterprise.syncTenantAndroid(params.tenantId),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
   }));
+
   const toggleAndroid = useMutation(() => ({
     mutationFn: (enabled: boolean) => enterprise.patchTenantAndroid(params.tenantId, { enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
   }));
+
   const [email, setEmail] = createSignal("");
   const [cert, setCert] = createSignal("");
   const [fileName, setFileName] = createSignal("");
@@ -91,6 +102,7 @@ export default function ManagementSettingsPage() {
     try {
       const file = await selectFile(".pem,.p7m,.json,.txt");
       setAbmFileName(file.name);
+
       if (file.name.toLowerCase().endsWith(".p7m")) {
         setAbmContent(arrayBufferToBase64(await file.arrayBuffer()));
         setAbmEncoding("base64");
@@ -130,14 +142,17 @@ export default function ManagementSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) });
     },
   }));
+
   const syncAbm = useMutation(() => ({
     mutationFn: () => enterprise.syncAppleBusinessManager(params.tenantId),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) }),
   }));
+
   const deleteAbm = useMutation(() => ({
     mutationFn: () => enterprise.deleteAppleBusinessManagerToken(params.tenantId),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) }),
   }));
+
   const uploadVpp = useMutation(() => ({
     mutationFn: () =>
       enterprise.uploadVppToken(params.tenantId, {
@@ -151,10 +166,12 @@ export default function ManagementSettingsPage() {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.vpp(params.tenantId) });
     },
   }));
+
   const syncVpp = useMutation(() => ({
     mutationFn: () => enterprise.syncVpp(params.tenantId),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.vpp(params.tenantId) }),
   }));
+
   const deleteVpp = useMutation(() => ({
     mutationFn: () => enterprise.deleteVppToken(params.tenantId),
     onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.vpp(params.tenantId) }),
@@ -164,12 +181,15 @@ export default function ManagementSettingsPage() {
   const [autopilotFileName, setAutopilotFileName] = createSignal("");
   const [profileName, setProfileName] = createSignal("");
   const [profileDescription, setProfileDescription] = createSignal("");
+
   const [profileMode, setProfileMode] = createSignal<
     "userDriven" | "selfDeploying" | "preProvisioned"
   >("userDriven");
+
   const [profileJoinType, setProfileJoinType] = createSignal<
     "azureADJoin" | "azureADJoinUsingDeviceAuth" | "hybridAzureADJoin"
   >("azureADJoin");
+
   const [profileNameTemplate, setProfileNameTemplate] = createSignal("");
   const [profileLocale, setProfileLocale] = createSignal("");
   const [profileTimezone, setProfileTimezone] = createSignal("");
@@ -219,17 +239,21 @@ export default function ManagementSettingsPage() {
         setAutopilotContent("");
         setAutopilotFileName("");
       }
+
       await invalidateAutopilot();
     },
   }));
+
   const syncAutopilot = useMutation(() => ({
     mutationFn: () => enterprise.syncAutopilotDevices(params.tenantId),
     onSuccess: invalidateAutopilot,
   }));
+
   const deleteAutopilotDevice = useMutation(() => ({
     mutationFn: (serial: string) => enterprise.deleteAutopilotDevice(params.tenantId, serial),
     onSuccess: invalidateAutopilot,
   }));
+
   const saveAutopilotProfile = useMutation(() => ({
     mutationFn: () => {
       const payload = {
@@ -243,7 +267,9 @@ export default function ManagementSettingsPage() {
         enableDevicePreparation: profileDevicePreparation(),
         assignedGroupId: profileGroupId() || null,
       };
+
       const editing = editingProfileId();
+
       return editing
         ? enterprise.updateAutopilotProfile(params.tenantId, editing, payload)
         : enterprise.createAutopilotProfile(params.tenantId, payload);
@@ -253,6 +279,7 @@ export default function ManagementSettingsPage() {
       await invalidateAutopilot();
     },
   }));
+
   const assignAutopilotProfile = useMutation(() => ({
     mutationFn: (input: { profileId: string; groupId: string }) =>
       enterprise.assignAutopilotProfile(params.tenantId, input.profileId, input.groupId),
@@ -261,16 +288,20 @@ export default function ManagementSettingsPage() {
 
   const downloadCsr = async () => {
     setCsrError(undefined);
+
     try {
       const response = await fetch(`/api/v1/tenants/${params.tenantId}/apns/csr`, {
         credentials: "include",
         headers: { "x-effect-auth-csrf": "1" },
       });
+
       if (!response.ok) {
         const body = await response.json().catch(() => undefined);
         throw new Error(errorMessage(body, `CSR request failed (${response.status})`));
       }
+
       const data = (await response.json()) as { plist?: string };
+
       if (!data.plist) throw new Error("The server did not return a CSR");
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/x-plist" }));
@@ -1275,6 +1306,7 @@ function AutopilotProfileRow(props: {
   assigning: boolean;
 }) {
   const [groupId, setGroupId] = createSignal(props.profile.assignedGroupId ?? "");
+
   return (
     <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
       <div class="flex flex-wrap items-center gap-2">

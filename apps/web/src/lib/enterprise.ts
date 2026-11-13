@@ -201,9 +201,13 @@ export type {
 export { formatDeviceQueryText, parseDeviceQueryText };
 
 type RouteParam = string | undefined;
+
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
+
 type EndpointData<T> = T extends EndpointPromise<infer A, unknown> ? A : never;
+
 type EndpointError<T> = T extends EndpointPromise<unknown, infer E> ? E : never;
+
 type EnterpriseApiClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["client"]["EnterpriseApi"];
@@ -288,12 +292,14 @@ export const enterpriseKeys = {
 
 const required = (value: RouteParam, name: string) => {
   if (!value) throw new EnterpriseBadRequest({ message: `Missing ${name}` });
+
   return value;
 };
 
 const clientEffect = () => {
   const event = isServer ? getRequestEvent() : undefined;
   const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+
   return HttpApiClient.make(enterpriseHttpApi, { baseUrl }).pipe(
     Effect.map((client) => ({ client, event })),
   );
@@ -316,23 +322,27 @@ function endpoint<A, E>(
   const action = options.stepUp === false ? undefined : options.stepUp;
 
   const attempt = (grant?: string) => {
-    const extraHeaders: Record<string, string> = {
-      ...(grant ? { "x-mattrax-step-up": grant } : {}),
-    };
+    const extraHeaders: Record<string, string> = (grant ? { "x-mattrax-step-up": grant } : {});
+
     const effect = clientEffect().pipe(
       Effect.flatMap(({ client, event }) => {
         const cookie = event?.request.headers.get("cookie");
         const api = client.EnterpriseApi;
+
         const headers = {
           ...extraHeaders,
           ...(cookie ? { cookie } : {}),
         };
+
         if (Object.keys(headers).length === 0) return call(api);
+
         return call(
           new Proxy(api, {
             get(target, property, receiver) {
               const value = Reflect.get(target, property, receiver);
+
               if (typeof value !== "function") return value;
+
               return (input: Record<string, unknown> = {}) =>
                 value({
                   ...input,
@@ -343,6 +353,7 @@ function endpoint<A, E>(
         );
       }),
     );
+
     return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
   };
 
@@ -351,15 +362,19 @@ function endpoint<A, E>(
       return await attempt(stepUpGrant(action));
     } catch (error) {
       if (errorTag(error) !== "StepUpRequired") throw error;
+
       const required =
         (errorField(error, "action") as StepUpAction | undefined) ??
         (action as StepUpAction | undefined);
+
       if (!required) throw error;
       const methods = errorField(error, "methods");
+
       const grant = await requestStepUp(
         required,
         Array.isArray(methods) ? (methods as StepUpMethod[]) : undefined,
       );
+
       return await attempt(grant);
     }
   };
@@ -447,18 +462,21 @@ export const enterprise = {
   list: <E extends Entity>(tenantId: RouteParam, entity: E, _group?: string) =>
     endpoint((api) => {
       const params = { tenantId: required(tenantId, "tenantId") };
+
       if (entity === "device")
         return api.listDevices({ params }) as Effect.Effect<
           { rows: RowFor<E>[] },
           Effect.Error<ReturnType<typeof api.listDevices>>,
           never
         >;
+
       if (entity === "group")
         return api.listGroups({ params }) as Effect.Effect<
           { rows: RowFor<E>[] },
           Effect.Error<ReturnType<typeof api.listGroups>>,
           never
         >;
+
       return api.listPolicies({ params }) as Effect.Effect<
         { rows: RowFor<E>[] },
         Effect.Error<ReturnType<typeof api.listPolicies>>,
@@ -594,18 +612,21 @@ export const enterprise = {
   get: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) =>
     endpoint((api) => {
       const params = { tenantId: required(tenantId, "tenantId"), id: required(id, "id") };
+
       if (entity === "device")
         return api.getDevice({ params }) as Effect.Effect<
           RowFor<E> | GroupNode,
           Effect.Error<ReturnType<typeof api.getDevice>>,
           never
         >;
+
       if (entity === "group")
         return api.getGroup({ params }) as Effect.Effect<
           RowFor<E> | GroupNode,
           Effect.Error<ReturnType<typeof api.getGroup>>,
           never
         >;
+
       return api.getPolicy({ params }) as Effect.Effect<
         RowFor<E> | GroupNode,
         Effect.Error<ReturnType<typeof api.getPolicy>>,
@@ -1452,11 +1473,13 @@ export const enterprise = {
 
 export const meQueryOptions = (userId?: string, enabled = true) => {
   const cached = readMeCache(userId);
+
   return queryOptions<MeResponse, unknown, MeResponse, ReturnType<typeof enterpriseKeys.me>>({
     queryKey: enterpriseKeys.me(),
     queryFn: async () => {
       const data = (await enterprise.me()) as MeResponse;
       writeMeCache(data);
+
       return data;
     },
     enabled: !isServer && enabled,
@@ -1683,5 +1706,6 @@ export function resolveActiveTenant(
   tenantId?: string,
 ) {
   if (!me) return undefined;
+
   return me.tenants.find((tenant) => tenant.id === tenantId) ?? me.tenants[0];
 }

@@ -21,6 +21,7 @@ test.describe("protocol routes", () => {
       headers: { "content-type": "application/x-apple-aspen-mdm" },
       data: "<plist></plist>",
     });
+
     expect(response.status()).toBeGreaterThanOrEqual(400);
     expect(response.status()).toBeLessThan(500);
   });
@@ -32,6 +33,7 @@ test.describe("protocol routes", () => {
       headers: { "content-type": "application/soap+xml" },
       data: "<x/>",
     });
+
     // The tenant-scoped route is always mounted now; no deployment-wide pin is
     // required. Malformed SOAP is a 200 SOAP fault, never an opaque 500.
     expect(response.status()).toBe(200);

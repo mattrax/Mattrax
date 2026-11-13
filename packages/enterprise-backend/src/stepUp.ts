@@ -116,6 +116,7 @@ export const verifyStepUpFlow = (
         typeof payload.requestBindingExpiresAtMillis !== "number"
       )
         return undefined;
+
       return {
         flowId: payload.flowId,
         requestBindingVerifier: payload.verifier,
@@ -137,8 +138,10 @@ export const verifyAnyStepUpFlow = (
   Effect.gen(function* () {
     for (const action of STEP_UP_ACTIONS) {
       const flow = yield* verifyStepUpFlow(secret, token, { ...expected, action });
+
       if (flow) return { ...flow, action };
     }
+
     return undefined;
   });
 
@@ -214,25 +217,33 @@ export const makeStepUpServiceLive = (options: {
         verifyPassword: (subjectId, password) =>
           Effect.gen(function* () {
             if (password.length === 0 || password.length > 4096) return false;
+
             const candidate = yield* passwords
               .readForSubject({ moduleId: passwordModuleId, subjectId: subject(subjectId) })
               .pipe(Effect.catch(() => Effect.succeed({ _tag: "None" as const })));
+
             if (candidate._tag === "None") return false;
+
             const verified = yield* passwordHashing
               .verify(Redacted.make(password), candidate.value.verifier)
               .pipe(Effect.catch(() => Effect.succeed({ matches: false })));
+
             return verified.matches;
           }),
 
         verifyTotp: (subjectId, code) =>
           Effect.gen(function* () {
             if (!/^[0-9]{6}$/.test(code.trim())) return false;
+
             const snapshot = yield* totpPersistence
               .snapshot({ moduleId: TOTP_MODULE_ID, subjectId: subject(subjectId) })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             const record = snapshot?.record;
+
             if (!record?.secret) return false;
             const nowMillis = DateTime.toEpochMillis(yield* DateTime.now);
+
             const step = yield* Effect.acquireUseRelease(
               totpCryptography.decryptSecret(
                 {
@@ -252,6 +263,7 @@ export const makeStepUpServiceLive = (options: {
                 ),
               (secret) => Effect.sync(() => secret.fill(0)),
             ).pipe(Effect.catch(() => Effect.succeed(false)));
+
             return step !== null;
           }),
 
@@ -261,6 +273,7 @@ export const makeStepUpServiceLive = (options: {
               return yield* StepUpUnavailable.make({
                 message: "Passkeys are not configured on this deployment",
               });
+
             const snapshot = yield* passkeyCredentials
               .listForSubject({
                 moduleId: PASSKEY_MODULE_ID,
@@ -274,6 +287,7 @@ export const makeStepUpServiceLive = (options: {
                   ),
                 ),
               );
+
             if (!snapshot || snapshot.credentials.length === 0)
               return yield* StepUpUnavailable.make({
                 message: "Add a passkey to this account before using it to confirm actions",
@@ -326,6 +340,7 @@ export const makeStepUpServiceLive = (options: {
                   ),
                 ),
               );
+
             const decision = yield* receipt.read.pipe(
               Effect.catch(() =>
                 Effect.fail(
@@ -333,6 +348,7 @@ export const makeStepUpServiceLive = (options: {
                 ),
               ),
             );
+
             if (decision._tag !== "Issued")
               return yield* StepUpUnavailable.make({
                 message: "Could not start a passkey ceremony",
@@ -365,6 +381,7 @@ export const makeStepUpServiceLive = (options: {
         completePasskey: (input) =>
           Effect.gen(function* () {
             if (profile === undefined) return false;
+
             const access = yield* Schema.decodeUnknownEffect(Passkey.PasskeyAccess)({
               moduleId: PASSKEY_MODULE_ID,
               purpose: "step-up",
@@ -372,22 +389,26 @@ export const makeStepUpServiceLive = (options: {
               requestBindingVerifier: input.requestBindingVerifier,
               requestBindingExpiresAtMillis: input.requestBindingExpiresAtMillis,
             }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (access === undefined) return false;
 
             const ceremony = yield* passkeyPersistence
               .context(access)
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (ceremony === undefined || ceremony.purpose !== "step-up") return false;
 
             // The assertion's `rawId` is the base64url protocol credential id.
             const rawId = yield* Effect.sync(() => {
               try {
                 const parsed = JSON.parse(input.response) as { rawId?: unknown };
+
                 return typeof parsed.rawId === "string" ? parsed.rawId : undefined;
               } catch {
                 return undefined;
               }
             });
+
             if (rawId === undefined) return false;
 
             const credential = yield* passkeyCredentials
@@ -396,7 +417,9 @@ export const makeStepUpServiceLive = (options: {
                 protocolCredentialId: rawId as unknown as Passkey.PasskeyProtocolCredentialId,
               })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (!credential || !credential.active) return false;
+
             if (credential.revision.subjectId !== input.subjectId) return false;
 
             const assertion = yield* passkeyProtocol
@@ -406,6 +429,7 @@ export const makeStepUpServiceLive = (options: {
                 response: Redacted.make(input.response),
               })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (assertion === undefined) return false;
 
             const receipt = yield* passkeyPersistence
@@ -413,10 +437,13 @@ export const makeStepUpServiceLive = (options: {
                 journal.prepare(value),
               )
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
             if (receipt === undefined) return false;
+
             const decision = yield* receipt.read.pipe(
               Effect.catch(() => Effect.succeed("Rejected" as const)),
             );
+
             return decision === "Verified";
           }),
       });

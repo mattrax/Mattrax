@@ -19,6 +19,7 @@ export default function NewTenantPage() {
   const queryClient = useQueryClient();
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
+
   const createTenant = useMutation(() => ({
     mutationFn: () => enterprise.createTenant({ name: name(), slug: slug() || slugify(name()) }),
     onSuccess: async ({ id }) => {
@@ -26,6 +27,7 @@ export default function NewTenantPage() {
       navigate(`/t/${id}/devices`);
     },
   }));
+
   return (
     <Page class="max-w-[640px]">
       <a
@@ -57,6 +59,7 @@ export default function NewTenantPage() {
               value={name()}
               onInput={(event) => {
                 setName(event.currentTarget.value);
+
                 if (!slug()) setSlug(slugify(event.currentTarget.value));
               }}
               placeholder="Acme Operations"

@@ -5,6 +5,7 @@ import { toCsv } from "./deviceSearch.ts";
 
 export const AUDIT_SEARCH_DEFAULT_LIMIT = 50;
 export const AUDIT_SEARCH_MAX_LIMIT = 200;
+
 /** Hard ceiling for audit exports so a bad request cannot buffer all history. */
 export const AUDIT_EXPORT_MAX_ROWS = 10_000;
 
@@ -37,10 +38,13 @@ export type AuditSearchFilters = {
 
 const integer = (value: unknown, fallback: number) => {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
+
     if (Number.isFinite(parsed)) return Math.trunc(parsed);
   }
+
   return fallback;
 };
 
@@ -49,17 +53,22 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 
 const optionalText = (value: string | undefined, field: string) => {
   const text = value?.trim();
+
   if (!text) return undefined;
+
   if (text.length > 255)
     throw new EnterpriseBadRequest({ message: `${field} must be 255 characters or fewer` });
+
   return text;
 };
 
 const parseTimestamp = (value: string | undefined, field: string) => {
   if (!value) return undefined;
   const parsed = new Date(value);
+
   if (Number.isNaN(parsed.getTime()))
     throw new EnterpriseBadRequest({ message: `${field} must be an ISO timestamp` });
+
   return parsed;
 };
 
@@ -70,7 +79,9 @@ export const escapeLike = (value: string) =>
 const base64UrlEncode = (value: string) => {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
@@ -78,6 +89,7 @@ const base64UrlDecode = (value: string) => {
   const padded = value.replaceAll("-", "+").replaceAll("_", "/");
   const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, "="));
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+
   return new TextDecoder().decode(bytes);
 };
 
@@ -94,15 +106,19 @@ export const decodeAuditCursor = (raw: string): DecodedAuditCursor => {
       i?: unknown;
       o?: unknown;
     };
+
     if (typeof parsed.o === "number" && Number.isInteger(parsed.o) && parsed.o >= 0)
       return { kind: "offset", offset: parsed.o };
+
     if (typeof parsed.c === "string" && typeof parsed.i === "string") {
       const createdAt = new Date(parsed.c);
+
       if (!Number.isNaN(createdAt.getTime())) return { kind: "keyset", createdAt, id: parsed.i };
     }
   } catch {
     // Fall through to the shared validation error.
   }
+
   throw new EnterpriseBadRequest({ message: "cursor is invalid" });
 };
 
@@ -113,14 +129,17 @@ export const decodeAuditCursor = (raw: string): DecodedAuditCursor => {
 export const normalizeAuditSearchQuery = (query: AuditSearchQuery): AuditSearchFilters => {
   const from = parseTimestamp(query.from, "from");
   const to = parseTimestamp(query.to, "to");
+
   if (from && to && from.getTime() > to.getTime())
     throw new EnterpriseBadRequest({ message: "from must not be after to" });
 
   let cursor: AuditCursor | undefined;
   let offset = Math.max(integer(query.offset, 0), 0);
   let offsetPaging = query.offset !== undefined && !query.cursor;
+
   if (query.cursor) {
     const decoded = decodeAuditCursor(query.cursor);
+
     if (decoded.kind === "offset") {
       offset = decoded.offset;
       offsetPaging = true;
@@ -155,7 +174,9 @@ export const auditWhere = (
   filters: AuditSearchFilters,
 ): SQL => {
   const conditions: SQL[] = [eq(schema.auditLog.organizationId, organizationId)];
+
   if (filters.action) conditions.push(eq(schema.auditLog.action, filters.action));
+
   if (filters.actor) {
     const pattern = `%${escapeLike(filters.actor)}%`;
     conditions.push(
@@ -165,12 +186,17 @@ export const auditWhere = (
       ) as SQL,
     );
   }
+
   if (filters.targetType) conditions.push(eq(schema.auditLog.targetType, filters.targetType));
+
   if (filters.targetId) {
     conditions.push(like(schema.auditLog.targetId, `%${escapeLike(filters.targetId)}%`));
   }
+
   if (filters.from) conditions.push(gte(schema.auditLog.createdAt, filters.from));
+
   if (filters.to) conditions.push(lte(schema.auditLog.createdAt, filters.to));
+
   if (filters.cursor) {
     // Keyset pagination is stable even when rows share a millisecond: order by
     // (createdAt desc, id desc), so the next page starts strictly after both.
@@ -184,6 +210,7 @@ export const auditWhere = (
       ) as SQL,
     );
   }
+
   return and(...conditions) as SQL;
 };
 

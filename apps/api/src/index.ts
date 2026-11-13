@@ -83,6 +83,7 @@ const rateLimiter = makeRateLimiter();
  * Worker or lock customers out.
  */
 const planLimits = parsePlanLimits(apiEnv.MATTRAX_PLAN_LIMITS);
+
 for (const warning of planLimits.warnings) console.warn(warning);
 
 /**
@@ -94,7 +95,9 @@ const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
 const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
   sso: makeSsoStrategy(),
 });
+
 const authHttp = AuthContract.httpGroup(AuthApi);
+
 const authHttps = Http.make(appAuth, {
   origin: apiEnv.ORIGIN,
   cookie: { name: sessionCookie },
@@ -116,6 +119,7 @@ const proofSchedulerLayer = Layer.succeed(Proofs.ProofDispatchScheduler, {
       try: () => Effect.runPromise(work),
       catch: (cause) => {
         console.error("Proof delivery failed", cause);
+
         return Proofs.ProofUnavailable.make({});
       },
     }),
@@ -203,6 +207,7 @@ const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
 const entraSyncEffect = (db: EnterpriseDb, env: Env, concurrency: number | undefined) => {
   if (!env.AZURE_CLIENT_ID || !env.AZURE_CLIENT_SECRET)
     return runScheduledEntraSync({ db, concurrency });
+
   return Effect.scoped(
     Effect.gen(function* () {
       const context = yield* Layer.build(
@@ -212,6 +217,7 @@ const entraSyncEffect = (db: EnterpriseDb, env: Env, concurrency: number | undef
           origin: env.ORIGIN,
         }),
       );
+
       return yield* runScheduledEntraSync({
         db,
         graph: Context.get(context, AzureGraph),
@@ -231,6 +237,7 @@ const ENTRA_SYNC_CRON = "47 * * * *";
 const parsePositive = (value: string | undefined) => {
   if (value === undefined) return undefined;
   const parsed = Number(value);
+
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 };
 
@@ -238,6 +245,7 @@ const parsePositive = (value: string | undefined) => {
 const entraSyncJob = (env: Env) =>
   Effect.gen(function* () {
     const db = yield* Db;
+
     return yield* entraSyncEffect(
       db,
       env,
@@ -247,6 +255,7 @@ const entraSyncJob = (env: Env) =>
 
 const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) => {
   const androidConfig = androidDeliveryConfig();
+
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
@@ -271,6 +280,7 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
           "APNs push relay is not configured; devices will poll for changes instead",
         ),
   );
+
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
   const devMailbox = isDevMailboxEnabled(
@@ -282,7 +292,9 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     env.ORIGIN,
     request.url,
   );
+
   const devMailboxSecret = (env as unknown as { DEV_MAILBOX_SECRET?: string }).DEV_MAILBOX_SECRET;
+
   const devEmail = devMailbox
     ? {
         send: async (message: { to: string; subject: string; text?: string; html?: string }) => {
@@ -296,6 +308,7 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
         },
       }
     : undefined;
+
   const email = devEmail ?? (env as any).EMAIL;
 
   const authLive = makeAuthLive({
@@ -335,10 +348,12 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     AppleMdmTrust,
     Effect.gen(function* () {
       const db = yield* Db;
+
       return AppleMdmTrust.of({
         requireSignature: true,
         caCertPems: Effect.gen(function* () {
           const ca = yield* db.query.scepCa.findFirst();
+
           return ca ? [ca.certPem] : [];
         }).pipe(
           Effect.mapError(
@@ -444,11 +459,13 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
             // remote opt-in is used, so an exposed dev deployment cannot leak
             // verification links to arbitrary callers.
             const supplied = debugRequest.headers["x-dev-mailbox-secret"];
+
             if (
               devMailboxSecret &&
               !timingSafeStringEqual(typeof supplied === "string" ? supplied : "", devMailboxSecret)
             )
               return Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }));
+
             return HttpServerResponse.json(listDevEmails());
           }).pipe(Layer.provide(HttpServer.layerServices)),
         ]
@@ -485,6 +502,7 @@ const checkDatabaseReady = (env: Env) =>
 const deploymentId = (env: Env): string | null => {
   const metadata = (env as unknown as { CF_VERSION_METADATA?: { id?: string } })
     .CF_VERSION_METADATA;
+
   return metadata?.id ?? null;
 };
 
@@ -494,6 +512,7 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
     version,
     deploymentId: deploymentId(env),
   });
+
   return withRequestId(
     new Response(JSON.stringify(result.body), {
       status: result.httpStatus,
@@ -510,6 +529,7 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
 const describeError = (cause: unknown): string => {
   const error = cause instanceof Error ? cause : undefined;
   const text = error ? `${error.name}: ${error.message}` : String(cause);
+
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
@@ -521,6 +541,7 @@ export default {
     const requestId = resolveRequestId(request);
     const startedAt = Date.now();
     const pathname = new URL(request.url).pathname;
+
     const analytics = createRequestAnalytics({
       key: apiEnv.POSTHOG_KEY,
       host: apiEnv.POSTHOG_HOST,
@@ -541,6 +562,7 @@ export default {
 
     try {
       const limited = await rateLimiter.check(request, rateLimitBindings(env));
+
       if (limited.limited) {
         response = rateLimitResponse(limited, requestId);
       } else if (
@@ -565,6 +587,7 @@ export default {
         headers.delete("x-device-identity-certificate");
         headers.delete("x-device-identity-certificate-serial");
         headers.delete("x-device-identity-certificate-sha256");
+
         const tls = (
           request as unknown as {
             cf?: {
@@ -578,21 +601,26 @@ export default {
             };
           }
         ).cf?.tlsClientAuth;
+
         if (
           tls?.certVerified === "SUCCESS" &&
           tls.certRevoked !== "1" &&
           tls.certRevoked !== true
         ) {
           if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
+
           if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
+
           if (tls.certFingerprintSHA256)
             headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
         }
+
         const deviceRequest = new Request(request, { headers });
 
         const handlerAndDispose = HttpRouter.toWebHandler(
           makeAppLayer(env, deviceRequest, analytics) as any,
         );
+
         dispose = handlerAndDispose.dispose;
         const context = Context.makeUnsafe<any>(new Map());
         response = await handlerAndDispose.handler(deviceRequest, context);
@@ -611,6 +639,7 @@ export default {
     }
 
     const errorTag = uncaught ? "UncaughtError" : await readErrorTag(response);
+
     if (shouldLogRequest(pathname, response.status)) {
       logRequest({
         requestId,
@@ -638,8 +667,10 @@ export default {
         ...(errorTag ? { error_tag: errorTag } : {}),
       });
       const conversion = authEventForRequest(pathname, request.method, response.status);
+
       if (conversion === "auth_signed_in" || conversion === "auth_sso_signed_in") {
         const outcome = await authOutcomeFromResponse(response);
+
         if (outcome === "pending")
           analytics.capture("auth_mfa_pending", { status: response.status });
         else if (outcome !== undefined) analytics.capture(conversion, { status: response.status });
@@ -681,9 +712,12 @@ export default {
     const parseDays = (value: string | undefined) => {
       if (value === undefined) return undefined;
       const parsed = Number(value);
+
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
     };
+
     const graphConfigured = Boolean(env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET);
+
     const logEntraResult = (exit: Exit.Exit<unknown, unknown>) => {
       if (Exit.isFailure(exit)) console.error("Scheduled Entra directory sync failed", exit.cause);
       else console.log("Scheduled Entra directory sync complete", exit.value);
@@ -694,37 +728,46 @@ export default {
     if (controller.cron === ENTRA_SYNC_CRON) {
       if (!graphConfigured) {
         console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
+
         return;
       }
+
       ctx.waitUntil(
         Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
           console.error("Scheduled Entra directory sync job failed", cause),
         ),
       );
+
       return;
     }
+
     // Delivery is best-effort: a missing binding or a provider rejection is
     // logged by maintenance and never fails the scheduled run.
     const notifyCredentialExpiry = (notification: CredentialExpiryNotification) =>
       Effect.tryPromise({
         try: async () => {
           const email = env.EMAIL;
+
           if (!email) {
             console.warn(
               "Credential expiry email skipped: EMAIL binding is not configured",
               notification.organizationId,
               notification.threshold,
             );
+
             return;
           }
+
           if (notification.recipients.length === 0) {
             console.warn(
               "Credential expiry email skipped: no owner/admin recipients",
               notification.organizationId,
               notification.threshold,
             );
+
             return;
           }
+
           const message = credentialExpiryEmail(notification, { origin: apiEnv.ORIGIN });
           await email.send({
             to: notification.recipients.map((recipient) => recipient.email),
@@ -738,8 +781,10 @@ export default {
       });
 
     const storage = storageBucketFor(env);
+
     const daily = Effect.gen(function* () {
       const db = yield* Db;
+
       // Maintenance is allowed to fail without skipping backups: a broken
       // retention query must not leave the fleet without a recent bundle.
       const maintenance = yield* Effect.exit(
@@ -752,6 +797,7 @@ export default {
           notifyCredentialExpiry,
         }),
       );
+
       if (Exit.isFailure(maintenance))
         console.error("Scheduled maintenance failed", maintenance.cause);
       else console.log("Scheduled maintenance complete", maintenance.value);
@@ -770,6 +816,7 @@ export default {
       const entra = yield* Effect.exit(
         entraSyncEffect(db, env, parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY)),
       );
+
       return { maintenance, backups, entra };
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 

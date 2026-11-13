@@ -22,7 +22,9 @@ const deviceName = `${enterpriseName}/devices/device-1`;
 const base64 = (value: unknown): string => {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -56,6 +58,7 @@ const rejectsKind = async (work: Promise<unknown>, kind: string): Promise<void> 
   await assert.rejects(work, (error: any) => {
     assert.equal(error?._tag, "AndroidDeliveryError");
     assert.equal(error?.kind, kind);
+
     return true;
   });
 };
@@ -219,6 +222,7 @@ export const androidChecks: ReadonlyArray<Check> = [
           statusReportingSettings: { softwareInfoEnabled: true },
         },
       ]);
+
       assert.deepEqual(merged, {
         applications: [{ installType: "AVAILABLE", packageName: "com.example" }],
         cameraDisabled: false,
@@ -261,6 +265,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         },
         { kind: "mttx.android.policy.handwritten", data: { screenCaptureDisabled: true } },
       ]);
+
       assert.deepEqual(policy, { cameraDisabled: true, screenCaptureDisabled: true });
     },
   ),
@@ -273,16 +278,19 @@ export const androidChecks: ReadonlyArray<Check> = [
       const first = await compileAndroidPolicyWithHash([
         { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
       ]);
+
       const second = await compileAndroidPolicyWithHash([
         {
           kind: "mttx.android.policy.designer",
           data: { policy: { cameraDisabled: true, screenCaptureDisabled: false } },
         },
       ]);
+
       const reordered = await androidPolicyHash({
         screenCaptureDisabled: false,
         cameraDisabled: true,
       });
+
       assert.equal(first.hash, await androidPolicyHash({ cameraDisabled: true }));
       assert.equal(
         reordered,
@@ -301,6 +309,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = await createAndroidHarness();
       const token = await harness.signToken();
+
       const body = harness.pushBody(
         {
           name: `${enterpriseName}/devices/device-2`,
@@ -319,10 +328,12 @@ export const androidChecks: ReadonlyArray<Check> = [
         "ENROLLMENT",
         "message-enrollment-1",
       );
+
       const result = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       assert.deepEqual(result, { status: "ok", type: "ENROLLMENT" });
       assert.ok(
         harness.db.store.device!.some(
@@ -339,6 +350,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = await createAndroidHarness();
       const token = await harness.signToken();
+
       const body = harness.pushBody(
         {
           name: `${enterpriseName}/devices/device-3`,
@@ -348,14 +360,17 @@ export const androidChecks: ReadonlyArray<Check> = [
         "ENROLLMENT",
         "message-duplicate",
       );
+
       const first = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       const second = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       assert.deepEqual(first, { status: "ok", type: "ENROLLMENT" });
       assert.deepEqual(second, { status: "duplicate", type: "ENROLLMENT" });
       assert.equal(
@@ -374,6 +389,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = await createAndroidHarness();
       const token = await harness.signToken();
+
       const body = harness.pushBody(
         {
           name: `${enterpriseName}/operations/op-1`,
@@ -383,10 +399,12 @@ export const androidChecks: ReadonlyArray<Check> = [
         "COMMAND",
         "message-command-1",
       );
+
       const result = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       assert.deepEqual(result, { status: "ok", type: "COMMAND" });
       assert.equal(harness.calls.commands.length, 0);
     },
@@ -400,14 +418,17 @@ export const androidChecks: ReadonlyArray<Check> = [
       const harness = await createAndroidHarness();
       harness.db.store.android_enterprise![0]!.status = "disabled";
       const token = await harness.signToken();
+
       const body = harness.pushBody(
         { name: `${enterpriseName}/devices/device-1`, enterpriseName, state: "ACTIVE" },
         "ENROLLMENT",
       );
+
       const result = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       assert.deepEqual(result, {
         status: "ignored",
         type: "ENROLLMENT",
@@ -423,14 +444,17 @@ export const androidChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = await createAndroidHarness();
       const token = await harness.signToken();
+
       const body = harness.pushBody(
         { name: "enterprises/LC999/devices/device-1", enterpriseName: "enterprises/LC999" },
         "ENROLLMENT",
       );
+
       const result = await harness.handlePubSub({
         body,
         authorization: `Bearer ${token}`,
       });
+
       assert.equal(result.status, "ignored");
     },
   ),
@@ -487,9 +511,11 @@ export const androidChecks: ReadonlyArray<Check> = [
     "A callback missing either query parameter cannot complete signup.",
     async () => {
       const harness = await createAndroidHarness();
+
       const response = await harness.routeHandler(
         new Request("https://mdm.example.test/api/v1/android/signup/callback"),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -500,11 +526,13 @@ export const androidChecks: ReadonlyArray<Check> = [
     "The state token binds the callback to the tenant that started signup.",
     async () => {
       const harness = await createAndroidHarness();
+
       const response = await harness.routeHandler(
         new Request(
           "https://mdm.example.test/api/v1/android/signup/callback?state=tampered&enterpriseToken=token",
         ),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -515,6 +543,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     "The route must expose the delivery error kind as an HTTP status.",
     async () => {
       const harness = await createAndroidHarness();
+
       const response = await harness.routeHandler(
         new Request("https://mdm.example.test/api/v1/android/pubsub", {
           method: "POST",
@@ -522,6 +551,7 @@ export const androidChecks: ReadonlyArray<Check> = [
           body: JSON.stringify(harness.pushBody({ name: deviceName }, "ENROLLMENT")),
         }),
       );
+
       assert.equal(response.status, 401);
     },
   ),
@@ -569,6 +599,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         lastSeenAt: new Date(),
       });
       const token = await harness.signToken();
+
       const result = await harness.handlePubSub({
         body: harness.pushBody(
           {
@@ -581,6 +612,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         ),
         authorization: `Bearer ${token}`,
       });
+
       assert.deepEqual(result, { status: "ok", type: "ENROLLMENT" });
       assert.equal(harness.db.store.device![0]?.status, "unenrolled");
       assert.equal(harness.db.store.android_device![0]?.state, "DELETED");
@@ -596,9 +628,11 @@ export const androidChecks: ReadonlyArray<Check> = [
       const before = await compileAndroidPolicyWithHash([
         { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
       ]);
+
       const after = await compileAndroidPolicyWithHash([
         { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: false } } },
       ]);
+
       assert.notEqual(before.hash, after.hash);
       assert.notEqual(androidPolicyIdForHash(before.hash), androidPolicyIdForHash(after.hash));
       assert.equal(

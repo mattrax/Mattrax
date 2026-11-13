@@ -28,6 +28,7 @@ const DEVICE_INVENTORY_COLUMNS = [
 
 describe("device inventory migration", () => {
   const names = migrationNames();
+
   const inventoryMigrations = names.filter((name) =>
     readMigration(name).includes("`filevault_enabled`"),
   );
@@ -39,17 +40,20 @@ describe("device inventory migration", () => {
   it("adds every inventory column to the device table", () => {
     const sql = readMigration(inventoryMigrations[0]!);
     expect(sql).toContain("ALTER TABLE `device`");
+
     for (const column of DEVICE_INVENTORY_COLUMNS) expect(sql).toContain(`\`${column}\``);
     expect(sql).not.toContain("NOT NULL");
   });
 
   it("ships a snapshot with nullable columns of the expected types", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns" && entry.table === "device")
         .map((entry) => [entry.name, entry]),
     );
+
     const expected: Record<(typeof DEVICE_INVENTORY_COLUMNS)[number], string> = {
       filevault_enabled: "boolean",
       battery_health: "varchar(255)",
@@ -57,6 +61,7 @@ describe("device inventory migration", () => {
       model_number: "varchar(255)",
       inventory_updated_at: "datetime(3)",
     };
+
     for (const [column, type] of Object.entries(expected)) {
       const entry = columns.get(column);
       expect(entry, `missing snapshot column ${column}`).toBeDefined();
@@ -67,6 +72,7 @@ describe("device inventory migration", () => {
 
   it("does not leave the device inventory columns in a later migration", () => {
     const [inventoryMigration] = inventoryMigrations;
+
     for (const name of names.filter((candidate) => candidate > inventoryMigration!))
       for (const column of DEVICE_INVENTORY_COLUMNS)
         expect(readMigration(name)).not.toContain(`\`${column}\``);
@@ -84,6 +90,7 @@ describe("tenant branding migration", () => {
   it("adds nullable branding columns to the organization table", () => {
     const sql = readMigration(brandingMigrations[0]!);
     expect(sql).toContain("ALTER TABLE `organization`");
+
     for (const column of ["display_name", "support_email", "brand_color"])
       expect(sql).toContain(`\`${column}\``);
     expect(sql).not.toContain("NOT NULL");
@@ -91,11 +98,13 @@ describe("tenant branding migration", () => {
 
   it("ships a snapshot with nullable branding columns of the expected types", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns" && entry.table === "organization")
         .map((entry) => [entry.name, entry]),
     );
+
     expect(columns.get("display_name")).toMatchObject({
       type: "varchar(255)",
       notNull: false,
@@ -112,6 +121,7 @@ describe("tenant branding migration", () => {
 
   it("does not leave the branding columns in a later migration", () => {
     const [brandingMigration] = brandingMigrations;
+
     for (const name of names.filter((candidate) => candidate > brandingMigration!))
       for (const column of ["`display_name`", "`support_email`", "`brand_color`"])
         expect(readMigration(name)).not.toContain(column);
@@ -129,6 +139,7 @@ describe("APNs push telemetry migration", () => {
   it("adds every telemetry column with a failure counter default", () => {
     const sql = readMigration(pushMigrations[0]!);
     expect(sql).toContain("ALTER TABLE `device_apple`");
+
     for (const column of [
       "last_push_at",
       "last_push_ok_at",
@@ -142,11 +153,13 @@ describe("APNs push telemetry migration", () => {
 
   it("ships a snapshot with nullable telemetry and a non-null counter", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns" && entry.table === "device_apple")
         .map((entry) => [entry.name, entry]),
     );
+
     for (const column of [
       "last_push_at",
       "last_push_ok_at",
@@ -157,6 +170,7 @@ describe("APNs push telemetry migration", () => {
       expect(entry, `missing snapshot column ${column}`).toBeDefined();
       expect(entry!.notNull).toBe(false);
     }
+
     const counter = columns.get("consecutive_push_failures");
     expect(counter).toMatchObject({ type: "int", notNull: true, default: "0" });
   });
@@ -164,6 +178,7 @@ describe("APNs push telemetry migration", () => {
 
 describe("scoped API token migration", () => {
   const names = migrationNames();
+
   const tokenMigrations = names.filter(
     (name) =>
       readMigration(name).includes("ALTER TABLE `account_api_token`") &&
@@ -188,11 +203,13 @@ describe("scoped API token migration", () => {
 
   it("ships a snapshot with nullable scoped columns", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns" && entry.table === "account_api_token")
         .map((entry) => [entry.name, entry]),
     );
+
     expect(columns.get("tenant_id")).toMatchObject({
       type: "varchar(255)",
       notNull: false,
@@ -206,6 +223,7 @@ describe("scoped API token migration", () => {
 
 describe("MFA migration", () => {
   const names = migrationNames();
+
   const mfaMigrations = names.filter((name) =>
     readMigration(name).includes("CREATE TABLE `auth_totp_factor`"),
   );
@@ -225,11 +243,13 @@ describe("MFA migration", () => {
 
   it("ships a snapshot with the new columns", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns")
         .map((entry) => [`${entry.table}.${entry.name}`, entry]),
     );
+
     expect(columns.get("user.totp_enabled")).toMatchObject({
       type: "boolean",
       notNull: true,
@@ -249,6 +269,7 @@ describe("MFA migration", () => {
 
 describe("dynamic groups migration", () => {
   const names = migrationNames();
+
   const dynamicMigrations = names.filter((name) =>
     readMigration(name).includes("ALTER TABLE `enterprise_group` ADD `kind`"),
   );
@@ -269,11 +290,13 @@ describe("dynamic groups migration", () => {
 
   it("ships a snapshot with the new columns", () => {
     const snapshot = readSnapshot(names.at(-1)!);
+
     const columns = new Map(
       snapshot.ddl
         .filter((entry) => entry.entityType === "columns")
         .map((entry) => [`${entry.table}.${entry.name}`, entry]),
     );
+
     expect(columns.get("enterprise_group.kind")).toMatchObject({
       type: "varchar(16)",
       notNull: true,

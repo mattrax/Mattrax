@@ -12,5 +12,6 @@ export default function SoftwareRedirectPage() {
   onSettled(() => {
     if (params.tenantId) navigate(`/t/${params.tenantId}/dashboards`, { replace: true });
   });
+
   return null;
 }

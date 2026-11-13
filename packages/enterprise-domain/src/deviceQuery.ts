@@ -12,7 +12,9 @@ import { Schema } from "effect";
 const DevicePlatform = Schema.Literals(["apple", "win", "android"]);
 const DeviceStatusValue = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
 const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
+
 export type DeviceQueryHealth = typeof DeviceHealthLevel.Type | "stale";
+
 const DeviceFileVault = Schema.Literals(["enabled", "disabled", "unknown"]);
 
 const TextField = Schema.Literals([
@@ -84,6 +86,7 @@ export const DeviceCondition = Schema.Union([
   FileVaultCondition,
   ApplicationCondition,
 ]);
+
 export type DeviceCondition = typeof DeviceCondition.Type;
 
 /**
@@ -96,6 +99,7 @@ export const DeviceQuery = Schema.Struct({
   any: Schema.optional(Schema.Array(DeviceCondition)),
   none: Schema.optional(Schema.Array(DeviceCondition)),
 });
+
 export type DeviceQuery = typeof DeviceQuery.Type;
 
 export const emptyDeviceQuery = (): DeviceQuery => ({ all: [] });
@@ -106,18 +110,22 @@ export const deviceQueryConditionCount = (query: DeviceQuery | null | undefined)
 /** Human-readable reason a query cannot be evaluated, or `null`. */
 export const deviceQueryProblem = (query: DeviceQuery | null | undefined): string | null => {
   if (!query) return null;
+
   for (const list of [query.all ?? [], query.any ?? [], query.none ?? []])
     for (const condition of list) {
       if (typeof condition.value === "string" && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
+
       if (
         (condition.field === "staleDays" || condition.field === "enrolledDays") &&
         condition.value < 0
       )
         return `${condition.field} must not be negative`;
+
       if (condition.field === "osVersion" && condition.value.trim() === "")
         return "The osVersion condition needs a value";
     }
+
   return null;
 };
 
@@ -156,12 +164,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const parseDate = (value: Date | string | null | undefined): Date | null => {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value);
+
   if (Number.isNaN(date.getTime()) || date.getTime() <= 0) return null;
+
   return date;
 };
 
 const normalized = (value: string | null | undefined): string | null => {
   const text = value?.trim();
+
   return text ? text.toLowerCase() : null;
 };
 
@@ -170,13 +181,17 @@ const versionSegments = (value: string): number[] | null => {
     .trim()
     .split(/[._-]/)
     .filter((part) => part.length > 0);
+
   if (parts.length === 0) return null;
   const numbers: number[] = [];
+
   for (const part of parts) {
     const match = part.match(/^(\d+)/);
+
     if (!match) return null;
     numbers.push(Number(match[1]));
   }
+
   return numbers;
 };
 
@@ -188,12 +203,16 @@ const versionSegments = (value: string): number[] | null => {
 export const compareVersionStrings = (left: string, right: string): number | null => {
   const a = versionSegments(left);
   const b = versionSegments(right);
+
   if (!a || !b) return null;
   const length = Math.max(a.length, b.length);
+
   for (let index = 0; index < length; index++) {
     const difference = (a[index] ?? 0) - (b[index] ?? 0);
+
     if (difference !== 0) return difference < 0 ? -1 : 1;
   }
+
   return 0;
 };
 
@@ -222,7 +241,9 @@ const textMatches = (
 ) => {
   const value = normalized(actual);
   const expected = normalized(condition.value);
+
   if (value === null || expected === null) return false;
+
   switch (condition.op ?? "contains") {
     case "eq":
       return value === expected;
@@ -238,14 +259,19 @@ const textMatches = (
 
 const dayAge = (value: Date | string | null | undefined, now: Date): number | null => {
   const date = parseDate(value);
+
   return date ? (now.getTime() - date.getTime()) / DAY_MS : null;
 };
 
 const fileVaultState = (device: DeviceQueryDevice): "enabled" | "disabled" | "unknown" => {
   const status = normalized(device.fileVaultStatus);
+
   if (status === "enabled" || status === "disabled") return status;
+
   if (device.fileVaultEnabled === true) return "enabled";
+
   if (device.fileVaultEnabled === false) return "disabled";
+
   return "unknown";
 };
 
@@ -254,12 +280,16 @@ const matchesApplication = (
   condition: Extract<DeviceCondition, { field: "application" }>,
 ) => {
   const expected = normalized(condition.value);
+
   if (!expected) return false;
+
   const found = (device.applications ?? []).some((application) => {
     const id = normalized(application.bundleId);
     const name = normalized(application.name);
+
     return id === expected || name === expected || (name?.includes(expected) ?? false);
   });
+
   return condition.op === "lacks" ? !found : found;
 };
 
@@ -280,41 +310,56 @@ const matchesCondition = (
     case "proto": {
       const actual = normalized(device.proto);
       const expected = normalized(condition.value);
+
       if (actual === null || expected === null) return false;
+
       return condition.op === "ne" ? actual !== expected : actual === expected;
     }
+
     case "osVersion": {
       if (!device.osVersion) return false;
       const op = condition.op ?? "eq";
+
       if (op === "eq")
         return (
           normalized(device.osVersion) === normalized(condition.value) ||
           compareVersionStrings(device.osVersion, condition.value) === 0
         );
       const comparison = compareVersionStrings(device.osVersion, condition.value);
+
       if (comparison === null) return false;
+
       return compareNumber(comparison, 0, op);
     }
+
     case "status": {
       const actual = normalized(device.status);
       const expected = normalized(condition.value);
+
       if (actual === null || expected === null) return false;
+
       return condition.op === "ne" ? actual !== expected : actual === expected;
     }
+
     case "health": {
       if (condition.value === "stale") return Boolean(device.health?.stale);
       const matches = device.health?.level === condition.value;
+
       return condition.op === "ne" ? !matches : matches;
     }
+
     case "staleDays":
     case "enrolledDays": {
       const age = dayAge(
         condition.field === "staleDays" ? device.lastSeenAt : device.enrolledAt,
         now,
       );
+
       if (age === null) return false;
+
       return compareNumber(age, condition.value, condition.op ?? "gte");
     }
+
     case "fileVault":
       return fileVaultState(device) === condition.value;
     case "application":
@@ -336,23 +381,29 @@ export const evaluateDeviceQuery = (
   if (!query) return true;
   const now = options.now ?? new Date();
   const every = query.all ?? [];
+
   if (!every.every((condition) => matchesCondition(condition, device, now))) return false;
   const some = query.any ?? [];
+
   if (some.length > 0 && !some.some((condition) => matchesCondition(condition, device, now)))
     return false;
   const none = query.none ?? [];
+
   if (none.some((condition) => matchesCondition(condition, device, now))) return false;
+
   return true;
 };
 
 /** The URL/search representation used by the device table. */
 const quoteValue = (value: string) =>
   /[\s"]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+
 const unquoteValue = (value: string) =>
   value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
 
 const operatorText = (condition: DeviceCondition): string => {
   const op = condition.op;
+
   switch (condition.field) {
     case "platform":
     case "proto":
@@ -380,6 +431,7 @@ const operatorText = (condition: DeviceCondition): string => {
           return "is";
       }
     }
+
     default:
       switch (op ?? "contains") {
         case "eq":
@@ -399,6 +451,7 @@ const formatCondition = (condition: DeviceCondition): string => {
     condition.field === "staleDays" || condition.field === "enrolledDays"
       ? String(condition.value)
       : condition.value;
+
   return `${condition.field} ${operatorText(condition)} ${quoteValue(String(value))}`;
 };
 
@@ -413,6 +466,7 @@ type ParsedCondition = DeviceCondition | null;
 
 const parseOperator = (field: string, operator: string, value: string): ParsedCondition => {
   const op = operator.trim().toLowerCase();
+
   switch (field) {
     case "platform":
     case "proto":
@@ -456,8 +510,10 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
                 : op === "is"
                   ? "eq"
                   : null;
+
       return versionOp ? ({ field, op: versionOp, value } as DeviceCondition) : null;
     }
+
     case "staleDays":
     case "enrolledDays": {
       const daysOp =
@@ -472,11 +528,14 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
                 : op === "is"
                   ? "eq"
                   : null;
+
       const number = Number(value);
+
       return daysOp && Number.isFinite(number)
         ? ({ field, op: daysOp, value: number } as DeviceCondition)
         : null;
     }
+
     case "fileVault":
       return op === "is" ? ({ field, op: "eq", value: value as never } as DeviceCondition) : null;
     case "application":
@@ -501,8 +560,10 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
               : op === "contains"
                 ? "contains"
                 : null;
+
       return textOp ? ({ field, op: textOp, value } as DeviceCondition) : null;
     }
+
     default:
       return null;
   }
@@ -513,18 +574,24 @@ const splitAnd = (text: string): string[] => {
   const parts: string[] = [];
   let current = "";
   let quoted = false;
+
   for (let index = 0; index < text.length; index++) {
     const character = text[index]!;
+
     if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
+
     if (!quoted && text.slice(index, index + 5).toLowerCase() === " and ") {
       parts.push(current.trim());
       current = "";
       index += 4;
       continue;
     }
+
     current += character;
   }
+
   if (current.trim()) parts.push(current.trim());
+
   return parts;
 };
 
@@ -534,15 +601,20 @@ const splitAnd = (text: string): string[] => {
  */
 export const parseDeviceQueryText = (text: string | null | undefined): DeviceQuery | null => {
   const trimmed = text?.trim();
+
   if (!trimmed) return null;
   const conditions: DeviceCondition[] = [];
+
   for (const clause of splitAnd(trimmed)) {
     const match = clause.match(
       /^([A-Za-z][A-Za-z0-9]*)\s+(is not|is|contains|starts with|has|lacks|older than|newer than|at most|at least|more than|less than|>=|<=|>|<|=)\s+(.+)$/i,
     );
+
     if (!match) continue;
     const condition = parseOperator(match[1]!, match[2]!, unquoteValue(match[3]!.trim()));
+
     if (condition) conditions.push(condition);
   }
+
   return conditions.length ? { version: 1, all: conditions } : null;
 };

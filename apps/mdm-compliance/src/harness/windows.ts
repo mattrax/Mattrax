@@ -64,6 +64,7 @@ export type WindowsHarness = {
 
 export const createWindowsHarness = (): WindowsHarness => {
   const origin = "https://mdm.example.test";
+
   const state: WindowsHarnessState = {
     discovery: [],
     policy: [],
@@ -96,12 +97,14 @@ export const createWindowsHarness = (): WindowsHarness => {
     enrollmentError: null,
     managementError: null,
   };
+
   const failFor = (kind: "unknown" | "unsupported" | null) =>
     kind === "unknown"
       ? Effect.fail(new UnknownDevice())
       : kind === "unsupported"
         ? Effect.fail(new ManagementNotSupported())
         : null;
+
   const backend = ManagementBackend.of({
     appleDeviceEvent: () => Effect.void,
     getAppleBootstrapToken: () => Effect.succeed(null),
@@ -120,8 +123,10 @@ export const createWindowsHarness = (): WindowsHarness => {
     getAppleAsset: () => Effect.succeed(null),
     windowsDiscovery: (request) => {
       const failure = failFor(state.discoveryError);
+
       if (failure) return failure;
       state.discovery.push(request);
+
       return Effect.succeed(
         state.discoveryResponse ?? {
           authPolicy: "OnPremise",
@@ -133,11 +138,13 @@ export const createWindowsHarness = (): WindowsHarness => {
     },
     getWindowsEnrollmentPolicy: (authToken, context) => {
       const failure = failFor(state.policyError);
+
       if (failure) return failure;
       state.policy.push({
         authToken,
         ...(context?.tenantToken ? { tenantToken: context.tenantToken } : {}),
       });
+
       return Effect.succeed(
         state.enrollmentPolicy ?? {
           minimalKeyLength: "2048",
@@ -149,8 +156,10 @@ export const createWindowsHarness = (): WindowsHarness => {
     },
     windowsEnroll: (request) => {
       const failure = failFor(state.enrollmentError);
+
       if (failure) return failure;
       state.enrollments.push(request);
+
       return Effect.succeed(
         state.enrollmentResult ?? {
           deviceId: request.deviceId ?? "windows-device",
@@ -164,8 +173,10 @@ export const createWindowsHarness = (): WindowsHarness => {
     },
     windowsManagementCheckin: (scope, request) => {
       const failure = failFor(state.managementError);
+
       if (failure) return failure;
       state.management.push({ scope, request });
+
       return Effect.succeed(state.managementResponse);
     },
     windowsDeviceEvent: (scope, event) =>
@@ -173,17 +184,21 @@ export const createWindowsHarness = (): WindowsHarness => {
         state.events.push({ scope, event });
       }),
   });
+
   const serviceLayer = WindowsMdmServiceLive({ origin, providerId: "Compliance" }).pipe(
     Layer.provideMerge(Layer.succeed(ManagementBackend, backend)),
   );
+
   const appLayer = windowsMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
+
   const service = Effect.runSync(
     Effect.provide(
       Effect.service(WindowsMdmService),
       serviceLayer,
     ) as Effect.Effect<WindowsMdmService.Service>,
   );
+
   return { handler, state, service, origin };
 };
 
@@ -209,6 +224,7 @@ export const windowsSoapEnvelope = (
       : `<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:BinarySecurityToken>${escapeXml(
           options.security ?? "token-123",
         )}</wsse:BinarySecurityToken></wsse:Security>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
   <s:Header>
@@ -249,6 +265,7 @@ export const windowsSyncMLBody = (
   } = {},
 ): string => {
   const command = options.command ?? "alert";
+
   const commandXml =
     command === "alert"
       ? `<Alert><CmdID>2</CmdID><Data>1201</Data></Alert>`
@@ -257,6 +274,7 @@ export const windowsSyncMLBody = (
         : command === "exec"
           ? `<Exec><CmdID>2</CmdID><Item><Target><LocURI>./Device/Vendor/MSFT/RemoteWipe/doWipe</LocURI></Target></Item></Exec>`
           : `<Get><CmdID>2</CmdID><Item><Target><LocURI>./DevInfo/DevId</LocURI></Target></Item></Get>`;
+
   return `<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>${options.sessionId ?? "session-1"}</SessionID><MsgID>${options.msgId ?? "1"}</MsgID><Target><LocURI>https://mdm.example.test/mdm/windows/management</LocURI></Target><Source><LocURI>windows-device-1</LocURI></Source></SyncHdr><SyncBody>${commandXml}<Final/></SyncBody></SyncML>`;
 };
 
@@ -282,6 +300,7 @@ export const decodeWindowsResponse = async <A>(
 ): Promise<A> => {
   const text = await response.text();
   const body = extractSoapBody(text);
+
   return Effect.runPromise(deserializeSoapElement(body, schema) as Effect.Effect<A, never>);
 };
 

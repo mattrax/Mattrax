@@ -37,6 +37,7 @@ export default function IntegrationsSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const webhooks = useQuery(() => enterpriseQueries.webhooks(params.tenantId));
+
   const tenant = useQuery(() => ({
     ...enterpriseQueries.tenant(params.tenantId),
     enabled: Boolean(params.tenantId) && !isServer,
@@ -65,8 +66,10 @@ export default function IntegrationsSettingsPage() {
     // server render cannot throw out of a Show accessor.
     if (isServer) return false;
     const role = tenant.data?.role ?? "";
+
     return role.split(",").some((item) => item === "owner" || item === "admin");
   };
+
   const urlProblem = createMemo(() => (url().trim() ? webhookUrlProblem(url()) : null));
 
   const invalidate = () =>
@@ -76,8 +79,10 @@ export default function IntegrationsSettingsPage() {
     setEvents((current) =>
       current.includes(event) ? current.filter((item) => item !== event) : [...current, event],
     );
+
   const toggleAllEvents = (all: boolean) => {
     setAllEvents(all);
+
     // Switching from "all" to a subset starts from every current event so the
     // administrator only has to untick the ones they do not want.
     if (!all && events().length === 0) setEvents(Array.from(WEBHOOK_EVENT_TYPES));
@@ -93,6 +98,7 @@ export default function IntegrationsSettingsPage() {
     setFormError(undefined);
     setEditorOpen(true);
   };
+
   const openEdit = (endpoint: WebhookEndpointInfo) => {
     setEditing(endpoint);
     setUrl(endpoint.url);
@@ -115,13 +121,17 @@ export default function IntegrationsSettingsPage() {
         events: allEvents() ? [] : events(),
         enabled: enabled(),
       };
+
       const current = editing();
+
       if (current) return enterprise.patchWebhook(params.tenantId, current.id, payload);
+
       return enterprise.createWebhook(params.tenantId, payload);
     },
     onSuccess: async (result) => {
       await invalidate();
       setEditorOpen(false);
+
       if ("secret" in result) setSecret(result.secret);
     },
     onError: (error) => setFormError(error),
@@ -150,6 +160,7 @@ export default function IntegrationsSettingsPage() {
 
   const test = async (endpoint: WebhookEndpointInfo) => {
     setTestingId(endpoint.id);
+
     try {
       const result = await enterprise.testWebhook(params.tenantId, endpoint.id);
       setTestResults((current) => ({ ...current, [endpoint.id]: result }));
@@ -346,6 +357,7 @@ export default function IntegrationsSettingsPage() {
             class="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
+
               if (!urlProblem()) save.mutate();
             }}
           >
@@ -475,6 +487,7 @@ export default function IntegrationsSettingsPage() {
               disabled={remove.isPending}
               onClick={() => {
                 const target = deleteTarget();
+
                 if (target) remove.mutate(target);
               }}
             >
@@ -505,6 +518,7 @@ export default function IntegrationsSettingsPage() {
               disabled={rotate.isPending}
               onClick={() => {
                 const target = rotateTarget();
+
                 if (target) rotate.mutate(target);
               }}
             >

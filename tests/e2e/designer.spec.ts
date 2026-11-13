@@ -32,9 +32,11 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /Deploy in Mattrax/ }).click();
     await page.waitForURL(/\/login\?returnTo=/);
     expect(page.url()).toContain(encodeURIComponent("/dashboard?designerDraft=1"));
+
     const draft = await page.evaluate(() =>
       JSON.parse(localStorage.getItem("mattrax:designer-draft") ?? "null"),
     );
+
     expect(draft.version).toBe(2);
     expect(draft.platforms.apple.length).toBeGreaterThan(0);
   });
@@ -138,6 +140,7 @@ test.describe("policy designer", () => {
     const requested: string[] = [];
     page.on("request", (request) => {
       const url = new URL(request.url());
+
       if (url.pathname.startsWith("/catalog/")) requested.push(url.pathname);
     });
 

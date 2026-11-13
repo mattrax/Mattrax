@@ -18,7 +18,9 @@ export const registerPostHogReader = (next: PostHogReader): void => {
  */
 export const analyticsHeaders = (): Record<string, string> => {
   const context = reader?.();
+
   if (!context) return {};
+
   return {
     ...(context.distinctId ? { "x-posthog-distinct-id": context.distinctId } : {}),
     ...(context.sessionId ? { "x-posthog-session-id": context.sessionId } : {}),

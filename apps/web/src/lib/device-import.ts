@@ -31,6 +31,7 @@ export const parseCsvRecords = (input: string): string[][] => {
 
   for (let index = 0; index < text.length; index++) {
     const character = text[index]!;
+
     if (quoted) {
       if (character === '"') {
         if (text[index + 1] === '"') {
@@ -42,6 +43,7 @@ export const parseCsvRecords = (input: string): string[][] => {
       } else {
         field += character;
       }
+
       continue;
     }
 
@@ -64,6 +66,7 @@ export const parseCsvRecords = (input: string): string[][] => {
     record.push(field.endsWith("\r") ? field.slice(0, -1) : field);
     records.push(record);
   }
+
   return records.filter((row) => row.some((cell) => cell.trim() !== ""));
 };
 
@@ -91,6 +94,7 @@ const ALIASES: Record<string, "serial" | "name" | "asset_tag" | "group" | "notes
 
 const optional = (value: string | undefined) => {
   const trimmed = value?.trim();
+
   return trimmed ? trimmed : undefined;
 };
 
@@ -101,11 +105,13 @@ const optional = (value: string | undefined) => {
  */
 export const parseDeviceImportCsv = (input: string): DeviceImportParseResult => {
   const records = parseCsvRecords(input);
+
   if (records.length === 0)
     return { rows: [], issues: [{ row: 1, message: "The file is empty." }], headers: [] };
 
   const rawHeaders = records[0]!;
   const headers = rawHeaders.map((header) => ALIASES[normalizeHeader(header)] ?? null);
+
   if (!headers.includes("serial"))
     return {
       rows: [],
@@ -120,24 +126,30 @@ export const parseDeviceImportCsv = (input: string): DeviceImportParseResult => 
   for (let index = 1; index < records.length; index++) {
     const record = records[index]!;
     const rowNumber = index + 1;
+
     const value = (column: (typeof headers)[number]) => {
       const position = headers.indexOf(column);
+
       return position === -1 ? undefined : record[position];
     };
 
     const serial = value("serial")?.trim() ?? "";
+
     if (!serial) {
       issues.push({ row: rowNumber, message: "Serial is required." });
       continue;
     }
+
     if (serial.length > 255) {
       issues.push({ row: rowNumber, message: "Serial is longer than 255 characters." });
       continue;
     }
+
     if (seen.has(serial.toLowerCase())) {
       issues.push({ row: rowNumber, message: `Duplicate serial "${serial}" in this file.` });
       continue;
     }
+
     seen.add(serial.toLowerCase());
 
     rows.push({

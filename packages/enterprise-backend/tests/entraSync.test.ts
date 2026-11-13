@@ -48,16 +48,19 @@ const baseOptions = {
 describe("syncEntraDirectory pagination", () => {
   it("commits each page and reports delta cursors as resource classes finish", async () => {
     const db = makeDb();
+
     const progress: Array<{
       users: number;
       groups: number;
       usersDelta?: string;
       groupsDelta?: string;
     }> = [];
+
     let transactions = 0;
     const transaction = db.transaction;
     db.transaction = (work: (tx: any) => unknown) => {
       transactions++;
+
       return transaction(work);
     };
 
@@ -115,14 +118,17 @@ describe("syncEntraDirectory pagination", () => {
   it("skips user/group work for a domain-only refresh", async () => {
     const db = makeDb();
     let called = false;
+
     const graph = {
       domains: () => Effect.succeed([{ id: "acme.com", isVerified: true, isInitial: false }]),
       usersDelta: () => {
         called = true;
+
         return Effect.succeed(page([]));
       },
       groupsDelta: () => {
         called = true;
+
         return Effect.succeed(page([]));
       },
     } as never;

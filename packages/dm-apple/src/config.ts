@@ -45,6 +45,7 @@ const processEnv = (): Record<string, string | undefined> =>
  */
 export const appleMdmConfigFromEnv = (): AppleMdmConfig.Service => {
   const env = processEnv();
+
   return {
     origin: env.ORIGIN ?? env.MATTRAX_ORIGIN ?? "",
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT ?? env.APNS_CERT,

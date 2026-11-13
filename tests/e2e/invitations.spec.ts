@@ -5,11 +5,13 @@ test.describe("invitations", () => {
   test("an invited user joins the tenant through the invite link", async ({ page, context }) => {
     const tenant = await bootstrapTenant(page, "Invite Tenant");
     const email = `invitee-${Date.now()}@example.com`;
+
     const invitation = await api<{ inviteUrl: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/invitations`,
       { method: "POST", body: JSON.stringify({ email, role: "member" }) },
     );
+
     expect(invitation.inviteUrl).toContain("/accept-invitation?token=");
 
     // The owner's session must not accept the invitee's token.
@@ -20,10 +22,12 @@ test.describe("invitations", () => {
           headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
           body: JSON.stringify({ token }),
         });
+
         return response.status;
       },
       { token: new URL(invitation.inviteUrl).searchParams.get("token") },
     );
+
     expect(wrong).toBe(403);
 
     const invitee = await context.newPage();

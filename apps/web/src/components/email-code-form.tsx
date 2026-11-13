@@ -28,9 +28,11 @@ export function EmailCodeForm(props: {
   const [pending, setPending] = createSignal(false);
   const [sending, setSending] = createSignal(false);
   const [error, setError] = createSignal<string | null>(props.initialError ?? null);
+
   const [notice, setNotice] = createSignal<string | null>(
     props.sentInitially ? "A verification code is on its way." : null,
   );
+
   const [cooldown, setCooldown] = createSignal(props.sentInitially ? 30 : 0);
   let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -41,12 +43,15 @@ export function EmailCodeForm(props: {
       setCooldown((value) => {
         if (value <= 1) {
           clearInterval(timer);
+
           return 0;
         }
+
         return value - 1;
       });
     }, 1000);
   };
+
   onCleanup(() => clearInterval(timer));
 
   const send = async () => {
@@ -56,10 +61,13 @@ export function EmailCodeForm(props: {
     setNotice(null);
     const result = await authClient.requestEmailVerification();
     setSending(false);
+
     if (result.error) {
       setError(errorMessage(result.error, "Could not send a verification code."));
+
       return;
     }
+
     setChallenge(result.data?.challenge ?? "");
     setNotice("A new verification code has been sent.");
     startCooldown();
@@ -74,21 +82,29 @@ export function EmailCodeForm(props: {
     event.preventDefault();
     setError(null);
     setNotice(null);
+
     if (!/^\d{6}$/.test(code())) {
       setError("Enter the six-digit code from the email.");
+
       return;
     }
+
     if (!challenge()) {
       setError("Request a code, then enter the six digits from the email.");
+
       return;
     }
+
     setPending(true);
     const result = await authClient.verifyEmail({ code: code(), challenge: challenge() });
     setPending(false);
+
     if (result.error) {
       setError(errorMessage(result.error, "That code is invalid or has expired."));
+
       return;
     }
+
     await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     await props.onVerified();
   };

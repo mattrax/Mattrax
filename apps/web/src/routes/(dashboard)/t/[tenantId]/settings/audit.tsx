@@ -24,17 +24,21 @@ const SYSTEM_ACTOR = "system";
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
   let body: unknown = text;
+
   try {
     body = text ? (JSON.parse(text) as unknown) : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
+
   const presentation = errorPresentation(body, fallback);
+
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
 const inputClass =
   "h-8 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
+
 const selectClass = inputClass;
 
 /** Common actions offered as suggestions; any exact action name is accepted. */
@@ -75,21 +79,27 @@ const formatAction = (action: string) =>
 
 const formatDate = (value: string) => {
   const date = new Date(value);
+
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
 const actorLabel = (entry: AuditLogEntry) => {
   if (!entry.actorEmail || entry.actorEmail === SYSTEM_ACTOR) return "System";
+
   return entry.actorEmail;
 };
 
 const credentialOf = (entry: AuditLogEntry) => {
   const metadata = entry.metadata;
+
   if (!metadata || typeof metadata !== "object") return undefined;
   const credential = (metadata as Record<string, unknown>).credential;
+
   if (!credential || typeof credential !== "object") return undefined;
   const value = credential as { type?: unknown; name?: unknown };
+
   if (value.type !== "api_token" && value.type !== "oauth") return undefined;
+
   return {
     type: value.type,
     name: typeof value.name === "string" ? value.name : undefined,
@@ -98,10 +108,13 @@ const credentialOf = (entry: AuditLogEntry) => {
 
 const rbacOf = (entry: AuditLogEntry) => {
   const metadata = entry.metadata;
+
   if (!metadata || typeof metadata !== "object") return undefined;
   const rbac = (metadata as Record<string, unknown>).rbac;
+
   if (!rbac || typeof rbac !== "object") return undefined;
   const value = rbac as { roleName?: unknown; permission?: unknown; roleKind?: unknown };
+
   return {
     roleName: typeof value.roleName === "string" ? value.roleName : undefined,
     permission: typeof value.permission === "string" ? value.permission : undefined,
@@ -112,12 +125,17 @@ const rbacOf = (entry: AuditLogEntry) => {
 /** Compact one-line metadata preview; the full JSON is in the export. */
 const summarizeMetadata = (metadata: unknown) => {
   if (metadata === null || metadata === undefined) return "";
+
   if (typeof metadata === "string") return metadata;
+
   if (typeof metadata !== "object") return JSON.stringify(metadata);
+
   const rows = Object.entries(metadata as Record<string, unknown>).filter(
     ([key]) => key !== "credential" && key !== "rbac",
   );
+
   if (rows.length === 0) return "";
+
   return rows
     .slice(0, 3)
     .map(([key, value]) => {
@@ -127,6 +145,7 @@ const summarizeMetadata = (metadata: unknown) => {
           : value === null || value === undefined
             ? "—"
             : JSON.stringify(value);
+
       return `${key}: ${text}`;
     })
     .join(" · ");
@@ -134,6 +153,7 @@ const summarizeMetadata = (metadata: unknown) => {
 
 const dateStart = (value: string) =>
   value ? new Date(`${value}T00:00:00`).toISOString() : undefined;
+
 const dateEnd = (value: string) =>
   value ? new Date(`${value}T23:59:59.999`).toISOString() : undefined;
 
@@ -146,12 +166,14 @@ export default function AuditSettingsPage() {
   const [targetId, setTargetId] = createSignal("");
   const [fromDate, setFromDate] = createSignal("");
   const [toDate, setToDate] = createSignal("");
+
   const [debounced, setDebounced] = createSignal({
     action: "",
     actor: "",
     targetType: "",
     targetId: "",
   });
+
   const [exporting, setExporting] = createSignal<"csv" | "json" | null>(null);
   const [exportError, setExportError] = createSignal<unknown>();
   const [exportTruncated, setExportTruncated] = createSignal(false);
@@ -168,6 +190,7 @@ export default function AuditSettingsPage() {
     }),
     (next) => {
       const current = debounced();
+
       if (
         current.action === next.action &&
         current.actor === next.actor &&
@@ -182,6 +205,7 @@ export default function AuditSettingsPage() {
 
   const rangeError = createMemo(() => {
     if (!fromDate() || !toDate()) return undefined;
+
     return dateStart(fromDate())! > dateEnd(toDate())!
       ? new Error("The start date must be on or before the end date.")
       : undefined;
@@ -214,6 +238,7 @@ export default function AuditSettingsPage() {
   const entries = createMemo<AuditLogEntry[]>(
     () => log.data?.pages.flatMap((page) => page.entries) ?? [],
   );
+
   const hasFilters = () =>
     Boolean(
       action().trim() ||
@@ -239,18 +264,23 @@ export default function AuditSettingsPage() {
     setExporting(format);
     setExportError(undefined);
     setExportTruncated(false);
+
     try {
       const query = new URLSearchParams();
       const active = filters();
+
       for (const [key, value] of Object.entries(active)) {
         if (key === "limit" || value === undefined || value === null) continue;
         query.set(key, String(value));
       }
+
       query.set("format", format);
+
       const response = await fetch(
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/audit/export?${query}`,
         { credentials: "include" },
       );
+
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const body = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
@@ -439,6 +469,7 @@ export default function AuditSettingsPage() {
                 <For each={entries()}>
                   {(entry) => {
                     const summary = () => summarizeMetadata(entry.metadata);
+
                     return (
                       <tr class="transition-colors hover:bg-white/[0.02]">
                         <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">

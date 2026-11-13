@@ -259,6 +259,7 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
 ];
 
 export const BUILT_IN_TENANT_ROLES = ["owner", "admin", "member", "auditor"] as const;
+
 export type BuiltInTenantRole = (typeof BUILT_IN_TENANT_ROLES)[number];
 
 const READ_PERMISSIONS = PERMISSIONS.filter((permission) => permission.endsWith(".read"));
@@ -293,11 +294,14 @@ export const isPermission = (value: string): value is Permission => PERMISSION_S
 /** Union permissions for legacy comma-separated built-in roles. */
 export const builtInRolePermissions = (role: string): Set<Permission> => {
   const permissions = new Set<Permission>();
+
   for (const part of role.split(",")) {
     const name = part.trim();
+
     if (isBuiltInTenantRole(name))
       for (const permission of BUILT_IN_ROLE_PERMISSIONS[name]) permissions.add(permission);
   }
+
   return permissions;
 };
 
@@ -306,6 +310,7 @@ export const hasPermission = (
   required: string,
 ): boolean => {
   const set = permissions instanceof Set ? permissions : new Set(permissions);
+
   return set.has(required);
 };
 
@@ -321,6 +326,7 @@ export const hasAnyWritePermission = (permissions: ReadonlySet<string>): boolean
 export const permissionLabel = (permission: string): string => {
   for (const group of PERMISSION_GROUPS)
     for (const item of group.permissions) if (item.id === permission) return item.label;
+
   return permission;
 };
 
@@ -335,9 +341,11 @@ export const TenantRole = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type TenantRole = typeof TenantRole.Type;
 
 export const TenantRolesResponse = Schema.Struct({ roles: Schema.Array(TenantRole) });
+
 export type TenantRolesResponse = typeof TenantRolesResponse.Type;
 
 export const CreateTenantRoleRequest = Schema.Struct({
@@ -345,6 +353,7 @@ export const CreateTenantRoleRequest = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   permissions: Schema.Array(Permission),
 });
+
 export type CreateTenantRoleRequest = typeof CreateTenantRoleRequest.Type;
 
 export const PatchTenantRoleRequest = Schema.Struct({
@@ -352,6 +361,7 @@ export const PatchTenantRoleRequest = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   permissions: Schema.optional(Schema.Array(Permission)),
 });
+
 export type PatchTenantRoleRequest = typeof PatchTenantRoleRequest.Type;
 
 export const RoleAssignment = Schema.Struct({
@@ -359,4 +369,5 @@ export const RoleAssignment = Schema.Struct({
   roleId: Schema.optional(Schema.NullOr(Schema.String)),
   role: Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type RoleAssignment = typeof RoleAssignment.Type;

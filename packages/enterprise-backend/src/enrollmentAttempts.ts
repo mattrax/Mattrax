@@ -7,6 +7,7 @@
  * so the outcome mapping can be unit tested without a database.
  */
 export const ENROLLMENT_ATTEMPT_PLATFORMS = ["apple", "win", "android", "unknown"] as const;
+
 export type EnrollmentAttemptPlatform = (typeof ENROLLMENT_ATTEMPT_PLATFORMS)[number];
 
 export const ENROLLMENT_ATTEMPT_OUTCOMES = [
@@ -18,6 +19,7 @@ export const ENROLLMENT_ATTEMPT_OUTCOMES = [
   "scep_error",
   "other",
 ] as const;
+
 export type EnrollmentAttemptOutcome = (typeof ENROLLMENT_ATTEMPT_OUTCOMES)[number];
 
 /**
@@ -47,10 +49,15 @@ export const detectEnrollmentPlatform = (
 ): EnrollmentAttemptPlatform => {
   if (requested === "apple" || requested === "win" || requested === "android") return requested;
   const agent = (userAgent ?? "").toLowerCase();
+
   if (!agent) return "unknown";
+
   if (/iphone|ipad|ipod|macintosh|mac os x/.test(agent)) return "apple";
+
   if (/android/.test(agent)) return "android";
+
   if (/windows/.test(agent)) return "win";
+
   return "unknown";
 };
 
@@ -82,27 +89,34 @@ export const evaluateEnrollmentAttempt = (
     case "apple":
       if (!context.appleEnabled)
         return { outcome: "disabled", detail: "Apple enrollment is disabled" };
+
       if (context.appleScepFailed)
         return { outcome: "scep_error", detail: "The SCEP challenge could not be created" };
+
       if (!context.apnsConfigured)
         return { outcome: "no_apns", detail: "Apple push notifications are not configured" };
+
       return { outcome: "ok", detail: "Apple enrollment profile issued" };
     case "win":
       if (!context.windowsEnabled)
         return { outcome: "disabled", detail: "Windows enrollment is disabled" };
+
       return { outcome: "ok", detail: "Windows discovery details issued" };
     case "android":
       if (!context.androidEnabled)
         return { outcome: "disabled", detail: "Android enrollment is disabled" };
+
       if (context.androidAvailable === false)
         return {
           outcome: "other",
           detail: "Android Enterprise is not connected for this tenant",
         };
+
       return { outcome: "ok", detail: "Android enrollment token issued" };
     case "unknown":
       if (!context.appleEnabled && !context.windowsEnabled && !context.androidEnabled)
         return { outcome: "disabled", detail: "All enrollment platforms are disabled" };
+
       return { outcome: "ok", detail: "Enrollment link opened" };
   }
 };

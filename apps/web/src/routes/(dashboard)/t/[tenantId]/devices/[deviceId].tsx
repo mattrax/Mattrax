@@ -84,10 +84,12 @@ export default function DeviceDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
     queryFn: () => enterprise.get(params.tenantId, "device", params.deviceId),
   }));
+
   const row = () => device.data as DeviceRow | undefined;
   // The ABM lookup is keyed by serial, which only exists once the device query
   // resolves. Mirroring it into a signal keeps the query options free of
@@ -102,18 +104,23 @@ export default function DeviceDetailPage() {
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
+
   const [confirmAction, setConfirmAction] = createSignal<"unenroll" | "delete" | "revoke" | null>(
     null,
   );
+
   const [confirmName, setConfirmName] = createSignal("");
+
   const closeConfirm = () => {
     setConfirmName("");
     setConfirmAction(null);
   };
+
   createEffect(
     () => row()?.id,
     () => {
       const device = row();
+
       if (device) {
         setName(device.name);
         setAssetTag(device.assetTag ?? "");
@@ -121,6 +128,7 @@ export default function DeviceDetailPage() {
       }
     },
   );
+
   const invalidate = async () => {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
@@ -150,6 +158,7 @@ export default function DeviceDetailPage() {
       queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
     });
   };
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchDevice(params.tenantId, params.deviceId, {
@@ -159,30 +168,38 @@ export default function DeviceDetailPage() {
       }),
     onSuccess: invalidate,
   }));
+
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId),
     onSuccess: invalidate,
   }));
+
   const commands = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "commands"],
     queryFn: () => enterprise.listDeviceCommands(params.tenantId, params.deviceId),
   }));
+
   const activity = useQuery(() => ({
     queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId, 50),
     queryFn: () => enterprise.getDeviceActivity(params.tenantId, params.deviceId, 50),
   }));
+
   const health = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
     queryFn: () => enterprise.getDeviceHealth(params.tenantId, params.deviceId),
   }));
+
   const effectivePolicy = useQuery(() =>
     enterpriseQueries.deviceEffectivePolicy(params.tenantId, params.deviceId),
   );
+
   const applications = useQuery(() =>
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
+
   const abmDevice = useQuery(() => enterpriseQueries.abmDevice(params.tenantId, abmSerial()));
   const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
+
   const assignAbm = useMutation(() => ({
     mutationFn: () => enterprise.assignAbmDevice(params.tenantId, row()!.serial!),
     onSuccess: async () => {
@@ -192,16 +209,19 @@ export default function DeviceDetailPage() {
       await queryClient.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) });
     },
   }));
+
   const adeProfile = useMutation(() => ({
     mutationFn: () => enterprise.getAbmDeviceProfileUrl(params.tenantId, row()!.serial!),
     onSuccess: (result) => setAdeUrl(result.url),
   }));
+
   const resolved = () => effectivePolicy.data as EffectivePolicyResponse | undefined;
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = createSignal(false);
   const [recoveryKey, setRecoveryKey] = createSignal<string | null>(null);
   const [recoveryCopied, setRecoveryCopied] = createSignal(false);
+
   const command = useMutation(() => ({
     mutationFn: (payload: {
       action:
@@ -220,6 +240,7 @@ export default function DeviceDetailPage() {
       await invalidate();
     },
   }));
+
   const revealRecoveryKey = useMutation(() => ({
     mutationFn: () => enterprise.getDeviceRecoveryKey(params.tenantId, params.deviceId),
     onSuccess: (result) => {
@@ -227,6 +248,7 @@ export default function DeviceDetailPage() {
       setRecoveryCopied(false);
     },
   }));
+
   // Destructive actions close the confirm dialog only after success; on error
   // the dialog stays open so its `ErrorText` is visible.
   const unenroll = useMutation(() => ({
@@ -236,6 +258,7 @@ export default function DeviceDetailPage() {
       closeConfirm();
     },
   }));
+
   const revokeIdentity = useMutation(() => ({
     mutationFn: () => enterprise.revokeDeviceIdentity(params.tenantId, params.deviceId),
     onSuccess: async () => {
@@ -243,6 +266,7 @@ export default function DeviceDetailPage() {
       closeConfirm();
     },
   }));
+
   const remove = useMutation(() => ({
     mutationFn: () =>
       enterprise.deleteDevices(params.tenantId, params.deviceId ? [params.deviceId] : []),
@@ -252,6 +276,7 @@ export default function DeviceDetailPage() {
       navigate(`/t/${params.tenantId}/devices`);
     },
   }));
+
   const fields = () =>
     [
       ["Management name", row()?.name],
@@ -272,28 +297,40 @@ export default function DeviceDetailPage() {
 
   const fileVaultLabel = () => {
     const status = row()?.fileVaultStatus;
+
     if (status === "enabled") return "Enabled";
+
     if (status === "disabled") return "Disabled";
+
     if (status === "unknown") return "Unknown";
     const value = row()?.fileVaultEnabled;
+
     if (value === null || value === undefined) return "Not reported";
+
     return value ? "Enabled" : "Disabled";
   };
+
   const formatBytes = (value?: number | null) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+
     if (value < 1024) return `${value} B`;
     const units = ["KB", "MB", "GB", "TB"];
     let amount = value / 1024;
     let unit = 0;
+
     while (amount >= 1024 && unit < units.length - 1) {
       amount /= 1024;
       unit++;
     }
+
     return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
   };
+
   const copyRecoveryKey = async () => {
     const key = recoveryKey();
+
     if (!key) return;
+
     try {
       await navigator.clipboard.writeText(key);
       setRecoveryCopied(true);
@@ -302,52 +339,78 @@ export default function DeviceDetailPage() {
       setRecoveryCopied(false);
     }
   };
+
   const openRecoveryDialog = () => {
     setRecoveryKey(null);
     setRecoveryCopied(false);
     setRecoveryDialogOpen(true);
   };
+
   const appNames = () => (applications.data?.applications ?? []) as DeviceApplication[];
+
   const capabilityLabels = () => {
     const value = row()?.capabilities;
+
     if (value == null) return [];
+
     if (Array.isArray(value)) return value.map((entry) => String(entry));
+
     if (typeof value === "string") return [value];
+
     return [JSON.stringify(value)];
   };
+
   const certificateDays = (notAfter: string) => {
     const expires = new Date(notAfter);
+
     if (Number.isNaN(expires.getTime())) return null;
+
     return Math.ceil((expires.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
   };
+
   const certificateTone = (notAfter: string, revoked: boolean): ChipTone => {
     if (revoked) return "danger";
     const days = certificateDays(notAfter);
+
     if (days === null) return "muted";
+
     if (days <= 7) return "danger";
+
     if (days <= 30) return "warning";
+
     return "success";
   };
+
   const certificateDaysLabel = (notAfter: string) => {
     const expires = new Date(notAfter);
+
     if (Number.isNaN(expires.getTime())) return "expiry unknown";
     const remaining = expires.getTime() - Date.now();
+
     if (remaining <= 0) {
       const elapsed = Math.abs(remaining);
+
       if (elapsed < 60 * 60 * 1000) return "expired";
+
       if (elapsed < 24 * 60 * 60 * 1000)
         return `expired ${Math.ceil(elapsed / (60 * 60 * 1000))}h ago`;
+
       return `expired ${Math.ceil(elapsed / (24 * 60 * 60 * 1000))}d ago`;
     }
+
     const days = Math.ceil(remaining / (24 * 60 * 60 * 1000));
+
     return `${days}d left`;
   };
+
   const relativeTime = (value?: string | null) => {
     if (!value) return "Unknown";
     const date = new Date(value);
+
     if (Number.isNaN(date.getTime())) return value;
     const seconds = Math.round((date.getTime() - Date.now()) / 1000);
     const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
     const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
       ["year", 365 * 24 * 60 * 60],
       ["month", 30 * 24 * 60 * 60],
@@ -355,11 +418,14 @@ export default function DeviceDetailPage() {
       ["hour", 60 * 60],
       ["minute", 60],
     ];
+
     for (const [unit, size] of units) {
       if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
     }
+
     return format.format(seconds, "second");
   };
+
   const activityTone = (kind: string): ChipTone => {
     switch (kind) {
       case "command":
@@ -372,17 +438,25 @@ export default function DeviceDetailPage() {
         return "muted";
     }
   };
+
   const pushBadge = (): { label: string; tone: ChipTone } => {
     const push = health.data?.push;
+
     if (!push) return { label: "Unknown", tone: "muted" };
+
     if (push.invalidToken) return { label: "Re-enroll required", tone: "danger" };
+
     if (push.consecutiveFailures > 0) return { label: "Failing", tone: "warning" };
+
     if (push.lastSuccessAt) return { label: "Delivering", tone: "success" };
+
     return { label: "Not attempted", tone: "muted" };
   };
+
   const declarationIssues = () =>
     (health.data?.declarations ?? []).filter((declaration) => {
       const valid = declaration.valid.trim().toLowerCase();
+
       return (
         valid !== "valid" ||
         ((declaration.declarationType === "configurations" ||
@@ -390,50 +464,64 @@ export default function DeviceDetailPage() {
           !declaration.active)
       );
     });
+
   const declarationReasons = (reasons: unknown) => {
     if (reasons == null) return [];
     const values = Array.isArray(reasons) ? reasons : [reasons];
+
     return values
       .map((value) => {
         if (typeof value === "string") return value;
+
         if (value && typeof value === "object") {
           const record = value as Record<string, unknown>;
+
           return [record.code, record.description]
             .filter((part): part is string => typeof part === "string")
             .join(": ");
         }
+
         return "";
       })
       .filter(Boolean);
   };
+
   const certificates = () => health.data?.certificates ?? [];
   const hasActiveCertificate = () => certificates().some((certificate) => !certificate.revokedAt);
+
   const confirmDescription = () =>
     confirmAction() === "delete"
       ? "The device record and its history will be removed."
       : confirmAction() === "revoke"
         ? "The SCEP identity certificates issued to this device will be revoked. The device cannot renew them and may need to re-enroll."
         : "The device will be asked to remove its management profile.";
+
   const confirmLabel = () =>
     confirmAction() === "delete"
       ? "Delete device"
       : confirmAction() === "revoke"
         ? "Revoke identity"
         : "Unenroll device";
+
   const confirmPending = () => unenroll.isPending || remove.isPending || revokeIdentity.isPending;
+
   /**
    * Each mutation's `onSuccess` closes the dialog. Failures leave it open and
    * the dialog's `ErrorText` renders the mutation error.
    */
   const confirmDestructive = () => {
     const action = confirmAction();
+
     if (!action) return;
+
     if (action === "delete") remove.mutate();
     else if (action === "revoke") revokeIdentity.mutate();
     else unenroll.mutate();
   };
+
   const osLabel = () =>
     [row()?.osEdition, row()?.osVersion].filter(Boolean).join(" ") || "Not reported";
+
   return (
     <Page wide>
       <Show
@@ -1509,6 +1597,7 @@ export default function DeviceDetailPage() {
         open={recoveryDialogOpen()}
         onOpenChange={(open) => {
           setRecoveryDialogOpen(open);
+
           if (!open) {
             setRecoveryKey(null);
             setRecoveryCopied(false);

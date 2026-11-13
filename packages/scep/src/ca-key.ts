@@ -74,6 +74,7 @@ export const isSealedCaPrivateKey = (value: unknown): value is SealedCaPrivateKe
 
 const requireSecret = (authSecret: string | undefined): string => {
   const secret = authSecret?.trim();
+
   if (!secret) {
     throw new ScepCaKeyError({
       message:
@@ -81,6 +82,7 @@ const requireSecret = (authSecret: string | undefined): string => {
       reason: "missing_secret",
     });
   }
+
   return secret;
 };
 
@@ -94,6 +96,7 @@ export const sealCaPrivateKey = async (
 ): Promise<SealedCaPrivateKey> => {
   const secret = requireSecret(authSecret);
   let serialized: string;
+
   try {
     serialized = JSON.stringify(privateKeyJwk);
   } catch {
@@ -102,6 +105,7 @@ export const sealCaPrivateKey = async (
       reason: "serialize_failed",
     });
   }
+
   try {
     return {
       v: SCEP_CA_KEY_ENVELOPE_VERSION,
@@ -146,6 +150,7 @@ export const openCaPrivateKey = async (
   if (isSealedCaPrivateKey(value)) {
     const secret = requireSecret(authSecret);
     let plaintext: string;
+
     try {
       plaintext = await openSecret(secret, value.sealed);
     } catch {
@@ -156,7 +161,9 @@ export const openCaPrivateKey = async (
         reason: "decrypt_failed",
       });
     }
+
     let parsed: unknown;
+
     try {
       parsed = JSON.parse(plaintext) as unknown;
     } catch {
@@ -165,18 +172,21 @@ export const openCaPrivateKey = async (
         reason: "invalid",
       });
     }
+
     if (!isPrivateRsaJwk(parsed)) {
       throw new ScepCaKeyError({
         message: "Decrypted SCEP CA private key is not a valid RSA private JWK",
         reason: "invalid",
       });
     }
+
     return { privateKeyJwk: parsed };
   }
 
   if (isPrivateRsaJwk(value)) {
     // Legacy plaintext row: seal it and tell the caller to persist the result.
     const migrated = await sealCaPrivateKey(authSecret, value);
+
     return { privateKeyJwk: value, migrated };
   }
 

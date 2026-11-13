@@ -35,6 +35,7 @@ export default function DashboardRedirectPage() {
 
   onSettled(() => {
     const wantsDraft = Boolean(searchParams.designerDraft);
+
     if (wantsDraft) setDraft(parseDraft(localStorage.getItem("mattrax:designer-draft")));
     setDraftChecked(true);
   });
@@ -58,6 +59,7 @@ export default function DashboardRedirectPage() {
     }),
     ({ ready, loading, draft: current, tenants }) => {
       if (!ready || loading) return;
+
       if (current && (tenants?.length ?? 0) > 0) return;
       const tenant = tenants?.find((item) => item.id === tenantId()) ?? tenants?.[0];
       navigate(tenant ? `/t/${tenant.id}` : "/tenants/new", { replace: true });
@@ -68,8 +70,10 @@ export default function DashboardRedirectPage() {
     mutationFn: async () => {
       const current = draft();
       const tenant = tenantId() || me.data?.tenants[0]?.id;
+
       if (!current || !tenant) throw new Error("Choose a tenant first");
       const policy = await enterprise.createPolicy(tenant, { name: current.name });
+
       try {
         await enterprise.patchPolicy(tenant, policy.id, {
           configurations: policyToConfigurations(current),
@@ -78,8 +82,10 @@ export default function DashboardRedirectPage() {
         await enterprise.deletePolicies(tenant, [policy.id]).catch(() => undefined);
         throw error;
       }
+
       localStorage.setItem(`mattrax:designer:${policy.id}`, JSON.stringify(current));
       localStorage.removeItem("mattrax:designer-draft");
+
       return { tenant, policyId: policy.id };
     },
     onSuccess: ({ tenant, policyId }) => {

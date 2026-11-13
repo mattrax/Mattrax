@@ -51,6 +51,7 @@ export function fromManagementResponse(
     ...(request.syncBody.delete ?? []).map((command) => ({ command, cmd: "Delete" })),
     ...(request.syncBody.exec ?? []).map((command) => ({ command, cmd: "Exec" })),
   ];
+
   const acknowledgements = inbound.map(({ command, cmd }, index) => ({
     cmdID: String(1000 + index),
     msgRef: request.syncHdr.msgID,
@@ -58,6 +59,7 @@ export function fromManagementResponse(
     cmd,
     data: "200",
   }));
+
   return {
     syncHdr: {
       verDTD: request.syncHdr.verDTD,

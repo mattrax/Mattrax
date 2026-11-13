@@ -17,10 +17,13 @@ type CachedMe = {
  */
 export function readMeCache(userId: string | undefined): CachedMe | undefined {
   if (!userId || typeof localStorage === "undefined") return undefined;
+
   try {
     const raw = localStorage.getItem(ME_CACHE_KEY);
+
     if (!raw) return undefined;
     const cached = JSON.parse(raw) as CachedMe;
+
     if (
       cached.userId !== userId ||
       cached.data?.user?.id !== userId ||
@@ -28,6 +31,7 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
       Date.now() - cached.updatedAt > MAX_AGE_MS
     )
       return undefined;
+
     return cached;
   } catch {
     return undefined;
@@ -36,6 +40,7 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
 
 export function writeMeCache(data: MeResponse): void {
   if (typeof localStorage === "undefined") return;
+
   try {
     localStorage.setItem(
       ME_CACHE_KEY,
@@ -52,6 +57,7 @@ export function writeMeCache(data: MeResponse): void {
 
 export function clearMeCache(): void {
   if (typeof localStorage === "undefined") return;
+
   try {
     localStorage.removeItem(ME_CACHE_KEY);
   } catch {

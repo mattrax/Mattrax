@@ -76,6 +76,7 @@ describe("device query", () => {
       ],
       none: [{ field: "status", op: "ne", value: "enrolled" }],
     };
+
     expect(evaluateDeviceQuery(query, device(), { now })).toBe(true);
     expect(evaluateDeviceQuery(query, device({ status: "unenrolled" }), { now })).toBe(false);
   });
@@ -84,6 +85,7 @@ describe("device query", () => {
     const query = parseDeviceQueryText(
       'platform is apple and osVersion at least 14.4 and model contains "MacBook Pro" and staleDays at least 14',
     );
+
     expect(query).not.toBeNull();
     expect(query!.all).toHaveLength(4);
     expect(evaluateDeviceQuery(query, device({ model: "MacBook Pro 16" }), { now })).toBe(false);

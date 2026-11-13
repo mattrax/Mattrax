@@ -16,7 +16,9 @@ const audience = "22222222-2222-2222-2222-222222222222";
 const base64Url = (value: Uint8Array | string): string => {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
@@ -36,7 +38,9 @@ const makeKey = async (kid = "test-key"): Promise<SigningKey> => {
     true,
     ["sign", "verify"],
   );
+
   const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+
   return {
     privateKey: pair.privateKey,
     jwks: {
@@ -62,8 +66,10 @@ const signToken = async (
   const header = base64Url(
     JSON.stringify({ alg: options.alg ?? "RS256", typ: "JWT", kid: options.kid ?? "test-key" }),
   );
+
   const payload = base64Url(JSON.stringify(claims));
   const signingInput = `${header}.${payload}`;
+
   const signature =
     options.signature ??
     new Uint8Array(
@@ -73,6 +79,7 @@ const signToken = async (
         new TextEncoder().encode(signingInput),
       ),
     );
+
   return `${signingInput}.${base64Url(signature)}`;
 };
 
@@ -109,6 +116,7 @@ describe("federated Entra token validation", () => {
     const result = await validate(token, key);
 
     expect(result.ok).toBe(true);
+
     if (!result.ok) return;
     expect(result.claims).toMatchObject({
       tenantId,
@@ -162,10 +170,12 @@ describe("federated Entra token validation", () => {
   it("rejects a token issued for another tenant", async () => {
     const key = await makeKey();
     const otherTenant = "33333333-3333-3333-3333-333333333333";
+
     const token = await signToken(
       key,
       claims({ tid: otherTenant, iss: federatedIssuer(otherTenant) }),
     );
+
     const result = await validate(token, key);
 
     expect(result).toMatchObject({ ok: false, reason: "tenant" });

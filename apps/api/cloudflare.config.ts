@@ -153,6 +153,7 @@ export const apiWorker = {
 };
 
 export type ApiConfig = UnwrapConfig<typeof apiWorker>;
+
 export type ApiEnv = InferEnv<ApiConfig>;
 
 export default defineConfig({ worker: apiWorker });

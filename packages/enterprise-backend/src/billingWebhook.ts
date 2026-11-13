@@ -23,6 +23,7 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 
 const idOf = (value: unknown): string | undefined => {
   if (typeof value === "string" && value.trim()) return value.trim();
+
   if (
     typeof value === "object" &&
     value !== null &&
@@ -30,12 +31,14 @@ const idOf = (value: unknown): string | undefined => {
     typeof (value as { id?: unknown }).id === "string"
   )
     return (value as { id: string }).id;
+
   return undefined;
 };
 
 const organizationIdFromMetadata = (metadata: unknown): string | undefined => {
   if (typeof metadata !== "object" || metadata === null) return undefined;
   const value = (metadata as Record<string, unknown>).organizationId;
+
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
@@ -46,6 +49,7 @@ const subscriptionPeriod = (subscription: any) => {
   // Stripe moved current period fields onto subscription items in newer API
   // versions; older subscriptions still carry them at the top level.
   const item = subscription.items?.data?.[0];
+
   return {
     periodStart: dateFromUnix(
       item?.current_period_start ?? subscription.current_period_start ?? subscription.start_date,
@@ -56,10 +60,13 @@ const subscriptionPeriod = (subscription: any) => {
 
 const planFor = (subscription: any, deviceMonthlyPriceId?: string) => {
   const metadataPlan = subscription.metadata?.plan;
+
   if (typeof metadataPlan === "string" && metadataPlan.trim())
     return metadataPlan.trim().slice(0, 255);
   const priceId = subscription.items?.data?.[0]?.price?.id;
+
   if (deviceMonthlyPriceId && priceId === deviceMonthlyPriceId) return "device";
+
   return "device";
 };
 
@@ -79,12 +86,14 @@ type ResolveOrganizationInput = {
 const resolveOrganization = (input: ResolveOrganizationInput) =>
   Effect.gen(function* () {
     let customerOrganizationId: string | undefined;
+
     if (input.customerId) {
       const [row] = yield* input.db
         .select({ id: schema.organization.id })
         .from(schema.organization)
         .where(eq(schema.organization.stripeCustomerId, input.customerId))
         .limit(1);
+
       customerOrganizationId = row?.id;
     }
 
@@ -96,12 +105,14 @@ const resolveOrganization = (input: ResolveOrganizationInput) =>
       return yield* Effect.fail(fail("Stripe object maps to conflicting Mattrax organizations"));
 
     const organizationId = input.metadataOrganizationId ?? customerOrganizationId;
+
     if (!organizationId)
       return yield* Effect.fail(fail("Stripe object is not linked to a Mattrax organization"));
 
     const organization = yield* input.db.query.organization.findFirst({
       where: { id: organizationId },
     });
+
     if (!organization)
       return yield* Effect.fail(fail("Stripe object references an unknown Mattrax organization"));
 
@@ -138,10 +149,12 @@ const applySubscription = (input: ApplySubscriptionInput) =>
   Effect.gen(function* () {
     const subscription = input.subscription;
     const stripeSubscriptionId = idOf(subscription.id);
+
     if (!stripeSubscriptionId)
       return yield* Effect.fail(fail("Subscription event is missing a subscription id"));
 
     const customerId = idOf(subscription.customer);
+
     const organization = yield* resolveOrganization({
       db: input.db,
       metadataOrganizationId: organizationIdFromMetadata(subscription.metadata),
@@ -154,6 +167,7 @@ const applySubscription = (input: ApplySubscriptionInput) =>
       .from(schema.subscription)
       .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
       .limit(1);
+
     if (byStripeId && byStripeId.referenceId !== organization.id)
       return yield* Effect.fail(
         fail("Stripe subscription already belongs to another Mattrax organization"),
@@ -168,6 +182,7 @@ const applySubscription = (input: ApplySubscriptionInput) =>
         .limit(1))[0];
 
     const { periodStart, periodEnd } = subscriptionPeriod(subscription);
+
     const values = {
       plan: planFor(subscription, input.deviceMonthlyPriceId),
       referenceId: organization.id,
@@ -211,18 +226,22 @@ type ApplyInvoiceInput = {
 const applyInvoice = (input: ApplyInvoiceInput) =>
   Effect.gen(function* () {
     const invoice = input.invoice;
+
     const embeddedSubscription =
       typeof invoice.subscription === "object" && invoice.subscription !== null
         ? invoice.subscription
         : undefined;
+
     const stripeSubscriptionId =
       idOf(invoice.subscription) ??
       idOf(invoice.parent?.subscription_details?.subscription) ??
       idOf(invoice.subscription_details?.subscription);
+
     const metadataOrganizationId =
       organizationIdFromMetadata(embeddedSubscription?.metadata) ??
       organizationIdFromMetadata(invoice.parent?.subscription_details?.metadata) ??
       organizationIdFromMetadata(invoice.subscription_details?.metadata);
+
     const customerId = idOf(invoice.customer);
 
     if (embeddedSubscription?.id) {
@@ -232,7 +251,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
           ...embeddedSubscription,
           // Expanded invoice subscriptions do not always repeat metadata.
           metadata: {
-            ...(embeddedSubscription.metadata ?? {}),
+            ...embeddedSubscription.metadata,
             ...(metadataOrganizationId ? { organizationId: metadataOrganizationId } : {}),
           },
           customer: embeddedSubscription.customer ?? customerId,
@@ -255,6 +274,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
     });
 
     let existing: any;
+
     if (stripeSubscriptionId) {
       [existing] = yield* input.db
         .select()
@@ -262,6 +282,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
         .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
         .limit(1);
     }
+
     if (!existing) {
       [existing] = yield* input.db
         .select()
@@ -269,6 +290,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
         .where(eq(schema.subscription.referenceId, organization.id))
         .limit(1);
     }
+
     if (!existing)
       return yield* Effect.fail(fail("Invoice does not match a known Mattrax subscription"));
 
@@ -302,6 +324,7 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
   Effect.gen(function* () {
     if (!input.webhookSecret)
       return yield* Effect.fail(fail("Billing webhook is not configured for this deployment", 503));
+
     if (!input.signature) return yield* Effect.fail(fail("Missing Stripe-Signature header"));
 
     const event = yield* verifyStripeWebhookSignature(
@@ -311,6 +334,7 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
     ).pipe(Effect.mapError(() => fail("Invalid Stripe signature")));
 
     const now = input.now ?? new Date();
+
     switch (event.type) {
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -359,6 +383,7 @@ export const billingWebhookRoutes = (config: BillingWebhookConfig) =>
     Effect.gen(function* () {
       const db = yield* Db;
       const signatureHeader = request.headers["stripe-signature"];
+
       const signature = Array.isArray(signatureHeader)
         ? (signatureHeader[0] ?? null)
         : (signatureHeader ?? null);
@@ -367,6 +392,7 @@ export const billingWebhookRoutes = (config: BillingWebhookConfig) =>
         const body = yield* request.text.pipe(
           Effect.mapError(() => fail("Could not read the webhook request body", 500)),
         );
+
         return yield* processStripeWebhook({
           db,
           payload: body,

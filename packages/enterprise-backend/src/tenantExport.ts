@@ -40,6 +40,7 @@ export type TenantExportBundle = {
 
 const iso = (date: Date | number | null | undefined) => {
   if (date == null) return new Date(0).toISOString();
+
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
@@ -57,8 +58,10 @@ const safeFilename = (value: string) =>
  */
 const exportMetadata = (value: string | null | undefined): Record<string, unknown> | null => {
   if (!value) return null;
+
   try {
     const parsed: unknown = JSON.parse(value);
+
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
@@ -79,6 +82,7 @@ export const buildTenantExport = (
 ): Effect.Effect<TenantExportBundle, unknown> =>
   Effect.gen(function* () {
     const organizationId = organization.id;
+
     const members = (yield* db
       .select()
       .from(schema.member)
@@ -87,7 +91,9 @@ export const buildTenantExport = (
       role: string;
       createdAt: Date;
     }>;
+
     const userIds = [...new Set(members.map((member) => member.userId))];
+
     const users = userIds.length
       ? ((yield* db
           .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
@@ -98,24 +104,30 @@ export const buildTenantExport = (
           email: string;
         }>)
       : [];
+
     const usersById = new Map(users.map((user) => [user.id, user]));
 
     const groups = (yield* db
       .select()
       .from(schema.enterpriseGroup)
       .where(eq(schema.enterpriseGroup.organizationId, organizationId))) as Array<EnterpriseGroup>;
+
     const groupIds = groups.map((group) => group.id);
+
     const policies = (yield* db
       .select()
       .from(schema.policy)
       .where(eq(schema.policy.organizationId, organizationId))) as Array<EnterprisePolicy>;
+
     const policyIds = policies.map((policy) => policy.id);
+
     const applications = (yield* db
       .select()
       .from(schema.application)
       .where(
         eq(schema.application.organizationId, organizationId),
       )) as Array<EnterpriseApplication>;
+
     const applicationIds = applications.map((application) => application.id);
 
     const groupDevices = groupIds.length
@@ -127,7 +139,9 @@ export const buildTenantExport = (
           deviceId: string;
         }>)
       : [];
+
     const deviceIds = [...new Set(groupDevices.map((link) => link.deviceId))];
+
     const devices = deviceIds.length
       ? ((yield* db
           .select({
@@ -143,6 +157,7 @@ export const buildTenantExport = (
             ),
           )) as Array<{ id: string; name: string; serial: string | null }>)
       : [];
+
     const devicesById = new Map(devices.map((device) => [device.id, device]));
 
     const groupPolicies = groupIds.length
@@ -154,8 +169,10 @@ export const buildTenantExport = (
           policyId: string;
         }>)
       : [];
+
     const policyKeys = new Set(policyIds);
     const groupPolicyKeys = new Map<string, string[]>();
+
     for (const link of groupPolicies) {
       if (!policyKeys.has(link.policyId)) continue;
       groupPolicyKeys.set(link.groupId, [
@@ -174,7 +191,9 @@ export const buildTenantExport = (
           data: unknown;
         }>)
       : [];
+
     const policyConfigurations = new Map<string, Record<string, unknown>>();
+
     for (const configuration of configurations) {
       const current = policyConfigurations.get(configuration.policyId) ?? {};
       current[configuration.kind] = configuration.data;
@@ -190,8 +209,10 @@ export const buildTenantExport = (
           groupId: string;
         }>)
       : [];
+
     const groupKeys = new Set(groupIds);
     const applicationGroupKeys = new Map<string, string[]>();
+
     for (const link of applicationGroups) {
       if (!groupKeys.has(link.groupId)) continue;
       applicationGroupKeys.set(link.applicationId, [
@@ -203,6 +224,7 @@ export const buildTenantExport = (
     const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
       where: { organizationId },
     });
+
     const preRegistrations = (yield* db
       .select()
       .from(schema.devicePreRegistration)
@@ -213,6 +235,7 @@ export const buildTenantExport = (
       notes: string | null;
       groupId: string | null;
     }>;
+
     const certificates = (yield* db
       .select()
       .from(schema.scepIssuedCertificate)
@@ -227,6 +250,7 @@ export const buildTenantExport = (
 
     let auditLog: TenantExportAuditEntry[] | undefined;
     let auditTruncated: boolean | undefined;
+
     if (options.includeAudit) {
       const rows = (yield* db
         .select()
@@ -241,6 +265,7 @@ export const buildTenantExport = (
         metadata: unknown;
         createdAt: Date;
       }>;
+
       auditTruncated = rows.length > TENANT_EXPORT_MAX_ROWS;
       auditLog = rows.slice(0, TENANT_EXPORT_MAX_ROWS).map((entry) => ({
         action: entry.action,
@@ -261,9 +286,12 @@ export const buildTenantExport = (
       brandColor: organization.brandColor ?? null,
       metadata: exportMetadata(organization.metadata),
     };
+
     const exportedMembers: TenantExportMember[] = members.flatMap((member) => {
       const user = usersById.get(member.userId);
+
       if (!user) return [];
+
       return [
         {
           email: user.email,
@@ -273,6 +301,7 @@ export const buildTenantExport = (
         },
       ];
     });
+
     const exportedGroups: TenantExportGroup[] = groups.map((group) => ({
       key: group.id,
       name: group.name,
@@ -280,17 +309,21 @@ export const buildTenantExport = (
       devices: groupDevices.flatMap((link) => {
         if (link.groupId !== group.id) return [];
         const device = devicesById.get(link.deviceId);
+
         if (!device) return [];
+
         return [{ key: device.id, name: device.name, serial: device.serial }];
       }),
       policyKeys: groupPolicyKeys.get(group.id) ?? [],
     }));
+
     const exportedPolicies: TenantExportPolicy[] = policies.map((policy) => ({
       key: policy.id,
       name: policy.name,
       notes: policy.notes,
       configurations: policyConfigurations.get(policy.id) ?? {},
     }));
+
     const exportedApplications: TenantExportApplication[] = applications.map((application) => ({
       key: application.id,
       name: application.name,
@@ -308,6 +341,7 @@ export const buildTenantExport = (
       notes: application.notes,
       groupKeys: applicationGroupKeys.get(application.id) ?? [],
     }));
+
     const exportedEnrollment: TenantExportEnrollment | undefined = enrollment
       ? {
           code: enrollment.code,
@@ -318,6 +352,7 @@ export const buildTenantExport = (
           maxDevices: enrollment.maxDevices ?? 100,
         }
       : undefined;
+
     const exportedPreRegistrations: TenantExportPreRegistration[] = preRegistrations.map((row) => ({
       serial: row.serial,
       name: row.name,
@@ -325,6 +360,7 @@ export const buildTenantExport = (
       notes: row.notes,
       groupKey: row.groupId && groupKeys.has(row.groupId) ? row.groupId : null,
     }));
+
     const exportedCertificates: TenantExportCertificate[] = certificates.map((row) => ({
       serial: row.serial,
       enrollmentId: row.enrollmentId,
@@ -335,6 +371,7 @@ export const buildTenantExport = (
     }));
 
     const exportedAt = options.now ?? new Date();
+
     const bundle: TenantExportEnvelope = {
       version: TENANT_EXPORT_VERSION,
       exportedAt: exportedAt.toISOString(),
@@ -349,6 +386,7 @@ export const buildTenantExport = (
       ...(auditLog ? { auditLog } : {}),
       ...(auditTruncated !== undefined ? { auditTruncated } : {}),
     };
+
     return {
       body: JSON.stringify(bundle, null, 2),
       filename: `tenant-${safeFilename(organization.slug)}-${exportedAt

@@ -20,18 +20,23 @@ const write = (stream: "stdout" | "stderr", text: string) =>
 
 const categories = (value: string): ReadonlyArray<CheckCategory> => {
   if (value === "all") return [];
+
   const parsed = value
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+
   for (const category of parsed)
     if (!isCheckCategory(category)) throw new Error(`Unknown category: ${category}`);
+
   return parsed as ReadonlyArray<CheckCategory>;
 };
 
 const platform = (value: string): ReadonlyArray<Platform> => {
   if (value === "all") return [];
+
   if (!isPlatform(value)) throw new Error(`Unknown platform: ${value}`);
+
   return [value];
 };
 
@@ -75,6 +80,7 @@ const command = Command.make(
   Effect.fn(function* (config) {
     let selectedPlatforms: ReadonlyArray<Platform>;
     let selectedCategories: ReadonlyArray<CheckCategory>;
+
     try {
       selectedPlatforms = platform(config.platform);
       selectedCategories = categories(config.category);
@@ -83,6 +89,7 @@ const command = Command.make(
       yield* Effect.sync(() => {
         process.exitCode = 2;
       });
+
       return;
     }
 
@@ -99,6 +106,7 @@ const command = Command.make(
           `${item.platform.padEnd(8)} ${item.category.padEnd(22)} ${item.dayN ? "day-N" : "base "} ${item.id}  ${item.name}`,
         );
       yield* write("stdout", `${checks.length} checks`);
+
       return;
     }
 
@@ -107,6 +115,7 @@ const command = Command.make(
       yield* Effect.sync(() => {
         process.exitCode = 1;
       });
+
       return;
     }
 

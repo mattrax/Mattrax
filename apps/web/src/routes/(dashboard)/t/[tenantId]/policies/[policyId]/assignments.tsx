@@ -32,13 +32,16 @@ export default function PolicyAssignmentsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const policy = useQuery(() => enterpriseQueries.item(params.tenantId, "policy", params.policyId));
+
   const assignments = useQuery(() =>
     enterpriseQueries.policyAssignments(params.tenantId, params.policyId),
   );
+
   const devices = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
   }));
+
   const [modes, setModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
   const [message, setMessage] = createSignal<string | null>(null);
   const [filter, setFilter] = createSignal("");
@@ -51,12 +54,15 @@ export default function PolicyAssignmentsPage() {
       setModes(new Map(data.devices.map((device) => [device.id, device.mode])));
     },
   );
+
   const save = useMutation(() => ({
     mutationFn: () => {
       const previous = new Map(
         (assignments.data?.devices ?? []).map((device) => [device.id, device.mode]),
       );
+
       const next = modes();
+
       return enterprise.patchPolicyAssignments(params.tenantId, params.policyId, {
         assign: [...next]
           .filter(([id, mode]) => previous.get(id) !== mode)
@@ -71,12 +77,15 @@ export default function PolicyAssignmentsPage() {
       });
     },
   }));
+
   const setMode = (id: string, mode: "include" | "exclude" | "") => {
     const next = new Map(modes());
+
     if (mode) next.set(id, mode);
     else next.delete(id);
     setModes(next);
   };
+
   const includedCount = () => [...modes().values()].filter((mode) => mode === "include").length;
   const excludedCount = () => [...modes().values()].filter((mode) => mode === "exclude").length;
   const row = () => policy.data as PolicyRow | undefined;
@@ -84,7 +93,9 @@ export default function PolicyAssignmentsPage() {
   const deviceRows = createMemo(() => {
     const term = filter().trim().toLowerCase();
     const rows = devices.data?.rows ?? [];
+
     if (!term) return rows;
+
     return rows.filter((device) => device.name.toLowerCase().includes(term));
   });
 

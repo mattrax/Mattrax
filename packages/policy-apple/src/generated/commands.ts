@@ -26,6 +26,7 @@ export const Accountconfiguration = Schema.Struct({
   ),
   ManagedLocalUserShortName: Schema.optional(Schema.String),
 });
+
 export type Accountconfiguration = typeof Accountconfiguration.Type;
 
 /**
@@ -35,6 +36,7 @@ export type Accountconfiguration = typeof Accountconfiguration.Type;
 export const Activensextensions = Schema.Struct({
   FilterExtensionPoints: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type Activensextensions = typeof Activensextensions.Type;
 
 /**
@@ -45,6 +47,7 @@ export const Applyredemptioncode = Schema.Struct({
   Identifier: Schema.String,
   RedemptionCode: Schema.String,
 });
+
 export type Applyredemptioncode = typeof Applyredemptioncode.Type;
 
 /**
@@ -54,6 +57,7 @@ export type Applyredemptioncode = typeof Applyredemptioncode.Type;
 export const Certificatelist = Schema.Struct({
   ManagedOnly: Schema.optional(Schema.Boolean),
 });
+
 export type Certificatelist = typeof Certificatelist.Type;
 
 /**
@@ -63,6 +67,7 @@ export type Certificatelist = typeof Certificatelist.Type;
 export const Clearpasscode = Schema.Struct({
   UnlockToken: Schema.String,
 });
+
 export type Clearpasscode = typeof Clearpasscode.Type;
 
 /**
@@ -72,6 +77,7 @@ export type Clearpasscode = typeof Clearpasscode.Type;
 export const Declarativemanagement = Schema.Struct({
   Data: Schema.optional(Schema.String),
 });
+
 export type Declarativemanagement = typeof Declarativemanagement.Type;
 
 /**
@@ -83,6 +89,7 @@ export const Deleteuser = Schema.Struct({
   ForceDeletion: Schema.optional(Schema.Boolean),
   DeleteAllUsers: Schema.optional(Schema.Boolean),
 });
+
 export type Deleteuser = typeof Deleteuser.Type;
 
 /**
@@ -93,6 +100,7 @@ export const Deviceinformation = Schema.Struct({
   Queries: Schema.Array(Schema.String),
   DeviceAttestationNonce: Schema.optional(Schema.String),
 });
+
 export type Deviceinformation = typeof Deviceinformation.Type;
 
 /**
@@ -104,6 +112,7 @@ export const Devicelock = Schema.Struct({
   PhoneNumber: Schema.optional(Schema.String),
   PIN: Schema.optional(Schema.String),
 });
+
 export type Devicelock = typeof Devicelock.Type;
 
 /**
@@ -115,6 +124,7 @@ export const Enablelostmode = Schema.Struct({
   PhoneNumber: Schema.optional(Schema.String),
   Footnote: Schema.optional(Schema.String),
 });
+
 export type Enablelostmode = typeof Enablelostmode.Type;
 
 /**
@@ -137,6 +147,7 @@ export const Erasedevice = Schema.Struct({
     }),
   ),
 });
+
 export type Erasedevice = typeof Erasedevice.Type;
 
 /**
@@ -177,6 +188,7 @@ export const Installapplication = Schema.Struct({
   InstallAsManaged: Schema.optional(Schema.Boolean),
   iOSApp: Schema.optional(Schema.Boolean),
 });
+
 export type Installapplication = typeof Installapplication.Type;
 
 /**
@@ -209,6 +221,7 @@ export const Installedapplicationlist = Schema.Struct({
     ),
   ),
 });
+
 export type Installedapplicationlist = typeof Installedapplicationlist.Type;
 
 /**
@@ -234,6 +247,7 @@ export const Installenterpriseapplication = Schema.Struct({
   ChangeManagementState: Schema.optional(Schema.Literal("Managed")),
   iOSApp: Schema.optional(Schema.Boolean),
 });
+
 export type Installenterpriseapplication = typeof Installenterpriseapplication.Type;
 
 /**
@@ -250,6 +264,7 @@ export const Installmedia = Schema.Struct({
   Author: Schema.optional(Schema.String),
   Title: Schema.optional(Schema.String),
 });
+
 export type Installmedia = typeof Installmedia.Type;
 
 /**
@@ -259,6 +274,7 @@ export type Installmedia = typeof Installmedia.Type;
 export const Installprofile = Schema.Struct({
   Payload: Schema.String,
 });
+
 export type Installprofile = typeof Installprofile.Type;
 
 /**
@@ -268,6 +284,7 @@ export type Installprofile = typeof Installprofile.Type;
 export const Installprovisioningprofile = Schema.Struct({
   ProvisioningProfile: Schema.String,
 });
+
 export type Installprovisioningprofile = typeof Installprovisioningprofile.Type;
 
 /**
@@ -278,6 +295,7 @@ export const Invitetoprogram = Schema.Struct({
   ProgramID: Schema.Literal("com.apple.cloudvpp"),
   InvitationURL: Schema.String,
 });
+
 export type Invitetoprogram = typeof Invitetoprogram.Type;
 
 /**
@@ -296,6 +314,7 @@ export const Lomdevicerequest = Schema.Struct({
     }),
   ),
 });
+
 export type Lomdevicerequest = typeof Lomdevicerequest.Type;
 
 /**
@@ -305,6 +324,7 @@ export type Lomdevicerequest = typeof Lomdevicerequest.Type;
 export const Managedapplicationattributes = Schema.Struct({
   Identifiers: Schema.Array(Schema.String),
 });
+
 export type Managedapplicationattributes = typeof Managedapplicationattributes.Type;
 
 /**
@@ -314,6 +334,7 @@ export type Managedapplicationattributes = typeof Managedapplicationattributes.T
 export const Managedapplicationconfiguration = Schema.Struct({
   Identifiers: Schema.Array(Schema.String),
 });
+
 export type Managedapplicationconfiguration = typeof Managedapplicationconfiguration.Type;
 
 /**
@@ -324,6 +345,7 @@ export const Managedapplicationfeedback = Schema.Struct({
   Identifiers: Schema.Array(Schema.String),
   DeleteFeedback: Schema.optional(Schema.Boolean),
 });
+
 export type Managedapplicationfeedback = typeof Managedapplicationfeedback.Type;
 
 /**
@@ -333,6 +355,7 @@ export type Managedapplicationfeedback = typeof Managedapplicationfeedback.Type;
 export const Managedapplicationlist = Schema.Struct({
   Identifiers: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type Managedapplicationlist = typeof Managedapplicationlist.Type;
 
 /**
@@ -342,6 +365,7 @@ export type Managedapplicationlist = typeof Managedapplicationlist.Type;
 export const Profilelist = Schema.Struct({
   ManagedOnly: Schema.optional(Schema.Boolean),
 });
+
 export type Profilelist = typeof Profilelist.Type;
 
 /**
@@ -351,6 +375,7 @@ export type Profilelist = typeof Profilelist.Type;
 export const Provisioningprofilelist = Schema.Struct({
   ManagedOnly: Schema.optional(Schema.Boolean),
 });
+
 export type Provisioningprofilelist = typeof Provisioningprofilelist.Type;
 
 /**
@@ -360,6 +385,7 @@ export type Provisioningprofilelist = typeof Provisioningprofilelist.Type;
 export const Refreshcellularplans = Schema.Struct({
   eSIMServerURL: Schema.String,
 });
+
 export type Refreshcellularplans = typeof Refreshcellularplans.Type;
 
 /**
@@ -369,6 +395,7 @@ export type Refreshcellularplans = typeof Refreshcellularplans.Type;
 export const Removeapplication = Schema.Struct({
   Identifier: Schema.String,
 });
+
 export type Removeapplication = typeof Removeapplication.Type;
 
 /**
@@ -380,6 +407,7 @@ export const Removemedia = Schema.Struct({
   iTunesStoreID: Schema.optional(Schema.String),
   PersistentID: Schema.optional(Schema.String),
 });
+
 export type Removemedia = typeof Removemedia.Type;
 
 /**
@@ -389,6 +417,7 @@ export type Removemedia = typeof Removemedia.Type;
 export const Removeprofile = Schema.Struct({
   Identifier: Schema.String,
 });
+
 export type Removeprofile = typeof Removeprofile.Type;
 
 /**
@@ -398,6 +427,7 @@ export type Removeprofile = typeof Removeprofile.Type;
 export const Removeprovisioningprofile = Schema.Struct({
   UUID: Schema.String,
 });
+
 export type Removeprovisioningprofile = typeof Removeprovisioningprofile.Type;
 
 /**
@@ -410,6 +440,7 @@ export const Requestmirroring = Schema.Struct({
   ScanTime: Schema.optional(Schema.Int),
   Password: Schema.optional(Schema.String),
 });
+
 export type Requestmirroring = typeof Requestmirroring.Type;
 
 /**
@@ -421,6 +452,7 @@ export const Restartdevice = Schema.Struct({
   KextPaths: Schema.optional(Schema.Array(Schema.String)),
   NotifyUser: Schema.optional(Schema.Boolean),
 });
+
 export type Restartdevice = typeof Restartdevice.Type;
 
 /**
@@ -430,6 +462,7 @@ export type Restartdevice = typeof Restartdevice.Type;
 export const Restrictions = Schema.Struct({
   ProfileRestrictions: Schema.optional(Schema.Boolean),
 });
+
 export type Restrictions = typeof Restrictions.Type;
 
 /**
@@ -446,6 +479,7 @@ export const Rotatefilevaultkey = Schema.Struct({
   NewCertificate: Schema.optional(Schema.String),
   ReplyEncryptionCertificate: Schema.optional(Schema.String),
 });
+
 export type Rotatefilevaultkey = typeof Rotatefilevaultkey.Type;
 
 /**
@@ -470,6 +504,7 @@ export const Scheduleosupdate = Schema.Struct({
     }),
   ),
 });
+
 export type Scheduleosupdate = typeof Scheduleosupdate.Type;
 
 /**
@@ -479,6 +514,7 @@ export type Scheduleosupdate = typeof Scheduleosupdate.Type;
 export const Scheduleosupdatescan = Schema.Struct({
   Force: Schema.optional(Schema.Boolean),
 });
+
 export type Scheduleosupdatescan = typeof Scheduleosupdatescan.Type;
 
 /**
@@ -489,6 +525,7 @@ export const Setautoadminpassword = Schema.Struct({
   GUID: Schema.String,
   passwordHash: Schema.String,
 });
+
 export type Setautoadminpassword = typeof Setautoadminpassword.Type;
 
 /**
@@ -500,6 +537,7 @@ export const Setfirmwarepassword = Schema.Struct({
   NewPassword: Schema.String,
   AllowOroms: Schema.optional(Schema.Boolean),
 });
+
 export type Setfirmwarepassword = typeof Setfirmwarepassword.Type;
 
 /**
@@ -510,6 +548,7 @@ export const Setrecoverylock = Schema.Struct({
   CurrentPassword: Schema.optional(Schema.String),
   NewPassword: Schema.String,
 });
+
 export type Setrecoverylock = typeof Setrecoverylock.Type;
 
 /**
@@ -706,6 +745,7 @@ export const Settings = Schema.Struct({
     }),
   ),
 });
+
 export type Settings = typeof Settings.Type;
 
 /**
@@ -715,6 +755,7 @@ export type Settings = typeof Settings.Type;
 export const Unlockuseraccount = Schema.Struct({
   UserName: Schema.String,
 });
+
 export type Unlockuseraccount = typeof Unlockuseraccount.Type;
 
 /**
@@ -724,6 +765,7 @@ export type Unlockuseraccount = typeof Unlockuseraccount.Type;
 export const Validateapplications = Schema.Struct({
   Identifiers: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type Validateapplications = typeof Validateapplications.Type;
 
 /**
@@ -733,6 +775,7 @@ export type Validateapplications = typeof Validateapplications.Type;
 export const Verifyfirmwarepassword = Schema.Struct({
   Password: Schema.String,
 });
+
 export type Verifyfirmwarepassword = typeof Verifyfirmwarepassword.Type;
 
 /**
@@ -742,4 +785,5 @@ export type Verifyfirmwarepassword = typeof Verifyfirmwarepassword.Type;
 export const Verifyrecoverylock = Schema.Struct({
   Password: Schema.String,
 });
+
 export type Verifyrecoverylock = typeof Verifyrecoverylock.Type;

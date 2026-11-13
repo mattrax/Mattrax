@@ -20,10 +20,12 @@ export type MdmColumn<T> = {
 };
 
 type SortState = { id: string; dir: "asc" | "desc" } | null;
+
 export type MdmSortState = SortState;
 
 function readVisibility(key: string | undefined): Record<string, boolean> {
   if (!key || typeof localStorage === "undefined") return {};
+
   try {
     return JSON.parse(localStorage.getItem(`mattrax:table:${key}:columns`) ?? "{}");
   } catch {
@@ -64,19 +66,24 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
   const [internalSearch, setInternalSearch] = createSignal("");
   const [internalSort, setInternalSort] = createSignal<SortState>(null);
+
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
     readVisibility(props.storageKey),
   );
+
   const [columnsOpen, setColumnsOpen] = createSignal(false);
   let searchInput: HTMLInputElement | undefined;
 
   const serverMode = () => props.mode === "server";
   const search = () => (serverMode() ? (props.searchValue ?? "") : internalSearch());
+
   const setSearch = (value: string) => {
     if (serverMode()) props.onSearchChange?.(value);
     else setInternalSearch(value);
   };
+
   const sort = () => (serverMode() ? (props.sortValue ?? null) : internalSort());
+
   const setSort = (value: SortState) => {
     if (serverMode()) props.onSortChange?.(value);
     else setInternalSort(value);
@@ -92,6 +99,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     if (serverMode()) return [...(props.rows ?? [])];
     const term = search().trim().toLowerCase();
     let result = [...(props.rows ?? [])];
+
     if (term)
       result = result.filter(
         (row) =>
@@ -100,6 +108,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           ) || row.name?.toLowerCase().includes(term),
       );
     const current = sort();
+
     if (current) {
       const col = props.columns.find((item) => item.id === current.id);
       result.sort(
@@ -109,6 +118,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           }) * (current.dir === "asc" ? 1 : -1),
       );
     }
+
     return result;
   });
 
@@ -138,36 +148,48 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     },
   );
   const clear = () => setSelected({});
+
   const toggleAll = () =>
     setSelected(
       allSelected()
         ? {}
         : (Object.fromEntries(rows().map((row) => [row.id, true])) as Record<string, true>),
     );
+
   const toggleSort = (id: string) =>
     setSort(
       sort()?.id !== id ? { id, dir: "asc" } : sort()?.dir === "asc" ? { id, dir: "desc" } : null,
     );
+
   const toggleRow = (row: T, checked: boolean) => {
     setSelected((value) => {
       const next = { ...value };
+
       if (checked) next[row.id] = true;
       else delete next[row.id];
+
       return next;
     });
   };
+
   const toggleColumn = (id: string, visible: boolean) => {
     setHidden((value) => {
       const next = { ...value, [id]: !visible };
+
       if (props.storageKey && typeof localStorage !== "undefined")
         localStorage.setItem(`mattrax:table:${props.storageKey}:columns`, JSON.stringify(next));
+
       return next;
     });
   };
+
   const actions = () => props.actions?.(selectedRows(), clear);
+
   const sortIndicator = (column: MdmColumn<T>) => {
     const value = sort();
+
     if (value?.id !== (column.sortId ?? column.id)) return "";
+
     return value.dir === "asc" ? " ↑" : " ↓";
   };
 
@@ -332,13 +354,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       onClick={(event) => {
                         if (!props.onRowClick) return;
                         const target = event.target as HTMLElement;
+
                         if (target.closest("a,button,input,select,textarea")) return;
                         props.onRowClick(row);
                       }}
                       onKeyDown={(event) => {
                         if (!props.onRowClick) return;
                         const target = event.target as HTMLElement;
+
                         if (target.closest("a,button,input,select,textarea")) return;
+
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           props.onRowClick(row);

@@ -6,12 +6,14 @@ const base = { version: "1.2.3", deploymentId: "deploy-1" };
 describe("readiness probe", () => {
   it("returns 200 when the database check succeeds", async () => {
     let calls = 0;
+
     const result = await checkReadiness({
       ...base,
       checkDatabase: async () => {
         calls++;
       },
     });
+
     expect(calls).toBe(1);
     expect(result.httpStatus).toBe(200);
     expect(result.body).toMatchObject({
@@ -30,6 +32,7 @@ describe("readiness probe", () => {
         throw new Error("connection refused for user admin@example.com");
       },
     });
+
     expect(result.httpStatus).toBe(503);
     expect(result.body).toMatchObject({
       status: "unavailable",
@@ -42,11 +45,13 @@ describe("readiness probe", () => {
 
   it("returns 503 instead of hanging when the check never settles", async () => {
     const started = Date.now();
+
     const result = await checkReadiness({
       ...base,
       timeoutMs: 10,
       checkDatabase: () => new Promise<void>(() => {}),
     });
+
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(result.httpStatus).toBe(503);
     expect(result.body.reason).toBe("timeout");
@@ -57,6 +62,7 @@ describe("readiness probe", () => {
       version: "1.2.3",
       checkDatabase: async () => {},
     });
+
     expect(result.body.deploymentId).toBeNull();
   });
 });

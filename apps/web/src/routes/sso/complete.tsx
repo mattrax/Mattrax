@@ -9,29 +9,39 @@ export default function SsoCompletePage() {
   const navigate = useNavigate();
   const [error, setError] = createSignal<string | null>(null);
   const [mfaPending, setMfaPending] = createSignal(false);
+
   const returnTo = () => {
     const value = Array.isArray(searchParams.returnTo)
       ? searchParams.returnTo[0]
       : searchParams.returnTo;
+
     return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
   };
 
   onSettled(() => {
     const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
+
     if (!token) {
       setError("This sign-in link is missing its token.");
+
       return;
     }
+
     void (async () => {
       const result = await authClient.ssoSignIn(token);
+
       if (result.error) {
         setError(errorMessage(result.error, "Single sign-on failed."));
+
         return;
       }
+
       if (result.data?.pending) {
         setMfaPending(true);
+
         return;
       }
+
       navigate(returnTo(), { replace: true });
     })();
   });

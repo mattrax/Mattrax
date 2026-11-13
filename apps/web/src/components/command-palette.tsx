@@ -44,6 +44,7 @@ function readRecents(): Recent[] {
     const parsed = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]") as Array<
       Recent & { label?: string }
     >;
+
     return parsed.map((item) => ({
       id: item.id,
       title: item.title ?? item.label ?? "",
@@ -71,17 +72,25 @@ const GROUP_ORDER = [
 
 const groupRank = (group: string) => {
   const index = GROUP_ORDER.indexOf(group);
+
   return index === -1 ? GROUP_ORDER.length : index;
 };
 
 const iconForGroup = (group: string): Command["icon"] => {
   if (group === "Devices") return Laptop;
+
   if (group === "People") return User;
+
   if (group === "Groups") return UsersRound;
+
   if (group === "Policies") return ShieldCheck;
+
   if (group === "Settings") return Settings;
+
   if (group === "Queries") return Search;
+
   if (group === "Actions") return Activity;
+
   return LayoutDashboard;
 };
 
@@ -103,6 +112,7 @@ export function CommandPalette() {
   // Debounce search in the input handler so shortcut registration is not
   // delayed by derived work.
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
   const updateQuery = (value: string) => {
     setQuery(value);
     setActive(0);
@@ -110,6 +120,7 @@ export function CommandPalette() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => setDebouncedQuery(value.trim()), 180);
   };
+
   onCleanup(() => clearTimeout(searchTimer));
 
   const results = useQuery(() => ({
@@ -119,7 +130,9 @@ export function CommandPalette() {
         q: debouncedQuery(),
         limit: SEARCH_LIMIT,
       });
+
       setTruncated((result.rows?.length ?? 0) >= SEARCH_LIMIT);
+
       return result;
     },
     enabled: open() && Boolean(tenantId()) && debouncedQuery().length > 0,
@@ -137,6 +150,7 @@ export function CommandPalette() {
   const builtIn = createMemo<Command[]>(() => {
     const id = tenantId();
     const go = (href: string) => () => navigate(href);
+
     const actions: Command[] = [
       {
         id: "account-settings",
@@ -185,21 +199,27 @@ export function CommandPalette() {
         run: async () => {
           try {
             const result = await authClient.signOut();
+
             if (result.error) {
               reportGlobalError(result.error);
+
               return;
             }
           } catch (error) {
             reportGlobalError(error);
+
             return;
           }
+
           window.location.assign("/login");
         },
       },
     ];
+
     if (!id) return actions;
 
     const nav = (command: Command) => ({ ...command, href: command.href ?? undefined });
+
     const navigation: Command[] = [
       nav(navigable("nav-overview", "Overview", `${base()}`, go(`${base()}`))),
       nav(
@@ -223,6 +243,7 @@ export function CommandPalette() {
       ),
       nav(navigable("nav-settings", "Settings", `${base()}/settings`, go(`${base()}/settings`))),
     ];
+
     const shortcuts: Record<string, CommandShortcut> = {
       "nav-overview": sequence("g", "o"),
       "nav-dashboards": sequence("g", "b"),
@@ -232,6 +253,7 @@ export function CommandPalette() {
       "nav-applications": sequence("g", "a"),
       "nav-settings": sequence("g", "t"),
     };
+
     const withShortcuts = navigation.map((command) =>
       shortcuts[command.id] ? { ...command, shortcut: shortcuts[command.id]! } : command,
     );
@@ -391,49 +413,64 @@ export function CommandPalette() {
   /** Turn "devices critical apple" into a filtered device table command. */
   const deviceQuery = createMemo<Command | undefined>(() => {
     const id = tenantId();
+
     if (!id) return undefined;
     const term = query().trim().toLowerCase();
     const match = /^devices?\b\s*(.*)$/.exec(term);
+
     if (!match) return undefined;
     const rest = match[1]?.trim() ?? "";
+
     if (!rest) return undefined;
     const params = new URLSearchParams();
     const words: string[] = [];
+
     for (const token of rest.split(/\s+/)) {
       if (["critical", "attention", "warning", "healthy", "unknown", "stale"].includes(token)) {
         params.set("health", token === "warning" ? "attention" : token);
         continue;
       }
+
       if (["apple", "mac", "ios", "ipados"].includes(token)) {
         params.set("proto", "apple");
         continue;
       }
+
       if (["windows", "win"].includes(token)) {
         params.set("proto", "win");
         continue;
       }
+
       if (token === "android") {
         params.set("proto", "android");
         continue;
       }
+
       if (["enrolled", "enrolling", "unenrolling", "unenrolled"].includes(token)) {
         params.set("status", token);
         continue;
       }
+
       if (["failing", "invalid"].includes(token)) {
         params.set("push", token);
         continue;
       }
+
       const days = /^(\d+)d$/.exec(token);
+
       if (days) {
         params.set("staleDays", days[1]!);
         continue;
       }
+
       words.push(token);
     }
+
     if (words.length > 0) params.set("q", words.join(" "));
+
     if ([...params.keys()].length === 0) return undefined;
     const href = `${base()}/devices?${params.toString()}`;
+
     return {
       id: "query-devices-dynamic",
       title: `Show devices: ${rest}`,
@@ -447,7 +484,9 @@ export function CommandPalette() {
 
   const serverItems = createMemo<Command[]>(() => {
     const id = tenantId();
+
     if (!id || results.status !== "success") return [];
+
     return (results.data?.rows ?? []).map((row) => {
       if ("proto" in row)
         return {
@@ -459,6 +498,7 @@ export function CommandPalette() {
           href: `/t/${id}/devices/${row.id}`,
           run: () => navigate(`/t/${id}/devices/${row.id}`),
         };
+
       if ("email" in row)
         return {
           id: `person-${row.id}`,
@@ -469,6 +509,7 @@ export function CommandPalette() {
           href: `/t/${id}/settings/administrators`,
           run: () => navigate(`/t/${id}/settings/administrators`),
         };
+
       if ("devicesCount" in row)
         return {
           id: `group-${row.id}`,
@@ -479,6 +520,7 @@ export function CommandPalette() {
           href: `/t/${id}/groups/${row.id}`,
           run: () => navigate(`/t/${id}/groups/${row.id}`),
         };
+
       return {
         id: `policy-${row.id}`,
         title: row.name,
@@ -500,6 +542,7 @@ export function CommandPalette() {
 
   const matches = (command: Command, term: string) => {
     const tokens = term.split(/\s+/).filter(Boolean);
+
     const haystack = [
       command.title,
       command.subtitle ?? "",
@@ -508,11 +551,13 @@ export function CommandPalette() {
     ]
       .join(" ")
       .toLowerCase();
+
     return tokens.every((token) => haystack.includes(token));
   };
 
   const items = createMemo<Command[]>(() => {
     const term = query().trim().toLowerCase();
+
     if (!term) {
       const recent: Command[] = recents().map((entry) => ({
         id: entry.id,
@@ -523,17 +568,21 @@ export function CommandPalette() {
         href: entry.href,
         run: () => navigate(entry.href),
       }));
+
       const seen = new Set(recent.map((entry) => entry.id));
       const pageCommands = registeredCommands();
       const pageIds = new Set(pageCommands.map((command) => command.id));
+
       const actions = builtIn().filter(
         (command) =>
           (command.group === "Actions" || command.group === "Navigation") &&
           !seen.has(command.id) &&
           !pageIds.has(command.id),
       );
+
       return [...recent, ...pageCommands, ...actions];
     }
+
     return allCommands()
       .filter((command) => matches(command, term))
       .slice(0, 50);
@@ -541,16 +590,19 @@ export function CommandPalette() {
 
   const grouped = createMemo(() => {
     const map = new Map<string, Command[]>();
+
     for (const item of items()) {
       const list = map.get(item.group) ?? [];
       list.push(item);
       map.set(item.group, list);
     }
+
     return [...map.entries()].sort(([left], [right]) => groupRank(left) - groupRank(right));
   });
 
   const remember = (item: Command) => {
     if (!item.href || item.group === "Actions") return;
+
     const next: Recent[] = [
       {
         id: item.id,
@@ -561,6 +613,7 @@ export function CommandPalette() {
       },
       ...recents().filter((entry) => entry.id !== item.id),
     ].slice(0, 8);
+
     setRecents(next);
     localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   };
@@ -589,15 +642,18 @@ export function CommandPalette() {
   onSettled(() => {
     let pendingSequence = "";
     let sequenceTimer: ReturnType<typeof setTimeout> | undefined;
+
     const clearSequence = () => {
       pendingSequence = "";
       clearTimeout(sequenceTimer);
     };
+
     const sequenceCommands = () =>
       allCommands().filter(
         (command) =>
           command.shortcut?.kind === "sequence" && (!command.enabled || command.enabled()),
       );
+
     const chordCommands = () =>
       allCommands().filter(
         (command) => command.shortcut?.kind === "chord" && (!command.enabled || command.enabled()),
@@ -610,95 +666,122 @@ export function CommandPalette() {
 
       for (const command of chordCommands()) {
         const shortcut = command.shortcut;
+
         if (shortcut?.kind !== "chord") continue;
+
         if (!matchesChord(shortcut, event)) continue;
+
         if (editable && !mod) continue;
         event.preventDefault();
         void command.run();
         clearSequence();
+
         return true;
       }
 
       if (mod || event.altKey || editable) {
         if (!pendingSequence) return false;
         clearSequence();
+
         return false;
       }
 
       const key = event.key.toLowerCase();
       const prefix = pendingSequence + key;
       const commands = sequenceCommands();
+
       const exact = commands.find(
         (command) =>
           command.shortcut?.kind === "sequence" &&
           command.shortcut.keys.join(" ").toLowerCase() === prefix,
       );
+
       if (exact) {
         event.preventDefault();
         clearSequence();
         void exact.run();
+
         return true;
       }
+
       const hasLonger = commands.some(
         (command) =>
           command.shortcut?.kind === "sequence" &&
           command.shortcut.keys.join(" ").toLowerCase().startsWith(`${prefix} `),
       );
+
       if (hasLonger) {
         event.preventDefault();
         pendingSequence = `${prefix} `;
         clearTimeout(sequenceTimer);
         sequenceTimer = setTimeout(clearSequence, 1200);
+
         return true;
       }
+
       if (pendingSequence) clearSequence();
+
       const startsSequence = commands.some(
         (command) => command.shortcut?.kind === "sequence" && command.shortcut.keys[0] === key,
       );
+
       if (startsSequence) {
         event.preventDefault();
         pendingSequence = `${key} `;
         clearTimeout(sequenceTimer);
         sequenceTimer = setTimeout(clearSequence, 1200);
+
         return true;
       }
+
       return false;
     };
 
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+
         if (!open()) rememberOpener();
         clearSequence();
         setOpen((value) => !value);
+
         return;
       }
+
       if (!open() && runShortcut(event)) return;
+
       if (!open()) return;
+
       if (event.key === "Escape") {
         setOpen(false);
         clearSequence();
         queueMicrotask(() => opener?.focus({ preventScroll: true }));
       }
+
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setActive((value) => Math.min(value + 1, items().length - 1));
       }
+
       if (event.key === "ArrowUp") {
         event.preventDefault();
         setActive((value) => Math.max(value - 1, 0));
       }
+
       if (event.key === "Enter") {
         event.preventDefault();
         run(items()[active()]);
       }
     };
+
     const openEvent = () => {
       rememberOpener();
       setOpen(true);
     };
+
     window.addEventListener("keydown", handler);
     window.addEventListener("mattrax:open-command-palette", openEvent);
+
     return () => {
       clearTimeout(sequenceTimer);
       window.removeEventListener("keydown", handler);
@@ -720,7 +803,9 @@ export function CommandPalette() {
       if (typeof document === "undefined") return;
       const root = document.documentElement;
       const previous = root.style.overflow;
+
       if (isOpen) root.style.overflow = "hidden";
+
       return () => {
         root.style.overflow = previous;
       };
@@ -742,15 +827,19 @@ export function CommandPalette() {
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
             if (event.key !== "Tab" || !card) return;
+
             const focusable = Array.from(
               card.querySelectorAll<HTMLElement>("input, button, a[href]"),
             );
+
             if (focusable.length === 0) return;
             event.preventDefault();
             const current = focusable.indexOf(document.activeElement as HTMLElement);
+
             const next = event.shiftKey
               ? (current - 1 + focusable.length) % focusable.length
               : (current + 1) % focusable.length;
+
             focusable[next]?.focus();
           }}
         >
@@ -821,6 +910,7 @@ export function CommandPalette() {
                     <For each={groupItems}>
                       {(item) => {
                         const index = () => items().indexOf(item);
+
                         return (
                           <button
                             type="button"
@@ -837,6 +927,7 @@ export function CommandPalette() {
                             <Show when={item.icon}>
                               {(icon) => {
                                 const Icon = icon();
+
                                 return <Icon class="size-4 shrink-0 text-muted-foreground" />;
                               }}
                             </Show>

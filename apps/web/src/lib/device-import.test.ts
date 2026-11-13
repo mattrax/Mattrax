@@ -5,6 +5,7 @@ describe("device pre-registration CSV", () => {
   it("parses headers, quoted commas and CRLF line endings", () => {
     const csv =
       '\uFEFFserial,name,asset_tag,group,notes\r\nC02A,"Mac, Alice",AT-1,Staff,"Line one\r\nLine two"\r\nC02B,Bob,,,';
+
     const parsed = parseDeviceImportCsv(csv);
     expect(parsed.issues).toEqual([]);
     expect(parsed.rows).toEqual([
@@ -31,6 +32,7 @@ describe("device pre-registration CSV", () => {
     const parsed = parseDeviceImportCsv(
       "Serial Number,Device Name,Asset Tag,Group Name,Note\nS1,Mac,AT,Staff,Hello",
     );
+
     expect(parsed.issues).toEqual([]);
     expect(parsed.rows[0]).toMatchObject({
       serial: "S1",

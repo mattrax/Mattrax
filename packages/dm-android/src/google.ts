@@ -53,7 +53,9 @@ export type BuildJwtOptions = {
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
+
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
@@ -65,6 +67,7 @@ export function base64UrlEncode(input: string | Uint8Array | ArrayBuffer): strin
       : input instanceof Uint8Array
         ? input
         : new Uint8Array(input);
+
   return bytesToBase64Url(bytes);
 }
 
@@ -109,6 +112,7 @@ export function buildServiceAccountJwt(
     const key = yield* importServiceAccountKey(options.privateKeyPem);
 
     const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+
     const claims = base64UrlEncode(
       JSON.stringify({
         iss: options.clientEmail,
@@ -118,6 +122,7 @@ export function buildServiceAccountJwt(
         exp: issuedAt + lifetime,
       }),
     );
+
     const signingInput = `${header}.${claims}`;
 
     const signature = yield* Effect.tryPromise({
@@ -140,21 +145,27 @@ const TokenResponse = Schema.Struct({
 function errorDetail(text: string): string {
   try {
     const json = JSON.parse(text) as unknown;
+
     if (typeof json === "object" && json !== null) {
       const record = json as Record<string, unknown>;
       const error = record["error"];
+
       if (typeof error === "string") {
         const description = record["error_description"];
+
         return typeof description === "string" ? `${error}: ${description}` : error;
       }
+
       if (typeof error === "object" && error !== null) {
         const message = (error as Record<string, unknown>)["message"];
+
         if (typeof message === "string") return message;
       }
     }
   } catch {
     // Fall through to the raw body.
   }
+
   return text.length > 500 ? `${text.slice(0, 500)}…` : text;
 }
 
@@ -172,10 +183,12 @@ export function exchangeServiceAccountJwt(options: {
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: options.assertion,
     }).toString();
+
     const request = HttpClientRequest.post(options.tokenUri).pipe(
       HttpClientRequest.setHeader("content-type", "application/x-www-form-urlencoded"),
       HttpClientRequest.bodyText(body),
     );
+
     const response = yield* options.client
       .execute(request)
       .pipe(
@@ -183,11 +196,13 @@ export function exchangeServiceAccountJwt(options: {
           (cause) => new GoogleApiError({ message: "Google token request failed", cause }),
         ),
       );
+
     const text = yield* response.text.pipe(
       Effect.mapError(
         (cause) => new GoogleApiError({ message: "Failed to read Google token response", cause }),
       ),
     );
+
     if (response.status < 200 || response.status > 299) {
       return yield* Effect.fail(
         new GoogleApiError({
@@ -196,10 +211,12 @@ export function exchangeServiceAccountJwt(options: {
         }),
       );
     }
+
     const json = yield* Effect.try({
       try: () => JSON.parse(text) as unknown,
       catch: (cause) => new GoogleApiError({ message: "Invalid Google token JSON", cause }),
     });
+
     const decoded = yield* (
       Schema.decodeUnknownEffect(TokenResponse)(json) as Effect.Effect<
         typeof TokenResponse.Type,
@@ -210,7 +227,9 @@ export function exchangeServiceAccountJwt(options: {
         (cause) => new GoogleApiError({ message: "Invalid Google token response shape", cause }),
       ),
     );
+
     const lifetimeSeconds = decoded.expires_in ?? JWT_LIFETIME_SECONDS;
+
     return {
       accessToken: decoded.access_token,
       tokenType: decoded.token_type ?? "Bearer",
@@ -259,14 +278,17 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
       const accessToken = () =>
         Effect.gen(function* () {
           if (cached && cached.expiresAt > Date.now()) return cached;
+
           const assertion = yield* buildServiceAccountJwt({
             clientEmail: config.clientEmail,
             privateKeyPem: config.privateKeyPem,
             audience: tokenUri,
             scope: ANDROID_MANAGEMENT_SCOPE,
           });
+
           const token = yield* exchangeServiceAccountJwt({ tokenUri, assertion, client });
           cached = token;
+
           return token;
         });
 
@@ -274,12 +296,15 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
         Effect.gen(function* () {
           const label = request.label ?? `${request.method ?? "GET"} ${request.url}`;
           const token = yield* accessToken();
+
           let httpRequest = HttpClientRequest.make(request.method ?? "GET")(request.url).pipe(
             HttpClientRequest.bearerToken(token.accessToken),
           );
+
           for (const [name, value] of Object.entries(request.headers ?? {})) {
             httpRequest = HttpClientRequest.setHeader(httpRequest, name, value);
           }
+
           if (request.body !== undefined) {
             httpRequest = HttpClientRequest.bodyText(
               httpRequest,
@@ -287,16 +312,19 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
               "application/json",
             );
           }
+
           const response = yield* client
             .execute(httpRequest)
             .pipe(
               Effect.mapError((cause) => new GoogleApiError({ message: `${label} failed`, cause })),
             );
+
           const text = yield* response.text.pipe(
             Effect.mapError(
               (cause) => new GoogleApiError({ message: `Failed to read ${label} response`, cause }),
             ),
           );
+
           if (response.status < 200 || response.status > 299) {
             return yield* Effect.fail(
               new GoogleApiError({
@@ -305,6 +333,7 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
               }),
             );
           }
+
           return text;
         });
 
@@ -319,10 +348,12 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
               new GoogleApiError({ message: `${label} returned an empty body` }),
             );
           }
+
           const json = yield* Effect.try({
             try: () => JSON.parse(text) as unknown,
             catch: (cause) => new GoogleApiError({ message: `Invalid ${label} JSON`, cause }),
           });
+
           return yield* (
             Schema.decodeUnknownEffect(schema)(json) as Effect.Effect<A, unknown>
           ).pipe(
@@ -338,6 +369,7 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
           Effect.gen(function* () {
             const label = request.label ?? `${request.method ?? "GET"} ${request.url}`;
             const text = yield* send(request);
+
             return yield* decodeJson(text, request.schema, label);
           }),
         authorizedFetchVoid: (request: AuthorizedVoidRequest) => send(request).pipe(Effect.asVoid),

@@ -16,6 +16,7 @@ test.describe("tenant export and import", () => {
     const withAudit = await page.request.get(
       `/api/v1/tenants/${tenant.id}/export?includeAudit=true`,
     );
+
     expect(withAudit.ok()).toBe(true);
     const withAuditBody = (await withAudit.json()) as { auditLog?: unknown[] };
     expect(Array.isArray(withAuditBody.auditLog)).toBe(true);
@@ -27,10 +28,12 @@ test.describe("tenant export and import", () => {
 
     const path = await download.path();
     expect(path).not.toBeNull();
+
     const bundle = JSON.parse(await readFile(path!, "utf8")) as {
       version: number;
       tenant: { name: string; slug: string };
     };
+
     expect(bundle.version).toBe(1);
     expect(bundle.tenant.slug).toBe(tenant.slug);
 
@@ -41,6 +44,7 @@ test.describe("tenant export and import", () => {
         "x-effect-auth-csrf": "1",
       },
     });
+
     expect(rejected.status()).toBe(400);
 
     await page.getByRole("button", { name: "Import tenant" }).click();
@@ -76,13 +80,17 @@ test.describe("tenant backups", () => {
       .poll(
         async () => {
           const response = await page.request.get(`/api/v1/tenants/${tenant.id}/backups`);
+
           if (!response.ok()) return undefined;
+
           const body = (await response.json()) as {
             backups: Array<{ id: string; status: string; trigger: string }>;
           };
+
           succeeded = body.backups.find(
             (run) => run.status === "succeeded" && run.trigger === "manual",
           );
+
           return succeeded?.id;
         },
         { timeout: 30_000 },
@@ -90,10 +98,12 @@ test.describe("tenant backups", () => {
       .toBeTruthy();
 
     const grant = await stepUpGrant(page, "backup-download");
+
     const download = await page.request.get(
       `/api/v1/tenants/${tenant.id}/backups/${succeeded!.id}/download`,
       { headers: { "x-mattrax-step-up": grant } },
     );
+
     expect(download.ok()).toBe(true);
     expect(download.headers()["cache-control"]).toBe("no-store");
     expect(download.headers()["content-disposition"]).toContain("attachment");

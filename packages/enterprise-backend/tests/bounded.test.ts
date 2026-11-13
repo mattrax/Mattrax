@@ -46,6 +46,7 @@ describe("APNs fan-out", () => {
 
     let active = 0;
     let peak = 0;
+
     const sleep = (ms: number) =>
       Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)));
 
@@ -92,6 +93,7 @@ describe("APNs fan-out", () => {
           peak = Math.max(peak, active);
           yield* sleep(pushToken === "token-device-2" ? 15 : 5);
           active--;
+
           if (pushToken === "token-device-2") return yield* Effect.fail(new Error("boom"));
         }),
     } as never;

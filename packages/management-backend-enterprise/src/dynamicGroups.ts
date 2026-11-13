@@ -25,7 +25,9 @@ export type DynamicGroupSyncResult = {
 };
 
 type DeviceRow = typeof s.device.$inferSelect;
+
 type DeclarationRow = typeof s.deviceDeclaration.$inferSelect;
+
 type ApplicationRow = typeof s.deviceApplication.$inferSelect;
 
 const deviceSnapshot = (
@@ -51,11 +53,13 @@ const deviceSnapshot = (
 
 const declarationsByDevice = (rows: ReadonlyArray<DeclarationRow>) => {
   const map = new Map<string, DeclarationRow[]>();
+
   for (const row of rows) {
     const list = map.get(row.deviceId) ?? [];
     list.push(row);
     map.set(row.deviceId, list);
   }
+
   return map;
 };
 
@@ -100,11 +104,13 @@ const applicationsByDevice = (
   rows: ReadonlyArray<Pick<ApplicationRow, "deviceId" | "bundleId" | "name">>,
 ) => {
   const map = new Map<string, Array<{ bundleId: string; name: string | null }>>();
+
   for (const row of rows) {
     const list = map.get(row.deviceId) ?? [];
     list.push({ bundleId: row.bundleId, name: row.name });
     map.set(row.deviceId, list);
   }
+
   return map;
 };
 
@@ -126,6 +132,7 @@ export const syncDynamicGroup = (
 ) =>
   Effect.gen(function* () {
     const now = options.now ?? new Date();
+
     const [group] = yield* db
       .select()
       .from(s.enterpriseGroup)
@@ -136,6 +143,7 @@ export const syncDynamicGroup = (
         ),
       )
       .limit(1);
+
     if (!group) return { groupId, matched: 0, added: 0, removed: 0, evaluatedAt: now };
 
     // Manual groups never own dynamic rows. Clearing them here also covers a
@@ -144,6 +152,7 @@ export const syncDynamicGroup = (
       const removed = yield* db
         .delete(s.groupDevice)
         .where(and(eq(s.groupDevice.groupId, groupId), eq(s.groupDevice.source, "dynamic")));
+
       return {
         groupId,
         matched: 0,
@@ -154,21 +163,26 @@ export const syncDynamicGroup = (
     }
 
     const rules = group.rules as DynamicGroupRules | null;
+
     // Invalid rules should have been rejected on write. Leave the existing
     // membership untouched rather than silently removing baselines. A
     // version-valid rule set with no conditions is well defined: it matches
     // nothing, so recomputing clears dynamic rows.
     if (!rules || rules.version !== 1)
       return { groupId, matched: 0, added: 0, removed: 0, evaluatedAt: now };
+
     if (hasDynamicGroupConditions(rules) && dynamicGroupRulesProblem(rules) !== null)
       return { groupId, matched: 0, added: 0, removed: 0, evaluatedAt: now };
 
     const devices = yield* loadTenantDevices(db, organizationId);
+
     const declarations = yield* loadDeclarations(
       db,
       devices.map((device) => device.id),
     );
+
     const declarationsFor = declarationsByDevice(declarations);
+
     const applications = applicationsByDevice(
       yield* loadApplications(
         db,
@@ -176,7 +190,9 @@ export const syncDynamicGroup = (
         devices.map((device) => device.id),
       ),
     );
+
     const matching = new Set<string>();
+
     for (const device of devices) {
       const health = deriveDeviceHealth({
         status: device.status,
@@ -192,6 +208,7 @@ export const syncDynamicGroup = (
         now,
         ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
       });
+
       if (
         evaluateDynamicGroupRules(
           rules,
@@ -203,9 +220,11 @@ export const syncDynamicGroup = (
     }
 
     const links = yield* db.select().from(s.groupDevice).where(eq(s.groupDevice.groupId, groupId));
+
     const manual = new Set(
       links.filter((link) => link.source !== "dynamic").map((link) => link.deviceId),
     );
+
     const existingDynamic = new Set(
       links.filter((link) => link.source === "dynamic").map((link) => link.deviceId),
     );
@@ -225,6 +244,7 @@ export const syncDynamicGroup = (
             inArray(s.groupDevice.deviceId, toRemove),
           ),
         );
+
     if (toAdd.length > 0)
       yield* db
         .insert(s.groupDevice)
@@ -269,9 +289,12 @@ export const syncDynamicGroupsForTenant = (
           eq(s.enterpriseGroup.kind, "dynamic"),
         ),
       );
+
     const results: DynamicGroupSyncResult[] = [];
+
     for (const group of groups)
       results.push(yield* syncDynamicGroup(db, organizationId, group.id, options));
+
     return results;
   });
 
@@ -288,11 +311,13 @@ export const syncDynamicGroupsForDevice = (
 ) =>
   Effect.gen(function* () {
     const now = options.now ?? new Date();
+
     const [device] = yield* db
       .select()
       .from(s.device)
       .where(and(eq(s.device.id, deviceId), eq(s.device.organizationId, organizationId)))
       .limit(1);
+
     if (!device) return [];
 
     const groups = yield* db
@@ -304,12 +329,15 @@ export const syncDynamicGroupsForDevice = (
           eq(s.enterpriseGroup.kind, "dynamic"),
         ),
       );
+
     if (groups.length === 0) return [];
 
     const declarations = yield* loadDeclarations(db, [device.id]);
+
     const applications = applicationsByDevice(
       yield* loadApplications(db, organizationId, [device.id]),
     );
+
     const health = deriveDeviceHealth({
       status: device.status,
       lastSeenAt: device.lastSeenAt,
@@ -329,9 +357,11 @@ export const syncDynamicGroupsForDevice = (
       .select()
       .from(s.groupDevice)
       .where(eq(s.groupDevice.deviceId, deviceId));
+
     const manualGroups = new Set(
       links.filter((link) => link.source !== "dynamic").map((link) => link.groupId),
     );
+
     const dynamicGroups = new Set(
       links.filter((link) => link.source === "dynamic").map((link) => link.groupId),
     );
@@ -340,11 +370,15 @@ export const syncDynamicGroupsForDevice = (
     const toAdd: string[] = [];
     const toRemove: string[] = [];
     const evaluated: string[] = [];
+
     for (const group of groups) {
       const rules = group.rules as DynamicGroupRules | null;
+
       if (!rules || rules.version !== 1) continue;
+
       if (hasDynamicGroupConditions(rules) && dynamicGroupRulesProblem(rules) !== null) continue;
       evaluated.push(group.id);
+
       const matches =
         !manualGroups.has(group.id) &&
         evaluateDynamicGroupRules(
@@ -352,8 +386,11 @@ export const syncDynamicGroupsForDevice = (
           deviceSnapshot(device, health, applications.get(device.id) ?? []),
           { now },
         );
+
       const isDynamicMember = dynamicGroups.has(group.id);
+
       if (matches && !isDynamicMember) toAdd.push(group.id);
+
       if (!matches && isDynamicMember) toRemove.push(group.id);
       results.push({
         groupId: group.id,
@@ -374,11 +411,13 @@ export const syncDynamicGroupsForDevice = (
             inArray(s.groupDevice.groupId, toRemove),
           ),
         );
+
     if (toAdd.length > 0)
       yield* db
         .insert(s.groupDevice)
         .ignore()
         .values(toAdd.map((groupId) => ({ groupId, deviceId, source: "dynamic" as const })));
+
     if (evaluated.length > 0)
       yield* db
         .update(s.enterpriseGroup)
@@ -414,6 +453,7 @@ export const previewDynamicGroup = (
 ) =>
   Effect.gen(function* () {
     const now = options.now ?? new Date();
+
     const [group] = yield* db
       .select()
       .from(s.enterpriseGroup)
@@ -424,25 +464,32 @@ export const previewDynamicGroup = (
         ),
       )
       .limit(1);
+
     if (!group) return null;
 
     const devices = yield* loadTenantDevices(db, organizationId);
+
     if (group.kind !== "dynamic") {
       const links = yield* db
         .select()
         .from(s.groupDevice)
         .where(eq(s.groupDevice.groupId, groupId));
+
       const memberIds = new Set(links.map((link) => link.deviceId));
+
       const members = devices
         .filter((device) => memberIds.has(device.id))
         .map((device) => ({ id: device.id, name: device.name }))
         .sort((left, right) => left.name.localeCompare(right.name));
+
       return { groupId, kind: "manual", count: members.length, devices: members, evaluatedAt: now };
     }
 
     const rules = group.rules as DynamicGroupRules | null;
+
     if (!rules || rules.version !== 1)
       return { groupId, kind: "dynamic", count: 0, devices: [], evaluatedAt: now };
+
     if (hasDynamicGroupConditions(rules) && dynamicGroupRulesProblem(rules) !== null)
       return { groupId, kind: "dynamic", count: 0, devices: [], evaluatedAt: now };
 
@@ -450,7 +497,9 @@ export const previewDynamicGroup = (
       db,
       devices.map((device) => device.id),
     );
+
     const declarationsFor = declarationsByDevice(declarations);
+
     const applications = applicationsByDevice(
       yield* loadApplications(
         db,
@@ -458,7 +507,9 @@ export const previewDynamicGroup = (
         devices.map((device) => device.id),
       ),
     );
+
     const matched: Array<{ id: string; name: string }> = [];
+
     for (const device of devices) {
       const health = deriveDeviceHealth({
         status: device.status,
@@ -474,6 +525,7 @@ export const previewDynamicGroup = (
         now,
         ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
       });
+
       if (
         evaluateDynamicGroupRules(
           rules,
@@ -483,7 +535,9 @@ export const previewDynamicGroup = (
       )
         matched.push({ id: device.id, name: device.name });
     }
+
     matched.sort((left, right) => left.name.localeCompare(right.name));
+
     return {
       groupId,
       kind: "dynamic",

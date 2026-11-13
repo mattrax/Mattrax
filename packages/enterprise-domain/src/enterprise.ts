@@ -43,11 +43,13 @@ const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String }
 const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
 const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
 const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
+
 const TenantDashboardWidgetParam = {
   tenantId: Schema.String,
   dashboardId: Schema.String,
   widgetId: Schema.String,
 };
+
 const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
 const McpConnectionParam = { connectionId: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
@@ -61,18 +63,21 @@ export class EnterpriseUnauthorized extends Schema.TaggedError<EnterpriseUnautho
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseBadRequest extends Schema.TaggedError<EnterpriseBadRequest>()(
   "EnterpriseBadRequest",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>()(
   "EnterpriseForbidden",
   {
     message: Schema.String,
   },
 ) {}
+
 /** A tenant member's RBAC role does not grant the endpoint's permission. */
 export class EnterprisePermissionDenied extends Schema.TaggedError<EnterprisePermissionDenied>()(
   "EnterprisePermissionDenied",
@@ -83,54 +88,63 @@ export class EnterprisePermissionDenied extends Schema.TaggedError<EnterprisePer
     roleKind: Schema.Literals(["built-in", "custom"]),
   },
 ) {}
+
 export class EnterpriseConflict extends Schema.TaggedError<EnterpriseConflict>()(
   "EnterpriseConflict",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseNotFound extends Schema.TaggedError<EnterpriseNotFound>()(
   "EnterpriseNotFound",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseTenantHasMembers extends Schema.TaggedError<EnterpriseTenantHasMembers>()(
   "EnterpriseTenantHasMembers",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseLastTenantUser extends Schema.TaggedError<EnterpriseLastTenantUser>()(
   "EnterpriseLastTenantUser",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseDbError extends Schema.TaggedError<EnterpriseDbError>()(
   "EnterpriseDbError",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseStripeError extends Schema.TaggedError<EnterpriseStripeError>()(
   "EnterpriseStripeError",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseR2FileNotFound extends Schema.TaggedError<EnterpriseR2FileNotFound>()(
   "EnterpriseR2FileNotFound",
   {
     message: Schema.String,
   },
 ) {}
+
 export class EnterpriseR2InternalError extends Schema.TaggedError<EnterpriseR2InternalError>()(
   "EnterpriseR2InternalError",
   {
     message: Schema.String,
   },
 ) {}
+
 /** The deployment has no Google Android Management credentials. */
 export class EnterpriseNotConfigured extends Schema.TaggedError<EnterpriseNotConfigured>()(
   "EnterpriseNotConfigured",
@@ -138,6 +152,7 @@ export class EnterpriseNotConfigured extends Schema.TaggedError<EnterpriseNotCon
     message: Schema.String,
   },
 ) {}
+
 /** Google rejected an Android Management request. */
 export class EnterpriseUpstreamError extends Schema.TaggedError<EnterpriseUpstreamError>()(
   "EnterpriseUpstreamError",
@@ -145,6 +160,7 @@ export class EnterpriseUpstreamError extends Schema.TaggedError<EnterpriseUpstre
     message: Schema.String,
   },
 ) {}
+
 /**
  * A failure that was not individually modelled by an endpoint. The backend
  * logs the original cause; clients get a stable, serializable fallback instead
@@ -162,7 +178,9 @@ const EnterpriseAuthRequiredErrors = [
   // Every authenticated endpoint maps unexpected failures to this typed 500.
   EnterpriseInternal.pipe(HttpApiSchema.status(500)),
 ] as const;
+
 const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
+
 const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -171,47 +189,57 @@ const EnterpriseTenantReadErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterprisePermissionDenied.pipe(HttpApiSchema.status(403)),
 ] as const;
+
 /** Read endpoints that validate user input (filters, cursors) can return 400. */
 const EnterpriseTenantValidatedReadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
+
 const EnterpriseTenantWriteErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
+
 const EnterpriseTenantDeleteErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseTenantHasMembers.pipe(HttpApiSchema.status(409)),
 ] as const;
+
 const EnterpriseTenantUserRemoveErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseLastTenantUser.pipe(HttpApiSchema.status(409)),
 ] as const;
+
 const EnterprisePolicyApplicationUploadErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
+
 const EnterprisePolicyApplicationDownloadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
+
 const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseTenantExportErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
+
 const EnterpriseTenantBackupDownloadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
+
 const EnterpriseTenantImportErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -219,33 +247,40 @@ const EnterpriseTenantImportErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),
 ] as const;
+
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
 const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
+
 const EnterpriseAndroidReadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseAndroidErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseAppleReadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseAppleWriteErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseNoDomainErrors = [
   ...EnterpriseDbErrors,
   EnterpriseInternal.pipe(HttpApiSchema.status(500)),
 ] as const;
+
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -253,24 +288,31 @@ const EnterpriseAccountErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
+
 /** Sensitive account/tenant actions also require a recent step-up. */
 const EnterpriseStepUpRequired = [StepUpRequired.pipe(HttpApiSchema.status(403))] as const;
+
 const EnterpriseAutopilotReadErrors = [
   ...EnterpriseTenantReadErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseAutopilotWriteErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
+
 const EnterpriseStepUpErrors = [...EnterpriseAccountErrors, ...EnterpriseStepUpRequired] as const;
+
 const EnterpriseStepUpFactorErrors = [
   ...EnterpriseStepUpErrors,
   StepUpUnavailable.pipe(HttpApiSchema.status(400)),
 ] as const;
+
 const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
+
 const EnterprisePublicEmailErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -278,16 +320,19 @@ const EnterprisePublicEmailErrors = [
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
+
 const EnterprisePublicNotFoundErrors = [
   ...EnterpriseDbErrors,
   EnterpriseInternal.pipe(HttpApiSchema.status(500)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
+
 const EnterprisePublicEnrollmentProfileErrors = [
   ...EnterprisePublicNotFoundErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
 ] as const;
+
 const EnterprisePublicAdeProfileErrors = [
   ...EnterprisePublicEnrollmentProfileErrors,
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
@@ -315,6 +360,7 @@ export const UserInfo = Schema.Struct({
    */
   hasPassword: Schema.Boolean,
 });
+
 export type UserInfo = typeof UserInfo.Type;
 
 export const OrganizationInfo = Schema.Struct({
@@ -334,6 +380,7 @@ export const TenantInfo = Schema.Struct({
   supportEmail: Schema.optional(NullableString),
   brandColor: Schema.optional(NullableString),
 });
+
 export type TenantInfo = typeof TenantInfo.Type;
 
 export const TenantDetail = Schema.Struct({
@@ -348,6 +395,7 @@ export const TenantDetail = Schema.Struct({
   metadata: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+
 export type TenantDetail = typeof TenantDetail.Type;
 
 /**
@@ -360,6 +408,7 @@ export const TenantBranding = Schema.Struct({
   supportEmail: Schema.String,
   brandColor: Schema.String,
 });
+
 export type TenantBranding = typeof TenantBranding.Type;
 
 export const BillingSummary = Schema.Struct({
@@ -384,12 +433,14 @@ export const BillingSummary = Schema.Struct({
   cancelAtPeriodEnd: Schema.Boolean,
   configured: Schema.Boolean,
 });
+
 export type BillingSummary = typeof BillingSummary.Type;
 
 export const MeResponse = Schema.Struct({
   user: UserInfo,
   tenants: Schema.Array(TenantInfo),
 });
+
 export type MeResponse = typeof MeResponse.Type;
 
 export const CreateTenantRequest = Schema.Struct({
@@ -426,6 +477,7 @@ export const TenantUser = Schema.Struct({
   roleKind: Schema.optional(Schema.Literals(["built-in", "custom"])),
   createdAt: Schema.String,
 });
+
 export type TenantUser = typeof TenantUser.Type;
 
 export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUser) });
@@ -447,6 +499,7 @@ export const TenantInvitation = Schema.Struct({
   expiresAt: Schema.String,
   createdAt: Schema.String,
 });
+
 export type TenantInvitation = typeof TenantInvitation.Type;
 
 export const TenantInvitationsResponse = Schema.Struct({
@@ -465,6 +518,7 @@ export const SsoConfigResponse = Schema.Struct({
   /** Require owners and admins to enroll an authenticator before tenant access. */
   requireMfa: Schema.Boolean,
 });
+
 export const PatchSsoConfigRequest = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   azureTenantId: Schema.optional(NullableString),
@@ -478,7 +532,9 @@ export const EntraDomainInfo = Schema.Struct({
   isVerified: Schema.Boolean,
   verifiedAt: Schema.optional(NullableString),
 });
+
 export type EntraDomainInfo = typeof EntraDomainInfo.Type;
+
 export const EntraDomainsResponse = Schema.Struct({ domains: Schema.Array(EntraDomainInfo) });
 
 export const EntraDirectorySyncStatus = Schema.Struct({
@@ -495,11 +551,14 @@ export const EntraDirectorySyncStatus = Schema.Struct({
   nextSyncAt: Schema.optional(NullableString),
   consentUrl: Schema.optional(NullableString),
 });
+
 export type EntraDirectorySyncStatus = typeof EntraDirectorySyncStatus.Type;
+
 export const PatchEntraDirectorySyncRequest = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   syncIntervalMinutes: Schema.optional(Schema.Number),
 });
+
 export const EntraDirectorySyncResult = Schema.Struct({
   status: Schema.Literal("ok"),
   users: Schema.Number,
@@ -514,6 +573,7 @@ export const AutopilotProfileStatus = Schema.Literals([
   "succeeded",
   "failed",
 ]);
+
 export type AutopilotProfileStatus = typeof AutopilotProfileStatus.Type;
 
 export const AutopilotEnrollmentState = Schema.Literals([
@@ -524,6 +584,7 @@ export const AutopilotEnrollmentState = Schema.Literals([
   "failed",
   "blocked",
 ]);
+
 export type AutopilotEnrollmentState = typeof AutopilotEnrollmentState.Type;
 
 export const AutopilotDeploymentMode = Schema.Literals([
@@ -531,6 +592,7 @@ export const AutopilotDeploymentMode = Schema.Literals([
   "selfDeploying",
   "preProvisioned",
 ]);
+
 export type AutopilotDeploymentMode = typeof AutopilotDeploymentMode.Type;
 
 export const AutopilotJoinType = Schema.Literals([
@@ -538,6 +600,7 @@ export const AutopilotJoinType = Schema.Literals([
   "azureADJoinUsingDeviceAuth",
   "hybridAzureADJoin",
 ]);
+
 export type AutopilotJoinType = typeof AutopilotJoinType.Type;
 
 /** A cached Windows Autopilot device. The hardware hash is never returned. */
@@ -556,11 +619,13 @@ export const AutopilotDeviceInfo = Schema.Struct({
   deviceId: Schema.optional(NullableString),
   lastSyncedAt: Schema.optional(NullableString),
 });
+
 export type AutopilotDeviceInfo = typeof AutopilotDeviceInfo.Type;
 
 export const AutopilotDevicesResponse = Schema.Struct({
   devices: Schema.Array(AutopilotDeviceInfo),
 });
+
 export type AutopilotDevicesResponse = typeof AutopilotDevicesResponse.Type;
 
 export const AutopilotImportRequest = Schema.Struct({
@@ -570,6 +635,7 @@ export const AutopilotImportRequest = Schema.Struct({
   format: Schema.optional(Schema.Literals(["csv", "text"])),
   maxRows: Schema.optional(Schema.Number),
 });
+
 export type AutopilotImportRequest = typeof AutopilotImportRequest.Type;
 
 export const AutopilotImportResponse = Schema.Struct({
@@ -579,6 +645,7 @@ export const AutopilotImportResponse = Schema.Struct({
   errors: Schema.Array(Schema.String),
   devices: Schema.Array(AutopilotDeviceInfo),
 });
+
 export type AutopilotImportResponse = typeof AutopilotImportResponse.Type;
 
 export const AutopilotSyncResponse = Schema.Struct({
@@ -587,6 +654,7 @@ export const AutopilotSyncResponse = Schema.Struct({
   linked: Schema.Number,
   pages: Schema.Number,
 });
+
 export type AutopilotSyncResponse = typeof AutopilotSyncResponse.Type;
 
 export const AutopilotProfileInfo = Schema.Struct({
@@ -606,11 +674,13 @@ export const AutopilotProfileInfo = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type AutopilotProfileInfo = typeof AutopilotProfileInfo.Type;
 
 export const AutopilotProfilesResponse = Schema.Struct({
   profiles: Schema.Array(AutopilotProfileInfo),
 });
+
 export type AutopilotProfilesResponse = typeof AutopilotProfilesResponse.Type;
 
 const AutopilotProfileFields = {
@@ -626,18 +696,21 @@ const AutopilotProfileFields = {
 } as const;
 
 export const CreateAutopilotProfileRequest = Schema.Struct(AutopilotProfileFields);
+
 export type CreateAutopilotProfileRequest = typeof CreateAutopilotProfileRequest.Type;
 
 export const UpdateAutopilotProfileRequest = Schema.Struct({
   ...AutopilotProfileFields,
   name: Schema.optional(Schema.String),
 });
+
 export type UpdateAutopilotProfileRequest = typeof UpdateAutopilotProfileRequest.Type;
 
 export const AssignAutopilotProfileRequest = Schema.Struct({
   /** Entra group object id targeted by the Graph assignment. */
   groupId: Schema.String,
 });
+
 export type AssignAutopilotProfileRequest = typeof AssignAutopilotProfileRequest.Type;
 
 /** Graph/Autopilot configuration shown in Settings → Management. */
@@ -658,6 +731,7 @@ export const AutopilotSettingsResponse = Schema.Struct({
     authServiceUrl: Schema.optional(NullableString),
   }),
 });
+
 export type AutopilotSettingsResponse = typeof AutopilotSettingsResponse.Type;
 
 export const ScimTokenInfo = Schema.Struct({
@@ -666,8 +740,10 @@ export const ScimTokenInfo = Schema.Struct({
   createdAt: Schema.String,
   lastUsedAt: Schema.optional(NullableString),
 });
+
 export const ScimTokensResponse = Schema.Struct({ tokens: Schema.Array(ScimTokenInfo) });
 export const CreateScimTokenRequest = Schema.Struct({ name: Schema.String });
+
 export const CreateScimTokenResponse = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -685,6 +761,7 @@ export const AuditLogEntry = Schema.Struct({
   metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
   createdAt: Schema.String,
 });
+
 export type AuditLogEntry = typeof AuditLogEntry.Type;
 
 export const AuditLogResponse = Schema.Struct({ entries: Schema.Array(AuditLogEntry) });
@@ -706,18 +783,21 @@ export const AuditSearchQuery = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   offset: Schema.optional(Schema.Number),
 });
+
 export type AuditSearchQuery = typeof AuditSearchQuery.Type;
 
 export const AuditSearchResponse = Schema.Struct({
   entries: Schema.Array(AuditLogEntry),
   nextCursor: Schema.NullOr(Schema.String),
 });
+
 export type AuditSearchResponse = typeof AuditSearchResponse.Type;
 
 export const AuditExportQuery = Schema.Struct({
   ...AuditSearchQuery.fields,
   format: Schema.optional(Schema.Literals(["csv", "json"])),
 });
+
 export type AuditExportQuery = typeof AuditExportQuery.Type;
 
 export const CreateInvitationResponse = Schema.Struct({
@@ -725,6 +805,7 @@ export const CreateInvitationResponse = Schema.Struct({
   /** Present when the server can build an invite link (always in this build). */
   inviteUrl: Schema.optional(NullableString),
 });
+
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String });
 
@@ -736,6 +817,7 @@ export const VerifyEmailRequest = Schema.Struct({
   /** Signed challenge returned by `requestEmailVerification`. */
   challenge: Schema.optional(Schema.String),
 });
+
 export const EmailVerificationResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Present when a verification code was issued. */
@@ -750,6 +832,7 @@ export const UpdateMeRequest = Schema.Struct({
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
 export const DeviceStatus = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
 export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "unknown"]);
+
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
 
 export const DeviceRow = Schema.Struct({
@@ -795,6 +878,7 @@ export const DeviceRow = Schema.Struct({
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
 });
+
 export type DeviceRow = typeof DeviceRow.Type;
 
 /** One installed application reported by a managed device. */
@@ -809,11 +893,13 @@ export const DeviceApplication = Schema.Struct({
   isManaged: Schema.Boolean,
   lastReportedAt: Schema.String,
 });
+
 export type DeviceApplication = typeof DeviceApplication.Type;
 
 export const DeviceApplicationsResponse = Schema.Struct({
   applications: Schema.Array(DeviceApplication),
 });
+
 export type DeviceApplicationsResponse = typeof DeviceApplicationsResponse.Type;
 
 /** A tenant-wide software inventory row with its installed-device count. */
@@ -823,6 +909,7 @@ export const ApplicationInventoryRow = Schema.Struct({
   id: Schema.String,
   deviceCount: Schema.Number,
 });
+
 export type ApplicationInventoryRow = typeof ApplicationInventoryRow.Type;
 
 export const ApplicationInventoryQuery = Schema.Struct({
@@ -833,6 +920,7 @@ export const ApplicationInventoryQuery = Schema.Struct({
   limit: Schema.optional(Schema.Number),
   offset: Schema.optional(Schema.Number),
 });
+
 export type ApplicationInventoryQuery = typeof ApplicationInventoryQuery.Type;
 
 export const ApplicationInventoryResponse = Schema.Struct({
@@ -840,6 +928,7 @@ export const ApplicationInventoryResponse = Schema.Struct({
   /** Total matching bundle identifiers before pagination. */
   total: Schema.Number,
 });
+
 export type ApplicationInventoryResponse = typeof ApplicationInventoryResponse.Type;
 
 /** Decrypted FileVault recovery key. Never returned by list/detail endpoints. */
@@ -850,6 +939,7 @@ export const DeviceRecoveryKeyResponse = Schema.Struct({
   /** When the value last changed. */
   rotatedAt: Schema.optional(NullableString),
 });
+
 export type DeviceRecoveryKeyResponse = typeof DeviceRecoveryKeyResponse.Type;
 
 export const DeviceCommandInfo = Schema.Struct({
@@ -861,9 +951,11 @@ export const DeviceCommandInfo = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export const DeviceCommandsResponse = Schema.Struct({
   commands: Schema.Array(DeviceCommandInfo),
 });
+
 export const DeviceDeclarationInfo = Schema.Struct({
   identifier: Schema.String,
   declarationType: Schema.String,
@@ -873,26 +965,34 @@ export const DeviceDeclarationInfo = Schema.Struct({
   reasons: Schema.optional(Schema.NullOr(Schema.Unknown)),
   updatedAt: Schema.String,
 });
+
 export const DeviceDeclarationsResponse = Schema.Struct({
   declarations: Schema.Array(DeviceDeclarationInfo),
 });
 
 export const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
+
 export type DeviceHealthLevel = typeof DeviceHealthLevel.Type;
+
 export const DeviceHealthReasonSeverity = Schema.Literals(["info", "warning", "critical"]);
+
 export type DeviceHealthReasonSeverity = typeof DeviceHealthReasonSeverity.Type;
+
 export const DeviceHealthReason = Schema.Struct({
   code: Schema.String,
   label: Schema.String,
   severity: DeviceHealthReasonSeverity,
 });
+
 export type DeviceHealthReason = typeof DeviceHealthReason.Type;
+
 export const DeviceHealth = Schema.Struct({
   level: DeviceHealthLevel,
   reasons: Schema.Array(DeviceHealthReason),
   lastSeenAt: Schema.optional(NullableString),
   stale: Schema.Boolean,
 });
+
 export type DeviceHealth = typeof DeviceHealth.Type;
 
 /** Identity certificate metadata. Private keys are never exposed. */
@@ -902,10 +1002,12 @@ export const DeviceCertificateInfo = Schema.Struct({
   revokedAt: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+
 export type DeviceCertificateInfo = typeof DeviceCertificateInfo.Type;
 
 /** APNs delivery state for a single Apple device. */
 export const DevicePushErrorCode = Schema.Literals(["invalid_token", "delivery_failed"]);
+
 export type DevicePushErrorCode = typeof DevicePushErrorCode.Type;
 
 export const DevicePushInfo = Schema.Struct({
@@ -919,6 +1021,7 @@ export const DevicePushInfo = Schema.Struct({
   /** Apple rejected the token; the device has to enroll again. */
   invalidToken: Schema.Boolean,
 });
+
 export type DevicePushInfo = typeof DevicePushInfo.Type;
 
 /** Tenant-wide APNs delivery rollup. */
@@ -934,6 +1037,7 @@ export const DevicePushHealthCounts = Schema.Struct({
   /** Devices Apple has told us can no longer receive pushes. */
   invalidToken: Schema.Number,
 });
+
 export type DevicePushHealthCounts = typeof DevicePushHealthCounts.Type;
 
 export const DevicePushFailure = Schema.Struct({
@@ -944,12 +1048,14 @@ export const DevicePushFailure = Schema.Struct({
   errorCode: Schema.optional(Schema.NullOr(DevicePushErrorCode)),
   consecutiveFailures: Schema.Number,
 });
+
 export type DevicePushFailure = typeof DevicePushFailure.Type;
 
 export const DevicePushHealthResponse = Schema.Struct({
   counts: DevicePushHealthCounts,
   recentFailures: Schema.Array(DevicePushFailure),
 });
+
 export type DevicePushHealthResponse = typeof DevicePushHealthResponse.Type;
 
 /** Chronological per-device feed assembled from existing records. */
@@ -960,6 +1066,7 @@ export const DeviceActivityKind = Schema.Literals([
   "lifecycle",
   "certificate",
 ]);
+
 export type DeviceActivityKind = typeof DeviceActivityKind.Type;
 
 export const DeviceActivityEntry = Schema.Struct({
@@ -970,11 +1077,13 @@ export const DeviceActivityEntry = Schema.Struct({
   status: Schema.optional(NullableString),
   at: Schema.String,
 });
+
 export type DeviceActivityEntry = typeof DeviceActivityEntry.Type;
 
 export const DeviceActivityResponse = Schema.Struct({
   events: Schema.Array(DeviceActivityEntry),
 });
+
 export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
 
 export const DeviceHealthResponse = Schema.Struct({
@@ -983,6 +1092,7 @@ export const DeviceHealthResponse = Schema.Struct({
   certificates: Schema.Array(DeviceCertificateInfo),
   push: DevicePushInfo,
 });
+
 export type DeviceHealthResponse = typeof DeviceHealthResponse.Type;
 
 export const DeviceHealthCounts = Schema.Struct({
@@ -994,7 +1104,9 @@ export const DeviceHealthCounts = Schema.Struct({
   stale: Schema.Number,
   unknown: Schema.Number,
 });
+
 export type DeviceHealthCounts = typeof DeviceHealthCounts.Type;
+
 export const DeviceHealthReasonGroup = Schema.Struct({
   /** Stable rule code, for grouping across devices. */
   code: Schema.String,
@@ -1004,6 +1116,7 @@ export const DeviceHealthReasonGroup = Schema.Struct({
   /** Devices carrying this reason. */
   count: Schema.Number,
 });
+
 export type DeviceHealthReasonGroup = typeof DeviceHealthReasonGroup.Type;
 
 /** A non-healthy device resolved to the fields the overview renders. */
@@ -1014,6 +1127,7 @@ export const DeviceHealthAttentionDevice = Schema.Struct({
   reasons: Schema.Array(DeviceHealthReason),
   lastSeenAt: NullableString,
 });
+
 export type DeviceHealthAttentionDevice = typeof DeviceHealthAttentionDevice.Type;
 
 export const DeviceHealthSummaryResponse = Schema.Struct({
@@ -1023,6 +1137,7 @@ export const DeviceHealthSummaryResponse = Schema.Struct({
   /** Worst devices to surface; the full list lives on the devices page. */
   devices: Schema.Array(DeviceHealthAttentionDevice),
 });
+
 export type DeviceHealthSummaryResponse = typeof DeviceHealthSummaryResponse.Type;
 
 /**
@@ -1037,6 +1152,7 @@ export const CredentialLevel = Schema.Literals([
   "missing",
   "unknown",
 ]);
+
 export type CredentialLevel = typeof CredentialLevel.Type;
 
 export const CredentialInfo = Schema.Struct({
@@ -1046,6 +1162,7 @@ export const CredentialInfo = Schema.Struct({
   daysLeft: Schema.optional(Schema.NullOr(Schema.Number)),
   level: CredentialLevel,
 });
+
 export type CredentialInfo = typeof CredentialInfo.Type;
 
 export const DeviceCertificateCounts = Schema.Struct({
@@ -1055,6 +1172,7 @@ export const DeviceCertificateCounts = Schema.Struct({
   expired: Schema.Number,
   revoked: Schema.Number,
 });
+
 export type DeviceCertificateCounts = typeof DeviceCertificateCounts.Type;
 
 export const CredentialHealthResponse = Schema.Struct({
@@ -1062,6 +1180,7 @@ export const CredentialHealthResponse = Schema.Struct({
   scepCa: CredentialInfo,
   deviceCertificates: DeviceCertificateCounts,
 });
+
 export type CredentialHealthResponse = typeof CredentialHealthResponse.Type;
 
 export const DeviceIdentityRevokeResponse = Schema.Struct({
@@ -1113,6 +1232,7 @@ export const GroupRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type GroupRow = typeof GroupRow.Type;
 
 export const GroupRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
@@ -1120,13 +1240,16 @@ export const DeviceRelation = Schema.Struct({ id: Schema.String, name: Schema.St
 
 /** Policy rows shown inside a group assignment table. */
 export const PolicyAssignmentMode = Schema.Literals(["include", "exclude"]);
+
 export type PolicyAssignmentMode = typeof PolicyAssignmentMode.Type;
+
 export const GroupPolicyRelation = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   mode: PolicyAssignmentMode,
   priority: Schema.Number,
 });
+
 export type GroupPolicyRelation = typeof GroupPolicyRelation.Type;
 
 /** Accepts a bare id (= include) or an explicit id/mode pair. */
@@ -1134,6 +1257,7 @@ export const PolicyAssignmentRef = Schema.Union([
   Schema.String,
   Schema.Struct({ id: Schema.String, mode: Schema.optional(PolicyAssignmentMode) }),
 ]);
+
 export type PolicyAssignmentRef = typeof PolicyAssignmentRef.Type;
 
 export const GroupNode = Schema.Struct({
@@ -1150,6 +1274,7 @@ export const GroupNode = Schema.Struct({
   devices: Schema.optional(Schema.Array(GroupRelation)),
   policies: Schema.optional(Schema.Array(GroupPolicyRelation)),
 });
+
 export type GroupNode = typeof GroupNode.Type;
 
 export const CreateGroupRequest = Schema.Struct({
@@ -1194,9 +1319,11 @@ export const PolicyRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type PolicyRow = typeof PolicyRow.Type;
 
 export type Entity = "device" | "group" | "policy";
+
 export type RowFor<E extends Entity> = E extends "device"
   ? DeviceRow
   : E extends "group"
@@ -1229,6 +1356,7 @@ export const PolicyApplicationObject = Schema.Struct({
   contentType: Schema.optional(NullableString),
   size: Schema.Number,
 });
+
 export type PolicyApplicationObject = typeof PolicyApplicationObject.Type;
 
 export const EnterpriseApplicationUploadErrors = EnterprisePolicyApplicationUploadErrors;
@@ -1241,11 +1369,15 @@ export const DownloadPolicyApplicationResponse = Schema.Struct({
   size: Schema.Number,
   content: Schema.String,
 });
+
 export type DownloadPolicyApplicationResponse = typeof DownloadPolicyApplicationResponse.Type;
 
 export const ApplicationPlatform = Schema.Literals(["apple", "win", "android"]);
+
 export type ApplicationPlatform = typeof ApplicationPlatform.Type;
+
 export const ApplicationSource = Schema.Literals(["manifest", "store", "upload"]);
+
 export type ApplicationSource = typeof ApplicationSource.Type;
 
 export const ApplicationRow = Schema.Struct({
@@ -1267,16 +1399,19 @@ export const ApplicationRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type ApplicationRow = typeof ApplicationRow.Type;
 
 export const ApplicationListResponse = Schema.Struct({
   applications: Schema.Array(ApplicationRow),
 });
+
 export const ApplicationNode = Schema.Struct({
   ...ApplicationRow.fields,
   groups: Schema.Array(GroupRelation),
   devices: Schema.Array(DeviceRelation),
 });
+
 export type ApplicationNode = typeof ApplicationNode.Type;
 
 /**
@@ -1289,8 +1424,10 @@ export type ApplicationNode = typeof ApplicationNode.Type;
  * passwords, sessions and auth proofs are excluded by construction.
  */
 export const TENANT_EXPORT_VERSION = 1;
+
 /** Reject bundles larger than this before doing any database work. */
 export const TENANT_IMPORT_MAX_BYTES = 8 * 1024 * 1024;
+
 /** Per-collection cap for an export, so a huge tenant cannot exhaust memory. */
 export const TENANT_EXPORT_MAX_ROWS = 10_000;
 
@@ -1304,6 +1441,7 @@ export const TenantExportProfile = Schema.Struct({
   brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(Schema.NullOr(JsonRecord)),
 });
+
 export type TenantExportProfile = typeof TenantExportProfile.Type;
 
 export const TenantExportMember = Schema.Struct({
@@ -1312,6 +1450,7 @@ export const TenantExportMember = Schema.Struct({
   role: Schema.String,
   createdAt: Schema.optional(NullableString),
 });
+
 export type TenantExportMember = typeof TenantExportMember.Type;
 
 export const TenantExportDeviceRef = Schema.Struct({
@@ -1319,6 +1458,7 @@ export const TenantExportDeviceRef = Schema.Struct({
   name: Schema.optional(NullableString),
   serial: Schema.optional(NullableString),
 });
+
 export type TenantExportDeviceRef = typeof TenantExportDeviceRef.Type;
 
 export const TenantExportGroup = Schema.Struct({
@@ -1329,6 +1469,7 @@ export const TenantExportGroup = Schema.Struct({
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
   policyKeys: Schema.Array(Schema.String),
 });
+
 export type TenantExportGroup = typeof TenantExportGroup.Type;
 
 export const TenantExportPolicy = Schema.Struct({
@@ -1338,6 +1479,7 @@ export const TenantExportPolicy = Schema.Struct({
   /** Configuration kind mapped to its stored JSON payload. */
   configurations: Schema.optional(JsonRecord),
 });
+
 export type TenantExportPolicy = typeof TenantExportPolicy.Type;
 
 export const TenantExportApplication = Schema.Struct({
@@ -1358,6 +1500,7 @@ export const TenantExportApplication = Schema.Struct({
   notes: Schema.optional(NullableString),
   groupKeys: Schema.Array(Schema.String),
 });
+
 export type TenantExportApplication = typeof TenantExportApplication.Type;
 
 export const TenantExportEnrollment = Schema.Struct({
@@ -1368,6 +1511,7 @@ export const TenantExportEnrollment = Schema.Struct({
   enabledAssetTag: Schema.Boolean,
   maxDevices: Schema.Number,
 });
+
 export type TenantExportEnrollment = typeof TenantExportEnrollment.Type;
 
 export const TenantExportPreRegistration = Schema.Struct({
@@ -1377,6 +1521,7 @@ export const TenantExportPreRegistration = Schema.Struct({
   notes: Schema.optional(NullableString),
   groupKey: Schema.optional(NullableString),
 });
+
 export type TenantExportPreRegistration = typeof TenantExportPreRegistration.Type;
 
 /** SCEP-issued identity metadata. Private keys are never exported. */
@@ -1388,6 +1533,7 @@ export const TenantExportCertificate = Schema.Struct({
   revokedAt: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+
 export type TenantExportCertificate = typeof TenantExportCertificate.Type;
 
 export const TenantExportAuditEntry = Schema.Struct({
@@ -1398,6 +1544,7 @@ export const TenantExportAuditEntry = Schema.Struct({
   metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
   createdAt: Schema.String,
 });
+
 export type TenantExportAuditEntry = typeof TenantExportAuditEntry.Type;
 
 export const TenantExportEnvelope = Schema.Struct({
@@ -1414,12 +1561,14 @@ export const TenantExportEnvelope = Schema.Struct({
   auditLog: Schema.optional(Schema.Array(TenantExportAuditEntry)),
   auditTruncated: Schema.optional(Schema.Boolean),
 });
+
 export type TenantExportEnvelope = typeof TenantExportEnvelope.Type;
 
 export const TenantExportQuery = Schema.Struct({
   /** `true`/`1` includes recent audit entries in the bundle (export-only). */
   includeAudit: Schema.optional(Schema.String),
 });
+
 export type TenantExportQuery = typeof TenantExportQuery.Type;
 
 /** One scheduled or manual tenant backup attempt. */
@@ -1436,11 +1585,13 @@ export const BackupRunInfo = Schema.Struct({
   /** Truncated, secret-free failure description. */
   error: Schema.optional(NullableString),
 });
+
 export type BackupRunInfo = typeof BackupRunInfo.Type;
 
 export const TenantBackupsResponse = Schema.Struct({
   backups: Schema.Array(BackupRunInfo),
 });
+
 export type TenantBackupsResponse = typeof TenantBackupsResponse.Type;
 
 /**
@@ -1461,6 +1612,7 @@ export const TenantImportRequest = Schema.Struct({
   auditLog: Schema.optional(Schema.Array(TenantExportAuditEntry)),
   auditTruncated: Schema.optional(Schema.Boolean),
 });
+
 export type TenantImportRequest = typeof TenantImportRequest.Type;
 
 export const TenantImportCounts = Schema.Struct({
@@ -1469,6 +1621,7 @@ export const TenantImportCounts = Schema.Struct({
   applications: Schema.Number,
   preRegistrations: Schema.Number,
 });
+
 export type TenantImportCounts = typeof TenantImportCounts.Type;
 
 export const TenantImportSkipped = Schema.Struct({
@@ -1477,6 +1630,7 @@ export const TenantImportSkipped = Schema.Struct({
   certificates: Schema.Number,
   auditLog: Schema.Number,
 });
+
 export type TenantImportSkipped = typeof TenantImportSkipped.Type;
 
 export const TenantImportResponse = Schema.Struct({
@@ -1487,6 +1641,7 @@ export const TenantImportResponse = Schema.Struct({
   /** Uploaded applications whose object bytes are not part of a bundle. */
   applicationsWithoutFiles: Schema.Number,
 });
+
 export type TenantImportResponse = typeof TenantImportResponse.Type;
 
 export const CreateApplicationRequest = Schema.Struct({
@@ -1531,6 +1686,7 @@ export const ApplicationInstallResult = Schema.Struct({
   skipped: Schema.Number,
   message: Schema.optional(Schema.String),
 });
+
 export type ApplicationInstallResult = typeof ApplicationInstallResult.Type;
 
 export const PolicyAssignmentsResponse = Schema.Struct({
@@ -1544,6 +1700,7 @@ export const PolicyAssignmentsResponse = Schema.Struct({
     }),
   ),
 });
+
 export type PolicyAssignmentsResponse = typeof PolicyAssignmentsResponse.Type;
 
 export const PatchPolicyAssignmentsRequest = Schema.Struct({
@@ -1553,6 +1710,7 @@ export const PatchPolicyAssignmentsRequest = Schema.Struct({
 
 /** Scope of an assignment that contributed to the effective policy. */
 export const EffectivePolicyScope = Schema.Literals(["direct", "group"]);
+
 export type EffectivePolicyScope = typeof EffectivePolicyScope.Type;
 
 export const EffectivePolicyConfiguration = Schema.Struct({
@@ -1565,6 +1723,7 @@ export const EffectivePolicyConfiguration = Schema.Struct({
   groupNames: Schema.Array(Schema.String),
   hash: Schema.String,
 });
+
 export type EffectivePolicyConfiguration = typeof EffectivePolicyConfiguration.Type;
 
 export const EffectivePolicyContributor = Schema.Struct({
@@ -1576,6 +1735,7 @@ export const EffectivePolicyContributor = Schema.Struct({
   groupNames: Schema.Array(Schema.String),
   kinds: Schema.Array(Schema.String),
 });
+
 export type EffectivePolicyContributor = typeof EffectivePolicyContributor.Type;
 
 export const EffectivePolicyOverrideReason = Schema.Literals([
@@ -1584,6 +1744,7 @@ export const EffectivePolicyOverrideReason = Schema.Literals([
   "older-updated-at",
   "lexicographic-id",
 ]);
+
 export type EffectivePolicyOverrideReason = typeof EffectivePolicyOverrideReason.Type;
 
 export const EffectivePolicyOverride = Schema.Struct({
@@ -1596,9 +1757,11 @@ export const EffectivePolicyOverride = Schema.Struct({
   groupNames: Schema.Array(Schema.String),
   reason: EffectivePolicyOverrideReason,
 });
+
 export type EffectivePolicyOverride = typeof EffectivePolicyOverride.Type;
 
 export const EffectivePolicyExclusionReason = Schema.Literals(["device-exclude", "group-exclude"]);
+
 export type EffectivePolicyExclusionReason = typeof EffectivePolicyExclusionReason.Type;
 
 export const EffectivePolicyExclusion = Schema.Struct({
@@ -1611,6 +1774,7 @@ export const EffectivePolicyExclusion = Schema.Struct({
   effective: Schema.Boolean,
   reason: EffectivePolicyExclusionReason,
 });
+
 export type EffectivePolicyExclusion = typeof EffectivePolicyExclusion.Type;
 
 export const EffectivePolicyResponse = Schema.Struct({
@@ -1620,6 +1784,7 @@ export const EffectivePolicyResponse = Schema.Struct({
   overridden: Schema.Array(EffectivePolicyOverride),
   exclusions: Schema.Array(EffectivePolicyExclusion),
 });
+
 export type EffectivePolicyResponse = typeof EffectivePolicyResponse.Type;
 
 export const MobileconfigPayloadPreview = Schema.Struct({
@@ -1630,6 +1795,7 @@ export const MobileconfigPayloadPreview = Schema.Struct({
   /** Friendly category name (for example "Wi-Fi" or "Restrictions"). */
   category: Schema.optional(Schema.String),
 });
+
 export type MobileconfigPayloadPreview = typeof MobileconfigPayloadPreview.Type;
 
 export const MobileconfigPreview = Schema.Struct({
@@ -1645,6 +1811,7 @@ export const MobileconfigPreview = Schema.Struct({
   payloadOrganization: Schema.optional(Schema.String),
   payloads: Schema.Array(MobileconfigPayloadPreview),
 });
+
 export type MobileconfigPreview = typeof MobileconfigPreview.Type;
 
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
@@ -1663,6 +1830,7 @@ export const PolicyDeploymentInfo = Schema.Struct({
   createdAt: Schema.String,
   createdByUserId: Schema.optional(NullableString),
 });
+
 export const PolicyDeploymentsResponse = Schema.Struct({
   deployments: Schema.Array(PolicyDeploymentInfo),
 });
@@ -1674,6 +1842,7 @@ export const UserSearchRow = Schema.Struct({
   email: Schema.String,
   role: Schema.String,
 });
+
 export type UserSearchRow = typeof UserSearchRow.Type;
 
 export const SearchResult = Schema.Struct({
@@ -1694,11 +1863,13 @@ export const DevicePreRegistrationRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 export type DevicePreRegistrationRow = typeof DevicePreRegistrationRow.Type;
 
 export const DevicePreRegistrationListResponse = Schema.Struct({
   rows: Schema.Array(DevicePreRegistrationRow),
 });
+
 export type DevicePreRegistrationListResponse = typeof DevicePreRegistrationListResponse.Type;
 
 export const DevicePreRegistrationImportRow = Schema.Struct({
@@ -1711,11 +1882,13 @@ export const DevicePreRegistrationImportRow = Schema.Struct({
   /** Tenant-scoped group name; resolved case-insensitively. */
   groupName: Schema.optional(NullableString),
 });
+
 export type DevicePreRegistrationImportRow = typeof DevicePreRegistrationImportRow.Type;
 
 export const DevicePreRegistrationImportRequest = Schema.Struct({
   rows: Schema.Array(DevicePreRegistrationImportRow),
 });
+
 export type DevicePreRegistrationImportRequest = typeof DevicePreRegistrationImportRequest.Type;
 
 export const DevicePreRegistrationImportResult = Schema.Struct({
@@ -1724,6 +1897,7 @@ export const DevicePreRegistrationImportResult = Schema.Struct({
   id: Schema.optional(NullableString),
   error: Schema.optional(NullableString),
 });
+
 export type DevicePreRegistrationImportResult = typeof DevicePreRegistrationImportResult.Type;
 
 export const DevicePreRegistrationImportResponse = Schema.Struct({
@@ -1732,7 +1906,9 @@ export const DevicePreRegistrationImportResponse = Schema.Struct({
   updated: Schema.Number,
   failed: Schema.Number,
 });
+
 export type DevicePreRegistrationImportResponse = typeof DevicePreRegistrationImportResponse.Type;
+
 export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
 
 /**
@@ -1747,12 +1923,17 @@ export const GroupPreviewResponse = Schema.Struct({
   devices: Schema.Array(GroupRelation),
   evaluatedAt: Schema.String,
 });
+
 export type GroupPreviewResponse = typeof GroupPreviewResponse.Type;
+
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
 export const DeviceSearchSort = Schema.Literals(["name", "lastSeenAt", "enrolledAt", "status"]);
+
 export type DeviceSearchSort = typeof DeviceSearchSort.Type;
+
 export const SortDirection = Schema.Literals(["asc", "desc"]);
+
 export type SortDirection = typeof SortDirection.Type;
 
 export const DeviceHealthFilter = Schema.Literals([
@@ -1762,6 +1943,7 @@ export const DeviceHealthFilter = Schema.Literals([
   "unknown",
   "stale",
 ]);
+
 export type DeviceHealthFilter = typeof DeviceHealthFilter.Type;
 
 /**
@@ -1790,6 +1972,7 @@ export const DeviceSearchQuery = Schema.Struct({
   sort: Schema.optional(DeviceSearchSort),
   direction: Schema.optional(SortDirection),
 });
+
 export type DeviceSearchQuery = typeof DeviceSearchQuery.Type;
 
 /** A device row plus its group memberships, populated by the search endpoint. */
@@ -1797,15 +1980,18 @@ export const DeviceSearchRow = Schema.Struct({
   ...DeviceRow.fields,
   groups: Schema.Array(DeviceRelation),
 });
+
 export type DeviceSearchRow = typeof DeviceSearchRow.Type;
 
 export const DeviceSearchResponse = Schema.Struct({
   devices: Schema.Array(DeviceSearchRow),
   total: Schema.Number,
 });
+
 export type DeviceSearchResponse = typeof DeviceSearchResponse.Type;
 
 export const NodeResponse = Schema.Union([DeviceRow, GroupNode, PolicyRow]);
+
 export type NodeResponse = typeof NodeResponse.Type;
 
 export const PlatformEnrollment = Schema.Union([
@@ -1815,10 +2001,12 @@ export const PlatformEnrollment = Schema.Union([
   /** The platform toggle is on, but delivery is not wired up in this build. */
   Schema.Literal("unavailable"),
 ]);
+
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
 /** Android Enterprise signup/delivery state exposed to administrators. */
 export const AndroidEnterpriseStatus = Schema.Literals(["pending", "active", "error", "disabled"]);
+
 export type AndroidEnterpriseStatus = typeof AndroidEnterpriseStatus.Type;
 
 /**
@@ -1845,10 +2033,12 @@ export const AndroidEnterpriseInfo = Schema.Struct({
   createdAt: Schema.optional(NullableString),
   updatedAt: Schema.optional(NullableString),
 });
+
 export type AndroidEnterpriseInfo = typeof AndroidEnterpriseInfo.Type;
 
 /** Starts the Google-hosted Android Enterprise signup flow. */
 export const AndroidSignupResponse = Schema.Struct({ url: Schema.String });
+
 export type AndroidSignupResponse = typeof AndroidSignupResponse.Type;
 
 export const PatchTenantAndroidRequest = Schema.Struct({
@@ -1859,6 +2049,7 @@ export const PatchTenantAndroidRequest = Schema.Struct({
    */
   enabled: Schema.optional(Schema.Boolean),
 });
+
 export type PatchTenantAndroidRequest = typeof PatchTenantAndroidRequest.Type;
 
 /**
@@ -1881,6 +2072,7 @@ export const AndroidEnrollment = Schema.Union([
   /** No enterprise is connected; the page shows setup instructions. */
   Schema.Literal("unavailable"),
 ]);
+
 export type AndroidEnrollment = typeof AndroidEnrollment.Type;
 
 /** Result of an explicit Android policy sync. */
@@ -1890,10 +2082,12 @@ export const AndroidSyncResponse = Schema.Struct({
   skipped: Schema.Number,
   failed: Schema.Number,
 });
+
 export type AndroidSyncResponse = typeof AndroidSyncResponse.Type;
 
 /** Apple Business Manager credential/sync state for one tenant. */
 export const AppleBusinessManagerStatus = Schema.Literals(["unconfigured", "active", "error"]);
+
 export type AppleBusinessManagerStatus = typeof AppleBusinessManagerStatus.Type;
 
 export const AppleBusinessManagerInfo = Schema.Struct({
@@ -1915,6 +2109,7 @@ export const AppleBusinessManagerInfo = Schema.Struct({
   createdAt: Schema.optional(NullableString),
   updatedAt: Schema.optional(NullableString),
 });
+
 export type AppleBusinessManagerInfo = typeof AppleBusinessManagerInfo.Type;
 
 /**
@@ -1933,6 +2128,7 @@ export const UploadAppleBusinessManagerTokenRequest = Schema.Struct({
   orgName: Schema.optional(Schema.String),
   scope: Schema.optional(Schema.Literals(["business.api", "school.api"])),
 });
+
 export type UploadAppleBusinessManagerTokenRequest =
   typeof UploadAppleBusinessManagerTokenRequest.Type;
 
@@ -1943,6 +2139,7 @@ export const AppleBusinessManagerSyncResponse = Schema.Struct({
   removed: Schema.Number,
   lastSyncedAt: Schema.String,
 });
+
 export type AppleBusinessManagerSyncResponse = typeof AppleBusinessManagerSyncResponse.Type;
 
 export const AbmDeviceInfo = Schema.Struct({
@@ -1957,9 +2154,11 @@ export const AbmDeviceInfo = Schema.Struct({
   lastSeenAt: Schema.optional(NullableString),
   updatedAt: Schema.String,
 });
+
 export type AbmDeviceInfo = typeof AbmDeviceInfo.Type;
 
 export const AbmDevicesResponse = Schema.Struct({ devices: Schema.Array(AbmDeviceInfo) });
+
 export type AbmDevicesResponse = typeof AbmDevicesResponse.Type;
 
 export const AbmAssignDeviceResponse = Schema.Struct({
@@ -1968,6 +2167,7 @@ export const AbmAssignDeviceResponse = Schema.Struct({
   mdmServerId: Schema.String,
   activityId: Schema.optional(NullableString),
 });
+
 export type AbmAssignDeviceResponse = typeof AbmAssignDeviceResponse.Type;
 
 export const AbmProfileUrlResponse = Schema.Struct({
@@ -1976,10 +2176,12 @@ export const AbmProfileUrlResponse = Schema.Struct({
   url: Schema.String,
   expiresAt: Schema.String,
 });
+
 export type AbmProfileUrlResponse = typeof AbmProfileUrlResponse.Type;
 
 /** Apple Apps and Books (VPP) token/licence state for one tenant. */
 export const VppStatus = Schema.Literals(["unconfigured", "active", "error"]);
+
 export type VppStatus = typeof VppStatus.Type;
 
 export const VppInfo = Schema.Struct({
@@ -1996,6 +2198,7 @@ export const VppInfo = Schema.Struct({
   createdAt: Schema.optional(NullableString),
   updatedAt: Schema.optional(NullableString),
 });
+
 export type VppInfo = typeof VppInfo.Type;
 
 export const UploadVppTokenRequest = Schema.Struct({
@@ -2003,6 +2206,7 @@ export const UploadVppTokenRequest = Schema.Struct({
   encoding: Schema.optional(Schema.Literals(["text", "base64"])),
   fileName: Schema.optional(Schema.String),
 });
+
 export type UploadVppTokenRequest = typeof UploadVppTokenRequest.Type;
 
 export const VppSyncResponse = Schema.Struct({
@@ -2012,6 +2216,7 @@ export const VppSyncResponse = Schema.Struct({
   assignedLicenses: Schema.Number,
   lastSyncedAt: Schema.String,
 });
+
 export type VppSyncResponse = typeof VppSyncResponse.Type;
 
 export const VppAssetInfo = Schema.Struct({
@@ -2029,9 +2234,11 @@ export const VppAssetInfo = Schema.Struct({
   supportedPlatforms: Schema.optional(Schema.Array(Schema.String)),
   lastSyncedAt: Schema.optional(NullableString),
 });
+
 export type VppAssetInfo = typeof VppAssetInfo.Type;
 
 export const VppAssetsResponse = Schema.Struct({ assets: Schema.Array(VppAssetInfo) });
+
 export type VppAssetsResponse = typeof VppAssetsResponse.Type;
 
 export const VppInstallRequest = Schema.Struct({
@@ -2040,6 +2247,7 @@ export const VppInstallRequest = Schema.Struct({
   /** Group ids whose devices should receive the app. */
   groups: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type VppInstallRequest = typeof VppInstallRequest.Type;
 
 export const VppInstallResponse = Schema.Struct({
@@ -2050,11 +2258,13 @@ export const VppInstallResponse = Schema.Struct({
   failed: Schema.Number,
   message: Schema.optional(Schema.String),
 });
+
 export type VppInstallResponse = typeof VppInstallResponse.Type;
 
 export const VppReleaseRequest = Schema.Struct({
   devices: Schema.Array(Schema.String),
 });
+
 export type VppReleaseRequest = typeof VppReleaseRequest.Type;
 
 export const VppReleaseResponse = Schema.Struct({
@@ -2063,6 +2273,7 @@ export const VppReleaseResponse = Schema.Struct({
   failed: Schema.Number,
   message: Schema.optional(Schema.String),
 });
+
 export type VppReleaseResponse = typeof VppReleaseResponse.Type;
 
 export const VppAssignmentInfo = Schema.Struct({
@@ -2074,11 +2285,13 @@ export const VppAssignmentInfo = Schema.Struct({
   lastError: Schema.optional(NullableString),
   updatedAt: Schema.String,
 });
+
 export type VppAssignmentInfo = typeof VppAssignmentInfo.Type;
 
 export const VppAssignmentsResponse = Schema.Struct({
   assignments: Schema.Array(VppAssignmentInfo),
 });
+
 export type VppAssignmentsResponse = typeof VppAssignmentsResponse.Type;
 
 /**
@@ -2105,6 +2318,7 @@ export const WindowsEnrollment = Schema.Union([
     ),
   }),
 ]);
+
 export type WindowsEnrollment = typeof WindowsEnrollment.Type;
 
 /** Deployment plan device allowance shown on the public enrollment page. */
@@ -2116,6 +2330,7 @@ export const EnrollmentDeviceLimit = Schema.Struct({
   /** Omitted when the plan is unlimited. */
   used: Schema.optional(Schema.Number),
 });
+
 export type EnrollmentDeviceLimit = typeof EnrollmentDeviceLimit.Type;
 
 export const EnrollmentResponse = Schema.Union([
@@ -2135,6 +2350,7 @@ export const EnrollmentResponse = Schema.Union([
     deviceLimit: Schema.optional(EnrollmentDeviceLimit),
   }),
 ]);
+
 export type EnrollmentResponse = typeof EnrollmentResponse.Type;
 
 export const EnrollmentQuery = {
@@ -2153,6 +2369,7 @@ export const AppleEnrollmentProfileResponse = Schema.String.pipe(
 );
 
 export const EnrollmentAttemptPlatform = Schema.Literals(["apple", "win", "android", "unknown"]);
+
 export type EnrollmentAttemptPlatform = typeof EnrollmentAttemptPlatform.Type;
 
 export const EnrollmentAttemptOutcome = Schema.Literals([
@@ -2164,6 +2381,7 @@ export const EnrollmentAttemptOutcome = Schema.Literals([
   "scep_error",
   "other",
 ]);
+
 export type EnrollmentAttemptOutcome = typeof EnrollmentAttemptOutcome.Type;
 
 export const EnrollmentAttempt = Schema.Struct({
@@ -2174,11 +2392,13 @@ export const EnrollmentAttempt = Schema.Struct({
   detail: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+
 export type EnrollmentAttempt = typeof EnrollmentAttempt.Type;
 
 export const EnrollmentAttemptsResponse = Schema.Struct({
   attempts: Schema.Array(EnrollmentAttempt),
 });
+
 export type EnrollmentAttemptsResponse = typeof EnrollmentAttemptsResponse.Type;
 
 export const TenantEnrollmentInfo = Schema.Struct({
@@ -2203,6 +2423,7 @@ export const TenantEnrollmentInfo = Schema.Struct({
   /** `enterprises/{enterpriseId}` when Android Enterprise is connected. */
   androidEnterpriseName: Schema.optional(NullableString),
 });
+
 export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
 export const PatchTenantEnrollmentRequest = Schema.Struct({
@@ -2221,9 +2442,11 @@ export const ApnsInfo = Schema.Struct({
   commonName: Schema.optional(NullableString),
   expiresAt: Schema.optional(NullableString),
 });
+
 export type ApnsInfo = typeof ApnsInfo.Type;
 
 export const ApnsCsrResponse = Schema.Struct({ plist: Schema.String });
+
 export type ApnsCsrResponse = typeof ApnsCsrResponse.Type;
 
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
@@ -2240,6 +2463,7 @@ export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
  * was introduced report both scopes.
  */
 export const ApiTokenScope = Schema.Union([Schema.Literal("read"), Schema.Literal("write")]);
+
 export type ApiTokenScope = typeof ApiTokenScope.Type;
 
 export const ApiTokenInfo = Schema.Struct({
@@ -2254,7 +2478,9 @@ export const ApiTokenInfo = Schema.Struct({
   expiresAt: Schema.optional(NullableString),
   revokedAt: Schema.optional(NullableString),
 });
+
 export const ApiTokensResponse = Schema.Struct({ tokens: Schema.Array(ApiTokenInfo) });
+
 export const CreateApiTokenRequest = Schema.Struct({
   name: Schema.String,
   expiresAt: Schema.optional(NullableString),
@@ -2263,6 +2489,7 @@ export const CreateApiTokenRequest = Schema.Struct({
   /** Restricts the token to a single tenant; omit for all current memberships. */
   tenantId: Schema.optional(NullableString),
 });
+
 export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
 
 /** A user's consent grant to an OAuth MCP client. */
@@ -2277,10 +2504,13 @@ export const McpConnectionInfo = Schema.Struct({
   revokedAt: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+
 export type McpConnectionInfo = typeof McpConnectionInfo.Type;
+
 export const McpConnectionsResponse = Schema.Struct({
   connections: Schema.Array(McpConnectionInfo),
 });
+
 export type McpConnectionsResponse = typeof McpConnectionsResponse.Type;
 
 /** Activity heartbeat written by the MCP gateway for audit attribution. */
@@ -2290,6 +2520,7 @@ export const McpActivityRequest = Schema.Struct({
   path: Schema.String,
   status: Schema.Number,
 });
+
 export type McpActivityRequest = typeof McpActivityRequest.Type;
 
 export const AccountSessionInfo = Schema.Struct({
@@ -2299,6 +2530,7 @@ export const AccountSessionInfo = Schema.Struct({
   expiresAt: Schema.String,
   method: Schema.optional(NullableString),
 });
+
 export const AccountSessionsResponse = Schema.Struct({
   sessions: Schema.Array(AccountSessionInfo),
 });

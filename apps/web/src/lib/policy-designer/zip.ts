@@ -6,17 +6,22 @@
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
+
   for (let index = 0; index < 256; index++) {
     let value = index;
+
     for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
     table[index] = value >>> 0;
   }
+
   return table;
 })();
 
 const crc32 = (bytes: Uint8Array) => {
   let crc = 0xffffffff;
+
   for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+
   return (crc ^ 0xffffffff) >>> 0;
 };
 
@@ -24,16 +29,21 @@ const crc32 = (bytes: Uint8Array) => {
 const dosTimestamp = (date = new Date()) => {
   const time =
     (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+
   const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+
   return { time, day };
 };
 
 const writeU16 = (view: DataView, offset: number, value: number) => {
   view.setUint16(offset, value, true);
+
   return offset + 2;
 };
+
 const writeU32 = (view: DataView, offset: number, value: number) => {
   view.setUint32(offset, value >>> 0, true);
+
   return offset + 4;
 };
 
@@ -45,6 +55,7 @@ const bytesOf = (value: string | Uint8Array) =>
 /** Build a store-only ZIP archive from text or byte entries. */
 export const buildZip = (entries: ZipEntry[]): Uint8Array => {
   const encoder = new TextEncoder();
+
   const files = entries.map((entry) => ({
     name: encoder.encode(entry.name),
     bytes: bytesOf(entry.content),
@@ -55,6 +66,7 @@ export const buildZip = (entries: ZipEntry[]): Uint8Array => {
     (total, file) => total + 30 + file.name.length + file.bytes.length,
     0,
   );
+
   const directorySize = files.reduce((total, file) => total + 46 + file.name.length, 0);
   const output = new Uint8Array(localSize + directorySize + 22);
   const view = new DataView(output.buffer);
@@ -116,5 +128,6 @@ export const buildZip = (entries: ZipEntry[]): Uint8Array => {
   offset = writeU32(view, offset, centralSize);
   offset = writeU32(view, offset, centralStart);
   offset = writeU16(view, offset, 0); // comment length
+
   return output.slice(0, offset);
 };

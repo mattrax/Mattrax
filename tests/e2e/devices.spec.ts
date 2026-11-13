@@ -18,6 +18,7 @@ test.describe("device fleet management", () => {
       page,
       `/api/v1/tenants/${tenant.id}/devices/search?limit=10`,
     );
+
     expect(found).toEqual({ devices: [], total: 0 });
 
     // Filtering and sorting compile against MySQL even with no matching rows.
@@ -25,6 +26,7 @@ test.describe("device fleet management", () => {
       page,
       `/api/v1/tenants/${tenant.id}/devices/search?status=enrolled&proto=apple&staleDays=30&sort=lastSeenAt&direction=desc&limit=10&offset=0`,
     );
+
     expect(filtered).toEqual({ devices: [], total: 0 });
 
     // Group filters use a SQL subquery scoped to the tenant.
@@ -32,16 +34,19 @@ test.describe("device fleet management", () => {
       method: "POST",
       body: JSON.stringify({ name: "Field Ops" }),
     });
+
     const inGroup = await api<{ devices: unknown[]; total: number }>(
       page,
       `/api/v1/tenants/${tenant.id}/devices/search?groupId=${group.id}`,
     );
+
     expect(inGroup).toEqual({ devices: [], total: 0 });
 
     // A tenant id the caller cannot see is rejected rather than leaking rows.
     const missing = await page.request.get(
       "/api/v1/tenants/not-a-real-tenant/devices/search?limit=10",
     );
+
     expect(missing.status()).toBe(404);
 
     // Export responds with an attachment and RFC 4180 CSV.
@@ -65,8 +70,10 @@ test.describe("device fleet management", () => {
 
     const request = page.waitForResponse((response) => {
       if (!response.url().includes(`/api/v1/tenants/${tenant.id}/devices/search`)) return false;
+
       return new URL(response.url()).searchParams.get("q") === "abc";
     });
+
     await search.fill("abc");
     await expect(search).toHaveValue("abc");
     expect((await request).ok()).toBe(true);
@@ -78,8 +85,10 @@ test.describe("device fleet management", () => {
     // Additional keystrokes are not reverted to the last URL value.
     const extended = page.waitForResponse((response) => {
       if (!response.url().includes(`/api/v1/tenants/${tenant.id}/devices/search`)) return false;
+
       return new URL(response.url()).searchParams.get("q") === "abcd";
     });
+
     await search.fill("abcd");
     await expect(search).toHaveValue("abcd");
     expect((await extended).ok()).toBe(true);
@@ -98,6 +107,7 @@ test.describe("device fleet management", () => {
       method: "POST",
       body: JSON.stringify({ name: "Field Ops" }),
     });
+
     await gotoHydrated(page, page.url());
     await page.getByLabel("Filter by group").selectOption(group.id);
     await expect.poll(() => new URL(page.url()).searchParams.get("groupId")).toBe(group.id);
@@ -148,6 +158,7 @@ test.describe("device fleet management", () => {
       reasons: unknown[];
       devices: unknown[];
     }>(page, `/api/v1/tenants/${tenant.id}/device-health`);
+
     expect(summary.counts).toEqual({
       total: 0,
       healthy: 0,
@@ -161,6 +172,7 @@ test.describe("device fleet management", () => {
 
     await gotoHydrated(page, `/t/${tenant.id}`);
     await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
+
     for (const label of [
       "Managed devices",
       "Devices needing attention",
@@ -175,6 +187,7 @@ test.describe("device fleet management", () => {
       scepCa: { configured: boolean; level: string };
       deviceCertificates: { total: number };
     }>(page, `/api/v1/tenants/${tenant.id}/credential-health`);
+
     expect(credentials.apns).toMatchObject({ configured: false, level: "missing" });
     expect(credentials.scepCa.level).toMatch(/missing|ok/);
     expect(credentials.deviceCertificates.total).toBe(0);
@@ -190,6 +203,7 @@ test.describe("device fleet management", () => {
       };
       recentFailures: unknown[];
     }>(page, `/api/v1/tenants/${tenant.id}/push-health`);
+
     expect(pushHealth.counts).toEqual({
       configured: 0,
       attempted: 0,
@@ -211,14 +225,19 @@ test.describe("device fleet management", () => {
     const missingActivity = await page.request.get(
       `/api/v1/tenants/${tenant.id}/devices/not-a-device/activity`,
     );
+
     expect(missingActivity.status()).toBe(404);
+
     const missingPushHealth = await page.request.get(
       "/api/v1/tenants/not-a-real-tenant/push-health",
     );
+
     expect(missingPushHealth.status()).toBe(404);
+
     const missingCredentials = await page.request.get(
       "/api/v1/tenants/not-a-real-tenant/credential-health",
     );
+
     expect(missingCredentials.status()).toBe(404);
 
     // A tenant the caller cannot see is rejected rather than leaking counts.
@@ -229,11 +248,14 @@ test.describe("device fleet management", () => {
     const unknownHealth = await page.request.get(
       `/api/v1/tenants/${tenant.id}/devices/not-a-device/health`,
     );
+
     expect(unknownHealth.status()).toBe(404);
+
     const unknownRevoke = await page.request.post(
       `/api/v1/tenants/${tenant.id}/devices/not-a-device/revoke-identity`,
       { headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" } },
     );
+
     expect(unknownRevoke.status()).toBe(404);
   });
 
@@ -275,6 +297,7 @@ test.describe("device fleet management", () => {
     const registrations = await api<{
       rows: Array<{ serial: string; name: string; assetTag: string; groupName: string }>;
     }>(page, `/api/v1/tenants/${tenant.id}/device-pre-registrations`);
+
     expect(registrations.rows).toEqual([
       expect.objectContaining({
         serial: "C02IMPORT",

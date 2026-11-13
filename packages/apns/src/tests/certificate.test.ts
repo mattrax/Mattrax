@@ -11,6 +11,7 @@ describe("APNs certificate parsing", () => {
   it("extracts the UID topic, common name and expiry", async () => {
     const keys = await createTestApnsKeys();
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     const { pem } = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.apple.mgmt.External.abc123",
@@ -33,12 +34,14 @@ describe("APNs certificate parsing", () => {
 
   it("rejects expired and not-yet-valid certificates", async () => {
     const keys = await createTestApnsKeys();
+
     const expired = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.apple.mgmt.External.abc123",
       notBefore: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
       notAfter: new Date(Date.now() - 24 * 60 * 60 * 1000),
     });
+
     await expect(validateApnsCertificate(expired.pem)).rejects.toThrow(/expired/);
 
     const future = await createTestApnsCertificate({
@@ -47,21 +50,25 @@ describe("APNs certificate parsing", () => {
       notBefore: new Date(Date.now() + 24 * 60 * 60 * 1000),
       notAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
+
     await expect(validateApnsCertificate(future.pem)).rejects.toThrow(/not valid yet/);
   });
 
   it("rejects certificates whose topic is not an APNs MDM topic", async () => {
     const keys = await createTestApnsKeys();
+
     const { pem } = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.example.not-mdm",
     });
+
     await expect(validateApnsCertificate(pem)).rejects.toThrow(/Invalid APNs topic/);
   });
 
   it("checks the certificate against the pending private key", async () => {
     const keys = await createTestApnsKeys();
     const other = await createTestApnsKeys();
+
     const { certificate, pem } = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.apple.mgmt.External.abc123",

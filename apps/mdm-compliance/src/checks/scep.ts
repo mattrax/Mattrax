@@ -37,6 +37,7 @@ const nonce = () => crypto.getRandomValues(new Uint8Array(16));
 const sameBytes = (left: ArrayBuffer | undefined, right: Uint8Array): boolean => {
   if (!left) return false;
   const a = new Uint8Array(left);
+
   return a.length === right.length && a.every((byte, index) => byte === right[index]);
 };
 
@@ -52,6 +53,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /text\/plain/);
       const caps = (await response.text()).split(/\r?\n/);
+
       for (const capability of ["Renewal", "SCEPStandard", "SHA-256", "AES", "POSTPKIOperation"])
         assert.ok(caps.includes(capability), `missing capability ${capability}`);
     },
@@ -100,13 +102,17 @@ export const scepChecks: ReadonlyArray<Check> = [
             enrollmentId: "enrollment-1",
           }),
       });
+
       const deviceKeys = await generateKeyPair();
       const signer = await createSelfSignedCertificate(deviceKeys, "Compliance Device");
+
       const csr = await createCsr(deviceKeys, {
         commonName: "Compliance Device",
         organizationalUnit: "spoofed-tenant",
       });
+
       const senderNonce = nonce();
+
       const request = await buildPkcsReq({
         csr,
         caCert: harness.state.ca.cert,
@@ -115,6 +121,7 @@ export const scepChecks: ReadonlyArray<Check> = [
         transactionId: "txn-issue-1",
         senderNonce,
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("content-type"), "application/x-pki-message");
@@ -145,10 +152,12 @@ export const scepChecks: ReadonlyArray<Check> = [
       const harness = await createScepHarness({
         authenticate: () => Effect.fail(new ScepError({ message: "Challenge is invalid" })),
       });
+
       const deviceKeys = await generateKeyPair();
       const signer = await createSelfSignedCertificate(deviceKeys, "Device");
       const csr = await createCsr(deviceKeys, { commonName: "Device", challengePassword: "wrong" });
       const senderNonce = nonce();
+
       const request = await buildPkcsReq({
         csr,
         caCert: harness.state.ca.cert,
@@ -157,6 +166,7 @@ export const scepChecks: ReadonlyArray<Check> = [
         transactionId: "txn-auth-failure",
         senderNonce,
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       const certRep = await parseCertRep(await response.arrayBuffer());
@@ -182,6 +192,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       const corrupted = new Uint8Array(validDer.slice(0));
       // Corrupt the CSR signature while keeping the outer CMS signature valid.
       corrupted[corrupted.length - 1] = corrupted[corrupted.length - 1]! ^ 0xff;
+
       const request = await buildPkcsReq({
         csr,
         csrDer: corrupted.buffer,
@@ -191,6 +202,7 @@ export const scepChecks: ReadonlyArray<Check> = [
         transactionId: "txn-bad-signature",
         senderNonce: nonce(),
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       const certRep = await parseCertRep(await response.arrayBuffer());
@@ -206,9 +218,11 @@ export const scepChecks: ReadonlyArray<Check> = [
     "A body that is not a CMS SignedData cannot be processed and must return HTTP 400, not 500.",
     async () => {
       const harness = await createScepHarness();
+
       const response = await harness.handler(
         scepPost(new TextEncoder().encode("this is not a SCEP message").buffer),
       );
+
       assert.equal(response.status, 400);
     },
   ),
@@ -219,11 +233,13 @@ export const scepChecks: ReadonlyArray<Check> = [
     "A valid messageType=17 signed by an issued identity must receive a new certificate linked to the same device.",
     async () => {
       const harness = await createScepHarness();
+
       const identity = await issueIdentity({
         ca: harness.state.ca,
         commonName: "Renewing Device",
         organizationalUnit: "tenant-authenticated",
       });
+
       harness.state.issued.set(identity.serial, {
         serial: identity.serial,
         organizationId: "tenant-authenticated",
@@ -231,11 +247,14 @@ export const scepChecks: ReadonlyArray<Check> = [
         deviceId: "device-1",
         notAfter: new Date(Date.now() + 86_400_000),
       });
+
       const csr = await createCsr(identity.keyPair, {
         commonName: "Renewing Device",
         organizationalUnit: "tenant-authenticated",
       });
+
       const senderNonce = nonce();
+
       const request = await buildPkcsReq({
         csr,
         caCert: harness.state.ca.cert,
@@ -246,15 +265,18 @@ export const scepChecks: ReadonlyArray<Check> = [
         encryptCsr: false,
         messageType: "17",
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       const certRep = await parseCertRep(await response.arrayBuffer());
       assert.equal(certRep.pkiStatus, "0");
       assert.equal(certRep.transactionId, "txn-renewal-1");
+
       const deviceJwk = (await crypto.subtle.exportKey(
         "jwk",
         identity.keyPair.privateKey,
       )) as JsonWebKey;
+
       const renewed = await decryptCertRep(certRep, deviceJwk);
       assert.notEqual(
         renewed.serialNumber.valueBlock.valueHexView
@@ -278,12 +300,15 @@ export const scepChecks: ReadonlyArray<Check> = [
     "A deleted or expired identity must receive a failure CertRep and no new certificate.",
     async () => {
       const harness = await createScepHarness();
+
       const identity = await issueIdentity({
         ca: harness.state.ca,
         commonName: "Unknown Device",
         organizationalUnit: "tenant-authenticated",
       });
+
       const csr = await createCsr(identity.keyPair, { commonName: "Unknown Device" });
+
       const request = await buildPkcsReq({
         csr,
         caCert: harness.state.ca.cert,
@@ -294,6 +319,7 @@ export const scepChecks: ReadonlyArray<Check> = [
         encryptCsr: false,
         messageType: "17",
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       const certRep = await parseCertRep(await response.arrayBuffer());
@@ -313,6 +339,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       const foreign = await generateKeyPair();
       const foreignCert = await createSelfSignedCertificate(foreign, "Foreign Device");
       const csr = await createCsr(foreign, { commonName: "Foreign Device" });
+
       const request = await buildPkcsReq({
         csr,
         caCert: harness.state.ca.cert,
@@ -323,6 +350,7 @@ export const scepChecks: ReadonlyArray<Check> = [
         encryptCsr: false,
         messageType: "17",
       });
+
       const response = await harness.handler(scepPost(request));
       assert.equal(response.status, 200);
       const certRep = await parseCertRep(await response.arrayBuffer());

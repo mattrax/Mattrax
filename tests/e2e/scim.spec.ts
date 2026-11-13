@@ -4,13 +4,16 @@ import { bootstrapTenant, uniqueEmail } from "./helpers";
 test.describe("SCIM provisioning", () => {
   test("provisions users and groups with a tenant token", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "SCIM Tenant");
+
     const created = await page.evaluate(async (tenantId) => {
       const response = await fetch(`/api/v1/tenants/${tenantId}/scim-tokens`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
         body: JSON.stringify({ name: "Browser test" }),
       });
+
       if (!response.ok) throw new Error(await response.text());
+
       return (await response.json()) as { token: string; baseUrl: string };
     }, tenant.id);
 
@@ -23,6 +26,7 @@ test.describe("SCIM provisioning", () => {
           ...(init?.headers as Record<string, string> | undefined),
         },
       });
+
       return response;
     };
 
@@ -33,6 +37,7 @@ test.describe("SCIM provisioning", () => {
     expect(before.totalResults).toBeGreaterThanOrEqual(1);
 
     const email = uniqueEmail("scim");
+
     const create = await scim("/Users", {
       method: "POST",
       data: {
@@ -43,6 +48,7 @@ test.describe("SCIM provisioning", () => {
         roles: [{ value: "member" }],
       },
     });
+
     expect(create.status()).toBe(201);
     const user = (await create.json()) as { id: string; userName: string };
     expect(user.userName).toBe(email);
@@ -55,6 +61,7 @@ test.describe("SCIM provisioning", () => {
         members: [{ value: user.id }],
       },
     });
+
     expect(groupResponse.status()).toBe(201);
     const group = (await groupResponse.json()) as { id: string; members: unknown[] };
     expect(group.members).toHaveLength(1);
@@ -66,6 +73,7 @@ test.describe("SCIM provisioning", () => {
         Operations: [{ op: "replace", path: "members", value: [] }],
       },
     });
+
     expect(patch.ok()).toBe(true);
 
     const remove = await scim(`/Users/${user.id}`, { method: "DELETE" });

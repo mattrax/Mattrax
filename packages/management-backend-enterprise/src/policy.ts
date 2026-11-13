@@ -59,15 +59,20 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 export const parseConfigurationKind = (kind: string): ConfigurationKind => {
   if (kind === "mttx.apple.device") return { type: "device" };
   const android = /^mttx\.android\.policy\.(.+)$/.exec(kind);
+
   if (android?.[1] && IDENTIFIER_PATTERN.test(android[1]))
     return { type: "android", id: android[1] };
   const windows = /^mttx\.windows\.custom\.(.+)$/.exec(kind);
+
   if (windows?.[1] && IDENTIFIER_PATTERN.test(windows[1]))
     return { type: "windows", id: windows[1] };
   const match = /^mttx\.apple\.(custom|certificate|declaration|application)\.(.+)$/.exec(kind);
+
   if (!match) return { type: "unknown" };
   const [, group, id] = match;
+
   if (!IDENTIFIER_PATTERN.test(id!)) return { type: "unknown" };
+
   switch (group) {
     case "custom":
       return { type: "custom", id: id! };
@@ -84,6 +89,7 @@ export const parseConfigurationKind = (kind: string): ConfigurationKind => {
 
 export const isLegacyKind = (kind: string): boolean => {
   const parsed = parseConfigurationKind(kind);
+
   return parsed.type === "device" || parsed.type === "custom";
 };
 
@@ -95,6 +101,7 @@ export const configurationDeclarationIdentifier = (policyId: string, kind: strin
 
 export const splitConfigurationDeclarationIdentifier = (identifier: string) => {
   const [policyId, ...rest] = identifier.split(":");
+
   return { policyId: policyId ?? "", kind: rest.join(":") };
 };
 
@@ -107,8 +114,11 @@ export const splitConfigurationAssetIdentifier = (
   const withoutSuffix = identifier.endsWith(".asset")
     ? identifier.slice(0, -".asset".length)
     : identifier;
+
   const separator = withoutSuffix.indexOf(".");
+
   if (separator <= 0) return null;
+
   return {
     policyId: withoutSuffix.slice(0, separator),
     kind: withoutSuffix.slice(separator + 1),
@@ -121,18 +131,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
   const binary = atob(cleaned);
+
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
 const sha256Hex = async (value: string | Uint8Array): Promise<string> => {
   const bytes = typeof value === "string" ? encoder.encode(value) : value;
   const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary);
 };
 
@@ -142,11 +156,14 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined =>
 /** Signed profiles are CMS/PKCS#7 DER or PEM with an embedded plist. */
 const isSignedMobileconfig = (bytes: Uint8Array, text: string): boolean => {
   const pem = /-----BEGIN (?:PKCS7|CMS)-----/.test(text);
+
   const der =
     bytes.length > 3 &&
     bytes[0] === 0x30 &&
     (bytes[1] === 0x82 || bytes[1] === 0x81 || bytes[1] === 0x80);
+
   const embedded = text.includes("<plist") || text.includes("<?xml");
+
   return (pem || der) && embedded;
 };
 
@@ -154,8 +171,11 @@ const payloadsFromMobileconfig = (
   root: Record<string, unknown>,
 ): Array<Record<string, unknown>> => {
   const content = root.PayloadContent;
+
   if (Array.isArray(content)) return content.filter(isRecord);
+
   if (isRecord(content)) return [content];
+
   return [];
 };
 
@@ -167,6 +187,7 @@ const payloadsFromMobileconfig = (
 export const validateConfiguration = (kind: string, data: unknown): Effect.Effect<void, string> =>
   Effect.gen(function* () {
     const parsed = parseConfigurationKind(kind);
+
     switch (parsed.type) {
       case "unknown":
         return yield* Effect.fail(
@@ -178,112 +199,152 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
         );
       case "device": {
         const record = asRecord(data);
+
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+
         if (record.camera !== undefined && typeof record.camera !== "boolean")
           return yield* Effect.fail(`"${kind}.camera" must be a boolean`);
+
         return;
       }
+
       case "custom": {
         const record = asRecord(data);
+
         if (!record || typeof record.content !== "string" || record.content.length === 0)
           return yield* Effect.fail(`"${kind}" requires a base64 encoded "content" string`);
         let bytes: Uint8Array;
+
         try {
           bytes = decodeBase64(record.content);
         } catch {
           return yield* Effect.fail(`"${kind}.content" is not valid base64`);
         }
+
         const text = new TextDecoder().decode(bytes);
         const parsed = yield* Effect.exit(parsePlist(text));
+
         if (Exit.isFailure(parsed)) {
           // A CMS/PKCS#7-wrapped profile keeps its code signature and is
           // deployed verbatim. We only check that it carries an embedded
           // plist; the device is responsible for validating the signer.
           if (isSignedMobileconfig(bytes, text)) return;
           const cause = parsed.cause;
+
           return yield* Effect.fail(
             `"${kind}.content" is not a valid mobileconfig plist: ${String(cause)}`,
           );
         }
+
         const plist = parsed.value;
+
         if (!isRecord(plist))
           return yield* Effect.fail(`"${kind}.content" must contain a plist dictionary`);
+
         if (plist.PayloadType !== "Configuration")
           return yield* Effect.fail(
             `"${kind}.content" must have a top-level PayloadType of Configuration`,
           );
+
         if (typeof plist.PayloadIdentifier !== "string" || plist.PayloadIdentifier.length === 0)
           return yield* Effect.fail(`"${kind}.content" must have a PayloadIdentifier`);
+
         if (typeof plist.PayloadDisplayName !== "string" || plist.PayloadDisplayName.length === 0)
           return yield* Effect.fail(`"${kind}.content" must have a PayloadDisplayName`);
+
         if (
           plist.PayloadScope !== undefined &&
           !["System", "User"].includes(String(plist.PayloadScope))
         )
           return yield* Effect.fail(`"${kind}.content" PayloadScope must be System or User`);
         const payloads = payloadsFromMobileconfig(plist);
+
         if (payloads.length === 0)
           return yield* Effect.fail(
             `"${kind}.content" must contain at least one PayloadContent entry`,
           );
         const hasMdm = payloads.some((payload) => payload.PayloadType === "com.apple.mdm");
+
         if (hasMdm)
           return yield* Effect.fail(
             `"${kind}.content" contains a com.apple.mdm payload, which cannot be deployed as a managed profile`,
           );
+
         return;
       }
+
       case "android": {
         const record = asRecord(data);
+
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
         const policy = record.policy === undefined ? record : asRecord(record.policy);
+
         if (!policy) return yield* Effect.fail(`"${kind}.policy" must be an object`);
+
         if ("name" in policy || "policyName" in policy)
           return yield* Effect.fail(`"${kind}.policy" must not contain name or policyName`);
+
         return;
       }
+
       case "windows": {
         const record = asRecord(data);
+
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
         const nodes = Array.isArray(record.nodes) ? record.nodes : [record];
+
         if (nodes.length === 0)
           return yield* Effect.fail(`"${kind}" must contain at least one OMA-URI node`);
+
         for (const node of nodes) {
           if (!isRecord(node)) return yield* Effect.fail(`Every "${kind}" node must be an object`);
+
           if (typeof node.omaUri !== "string" || !node.omaUri.startsWith("./"))
             return yield* Effect.fail(
               `"${kind}.omaUri" must be a Windows OMA-URI starting with "./"`,
             );
+
           if (node.value === undefined || node.value === null)
             return yield* Effect.fail(`"${kind}.value" is required`);
+
           if (
             node.format !== undefined &&
             !["int", "chr", "bool", "xml", "b64", "node"].includes(node.format as string)
           )
             return yield* Effect.fail(`"${kind}.format" must be int, chr, bool, xml, b64 or node`);
         }
+
         return;
       }
+
       case "certificate": {
         const record = asRecord(data);
+
         if (!record || typeof record.pem !== "string" || record.pem.length === 0)
           return yield* Effect.fail(`"${kind}" requires a PEM "pem" string`);
         const begins = record.pem.match(/-----BEGIN CERTIFICATE-----/g)?.length ?? 0;
         const ends = record.pem.match(/-----END CERTIFICATE-----/g)?.length ?? 0;
+
         if (begins !== 1 || ends !== 1)
           return yield* Effect.fail(`"${kind}.pem" must contain exactly one PEM certificate`);
+
         return;
       }
+
       case "declaration": {
         const record = asRecord(data);
+
         if (!record || typeof record.kind !== "string" || record.kind.length === 0)
           return yield* Effect.fail(`"${kind}" requires a declaration "kind" string`);
+
         if (!record.kind.startsWith("com.apple."))
           return yield* Effect.fail(
             `"${kind}.kind" must be an Apple declaration type (for example com.apple.configuration.services.configuration-files)`,
           );
+
         if (!isRecord(record.configuration))
           return yield* Effect.fail(`"${kind}" requires a "configuration" object`);
+
         return;
       }
     }
@@ -291,6 +352,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
 
 const declarationTypeFor = (row: PolicyConfigurationRow): string | null => {
   const parsed = parseConfigurationKind(row.kind);
+
   switch (parsed.type) {
     case "device":
     case "custom":
@@ -322,6 +384,7 @@ export const configurationServerToken = async (
       )
     ).toUpperCase();
   }
+
   return row.hash;
 };
 
@@ -344,7 +407,9 @@ export const configurationProfileUrl = async (
     kind: row.kind,
     deviceToken: context.deviceToken,
   });
+
   const origin = trimTrailingSlash(context.origin);
+
   return `${origin}/mdm/apple/profiles/${encodeURIComponent(context.deviceToken)}/${encodeURIComponent(row.policyId)}/${encodeURIComponent(row.kind)}?token=${encodeURIComponent(token)}`;
 };
 
@@ -353,6 +418,7 @@ export const buildConfigurationDeclaration = async (
   context: DeclarationContext,
 ): Promise<CompiledDeclaration | null> => {
   const type = declarationTypeFor(row);
+
   if (!type) return null;
 
   const identifier = configurationDeclarationIdentifier(row.policyId, row.kind);
@@ -378,6 +444,7 @@ export const buildConfigurationDeclaration = async (
       };
     case "declaration": {
       const data = row.data as Record<string, unknown>;
+
       return {
         Type: type,
         Identifier: identifier,
@@ -385,6 +452,7 @@ export const buildConfigurationDeclaration = async (
         Payload: data.configuration as Record<string, unknown>,
       };
     }
+
     default:
       return null;
   }
@@ -395,8 +463,10 @@ export const buildAssetDeclaration = async (
   context: DeclarationContext,
 ): Promise<CompiledDeclaration | null> => {
   const parsed = parseConfigurationKind(row.kind);
+
   if (parsed.type !== "certificate") return null;
   const data = row.data as Record<string, unknown>;
+
   if (typeof data.pem !== "string") return null;
 
   const identifier = configurationAssetIdentifier(row.policyId, row.kind);
@@ -426,9 +496,11 @@ const stableUuid = async (value: string): Promise<string> => {
   const digest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
   ).slice(0, 16);
+
   digest[6] = (digest[6]! & 0x0f) | 0x50;
   digest[8] = (digest[8]! & 0x3f) | 0x80;
   const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
@@ -436,6 +508,7 @@ const legacyDeviceProfile = async (row: PolicyConfigurationRow) => {
   const data = row.data as Record<string, unknown>;
   const allowCamera = data.camera !== false;
   const uuid = await stableUuid(`mattrax:${row.policyId}:${row.kind}`);
+
   return {
     PayloadContent: [
       {
@@ -463,21 +536,27 @@ export const buildLegacyProfile = async (
   row: PolicyConfigurationRow,
 ): Promise<{ content: Uint8Array; contentType: string } | null> => {
   const parsed = parseConfigurationKind(row.kind);
+
   if (parsed.type === "custom") {
     const content = (row.data as Record<string, unknown>).content;
+
     if (typeof content !== "string") return null;
+
     return {
       content: decodeBase64(content),
       contentType: "application/x-apple-aspen-config",
     };
   }
+
   if (parsed.type === "device") {
     const plist = await Effect.runPromise(serializePlist(await legacyDeviceProfile(row)));
+
     return {
       content: encoder.encode(plist),
       contentType: "application/x-apple-aspen-config",
     };
   }
+
   return null;
 };
 
@@ -486,7 +565,9 @@ export const buildAssetContent = (
 ): { content: Uint8Array; contentType: string } | null => {
   if (!isCertificateKind(row.kind)) return null;
   const pem = (row.data as Record<string, unknown>).pem;
+
   if (typeof pem !== "string") return null;
+
   return { content: encoder.encode(pem), contentType: "application/pem" };
 };
 
@@ -495,11 +576,13 @@ export const certificateOrganizationalUnit = (
 ): string | null => {
   if (!identityCertificate) return null;
   let text = identityCertificate;
+
   try {
     text = decodeURIComponent(identityCertificate);
   } catch {
     // Header may already be decoded.
   }
+
   return text.match(/(?:^|[,/\n])\s*OU\s*=\s*([^,/\n]+)/i)?.[1]?.trim() ?? null;
 };
 
@@ -531,10 +614,13 @@ export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPo
   if (parseConfigurationKind(row.kind).type !== "windows") return [];
   const data = row.data as Record<string, unknown>;
   const nodes = Array.isArray(data.nodes) ? data.nodes : [data];
+
   return nodes.flatMap((node) => {
     if (!node || typeof node !== "object") return [];
     const record = node as Record<string, unknown>;
+
     if (typeof record.omaUri !== "string") return [];
+
     return [
       {
         omaUri: record.omaUri,

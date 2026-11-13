@@ -16,12 +16,16 @@ export default function AcceptInvitationPage() {
 
   const accept = async () => {
     const value = token();
+
     if (!value) {
       setError("This invitation link is missing its token.");
+
       return;
     }
+
     setPending(true);
     setError(null);
+
     try {
       const response = await fetch("/api/v1/invitations/accept", {
         method: "POST",
@@ -29,14 +33,17 @@ export default function AcceptInvitationPage() {
         headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
         body: JSON.stringify({ token: value }),
       });
+
       const body = (await response.json().catch(() => undefined)) as
         | { tenantId?: string; message?: string; error?: { message?: string } }
         | undefined;
+
       if (!response.ok || !body?.tenantId) {
         throw new Error(
           body?.message ?? body?.error?.message ?? `Request failed (${response.status})`,
         );
       }
+
       navigate(`/t/${body.tenantId}/devices`, { replace: true });
     } catch (cause) {
       setError(errorMessage(cause, "Could not accept the invitation"));

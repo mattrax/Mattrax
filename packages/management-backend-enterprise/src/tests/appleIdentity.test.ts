@@ -51,12 +51,14 @@ const setup = (
     ...(options.subscription ? { [tableName(schema.subscription)]: [options.subscription] } : {}),
     ...(options.devices ? { [tableName(schema.device)]: options.devices } : {}),
   });
+
   const backend = ManagementBackendEnterpriseLive.make({
     db: db as any,
     origin,
     authSecret,
     planLimits: options.planLimits,
   });
+
   return { db, backend };
 };
 

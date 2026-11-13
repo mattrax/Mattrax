@@ -29,9 +29,11 @@ describe("Apple enrollment profile", () => {
 
   it("builds the SCEP payload with the per-enrollment challenge and tenant subject", () => {
     const profile = build();
+
     const scep = profile.PayloadContent.find(
       (payload) => payload.PayloadType === "com.apple.security.scep",
     )!;
+
     expect(scep.PayloadContent).toMatchObject({
       Challenge: "org-123.challenge-signature",
       "Key Type": "RSA",
@@ -44,9 +46,11 @@ describe("Apple enrollment profile", () => {
 
   it("builds the MDM payload and references the SCEP identity certificate", () => {
     const profile = build();
+
     const scep = profile.PayloadContent.find(
       (payload) => payload.PayloadType === "com.apple.security.scep",
     )!;
+
     const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm")!;
 
     expect(mdm).toMatchObject({
@@ -76,11 +80,13 @@ describe("Apple enrollment profile", () => {
     const first = build();
     const second = build();
     expect(second.PayloadUUID).toBe(first.PayloadUUID);
+
     for (let index = 0; index < first.PayloadContent.length; index++) {
       expect(second.PayloadContent[index]!.PayloadUUID).toBe(
         first.PayloadContent[index]!.PayloadUUID,
       );
     }
+
     expect(first.PayloadUUID).toMatch(
       /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
     );
@@ -116,7 +122,9 @@ describe("Apple enrollment profile", () => {
       organizationId: "org",
       challenge: "challenge",
     };
+
     const first = buildAppleEnrollmentProfile({ ...base, organizationName: "Acme" });
+
     const rebranded = buildAppleEnrollmentProfile({
       ...base,
       organizationName: "Acme Corp",

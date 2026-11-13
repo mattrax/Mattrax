@@ -33,14 +33,17 @@ const sourceLabel = (source: ApplicationNode["source"]) =>
 
 const formatBytes = (value?: number | null) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+
   if (value < 1024) return `${value} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let amount = value / 1024;
   let unit = 0;
+
   while (amount >= 1024 && unit < units.length - 1) {
     amount /= 1024;
     unit++;
   }
+
   return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
 };
 
@@ -49,14 +52,17 @@ export default function ApplicationDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const app = useQuery(() => enterpriseQueries.application(params.tenantId, params.applicationId));
+
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
   }));
+
   const devices = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
   }));
+
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
   const row = () => app.data as ApplicationNode | undefined;
@@ -74,6 +80,7 @@ export default function ApplicationDetailPage() {
     () => row()?.id,
     () => {
       const value = row();
+
       if (!value) return;
       setName(value.name);
       setBundleId(value.bundleId ?? "");
@@ -109,6 +116,7 @@ export default function ApplicationDetailPage() {
       const assignDevices = [...deviceIds()].filter((id) => !oldDevices.includes(id));
       const unassignGroups = oldGroups.filter((id) => !groupIds().has(id));
       const unassignDevices = oldDevices.filter((id) => !deviceIds().has(id));
+
       if (
         assignGroups.length +
           assignDevices.length +
@@ -138,6 +146,7 @@ export default function ApplicationDetailPage() {
   const upload = useMutation(() => ({
     mutationFn: async () => {
       const file = await selectFile("*/*");
+
       return enterprise.uploadApplication(params.tenantId, params.applicationId, {
         fileName: file.name,
         contentType: file.type || undefined,
@@ -160,6 +169,7 @@ export default function ApplicationDetailPage() {
 
   const toggle = (set: () => Set<string>, update: (value: Set<string>) => void, id: string) => {
     const next = new Set(set());
+
     if (next.has(id)) next.delete(id);
     else next.add(id);
     update(next);
@@ -168,6 +178,7 @@ export default function ApplicationDetailPage() {
   const platform = () => row()?.platform;
   const canInstall = createMemo(() => platform() === "apple");
   const assignedCount = () => groupIds().size + deviceIds().size;
+
   const vppAsset = createMemo(() =>
     (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
   );

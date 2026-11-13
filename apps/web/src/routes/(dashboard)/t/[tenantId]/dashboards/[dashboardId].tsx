@@ -27,6 +27,7 @@ import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 type Layout = { x: number; y: number; w: number; h: number };
+
 type Draft = {
   type: DashboardWidgetType;
   title: string;
@@ -42,8 +43,11 @@ const defaultConfig = (type: DashboardWidgetType): Record<string, any> => {
       markdown:
         "## Team notes\n\nAdd context, links and images here.\n\n- [Mattrax docs](/docs/)\n- Status page: https://status.otbeaumont.me",
     };
+
   if (type === "pie") return { dataset: "devices", query: { all: [] }, dimension: "platform" };
+
   if (type === "stat") return { dataset: "devices", query: { all: [] }, label: "devices" };
+
   return {
     dataset: "devices",
     query: { all: [] },
@@ -107,23 +111,31 @@ const resolveLayout = (
   priorityId?: string,
 ): Record<string, Layout> => {
   const placed: Record<string, Layout> = {};
+
   const ordered = Object.entries(input).sort(([leftId, left], [rightId, right]) => {
     if (leftId === priorityId) return -1;
+
     if (rightId === priorityId) return 1;
+
     return left.y - right.y || left.x - right.x;
   });
+
   for (const [id, layout] of ordered) {
     let next = { ...layout };
+
     for (let guard = 0; guard < 100; guard++) {
       const blockers = Object.entries(placed).filter(([, other]) => overlaps(next, other));
+
       if (blockers.length === 0) break;
       next = {
         ...next,
         y: Math.max(...blockers.map(([, other]) => other.y + other.h)),
       };
     }
+
     placed[id] = next;
   }
+
   return placed;
 };
 
@@ -134,6 +146,7 @@ const clampLayout = (layout: Layout, mode: "move" | "resize", dx: number, dy: nu
       x: Math.min(Math.max(layout.x + dx, 0), 12 - layout.w),
       y: Math.max(layout.y + dy, 0),
     };
+
   return {
     ...layout,
     w: Math.min(Math.max(layout.w + dx, 1), 12 - layout.x),
@@ -146,21 +159,26 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+
   const dashboard = useQuery(() =>
     enterpriseQueries.dashboard(params.tenantId, params.dashboardId),
   );
+
   const [editing, setEditing] = createSignal(
     untrack(() => (Array.isArray(searchParams.edit) ? searchParams.edit[0] : searchParams.edit)) ===
       "1",
   );
+
   const [layout, setLayout] = createSignal<Record<string, Layout>>({});
   const [editorOpen, setEditorOpen] = createSignal(false);
   const [editingWidget, setEditingWidget] = createSignal<DashboardWidget | null>(null);
+
   const [draft, setDraft] = createSignal<Draft>({
     type: "table",
     title: "New table",
     config: defaultConfig("table"),
   });
+
   const [formError, setFormError] = createSignal<string | null>(null);
   const [name, setName] = createSignal("");
   const [description, setDescription] = createSignal("");
@@ -245,17 +263,23 @@ export default function DashboardPage() {
     mutationFn: async () => {
       const value = draft();
       const title = value.title.trim();
+
       if (!title) throw new Error("Give the widget a title");
+
       const config: Record<string, any> = {
         ...value.config,
         ...(value.type === "markdown" ? {} : { query: value.config.query ?? { all: [] } }),
       };
+
       if (value.type === "markdown" && !String(config.markdown ?? "").trim())
         throw new Error("Write some markdown first");
+
       if (value.type === "table" && !(config.columns?.length > 0))
         throw new Error("Choose at least one column");
+
       if (value.type === "pie" && !config.dimension) throw new Error("Choose a pie dimension");
       const existing = editingWidget();
+
       if (existing)
         return enterprise.patchDashboardWidget(params.tenantId, params.dashboardId, existing.id, {
           type: value.type,
@@ -263,6 +287,7 @@ export default function DashboardPage() {
           config,
         });
       const nextY = widgets().reduce((bottom, widget) => Math.max(bottom, widget.y + widget.h), 0);
+
       return enterprise.createDashboardWidget(params.tenantId, params.dashboardId, {
         type: value.type,
         title,
@@ -355,6 +380,7 @@ export default function DashboardPage() {
       const dx = Math.round((pointer.clientX - startX) / column);
       const dy = Math.round((pointer.clientY - startY) / row);
       const next = clampLayout(origin, mode, dx, dy);
+
       if (
         next.x === latest[widget.id]!.x &&
         next.y === latest[widget.id]!.y &&
@@ -365,10 +391,13 @@ export default function DashboardPage() {
       latest = resolveLayout({ ...before, [widget.id]: next }, widget.id);
       setLayout(latest);
     };
+
     const up = () => {
       cleanDrag?.();
+
       const changed = Object.entries(latest).filter(([id, position]) => {
         const previous = before[id];
+
         return (
           !previous ||
           previous.x !== position.x ||
@@ -377,15 +406,18 @@ export default function DashboardPage() {
           previous.h !== position.h
         );
       });
+
       if (changed.length > 0)
         saveLayout.mutate(changed.map(([id, position]) => ({ id, ...position })));
     };
+
     cleanDrag = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
       cleanDrag = undefined;
     };
+
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
@@ -398,6 +430,7 @@ export default function DashboardPage() {
   const toggleColumn = (id: string) => {
     setDraft((value) => {
       const columns: string[] = value.config.columns ?? [];
+
       return {
         ...value,
         config: {
@@ -568,6 +601,7 @@ export default function DashboardPage() {
           <For each={widgets()}>
             {(widget) => {
               const position = () => currentLayout(widget);
+
               return (
                 <article
                   class={cn(
@@ -705,13 +739,16 @@ export default function DashboardPage() {
                       const nextDataset = event.currentTarget.value as "devices" | "software";
                       setDraft((value) => {
                         const config = defaultConfig(value.type);
+
                         if (value.type === "table")
                           config.columns =
                             nextDataset === "software"
                               ? ["name", "version", "managed", "deviceCount"]
                               : ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+
                         if (value.type === "pie")
                           config.dimension = nextDataset === "software" ? "managed" : "platform";
+
                         return {
                           ...value,
                           config: { ...config, dataset: nextDataset },
@@ -788,6 +825,7 @@ export default function DashboardPage() {
                     <For each={columnOptions()}>
                       {([id, label]) => {
                         const checked = () => (draft().config.columns ?? []).includes(id);
+
                         return (
                           <button
                             type="button"

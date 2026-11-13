@@ -18,8 +18,10 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
   );
+
   const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
+
   return handler;
 }
 
@@ -65,6 +67,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
       }),
     );
+
     expect(authRes.status).toBe(200);
 
     // ── Step 2: TokenUpdate ───────────────────────────────────────────
@@ -87,6 +90,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
       }),
     );
+
     expect(tokenRes.status).toBe(200);
 
     // ── Step 3: Checkin (receive command) ─────────────────────────────
@@ -105,13 +109,16 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm" },
       }),
     );
+
     expect(checkinRes.status).toBe(200);
 
     const checkinBody = await checkinRes.text();
+
     const commandPlist = (await parsePlist(checkinBody).pipe(Effect.runPromise)) as Record<
       string,
       unknown
     >;
+
     expect(commandPlist.CommandUUID).toBe("cmd-enroll-001");
     expect((commandPlist.Command as any).RequestType).toBe("DeviceInformation");
 
@@ -138,6 +145,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm" },
       }),
     );
+
     expect(resultRes.status).toBe(200);
 
     // ── Step 5: CheckOut ──────────────────────────────────────────────
@@ -158,6 +166,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
       }),
     );
+
     expect(checkoutRes.status).toBe(200);
 
     // ── Verify events were recorded in order ──────────────────────────
@@ -219,6 +228,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
       }),
     );
+
     expect(tokensRes.status).toBe(200);
     const tokensData = (await tokensRes.json()) as Record<string, any>;
     expect(tokensData.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
@@ -243,6 +253,7 @@ describe("Apple MDM E2E", () => {
         headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
       }),
     );
+
     expect(itemsRes.status).toBe(200);
     const itemsData = (await itemsRes.json()) as Record<string, any>;
     expect(itemsData.Declarations.Activations).toHaveLength(1);

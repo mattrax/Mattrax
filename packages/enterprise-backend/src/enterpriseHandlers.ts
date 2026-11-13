@@ -324,6 +324,7 @@ export type EnterpriseHandlersConfig = {
 const isModelledError = (error: unknown): boolean => {
   if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
   const tag = (error as { _tag?: unknown })._tag;
+
   return typeof tag === "string" && (tag.startsWith("Enterprise") || tag.startsWith("StepUp"));
 };
 
@@ -344,12 +345,14 @@ const logServiceFailure = (error: unknown, causeText?: string) => {
     typeof error === "object" && error !== null && "_tag" in error
       ? String((error as { _tag?: unknown })._tag)
       : undefined;
+
   const message =
     error instanceof Error
       ? error.message
       : typeof error === "object" && error !== null && "message" in error
         ? String((error as { message?: unknown }).message ?? "")
         : String(error);
+
   return Effect.logError(
     "Enterprise service failure",
     JSON.stringify({
@@ -372,16 +375,20 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.catchCause((cause) => {
       const error = Cause.squash(cause);
+
       if (isModelledError(error)) {
         const tag =
           typeof error === "object" && error !== null && "_tag" in error
             ? String((error as { _tag?: unknown })._tag)
             : "";
+
         const log = expectedClientTags.has(tag)
           ? Effect.void
           : logServiceFailure(error, Cause.pretty(cause));
+
         return Effect.flatMap(log, () => Effect.fail(error as E));
       }
+
       const internal = diagnoseError(
         new EnterpriseInternal({
           message: "Something went wrong on our side. Try again shortly.",
@@ -394,6 +401,7 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
           },
         },
       );
+
       return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
         Effect.fail(internal as E),
       );
@@ -438,15 +446,19 @@ const wrapServiceErrors = <S extends Record<string, any>>(
   new Proxy(service, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
+
       if (typeof value !== "function") return value;
+
       return (...args: Array<unknown>) => {
         const fn = value as unknown as (...args: Array<unknown>) => unknown;
         const result = fn.apply(target, args);
+
         if (!Effect.isEffect(result)) return result;
         const method = String(property);
         const permission = permissions ? permissionForMethod(method) : undefined;
         const tenantId = typeof args[1] === "string" ? args[1] : undefined;
         const startedAt = Date.now();
+
         const mapped =
           permission && tenantId
             ? Effect.provideService(result as any, RequiredPermission, {
@@ -454,6 +466,7 @@ const wrapServiceErrors = <S extends Record<string, any>>(
                 method,
               })
             : result;
+
         const withAnalytics = analytics
           ? (mapped as Effect.Effect<unknown, unknown, unknown>).pipe(
               Effect.tap((value) =>
@@ -464,6 +477,7 @@ const wrapServiceErrors = <S extends Record<string, any>>(
                     typeof (value as { id?: unknown }).id === "string"
                       ? (value as { id: string }).id
                       : undefined;
+
                   const properties = {
                     method,
                     ...(tenantId ? { tenant_id: tenantId } : {}),
@@ -472,9 +486,11 @@ const wrapServiceErrors = <S extends Record<string, any>>(
                     duration_ms: Date.now() - startedAt,
                     status: "ok",
                   };
+
                   try {
                     analytics.capture("api_operation", properties);
                     const event = PRODUCT_EVENTS[method];
+
                     if (event) analytics.capture(event, properties);
                   } catch {
                     // Analytics must never fail a successful API operation.
@@ -483,6 +499,7 @@ const wrapServiceErrors = <S extends Record<string, any>>(
               ),
             )
           : mapped;
+
         return mapServiceErrors(withAnalytics as any);
       };
     },
@@ -495,7 +512,9 @@ type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
 };
 
 type StripeClientLike = Parameters<typeof makeEffectStripeClient>[0];
+
 type RawStripeClientLike = object;
+
 type Dynamic = ReturnType<typeof JSON.parse>;
 
 const isEffectStripeClient = (
@@ -517,6 +536,7 @@ const escapeHtml = (value: string) =>
 const optionalText = (value: string | null | undefined): string | null | undefined => {
   if (value === undefined) return undefined;
   const trimmed = value?.trim();
+
   return trimmed ? trimmed : null;
 };
 
@@ -534,18 +554,24 @@ type BrandingPayload = {
 const brandingUpdate = (body: BrandingPayload): Record<string, string | null> => {
   const errors = validateTenantBranding(body);
   const firstError = Object.values(errors)[0];
+
   if (firstError) throw new EnterpriseBadRequest({ message: firstError });
 
   const update: Record<string, string | null> = {};
   const displayName = optionalText(body.displayName);
+
   if (displayName !== undefined) update.displayName = displayName;
   const logo = optionalText(body.logo);
+
   if (logo !== undefined) update.logo = logo;
   const supportEmail = optionalText(body.supportEmail);
+
   if (supportEmail !== undefined) update.supportEmail = supportEmail;
   const brandColor = optionalText(body.brandColor);
+
   if (brandColor !== undefined)
     update.brandColor = brandColor ? normalizeBrandColor(brandColor) : null;
+
   return update;
 };
 
@@ -575,16 +601,21 @@ const allowAppleProfileRequest = (ip: string | null | undefined) => {
   const key = ip?.trim() || "local";
   const timestamp = Date.now();
   const entry = appleProfileWindows.get(key);
+
   if (!entry || entry.resetAt <= timestamp) {
     appleProfileWindows.set(key, { count: 1, resetAt: timestamp + APPLE_PROFILE_WINDOW_MS });
+
     // Bound the map so rotating addresses cannot grow it without limit.
     if (appleProfileWindows.size > 10_000) {
       for (const [candidate, value] of appleProfileWindows)
         if (value.resetAt <= timestamp) appleProfileWindows.delete(candidate);
     }
+
     return true;
   }
+
   entry.count += 1;
+
   return entry.count <= APPLE_PROFILE_PER_IP_LIMIT;
 };
 
@@ -609,6 +640,7 @@ const slugBase = (value: string) =>
 const importString = (value: unknown, max: number): string | null => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
+
   return trimmed ? trimmed.slice(0, max) : null;
 };
 
@@ -632,8 +664,11 @@ export const appleEnrollmentProfileResponse = (result: {
 /** Render the stored capability JSON for CSV export without losing entries. */
 const capabilityText = (value: unknown): string => {
   if (value == null) return "";
+
   if (Array.isArray(value)) return value.map((entry) => String(entry)).join("; ");
+
   if (typeof value === "string") return value;
+
   return JSON.stringify(value);
 };
 
@@ -683,6 +718,7 @@ const backupRunInfo = (run: {
 
 const headersFromRequest = (request: HttpServerRequest) => {
   const headers = new Headers();
+
   for (const [key, value] of Object.entries(request.headers)) {
     if (Array.isArray(value)) {
       for (const item of value) headers.append(key, item);
@@ -690,6 +726,7 @@ const headersFromRequest = (request: HttpServerRequest) => {
       headers.set(key, value);
     }
   }
+
   return headers;
 };
 
@@ -705,6 +742,7 @@ const requireStepUp = (
 
 const iso = (date: Date | number | null | undefined) => {
   if (date == null) return new Date(0).toISOString();
+
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
@@ -718,15 +756,19 @@ const hashJson = (value: unknown) =>
   );
 
 const TENANT_ROLES = new Set(["owner", "admin", "member", "auditor"]);
+
 const rolesOf = (role: string) =>
   role
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+
 const validRoles = (role: string) => {
   const roles = rolesOf(role);
+
   return roles.length > 0 && roles.every((item) => TENANT_ROLES.has(item));
 };
+
 const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
 
 /**
@@ -741,6 +783,7 @@ const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
  */
 const canWriteTenant = (role: string) =>
   role.split(",").some((item) => item === "owner" || item === "admin");
+
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
 export const createEnterpriseService = ({
@@ -766,9 +809,11 @@ export const createEnterpriseService = ({
   analytics,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
   const auth = wrapServiceErrors(
     authService as unknown as Record<string, any>,
   ) as unknown as typeof authService;
+
   const identifyUser = (
     user: { readonly id: string; readonly email: string; readonly name?: string | null },
     tenant?: {
@@ -780,6 +825,7 @@ export const createEnterpriseService = ({
     },
   ) => {
     if (!analytics) return;
+
     try {
       analytics.identify({
         userId: user.id,
@@ -800,7 +846,9 @@ export const createEnterpriseService = ({
       // Analytics must never fail an authenticated request.
     }
   };
+
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
+
   const applePush = makeApplePush({
     db,
     schema,
@@ -808,16 +856,19 @@ export const createEnterpriseService = ({
     authSecret,
     ...(webhookFetch ? { webhookFetch } : {}),
   });
+
   const webhookOptions = {
     ...(authSecret ? { authSecret } : {}),
     ...(webhookFetch ? { fetch: webhookFetch } : {}),
     ...(webhookTimeoutMs !== undefined ? { timeoutMs: webhookTimeoutMs } : {}),
   };
+
   const stripe = stripeClient
     ? isEffectStripeClient(stripeClient)
       ? stripeClient
       : makeEffectStripeClient(stripeClient as StripeClientLike)
     : undefined;
+
   const billingConfigured = Boolean(stripe);
 
   const billingNotConfigured = () =>
@@ -850,6 +901,7 @@ export const createEnterpriseService = ({
         return new EnterpriseUpstreamError({ message: error.message });
     }
   };
+
   const mapAndroidFailure = <A, R>(effect: Effect.Effect<A, AndroidDeliveryError, R>) =>
     effect.pipe(Effect.mapError(androidFailure));
 
@@ -873,6 +925,7 @@ export const createEnterpriseService = ({
         return new EnterpriseUpstreamError({ message: error.message });
     }
   };
+
   const mapAppleFailure = <A, R>(effect: Effect.Effect<A, AppleBusinessManagerError, R>) =>
     effect.pipe(Effect.mapError(appleFailure));
 
@@ -895,6 +948,7 @@ export const createEnterpriseService = ({
         return new EnterpriseUpstreamError({ message: error.message });
     }
   };
+
   const mapVppFailure = <A, R>(effect: Effect.Effect<A, VppError, R>) =>
     effect.pipe(Effect.mapError(vppFailure));
 
@@ -908,6 +962,7 @@ export const createEnterpriseService = ({
       organizationId,
       ...(deviceIds ? { deviceIds } : {}),
     }).pipe(Effect.catch(() => Effect.void));
+
   const r2Layer = R2StorageLive(storage);
 
   const requireTenant = (
@@ -934,6 +989,7 @@ export const createEnterpriseService = ({
         if (apiToken.tenantId && apiToken.tenantId !== tenantId)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
         const scopes = tokenScopes(apiToken.scopes);
+
         if (access === "read" && !scopes.has("read"))
           return yield* Effect.fail(
             diagnoseError(
@@ -941,6 +997,7 @@ export const createEnterpriseService = ({
               { code: "token_scope", reason: "read_scope_missing" },
             ),
           );
+
         if ((access === "write" || access === "delete") && !scopes.has("write"))
           return yield* Effect.fail(
             diagnoseError(
@@ -955,12 +1012,14 @@ export const createEnterpriseService = ({
       const member = yield* db.query.member.findFirst({
         where: { userId: user.id, organizationId: tenantId },
       });
+
       if (!member)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
       const role = yield* resolveTenantRole(db, member);
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
+
       const deny = (permission: string) =>
         diagnoseError(
           new EnterprisePermissionDenied({
@@ -993,10 +1052,12 @@ export const createEnterpriseService = ({
               : access === "write"
                 ? "tenant.write"
                 : "tenant.read";
+
           if (!hasPermission(role.permissions, fallback)) return yield* Effect.fail(deny(fallback));
         } else {
           if (access === "write" && !canWriteTenant(member.role))
             return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
+
           if (access === "delete" && !canDeleteTenant(member.role))
             return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
         }
@@ -1005,6 +1066,7 @@ export const createEnterpriseService = ({
       const organization = yield* db.query.organization.findFirst({
         where: { id: member.organizationId },
       });
+
       if (!organization)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
@@ -1014,6 +1076,7 @@ export const createEnterpriseService = ({
         const sso = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: member.organizationId },
         });
+
         if (sso?.requireMfa)
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -1072,9 +1135,11 @@ export const createEnterpriseService = ({
         .select()
         .from(schema.configuration)
         .where(eq(schema.configuration.policyId, policyId));
+
       const snapshot = Object.fromEntries(
         configurations.map((configuration: any) => [configuration.kind, configuration.data]),
       );
+
       // `max(version)` can come from a stale Hyperdrive replica, so the first
       // INSERT may collide with the unique (policy_id, version) index even
       // though the read said the slot was free. Retry with a higher version
@@ -1087,11 +1152,14 @@ export const createEnterpriseService = ({
         .where(eq(schema.policyDeployment.policyId, policyId))
         .orderBy(desc(schema.policyDeployment.version))
         .limit(1);
+
       const base = current?.version ?? 0;
       let attempt = 1;
+
       const insertOnce = Effect.suspend(() => {
         const version = base + attempt;
         attempt += 1;
+
         return Effect.gen(function* () {
           yield* db.insert(schema.policyDeployment).values({
             id: id(),
@@ -1104,6 +1172,7 @@ export const createEnterpriseService = ({
           });
         });
       });
+
       yield* Effect.retry(insertOnce, { times: 20 });
     });
 
@@ -1138,11 +1207,13 @@ export const createEnterpriseService = ({
           : typeof metadata === "object" && metadata !== null
             ? (metadata as Record<string, unknown>)
             : { value: metadata };
+
       const enrichedMetadata = {
         ...metadataObject,
         ...(ctx.credential ? { credential: ctx.credential } : {}),
         ...(ctx.rbac ? { rbac: ctx.rbac } : {}),
       };
+
       yield* db.insert(schema.auditLog).values({
         id: id(),
         organizationId: ctx.organization.id,
@@ -1154,6 +1225,7 @@ export const createEnterpriseService = ({
         metadata: Object.keys(enrichedMetadata).length === 0 ? null : enrichedMetadata,
         createdAt: now(),
       });
+
       if (ctx.credential?.type === "oauth")
         yield* db
           .update(schema.mcpOAuthConnection)
@@ -1167,13 +1239,16 @@ export const createEnterpriseService = ({
       // lifecycle events are mostly emitted from the protocol path; deletion
       // only exists here.
       const webhookEvent = webhookEventForAuditAction(action);
+
       if (!webhookEvent) return;
+
       const context =
         typeof metadata === "object" && metadata !== null
           ? (metadata as Record<string, unknown>)
           : metadata === undefined
             ? {}
             : { metadata };
+
       yield* dispatchWebhookEvent(
         db,
         {
@@ -1186,21 +1261,27 @@ export const createEnterpriseService = ({
     });
 
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
+
   const normalizeWebhookEvents = (events: ReadonlyArray<string>): string[] => [
     ...new Set(events.filter((event) => WEBHOOK_EVENTS.has(event))),
   ];
 
   const webhookDescription = (value: string | null | undefined): string | null => {
     const trimmed = value?.trim();
+
     if (!trimmed) return null;
+
     if (trimmed.length > 500)
       throw new EnterpriseBadRequest({ message: "Description must be 500 characters or fewer" });
+
     return trimmed;
   };
 
   const requireWebhookUrl = (url: string): string => {
     const problem = webhookUrlProblem(url);
+
     if (problem) throw new EnterpriseBadRequest({ message: problem });
+
     return url.trim();
   };
 
@@ -1209,6 +1290,7 @@ export const createEnterpriseService = ({
       throw new EnterpriseBadRequest({
         message: "Webhook signing is not configured on this deployment",
       });
+
     return authSecret;
   };
 
@@ -1217,10 +1299,12 @@ export const createEnterpriseService = ({
       const endpoint = (yield* db.query.webhookEndpoint.findFirst({
         where: { id: webhookId, organizationId },
       })) as WebhookEndpointRow | undefined;
+
       if (!endpoint)
         return yield* Effect.fail(
           new EnterpriseNotFound({ message: "Webhook endpoint not found" }),
         );
+
       return endpoint;
     });
 
@@ -1239,12 +1323,15 @@ export const createEnterpriseService = ({
             ? cause
             : new EnterpriseBadRequest({ message: "Webhook signing is not configured" }),
       });
+
       const secret = generateWebhookSecret();
+
       const sealed = yield* Effect.tryPromise({
         try: () => sealSecret(signingSecret, secret),
         catch: () =>
           new EnterpriseBadRequest({ message: "Could not encrypt the webhook signing secret" }),
       });
+
       const webhookId = id();
       const timestamp = now();
       yield* db.insert(schema.webhookEndpoint).values({
@@ -1262,9 +1349,11 @@ export const createEnterpriseService = ({
         createdAt: timestamp,
         updatedAt: timestamp,
       });
+
       const endpoint = (yield* db.query.webhookEndpoint.findFirst({
         where: { id: webhookId, organizationId: input.organizationId },
       })) as WebhookEndpointRow;
+
       return { endpoint, secret };
     });
 
@@ -1308,12 +1397,14 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const result = yield* applePush.pushAppleDevices(deviceIds);
       yield* reportPolicyDeliveryFailure(organizationId, { policyId }, result);
+
       return result;
     });
 
   const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
     Effect.gen(function* () {
       if (organization.stripeCustomerId) return organization.stripeCustomerId;
+
       if (!stripe) return yield* Effect.fail(billingNotConfigured());
 
       // Search is the cheap path. Some Stripe accounts/API versions reject
@@ -1325,6 +1416,7 @@ export const createEnterpriseService = ({
           limit: 1,
         }) as Effect.Effect<{ data: Array<Stripe.Customer> }, unknown>,
       );
+
       let stripeCustomer: Stripe.Customer | undefined = Exit.isSuccess(search)
         ? search.value.data[0]
         : undefined;
@@ -1333,6 +1425,7 @@ export const createEnterpriseService = ({
         const page = yield* stripe
           .effect((client: Stripe) => client.customers.list({ limit: 100 }))
           .pipe(Effect.mapError(() => billingUnavailable()));
+
         stripeCustomer = page.data.find(
           (customer: Stripe.Customer) =>
             customer.metadata?.organizationId === organization.id &&
@@ -1351,6 +1444,7 @@ export const createEnterpriseService = ({
         .update(schema.organization)
         .set({ stripeCustomerId: stripeCustomer.id })
         .where(eq(schema.organization.id, organization.id));
+
       return stripeCustomer.id;
     });
 
@@ -1370,6 +1464,7 @@ export const createEnterpriseService = ({
         .from(schema.member)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
         .where(eq(schema.member.userId, userId));
+
       return rows.map((row: any) => ({
         ...row,
         logo: row.logo ?? null,
@@ -1385,6 +1480,7 @@ export const createEnterpriseService = ({
         .select({ value: count() })
         .from(schema.member)
         .where(eq(schema.member.organizationId, tenantId));
+
       return members?.value ?? 0;
     });
 
@@ -1394,18 +1490,21 @@ export const createEnterpriseService = ({
         .select({ role: schema.member.role })
         .from(schema.member)
         .where(eq(schema.member.organizationId, tenantId));
+
       return members.filter((member) => member.role.split(",").includes("owner")).length;
     });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       if (ids.length === 0) return;
+
       const rows = yield* db
         .select({ id: schema.device.id })
         .from(schema.device)
         .where(
           and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])),
         );
+
       if (rows.length !== new Set(ids).size)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
     });
@@ -1413,12 +1512,14 @@ export const createEnterpriseService = ({
   const assertTenantPolicies = (tenantId: string, ids: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       if (ids.length === 0) return;
+
       const rows = yield* db
         .select({ id: schema.policy.id })
         .from(schema.policy)
         .where(
           and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])),
         );
+
       if (rows.length !== new Set(ids).size)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
     });
@@ -1426,6 +1527,7 @@ export const createEnterpriseService = ({
   const assertTenantApplications = (tenantId: string, ids: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       if (ids.length === 0) return;
+
       const rows = yield* db
         .select({ id: schema.application.id })
         .from(schema.application)
@@ -1435,6 +1537,7 @@ export const createEnterpriseService = ({
             inArray(schema.application.id, [...ids]),
           ),
         );
+
       if (rows.length !== new Set(ids).size)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
     });
@@ -1447,12 +1550,14 @@ export const createEnterpriseService = ({
         .where(eq(schema.applicationGroup.applicationId, applicationId))) as Array<{
         groupId: string;
       }>;
+
       const direct = (yield* db
         .select()
         .from(schema.applicationDevice)
         .where(eq(schema.applicationDevice.applicationId, applicationId))) as Array<{
         deviceId: string;
       }>;
+
       const groupDevices = groups.length
         ? ((yield* db
             .select()
@@ -1464,11 +1569,14 @@ export const createEnterpriseService = ({
               ),
             )) as Array<{ deviceId: string }>)
         : [];
+
       const ids = new Set<string>([
         ...direct.map((row: { deviceId: string }) => row.deviceId),
         ...groupDevices.map((row: { deviceId: string }) => row.deviceId),
       ]);
+
       if (ids.size === 0) return [] as Array<EnterpriseDevice>;
+
       const devices = yield* db
         .select()
         .from(schema.device)
@@ -1478,6 +1586,7 @@ export const createEnterpriseService = ({
             inArray(schema.device.id, [...ids]),
           ),
         );
+
       return devices as Array<EnterpriseDevice>;
     });
 
@@ -1494,7 +1603,9 @@ export const createEnterpriseService = ({
       const group = yield* db.query.enterpriseGroup.findFirst({
         where: { id: groupId, organizationId: tenantId },
       });
+
       if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
       return group;
     });
 
@@ -1510,6 +1621,7 @@ export const createEnterpriseService = ({
         .from(schema.subscription)
         .where(eq(schema.subscription.referenceId, organizationId))
         .limit(1);
+
       const [devices] = yield* db
         .select({ value: count() })
         .from(schema.device)
@@ -1519,21 +1631,26 @@ export const createEnterpriseService = ({
             eq(schema.device.status, "enrolled"),
           ),
         );
+
       const planLimitDbError = () =>
         new EnterpriseDbError({ message: "Could not check plan limits" });
+
       const devicesUsed = yield* countOrganizationDevices(db, organizationId).pipe(
         Effect.mapError(planLimitDbError),
       );
+
       const deviceStatus = yield* deviceLimitForOrganization({
         db,
         organizationId,
         config: planLimits,
       }).pipe(Effect.mapError(planLimitDbError));
+
       const tenantStatus = yield* tenantLimitForAccount({
         db,
         userId,
         config: planLimits,
       }).pipe(Effect.mapError(planLimitDbError));
+
       return {
         plan: deviceStatus.plan,
         status: subscription?.status,
@@ -1561,7 +1678,9 @@ export const createEnterpriseService = ({
       const status = yield* tenantLimitForAccount({ db, userId, config: planLimits }).pipe(
         Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
       );
+
       if (!status.reached) return;
+
       return yield* Effect.fail(
         new EnterpriseForbidden({
           message: `Your plan allows ${status.limit ?? 0} tenant${
@@ -1621,9 +1740,12 @@ export const createEnterpriseService = ({
     if (cause instanceof AutopilotError) {
       if (cause.reason === "not_configured")
         return new EnterpriseNotConfigured({ message: cause.message });
+
       if (cause.reason === "invalid") return new EnterpriseBadRequest({ message: cause.message });
+
       return new EnterpriseUpstreamError({ message: cause.message });
     }
+
     return diagnoseError(
       new EnterpriseUpstreamError({
         message: "Microsoft Autopilot returned an unexpected response. Try again shortly.",
@@ -1645,12 +1767,15 @@ export const createEnterpriseService = ({
               "Microsoft Graph is not configured for this deployment. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET.",
           }),
         );
+
       const [config] = yield* db
         .select({ azureTenantId: schema.ssoConfig.azureTenantId })
         .from(schema.ssoConfig)
         .where(eq(schema.ssoConfig.organizationId, organizationId))
         .limit(1);
+
       const azureTenantId = config?.azureTenantId?.trim();
+
       if (!azureTenantId)
         return yield* Effect.fail(
           new EnterpriseNotConfigured({
@@ -1658,6 +1783,7 @@ export const createEnterpriseService = ({
               "Connect Entra ID for this tenant (Settings → Identity) before using Windows Autopilot.",
           }),
         );
+
       return { graph: azureGraph, azureTenantId };
     });
 
@@ -1718,7 +1844,9 @@ export const createEnterpriseService = ({
   ) =>
     Effect.gen(function* () {
       const deviceIds = certificateIdsForDevices(devices);
+
       if (deviceIds.length === 0) return 0;
+
       const active = yield* db
         .select({ serial: schema.scepIssuedCertificate.serial })
         .from(schema.scepIssuedCertificate)
@@ -1729,6 +1857,7 @@ export const createEnterpriseService = ({
             isNull(schema.scepIssuedCertificate.revokedAt),
           ),
         );
+
       if (active.length === 0) return 0;
       const revokedAt = now();
       yield* db
@@ -1741,6 +1870,7 @@ export const createEnterpriseService = ({
             isNull(schema.scepIssuedCertificate.revokedAt),
           ),
         );
+
       return active.length;
     });
 
@@ -1818,15 +1948,18 @@ export const createEnterpriseService = ({
         createdAt: iso(row.createdAt),
         updatedAt: iso(row.updatedAt),
       };
+
       if (withConfigurations) {
         const configurations = yield* db
           .select()
           .from(schema.configuration)
           .where(eq(schema.configuration.policyId, row.id));
+
         base.configurations = Object.fromEntries(
           configurations.map((item: EnterpriseConfiguration) => [item.kind, item.data]),
         );
       }
+
       return base;
     });
 
@@ -1883,10 +2016,12 @@ export const createEnterpriseService = ({
       const existing = yield* db.query.enterpriseEnrollment.findFirst({
         where: { organizationId: organizationId },
       });
+
       if (existing) return existing;
       const timestamp = now();
       const enrollment = { id: id(), organizationId, createdAt: timestamp, updatedAt: timestamp };
       yield* db.insert(schema.enterpriseEnrollment).ignore().values(enrollment);
+
       return (
         (yield* db.query.enterpriseEnrollment.findFirst({
           where: { organizationId: organizationId },
@@ -1919,6 +2054,7 @@ export const createEnterpriseService = ({
     Effect.catchCause(
       Effect.gen(function* () {
         let ipHash: string | null = null;
+
         // Without a deployment secret a salted digest would be trivially
         // reversible (or identical across deployments), so do not persist an
         // address-derived value at all.
@@ -1931,8 +2067,10 @@ export const createEnterpriseService = ({
             ) as ArrayBuffer,
           )).slice(0, 32);
         }
+
         const timestamp = now();
         const cutoff = new Date(timestamp.getTime() - ENROLLMENT_ATTEMPT_DEDUPE_MS);
+
         const recent = (yield* db
           .select()
           .from(schema.enrollmentAttempt)
@@ -1943,8 +2081,10 @@ export const createEnterpriseService = ({
               gte(schema.enrollmentAttempt.createdAt, cutoff),
             ),
           )) as Array<{ ipHash: string | null; outcome: string; createdAt: Date }>;
+
         const duplicate = recent.some((row) => {
           const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+
           return (
             !Number.isNaN(createdAt.getTime()) &&
             createdAt >= cutoff &&
@@ -1952,7 +2092,9 @@ export const createEnterpriseService = ({
             row.outcome === input.outcome
           );
         });
+
         const sameClient = recent.filter((row) => (row.ipHash ?? null) === ipHash).length;
+
         if (duplicate || sameClient >= ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT) return;
         yield* db.insert(schema.enrollmentAttempt).values({
           id: id(),
@@ -1965,6 +2107,7 @@ export const createEnterpriseService = ({
           userAgent: input.userAgent?.slice(0, 255) ?? null,
           createdAt: timestamp,
         });
+
         // Only failed attempts are customer-actionable. Dedupe above already
         // stops a page-refresh loop from producing a delivery per request.
         if (input.outcome !== "ok")
@@ -1995,6 +2138,7 @@ export const createEnterpriseService = ({
             message: "APNs certificate management is not configured on this server",
           }),
         );
+
       return authSecret;
     });
 
@@ -2009,6 +2153,7 @@ export const createEnterpriseService = ({
   const deviceSearchWhere = (organizationId: string, filters: DeviceSearchFilters) =>
     Effect.gen(function* () {
       const conditions: SQL[] = [eq(schema.device.organizationId, organizationId)];
+
       if (filters.q) {
         const pattern = `%${escapeLike(filters.q)}%`;
         conditions.push(
@@ -2021,14 +2166,19 @@ export const createEnterpriseService = ({
           ) as SQL,
         );
       }
+
       if (filters.status) conditions.push(eq(schema.device.status, filters.status));
+
       if (filters.proto) conditions.push(eq(schema.device.proto, filters.proto));
+
       if (filters.notSeenBefore)
         conditions.push(lt(schema.device.lastSeenAt, filters.notSeenBefore));
+
       if (filters.groupId) {
         const group = yield* db.query.enterpriseGroup.findFirst({
           where: { id: filters.groupId, organizationId },
         });
+
         if (!group)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
         // Keep the membership set in SQL so large groups do not inflate the
@@ -2043,6 +2193,7 @@ export const createEnterpriseService = ({
           ),
         );
       }
+
       if (filters.health) {
         // Health is derived from declarations and inventory fields, not a
         // stored column. Resolving the matching ids in application code keeps
@@ -2053,25 +2204,32 @@ export const createEnterpriseService = ({
           .select()
           .from(schema.device)
           .where(and(...conditions));
+
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
+
         const declarations = deviceIds.length
           ? yield* db
               .select()
               .from(schema.deviceDeclaration)
               .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
           : [];
+
         const byDevice = new Map<string, Array<any>>();
+
         for (const declaration of declarations) {
           const list = byDevice.get(declaration.deviceId) ?? [];
           list.push(declaration);
           byDevice.set(declaration.deviceId, list);
         }
+
         const matching = devices
           .filter((device: EnterpriseDevice) => {
             const health = rowDeviceHealth(device, byDevice.get(device.id) ?? []);
+
             return filters.health === "stale" ? health.stale : health.level === filters.health;
           })
           .map((device: EnterpriseDevice) => device.id);
+
         conditions.push(
           matching.length > 0
             ? inArray(schema.device.id, matching)
@@ -2079,6 +2237,7 @@ export const createEnterpriseService = ({
               eq(schema.device.id, "__no_matching_health__"),
         );
       }
+
       if (filters.push) {
         // Resolve matching devices from `device_apple` up front, like the
         // health filter. The final device condition remains tenant-scoped, so
@@ -2091,6 +2250,7 @@ export const createEnterpriseService = ({
               ? eq(schema.deviceApple.lastPushErrorCode, "invalid_token")
               : gt(schema.deviceApple.consecutivePushFailures, 0),
           );
+
         const deviceIds = appleRows.map((row: { deviceId: string }) => row.deviceId);
         conditions.push(
           deviceIds.length > 0
@@ -2098,6 +2258,7 @@ export const createEnterpriseService = ({
             : eq(schema.device.id, "__no_matching_push__"),
         );
       }
+
       return and(...conditions);
     });
 
@@ -2110,7 +2271,9 @@ export const createEnterpriseService = ({
           : filters.sort === "status"
             ? schema.device.status
             : schema.device.name;
+
     const primary = filters.direction === "desc" ? desc(column) : asc(column);
+
     // A stable tiebreaker keeps offset pagination deterministic.
     return [primary, asc(schema.device.id)];
   };
@@ -2119,7 +2282,9 @@ export const createEnterpriseService = ({
   const deviceGroupsFor = (organizationId: string, deviceIds: string[]) =>
     Effect.gen(function* () {
       const groups = new Map<string, Array<{ id: string; name: string }>>();
+
       if (deviceIds.length === 0) return groups;
+
       const rows = yield* db
         .select({
           deviceId: schema.groupDevice.deviceId,
@@ -2137,11 +2302,13 @@ export const createEnterpriseService = ({
             eq(schema.enterpriseGroup.organizationId, organizationId),
           ),
         );
+
       for (const row of rows) {
         const list = groups.get(row.deviceId) ?? [];
         list.push({ id: row.id, name: row.name });
         groups.set(row.deviceId, list);
       }
+
       return groups;
     });
 
@@ -2154,6 +2321,7 @@ export const createEnterpriseService = ({
         .orderBy(...auditOrder(schema))
         .limit(take)
         .offset(filters.offset);
+
       return rows;
     });
 
@@ -2178,9 +2346,11 @@ export const createEnterpriseService = ({
   const loadApnsKey = (organizationId: string) =>
     Effect.gen(function* () {
       const secret = yield* requireApnsSecret();
+
       const pending = yield* db.query.applePushKey.findFirst({
         where: { organizationId },
       });
+
       if (pending) {
         const jwk = JSON.parse(
           yield* Effect.tryPromise({
@@ -2189,12 +2359,14 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
           }),
         ) as JsonWebKey;
+
         return { jwk, pending: true };
       }
 
       const certificate = yield* db.query.applePushCertificate.findFirst({
         where: { organizationId },
       });
+
       if (certificate?.encryptedKey) {
         const jwk = JSON.parse(
           yield* Effect.tryPromise({
@@ -2203,6 +2375,7 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({ message: "Could not read the existing APNs key" }),
           }),
         ) as JsonWebKey;
+
         return { jwk, pending: false };
       }
 
@@ -2211,14 +2384,17 @@ export const createEnterpriseService = ({
         catch: (cause) =>
           new EnterpriseBadRequest({ message: "Could not generate an APNs key pair" }),
       });
+
       const jwk = yield* Effect.tryPromise({
         try: () => exportPrivateKeyJwk(keyPair.privateKey),
         catch: (cause) => new EnterpriseBadRequest({ message: "Could not export the APNs key" }),
       });
+
       const encryptedPrivateKeyJwk = yield* Effect.tryPromise({
         try: () => sealSecret(secret, JSON.stringify(jwk)),
         catch: (cause) => new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
       });
+
       const timestamp = now();
       yield* db
         .insert(schema.applePushKey)
@@ -2231,6 +2407,7 @@ export const createEnterpriseService = ({
         .onDuplicateKeyUpdate({
           set: { encryptedPrivateKeyJwk, updatedAt: timestamp },
         });
+
       return { jwk, pending: true };
     });
 
@@ -2280,8 +2457,10 @@ export const createEnterpriseService = ({
       const row = yield* db.query.dashboard.findFirst({
         where: { id: dashboardId, organizationId },
       });
+
       if (!row)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Dashboard not found" }));
+
       return row;
     });
 
@@ -2316,13 +2495,16 @@ export const createEnterpriseService = ({
             .from(schema.device)
             .where(eq(schema.device.organizationId, organizationId))
             .orderBy(asc(schema.device.name), asc(schema.device.id));
+
       const ids = rows.map((row) => row.id);
+
       const declarations = ids.length
         ? yield* db
             .select()
             .from(schema.deviceDeclaration)
             .where(inArray(schema.deviceDeclaration.deviceId, ids))
         : [];
+
       const applications = ids.length
         ? yield* db
             .select({
@@ -2338,21 +2520,26 @@ export const createEnterpriseService = ({
               ),
             )
         : [];
+
       const declarationsByDevice = new Map<string, Array<any>>();
+
       for (const declaration of declarations) {
         const list = declarationsByDevice.get(declaration.deviceId) ?? [];
         list.push(declaration);
         declarationsByDevice.set(declaration.deviceId, list);
       }
+
       const applicationsByDevice = new Map<
         string,
         Array<{ bundleId: string; name: string | null }>
       >();
+
       for (const application of applications) {
         const list = applicationsByDevice.get(application.deviceId) ?? [];
         list.push({ bundleId: application.bundleId, name: application.name });
         applicationsByDevice.set(application.deviceId, list);
       }
+
       return rows.map((row) => ({
         row,
         health: rowDeviceHealth(row, declarationsByDevice.get(row.id) ?? []),
@@ -2364,6 +2551,7 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const timestamp = now();
       const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
+
       const snapshots = (yield* loadDeviceSnapshots(organizationId)).filter((snapshot) =>
         evaluateDeviceQuery(
           payload.query,
@@ -2389,6 +2577,7 @@ export const createEnterpriseService = ({
                   : undefined,
             )
           : [];
+
         return {
           total: snapshots.length,
           buckets,
@@ -2408,6 +2597,7 @@ export const createEnterpriseService = ({
       }
 
       const matchingIds = snapshots.map((snapshot) => snapshot.row.id);
+
       const applications = matchingIds.length
         ? yield* db
             .select()
@@ -2419,6 +2609,7 @@ export const createEnterpriseService = ({
               ),
             )
         : [];
+
       type SoftwareGroup = {
         bundleId: string;
         name: string | null;
@@ -2427,7 +2618,9 @@ export const createEnterpriseService = ({
         hasUpdateAvailable: boolean;
         devices: Set<string>;
       };
+
       const groups = new Map<string, SoftwareGroup>();
+
       for (const application of applications) {
         const group = groups.get(application.bundleId) ?? {
           bundleId: application.bundleId,
@@ -2437,6 +2630,7 @@ export const createEnterpriseService = ({
           hasUpdateAvailable: false,
           devices: new Set<string>(),
         };
+
         group.name ??= application.name;
         group.version ??= application.version;
         group.isManaged ||= application.isManaged;
@@ -2444,9 +2638,11 @@ export const createEnterpriseService = ({
         group.devices.add(application.deviceId);
         groups.set(application.bundleId, group);
       }
+
       const software = [...groups.values()].sort((left, right) =>
         (left.name ?? left.bundleId).localeCompare(right.name ?? right.bundleId),
       );
+
       const buckets = payload.groupBy
         ? toBuckets(
             software.map((application) =>
@@ -2461,6 +2657,7 @@ export const createEnterpriseService = ({
                 : undefined,
           )
         : [];
+
       return {
         total: software.length,
         buckets,
@@ -2487,24 +2684,31 @@ export const createEnterpriseService = ({
         // Do not disclose tenant membership to an unverified account. The
         // verification screen only needs the user record.
         const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
+
         const memberships = yield* db.query.member.findMany({
           where: { userId: user.id },
         });
+
         const mfaRequired = yield* Effect.gen(function* () {
           for (const membership of memberships) {
             if (!canWriteTenant(membership.role)) continue;
+
             const sso = yield* db.query.ssoConfig.findFirst({
               where: { organizationId: membership.organizationId },
             });
+
             if (sso?.requireMfa) return true;
           }
+
           return false;
         });
+
         const passwordCredential = yield* db
           .select({ credentialId: schema.authPasswords.credentialId })
           .from(schema.authPasswords)
           .where(eq(schema.authPasswords.subjectId, user.id))
           .limit(1);
+
         return {
           user: {
             id: user.id,
@@ -2534,6 +2738,7 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           })
           .where(eq(schema.user.id, user.id));
+
         return ok;
       }),
     deleteMe: (request) =>
@@ -2546,11 +2751,13 @@ export const createEnterpriseService = ({
         const memberships = yield* db.query.member.findMany({
           where: { userId: user.id },
         });
+
         for (const membership of memberships) {
           const [members] = yield* db
             .select({ value: count() })
             .from(schema.member)
             .where(eq(schema.member.organizationId, membership.organizationId));
+
           if ((members?.value ?? 0) <= 1) {
             yield* db
               .delete(schema.organization)
@@ -2584,17 +2791,20 @@ export const createEnterpriseService = ({
           (schema as any).authCredentials,
           (schema as any).authIdentifiers,
         ];
+
         for (const table of authTables) {
           if (table) yield* db.delete(table).where(eq((table as any).subjectId, user.id));
         }
 
         yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
+
         return ok;
       }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
     listAccountSessions: (request) =>
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
         identifyUser(resolved.user);
+
         return {
           sessions: yield* listUserSessions(
             db,
@@ -2608,14 +2818,17 @@ export const createEnterpriseService = ({
         const { user } = yield* auth.requireUser({ headers: request.headers });
         identifyUser(user);
         const revoked = yield* revokeUserSession(db, user.id, sessionId);
+
         if (!revoked)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
+
         return ok;
       }),
     listTenants: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         identifyUser(user);
+
         if (!user.emailVerified)
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -2623,18 +2836,21 @@ export const createEnterpriseService = ({
             }),
           );
         const tenants = yield* listTenantInfo(user.id);
+
         return { tenants };
       }),
     createTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         identifyUser(user);
+
         if (!user.emailVerified)
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Verify your email address before creating a tenant.",
             }),
           );
+
         const body = payload as {
           name: string;
           slug: string;
@@ -2644,10 +2860,13 @@ export const createEnterpriseService = ({
           brandColor?: string | null;
           metadata?: Record<string, unknown>;
         };
+
         yield* assertTenantCreationAllowed(user.id);
+
         const existing = yield* db.query.organization.findFirst({
           where: { slug: body.slug },
         });
+
         if (existing)
           return yield* Effect.fail(
             diagnoseError(
@@ -2695,11 +2914,13 @@ export const createEnterpriseService = ({
             slug: body.slug,
           },
         );
+
         return { id: tenantId };
       }),
     getTenant: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return {
           ...ctx.organization,
           logo: ctx.organization.logo ?? null,
@@ -2715,6 +2936,7 @@ export const createEnterpriseService = ({
         // The method-level RBAC permission (tenant.export) gates this bundle,
         // which contains member emails, application metadata and policy data.
         const ctx = yield* requireTenant(request, tenantId, "read");
+
         return yield* buildTenantExport(db, ctx.organization, {
           includeAudit: query?.includeAudit === "true" || query?.includeAudit === "1",
         });
@@ -2722,6 +2944,7 @@ export const createEnterpriseService = ({
     runTenantBackup: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const result = yield* runTenantBackupForTenant(db, storage, ctx.organization.id, "manual", {
           actor: { userId: ctx.user.id, email: ctx.user.email },
         }).pipe(
@@ -2729,38 +2952,46 @@ export const createEnterpriseService = ({
             () => new EnterpriseDbError({ message: "Could not record the backup run" }),
           ),
         );
+
         return backupRunInfo(result);
       }),
     listTenantBackups: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
+
         const rows = yield* listTenantBackupRuns(db, ctx.organization.id).pipe(
           Effect.mapError(() => new EnterpriseDbError({ message: "Could not load backup runs" })),
         );
+
         return { backups: rows.map(backupRunInfo) };
       }),
     downloadTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
         yield* requireStepUp(auth, request, "backup-download");
+
         // Scoped lookup: an id from another tenant must look missing.
         const run = yield* db.query.backupRun.findFirst({
           where: { id: backupId, organizationId: ctx.organization.id },
         });
+
         if (!run || !run.r2Key || run.status !== "succeeded")
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Backup not found or not restorable" }),
           );
         const r2 = yield* R2Storage;
         const object = yield* r2.get(run.r2Key);
+
         if (!object)
           return yield* Effect.fail(
             new EnterpriseR2FileNotFound({ message: "The backup object is no longer available" }),
           );
+
         const content = yield* Effect.tryPromise({
           try: () => object.text(),
           catch: () => new EnterpriseR2InternalError({ message: "Could not read the backup" }),
         });
+
         return {
           content,
           filename: `tenant-${safeFilename(ctx.organization.slug)}-backup-${iso(
@@ -2777,6 +3008,7 @@ export const createEnterpriseService = ({
         // The payload has already been decoded, so this bounds what a caller
         // can make us hold in memory (and what could be written in one go).
         const bytes = new TextEncoder().encode(JSON.stringify(bundle)).byteLength;
+
         if (bytes > TENANT_IMPORT_MAX_BYTES)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -2786,12 +3018,14 @@ export const createEnterpriseService = ({
             }),
           );
         const declaredBytes = Number(request.headers?.["content-length"]);
+
         if (Number.isFinite(declaredBytes) && declaredBytes > TENANT_IMPORT_MAX_BYTES)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: `The bundle is too large. The limit is ${TENANT_IMPORT_MAX_BYTES / 1024} KB.`,
             }),
           );
+
         if (bundle.version !== TENANT_EXPORT_VERSION)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -2802,21 +3036,25 @@ export const createEnterpriseService = ({
           );
 
         const profile = bundle.tenant;
+
         if (!profile)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "The bundle is missing tenant details" }),
           );
         const name = importString(profile.name, 255);
+
         if (!name)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "The bundle tenant name is required" }),
           );
+
         if ((profile.name ?? "").trim().length > 255)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "The tenant name is longer than 255 characters" }),
           );
         const branding = yield* brandingOrFail(profile);
         const metadata = profile.metadata ? JSON.stringify(profile.metadata) : null;
+
         if (metadata && metadata.length > 60_000)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -2824,6 +3062,7 @@ export const createEnterpriseService = ({
             }),
           );
         const requestedSlug = slugBase((profile.slug ?? "").trim() || name);
+
         if (!requestedSlug)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "The bundle tenant slug is not usable" }),
@@ -2833,6 +3072,7 @@ export const createEnterpriseService = ({
         const policies = bundle.policies ?? [];
         const applications = bundle.applications ?? [];
         const preRegistrations = bundle.preRegistrations ?? [];
+
         for (const [label, rows] of [
           ["groups", groups],
           ["policies", policies],
@@ -2848,28 +3088,34 @@ export const createEnterpriseService = ({
         }
 
         const groupKeys = new Set<string>();
+
         for (const group of groups) {
           const key = importString(group.key, 255);
+
           if (!key)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Every group needs a key" }),
             );
+
           if (groupKeys.has(key))
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Duplicate group key "${key}"` }),
             );
           groupKeys.add(key);
           const groupName = importString(group.name, 255);
+
           if (!groupName)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Group "${key}" needs a name` }),
             );
+
           if ((group.notes ?? "").length > 10_000)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Group "${groupName}" has notes longer than 10000 characters`,
               }),
             );
+
           if (!Array.isArray(group.policyKeys))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -2880,22 +3126,27 @@ export const createEnterpriseService = ({
 
         const policyKeys = new Set<string>();
         const policyConfigurations = new Map<string, Array<[string, unknown]>>();
+
         for (const policy of policies) {
           const key = importString(policy.key, 255);
+
           if (!key)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Every policy needs a key" }),
             );
+
           if (policyKeys.has(key))
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Duplicate policy key "${key}"` }),
             );
           policyKeys.add(key);
           const policyName = importString(policy.name, 255);
+
           if (!policyName)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Policy "${key}" needs a name` }),
             );
+
           if ((policy.notes ?? "").length > 10_000)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -2903,6 +3154,7 @@ export const createEnterpriseService = ({
               }),
             );
           const configurations = policy.configurations ?? {};
+
           if (typeof configurations !== "object" || Array.isArray(configurations))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -2910,6 +3162,7 @@ export const createEnterpriseService = ({
               }),
             );
           const entries: Array<[string, unknown]> = [];
+
           for (const [kind, data] of Object.entries(configurations)) {
             if (data === null || data === undefined)
               return yield* Effect.fail(
@@ -2927,6 +3180,7 @@ export const createEnterpriseService = ({
             );
             entries.push([kind, data]);
           }
+
           policyConfigurations.set(key, entries);
         }
 
@@ -2943,28 +3197,34 @@ export const createEnterpriseService = ({
 
         const applicationKeys = new Set<string>();
         let applicationsWithoutFiles = 0;
+
         for (const application of applications) {
           const key = importString(application.key, 255);
+
           if (!key)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Every application needs a key" }),
             );
+
           if (applicationKeys.has(key))
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Duplicate application key "${key}"` }),
             );
           applicationKeys.add(key);
           const applicationName = importString(application.name, 255);
+
           if (!applicationName)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: `Application "${key}" needs a name` }),
             );
+
           if ((application.notes ?? "").length > 10_000)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Application "${applicationName}" has notes longer than 10000 characters`,
               }),
             );
+
           if (
             application.platform !== "apple" &&
             application.platform !== "win" &&
@@ -2975,6 +3235,7 @@ export const createEnterpriseService = ({
                 message: `Application "${applicationName}" has an unknown platform`,
               }),
             );
+
           if (
             application.source !== "manifest" &&
             application.source !== "store" &&
@@ -2985,6 +3246,7 @@ export const createEnterpriseService = ({
                 message: `Application "${applicationName}" has an unknown source`,
               }),
             );
+
           if (application.platform === "apple" && application.source === "manifest") {
             if (!application.manifestUrl?.trim())
               return yield* Effect.fail(
@@ -2993,12 +3255,14 @@ export const createEnterpriseService = ({
                 }),
               );
           }
+
           if (application.source === "store" && !Number.isSafeInteger(Number(application.storeId)))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Application "${applicationName}" must have a whole-number store ID`,
               }),
             );
+
           if (
             application.size !== null &&
             application.size !== undefined &&
@@ -3011,12 +3275,14 @@ export const createEnterpriseService = ({
                 message: `Application "${applicationName}" has an invalid file size`,
               }),
             );
+
           if (!Array.isArray(application.groupKeys))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Application "${applicationName}" must list its group assignments`,
               }),
             );
+
           for (const groupKey of application.groupKeys) {
             if (!groupKeys.has(groupKey))
               return yield* Effect.fail(
@@ -3025,18 +3291,22 @@ export const createEnterpriseService = ({
                 }),
               );
           }
+
           // Bundle bytes are metadata-only, so an uploaded object cannot be
           // restored and must be re-uploaded after import.
           if (application.source === "upload" || application.r2Key) applicationsWithoutFiles++;
         }
 
         const serials = new Set<string>();
+
         for (const row of preRegistrations) {
           const serial = importString(row.serial, 255);
+
           if (!serial)
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Every pre-registration needs a serial" }),
             );
+
           if (serials.has(serial.toLowerCase()))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -3044,6 +3314,7 @@ export const createEnterpriseService = ({
               }),
             );
           serials.add(serial.toLowerCase());
+
           if (row.groupKey && !groupKeys.has(row.groupKey))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -3053,6 +3324,7 @@ export const createEnterpriseService = ({
         }
 
         const enrollment = bundle.enrollment;
+
         if (enrollment) {
           if (
             !Number.isSafeInteger(enrollment.maxDevices) ||
@@ -3064,6 +3336,7 @@ export const createEnterpriseService = ({
                 message: "The enrollment device limit must be a whole number between 0 and 1000000",
               }),
             );
+
           if (
             enrollment.code !== null &&
             enrollment.code !== undefined &&
@@ -3080,14 +3353,17 @@ export const createEnterpriseService = ({
 
         const timestamp = now();
         const tenantId = id();
+
         const result = yield* db.transaction((tx) =>
           Effect.gen(function* () {
             let slug = requestedSlug;
             let available = yield* tx.query.organization.findFirst({ where: { slug } });
+
             for (let attempt = 2; available && attempt <= 100; attempt++) {
               slug = `${requestedSlug.slice(0, 240)}-${attempt}`;
               available = yield* tx.query.organization.findFirst({ where: { slug } });
             }
+
             if (available)
               return yield* Effect.fail(
                 new EnterpriseConflict({
@@ -3134,6 +3410,7 @@ export const createEnterpriseService = ({
             });
 
             const policyIdByKey = new Map<string, string>();
+
             for (const policy of policies) {
               const policyId = id();
               policyIdByKey.set(policy.key, policyId);
@@ -3146,14 +3423,17 @@ export const createEnterpriseService = ({
                 updatedAt: timestamp,
               });
               const configurations = policyConfigurations.get(policy.key) ?? [];
+
               if (configurations.length > 0) {
                 const values = yield* Effect.all(
                   configurations.map(([kind, data]) =>
                     Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
                   ),
                 );
+
                 yield* tx.insert(schema.configuration).values(values);
               }
+
               yield* tx.insert(schema.policyDeployment).values({
                 id: id(),
                 organizationId: tenantId,
@@ -3166,6 +3446,7 @@ export const createEnterpriseService = ({
             }
 
             const groupIdByKey = new Map<string, string>();
+
             for (const group of groups) {
               const groupId = id();
               groupIdByKey.set(group.key, groupId);
@@ -3178,18 +3459,24 @@ export const createEnterpriseService = ({
                 updatedAt: timestamp,
               });
             }
+
             const groupPolicyValues: Array<{ groupId: string; policyId: string }> = [];
+
             for (const group of groups) {
               const groupId = groupIdByKey.get(group.key)!;
+
               for (const policyKey of group.policyKeys) {
                 const policyId = policyIdByKey.get(policyKey);
+
                 if (policyId) groupPolicyValues.push({ groupId, policyId });
               }
             }
+
             if (groupPolicyValues.length > 0)
               yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
 
             const applicationIdByKey = new Map<string, string>();
+
             for (const application of applications) {
               const applicationId = id();
               applicationIdByKey.set(application.key, applicationId);
@@ -3215,14 +3502,19 @@ export const createEnterpriseService = ({
                 updatedAt: timestamp,
               });
             }
+
             const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
+
             for (const application of applications) {
               const applicationId = applicationIdByKey.get(application.key)!;
+
               for (const groupKey of application.groupKeys) {
                 const groupId = groupIdByKey.get(groupKey);
+
                 if (groupId) applicationGroupValues.push({ groupId, applicationId });
               }
             }
+
             if (applicationGroupValues.length > 0)
               yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
 
@@ -3286,6 +3578,7 @@ export const createEnterpriseService = ({
     patchTenant: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           name?: string;
           slug?: string;
@@ -3295,10 +3588,12 @@ export const createEnterpriseService = ({
           brandColor?: string | null;
           metadata?: Record<string, unknown> | null;
         };
+
         if (body.slug) {
           const claimed = yield* db.query.organization.findFirst({
             where: { slug: body.slug },
           });
+
           if (claimed && claimed.id !== tenantId)
             return yield* Effect.fail(
               diagnoseError(
@@ -3307,8 +3602,10 @@ export const createEnterpriseService = ({
               ),
             );
         }
+
         const branding = yield* brandingOrFail(body);
         const name = optionalText(body.name);
+
         if (body.name !== undefined && name === null)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Tenant name cannot be empty" }),
@@ -3329,6 +3626,7 @@ export const createEnterpriseService = ({
           })
           .where(eq(schema.organization.id, tenantId));
         yield* audit(ctx, "tenant.updated", "tenant", tenantId, { fields: Object.keys(body) });
+
         return ok;
       }),
     deleteTenant: (request, tenantId) =>
@@ -3336,6 +3634,7 @@ export const createEnterpriseService = ({
         yield* requireTenant(request, tenantId, "delete");
         yield* requireStepUp(auth, request, "tenant-delete");
         const count = yield* memberCount(tenantId);
+
         if (count > 1)
           return yield* Effect.fail(
             diagnoseError(
@@ -3346,17 +3645,21 @@ export const createEnterpriseService = ({
             ),
           );
         yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
+
         return ok;
       }),
     getEntraDirectorySync: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const state = yield* db.query.entraDirectorySync.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         return {
           configured: Boolean(azureGraph && azureClientId),
           enabled: state?.enabled ?? false,
@@ -3379,6 +3682,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { enabled?: boolean; syncIntervalMinutes?: number };
+
         if (body.syncIntervalMinutes !== undefined) {
           if (
             !Number.isInteger(body.syncIntervalMinutes) ||
@@ -3391,15 +3695,19 @@ export const createEnterpriseService = ({
               }),
             );
         }
+
         const existing = yield* db.query.entraDirectorySync.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const enabled = body.enabled ?? existing?.enabled ?? false;
         const interval = body.syncIntervalMinutes ?? existing?.syncIntervalMinutes ?? 0;
         const timestamp = now();
+
         const intervalChanged =
           body.syncIntervalMinutes !== undefined &&
           body.syncIntervalMinutes !== (existing?.syncIntervalMinutes ?? 0);
+
         // Keep `nextSyncAt` aligned with the cadence: changing the interval
         // resets the clock, a schedule that is already due (or has no next
         // run) waits a full interval, and a zero/disabled schedule clears it.
@@ -3409,6 +3717,7 @@ export const createEnterpriseService = ({
             : existing?.nextSyncAt
               ? Date.parse(String(existing.nextSyncAt))
               : null;
+
         const nextSyncAt =
           interval <= 0
             ? null
@@ -3418,6 +3727,7 @@ export const createEnterpriseService = ({
                 existingNextAt <= timestamp.getTime()
               ? new Date(timestamp.getTime() + interval * 60_000)
               : (existing?.nextSyncAt ?? null);
+
         if (existing)
           yield* db
             .update(schema.entraDirectorySync)
@@ -3442,19 +3752,23 @@ export const createEnterpriseService = ({
           enabled,
           syncIntervalMinutes: interval,
         });
+
         return ok;
       }),
     syncEntraDirectory: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const outcome = yield* runEntraDirectorySyncForTenant({
           db,
           graph: azureGraph,
           organizationId: ctx.organization.id,
           trigger: "manual",
         });
+
         if (outcome.status === "not_configured")
           return yield* Effect.fail(new EnterpriseBadRequest({ message: outcome.message }));
+
         if (outcome.status === "locked")
           return yield* Effect.fail(
             new EnterpriseConflict({
@@ -3462,19 +3776,23 @@ export const createEnterpriseService = ({
                 "A directory sync is already running for this tenant. Wait for it to finish, or retry after the lock becomes stale.",
             }),
           );
+
         if (outcome.status === "error") {
           yield* audit(ctx, "entra.sync_failed", "entra", ctx.organization.id, {
             message: outcome.message.slice(0, 500),
           });
+
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: `Directory sync failed: ${outcome.message}` }),
           );
         }
+
         yield* audit(ctx, "entra.sync_completed", "entra", ctx.organization.id, {
           users: outcome.users,
           groups: outcome.groups,
           domains: outcome.domains,
         });
+
         return {
           status: "ok" as const,
           users: outcome.users,
@@ -3485,10 +3803,12 @@ export const createEnterpriseService = ({
     listEntraDomains: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.ssoDomain)
           .where(eq(schema.ssoDomain.organizationId, ctx.organization.id));
+
         return {
           domains: rows.map((row: (typeof rows)[number]) => ({
             domain: row.domain,
@@ -3501,21 +3821,26 @@ export const createEnterpriseService = ({
     refreshEntraDomains: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         if (!azureGraph)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Microsoft Graph is not configured." }),
           );
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         if (!config?.azureTenantId)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Enable Entra ID SSO with a tenant id first." }),
           );
+
         const lock = yield* acquireEntraSyncLock({
           db,
           organizationId: ctx.organization.id,
         });
+
         if (!lock.acquired) {
           return yield* Effect.fail(
             new EnterpriseConflict({
@@ -3524,6 +3849,7 @@ export const createEnterpriseService = ({
             }),
           );
         }
+
         const exit = yield* Effect.exit(
           syncEntraDirectory({
             db,
@@ -3534,6 +3860,7 @@ export const createEnterpriseService = ({
             syncUsersAndGroups: false,
           }),
         );
+
         if (Exit.isFailure(exit)) {
           yield* db
             .update(schema.entraDirectorySync)
@@ -3543,12 +3870,14 @@ export const createEnterpriseService = ({
               updatedAt: now(),
             })
             .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: `Domain refresh failed: ${String(exit.cause)}`,
             }),
           );
         }
+
         yield* db
           .update(schema.entraDirectorySync)
           .set({
@@ -3558,13 +3887,16 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           })
           .where(eq(schema.entraDirectorySync.organizationId, ctx.organization.id));
+
         const rows = yield* db
           .select()
           .from(schema.ssoDomain)
           .where(eq(schema.ssoDomain.organizationId, ctx.organization.id));
+
         yield* audit(ctx, "entra.domains_refreshed", "entra", ctx.organization.id, {
           count: rows.length,
         });
+
         return {
           domains: rows.map((row: (typeof rows)[number]) => ({
             domain: row.domain,
@@ -3577,13 +3909,16 @@ export const createEnterpriseService = ({
     getAutopilotSettings: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const sso = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const devices = yield* db
           .select({ value: count() })
           .from(schema.autopilotDevice)
           .where(eq(schema.autopilotDevice.organizationId, ctx.organization.id));
+
         const linked = yield* db
           .select({ value: count() })
           .from(schema.autopilotDevice)
@@ -3593,25 +3928,28 @@ export const createEnterpriseService = ({
               isNotNull(schema.autopilotDevice.deviceId),
             ),
           );
+
         const profiles = yield* db
           .select({ value: count() })
           .from(schema.autopilotProfile)
           .where(eq(schema.autopilotProfile.organizationId, ctx.organization.id));
+
         const latest = yield* db
           .select({ lastSyncedAt: schema.autopilotDevice.lastSyncedAt })
           .from(schema.autopilotDevice)
           .where(eq(schema.autopilotDevice.organizationId, ctx.organization.id))
           .orderBy(desc(schema.autopilotDevice.lastSyncedAt))
           .limit(1);
+
         const azureTenantId = sso?.azureTenantId?.trim() || null;
         const audience = windowsFederated?.audience ?? azureClientId;
         const federatedEnabled = Boolean(audience && azureTenantId);
+
         const authServiceUrl = federatedEnabled
           ? (windowsFederated?.authServiceUrl?.(azureTenantId!) ??
-            federatedAuthServiceUrl(azureTenantId!, {
-              ...(azureClientId ? { clientId: azureClientId } : {}),
-            }))
+            federatedAuthServiceUrl(azureTenantId!, (azureClientId ? { clientId: azureClientId } : {})))
           : null;
+
         return {
           configured: Boolean(azureGraph && azureTenantId),
           graphConfigured: Boolean(azureGraph),
@@ -3632,21 +3970,26 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const rows = yield* autopilotDevicesFor(ctx.organization.id);
+
         return { devices: rows.map(autopilotDeviceInfo) };
       }),
     importAutopilotDevices: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           content?: string;
           format?: "csv" | "text";
           maxRows?: number;
         };
+
         const content = body.content ?? "";
+
         if (!content.trim())
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Paste at least one serial and hardware hash." }),
           );
+
         if (new TextEncoder().encode(content).length > AUTOPILOT_IMPORT_MAX_BYTES)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -3654,6 +3997,7 @@ export const createEnterpriseService = ({
             }),
           );
         const maxRows = body.maxRows ?? AUTOPILOT_IMPORT_MAX_ROWS;
+
         if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > AUTOPILOT_IMPORT_MAX_ROWS)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -3662,6 +4006,7 @@ export const createEnterpriseService = ({
           );
         const parsed = parseAutopilotCsv(content, { maxRows });
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const result = yield* importAutopilotDevices({
           db,
           graph,
@@ -3672,34 +4017,40 @@ export const createEnterpriseService = ({
           errors: parsed.errors,
           truncated: parsed.truncated,
         }).pipe(Effect.mapError(autopilotApiError));
+
         const devices = yield* autopilotDevicesFor(ctx.organization.id);
         yield* audit(ctx, "autopilot.devices_imported", "autopilot", ctx.organization.id, {
           imported: result.imported,
           skipped: result.skipped,
           errors: result.errors.length,
         });
+
         return { ...result, devices: devices.map(autopilotDeviceInfo) };
       }),
     syncAutopilotDevices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const result = yield* syncAutopilotDevices({
           db,
           graph,
           organizationId: ctx.organization.id,
           azureTenantId,
         }).pipe(Effect.mapError(autopilotApiError));
+
         yield* audit(ctx, "autopilot.devices_synced", "autopilot", ctx.organization.id, {
           synced: result.synced,
           linked: result.linked,
         });
+
         return { status: "ok" as const, ...result };
       }),
     deleteAutopilotDevice: (request, tenantId, serial) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const deleted = yield* deleteAutopilotDevice({
           db,
           graph,
@@ -3707,6 +4058,7 @@ export const createEnterpriseService = ({
           azureTenantId,
           serial: String(serial),
         }).pipe(Effect.mapError(autopilotApiError));
+
         if (!deleted)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Autopilot device not found" }),
@@ -3714,25 +4066,31 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "autopilot.device_deleted", "autopilot", ctx.organization.id, {
           serial: normalizeAutopilotSerial(String(serial)),
         });
+
         return { status: "ok" as const };
       }),
     listAutopilotProfiles: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const profiles = yield* listAutopilotProfiles(db, ctx.organization.id).pipe(
           Effect.mapError(autopilotApiError),
         );
+
         return { profiles: profiles.map(autopilotProfileInfo) };
       }),
     createAutopilotProfile: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const validation = validateAutopilotProfileInput(
           payload as Partial<Record<keyof AutopilotProfileValues, unknown>>,
         );
+
         if (!validation.ok)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const profile = yield* createAutopilotProfile({
           db,
           graph,
@@ -3740,15 +4098,18 @@ export const createEnterpriseService = ({
           azureTenantId,
           values: validation.value,
         }).pipe(Effect.mapError(autopilotApiError));
+
         yield* audit(ctx, "autopilot.profile_created", "autopilot", ctx.organization.id, {
           profileId: profile.id,
           name: profile.name,
         });
+
         return autopilotProfileInfo(profile);
       }),
     updateAutopilotProfile: (request, tenantId, profileId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const [existing] = yield* db
           .select()
           .from(schema.autopilotProfile)
@@ -3759,11 +4120,13 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         if (!existing)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Autopilot profile not found" }),
           );
         const body = payload as Partial<Record<keyof AutopilotProfileValues, unknown>>;
+
         const merged = {
           name: body.name ?? existing.name,
           description: body.description !== undefined ? body.description : existing.description,
@@ -3782,10 +4145,13 @@ export const createEnterpriseService = ({
           assignedGroupId:
             body.assignedGroupId !== undefined ? body.assignedGroupId : existing.assignedGroupId,
         };
+
         const validation = validateAutopilotProfileInput(merged);
+
         if (!validation.ok)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const profile = yield* updateAutopilotProfile({
           db,
           graph,
@@ -3794,20 +4160,24 @@ export const createEnterpriseService = ({
           profileId,
           values: validation.value,
         }).pipe(Effect.mapError(autopilotApiError));
+
         yield* audit(ctx, "autopilot.profile_updated", "autopilot", ctx.organization.id, {
           profileId,
           name: profile.name,
         });
+
         return autopilotProfileInfo(profile);
       }),
     assignAutopilotProfile: (request, tenantId, profileId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { groupId?: string };
+
         if (!body.groupId?.trim())
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "An Entra group id is required." }),
           );
+
         const [existing] = yield* db
           .select()
           .from(schema.autopilotProfile)
@@ -3818,10 +4188,12 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         if (!existing)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Autopilot profile not found" }),
           );
+
         const validation = validateAutopilotProfileInput({
           name: existing.name,
           description: existing.description,
@@ -3833,9 +4205,11 @@ export const createEnterpriseService = ({
           enableDevicePreparation: existing.enableDevicePreparation,
           assignedGroupId: body.groupId,
         });
+
         if (!validation.ok)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
         const profile = yield* assignAutopilotProfile({
           db,
           graph,
@@ -3844,18 +4218,22 @@ export const createEnterpriseService = ({
           profileId,
           groupId: body.groupId.trim(),
         }).pipe(Effect.mapError(autopilotApiError));
+
         yield* audit(ctx, "autopilot.profile_assigned", "autopilot", ctx.organization.id, {
           profileId,
           groupId: body.groupId.trim(),
         });
+
         return autopilotProfileInfo(profile);
       }),
     getSsoConfig: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         return {
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
@@ -3867,21 +4245,26 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "sso-policy");
+
         const body = payload as {
           enabled?: boolean;
           azureTenantId?: string | null;
           autoProvision?: boolean;
           requireMfa?: boolean;
         };
+
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const nextAzureTenantId =
           body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
+
         if (nextAzureTenantId) {
           const claimed = yield* db.query.ssoConfig.findFirst({
             where: { azureTenantId: nextAzureTenantId },
           });
+
           if (claimed && claimed.organizationId !== ctx.organization.id)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -3889,6 +4272,7 @@ export const createEnterpriseService = ({
               }),
             );
         }
+
         if (body.requireMfa === true) {
           if (!hasMfaFactor(ctx.user))
             return yield* Effect.fail(
@@ -3897,6 +4281,7 @@ export const createEnterpriseService = ({
                   "Enable an authenticator app for your own account before requiring MFA for the tenant.",
               }),
             );
+
           const privileged = yield* db
             .select({
               role: schema.member.role,
@@ -3906,9 +4291,11 @@ export const createEnterpriseService = ({
             .from(schema.member)
             .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
             .where(eq(schema.member.organizationId, ctx.organization.id));
+
           const missing = privileged.filter(
             (member) => canWriteTenant(member.role) && !hasMfaFactor(member),
           ).length;
+
           if (missing > 0)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -3916,7 +4303,9 @@ export const createEnterpriseService = ({
               }),
             );
         }
+
         const timestamp = now();
+
         if ((existing?.azureTenantId ?? null) !== nextAzureTenantId) {
           // Delta cursors and imported domains belong to the previous Entra
           // tenant and cannot be reused after a change.
@@ -3939,6 +4328,7 @@ export const createEnterpriseService = ({
               ),
             );
         }
+
         if (existing) {
           yield* db
             .update(schema.ssoConfig)
@@ -3961,12 +4351,15 @@ export const createEnterpriseService = ({
             updatedAt: timestamp,
           });
         }
+
         yield* audit(ctx, "sso.updated", "sso", ctx.organization.id, {
           fields: Object.keys(body),
         });
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         return {
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
@@ -3977,10 +4370,12 @@ export const createEnterpriseService = ({
     listScimTokens: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const rows = yield* db
           .select()
           .from(schema.scimToken)
           .where(eq(schema.scimToken.organizationId, ctx.organization.id));
+
         return {
           tokens: rows.map((row: any) => ({
             id: row.id,
@@ -3994,10 +4389,12 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { name: string };
+
         const raw = `scim_${bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
           .replaceAll("+", "-")
           .replaceAll("/", "_")
           .replace(/=+$/, "")}`;
+
         const tokenHash = yield* sha256Hex(new TextEncoder().encode(raw).buffer as ArrayBuffer);
         const scimId = id();
         const timestamp = now();
@@ -4012,6 +4409,7 @@ export const createEnterpriseService = ({
           updatedAt: timestamp,
         });
         yield* audit(ctx, "scim.token_created", "scim_token", scimId, { name: body.name });
+
         return {
           id: scimId,
           name: body.name,
@@ -4032,6 +4430,7 @@ export const createEnterpriseService = ({
             ),
           );
         yield* audit(ctx, "scim.token_revoked", "scim_token", tokenId);
+
         return ok;
       }),
     listWebhookEndpoints: (request, tenantId) =>
@@ -4039,22 +4438,26 @@ export const createEnterpriseService = ({
         // Delivery health is operationally sensitive, so even the list is
         // owner/admin-only rather than available to read-only members.
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const rows = (yield* db
           .select()
           .from(schema.webhookEndpoint)
           .where(eq(schema.webhookEndpoint.organizationId, ctx.organization.id))
           .orderBy(asc(schema.webhookEndpoint.createdAt))) as WebhookEndpointRow[];
+
         return { endpoints: rows.map(toWebhookEndpointInfo) };
       }),
     createWebhookEndpoint: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           url: string;
           description?: string | null;
           events: ReadonlyArray<string>;
           enabled?: boolean;
         };
+
         const validated = yield* Effect.try({
           try: () => ({
             url: requireWebhookUrl(body.url),
@@ -4065,6 +4468,7 @@ export const createEnterpriseService = ({
               ? cause
               : new EnterpriseBadRequest({ message: "Invalid webhook endpoint" }),
         });
+
         const { endpoint, secret } = yield* insertWebhookEndpoint({
           organizationId: ctx.organization.id,
           url: validated.url,
@@ -4072,22 +4476,27 @@ export const createEnterpriseService = ({
           events: normalizeWebhookEvents(body.events),
           enabled: body.enabled ?? true,
         });
+
         yield* audit(ctx, "webhook.created", "webhook_endpoint", endpoint.id, {
           url: endpoint.url,
           events: endpoint.eventFilters ?? [],
         });
+
         return { endpoint: toWebhookEndpointInfo(endpoint), secret };
       }),
     patchWebhookEndpoint: (request, tenantId, webhookId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           url?: string;
           description?: string | null;
           events?: ReadonlyArray<string>;
           enabled?: boolean;
         };
+
         const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+
         const validated = yield* Effect.try({
           try: () => ({
             url: body.url === undefined ? undefined : requireWebhookUrl(body.url),
@@ -4099,10 +4508,15 @@ export const createEnterpriseService = ({
               ? cause
               : new EnterpriseBadRequest({ message: "Invalid webhook endpoint" }),
         });
+
         const update: Record<string, unknown> = { updatedAt: now() };
+
         if (validated.url !== undefined) update.url = validated.url;
+
         if (validated.description !== undefined) update.description = validated.description;
+
         if (body.events !== undefined) update.eventFilters = normalizeWebhookEvents(body.events);
+
         if (body.enabled !== undefined) update.enabled = body.enabled;
         yield* db
           .update(schema.webhookEndpoint)
@@ -4117,6 +4531,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "webhook.updated", "webhook_endpoint", updated.id, {
           fields: Object.keys(update).filter((field) => field !== "updatedAt"),
         });
+
         return toWebhookEndpointInfo(updated);
       }),
     deleteWebhookEndpoint: (request, tenantId, webhookId) =>
@@ -4134,12 +4549,14 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "webhook.deleted", "webhook_endpoint", existing.id, {
           url: existing.url,
         });
+
         return ok;
       }),
     rotateWebhookSecret: (request, tenantId, webhookId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+
         const signingSecret = yield* Effect.try({
           try: () => requireWebhookSigning(),
           catch: (cause) =>
@@ -4147,12 +4564,15 @@ export const createEnterpriseService = ({
               ? cause
               : new EnterpriseBadRequest({ message: "Webhook signing is not configured" }),
         });
+
         const secret = generateWebhookSecret();
+
         const sealed = yield* Effect.tryPromise({
           try: () => sealSecret(signingSecret, secret),
           catch: () =>
             new EnterpriseBadRequest({ message: "Could not encrypt the webhook signing secret" }),
         });
+
         yield* db
           .update(schema.webhookEndpoint)
           .set({
@@ -4167,6 +4587,7 @@ export const createEnterpriseService = ({
             ),
           );
         yield* audit(ctx, "webhook.secret_rotated", "webhook_endpoint", existing.id);
+
         return { secret };
       }),
     testWebhookEndpoint: (request, tenantId, webhookId) =>
@@ -4178,17 +4599,20 @@ export const createEnterpriseService = ({
           status: outcome.status,
           responseStatus: outcome.responseStatus,
         });
+
         const response: WebhookTestResponse = {
           status: outcome.status,
           responseStatus: outcome.responseStatus,
           error: outcome.error,
           durationMs: outcome.durationMs,
         };
+
         return response;
       }),
     listAuditLog: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         // Kept for older dashboard bundles; new callers use `/audit/search`.
         const entries = yield* db
           .select()
@@ -4196,6 +4620,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.auditLog.organizationId, ctx.organization.id))
           .orderBy(desc(schema.auditLog.createdAt), desc(schema.auditLog.id))
           .limit(200);
+
         return { entries: entries.map((entry: any) => auditEntry(entry)) };
       }),
     searchAuditLog: (request, tenantId, query) =>
@@ -4207,18 +4632,21 @@ export const createEnterpriseService = ({
         const hasMore = rows.length > filters.limit;
         const page = hasMore ? rows.slice(0, filters.limit) : rows;
         let nextCursor: string | null = null;
+
         if (hasMore && page.length > 0) {
           const last = page[page.length - 1]!;
           nextCursor = filters.offsetPaging
             ? encodeAuditOffsetCursor(filters.offset + filters.limit)
             : encodeAuditCursor({ createdAt: last.createdAt, id: last.id });
         }
+
         return { entries: page.map((entry: any) => auditEntry(entry)), nextCursor };
       }),
     exportAuditLog: (request, tenantId, query) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const format = query.format ?? "csv";
+
         // Exports always start at the newest matching row; a cursor from an
         // interactive page would silently export only the remainder.
         const filters = {
@@ -4226,15 +4654,19 @@ export const createEnterpriseService = ({
           cursor: undefined,
           offset: 0,
         };
+
         const rows = yield* loadAuditEntries(
           ctx.organization.id,
           filters,
           AUDIT_EXPORT_MAX_ROWS + 1,
         );
+
         const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
+
         const entries = (truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows).map(
           (entry: any) => auditEntry(entry),
         );
+
         return {
           format,
           body: format === "json" ? auditJson(entries) : auditCsv(entries),
@@ -4245,19 +4677,24 @@ export const createEnterpriseService = ({
     listTenantRoles: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const custom = yield* db
           .select()
           .from(schema.tenantRole)
           .where(eq(schema.tenantRole.organizationId, tenantId))
           .orderBy(asc(schema.tenantRole.name));
+
         const members = yield* db
           .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
           .from(schema.member)
           .where(eq(schema.member.organizationId, tenantId));
+
         const counts = new Map<string, number>();
+
         for (const member of members)
           if (member.customRoleId)
             counts.set(member.customRoleId, (counts.get(member.customRoleId) ?? 0) + 1);
+
         const builtIns = BUILT_IN_TENANT_ROLES.map((key) => ({
           id: `builtin:${key}`,
           name: BUILT_IN_ROLE_LABELS[key],
@@ -4275,6 +4712,7 @@ export const createEnterpriseService = ({
           createdAt: iso(ctx.organization.createdAt),
           updatedAt: iso(ctx.organization.updatedAt),
         }));
+
         return {
           roles: [
             ...builtIns,
@@ -4296,26 +4734,33 @@ export const createEnterpriseService = ({
     createTenantRole: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const body = payload as {
           name?: string;
           description?: string | null;
           permissions?: ReadonlyArray<string>;
         };
+
         const name = body.name?.trim();
+
         if (!name)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Give the role a name" }));
+
         if (isBuiltInTenantRole(name.toLowerCase()))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "That name is reserved for a built-in role" }),
           );
         const permissions = normalizePermissions(body.permissions ?? []);
+
         if (permissions.length === 0)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose at least one permission" }),
           );
+
         const existing = yield* db.query.tenantRole.findFirst({
           where: { organizationId: tenantId, name },
         });
+
         if (existing)
           return yield* Effect.fail(
             new EnterpriseConflict({ message: "A role with that name already exists" }),
@@ -4336,38 +4781,49 @@ export const createEnterpriseService = ({
           name,
           permissions,
         });
+
         return { id: roleId };
       }),
     patchTenantRole: (request, tenantId, roleId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const role = yield* db.query.tenantRole.findFirst({
           where: { id: roleId, organizationId: tenantId },
         });
+
         if (!role) return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
         const body = payload as {
           name?: string;
           description?: string | null;
           permissions?: ReadonlyArray<string>;
         };
+
         const name = body.name?.trim();
+
         if (name !== undefined && !name)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Give the role a name" }));
+
         if (name && isBuiltInTenantRole(name.toLowerCase()))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "That name is reserved for a built-in role" }),
           );
+
         if (name && name !== role.name) {
           const claimed = yield* db.query.tenantRole.findFirst({
             where: { organizationId: tenantId, name },
           });
+
           if (claimed)
             return yield* Effect.fail(
               new EnterpriseConflict({ message: "A role with that name already exists" }),
             );
         }
+
         const permissions =
           body.permissions === undefined ? undefined : normalizePermissions(body.permissions);
+
         if (permissions && permissions.length === 0)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose at least one permission" }),
@@ -4388,15 +4844,19 @@ export const createEnterpriseService = ({
           ...(name !== undefined ? { name } : {}),
           ...(permissions !== undefined ? { permissions } : {}),
         });
+
         return ok;
       }),
     deleteTenantRole: (request, tenantId, roleId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const role = yield* db.query.tenantRole.findFirst({
           where: { id: roleId, organizationId: tenantId },
         });
+
         if (!role) return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
         const [assigned] = yield* db
           .select({ value: count() })
           .from(schema.member)
@@ -4406,6 +4866,7 @@ export const createEnterpriseService = ({
               eq(schema.member.customRoleId, role.id),
             ),
           );
+
         if (Number(assigned?.value ?? 0) > 0)
           return yield* Effect.fail(
             new EnterpriseConflict({
@@ -4414,11 +4875,13 @@ export const createEnterpriseService = ({
           );
         yield* db.delete(schema.tenantRole).where(eq(schema.tenantRole.id, role.id));
         yield* audit(ctx, "role.deleted", "role", role.id, { name: role.name });
+
         return ok;
       }),
     listTenantUsers: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId);
+
         const users = yield* db
           .select({
             memberId: schema.member.id,
@@ -4432,20 +4895,25 @@ export const createEnterpriseService = ({
           .from(schema.member)
           .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
           .where(eq(schema.member.organizationId, tenantId));
+
         const customRoles = yield* db
           .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
           .from(schema.tenantRole)
           .where(eq(schema.tenantRole.organizationId, tenantId));
+
         const custom = new Map(customRoles.map((role) => [role.id, role.name]));
+
         return {
           users: users.map((user) => {
             const builtInName = user.role
               .split(",")
               .map((raw) => {
                 const part = raw.trim();
+
                 return isBuiltInTenantRole(part) ? BUILT_IN_ROLE_LABELS[part] : part;
               })
               .join(", ");
+
             return {
               memberId: user.memberId,
               userId: user.userId,
@@ -4466,37 +4934,46 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { user } = ctx;
+
         const body = payload as {
           email: string;
           role?: string;
           roleId?: string | null;
           resend?: boolean;
         };
+
         const role = body.role ?? "member";
+
         const customRole = body.roleId
           ? yield* db.query.tenantRole.findFirst({
               where: { id: body.roleId, organizationId: tenantId },
             })
           : undefined;
+
         if (body.roleId && !customRole)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
         if (!customRole && !validRoles(role))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
+
         if (!customRole && hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Only an owner can invite another owner" }),
           );
         const invitationId = id();
         const timestamp = now();
+
         const rawToken = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
           .replaceAll("+", "-")
           .replaceAll("/", "_")
           .replace(/=+$/, "");
+
         const tokenHash = yield* sha256Hex(
           new TextEncoder().encode(rawToken).buffer as ArrayBuffer,
         );
+
         yield* db.insert(schema.invitation).values({
           id: invitationId,
           organizationId: tenantId,
@@ -4513,10 +4990,12 @@ export const createEnterpriseService = ({
         const inviteUrl = `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
         const branding = resolveTenantBranding(ctx.organization);
         const organization = branding.displayName;
+
         const roleLabel =
           customRole?.name ??
           BUILT_IN_ROLE_LABELS[role as keyof typeof BUILT_IN_ROLE_LABELS] ??
           role;
+
         if (email) {
           yield* Effect.tryPromise({
             try: () =>
@@ -4537,11 +5016,13 @@ export const createEnterpriseService = ({
         } else {
           console.log("INVITATION", body.email, inviteUrl);
         }
+
         yield* audit(ctx, "member.invited", "invitation", invitationId, {
           email: body.email,
           role,
           ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
         });
+
         return { id: invitationId, inviteUrl };
       }),
     acceptInvitation: (request, payload) =>
@@ -4549,31 +5030,38 @@ export const createEnterpriseService = ({
         const { user } = yield* auth.requireUser({ headers: request.headers });
         identifyUser(user);
         const body = payload as { token: string };
+
         const tokenHash = yield* sha256Hex(
           new TextEncoder().encode(body.token).buffer as ArrayBuffer,
         );
+
         const invitation = yield* db.query.invitation.findFirst({
           where: { tokenHash },
         });
+
         if (!invitation || invitation.status !== "pending")
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Invitation not found or already used" }),
           );
+
         if (invitation.expiresAt <= now())
           return yield* Effect.fail(
             diagnoseError(new EnterpriseBadRequest({ message: "Invitation expired" }), {
               code: "invitation_expired",
             }),
           );
+
         if (invitation.email.toLowerCase() !== user.email.toLowerCase())
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Sign in with the email address this invitation was sent to",
             }),
           );
+
         const existing = yield* db.query.member.findFirst({
           where: { userId: user.id, organizationId: invitation.organizationId },
         });
+
         if (!existing) {
           yield* db.insert(schema.member).values({
             id: id(),
@@ -4585,6 +5073,7 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           });
         }
+
         yield* db
           .update(schema.invitation)
           .set({ status: "accepted", updatedAt: now() })
@@ -4600,20 +5089,25 @@ export const createEnterpriseService = ({
             ...(invitation.customRoleId ? { roleId: invitation.customRoleId } : {}),
           },
         );
+
         return { tenantId: invitation.organizationId };
       }),
     listTenantInvitations: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
+
         const invitations = yield* db
           .select()
           .from(schema.invitation)
           .where(eq(schema.invitation.organizationId, tenantId));
+
         const customRoles = yield* db
           .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
           .from(schema.tenantRole)
           .where(eq(schema.tenantRole.organizationId, tenantId));
+
         const custom = new Map(customRoles.map((role) => [role.id, role.name]));
+
         return {
           invitations: invitations.map(
             (item: {
@@ -4645,55 +5139,68 @@ export const createEnterpriseService = ({
     cancelTenantInvitation: (request, tenantId, invitationId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
+
         const invitation = yield* db.query.invitation.findFirst({
           where: { id: invitationId, organizationId: tenantId },
         });
+
         if (!invitation)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Invitation not found" }));
         yield* db
           .update(schema.invitation)
           .set({ status: "canceled", updatedAt: now() })
           .where(eq(schema.invitation.id, invitationId));
+
         return ok;
       }),
     patchTenantUser: (request, tenantId, memberId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const member = yield* db.query.member.findFirst({
           where: { id: memberId, organizationId: tenantId },
         });
+
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
         const body = payload as { role?: string; roleId?: string | null };
+
         const customRole =
           body.roleId === undefined || body.roleId === null
             ? undefined
             : yield* db.query.tenantRole.findFirst({
                 where: { id: body.roleId, organizationId: tenantId },
               });
+
         if (body.roleId && !customRole)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
         if (body.role === undefined && body.roleId === undefined)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a role for this member" }),
           );
         const role = body.role ?? member.role;
+
         if (!customRole && !validRoles(role))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
+
         if (customRole && body.role !== undefined && !validRoles(role))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a valid fallback role" }),
           );
+
         if ((!customRole && hasOwnerRole(role)) || hasOwnerRole(member.role)) {
           if (!hasOwnerRole(ctx.member.role))
             return yield* Effect.fail(
               new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
             );
         }
+
         const removingOwner =
           hasOwnerRole(member.role) && (Boolean(customRole) || !hasOwnerRole(role));
+
         if (removingOwner && (yield* ownerCount(tenantId)) <= 1)
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
@@ -4711,12 +5218,14 @@ export const createEnterpriseService = ({
           role,
           ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
         });
+
         return ok;
       }),
     removeTenantUser: (request, tenantId, memberId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const count = yield* memberCount(tenantId);
+
         if (count <= 1)
           return yield* Effect.fail(
             diagnoseError(
@@ -4726,17 +5235,21 @@ export const createEnterpriseService = ({
               { code: "last_tenant_user" },
             ),
           );
+
         const member = yield* db.query.member.findFirst({
           where: { id: memberId, organizationId: tenantId },
         });
+
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+
         if (member.role.split(",").includes("owner") && (yield* ownerCount(tenantId)) <= 1)
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
           );
         yield* db.delete(schema.member).where(eq(schema.member.id, memberId));
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
+
         return ok;
       }),
     getEnrollment: (
@@ -4752,16 +5265,20 @@ export const createEnterpriseService = ({
         const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
           where: { id: enrollmentId },
         });
+
         if (!enrollment)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
+
         const organization = yield* db.query.organization.findFirst({
           where: { id: enrollment.organizationId },
         });
+
         if (!organization)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
         const branding = resolveTenantBranding(organization);
 
         const platform = detectEnrollmentPlatform(options?.userAgent, options?.platform);
+
         const record = (outcome: EnrollmentAttemptOutcome, detail: string): Effect.Effect<void> =>
           recordEnrollmentAttempt({
             organizationId: organization.id,
@@ -4775,17 +5292,21 @@ export const createEnterpriseService = ({
 
         if (enrollment.code && enrollment.code !== code) {
           yield* record("bad_code", "The enrollment password did not match");
+
           return { name: organization.name, branding, authenticated: false as const };
         }
 
         const apns = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: organization.id },
         });
+
         const [deviceCount] = yield* db
           .select({ value: count() })
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
+
         const tenantLimitReached = !canEnrollDevice(deviceCount?.value ?? 0, enrollment.maxDevices);
+
         // The deployment plan limit is independent of the tenant's own
         // `maxDevices` setting: whichever is lower wins. Existing devices stay
         // manageable; only new enrollments are blocked.
@@ -4796,32 +5317,38 @@ export const createEnterpriseService = ({
         }).pipe(
           Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
         );
+
         const planLimitReached = planStatus.reached;
         const enabled = !tenantLimitReached && !planLimitReached;
+
         const androidRow = androidConfigured()
           ? yield* loadAndroidEnterprise(db, organization.id)
           : undefined;
+
         const androidReady =
           androidConfigured() &&
           androidRow?.status === "active" &&
           Boolean(androidRow.enterpriseName);
+
         const sso = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: organization.id },
         });
+
         const autopilotProfileCount = yield* db
           .select({ value: count() })
           .from(schema.autopilotProfile)
           .where(eq(schema.autopilotProfile.organizationId, organization.id));
+
         const autopilotConfigured =
           Boolean(azureGraph && sso?.azureTenantId) &&
           Number(autopilotProfileCount[0]?.value ?? 0) > 0;
+
         const federatedAudience = windowsFederated?.audience ?? azureClientId;
         const federatedEnabled = Boolean(federatedAudience && sso?.azureTenantId);
+
         const federatedAuthUrl = federatedEnabled
           ? (windowsFederated?.authServiceUrl?.(sso!.azureTenantId!) ??
-            federatedAuthServiceUrl(sso!.azureTenantId!, {
-              ...(azureClientId ? { clientId: azureClientId } : {}),
-            }))
+            federatedAuthServiceUrl(sso!.azureTenantId!, (azureClientId ? { clientId: azureClientId } : {})))
           : null;
 
         // Only create a SCEP challenge when the Apple branch is actually
@@ -4829,6 +5356,7 @@ export const createEnterpriseService = ({
         // the whole enrollment page, and is recorded for administrators.
         let challenge: string | null = null;
         let appleScepFailed = false;
+
         if (enabled && enrollment.enabledApple && apns?.topic) {
           challenge = yield* Effect.tryPromise({
             try: () =>
@@ -4843,6 +5371,7 @@ export const createEnterpriseService = ({
             Effect.match({
               onFailure: () => {
                 appleScepFailed = true;
+
                 return null;
               },
               onSuccess: (value: string) => value,
@@ -4860,6 +5389,7 @@ export const createEnterpriseService = ({
           apnsConfigured: Boolean(apns?.topic),
           appleScepFailed,
         });
+
         yield* record(evaluation.outcome, evaluation.detail);
 
         // Windows discovery has no built-in tenant identity, so bind the tenant
@@ -4876,6 +5406,7 @@ export const createEnterpriseService = ({
                   }),
               }).pipe(Effect.catch(() => Effect.succeed(null)))
             : null;
+
         const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
 
         return {
@@ -4957,6 +5488,7 @@ export const createEnterpriseService = ({
                       Effect.catch(() =>
                         Effect.gen(function* () {
                           yield* record("other", "Android enrollment token could not be created");
+
                           return {
                             error:
                               "Android enrollment is temporarily unavailable! Contact your administrator.",
@@ -5000,8 +5532,10 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "The enrollment password is invalid." }),
           );
+
         if ("error" in result.apple)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: result.apple.error }));
+
         if (!("profile" in result.apple))
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -5014,9 +5548,11 @@ export const createEnterpriseService = ({
         const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
           where: { id: enrollmentId },
         });
+
         const organization = enrollment
           ? yield* db.query.organization.findFirst({ where: { id: enrollment.organizationId } })
           : undefined;
+
         const filename = `${safeFilename(
           organization?.slug ??
             resolveTenantBranding(organization ?? { name: "tenant" }).displayName,
@@ -5034,21 +5570,25 @@ export const createEnterpriseService = ({
           );
         const signed = yield* mapAppleFailure(readAdeProfileToken({ authSecret, token }));
         const abm = yield* loadAppleBusinessManager(db, signed.organizationId);
+
         if (!abm)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
               message: "Apple Business Manager is not configured for this tenant.",
             }),
           );
+
         const device = (yield* db.query.abmDevice.findFirst({
           where: { organizationId: signed.organizationId, serial: signed.serial },
         })) as typeof schema.abmDevice.$inferSelect | undefined;
+
         if (!device || device.enrollmentState === "REMOVED")
           return yield* Effect.fail(
             new EnterpriseNotFound({
               message: "This ABM device is no longer in the organization.",
             }),
           );
+
         if (device.enrollmentState !== "ASSIGNED")
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -5056,24 +5596,29 @@ export const createEnterpriseService = ({
                 "Assign this device to Mattrax in Apple Business Manager before downloading its ADE profile.",
             }),
           );
+
         if (device.assignedProfileUuid && device.assignedProfileUuid !== signed.profileUuid)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "This ADE profile link is for a different profile revision.",
             }),
           );
+
         const apns = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: signed.organizationId },
         });
+
         if (!apns?.topic)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
               message: "Apple push notifications are not configured for this tenant.",
             }),
           );
+
         const organization = yield* db.query.organization.findFirst({
           where: { id: signed.organizationId },
         });
+
         if (!organization)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found." }));
         const branding = resolveTenantBranding(organization);
@@ -5081,6 +5626,7 @@ export const createEnterpriseService = ({
         // and derives the certificate OU from that tenant. Use the tenant's
         // enrollment id (not an ADE-specific string) so ADE identities resolve.
         const enrollment = yield* getOrCreateEnrollment(signed.organizationId);
+
         const challenge = yield* Effect.tryPromise({
           try: () =>
             createScepChallenge(enrollment.id, authSecret!, {
@@ -5091,6 +5637,7 @@ export const createEnterpriseService = ({
               message: "Could not create the SCEP challenge for the ADE profile.",
             }),
         });
+
         const plist = yield* serializePlist(
           enterpriseEnrollmentProfile({
             origin,
@@ -5104,12 +5651,14 @@ export const createEnterpriseService = ({
             profileUuid: signed.profileUuid,
           }),
         );
+
         return { plist, filename: `${safeFilename(signed.serial)}.mobileconfig` };
       }),
     getTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const enrollment = yield* getOrCreateEnrollment(ctx.organization.id);
+
         const windowsToken =
           enrollment.enabledWindows && authSecret
             ? yield* Effect.tryPromise({
@@ -5120,14 +5669,18 @@ export const createEnterpriseService = ({
                   }),
               }).pipe(Effect.catch(() => Effect.succeed(null)))
             : null;
+
         const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
+
         const androidRow = androidConfigured()
           ? yield* loadAndroidEnterprise(db, ctx.organization.id)
           : undefined;
+
         const androidAvailable =
           androidConfigured() &&
           androidRow?.status === "active" &&
           Boolean(androidRow.enterpriseName);
+
         return {
           ...rowEnrollment(enrollment),
           androidAvailable,
@@ -5147,12 +5700,14 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const requested = Number((query as { limit?: unknown }).limit ?? 50);
         const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 50, 1), 200);
+
         const attempts = yield* db
           .select()
           .from(schema.enrollmentAttempt)
           .where(eq(schema.enrollmentAttempt.organizationId, ctx.organization.id))
           .orderBy(desc(schema.enrollmentAttempt.createdAt))
           .limit(limit);
+
         return {
           attempts: attempts.map((attempt: any) => ({
             id: attempt.id,
@@ -5168,6 +5723,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* getOrCreateEnrollment(ctx.organization.id);
+
         const body = payload as {
           code?: string | null;
           enabledApple?: boolean;
@@ -5176,6 +5732,7 @@ export const createEnterpriseService = ({
           enabledAssetTag?: boolean;
           maxDevices?: number;
         };
+
         yield* db
           .update(schema.enterpriseEnrollment)
           .set({
@@ -5193,6 +5750,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "enrollment.updated", "enrollment", null, {
           fields: Object.keys(body),
         });
+
         return ok;
       }),
     resetTenantEnrollment: (request, tenantId) =>
@@ -5205,16 +5763,19 @@ export const createEnterpriseService = ({
           .set({ id: newId, updatedAt: now() })
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
+
         return { id: newId };
       }),
     getAppleBusinessManager: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* mapAppleFailure(appleBusinessManagerInfo(db, ctx.organization.id));
       }),
     uploadAppleBusinessManagerToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           content: string;
           encoding?: "text" | "base64";
@@ -5226,6 +5787,7 @@ export const createEnterpriseService = ({
           orgName?: string;
           scope?: "business.api" | "school.api";
         };
+
         const info = yield* mapAppleFailure(
           saveAppleBusinessManagerToken({
             db,
@@ -5235,10 +5797,12 @@ export const createEnterpriseService = ({
             ...(appleApi ? { config: appleApi } : {}),
           }),
         );
+
         yield* audit(ctx, "abm.token_uploaded", "apple_business_manager", ctx.organization.id, {
           credentialType: info.credentialType,
           fileName: body.fileName,
         });
+
         return info;
       }),
     deleteAppleBusinessManagerToken: (request, tenantId) =>
@@ -5248,11 +5812,13 @@ export const createEnterpriseService = ({
           clearAppleBusinessManagerToken({ db, organizationId: ctx.organization.id }),
         );
         yield* audit(ctx, "abm.token_deleted", "apple_business_manager", ctx.organization.id);
+
         return ok;
       }),
     syncAppleBusinessManager: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const result = yield* mapAppleFailure(
           syncAppleBusinessManagerDevices({
             db,
@@ -5261,16 +5827,20 @@ export const createEnterpriseService = ({
             ...(appleApi ? { config: appleApi } : {}),
           }),
         );
+
         yield* audit(ctx, "abm.synced", "apple_business_manager", ctx.organization.id, result);
+
         return result;
       }),
     listAbmDevices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.abmDevice)
           .where(eq(schema.abmDevice.organizationId, ctx.organization.id));
+
         return {
           devices: rows.map((device: typeof schema.abmDevice.$inferSelect) => ({
             serial: device.serial,
@@ -5289,13 +5859,16 @@ export const createEnterpriseService = ({
     getAbmDevice: (request, tenantId, serial) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = (yield* db.query.abmDevice.findFirst({
           where: { organizationId: ctx.organization.id, serial },
         })) as typeof schema.abmDevice.$inferSelect | undefined;
+
         if (!device)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "This serial is not in the ABM inventory" }),
           );
+
         return {
           serial: device.serial,
           model: device.model,
@@ -5312,9 +5885,11 @@ export const createEnterpriseService = ({
     assignAppleBusinessManagerDevice: (request, tenantId, serial) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const apnsRow = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const result = yield* mapAppleFailure(
           assignAppleBusinessManagerDevice({
             db,
@@ -5326,15 +5901,18 @@ export const createEnterpriseService = ({
             ...(appleApi ? { config: appleApi } : {}),
           }),
         );
+
         yield* audit(ctx, "abm.device_assigned", "abm_device", serial, {
           mdmServerId: result.mdmServerId,
           activityId: result.activityId,
         });
+
         return { status: "ok" as const, ...result };
       }),
     getAbmDeviceProfileUrl: (request, tenantId, serial) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         if (!authSecret)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
@@ -5342,19 +5920,23 @@ export const createEnterpriseService = ({
             }),
           );
         const abm = yield* loadAppleBusinessManager(db, ctx.organization.id);
+
         if (!abm)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
               message: "Apple Business Manager is not configured for this tenant.",
             }),
           );
+
         const device = (yield* db.query.abmDevice.findFirst({
           where: { organizationId: ctx.organization.id, serial },
         })) as typeof schema.abmDevice.$inferSelect | undefined;
+
         if (!device)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "This serial is not in the ABM inventory" }),
           );
+
         if (device.enrollmentState !== "ASSIGNED" || device.profileStatus === "removed")
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -5363,12 +5945,14 @@ export const createEnterpriseService = ({
             }),
           );
         const profileUuid = device.assignedProfileUuid ?? abm.profileUuid;
+
         if (!profileUuid)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "No ADE profile UUID is recorded for this tenant.",
             }),
           );
+
         const signed = yield* mapAppleFailure(
           createAdeProfileToken({
             authSecret,
@@ -5377,9 +5961,11 @@ export const createEnterpriseService = ({
             profileUuid,
           }),
         );
+
         yield* audit(ctx, "abm.profile_url_created", "abm_device", serial, {
           profileUuid,
         });
+
         return {
           serial,
           profileUuid,
@@ -5390,16 +5976,19 @@ export const createEnterpriseService = ({
     getVpp: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* mapVppFailure(vppInfo(db, ctx.organization.id));
       }),
     uploadVppToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           content: string;
           encoding?: "text" | "base64";
           fileName?: string;
         };
+
         const info = yield* mapVppFailure(
           saveVppToken({
             db,
@@ -5409,9 +5998,11 @@ export const createEnterpriseService = ({
             ...(appleApi ? { config: appleApi } : {}),
           }),
         );
+
         yield* audit(ctx, "vpp.token_uploaded", "vpp_token", ctx.organization.id, {
           fileName: body.fileName,
         });
+
         return info;
       }),
     deleteVppToken: (request, tenantId) =>
@@ -5419,26 +6010,32 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* mapVppFailure(clearVppToken({ db, organizationId: ctx.organization.id }));
         yield* audit(ctx, "vpp.token_deleted", "vpp_token", ctx.organization.id);
+
         return ok;
       }),
     syncVpp: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         // Enrich VPP assets with app names/bundle ids when an ABM API
         // credential is available. Failure here is not fatal: the VPP counts
         // are still valid and the catalogue fallback supplies a display name.
         const appMetadata = yield* Effect.gen(function* () {
           if (!authSecret) return undefined;
           const abm = yield* loadAppleBusinessManager(db, ctx.organization.id);
+
           if (!abm) return undefined;
+
           const credential = yield* Effect.tryPromise({
             try: () => openAbmCredential(authSecret, abm.encryptedToken),
             catch: () => new Error("ABM credential unavailable"),
           });
+
           if (credential.kind !== "abm_api") return undefined;
           const client = makeAbmClient(appleApi, credential.scope);
           const token = yield* Effect.tryPromise(() => client.exchangeAccessToken(credential));
           const apps = yield* Effect.tryPromise(() => client.listApps(token.accessToken));
+
           return new Map(
             apps.map((app) => [
               app.id,
@@ -5449,6 +6046,7 @@ export const createEnterpriseService = ({
             ]),
           );
         }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+
         const result = yield* mapVppFailure(
           syncVppAssets({
             db,
@@ -5458,16 +6056,20 @@ export const createEnterpriseService = ({
             ...(appMetadata ? { appMetadata } : {}),
           }),
         );
+
         yield* audit(ctx, "vpp.synced", "vpp_token", ctx.organization.id, result);
+
         return result;
       }),
     listVppAssets: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.vppAsset)
           .where(eq(schema.vppAsset.organizationId, ctx.organization.id));
+
         return {
           assets: rows.map((asset: typeof schema.vppAsset.$inferSelect) => ({
             adamId: asset.adamId,
@@ -5491,10 +6093,12 @@ export const createEnterpriseService = ({
     listVppAssignments: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.deviceVppAssignment)
           .where(eq(schema.deviceVppAssignment.organizationId, ctx.organization.id));
+
         return {
           assignments: rows.map((assignment: typeof schema.deviceVppAssignment.$inferSelect) => ({
             deviceId: assignment.deviceId,
@@ -5510,31 +6114,38 @@ export const createEnterpriseService = ({
     installVppAsset: (request, tenantId, adamId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         if (!/^\d+$/.test(adamId))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "A VPP adamId must be numeric." }),
           );
         const body = payload as { devices?: string[]; groups?: string[] };
+
         const asset = (yield* findVppAsset(db, ctx.organization.id, adamId)) as
           | typeof schema.vppAsset.$inferSelect
           | undefined;
+
         if (!asset)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "No VPP licence pool exists for this app" }),
           );
         const groupIds = body.groups ?? [];
+
         for (const groupId of groupIds) yield* assertTenantGroup(ctx.organization.id, groupId);
         yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
+
         const groupDevices = groupIds.length
           ? yield* db
               .select({ deviceId: schema.groupDevice.deviceId })
               .from(schema.groupDevice)
               .where(inArray(schema.groupDevice.groupId, groupIds))
           : [];
+
         const ids = new Set<string>([
           ...(body.devices ?? []),
           ...groupDevices.map((row) => row.deviceId),
         ]);
+
         if (ids.size === 0)
           return {
             status: "ok" as const,
@@ -5544,6 +6155,7 @@ export const createEnterpriseService = ({
             failed: 0,
             message: "Select at least one device or group.",
           };
+
         const devices = (yield* db
           .select()
           .from(schema.device)
@@ -5553,13 +6165,16 @@ export const createEnterpriseService = ({
               inArray(schema.device.id, [...ids]),
             ),
           )) as Array<EnterpriseDevice>;
+
         const appleDevices = devices.filter(
           (device) => device.proto === "apple" && device.status === "enrolled",
         );
+
         const skipped = devices.length - appleDevices.length;
         let assigned = 0;
         let failed = 0;
         const queuedDevices: Array<EnterpriseDevice> = [];
+
         for (const device of appleDevices) {
           const outcome = yield* mapVppFailure(
             assignVppLicence({
@@ -5571,13 +6186,16 @@ export const createEnterpriseService = ({
               ...(appleApi ? { config: appleApi } : {}),
             }),
           ).pipe(Effect.result);
+
           if (outcome._tag === "Failure") {
             failed++;
             continue;
           }
+
           assigned++;
           queuedDevices.push(device);
         }
+
         if (queuedDevices.length > 0) {
           yield* db.insert(schema.deviceCommand).values(
             queuedDevices.map((device) => ({
@@ -5593,12 +6211,14 @@ export const createEnterpriseService = ({
           );
           yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
         }
+
         yield* audit(ctx, "vpp.install_queued", "vpp_asset", adamId, {
           assigned,
           queued: queuedDevices.length,
           skipped,
           failed,
         });
+
         return {
           status: "ok" as const,
           assigned,
@@ -5617,6 +6237,7 @@ export const createEnterpriseService = ({
         yield* assertTenantDevices(ctx.organization.id, body.devices);
         let released = 0;
         let failed = 0;
+
         for (const deviceId of body.devices) {
           const outcome = yield* mapVppFailure(
             releaseVppLicence({
@@ -5628,10 +6249,13 @@ export const createEnterpriseService = ({
               ...(appleApi ? { config: appleApi } : {}),
             }),
           ).pipe(Effect.result);
+
           if (outcome._tag === "Failure") failed++;
           else released++;
         }
+
         yield* audit(ctx, "vpp.licence_released", "vpp_asset", adamId, { released, failed });
+
         return {
           status: "ok" as const,
           released,
@@ -5642,6 +6266,7 @@ export const createEnterpriseService = ({
     getTenantAndroid: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* mapAndroidFailure(
           androidEnterpriseInfo(db, ctx.organization.id, androidConfig),
         );
@@ -5650,6 +6275,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { enabled?: boolean };
+
         if (body.enabled !== undefined) {
           yield* mapAndroidFailure(
             setAndroidEnabled({
@@ -5666,11 +6292,13 @@ export const createEnterpriseService = ({
             ctx.organization.id,
           );
         }
+
         return ok;
       }),
     createAndroidSignup: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const result = yield* mapAndroidFailure(
           createAndroidSignup({
             db,
@@ -5685,17 +6313,20 @@ export const createEnterpriseService = ({
             },
           }),
         );
+
         return result;
       }),
     syncTenantAndroid: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         if (!androidConfigured())
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
               message: "Android Enterprise is not configured for this deployment.",
             }),
           );
+
         const result = yield* mapAndroidFailure(
           syncAndroidPoliciesForTenant({
             db,
@@ -5703,22 +6334,27 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
           }),
         );
+
         yield* audit(ctx, "android.policy_sync", "android_enterprise", ctx.organization.id, {
           devices: result.devices,
           updated: result.updated,
           skipped: result.skipped,
           failed: result.failed,
         });
+
         return result;
       }),
     getApns: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const apns = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         let expiresAt: string | null = null;
         let commonName: string | null = null;
+
         if (apns) {
           try {
             const parsed = parseApnsCertificate(apns.certPem);
@@ -5728,6 +6364,7 @@ export const createEnterpriseService = ({
             // A historical certificate may be unparseable; still report it as configured.
           }
         }
+
         return {
           configured: apns !== undefined,
           email: apns?.email ?? null,
@@ -5740,9 +6377,11 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const key = yield* loadApnsKey(ctx.organization.id);
+
         const keyPair = yield* Effect.tryPromise({
           try: async () => {
             const privateKey = await importApnsKeyJwk(key.jwk);
+
             // WebCrypto cannot derive the public key from a private JWK, but the
             // JWK contains the public parameters; derive a key pair by importing
             // both halves.
@@ -5753,11 +6392,13 @@ export const createEnterpriseService = ({
               true,
               ["verify"],
             );
+
             return { privateKey, publicKey } as CryptoKeyPair;
           },
           catch: (cause) =>
             new EnterpriseBadRequest({ message: "Could not load the pending APNs key" }),
         });
+
         const result = yield* Effect.tryPromise({
           try: () =>
             buildApnsCsr({
@@ -5771,6 +6412,7 @@ export const createEnterpriseService = ({
           catch: (cause) =>
             new EnterpriseBadRequest({ message: "Could not generate the APNs CSR" }),
         });
+
         return { plist: result.plist };
       }),
     uploadApns: (request, tenantId, payload) =>
@@ -5783,13 +6425,16 @@ export const createEnterpriseService = ({
         const pending = yield* db.query.applePushKey.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+
         const existing = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: ctx.organization.id },
         });
 
         let encryptedKey: string | undefined;
+
         if (authSecret && (pending || existing?.encryptedKey)) {
           const encrypted = pending?.encryptedPrivateKeyJwk ?? existing?.encryptedKey;
+
           if (encrypted) {
             const jwk = JSON.parse(
               yield* Effect.tryPromise({
@@ -5798,11 +6443,13 @@ export const createEnterpriseService = ({
                   new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
               }),
             ) as JsonWebKey;
+
             const privateKey = yield* Effect.tryPromise({
               try: () => importApnsKeyJwk(jwk),
               catch: (cause) =>
                 new EnterpriseBadRequest({ message: "Could not import the pending APNs key" }),
             });
+
             yield* Effect.tryPromise({
               try: () => validateApnsCertificate(body.cert, { privateKey }),
               catch: (cause) =>
@@ -5834,6 +6481,7 @@ export const createEnterpriseService = ({
           topic: parsed.topic,
           updatedAt: now(),
         };
+
         yield* db
           .insert(schema.applePushCertificate)
           .values({ ...value, encryptedKey: encryptedKey ?? null })
@@ -5846,6 +6494,7 @@ export const createEnterpriseService = ({
               ...(encryptedKey ? { encryptedKey } : {}),
             },
           });
+
         if (pending)
           yield* db
             .delete(schema.applePushKey)
@@ -5853,11 +6502,13 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "apns.certificate_uploaded", "apns", ctx.organization.id, {
           email: body.email,
         });
+
         return ok;
       }),
     deleteDevices: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         // Resolve the rows first: revocation also has to match certificates
         // recorded against the legacy `dmIdentifier`, not just the row id.
         const devices = ids.length
@@ -5871,7 +6522,9 @@ export const createEnterpriseService = ({
                 ),
               )) as Array<EnterpriseDevice>)
           : [];
+
         const revoked = yield* revokeDeviceCertificates(ctx.organization.id, devices);
+
         if (ids.length > 0)
           yield* db
             .delete(schema.device)
@@ -5885,11 +6538,13 @@ export const createEnterpriseService = ({
           ids: [...ids],
           revokedCertificates: revoked,
         });
+
         return ok;
       }),
     listDevicePreRegistrations: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = (yield* db
           .select()
           .from(schema.devicePreRegistration)
@@ -5897,13 +6552,16 @@ export const createEnterpriseService = ({
           .orderBy(desc(schema.devicePreRegistration.createdAt))) as Array<
           typeof schema.devicePreRegistration.$inferSelect
         >;
+
         const groups = (yield* db
           .select()
           .from(schema.enterpriseGroup)
           .where(
             eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
           )) as Array<EnterpriseGroup>;
+
         const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+
         return {
           rows: rows.map((row) =>
             rowPreRegistration(row, row.groupId ? (groupNames.get(row.groupId) ?? null) : null),
@@ -5915,10 +6573,12 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { rows?: ReadonlyArray<DevicePreRegistrationImportRow> };
         const rows = Array.isArray(body.rows) ? body.rows : [];
+
         if (rows.length === 0)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Add at least one device row to import." }),
           );
+
         if (rows.length > 1000)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Import at most 1000 devices at a time." }),
@@ -5935,6 +6595,7 @@ export const createEnterpriseService = ({
         }).pipe(
           Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
         );
+
         const existingPreRegistrations = (yield* db
           .select({ id: schema.devicePreRegistration.id })
           .from(schema.devicePreRegistration)
@@ -5946,6 +6607,7 @@ export const createEnterpriseService = ({
               isNull(schema.devicePreRegistration.consumedDeviceId),
             ),
           )).length;
+
         let remainingCapacity =
           planStatus.limit === null
             ? Number.POSITIVE_INFINITY
@@ -5957,8 +6619,10 @@ export const createEnterpriseService = ({
           .where(
             eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
           )) as Array<EnterpriseGroup>;
+
         const groupsById = new Map(groups.map((group) => [group.id, group]));
         const groupsByName = new Map<string, Array<EnterpriseGroup>>();
+
         for (const group of groups) {
           const key = group.name.trim().toLowerCase();
           groupsByName.set(key, [...(groupsByName.get(key) ?? []), group]);
@@ -5966,8 +6630,10 @@ export const createEnterpriseService = ({
 
         const text = (value: string | null | undefined, previous: string | null, max: number) => {
           if (value === undefined) return previous;
+
           if (value === null) return null;
           const trimmed = value.trim();
+
           return trimmed ? trimmed.slice(0, max) : null;
         };
 
@@ -5977,6 +6643,7 @@ export const createEnterpriseService = ({
         for (const row of rows) {
           const result = yield* Effect.gen(function* () {
             const serial = typeof row.serial === "string" ? row.serial.trim().slice(0, 255) : "";
+
             if (!serial)
               return {
                 serial: typeof row.serial === "string" ? row.serial : "",
@@ -5990,9 +6657,11 @@ export const createEnterpriseService = ({
 
             let groupId = existing?.groupId ?? null;
             const wantsGroup = row.groupId !== undefined || row.groupName !== undefined;
+
             if (wantsGroup) {
               const requestedId = row.groupId?.trim() || "";
               const requestedName = row.groupName?.trim() || "";
+
               if (requestedId) {
                 if (!groupsById.has(requestedId))
                   return {
@@ -6003,12 +6672,14 @@ export const createEnterpriseService = ({
                 groupId = requestedId;
               } else if (requestedName) {
                 const matches = groupsByName.get(requestedName.toLowerCase()) ?? [];
+
                 if (matches.length === 0)
                   return {
                     serial,
                     status: "error" as const,
                     error: `Group "${requestedName}" was not found in this tenant.`,
                   };
+
                 if (matches.length > 1)
                   return {
                     serial,
@@ -6022,6 +6693,7 @@ export const createEnterpriseService = ({
             }
 
             const timestamp = now();
+
             if (existing) {
               yield* db
                 .update(schema.devicePreRegistration)
@@ -6038,6 +6710,7 @@ export const createEnterpriseService = ({
                     eq(schema.devicePreRegistration.organizationId, ctx.organization.id),
                   ),
                 );
+
               return { serial, status: "updated" as const, id: existing.id };
             }
 
@@ -6062,6 +6735,7 @@ export const createEnterpriseService = ({
               createdAt: timestamp,
               updatedAt: timestamp,
             });
+
             return { serial, status: "created" as const, id: registrationId };
           }).pipe(
             Effect.catch((error) =>
@@ -6076,6 +6750,7 @@ export const createEnterpriseService = ({
               }),
             ),
           );
+
           results.push(result);
         }
 
@@ -6088,14 +6763,17 @@ export const createEnterpriseService = ({
           updated,
           failed,
         });
+
         return { results, created, updated, failed };
       }),
     deleteDevicePreRegistration: (request, tenantId, registrationId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const row = yield* db.query.devicePreRegistration.findFirst({
           where: { id: registrationId, organizationId: ctx.organization.id },
         });
+
         if (!row)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Pre-registered device not found" }),
@@ -6117,11 +6795,13 @@ export const createEnterpriseService = ({
             serial: row.serial,
           },
         );
+
         return ok;
       }),
     deleteDevicePreRegistrations: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         if (ids.length > 0)
           yield* db
             .delete(schema.devicePreRegistration)
@@ -6134,6 +6814,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device_pre_registration.deleted", "device_pre_registration", null, {
           ids: [...ids],
         });
+
         return ok;
       }),
     patchDevice: (request, tenantId, deviceId, payload) =>
@@ -6151,25 +6832,32 @@ export const createEnterpriseService = ({
           );
         yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, { now: now() });
         yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
+
         return ok;
       }),
     deviceAction: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         const body = (payload ?? {}) as {
           action?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
         };
+
         const action = body.action ?? "sync";
+
         if (!["sync", "collect-security-info", "refresh-applications"].includes(action))
           yield* requireStepUp(auth, request, "device-command");
         let lockPin: string | undefined;
+
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
           yield* mapAndroidFailure(
             syncAndroidPoliciesForTenant({
@@ -6183,8 +6871,10 @@ export const createEnterpriseService = ({
             action,
             platform: "android",
           });
+
           return ok;
         }
+
         if (device.proto === "android" && device.status === "enrolled" && action !== "sync") {
           const command = yield* mapAndroidFailure(
             issueAndroidCommand({
@@ -6195,6 +6885,7 @@ export const createEnterpriseService = ({
               action,
             }),
           );
+
           if (!command)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -6205,12 +6896,15 @@ export const createEnterpriseService = ({
             action,
             platform: "android",
           });
+
           return ok;
         }
+
         if (device.status === "enrolled") {
           if (action !== "sync") {
             const windowsCommand =
               device.proto === "win" && (action === "wipe" || action === "restart");
+
             if (device.proto !== "apple" && !windowsCommand)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({
@@ -6223,6 +6917,7 @@ export const createEnterpriseService = ({
             const commandId = crypto.randomUUID();
             const timestamp = now();
             const randomPin = String(Math.floor(100000 + Math.random() * 900000));
+
             const request = (() => {
               if (device.proto === "win") {
                 if (action === "wipe")
@@ -6230,16 +6925,20 @@ export const createEnterpriseService = ({
                     requestType: "WindowsWipe",
                     payload: { locURI: "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected" },
                   };
+
                 if (action === "restart")
                   return {
                     requestType: "WindowsReboot",
                     payload: { locURI: "./Device/Vendor/MSFT/Reboot/RebootNow" },
                   };
+
                 return null;
               }
+
               switch (action) {
                 case "lock":
                   lockPin = randomPin;
+
                   return { requestType: "DeviceLock", payload: { PIN: randomPin } };
                 case "wipe":
                   return {
@@ -6285,6 +6984,7 @@ export const createEnterpriseService = ({
                         Options: { PurchaseMethod: 1 },
                       },
                     };
+
                   if (body.iTunesStoreId)
                     return {
                       requestType: "InstallApplication",
@@ -6295,11 +6995,13 @@ export const createEnterpriseService = ({
                         Options: { PurchaseMethod: 1 },
                       },
                     };
+
                   return null;
                 default:
                   return null;
               }
             })();
+
             if (!request)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({
@@ -6309,12 +7011,14 @@ export const createEnterpriseService = ({
                       : "Unknown device action",
                 }),
               );
+
             if (action === "clear-passcode") {
               const [apple] = yield* db
                 .select({ unlockToken: schema.deviceApple.unlockToken })
                 .from(schema.deviceApple)
                 .where(eq(schema.deviceApple.deviceId, device.id))
                 .limit(1);
+
               if (!apple?.unlockToken)
                 return yield* Effect.fail(
                   new EnterpriseBadRequest({
@@ -6323,6 +7027,7 @@ export const createEnterpriseService = ({
                 );
               request.payload = { UnlockToken: apple.unlockToken };
             }
+
             yield* db.insert(schema.deviceCommand).values({
               id: commandId,
               organizationId: ctx.organization.id,
@@ -6336,25 +7041,32 @@ export const createEnterpriseService = ({
               updatedAt: timestamp,
             });
           }
+
           yield* applePush.pushAppleDevice(device.id);
         }
+
         yield* audit(ctx, "device.action", "device", deviceId, { action });
+
         return lockPin ? { ...ok, pin: lockPin } : ok;
       }),
     listDeviceCommands: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         const commands = yield* db
           .select()
           .from(schema.deviceCommand)
           .where(eq(schema.deviceCommand.deviceId, device.id))
           .orderBy(desc(schema.deviceCommand.createdAt))
           .limit(200);
+
         return {
           commands: commands.map((command: any) => ({
             id: command.id,
@@ -6370,28 +7082,35 @@ export const createEnterpriseService = ({
     listDeviceDeclarations: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const declarations = yield* deviceDeclarationsFor(device.id);
+
         return { declarations: declarations.map(rowDeclaration) };
       }),
     deviceUnenroll: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         if (device.proto !== "apple")
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "Remote unenroll is only available for Apple devices today.",
             }),
           );
+
         if (device.status === "enrolled")
           yield* db
             .update(schema.device)
@@ -6403,6 +7122,7 @@ export const createEnterpriseService = ({
                 eq(schema.device.status, "enrolled"),
               ),
             );
+
         // mttx pushes both enrolled and already-unenrolling devices so repeated
         // requests still nudge the device.
         if (device.status === "enrolled" || device.status === "unenrolling")
@@ -6415,22 +7135,27 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.unenrolled", "device", deviceId, {
           revokedCertificates: revoked,
         });
+
         return ok;
       }),
     getDeviceHealth: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const declarations = yield* deviceDeclarationsFor(device.id);
         const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
+
         const apple =
           device.proto === "apple"
             ? yield* db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
             : undefined;
+
         return {
           health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
           declarations: declarations.map(rowDeclaration),
@@ -6441,12 +7166,15 @@ export const createEnterpriseService = ({
     getDeviceActivity: (request, tenantId, deviceId, query) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const limit = normalizeDeviceActivityLimit(query?.limit);
+
         const audits = yield* db
           .select()
           .from(schema.auditLog)
@@ -6459,14 +7187,17 @@ export const createEnterpriseService = ({
           )
           .orderBy(desc(schema.auditLog.createdAt))
           .limit(limit);
+
         const commands = yield* db
           .select()
           .from(schema.deviceCommand)
           .where(eq(schema.deviceCommand.deviceId, device.id))
           .orderBy(desc(schema.deviceCommand.updatedAt))
           .limit(limit);
+
         const declarations = yield* deviceDeclarationsFor(device.id);
         const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
+
         return {
           events: buildDeviceActivity(
             {
@@ -6487,27 +7218,35 @@ export const createEnterpriseService = ({
     getDeviceHealthSummary: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const devices = yield* db
           .select()
           .from(schema.device)
           .where(eq(schema.device.organizationId, ctx.organization.id));
+
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
+
         const declarations = deviceIds.length
           ? yield* db
               .select()
               .from(schema.deviceDeclaration)
               .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
           : [];
+
         const byDevice = new Map<string, Array<any>>();
+
         for (const declaration of declarations) {
           const list = byDevice.get(declaration.deviceId) ?? [];
           list.push(declaration);
           byDevice.set(declaration.deviceId, list);
         }
+
         const summaries = devices.map((device: EnterpriseDevice) =>
           rowDeviceHealth(device, byDevice.get(device.id) ?? []),
         );
+
         const levelRank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
+
         const attention = devices
           .map((device: EnterpriseDevice, index: number) => ({
             device,
@@ -6527,6 +7266,7 @@ export const createEnterpriseService = ({
             reasons: [...summary.reasons],
             lastSeenAt: summary.lastSeenAt,
           }));
+
         return {
           counts: countDeviceHealth(summaries),
           reasons: groupDeviceHealthReasons(summaries),
@@ -6536,6 +7276,7 @@ export const createEnterpriseService = ({
     getDevicePushHealth: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const devices = yield* db
           .select()
           .from(schema.device)
@@ -6545,20 +7286,25 @@ export const createEnterpriseService = ({
               eq(schema.device.proto, "apple"),
             ),
           );
+
         // Pushes are only attempted for live devices, so retiring devices do
         // not drag the tenant rollup into a failing state forever.
         const eligible = devices.filter(
           (device: EnterpriseDevice) =>
             device.status === "enrolled" || device.status === "unenrolling",
         );
+
         const deviceIds = eligible.map((device: EnterpriseDevice) => device.id);
+
         const appleRows = deviceIds.length
           ? yield* db
               .select()
               .from(schema.deviceApple)
               .where(inArray(schema.deviceApple.deviceId, deviceIds))
           : [];
+
         const names = new Map(eligible.map((device: EnterpriseDevice) => [device.id, device.name]));
+
         const recentFailures = appleRows
           .filter((row: any) => (row.consecutivePushFailures ?? 0) > 0 && row.lastPushAt)
           .map((row: any) => ({
@@ -6571,22 +7317,27 @@ export const createEnterpriseService = ({
           }))
           .sort((left: { at: string }, right: { at: string }) => right.at.localeCompare(left.at))
           .slice(0, 5);
+
         return { counts: summarizeApplePushHealth(appleRows), recentFailures };
       }),
     getCredentialHealth: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* loadCredentialHealth(db, ctx.organization.id, now());
       }),
     revokeDeviceIdentity: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
+
         if (certificates.length === 0)
           return yield* Effect.fail(
             new EnterpriseConflict({
@@ -6597,11 +7348,13 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.identity_revoked", "device", device.id, {
           revokedCertificates: revoked,
         });
+
         return { status: "ok" as const, revoked };
       }),
     createGroup: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           name: string;
           notes?: string | null;
@@ -6610,11 +7363,15 @@ export const createEnterpriseService = ({
           devices?: Array<string>;
           policies?: Array<string>;
         };
+
         const kind = body.kind ?? "manual";
         const rules = kind === "dynamic" ? (body.rules ?? null) : null;
+
         if (kind === "dynamic") {
           const problem = dynamicGroupRulesProblem(rules);
+
           if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
           if (body.devices?.length)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -6626,6 +7383,7 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Manual groups do not accept membership rules" }),
           );
         }
+
         yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
         yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
         const groupId = id();
@@ -6640,6 +7398,7 @@ export const createEnterpriseService = ({
           createdAt: now(),
           updatedAt: now(),
         });
+
         if (body.devices?.length)
           yield* db
             .insert(schema.groupDevice)
@@ -6647,13 +7406,16 @@ export const createEnterpriseService = ({
             .values(
               body.devices.map((deviceId) => ({ groupId, deviceId, source: "manual" as const })),
             );
+
         if (body.policies?.length)
           yield* db
             .insert(schema.groupPolicy)
             .ignore()
             .values(body.policies.map((policyId) => ({ groupId, policyId })));
+
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+
         if (body.devices?.length || body.policies?.length)
           yield* syncAndroidDevices(ctx.organization.id, [
             ...(body.devices ?? []),
@@ -6665,11 +7427,13 @@ export const createEnterpriseService = ({
           devices: body.devices?.length ?? 0,
           policies: body.policies?.length ?? 0,
         });
+
         return { id: groupId };
       }),
     deleteGroups: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const results = yield* Effect.forEach(
           [...(ids as ReadonlyArray<string>)],
           (groupId) =>
@@ -6679,6 +7443,7 @@ export const createEnterpriseService = ({
               const existing = yield* db.query.enterpriseGroup.findFirst({
                 where: { id: groupId, organizationId: ctx.organization.id },
               });
+
               if (!existing) return { id: groupId, deleted: false as const, reason: "notFound" };
               const devices = yield* applePush.deviceIdsInGroups([groupId]);
               yield* db
@@ -6689,46 +7454,57 @@ export const createEnterpriseService = ({
                     eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
                   ),
                 );
+
               return { id: groupId, deleted: true as const, devices };
             }),
           { concurrency: 10 },
         );
+
         const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+
         const failed = results
           .filter((row) => !row.deleted)
           .map((row) => ({ id: row.id, reason: row.reason }));
+
         const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         // Devices in a deleted group lose policies and must re-sync.
         yield* applePush.pushAppleDevices(affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "group.deleted", "group", null, { ids: [...deleted] });
+
         return { deleted, failed };
       }),
     patchGroup: (request, tenantId, groupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const existing = yield* assertTenantGroup(ctx.organization.id, groupId);
+
         const body = payload as {
           name?: string;
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
         };
+
         const kind = body.kind ?? existing.kind ?? "manual";
+
         const rules =
           kind === "dynamic"
             ? body.rules !== undefined
               ? body.rules
               : ((existing.rules as DynamicGroupRules | null | undefined) ?? null)
             : null;
+
         if (kind === "dynamic") {
           const problem = dynamicGroupRulesProblem(rules);
+
           if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
         } else if (body.rules != null) {
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Manual groups do not accept membership rules" }),
           );
         }
+
         const wasDynamic = existing.kind === "dynamic";
         yield* db
           .update(schema.enterpriseGroup)
@@ -6739,6 +7515,7 @@ export const createEnterpriseService = ({
               eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
             ),
           );
+
         if (kind === "dynamic") {
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
         } else if (wasDynamic) {
@@ -6756,13 +7533,16 @@ export const createEnterpriseService = ({
             .set({ lastEvaluatedAt: null })
             .where(eq(schema.enterpriseGroup.id, groupId));
         }
+
         yield* audit(ctx, "group.updated", "group", groupId, { fields: Object.keys(body) });
+
         return ok;
       }),
     patchGroupMembers: (request, tenantId, groupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const group = yield* assertTenantGroup(ctx.organization.id, groupId);
+
         const body = payload as {
           assign?: {
             devices?: Array<string>;
@@ -6773,6 +7553,7 @@ export const createEnterpriseService = ({
             policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
           };
         };
+
         if (
           group.kind === "dynamic" &&
           ((body.assign?.devices?.length ?? 0) > 0 || (body.unassign?.devices?.length ?? 0) > 0)
@@ -6792,6 +7573,7 @@ export const createEnterpriseService = ({
           ...assignPolicies.map((assignment) => assignment.id),
           ...unassignPolicies.map((assignment) => assignment.id),
         ]);
+
         if (body.assign?.devices?.length)
           yield* db
             .insert(schema.groupDevice)
@@ -6803,12 +7585,14 @@ export const createEnterpriseService = ({
                 source: "manual" as const,
               })),
             );
+
         if (assignPolicies.length) {
           // Upsert by replacing the affected link rows so a mode change is
           // applied atomically even on MySQL versions without RETURNING.
           const unique = [
             ...new Map(assignPolicies.map((assignment) => [assignment.id, assignment])).values(),
           ];
+
           yield* db.delete(schema.groupPolicy).where(
             and(
               eq(schema.groupPolicy.groupId, groupId),
@@ -6826,6 +7610,7 @@ export const createEnterpriseService = ({
             })),
           );
         }
+
         if (body.unassign?.devices?.length)
           yield* db
             .delete(schema.groupDevice)
@@ -6835,6 +7620,7 @@ export const createEnterpriseService = ({
                 inArray(schema.groupDevice.deviceId, body.unassign.devices),
               ),
             );
+
         if (unassignPolicies.length)
           yield* db.delete(schema.groupPolicy).where(
             and(
@@ -6852,6 +7638,7 @@ export const createEnterpriseService = ({
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
         ];
+
         if (assignPolicies.length || unassignPolicies.length)
           affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
         yield* applePush.pushAppleDevices(affectedDevices);
@@ -6862,11 +7649,13 @@ export const createEnterpriseService = ({
           assignPolicies: assignPolicies.length,
           unassignPolicies: unassignPolicies.length,
         });
+
         return ok;
       }),
     syncGroups: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const affected = yield* Effect.forEach(
           [...(ids as ReadonlyArray<string>)],
           (groupId) =>
@@ -6874,14 +7663,19 @@ export const createEnterpriseService = ({
               const group = yield* db.query.enterpriseGroup.findFirst({
                 where: { id: groupId, organizationId: ctx.organization.id },
               });
+
               if (!group) return [];
+
               if (group.kind === "dynamic")
                 yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+
               return yield* applePush.deviceIdsInGroups([groupId]);
             }),
           { concurrency: 10 },
         );
+
         yield* applePush.pushAppleDevices(affected.flat());
+
         return ok;
       }),
     duplicateGroup: (request, tenantId, groupId, payload) =>
@@ -6902,6 +7696,7 @@ export const createEnterpriseService = ({
           createdAt: now(),
           updatedAt: now(),
         });
+
         const devices =
           kind === "manual"
             ? yield* db
@@ -6909,10 +7704,12 @@ export const createEnterpriseService = ({
                 .from(schema.groupDevice)
                 .where(eq(schema.groupDevice.groupId, groupId))
             : [];
+
         const policies = yield* db
           .select()
           .from(schema.groupPolicy)
           .where(eq(schema.groupPolicy.groupId, groupId));
+
         if (devices.length)
           yield* db.insert(schema.groupDevice).values(
             devices.map((d: EnterpriseGroupDevice) => ({
@@ -6921,6 +7718,7 @@ export const createEnterpriseService = ({
               source: d.source ?? ("manual" as const),
             })),
           );
+
         if (policies.length)
           yield* db.insert(schema.groupPolicy).values(
             policies.map((p: EnterpriseGroupPolicy) => ({
@@ -6929,15 +7727,18 @@ export const createEnterpriseService = ({
               mode: p.mode ?? "include",
             })),
           );
+
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, newId, { now: now() });
         yield* audit(ctx, "group.duplicated", "group", newId, { sourceId: groupId });
+
         return { id: newId };
       }),
     createPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { name: string; notes?: string | null; priority?: number };
+
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
@@ -6954,11 +7755,13 @@ export const createEnterpriseService = ({
         });
         yield* audit(ctx, "policy.created", "policy", policyId, { name: body.name });
         yield* snapshotPolicy(ctx, policyId);
+
         return { id: policyId };
       }),
     deletePolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const results = yield* Effect.forEach(
           [...(ids as ReadonlyArray<string>)],
           (policyId) =>
@@ -6968,6 +7771,7 @@ export const createEnterpriseService = ({
               const existing = yield* db.query.policy.findFirst({
                 where: { id: policyId, organizationId: ctx.organization.id },
               });
+
               if (!existing) return { id: policyId, deleted: false as const, reason: "notFound" };
               const devices = yield* applePush.deviceIdsInPolicies([policyId]);
               yield* db
@@ -6978,40 +7782,50 @@ export const createEnterpriseService = ({
                     eq(schema.policy.organizationId, ctx.organization.id),
                   ),
                 );
+
               return { id: policyId, deleted: true as const, devices };
             }),
           { concurrency: 10 },
         );
+
         const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+
         const failed = results
           .filter((row) => !row.deleted)
           .map((row) => ({ id: row.id, reason: row.reason }));
+
         const affectedDevices = results.flatMap((row) => (row.deleted ? row.devices : []));
         const pushed = yield* applePush.pushAppleDevices(affectedDevices);
         yield* reportPolicyDeliveryFailure(ctx.organization.id, { policyIds: deleted }, pushed);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.deleted", "policy", null, { ids: [...deleted] });
+
         return { deleted, failed };
       }),
     patchPolicy: (request, tenantId, policyId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           name?: string;
           notes?: string | null;
           priority?: number;
           configurations?: Record<string, unknown>;
         };
+
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
           );
+
         const policy = yield* db.query.policy.findFirst({
           where: { id: policyId, organizationId: ctx.organization.id },
         });
+
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
         const configurations = Object.entries(body.configurations ?? {});
+
         // Validate the whole patch before mutating anything so a bad
         // configuration cannot leave the policy half-updated.
         for (const [kind, data] of configurations) {
@@ -7020,10 +7834,12 @@ export const createEnterpriseService = ({
             Effect.mapError((message) => new EnterpriseBadRequest({ message })),
           );
         }
+
         yield* db
           .update(schema.policy)
           .set({ name: body.name, notes: body.notes, priority: body.priority, updatedAt: now() })
           .where(eq(schema.policy.id, policyId));
+
         for (const [kind, data] of configurations) {
           if (data === null) {
             yield* db
@@ -7042,6 +7858,7 @@ export const createEnterpriseService = ({
               .onDuplicateKeyUpdate({ set: { data, hash } });
           }
         }
+
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
         yield* pushPolicyDevices(ctx.organization.id, policyId, affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
@@ -7050,18 +7867,21 @@ export const createEnterpriseService = ({
           configurations: Object.keys(body.configurations ?? {}),
         });
         yield* snapshotPolicy(ctx, policyId);
+
         return ok;
       }),
     listPolicyDeployments: (request, tenantId, policyId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+
         const deployments = yield* db
           .select()
           .from(schema.policyDeployment)
           .where(eq(schema.policyDeployment.policyId, policyId))
           .orderBy(desc(schema.policyDeployment.version))
           .limit(100);
+
         return {
           deployments: deployments.map((deployment: any) => ({
             id: deployment.id,
@@ -7075,6 +7895,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+
         const deployment = yield* db.query.policyDeployment.findFirst({
           where: {
             id: deploymentId,
@@ -7082,6 +7903,7 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
           },
         });
+
         if (!deployment)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Policy deployment not found" }),
@@ -7089,6 +7911,7 @@ export const createEnterpriseService = ({
         yield* db.delete(schema.configuration).where(eq(schema.configuration.policyId, policyId));
         const snapshot = deployment.snapshot as Record<string, unknown>;
         const entries = Object.entries(snapshot ?? {});
+
         if (entries.length > 0)
           yield* db
             .insert(schema.configuration)
@@ -7105,6 +7928,7 @@ export const createEnterpriseService = ({
           ctx.organization.id,
           yield* applePush.deviceIdsInPolicies([policyId]),
         );
+
         return ok;
       }),
     uploadPolicyApplication: (request, tenantId, policyId, payload) =>
@@ -7114,9 +7938,11 @@ export const createEnterpriseService = ({
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
         const body = payload as { fileName: string; contentType?: string; content: string };
         const bytes = base64ToBytes(body.content);
+
         const sha256 = yield* sha256Hex(
           bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
         );
+
         const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
         yield* r2.put(key, bytes, {
           httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
@@ -7126,6 +7952,7 @@ export const createEnterpriseService = ({
           fileName: body.fileName,
           sha256,
         });
+
         return {
           sha256,
           fileName: body.fileName,
@@ -7141,6 +7968,7 @@ export const createEnterpriseService = ({
         const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
         const object = yield* r2.get(key);
         const bytes = yield* r2.arrayBuffer(object);
+
         return {
           sha256,
           fileName: object.customMetadata?.fileName ?? sha256,
@@ -7153,16 +7981,20 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+
         const policy = yield* db.query.policy.findFirst({
           where: { id: policyId, organizationId: ctx.organization.id },
         });
+
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
         const priority = policy.priority ?? 0;
+
         const groupLinks = yield* db
           .select({ groupId: schema.groupPolicy.groupId, mode: schema.groupPolicy.mode })
           .from(schema.groupPolicy)
           .where(eq(schema.groupPolicy.policyId, policyId));
+
         const groups = groupLinks.length
           ? yield* db
               .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
@@ -7174,13 +8006,16 @@ export const createEnterpriseService = ({
                 ),
               )
           : [];
+
         const groupModes = new Map(
           groupLinks.map((link) => [link.groupId, link.mode ?? ("include" as const)]),
         );
+
         const deviceLinks = yield* db
           .select({ deviceId: schema.devicePolicy.deviceId, mode: schema.devicePolicy.mode })
           .from(schema.devicePolicy)
           .where(eq(schema.devicePolicy.policyId, policyId));
+
         const devices = deviceLinks.length
           ? yield* db
               .select({ id: schema.device.id, name: schema.device.name })
@@ -7195,9 +8030,11 @@ export const createEnterpriseService = ({
                 ),
               )
           : [];
+
         const deviceModes = new Map(
           deviceLinks.map((link) => [link.deviceId, link.mode ?? ("include" as const)]),
         );
+
         return {
           groups: groups
             .map((group) => ({
@@ -7219,20 +8056,24 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+
         const body = payload as {
           assign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
           unassign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
         };
+
         const assign = assignmentRefs(body.assign);
         const unassign = assignmentRefs(body.unassign);
         yield* assertTenantDevices(ctx.organization.id, [
           ...assign.map((assignment) => assignment.id),
           ...unassign.map((assignment) => assignment.id),
         ]);
+
         if (assign.length) {
           const unique = [
             ...new Map(assign.map((assignment) => [assignment.id, assignment])).values(),
           ];
+
           yield* db.delete(schema.devicePolicy).where(
             and(
               eq(schema.devicePolicy.policyId, policyId),
@@ -7250,6 +8091,7 @@ export const createEnterpriseService = ({
             })),
           );
         }
+
         if (unassign.length)
           yield* db.delete(schema.devicePolicy).where(
             and(
@@ -7273,27 +8115,33 @@ export const createEnterpriseService = ({
           unassign: unassign.length,
           exclude: assign.filter((assignment) => assignment.mode === "exclude").length,
         });
+
         return ok;
       }),
     listApplications: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const apps = (yield* db
           .select()
           .from(schema.application)
           .where(
             eq(schema.application.organizationId, ctx.organization.id),
           )) as Array<EnterpriseApplication>;
+
         if (apps.length === 0) return { applications: [] };
         const ids = apps.map((app) => app.id);
+
         const groupLinks = yield* db
           .select()
           .from(schema.applicationGroup)
           .where(inArray(schema.applicationGroup.applicationId, ids));
+
         const deviceLinks = yield* db
           .select()
           .from(schema.applicationDevice)
           .where(inArray(schema.applicationDevice.applicationId, ids));
+
         return {
           applications: apps.map((app) =>
             rowApplication(
@@ -7309,38 +8157,47 @@ export const createEnterpriseService = ({
     getApplication: (request, tenantId, applicationId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const app = (yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
         })) as EnterpriseApplication | undefined;
+
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
         const groupLinks = yield* db
           .select()
           .from(schema.applicationGroup)
           .where(eq(schema.applicationGroup.applicationId, applicationId));
+
         const deviceLinks = yield* db
           .select()
           .from(schema.applicationDevice)
           .where(eq(schema.applicationDevice.applicationId, applicationId));
+
         const groupIds = groupLinks.map((link: { groupId: string }) => link.groupId);
         const deviceIds = deviceLinks.map((link: { deviceId: string }) => link.deviceId);
+
         const groups = groupIds.length
           ? yield* db
               .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
               .from(schema.enterpriseGroup)
               .where(inArray(schema.enterpriseGroup.id, groupIds))
           : [];
+
         const devices = deviceIds.length
           ? yield* db
               .select({ id: schema.device.id, name: schema.device.name })
               .from(schema.device)
               .where(inArray(schema.device.id, deviceIds))
           : [];
+
         return { ...rowApplication(app, groups.length, devices.length), groups, devices };
       }),
     createApplication: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body = payload as {
           name: string;
           platform: "apple" | "win" | "android";
@@ -7351,9 +8208,11 @@ export const createEnterpriseService = ({
           storeId?: string | null;
           notes?: string | null;
         };
+
         if (!body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
         const source = body.source ?? (body.storeId ? "store" : "manifest");
+
         if (body.platform === "apple") {
           if (source === "manifest" && !body.manifestUrl?.trim())
             return yield* Effect.fail(
@@ -7361,11 +8220,13 @@ export const createEnterpriseService = ({
                 message: "Apple manifest applications require a manifest URL",
               }),
             );
+
           if (source === "store" && !body.storeId?.trim())
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
             );
         }
+
         if (source === "store" && !Number.isSafeInteger(Number(body.storeId)))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
@@ -7389,16 +8250,20 @@ export const createEnterpriseService = ({
           name: body.name.trim(),
           platform: body.platform,
         });
+
         return { id: applicationId };
       }),
     patchApplication: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const existing = (yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
         })) as EnterpriseApplication | undefined;
+
         if (!existing)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
         const body = payload as {
           name?: string;
           bundleId?: string | null;
@@ -7408,12 +8273,17 @@ export const createEnterpriseService = ({
           storeId?: string | null;
           notes?: string | null;
         };
+
         const source = body.source ?? existing.source;
+
         const manifestUrl =
           body.manifestUrl === undefined ? existing.manifestUrl : body.manifestUrl;
+
         const storeId = body.storeId === undefined ? existing.storeId : body.storeId;
+
         if (body.name !== undefined && !body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
+
         if (existing.platform === "apple") {
           if (source === "manifest" && !manifestUrl?.trim())
             return yield* Effect.fail(
@@ -7421,11 +8291,13 @@ export const createEnterpriseService = ({
                 message: "Apple manifest applications require a manifest URL",
               }),
             );
+
           if (source === "store" && !storeId?.trim())
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
             );
         }
+
         if (source === "store" && !Number.isSafeInteger(Number(storeId)))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
@@ -7451,12 +8323,14 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "application.updated", "application", applicationId, {
           fields: Object.keys(body),
         });
+
         return ok;
       }),
     deleteApplications: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const results = yield* Effect.forEach(
           [...(ids as ReadonlyArray<string>)],
           (applicationId) =>
@@ -7464,6 +8338,7 @@ export const createEnterpriseService = ({
               const existing = (yield* db.query.application.findFirst({
                 where: { id: applicationId, organizationId: ctx.organization.id },
               })) as EnterpriseApplication | undefined;
+
               if (!existing)
                 return { id: applicationId, deleted: false as const, reason: "notFound" };
               yield* db
@@ -7474,6 +8349,7 @@ export const createEnterpriseService = ({
                     eq(schema.application.organizationId, ctx.organization.id),
                   ),
                 );
+
               // Delete the object only after the row is gone. A failure here
               // leaves an orphaned object, never a row pointing at a deleted
               // file, and must not abort the rest of the batch.
@@ -7487,41 +8363,52 @@ export const createEnterpriseService = ({
                       ),
                     ),
                   );
+
               return { id: applicationId, deleted: true as const };
             }),
           { concurrency: 10 },
         );
+
         const deleted = results.filter((row) => row.deleted).map((row) => row.id);
+
         const failed = results
           .filter((row) => !row.deleted)
           .map((row) => ({ id: row.id, reason: row.reason }));
+
         yield* audit(ctx, "application.deleted", "application", null, { ids: deleted });
+
         return { deleted, failed };
       }).pipe(Effect.provide(r2Layer)),
     patchApplicationAssignments: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
         const body = payload as {
           assign?: { groups?: Array<string>; devices?: Array<string> };
           unassign?: { groups?: Array<string>; devices?: Array<string> };
         };
+
         const groupIds = [...(body.assign?.groups ?? []), ...(body.unassign?.groups ?? [])];
+
         for (const groupId of groupIds) yield* assertTenantGroup(ctx.organization.id, groupId);
         yield* assertTenantDevices(ctx.organization.id, [
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
         ]);
+
         if (body.assign?.groups?.length)
           yield* db
             .insert(schema.applicationGroup)
             .ignore()
             .values(body.assign.groups.map((groupId) => ({ groupId, applicationId })));
+
         if (body.assign?.devices?.length)
           yield* db
             .insert(schema.applicationDevice)
             .ignore()
             .values(body.assign.devices.map((deviceId) => ({ deviceId, applicationId })));
+
         if (body.unassign?.groups?.length)
           yield* db
             .delete(schema.applicationGroup)
@@ -7531,6 +8418,7 @@ export const createEnterpriseService = ({
                 inArray(schema.applicationGroup.groupId, body.unassign.groups),
               ),
             );
+
         if (body.unassign?.devices?.length)
           yield* db
             .delete(schema.applicationDevice)
@@ -7548,16 +8436,20 @@ export const createEnterpriseService = ({
           unassignGroups: body.unassign?.groups?.length ?? 0,
           unassignDevices: body.unassign?.devices?.length ?? 0,
         });
+
         return ok;
       }),
     installApplication: (request, tenantId, applicationId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const app = (yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
         })) as EnterpriseApplication | undefined;
+
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
         if (app.platform !== "apple")
           return {
             status: "ok" as const,
@@ -7568,6 +8460,7 @@ export const createEnterpriseService = ({
                 ? "Windows app delivery is not implemented yet; the catalogue entry was saved."
                 : "Android app delivery is not implemented yet; the catalogue entry was saved.",
           };
+
         if (app.source === "upload")
           return {
             status: "ok" as const,
@@ -7577,10 +8470,13 @@ export const createEnterpriseService = ({
               "Uploaded installers are stored but not deployable yet. Use a manifest URL or store ID for Apple apps.",
           };
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+
         const appleDevices = devices.filter(
           (device) => device.proto === "apple" && device.status === "enrolled",
         );
+
         const skipped = devices.length - appleDevices.length;
+
         if (appleDevices.length === 0)
           return {
             status: "ok" as const,
@@ -7594,9 +8490,11 @@ export const createEnterpriseService = ({
         // silently bypass the licence pool, so this path fails closed.
         if (app.source === "store" && app.storeId) {
           const storeId = app.storeId;
+
           const vpp = yield* db.query.vppToken.findFirst({
             where: { organizationId: ctx.organization.id },
           });
+
           if (vpp) {
             if (vpp.status !== "active")
               return yield* Effect.fail(
@@ -7605,9 +8503,11 @@ export const createEnterpriseService = ({
                     "The Apps and Books token is not active. Re-upload a valid token before installing VPP apps.",
                 }),
               );
+
             const asset = (yield* findVppAssetByStoreId(db, ctx.organization.id, storeId)) as
               | typeof schema.vppAsset.$inferSelect
               | undefined;
+
             if (!asset)
               return {
                 status: "ok" as const,
@@ -7619,6 +8519,7 @@ export const createEnterpriseService = ({
             let assigned = 0;
             let failed = 0;
             const queuedDevices: Array<EnterpriseDevice> = [];
+
             for (const device of appleDevices) {
               const outcome = yield* mapVppFailure(
                 assignVppLicence({
@@ -7630,13 +8531,16 @@ export const createEnterpriseService = ({
                   ...(appleApi ? { config: appleApi } : {}),
                 }),
               ).pipe(Effect.result);
+
               if (outcome._tag === "Failure") {
                 failed++;
                 continue;
               }
+
               assigned++;
               queuedDevices.push(device);
             }
+
             if (queuedDevices.length > 0) {
               yield* db.insert(schema.deviceCommand).values(
                 queuedDevices.map((device) => ({
@@ -7652,11 +8556,13 @@ export const createEnterpriseService = ({
               );
               yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
             }
+
             yield* audit(ctx, "application.install_queued", "application", applicationId, {
               queued: queuedDevices.length,
               skipped: skipped + failed,
               vppAssigned: assigned,
             });
+
             return {
               status: "ok" as const,
               queued: queuedDevices.length,
@@ -7684,6 +8590,7 @@ export const createEnterpriseService = ({
                 InstallAsManaged: true,
                 Options: { PurchaseMethod: 1 },
               };
+
         yield* db.insert(schema.deviceCommand).values(
           appleDevices.map((device) => ({
             id: id(),
@@ -7701,6 +8608,7 @@ export const createEnterpriseService = ({
           queued: appleDevices.length,
           skipped,
         });
+
         return { status: "ok" as const, queued: appleDevices.length, skipped };
       }),
     uploadApplication: (request, tenantId, applicationId, payload) =>
@@ -7708,14 +8616,18 @@ export const createEnterpriseService = ({
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
         const existing = (yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
         })) as EnterpriseApplication | undefined;
+
         const body = payload as { fileName: string; contentType?: string; content: string };
         const bytes = base64ToBytes(body.content);
+
         const sha256 = yield* sha256Hex(
           bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
         );
+
         const key = applicationKey(ctx.organization.id, applicationId, sha256);
         yield* r2.put(key, bytes, {
           httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
@@ -7737,12 +8649,14 @@ export const createEnterpriseService = ({
               eq(schema.application.organizationId, ctx.organization.id),
             ),
           );
+
         if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
           fileName: body.fileName,
           sha256,
           size: bytes.byteLength,
         });
+
         return {
           sha256,
           fileName: body.fileName,
@@ -7754,15 +8668,19 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId);
+
         const app = (yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
         })) as EnterpriseApplication | undefined;
+
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
         if (app.sha256 !== sha256 || !app.r2Key)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
+
         const object = yield* r2
           .get(app.r2Key)
           .pipe(
@@ -7770,7 +8688,9 @@ export const createEnterpriseService = ({
               Effect.fail(new EnterpriseNotFound({ message: "Application file not found" })),
             ),
           );
+
         const bytes = yield* r2.arrayBuffer(object);
+
         return {
           sha256,
           fileName: object.customMetadata?.fileName ?? app.fileName ?? sha256,
@@ -7782,6 +8702,7 @@ export const createEnterpriseService = ({
     syncPolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
+
         const affected = yield* Effect.forEach(
           [...(ids as ReadonlyArray<string>)],
           (policyId) =>
@@ -7789,24 +8710,29 @@ export const createEnterpriseService = ({
               const policy = yield* db.query.policy.findFirst({
                 where: { id: policyId, organizationId: tenantId },
               });
+
               return policy ? yield* applePush.deviceIdsInPolicies([policyId]) : [];
             }),
           { concurrency: 10 },
         );
+
         const pushed = yield* applePush.pushAppleDevices(affected.flat());
         yield* reportPolicyDeliveryFailure(
           tenantId,
           { policyIds: [...(ids as ReadonlyArray<string>)] },
           pushed,
         );
+
         return ok;
       }),
     duplicatePolicy: (request, tenantId, policyId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const source = yield* db.query.policy.findFirst({
           where: { id: policyId, organizationId: ctx.organization.id },
         });
+
         if (!source)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
         const body = payload as { name?: string };
@@ -7820,10 +8746,12 @@ export const createEnterpriseService = ({
           createdAt: now(),
           updatedAt: now(),
         });
+
         const configurations = yield* db
           .select()
           .from(schema.configuration)
           .where(eq(schema.configuration.policyId, policyId));
+
         if (configurations.length)
           yield* db.insert(schema.configuration).values(
             configurations.map((c: EnterpriseConfiguration) => ({
@@ -7835,11 +8763,13 @@ export const createEnterpriseService = ({
           );
         yield* audit(ctx, "policy.duplicated", "policy", newId, { sourceId: policyId });
         yield* snapshotPolicy(ctx, newId);
+
         return { id: newId };
       }),
     extractMobileconfig: (payload) =>
       Effect.gen(function* () {
         const body = payload as { mobileconfig: string };
+
         return yield* Effect.tryPromise({
           try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
           catch: (cause) =>
@@ -7851,6 +8781,7 @@ export const createEnterpriseService = ({
     previewMobileconfig: (payload) =>
       Effect.gen(function* () {
         const body = payload as { mobileconfig: string };
+
         return yield* Effect.tryPromise({
           try: () => parseMobileconfigPreview(body.mobileconfig),
           catch: (cause) =>
@@ -7864,8 +8795,10 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const term = (query.q ?? "").trim();
         const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+
         if (!term) return { rows: [] };
         const pattern = `%${term.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+
         const devices = yield* db
           .select()
           .from(schema.device)
@@ -7881,6 +8814,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(limit);
+
         const groups = yield* db
           .select()
           .from(schema.enterpriseGroup)
@@ -7891,6 +8825,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(limit);
+
         const policies = yield* db
           .select()
           .from(schema.policy)
@@ -7901,6 +8836,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(limit);
+
         const users = yield* db
           .select({
             id: schema.user.id,
@@ -7917,6 +8853,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(limit);
+
         return {
           rows: [
             ...devices.map(rowDevice),
@@ -7929,10 +8866,12 @@ export const createEnterpriseService = ({
     listDevices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.device)
           .where(eq(schema.device.organizationId, ctx.organization.id));
+
         return { rows: rows.map(rowDevice) };
       }),
     searchDevices: (request, tenantId, query) =>
@@ -7940,11 +8879,13 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
         const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+
         if (filters.query) {
           // Structured filters use the same evaluator as dynamic groups and
           // dashboards, so derived fields (health, enrolled age, installed
           // apps) behave identically everywhere.
           const candidates = yield* db.select().from(schema.device).where(where);
+
           const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
             (snapshot) =>
               evaluateDeviceQuery(
@@ -7957,7 +8898,9 @@ export const createEnterpriseService = ({
                 { now: now() },
               ),
           );
+
           const direction = filters.direction === "desc" ? -1 : 1;
+
           const sortValue = (snapshot: (typeof matches)[number]) =>
             filters.sort === "lastSeenAt"
               ? snapshot.row.lastSeenAt.getTime()
@@ -7966,20 +8909,25 @@ export const createEnterpriseService = ({
                 : filters.sort === "status"
                   ? snapshot.row.status
                   : snapshot.row.name;
+
           matches.sort((left, right) => {
             const a = sortValue(left);
             const b = sortValue(right);
+
             const comparison =
               typeof a === "number" && typeof b === "number"
                 ? a - b
                 : String(a).localeCompare(String(b), undefined, { numeric: true });
+
             return comparison * direction || left.row.id.localeCompare(right.row.id);
           });
           const page = matches.slice(filters.offset, filters.offset + filters.limit);
+
           const groups = yield* deviceGroupsFor(
             ctx.organization.id,
             page.map((snapshot) => snapshot.row.id),
           );
+
           return {
             devices: page.map((snapshot) => ({
               ...rowDevice(snapshot.row),
@@ -7988,7 +8936,9 @@ export const createEnterpriseService = ({
             total: matches.length,
           };
         }
+
         const [total] = yield* db.select({ value: count() }).from(schema.device).where(where);
+
         const rows = yield* db
           .select()
           .from(schema.device)
@@ -7996,10 +8946,12 @@ export const createEnterpriseService = ({
           .orderBy(...deviceOrder(filters))
           .limit(filters.limit)
           .offset(filters.offset);
+
         const groups = yield* deviceGroupsFor(
           ctx.organization.id,
           rows.map((row) => row.id),
         );
+
         return {
           devices: rows.map((row) => ({ ...rowDevice(row), groups: groups.get(row.id) ?? [] })),
           total: Number(total?.value ?? 0),
@@ -8008,21 +8960,26 @@ export const createEnterpriseService = ({
     listDashboards: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.dashboard)
           .where(eq(schema.dashboard.organizationId, ctx.organization.id))
           .orderBy(asc(schema.dashboard.name));
+
         const widgets = yield* db
           .select({ dashboardId: schema.dashboardWidget.dashboardId })
           .from(schema.dashboardWidget)
           .where(eq(schema.dashboardWidget.organizationId, ctx.organization.id));
+
         const countByDashboard = new Map<string, number>();
+
         for (const widget of widgets)
           countByDashboard.set(
             widget.dashboardId,
             (countByDashboard.get(widget.dashboardId) ?? 0) + 1,
           );
+
         return {
           dashboards: rows.map((row) =>
             dashboardSummaryRow(row, countByDashboard.get(row.id) ?? 0),
@@ -8034,15 +8991,18 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { name?: string; description?: string | null; template?: string };
         const name = body.name?.trim();
+
         if (!name)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Dashboard name is required" }),
           );
+
         const existing = yield* db
           .select({ id: schema.dashboard.id })
           .from(schema.dashboard)
           .where(eq(schema.dashboard.organizationId, ctx.organization.id))
           .limit(1);
+
         const dashboardId = id();
         const timestamp = now();
         yield* db.insert(schema.dashboard).values({
@@ -8055,12 +9015,15 @@ export const createEnterpriseService = ({
           createdAt: timestamp,
           updatedAt: timestamp,
         });
+
         if (body.template === "overview") {
           const widgets = defaultOverviewWidgets();
+
           if (widgets.length)
             yield* db.insert(schema.dashboardWidget).values(
               widgets.map((widget) => {
                 const layout = normalizeWidgetLayout(widget);
+
                 return {
                   id: id(),
                   organizationId: ctx.organization.id,
@@ -8075,9 +9038,11 @@ export const createEnterpriseService = ({
               }),
             );
         }
+
         yield* audit(ctx, "dashboard.created", "dashboard", dashboardId, {
           template: body.template ?? null,
         });
+
         return { id: dashboardId };
       }),
     getDashboard: (request, tenantId, dashboardId) =>
@@ -8085,6 +9050,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const row = yield* requireDashboard(ctx.organization.id, dashboardId);
         const widgets = yield* loadDashboardWidgets(row.id);
+
         return {
           ...dashboardSummaryRow(row, widgets.length),
           widgets: widgets.map(dashboardWidgetRow),
@@ -8094,15 +9060,18 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const row = yield* requireDashboard(ctx.organization.id, dashboardId);
+
         const body = payload as {
           name?: string;
           description?: string | null;
           isDefault?: boolean;
         };
+
         if (body.name !== undefined && !body.name.trim())
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Dashboard name is required" }),
           );
+
         if (body.isDefault === true) {
           yield* db
             .update(schema.dashboard)
@@ -8114,6 +9083,7 @@ export const createEnterpriseService = ({
               ),
             );
         }
+
         yield* db
           .update(schema.dashboard)
           .set({
@@ -8128,6 +9098,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "dashboard.updated", "dashboard", row.id, {
           fields: Object.keys(body),
         });
+
         return ok;
       }),
     deleteDashboard: (request, tenantId, dashboardId) =>
@@ -8135,6 +9106,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const row = yield* requireDashboard(ctx.organization.id, dashboardId);
         yield* db.delete(schema.dashboard).where(eq(schema.dashboard.id, row.id));
+
         if (row.isDefault) {
           const [next] = yield* db
             .select({ id: schema.dashboard.id })
@@ -8142,19 +9114,23 @@ export const createEnterpriseService = ({
             .where(eq(schema.dashboard.organizationId, ctx.organization.id))
             .orderBy(asc(schema.dashboard.createdAt))
             .limit(1);
+
           if (next)
             yield* db
               .update(schema.dashboard)
               .set({ isDefault: true, updatedAt: now() })
               .where(eq(schema.dashboard.id, next.id));
         }
+
         yield* audit(ctx, "dashboard.deleted", "dashboard", row.id);
+
         return ok;
       }),
     createDashboardWidget: (request, tenantId, dashboardId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
         const body = payload as {
           type?: string;
           title?: string;
@@ -8164,7 +9140,9 @@ export const createEnterpriseService = ({
           w?: number;
           h?: number;
         };
+
         const title = body.title?.trim();
+
         if (!title)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Widget title is required" }),
@@ -8189,16 +9167,19 @@ export const createEnterpriseService = ({
           widgetId,
           type,
         });
+
         const [created] = yield* db
           .select()
           .from(schema.dashboardWidget)
           .where(eq(schema.dashboardWidget.id, widgetId));
+
         return dashboardWidgetRow(created!);
       }),
     patchDashboardWidget: (request, tenantId, dashboardId, widgetId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
         const existing = yield* db.query.dashboardWidget.findFirst({
           where: {
             id: widgetId,
@@ -8206,8 +9187,10 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
           },
         });
+
         if (!existing)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Widget not found" }));
+
         const body = payload as {
           type?: DashboardWidgetType;
           title?: string;
@@ -8217,12 +9200,15 @@ export const createEnterpriseService = ({
           w?: number;
           h?: number;
         };
+
         const type = body.type ?? (existing.type as DashboardWidgetType);
         const title = body.title?.trim();
+
         if (body.title !== undefined && !title)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Widget title is required" }),
           );
+
         const layout = normalizeWidgetLayout(
           {
             x: body.x ?? existing.x,
@@ -8232,12 +9218,14 @@ export const createEnterpriseService = ({
           },
           { x: existing.x, y: existing.y, w: existing.w, h: existing.h },
         );
+
         const config =
           body.config !== undefined
             ? normalizeWidgetConfig(type, body.config)
             : body.type !== undefined
               ? normalizeWidgetConfig(type, existing.config)
               : undefined;
+
         yield* db
           .update(schema.dashboardWidget)
           .set({
@@ -8253,16 +9241,19 @@ export const createEnterpriseService = ({
           widgetId: existing.id,
           fields: Object.keys(body),
         });
+
         const [updated] = yield* db
           .select()
           .from(schema.dashboardWidget)
           .where(eq(schema.dashboardWidget.id, existing.id));
+
         return dashboardWidgetRow(updated!);
       }),
     deleteDashboardWidget: (request, tenantId, dashboardId, widgetId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
         const existing = yield* db.query.dashboardWidget.findFirst({
           where: {
             id: widgetId,
@@ -8270,6 +9261,7 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
           },
         });
+
         if (!existing)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Widget not found" }));
         yield* db.delete(schema.dashboardWidget).where(eq(schema.dashboardWidget.id, existing.id));
@@ -8277,20 +9269,26 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "dashboard.widget_deleted", "dashboard", dashboardRow.id, {
           widgetId: existing.id,
         });
+
         return ok;
       }),
     patchDashboardLayout: (request, tenantId, dashboardId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
         const body = payload as {
           widgets?: ReadonlyArray<{ id: string; x?: number; y?: number; w?: number; h?: number }>;
         };
+
         const current = yield* loadDashboardWidgets(dashboardRow.id);
         const byId = new Map(current.map((widget) => [widget.id, widget]));
+
         for (const change of body.widgets ?? []) {
           const existing = byId.get(change.id);
+
           if (!existing) continue;
+
           const layout = normalizeWidgetLayout(
             {
               x: change.x ?? existing.x,
@@ -8300,17 +9298,21 @@ export const createEnterpriseService = ({
             },
             { x: existing.x, y: existing.y, w: existing.w, h: existing.h },
           );
+
           yield* db
             .update(schema.dashboardWidget)
             .set({ ...layout, updatedAt: now() })
             .where(eq(schema.dashboardWidget.id, existing.id));
         }
+
         yield* touchDashboard(dashboardRow.id);
+
         return ok;
       }),
     queryDashboard: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* runDashboardQuery(ctx.organization.id, payload as DashboardQueryRequest);
       }),
     exportDevices: (request, tenantId, query) =>
@@ -8321,8 +9323,10 @@ export const createEnterpriseService = ({
         // Fetch one extra row so truncation is detected without a second count
         // query; the extra row is never written to the CSV.
         let rows: Array<typeof schema.device.$inferSelect>;
+
         if (filters.query) {
           const candidates = yield* db.select().from(schema.device).where(where);
+
           const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
             (snapshot) =>
               evaluateDeviceQuery(
@@ -8335,7 +9339,9 @@ export const createEnterpriseService = ({
                 { now: now() },
               ),
           );
+
           const direction = filters.direction === "desc" ? -1 : 1;
+
           const sortValue = (snapshot: (typeof matches)[number]) =>
             filters.sort === "lastSeenAt"
               ? snapshot.row.lastSeenAt.getTime()
@@ -8344,13 +9350,16 @@ export const createEnterpriseService = ({
                 : filters.sort === "status"
                   ? snapshot.row.status
                   : snapshot.row.name;
+
           matches.sort((left, right) => {
             const a = sortValue(left);
             const b = sortValue(right);
+
             const comparison =
               typeof a === "number" && typeof b === "number"
                 ? a - b
                 : String(a).localeCompare(String(b), undefined, { numeric: true });
+
             return comparison * direction || left.row.id.localeCompare(right.row.id);
           });
           rows = matches.slice(0, DEVICE_EXPORT_MAX_ROWS + 1).map((snapshot) => snapshot.row);
@@ -8362,12 +9371,15 @@ export const createEnterpriseService = ({
             .orderBy(...deviceOrder(filters))
             .limit(DEVICE_EXPORT_MAX_ROWS + 1);
         }
+
         const truncated = rows.length > DEVICE_EXPORT_MAX_ROWS;
         const exportedRows = truncated ? rows.slice(0, DEVICE_EXPORT_MAX_ROWS) : rows;
+
         const groups = yield* deviceGroupsFor(
           ctx.organization.id,
           exportedRows.map((row) => row.id),
         );
+
         const csv = toCsv(
           [
             "Name",
@@ -8410,16 +9422,20 @@ export const createEnterpriseService = ({
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
           ]),
         );
+
         return { csv, truncated, rowCount: exportedRows.length };
       }),
     getDevice: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const row = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!row)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         const secrets = yield* db
           .select({
             kind: schema.deviceSecret.kind,
@@ -8433,13 +9449,16 @@ export const createEnterpriseService = ({
               eq(schema.deviceSecret.organizationId, ctx.organization.id),
             ),
           );
+
         const recoveryKey = secrets.find((secret) => secret.kind === "filevault_recovery_key");
         const bootstrapToken = secrets.find((secret) => secret.kind === "bootstrap_token");
+
         const [apple] = yield* db
           .select({ bootstrapTokenEscrowed: schema.deviceApple.bootstrapTokenEscrowed })
           .from(schema.deviceApple)
           .where(eq(schema.deviceApple.deviceId, row.id))
           .limit(1);
+
         const [autopilot] = yield* db
           .select()
           .from(schema.autopilotDevice)
@@ -8455,6 +9474,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
           ...rowDevice(row),
@@ -8469,11 +9489,14 @@ export const createEnterpriseService = ({
     listDeviceApplications: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         const applications = yield* db
           .select()
           .from(schema.deviceApplication)
@@ -8483,6 +9506,7 @@ export const createEnterpriseService = ({
               eq(schema.deviceApplication.organizationId, ctx.organization.id),
             ),
           );
+
         return {
           applications: applications
             .map(rowDeviceApplication)
@@ -8497,18 +9521,22 @@ export const createEnterpriseService = ({
         // writes (owner/admin) applies, every reveal is audited, and a fresh
         // step-up is required.
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const device = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         yield* requireStepUp(auth, request, "recovery-key-reveal");
+
         if (!authSecret)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "Recovery key escrow is not configured on this deployment",
             }),
           );
+
         const [secret] = yield* db
           .select()
           .from(schema.deviceSecret)
@@ -8520,12 +9548,14 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         if (!secret)
           return yield* Effect.fail(
             new EnterpriseNotFound({
               message: "No FileVault recovery key has been escrowed for this device",
             }),
           );
+
         const recoveryKey = yield* Effect.tryPromise({
           try: () => openSecret(authSecret, secret.sealedValue),
           catch: () =>
@@ -8533,9 +9563,11 @@ export const createEnterpriseService = ({
               message: "The escrowed recovery key could not be decrypted",
             }),
         });
+
         yield* audit(ctx, "device.recovery_key_viewed", "device", device.id, {
           kind: "filevault_recovery_key",
         });
+
         return {
           recoveryKey,
           updatedAt: iso(secret.updatedAt),
@@ -8545,6 +9577,7 @@ export const createEnterpriseService = ({
     getApplicationInventory: (request, tenantId, query) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const filters = (query ?? {}) as {
           q?: string;
           managed?: string;
@@ -8552,13 +9585,16 @@ export const createEnterpriseService = ({
           limit?: number;
           offset?: number;
         };
+
         const term = filters.q?.trim().toLowerCase() ?? "";
+
         const managed =
           filters.managed === "managed"
             ? true
             : filters.managed === "unmanaged"
               ? false
               : undefined;
+
         const updatesOnly = filters.updates === "available";
         const limit = Math.min(Math.max(Math.trunc(Number(filters.limit ?? 100)) || 100, 1), 500);
         const offset = Math.max(Math.trunc(Number(filters.offset ?? 0)) || 0, 0);
@@ -8580,7 +9616,9 @@ export const createEnterpriseService = ({
           lastReportedAt: Date;
           devices: Set<string>;
         };
+
         const groups = new Map<string, InventoryGroup>();
+
         for (const row of rows) {
           const group = groups.get(row.bundleId) ?? {
             bundleId: row.bundleId,
@@ -8594,6 +9632,7 @@ export const createEnterpriseService = ({
             lastReportedAt: row.lastReportedAt,
             devices: new Set<string>(),
           };
+
           group.name ??= row.name;
           group.version ??= row.version;
           group.shortVersion ??= row.shortVersion;
@@ -8601,6 +9640,7 @@ export const createEnterpriseService = ({
           group.dynamicSize ??= row.dynamicSize;
           group.hasUpdateAvailable ||= row.hasUpdateAvailable;
           group.isManaged ||= row.isManaged;
+
           if (row.lastReportedAt > group.lastReportedAt) group.lastReportedAt = row.lastReportedAt;
           group.devices.add(row.deviceId);
           groups.set(row.bundleId, group);
@@ -8610,10 +9650,14 @@ export const createEnterpriseService = ({
           .filter((group) => {
             if (term) {
               const haystack = `${group.name ?? ""} ${group.bundleId}`.toLowerCase();
+
               if (!haystack.includes(term)) return false;
             }
+
             if (managed !== undefined && group.isManaged !== managed) return false;
+
             if (updatesOnly && !group.hasUpdateAvailable) return false;
+
             return true;
           })
           .sort((left, right) =>
@@ -8640,11 +9684,14 @@ export const createEnterpriseService = ({
     getDeviceEffectivePolicy: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const row = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
         });
+
         if (!row)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
         return yield* resolveEffectivePolicyForDevice(db, {
           id: row.id,
           organizationId: ctx.organization.id,
@@ -8653,23 +9700,29 @@ export const createEnterpriseService = ({
     listGroups: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.enterpriseGroup)
           .where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
+
         return { rows: rows.map((row: EnterpriseGroup) => rowGroup(row)) };
       }),
     getGroup: (request, tenantId, groupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const row = yield* db.query.enterpriseGroup.findFirst({
           where: { id: groupId, organizationId: ctx.organization.id },
         });
+
         if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
         const deviceLinks = yield* db
           .select({ deviceId: schema.groupDevice.deviceId })
           .from(schema.groupDevice)
           .where(eq(schema.groupDevice.groupId, groupId));
+
         const devices = deviceLinks.length
           ? yield* db
               .select({ id: schema.device.id, name: schema.device.name })
@@ -8684,10 +9737,12 @@ export const createEnterpriseService = ({
                 ),
               )
           : [];
+
         const policyLinks = yield* db
           .select({ policyId: schema.groupPolicy.policyId, mode: schema.groupPolicy.mode })
           .from(schema.groupPolicy)
           .where(eq(schema.groupPolicy.groupId, groupId));
+
         const policies = policyLinks.length
           ? yield* db
               .select({
@@ -8706,9 +9761,11 @@ export const createEnterpriseService = ({
                 ),
               )
           : [];
+
         const modes = new Map(
           policyLinks.map((link) => [link.policyId, link.mode ?? ("include" as const)]),
         );
+
         return {
           ...rowGroup(row, devices.length, policies.length),
           devices: [...devices].sort((left, right) => left.name.localeCompare(right.name)),
@@ -8724,11 +9781,14 @@ export const createEnterpriseService = ({
     previewGroup: (request, tenantId, groupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const preview = yield* previewDynamicGroup(db, ctx.organization.id, groupId, {
           now: now(),
         });
+
         if (!preview)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
         return {
           groupId: preview.groupId,
           kind: preview.kind,
@@ -8740,40 +9800,49 @@ export const createEnterpriseService = ({
     listPolicies: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const rows = yield* db
           .select()
           .from(schema.policy)
           .where(eq(schema.policy.organizationId, ctx.organization.id));
+
         return { rows: yield* Effect.all(rows.map((row: EnterprisePolicy) => rowPolicy(row))) };
       }),
     getPolicy: (request, tenantId, policyId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const row = yield* db.query.policy.findFirst({
           where: { id: policyId, organizationId: ctx.organization.id },
         });
+
         if (!row)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+
         return yield* rowPolicy(row, true);
       }),
     billing: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         return yield* billingSummary(ctx.organization.id, ctx.user.id);
       }),
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "billing-portal");
+
         if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body = payload as { returnUrl: string };
         const customer = yield* ensureStripeCustomer(ctx.organization);
+
         const result = yield* stripe.billingPortal.sessions
           .create({
             customer,
             return_url: body.returnUrl,
           })
           .pipe(Effect.mapError(() => billingUnavailable()));
+
         return { url: result.url ?? body.returnUrl };
       }),
     requestEmailVerification: (request) =>
@@ -8791,18 +9860,21 @@ export const createEnterpriseService = ({
     recordMcpActivity: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
         const body = payload as {
           tool?: string;
           method?: string;
           path?: string;
           status?: number;
         };
+
         yield* audit(ctx, "mcp.tool_called", "mcp", null, {
           tool: body.tool,
           method: body.method,
           path: body.path,
           status: body.status,
         });
+
         return ok;
       }),
     createApiToken: (request, payload) =>
@@ -8821,6 +9893,7 @@ export const createEnterpriseService = ({
     removeAccountPasskey: (request, credentialId) =>
       Effect.gen(function* () {
         const { user } = yield* requireStepUp(auth, request, "passkey-remove");
+
         const credential = yield* db
           .select({ credentialId: schema.authPasskeyCredentials.credentialId })
           .from(schema.authPasskeyCredentials)
@@ -8832,6 +9905,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         if (credential.length === 0)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Passkey not found" }));
 
@@ -8848,11 +9922,13 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         const password = yield* db
           .select({ credentialId: schema.authPasswords.credentialId })
           .from(schema.authPasswords)
           .where(eq(schema.authPasswords.subjectId, user.id))
           .limit(1);
+
         const identifier = yield* db
           .select({ value: schema.authIdentifiers.value })
           .from(schema.authIdentifiers)
@@ -8864,6 +9940,7 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
         // A password, another passkey or an active email identifier (which
         // enables email-code sign-in) keeps the account reachable.
         if (otherPasskey.length === 0 && password.length === 0 && identifier.length === 0)
@@ -8906,6 +9983,7 @@ export const createEnterpriseService = ({
               .where(eq(schema.user.id, user.id));
           }),
         );
+
         return ok;
       }),
     stepUpMethods: (request) => auth.stepUpMethods(webRequestFromRequest(request, origin)),
@@ -9210,6 +10288,7 @@ export const enterpriseHandlers = (
             rowCount: number;
           }) => {
             const extension = result.format;
+
             return HttpServerResponse.text(result.body, {
               contentType:
                 result.format === "json"
@@ -9282,6 +10361,7 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) => {
         const headers = request.headers as Record<string, string | undefined>;
         const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
+
         return service.getEnrollment(params.id, query.code, {
           platform: query.platform,
           ip: headers["cf-connecting-ip"] ?? forwarded,
@@ -9293,6 +10373,7 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) => {
         const headers = request.headers as Record<string, string | undefined>;
         const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
+
         return Effect.map(
           service.getAppleEnrollmentProfile(params.id, query.code, {
             platform: query.platform ?? "apple",
