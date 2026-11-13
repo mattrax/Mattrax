@@ -226,6 +226,8 @@ export async function buildScepCertFailure(
   caPrivateKey: CryptoKey,
   transactionId: string,
   senderNonce: ArrayBuffer,
+  /** RFC 8894 failInfo: badAlg=0, badMessageCheck=1, badRequest=2, badTime=3, badCertId=4. */
+  failInfo = "2",
 ): Promise<ArrayBuffer> {
   const empty = new ArrayBuffer(0);
   const encapContentInfo = new pkijs.EncapsulatedContentInfo({
@@ -282,7 +284,7 @@ export async function buildScepCertFailure(
           }),
           new pkijs.Attribute({
             type: SCEP_FAIL_INFO,
-            values: [new asn1js.PrintableString({ value: "2" })],
+            values: [new asn1js.PrintableString({ value: failInfo })],
           }),
           new pkijs.Attribute({
             type: SCEP_RECIPIENT_NONCE,

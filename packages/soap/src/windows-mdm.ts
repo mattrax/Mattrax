@@ -128,19 +128,21 @@ export const ProviderAttr = Schema.Struct({
 
 export const GetPoliciesResponse = Schema.Struct({
   response: Schema.Struct({
-    policyFriendlyName: ContentAttr.pipe(
-      Schema.annotateKey({ soapElementName: "policyFriendlyName" }),
+    policyFriendlyName: Schema.optional(
+      ContentAttr.pipe(Schema.annotateKey({ soapElementName: "policyFriendlyName" })),
     ),
-    nextUpdateHours: ContentAttr.pipe(Schema.annotateKey({ soapElementName: "nextUpdateHours" })),
-    policiesNotChanged: ContentAttr.pipe(
-      Schema.annotateKey({ soapElementName: "policiesNotChanged" }),
+    nextUpdateHours: Schema.optional(
+      ContentAttr.pipe(Schema.annotateKey({ soapElementName: "nextUpdateHours" })),
+    ),
+    policiesNotChanged: Schema.optional(
+      ContentAttr.pipe(Schema.annotateKey({ soapElementName: "policiesNotChanged" })),
     ),
     policies: Schema.Struct({
       policy: Schema.Struct({
         policyOIDReference: Schema.String.pipe(
           Schema.annotateKey({ soapElementName: "policyOIDReference" }),
         ),
-        cAs: GenericNil.pipe(Schema.annotateKey({ soapElementName: "cAs" })),
+        cAs: Schema.optional(GenericNil.pipe(Schema.annotateKey({ soapElementName: "cAs" }))),
         attributes: Schema.Struct({
           commonName: Schema.String.pipe(Schema.annotateKey({ soapElementName: "commonName" })),
           policySchema: Schema.String.pipe(Schema.annotateKey({ soapElementName: "policySchema" })),

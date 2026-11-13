@@ -515,7 +515,7 @@ describe("SCEP PKCS#7", () => {
       expect((cnAttr?.value as asn1js.Utf8String).valueBlock.value).toBe("TestDevice");
     });
 
-    it("parses the Fleet test PKCSReq.der outer structure", async () => {
+    it("parses the generated PKCSReq.der outer structure", async () => {
       // @ts-ignore
       const { readFileSync } = await import("fs");
       // @ts-ignore

@@ -45,6 +45,15 @@ function getTextContent(element: Element): string {
   return element.textContent ?? "";
 }
 
+/** Optional fields wrap the real schema in a Union with Undefined. */
+function unwrapOptionalAst(ast: AST.AST): AST.AST {
+  if (ast._tag !== "Union") return ast;
+  const present = ast.types.filter(
+    (member) => member._tag !== "Undefined" && member._tag !== "Void",
+  );
+  return present.length === 1 ? present[0]! : ast;
+}
+
 function hasXsiNil(element: Element): boolean {
   return element.getAttribute("xsi:nil") === "true" || element.getAttribute("nil") === "true";
 }
@@ -88,10 +97,14 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
     case "Objects": {
       const result: Record<string, unknown> = {};
       for (const ps of ast.propertySignatures) {
-        const propAnnotations = resolveAnnotations(ps.type) as Record<string, unknown> | undefined;
-        const isOptional = AST.isOptional(ps.type);
         const propName = String(ps.name);
-        const elName = getSoapElementName(ps.type, propName);
+        const valueAst = unwrapOptionalAst(ps.type);
+        const propAnnotations = {
+          ...resolveAnnotations(ps.type),
+          ...resolveAnnotations(valueAst),
+        } as Record<string, unknown> | undefined;
+        const isOptional = AST.isOptional(ps.type);
+        const elName = getSoapElementName(valueAst, getSoapElementName(ps.type, propName));
 
         if (propAnnotations?.soapAttribute === true) {
           const attrName = (propAnnotations?.soapAttributeName as string | undefined) ?? propName;
@@ -117,7 +130,12 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
           } else if (hasXsiNil(child)) {
             result[propName] = undefined;
           } else {
-            result[propName] = deserializeToUnknown(ps.type, child);
+            const itemAst = valueAst._tag === "Arrays" ? valueAst.rest[0] : undefined;
+            const repeatedDirectly =
+              valueAst._tag === "Arrays" &&
+              itemAst !== undefined &&
+              getSoapElementName(valueAst, propName) === getSoapElementName(itemAst, "item");
+            result[propName] = deserializeToUnknown(ps.type, repeatedDirectly ? element : child);
           }
         }
       }

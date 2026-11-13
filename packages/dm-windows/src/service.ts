@@ -240,7 +240,7 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
         policy: (xml, context = {}) =>
           Effect.gen(function* () {
             const header = extractSoapHeader(xml);
-            const token = extractBinarySecurityToken(header.securityXml ?? xml);
+            const token = extractBinarySecurityToken(header.securityXml ?? "");
             if (!token)
               return yield* Effect.fail(new WindowsMdmError("Missing binary security token"));
             const body = extractSoapBody(xml);
@@ -263,7 +263,7 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
         enroll: (xml, context = {}) =>
           Effect.gen(function* () {
             const header = extractSoapHeader(xml);
-            const token = extractBinarySecurityToken(header.securityXml ?? xml);
+            const token = extractBinarySecurityToken(header.securityXml ?? "");
             if (!token)
               return yield* Effect.fail(new WindowsMdmError("Missing binary security token"));
             const req = yield* deserializeSoapElement(

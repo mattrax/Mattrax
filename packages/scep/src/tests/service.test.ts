@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import * as pkijs from "pkijs";
+import * as asn1js from "asn1js";
 import { ScepService, ScepServiceTag } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
@@ -393,18 +394,29 @@ describe("ScepService", () => {
         recordIssuedCertificate: () => Effect.void,
       });
 
-      await expect(
-        runWithService(
-          repo,
-          Effect.gen(function* () {
-            const scep = yield* ScepServiceTag;
-            return yield* scep.pkiOperation(fixture.renewal);
-          }),
-        ),
-      ).rejects.toMatchObject({
-        _tag: "ScepError",
-        message: expect.stringContaining("unknown or expired"),
-      });
+      const response = await runWithService(
+        repo,
+        Effect.gen(function* () {
+          const scep = yield* ScepServiceTag;
+          return yield* scep.pkiOperation(fixture.renewal);
+        }),
+      );
+      // Renewal failures stay in-protocol as a failure CertRep so the device
+      // can distinguish a rejected renewal from a transport outage.
+      const parsed = asn1js.fromBER(response);
+      const signedData = new pkijs.SignedData({ schema: parsed.result });
+      const attributes = new Map(
+        signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+          attribute.type,
+          attribute,
+        ]),
+      );
+      const pkiStatus = attributes.get("2.16.840.1.113733.1.9.3")!
+        .values[0] as asn1js.PrintableString;
+      const failInfo = attributes.get("2.16.840.1.113733.1.9.4")!
+        .values[0] as asn1js.PrintableString;
+      expect(pkiStatus.valueBlock.value).toBe("2");
+      expect(failInfo.valueBlock.value).toBe("4");
     });
   });
 });

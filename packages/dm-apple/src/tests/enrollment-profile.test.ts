@@ -2,15 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildAppleEnrollmentProfile } from "../enrollment.js";
 
 /**
- * Adapted from Fleet's `server/mdm/apple/apple_mdm_test.go`:
- *   - TestGenerateEnrollmentProfileMobileconfig
- *   - TestEnrollmentProfileServerCapabilities
- *
- * Fleet's tests assert the generated profile contains one SCEP payload and one
- * MDM payload, that the MDM payload references the SCEP identity certificate,
- * and that the modern server capabilities are advertised.
+ * The generated profile must contain one SCEP payload and one MDM payload, the
+ * MDM payload must reference the SCEP identity certificate, and the modern
+ * server capabilities must be advertised.
  */
-describe("Apple enrollment profile (Fleet parity)", () => {
+describe("Apple enrollment profile", () => {
   const build = () =>
     buildAppleEnrollmentProfile({
       origin: "https://mdm.example.com",
@@ -64,7 +60,7 @@ describe("Apple enrollment profile (Fleet parity)", () => {
     });
   });
 
-  it("advertises the server capabilities Fleet requires", () => {
+  it("advertises the required server capabilities", () => {
     const profile = build();
     const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm")!;
     expect(mdm.ServerCapabilities).toEqual(

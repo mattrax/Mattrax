@@ -51,7 +51,9 @@ export const scepRoutes = Layer.mergeAll(
         onSuccess: (val) => val,
         onFailure: (err) => {
           console.error("scepPost error:", err);
-          return HttpServerResponse.text("Error", { status: 500 });
+          // PKIOperation failures are client/protocol errors (malformed CMS,
+          // unsupported message type, bad nonce), not server faults.
+          return HttpServerResponse.text("Invalid SCEP request", { status: 400 });
         },
       }),
     ),

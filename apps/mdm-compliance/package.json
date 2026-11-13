@@ -1,0 +1,35 @@
+{
+  "name": "@mattrax/mdm-compliance",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Standalone Apple, Windows, Android and SCEP MDM protocol compliance checker",
+  "bin": {
+    "mdm-compliance": "./src/index.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@mattrax/dm-android": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/dm-windows": "workspace:*",
+    "@mattrax/enterprise-backend": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/management-backend": "workspace:*",
+    "@mattrax/plist": "workspace:*",
+    "@mattrax/scep": "workspace:*",
+    "@mattrax/soap": "workspace:*",
+    "asn1js": "catalog:",
+    "effect": "catalog:",
+    "pkijs": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
+  }
+}

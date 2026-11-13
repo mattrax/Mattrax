@@ -1,11 +1,8 @@
 /**
  * Apple MDM enrollment profile builder.
  *
- * The payload shape mirrors Fleet's `GenerateEnrollmentProfileMobileconfig`
- * (see `server/mdm/apple/apple_mdm.go` in the Fleet repository) and the
- * production Mattrax implementation in
- * `crates/mx-api/src/v1/enrollment.rs`. Keep this a pure function: callers pass
- * the per-enrollment SCEP challenge and tenant identity explicitly.
+ * Keep this a pure function: callers pass the per-enrollment SCEP challenge
+ * and tenant identity explicitly so profile generation stays deterministic.
  */
 export type AppleEnrollmentProfileOptions = {
   /** Public server origin, without a trailing slash. */
@@ -82,9 +79,8 @@ export const buildAppleEnrollmentProfile = (
         ServerCapabilities: [
           "com.apple.mdm.per-user-connections",
           "com.apple.mdm.bootstraptoken",
-          // Fleet explicitly requires the token capability for modern macOS
-          // devices. Omitting it makes some devices skip bootstrap-token
-          // escrow, so keep parity with Fleet and mttx.
+          // Modern macOS devices need this capability or they skip
+          // bootstrap-token escrow.
           "com.apple.mdm.token",
         ],
         ServerURL: `${origin}/mdm/apple/mdm`,

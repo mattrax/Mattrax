@@ -28,6 +28,7 @@
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },
     { "path": "./apps/api" },
+    { "path": "./apps/mdm-compliance" },
     { "path": "./apps/web" }
   ]
 }

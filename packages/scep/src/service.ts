@@ -85,43 +85,44 @@ export const ScepService = Layer.effect(
 
         const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
 
+        const failureCertRep = (failInfo: "1" | "2" | "4" = "2") =>
+          Effect.tryPromise({
+            try: () =>
+              buildScepCertFailure(
+                ca.caCert,
+                ca.privateKey,
+                req.transactionId,
+                req.senderNonce,
+                failInfo,
+              ),
+            catch: (cause) =>
+              new ScepError({ message: "Failed to build SCEP failure response", cause }),
+          });
+
         const csrValid = yield* Effect.tryPromise({
           try: () => req.csr.verify(),
           catch: (cause) => new ScepError({ message: "Failed to verify the CSR signature", cause }),
         });
-        if (!csrValid) {
-          return yield* Effect.tryPromise({
-            try: () =>
-              buildScepCertFailure(ca.caCert, ca.privateKey, req.transactionId, req.senderNonce),
-            catch: (cause) =>
-              new ScepError({ message: "Failed to build SCEP failure response", cause }),
-          });
-        }
+        if (!csrValid) return yield* failureCertRep("1");
 
         // Renewals carry a currently-valid identity certificate signed by this
         // CA instead of the original enrollment challenge.
         let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
           undefined;
         let issued: ScepIssuedCertificate | null = null;
+
         if (req.renewal) {
           const signer = req.signerCerts[0];
-          if (!signer)
-            return yield* Effect.fail(new ScepError({ message: "SCEP renewal has no signer" }));
+          if (!signer) return yield* failureCertRep("1");
           const valid = yield* Effect.tryPromise({
             try: () => signer.verify(ca.caCert),
             catch: (cause) => new ScepError({ message: "Failed to verify renewal signer", cause }),
-          });
-          if (!valid)
-            return yield* Effect.fail(
-              new ScepError({ message: "SCEP renewal signer is not issued by this CA" }),
-            );
+          }).pipe(Effect.match({ onFailure: () => false, onSuccess: (value) => value }));
+          if (!valid) return yield* failureCertRep("1");
           const serial = certificateSerialHex(signer);
           issued = repo.findIssuedCertificate ? yield* repo.findIssuedCertificate(serial) : null;
-          if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date())) {
-            return yield* Effect.fail(
-              new ScepError({ message: "SCEP renewal certificate is unknown or expired" }),
-            );
-          }
+          if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date()))
+            return yield* failureCertRep("4");
           const ou = signer.subject.typesAndValues.find((item) => item.type === "2.5.4.11");
           const value = issued?.organizationId
             ? issued.organizationId
@@ -136,19 +137,12 @@ export const ScepService = Layer.effect(
           const authenticated = yield* repo
             .authenticatePkcsReq(req)
             .pipe(Effect.match({ onFailure: () => null, onSuccess: (value) => value ?? {} }));
-          if (authenticated === null) {
-            return yield* Effect.tryPromise({
-              try: () =>
-                buildScepCertFailure(ca.caCert, ca.privateKey, req.transactionId, req.senderNonce),
-              catch: (cause) =>
-                new ScepError({ message: "Failed to build SCEP failure response", cause }),
-            });
-          }
+          if (authenticated === null) return yield* failureCertRep("2");
           authentication = authenticated;
         }
 
         // Allow ten minutes of clock skew between the CA and device, matching
-        // Fleet and common SCEP clients.
+        // common SCEP clients.
         const notBefore = new Date(Date.now() - 10 * 60 * 1000);
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
         const serial = randomCertificateSerial();
