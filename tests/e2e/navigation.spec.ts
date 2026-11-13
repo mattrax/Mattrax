@@ -10,13 +10,12 @@ test.describe("top navigation", () => {
     const base = `/t/${tenant.id}`;
 
     for (const [label, path, heading] of [
-      ["Overview", base, "Device health"],
+      ["Overview", base, "Fleet overview"],
+      ["Dashboards", `${base}/dashboards`, "Dashboards"],
       ["Devices", `${base}/devices`, "Devices"],
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],
       ["Applications", `${base}/applications`, "Applications"],
-      ["Software", `${base}/software`, "Software"],
-      ["Enrollment", `${base}/settings/enrollment`, "Settings"],
       ["Settings", `${base}/settings`, "Settings"],
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();

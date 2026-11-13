@@ -190,6 +190,14 @@ export function CommandPalette() {
     const nav = (command: Command) => ({ ...command, href: command.href ?? undefined });
     const navigation: Command[] = [
       nav(navigable("nav-overview", "Overview", `${base()}`, go(`${base()}`))),
+      nav(
+        navigable(
+          "nav-dashboards",
+          "Dashboards",
+          `${base()}/dashboards`,
+          go(`${base()}/dashboards`),
+        ),
+      ),
       nav(navigable("nav-devices", "Devices", `${base()}/devices`, go(`${base()}/devices`))),
       nav(navigable("nav-groups", "Groups", `${base()}/groups`, go(`${base()}/groups`))),
       nav(navigable("nav-policies", "Policies", `${base()}/policies`, go(`${base()}/policies`))),
@@ -201,25 +209,15 @@ export function CommandPalette() {
           go(`${base()}/applications`),
         ),
       ),
-      nav(navigable("nav-software", "Software", `${base()}/software`, go(`${base()}/software`))),
-      nav(
-        navigable(
-          "nav-enrollment",
-          "Enrollment",
-          `${base()}/settings/enrollment`,
-          go(`${base()}/settings/enrollment`),
-        ),
-      ),
       nav(navigable("nav-settings", "Settings", `${base()}/settings`, go(`${base()}/settings`))),
     ];
     const shortcuts: Record<string, CommandShortcut> = {
       "nav-overview": sequence("g", "o"),
+      "nav-dashboards": sequence("g", "b"),
       "nav-devices": sequence("g", "d"),
       "nav-groups": sequence("g", "g"),
       "nav-policies": sequence("g", "p"),
       "nav-applications": sequence("g", "a"),
-      "nav-software": sequence("g", "s"),
-      "nav-enrollment": sequence("g", "e"),
       "nav-settings": sequence("g", "t"),
     };
     const withShortcuts = navigation.map((command) =>
@@ -246,6 +244,16 @@ export function CommandPalette() {
         keywords: ["new", "add", "group"],
         shortcut: sequence("n", "g"),
         run: go(`${base()}/groups/new`),
+      },
+      {
+        id: "new-dashboard",
+        title: "Create dashboard",
+        group: "Actions",
+        icon: Plus,
+        href: `${base()}/dashboards`,
+        keywords: ["new", "add", "dashboard", "overview", "widget"],
+        shortcut: sequence("n", "d"),
+        run: go(`${base()}/dashboards`),
       },
       {
         id: "new-tenant",

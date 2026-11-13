@@ -1,8 +1,16 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
+import {
+  EntityQueryBar,
+  formatEntityQuery,
+  matchesEntityQuery,
+  parseEntityQuery,
+  type EntityCondition,
+  type EntityField,
+} from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
 import { UsersRound } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
@@ -23,9 +31,36 @@ function MembershipBadge(props: { kind: GroupRow["kind"] }) {
   );
 }
 
+const fields: ReadonlyArray<EntityField<GroupRow>> = [
+  { id: "name", label: "Name", kind: "text", get: (row) => row.name },
+  {
+    id: "kind",
+    label: "Membership",
+    kind: "select",
+    options: [
+      { value: "manual", label: "Manual" },
+      { value: "dynamic", label: "Dynamic" },
+    ],
+    get: (row) => row.kind ?? "manual",
+  },
+  { id: "devices", label: "Devices", kind: "number", get: (row) => row.devicesCount ?? 0 },
+  { id: "policies", label: "Policies", kind: "number", get: (row) => row.policiesCount ?? 0 },
+];
+
 export default function GroupsPage() {
   const params = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const [conditions, setConditions] = createSignal<EntityCondition[]>(
+    parseEntityQuery(param(searchParams.query), fields),
+  );
+  const updateConditions = (next: EntityCondition[]) => {
+    setConditions(next);
+    setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
+  };
+  const filteredRows = () =>
+    (groups.data?.rows ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
@@ -38,22 +73,35 @@ export default function GroupsPage() {
         actions={<LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>}
       />
       <MdmTable<GroupRow>
-        rows={groups.data?.rows}
+        rows={filteredRows()}
         loading={groups.isPending}
         error={groups.error}
         storageKey="groups"
+        toolbar={
+          <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+        }
         searchPlaceholder="Search groups…"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/groups/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="group" selected={selected} clear={clear} />
         )}
         empty={
-          <EmptyState
-            icon={UsersRound}
-            title="No groups"
-            description="Create a group to organize devices and attach policy scope."
-            action={<LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>}
-          />
+          conditions().length > 0 ? (
+            <EmptyState
+              icon={UsersRound}
+              title="No matching groups"
+              description="Adjust the filter or clear it from the query bar."
+            />
+          ) : (
+            <EmptyState
+              icon={UsersRound}
+              title="No groups"
+              description="Create a group to organize devices and attach policy scope."
+              action={
+                <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+              }
+            />
+          )
         }
         columns={[
           {

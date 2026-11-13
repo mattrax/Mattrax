@@ -11,6 +11,7 @@ import {
   PageHeader,
   PlatformBadge,
 } from "~/components/mdm/common";
+import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
@@ -25,7 +26,10 @@ import {
 import {
   enterprise,
   enterpriseKeys,
+  formatDeviceQueryText,
+  parseDeviceQueryText,
   type DeviceHealthFilter,
+  type DeviceQuery,
   type DeviceRow,
 } from "~/lib/enterprise";
 import {
@@ -47,6 +51,7 @@ const FILTER_PARAM_KEYS = [
   "push",
   "sort",
   "direction",
+  "query",
 ] as const;
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
 const emptyFilterParams = () =>
@@ -153,6 +158,10 @@ export default function DevicesPage() {
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
   const [sort, setSort] = createSignal<MdmSortState>(initialSort());
+  const [deviceQuery, setDeviceQuery] = createSignal<DeviceQuery | null>(
+    parseDeviceQueryText(param(searchParams.query)),
+  );
+  const [queryOpen, setQueryOpen] = createSignal(false);
   const [page, setPage] = createSignal(0);
   const [exporting, setExporting] = createSignal(false);
   const [exportError, setExportError] = createSignal<unknown>();
@@ -264,6 +273,7 @@ export default function DevicesPage() {
       push: push(),
       sort: sort()?.id ?? "name",
       direction: sort()?.dir ?? "asc",
+      query: formatDeviceQueryText(deviceQuery()),
     }),
     (state) => {
       if (!urlInitialised) {
@@ -280,6 +290,7 @@ export default function DevicesPage() {
       if (state.push) next.push = state.push;
       if (state.sort && state.sort !== "name") next.sort = state.sort;
       if (state.direction === "desc") next.direction = state.direction;
+      if (state.query) next.query = state.query;
       setSearchParams(next, { replace: true });
     },
   );
@@ -297,6 +308,7 @@ export default function DevicesPage() {
     health: initialHealth(),
     push: initialPush(),
     sort: initialSort(),
+    query: param(searchParams.query) ?? "",
   }));
   createEffect(
     urlFilters,
@@ -313,6 +325,7 @@ export default function DevicesPage() {
         health: health(),
         push: push(),
         sort: sort(),
+        deviceQuery: deviceQuery(),
       }));
       if (filters.q !== local.q) {
         setQ(filters.q);
@@ -330,6 +343,11 @@ export default function DevicesPage() {
         (local.sort?.dir ?? "asc") !== (filters.sort?.dir ?? "asc")
       )
         setSort(filters.sort ?? { id: "name", dir: "asc" });
+      const nextQuery = parseDeviceQueryText(filters.query);
+      if (formatDeviceQueryText(nextQuery) !== formatDeviceQueryText(local.deviceQuery)) {
+        setDeviceQuery(nextQuery);
+        setPage(0);
+      }
     },
     { defer: true },
   );
@@ -342,6 +360,7 @@ export default function DevicesPage() {
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
     push: push() || undefined,
+    query: formatDeviceQueryText(deviceQuery()) || undefined,
     sort: (sort()?.id ?? "name") as "name" | "lastSeenAt" | "enrolledAt" | "status",
     direction: sort()?.dir ?? ("asc" as const),
   });
@@ -377,7 +396,16 @@ export default function DevicesPage() {
     },
   );
   const hasFilters = () =>
-    Boolean(debouncedQ() || status() || proto() || groupId() || staleDays() || health() || push());
+    Boolean(
+      debouncedQ() ||
+      status() ||
+      proto() ||
+      groupId() ||
+      staleDays() ||
+      health() ||
+      push() ||
+      deviceQuery(),
+    );
   const clearFilters = () => {
     setQ("");
     setDebouncedQ("");
@@ -387,6 +415,7 @@ export default function DevicesPage() {
     setStaleDays("");
     setHealth("");
     setPush("");
+    setDeviceQuery(null);
     setSort({ id: "name", dir: "asc" });
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
@@ -545,7 +574,7 @@ export default function DevicesPage() {
         searchPlaceholder="Search name, serial, model, asset tag…"
         toolbar={
           <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2">
-            <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div class="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
               <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-1 lg:flex-wrap lg:items-center">
                 <select
                   class={selectClass}
@@ -673,6 +702,48 @@ export default function DevicesPage() {
                   </Button>
                 </Show>
               </div>
+              <div class="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-white/[0.06] pt-2 lg:mt-0 lg:basis-full">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  aria-expanded={queryOpen() ? "true" : "false"}
+                  onClick={() => setQueryOpen((value) => !value)}
+                >
+                  Advanced query
+                  <Show when={deviceQuery()?.all?.length}>
+                    <span class="ml-1 rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums">
+                      {deviceQuery()!.all!.length}
+                    </span>
+                  </Show>
+                </Button>
+                <Show when={deviceQuery()}>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      setDeviceQuery(null);
+                      setPage(0);
+                    }}
+                  >
+                    Clear query
+                  </Button>
+                </Show>
+                <span class="ml-auto hidden text-[10.5px] text-muted-foreground/70 sm:inline">
+                  The URL reproduces this filtered view.
+                </span>
+              </div>
+              <Show when={queryOpen()}>
+                <div class="mt-2 w-full rounded-lg border border-white/[0.07] bg-white/[0.015] p-2.5 lg:basis-full">
+                  <DeviceQueryBuilder
+                    compact
+                    query={deviceQuery()}
+                    onChange={(query) => {
+                      setDeviceQuery(query);
+                      setPage(0);
+                    }}
+                  />
+                </div>
+              </Show>
             </div>
           </div>
         }

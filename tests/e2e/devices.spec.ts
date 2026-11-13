@@ -160,9 +160,14 @@ test.describe("device fleet management", () => {
     expect(summary.devices).toEqual([]);
 
     await gotoHydrated(page, `/t/${tenant.id}`);
-    await expect(page.getByRole("heading", { name: "Device health", exact: true })).toBeVisible();
-    for (const label of ["Healthy", "Attention", "Critical", "Stale (7d)", "Unknown"])
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
+    for (const label of [
+      "Managed devices",
+      "Devices needing attention",
+      "Critical devices",
+      "Stale devices",
+    ])
+      await expect(page.getByRole("heading", { name: label, exact: true }).first()).toBeVisible();
 
     // Credential monitoring is tenant-scoped too.
     const credentials = await api<{
@@ -193,9 +198,9 @@ test.describe("device fleet management", () => {
       invalidToken: 0,
     });
     expect(pushHealth.recentFailures).toEqual([]);
-    await expect(page.getByRole("heading", { name: "Needs attention", exact: true })).toBeVisible();
-    await expect(page.getByText("No devices enrolled yet")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+    await expect(page.getByText("No data to chart.")).toBeVisible();
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
     await gotoHydrated(page, `/t/${tenant.id}/settings/delivery`);
     await expect(
       page.getByRole("heading", { name: "Apple push delivery", exact: true }),

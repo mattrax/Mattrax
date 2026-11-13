@@ -30,6 +30,10 @@ import {
   resolveTenantBranding,
   validateTenantBranding,
   dynamicGroupRulesProblem,
+  defaultOverviewWidgets,
+  evaluateDeviceQuery,
+  type DashboardQueryRequest,
+  type DashboardWidgetType,
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   type DynamicGroupRules,
@@ -118,6 +122,13 @@ import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
+import {
+  deviceBucket,
+  normalizeWidgetConfig,
+  normalizeWidgetLayout,
+  softwareBucket,
+  toBuckets,
+} from "./dashboardQuery.ts";
 import {
   syncEntraDirectory,
   runEntraDirectorySyncForTenant,
@@ -1881,6 +1892,229 @@ export const createEnterpriseService = ({
         ? { id: value, mode: "include" as const }
         : { id: value.id, mode: value.mode ?? "include" },
     );
+
+  const dashboardWidgetRow = (row: typeof schema.dashboardWidget.$inferSelect) => ({
+    id: row.id,
+    type: row.type as DashboardWidgetType,
+    title: row.title,
+    config: row.config,
+    x: row.x,
+    y: row.y,
+    w: row.w,
+    h: row.h,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
+  const dashboardSummaryRow = (row: typeof schema.dashboard.$inferSelect, widgetCount: number) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    isDefault: row.isDefault,
+    widgetCount,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
+  const requireDashboard = (organizationId: string, dashboardId: string) =>
+    Effect.gen(function* () {
+      const row = yield* db.query.dashboard.findFirst({
+        where: { id: dashboardId, organizationId },
+      });
+      if (!row)
+        return yield* Effect.fail(new EnterpriseNotFound({ message: "Dashboard not found" }));
+      return row;
+    });
+
+  const loadDashboardWidgets = (dashboardId: string) =>
+    db
+      .select()
+      .from(schema.dashboardWidget)
+      .where(eq(schema.dashboardWidget.dashboardId, dashboardId))
+      .orderBy(asc(schema.dashboardWidget.y), asc(schema.dashboardWidget.x));
+
+  const touchDashboard = (dashboardId: string) =>
+    db
+      .update(schema.dashboard)
+      .set({ updatedAt: now() })
+      .where(eq(schema.dashboard.id, dashboardId));
+
+  /**
+   * Load every device in a tenant with the derived health and application
+   * inventory the shared query evaluator needs. Dashboard queries are
+   * evaluated in application code so they have exactly the same semantics as
+   * dynamic-group membership.
+   */
+  const loadDeviceSnapshots = (
+    organizationId: string,
+    candidates?: ReadonlyArray<typeof schema.device.$inferSelect>,
+  ) =>
+    Effect.gen(function* () {
+      const rows = candidates
+        ? [...candidates]
+        : yield* db
+            .select()
+            .from(schema.device)
+            .where(eq(schema.device.organizationId, organizationId))
+            .orderBy(asc(schema.device.name), asc(schema.device.id));
+      const ids = rows.map((row) => row.id);
+      const declarations = ids.length
+        ? yield* db
+            .select()
+            .from(schema.deviceDeclaration)
+            .where(inArray(schema.deviceDeclaration.deviceId, ids))
+        : [];
+      const applications = ids.length
+        ? yield* db
+            .select({
+              deviceId: schema.deviceApplication.deviceId,
+              bundleId: schema.deviceApplication.bundleId,
+              name: schema.deviceApplication.name,
+            })
+            .from(schema.deviceApplication)
+            .where(
+              and(
+                eq(schema.deviceApplication.organizationId, organizationId),
+                inArray(schema.deviceApplication.deviceId, ids),
+              ),
+            )
+        : [];
+      const declarationsByDevice = new Map<string, Array<any>>();
+      for (const declaration of declarations) {
+        const list = declarationsByDevice.get(declaration.deviceId) ?? [];
+        list.push(declaration);
+        declarationsByDevice.set(declaration.deviceId, list);
+      }
+      const applicationsByDevice = new Map<
+        string,
+        Array<{ bundleId: string; name: string | null }>
+      >();
+      for (const application of applications) {
+        const list = applicationsByDevice.get(application.deviceId) ?? [];
+        list.push({ bundleId: application.bundleId, name: application.name });
+        applicationsByDevice.set(application.deviceId, list);
+      }
+      return rows.map((row) => ({
+        row,
+        health: rowDeviceHealth(row, declarationsByDevice.get(row.id) ?? []),
+        applications: applicationsByDevice.get(row.id) ?? [],
+      }));
+    });
+
+  const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
+    Effect.gen(function* () {
+      const timestamp = now();
+      const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
+      const snapshots = (yield* loadDeviceSnapshots(organizationId)).filter((snapshot) =>
+        evaluateDeviceQuery(
+          payload.query,
+          {
+            ...snapshot.row,
+            health: snapshot.health,
+            applications: snapshot.applications,
+          },
+          { now: timestamp },
+        ),
+      );
+
+      if (payload.dataset === "devices") {
+        const buckets = payload.groupBy
+          ? toBuckets(
+              snapshots.map((snapshot) =>
+                deviceBucket(snapshot.row, payload.groupBy!, snapshot.health, timestamp),
+              ),
+              payload.groupBy === "health"
+                ? ["Healthy", "Attention", "Critical", "Unknown"]
+                : payload.groupBy === "platform"
+                  ? ["Apple", "Windows", "Android", "Unknown"]
+                  : undefined,
+            )
+          : [];
+        return {
+          total: snapshots.length,
+          buckets,
+          rows: snapshots.slice(0, limit).map((snapshot) => ({
+            id: snapshot.row.id,
+            name: snapshot.row.name,
+            platform: snapshot.row.proto,
+            osVersion: snapshot.row.osVersion,
+            model: snapshot.row.model,
+            serial: snapshot.row.serial,
+            status: snapshot.row.status,
+            health: snapshot.health.level,
+            lastSeenAt: iso(snapshot.row.lastSeenAt),
+            enrolledAt: iso(snapshot.row.enrolledAt),
+          })),
+        };
+      }
+
+      const matchingIds = snapshots.map((snapshot) => snapshot.row.id);
+      const applications = matchingIds.length
+        ? yield* db
+            .select()
+            .from(schema.deviceApplication)
+            .where(
+              and(
+                eq(schema.deviceApplication.organizationId, organizationId),
+                inArray(schema.deviceApplication.deviceId, matchingIds),
+              ),
+            )
+        : [];
+      type SoftwareGroup = {
+        bundleId: string;
+        name: string | null;
+        version: string | null;
+        isManaged: boolean;
+        hasUpdateAvailable: boolean;
+        devices: Set<string>;
+      };
+      const groups = new Map<string, SoftwareGroup>();
+      for (const application of applications) {
+        const group = groups.get(application.bundleId) ?? {
+          bundleId: application.bundleId,
+          name: application.name,
+          version: application.version,
+          isManaged: false,
+          hasUpdateAvailable: false,
+          devices: new Set<string>(),
+        };
+        group.name ??= application.name;
+        group.version ??= application.version;
+        group.isManaged ||= application.isManaged;
+        group.hasUpdateAvailable ||= application.hasUpdateAvailable;
+        group.devices.add(application.deviceId);
+        groups.set(application.bundleId, group);
+      }
+      const software = [...groups.values()].sort((left, right) =>
+        (left.name ?? left.bundleId).localeCompare(right.name ?? right.bundleId),
+      );
+      const buckets = payload.groupBy
+        ? toBuckets(
+            software.map((application) =>
+              payload.groupBy === "name"
+                ? (application.name ?? application.bundleId)
+                : softwareBucket(application, payload.groupBy!),
+            ),
+            payload.groupBy === "managed"
+              ? ["Managed", "Unmanaged"]
+              : payload.groupBy === "updates" || payload.groupBy === "hasUpdate"
+                ? ["Update available", "Up to date"]
+                : undefined,
+          )
+        : [];
+      return {
+        total: software.length,
+        buckets,
+        rows: software.slice(0, limit).map((application) => ({
+          id: application.bundleId,
+          name: application.name ?? application.bundleId,
+          bundleId: application.bundleId,
+          version: application.version,
+          managed: application.isManaged,
+          deviceCount: application.devices.size,
+        })),
+      };
+    });
 
   const service: Record<
     string,
@@ -7084,6 +7318,54 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
         const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        if (filters.query) {
+          // Structured filters use the same evaluator as dynamic groups and
+          // dashboards, so derived fields (health, enrolled age, installed
+          // apps) behave identically everywhere.
+          const candidates = yield* db.select().from(schema.device).where(where);
+          const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
+            (snapshot) =>
+              evaluateDeviceQuery(
+                filters.query,
+                {
+                  ...snapshot.row,
+                  health: snapshot.health,
+                  applications: snapshot.applications,
+                },
+                { now: now() },
+              ),
+          );
+          const direction = filters.direction === "desc" ? -1 : 1;
+          const sortValue = (snapshot: (typeof matches)[number]) =>
+            filters.sort === "lastSeenAt"
+              ? snapshot.row.lastSeenAt.getTime()
+              : filters.sort === "enrolledAt"
+                ? snapshot.row.enrolledAt.getTime()
+                : filters.sort === "status"
+                  ? snapshot.row.status
+                  : snapshot.row.name;
+          matches.sort((left, right) => {
+            const a = sortValue(left);
+            const b = sortValue(right);
+            const comparison =
+              typeof a === "number" && typeof b === "number"
+                ? a - b
+                : String(a).localeCompare(String(b), undefined, { numeric: true });
+            return comparison * direction || left.row.id.localeCompare(right.row.id);
+          });
+          const page = matches.slice(filters.offset, filters.offset + filters.limit);
+          const groups = yield* deviceGroupsFor(
+            ctx.organization.id,
+            page.map((snapshot) => snapshot.row.id),
+          );
+          return {
+            devices: page.map((snapshot) => ({
+              ...rowDevice(snapshot.row),
+              groups: groups.get(snapshot.row.id) ?? [],
+            })),
+            total: matches.length,
+          };
+        }
         const [total] = yield* db.select({ value: count() }).from(schema.device).where(where);
         const rows = yield* db
           .select()
@@ -7101,6 +7383,314 @@ export const createEnterpriseService = ({
           total: Number(total?.value ?? 0),
         };
       }),
+    listDashboards: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const rows = yield* db
+          .select()
+          .from(schema.dashboard)
+          .where(eq(schema.dashboard.organizationId, ctx.organization.id))
+          .orderBy(asc(schema.dashboard.name));
+        const widgets = yield* db
+          .select({ dashboardId: schema.dashboardWidget.dashboardId })
+          .from(schema.dashboardWidget)
+          .where(eq(schema.dashboardWidget.organizationId, ctx.organization.id));
+        const countByDashboard = new Map<string, number>();
+        for (const widget of widgets)
+          countByDashboard.set(
+            widget.dashboardId,
+            (countByDashboard.get(widget.dashboardId) ?? 0) + 1,
+          );
+        return {
+          dashboards: rows.map((row) =>
+            dashboardSummaryRow(row, countByDashboard.get(row.id) ?? 0),
+          ),
+        };
+      }),
+    createDashboard: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { name?: string; description?: string | null; template?: string };
+        const name = body.name?.trim();
+        if (!name)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Dashboard name is required" }),
+          );
+        const existing = yield* db
+          .select({ id: schema.dashboard.id })
+          .from(schema.dashboard)
+          .where(eq(schema.dashboard.organizationId, ctx.organization.id))
+          .limit(1);
+        const dashboardId = id();
+        const timestamp = now();
+        yield* db.insert(schema.dashboard).values({
+          id: dashboardId,
+          organizationId: ctx.organization.id,
+          name: name.slice(0, 120),
+          description: body.description?.trim().slice(0, 2000) || null,
+          isDefault: existing.length === 0,
+          createdByUserId: ctx.user.id,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        if (body.template === "overview") {
+          const widgets = defaultOverviewWidgets();
+          if (widgets.length)
+            yield* db.insert(schema.dashboardWidget).values(
+              widgets.map((widget) => {
+                const layout = normalizeWidgetLayout(widget);
+                return {
+                  id: id(),
+                  organizationId: ctx.organization.id,
+                  dashboardId,
+                  type: widget.type,
+                  title: widget.title,
+                  config: normalizeWidgetConfig(widget.type, widget.config),
+                  ...layout,
+                  createdAt: timestamp,
+                  updatedAt: timestamp,
+                };
+              }),
+            );
+        }
+        yield* audit(ctx, "dashboard.created", "dashboard", dashboardId, {
+          template: body.template ?? null,
+        });
+        return { id: dashboardId };
+      }),
+    getDashboard: (request, tenantId, dashboardId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const row = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const widgets = yield* loadDashboardWidgets(row.id);
+        return {
+          ...dashboardSummaryRow(row, widgets.length),
+          widgets: widgets.map(dashboardWidgetRow),
+        };
+      }),
+    patchDashboard: (request, tenantId, dashboardId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const row = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const body = payload as {
+          name?: string;
+          description?: string | null;
+          isDefault?: boolean;
+        };
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Dashboard name is required" }),
+          );
+        if (body.isDefault === true) {
+          yield* db
+            .update(schema.dashboard)
+            .set({ isDefault: false, updatedAt: now() })
+            .where(
+              and(
+                eq(schema.dashboard.organizationId, ctx.organization.id),
+                ne(schema.dashboard.id, row.id),
+              ),
+            );
+        }
+        yield* db
+          .update(schema.dashboard)
+          .set({
+            ...(body.name !== undefined ? { name: body.name.trim().slice(0, 120) } : {}),
+            ...(body.description !== undefined
+              ? { description: body.description?.trim().slice(0, 2000) || null }
+              : {}),
+            ...(body.isDefault === true ? { isDefault: true } : {}),
+            updatedAt: now(),
+          })
+          .where(eq(schema.dashboard.id, row.id));
+        yield* audit(ctx, "dashboard.updated", "dashboard", row.id, {
+          fields: Object.keys(body),
+        });
+        return ok;
+      }),
+    deleteDashboard: (request, tenantId, dashboardId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const row = yield* requireDashboard(ctx.organization.id, dashboardId);
+        yield* db.delete(schema.dashboard).where(eq(schema.dashboard.id, row.id));
+        if (row.isDefault) {
+          const [next] = yield* db
+            .select({ id: schema.dashboard.id })
+            .from(schema.dashboard)
+            .where(eq(schema.dashboard.organizationId, ctx.organization.id))
+            .orderBy(asc(schema.dashboard.createdAt))
+            .limit(1);
+          if (next)
+            yield* db
+              .update(schema.dashboard)
+              .set({ isDefault: true, updatedAt: now() })
+              .where(eq(schema.dashboard.id, next.id));
+        }
+        yield* audit(ctx, "dashboard.deleted", "dashboard", row.id);
+        return ok;
+      }),
+    createDashboardWidget: (request, tenantId, dashboardId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const body = payload as {
+          type?: string;
+          title?: string;
+          config?: unknown;
+          x?: number;
+          y?: number;
+          w?: number;
+          h?: number;
+        };
+        const title = body.title?.trim();
+        if (!title)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Widget title is required" }),
+          );
+        const type = body.type as DashboardWidgetType;
+        const layout = normalizeWidgetLayout(body);
+        const widgetId = id();
+        const timestamp = now();
+        yield* db.insert(schema.dashboardWidget).values({
+          id: widgetId,
+          organizationId: ctx.organization.id,
+          dashboardId: dashboardRow.id,
+          type,
+          title: title.slice(0, 120),
+          config: normalizeWidgetConfig(type, body.config),
+          ...layout,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        yield* touchDashboard(dashboardRow.id);
+        yield* audit(ctx, "dashboard.widget_created", "dashboard", dashboardRow.id, {
+          widgetId,
+          type,
+        });
+        const [created] = yield* db
+          .select()
+          .from(schema.dashboardWidget)
+          .where(eq(schema.dashboardWidget.id, widgetId));
+        return dashboardWidgetRow(created!);
+      }),
+    patchDashboardWidget: (request, tenantId, dashboardId, widgetId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const existing = yield* db.query.dashboardWidget.findFirst({
+          where: {
+            id: widgetId,
+            dashboardId: dashboardRow.id,
+            organizationId: ctx.organization.id,
+          },
+        });
+        if (!existing)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Widget not found" }));
+        const body = payload as {
+          type?: DashboardWidgetType;
+          title?: string;
+          config?: unknown;
+          x?: number;
+          y?: number;
+          w?: number;
+          h?: number;
+        };
+        const type = body.type ?? (existing.type as DashboardWidgetType);
+        const title = body.title?.trim();
+        if (body.title !== undefined && !title)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Widget title is required" }),
+          );
+        const layout = normalizeWidgetLayout(
+          {
+            x: body.x ?? existing.x,
+            y: body.y ?? existing.y,
+            w: body.w ?? existing.w,
+            h: body.h ?? existing.h,
+          },
+          { x: existing.x, y: existing.y, w: existing.w, h: existing.h },
+        );
+        const config =
+          body.config !== undefined
+            ? normalizeWidgetConfig(type, body.config)
+            : body.type !== undefined
+              ? normalizeWidgetConfig(type, existing.config)
+              : undefined;
+        yield* db
+          .update(schema.dashboardWidget)
+          .set({
+            ...(body.type !== undefined ? { type } : {}),
+            ...(title !== undefined ? { title: title.slice(0, 120) } : {}),
+            ...(config !== undefined ? { config } : {}),
+            ...layout,
+            updatedAt: now(),
+          })
+          .where(eq(schema.dashboardWidget.id, existing.id));
+        yield* touchDashboard(dashboardRow.id);
+        yield* audit(ctx, "dashboard.widget_updated", "dashboard", dashboardRow.id, {
+          widgetId: existing.id,
+          fields: Object.keys(body),
+        });
+        const [updated] = yield* db
+          .select()
+          .from(schema.dashboardWidget)
+          .where(eq(schema.dashboardWidget.id, existing.id));
+        return dashboardWidgetRow(updated!);
+      }),
+    deleteDashboardWidget: (request, tenantId, dashboardId, widgetId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const existing = yield* db.query.dashboardWidget.findFirst({
+          where: {
+            id: widgetId,
+            dashboardId: dashboardRow.id,
+            organizationId: ctx.organization.id,
+          },
+        });
+        if (!existing)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Widget not found" }));
+        yield* db.delete(schema.dashboardWidget).where(eq(schema.dashboardWidget.id, existing.id));
+        yield* touchDashboard(dashboardRow.id);
+        yield* audit(ctx, "dashboard.widget_deleted", "dashboard", dashboardRow.id, {
+          widgetId: existing.id,
+        });
+        return ok;
+      }),
+    patchDashboardLayout: (request, tenantId, dashboardId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const body = payload as {
+          widgets?: ReadonlyArray<{ id: string; x?: number; y?: number; w?: number; h?: number }>;
+        };
+        const current = yield* loadDashboardWidgets(dashboardRow.id);
+        const byId = new Map(current.map((widget) => [widget.id, widget]));
+        for (const change of body.widgets ?? []) {
+          const existing = byId.get(change.id);
+          if (!existing) continue;
+          const layout = normalizeWidgetLayout(
+            {
+              x: change.x ?? existing.x,
+              y: change.y ?? existing.y,
+              w: change.w ?? existing.w,
+              h: change.h ?? existing.h,
+            },
+            { x: existing.x, y: existing.y, w: existing.w, h: existing.h },
+          );
+          yield* db
+            .update(schema.dashboardWidget)
+            .set({ ...layout, updatedAt: now() })
+            .where(eq(schema.dashboardWidget.id, existing.id));
+        }
+        yield* touchDashboard(dashboardRow.id);
+        return ok;
+      }),
+    queryDashboard: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        return yield* runDashboardQuery(ctx.organization.id, payload as DashboardQueryRequest);
+      }),
     exportDevices: (request, tenantId, query) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -7108,12 +7698,48 @@ export const createEnterpriseService = ({
         const where = yield* deviceSearchWhere(ctx.organization.id, filters);
         // Fetch one extra row so truncation is detected without a second count
         // query; the extra row is never written to the CSV.
-        const rows = yield* db
-          .select()
-          .from(schema.device)
-          .where(where)
-          .orderBy(...deviceOrder(filters))
-          .limit(DEVICE_EXPORT_MAX_ROWS + 1);
+        let rows: Array<typeof schema.device.$inferSelect>;
+        if (filters.query) {
+          const candidates = yield* db.select().from(schema.device).where(where);
+          const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
+            (snapshot) =>
+              evaluateDeviceQuery(
+                filters.query,
+                {
+                  ...snapshot.row,
+                  health: snapshot.health,
+                  applications: snapshot.applications,
+                },
+                { now: now() },
+              ),
+          );
+          const direction = filters.direction === "desc" ? -1 : 1;
+          const sortValue = (snapshot: (typeof matches)[number]) =>
+            filters.sort === "lastSeenAt"
+              ? snapshot.row.lastSeenAt.getTime()
+              : filters.sort === "enrolledAt"
+                ? snapshot.row.enrolledAt.getTime()
+                : filters.sort === "status"
+                  ? snapshot.row.status
+                  : snapshot.row.name;
+          matches.sort((left, right) => {
+            const a = sortValue(left);
+            const b = sortValue(right);
+            const comparison =
+              typeof a === "number" && typeof b === "number"
+                ? a - b
+                : String(a).localeCompare(String(b), undefined, { numeric: true });
+            return comparison * direction || left.row.id.localeCompare(right.row.id);
+          });
+          rows = matches.slice(0, DEVICE_EXPORT_MAX_ROWS + 1).map((snapshot) => snapshot.row);
+        } else {
+          rows = yield* db
+            .select()
+            .from(schema.device)
+            .where(where)
+            .orderBy(...deviceOrder(filters))
+            .limit(DEVICE_EXPORT_MAX_ROWS + 1);
+        }
         const truncated = rows.length > DEVICE_EXPORT_MAX_ROWS;
         const exportedRows = truncated ? rows.slice(0, DEVICE_EXPORT_MAX_ROWS) : rows;
         const groups = yield* deviceGroupsFor(
@@ -8147,6 +8773,67 @@ export const enterpriseHandlers = (
     .handle("searchDevices", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.searchDevices(request, params.tenantId, query),
+      ),
+    )
+    .handle("listDashboards", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDashboards(request, params.tenantId),
+      ),
+    )
+    .handle("createDashboard", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createDashboard(request, params.tenantId, payload),
+      ),
+    )
+    .handle("getDashboard", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDashboard(request, params.tenantId, params.dashboardId),
+      ),
+    )
+    .handle("patchDashboard", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchDashboard(request, params.tenantId, params.dashboardId, payload),
+      ),
+    )
+    .handle("deleteDashboard", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteDashboard(request, params.tenantId, params.dashboardId),
+      ),
+    )
+    .handle("createDashboardWidget", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createDashboardWidget(request, params.tenantId, params.dashboardId, payload),
+      ),
+    )
+    .handle("patchDashboardWidget", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchDashboardWidget(
+          request,
+          params.tenantId,
+          params.dashboardId,
+          params.widgetId,
+          payload,
+        ),
+      ),
+    )
+    .handle("deleteDashboardWidget", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteDashboardWidget(
+          request,
+          params.tenantId,
+          params.dashboardId,
+          params.widgetId,
+        ),
+      ),
+    )
+    .handle("patchDashboardLayout", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchDashboardLayout(request, params.tenantId, params.dashboardId, payload),
+      ),
+    )
+    .handle("queryDashboard", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.queryDashboard(request, params.tenantId, payload),
       ),
     )
     .handleRaw("exportDevices", ({ request, params, query }) =>

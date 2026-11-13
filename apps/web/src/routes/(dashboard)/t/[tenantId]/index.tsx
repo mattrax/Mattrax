@@ -1,736 +1,249 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { useQuery } from "@tanstack/solid-query";
-import { For, Show } from "solid-js";
-import {
-  DeviceStatusBadge,
-  Page,
-  Panel,
-  QueryError,
-  StatCard,
-  relativeTime,
-} from "~/components/mdm/common";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { createMemo, For, Show } from "solid-js";
+import { defaultOverviewWidgets } from "@mattrax/enterprise-domain";
+import { Page, QueryError } from "~/components/mdm/common";
+import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Star } from "~/components/ui/icons";
 import {
-  Check,
-  ChevronRight,
-  CircleAlert,
-  Laptop,
-  LinkIcon,
-  Settings,
-  ShieldCheck,
-  UsersRound,
-} from "~/components/ui/icons";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import type { CredentialInfo } from "~/lib/enterprise";
-import { cn } from "~/lib/utils";
+  enterprise,
+  enterpriseKeys,
+  enterpriseQueries,
+  type DashboardSummary,
+  type DashboardWidget,
+} from "~/lib/enterprise";
 
-const credentialBadgeClass = (level: CredentialInfo["level"]) => {
-  switch (level) {
-    case "ok":
-      return "border-success/25 bg-success/10 text-success-foreground";
-    case "warning":
-      return "border-warning/25 bg-warning/10 text-warning-foreground";
-    case "critical":
-    case "expired":
-      return "border-destructive/25 bg-destructive/10 text-destructive";
-    default:
-      return "border-white/[0.08] bg-white/[0.03] text-muted-foreground";
-  }
-};
+const previewWidgets = (): DashboardWidget[] =>
+  defaultOverviewWidgets().map((widget, index) => ({
+    id: `preview-${index}`,
+    type: widget.type,
+    title: widget.title,
+    config: widget.config,
+    x: widget.x,
+    y: widget.y,
+    w: widget.w,
+    h: widget.h,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  }));
 
-const credentialDays = (info: CredentialInfo) => {
-  if (!info.configured) return "Not configured";
-  if (info.daysLeft == null) return "Expiry unknown";
-  if (info.level === "expired")
-    return info.daysLeft === 0 ? "Expired" : `Expired ${Math.abs(info.daysLeft)}d ago`;
-  if (info.daysLeft === 0) return "Expires today";
-  return `${info.daysLeft} day${info.daysLeft === 1 ? "" : "s"} left`;
-};
+function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
+  return (
+    <div class="dashboard-grid">
+      <For each={props.widgets}>
+        {(widget) => (
+          <article
+            class="dashboard-widget flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
+            style={{
+              "grid-column": `${widget.x + 1} / span ${widget.w}`,
+              "grid-row": `${widget.y + 1} / span ${widget.h}`,
+            }}
+          >
+            <header class="px-0.5 pb-2">
+              <h2 class="truncate text-[12.5px] font-medium text-foreground">{widget.title}</h2>
+              <p class="truncate text-[10px] capitalize text-muted-foreground/70">
+                {widget.type === "markdown"
+                  ? "Markdown"
+                  : `${widget.type} · ${String((widget.config as any)?.dataset ?? "devices")}`}
+              </p>
+            </header>
+            <div class="min-h-0 flex-1 overflow-hidden">
+              <DashboardWidgetView widget={widget} tenantId={props.tenantId} />
+            </div>
+          </article>
+        )}
+      </For>
+    </div>
+  );
+}
 
-/** A single setup task in the onboarding checklist. */
-function SetupStep(props: {
-  index: number;
-  title: string;
-  description: string;
-  done: boolean;
-  href: string;
-  action: string;
+function OverviewHeader(props: {
+  name: string;
+  description?: string | null;
+  isDefault?: boolean;
+  preview?: boolean;
+  dashboardId?: string;
+  tenantId: string;
+  create: () => void;
+  creating: boolean;
 }) {
   return (
-    <a
-      href={props.href}
-      class="group flex items-start gap-2.5 rounded-lg px-2 py-2.5 outline-none transition-colors hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-ring/60"
-    >
-      <span
-        class={cn(
-          "mt-px flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold tabular-nums",
-          props.done
-            ? "border-success/30 bg-success/15 text-success-foreground"
-            : "border-white/[0.1] bg-white/[0.03] text-muted-foreground",
-        )}
-      >
-        <Show when={props.done} fallback={props.index}>
-          <Check class="size-3" aria-hidden="true" />
-        </Show>
-      </span>
-      <span class="min-w-0 flex-1">
-        <span
-          class={cn(
-            "block text-[12.5px] font-medium leading-snug",
-            props.done ? "text-muted-foreground" : "text-foreground",
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          Overview
+        </p>
+        <div class="mt-1 flex flex-wrap items-center gap-2">
+          <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">{props.name}</h1>
+          <Show when={props.isDefault}>
+            <Badge variant="secondary" class="gap-1">
+              <Star class="size-3" />
+              Default
+            </Badge>
+          </Show>
+          <Show when={props.preview}>
+            <Badge variant="outline">Built-in preview</Badge>
+          </Show>
+        </div>
+        <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+          {props.description?.trim() ||
+            "Shared live views of your fleet. Create a dashboard to make this page your own."}
+        </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <Show when={props.dashboardId}>
+          {(id) => (
+            <Button
+              as="a"
+              href={`/t/${props.tenantId}/dashboards/${id()}`}
+              size="sm"
+              variant="outline"
+            >
+              Open dashboard
+            </Button>
           )}
-        >
-          {props.title}
-        </span>
-        <span class="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground/80">
-          {props.description}
-        </span>
-      </span>
-      <Show when={!props.done}>
-        <span class="mt-px flex shrink-0 items-center gap-0.5 text-[11px] font-[500] text-muted-foreground transition-colors group-hover:text-foreground">
-          {props.action}
-          <ChevronRight class="size-3" aria-hidden="true" />
-        </span>
+        </Show>
+        <Button as="a" href={`/t/${props.tenantId}/dashboards`} size="sm" variant="ghost">
+          All dashboards
+        </Button>
+        <Button size="sm" disabled={props.creating} onClick={props.create}>
+          {props.creating ? "Creating…" : props.preview ? "Customise overview" : "New dashboard"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LoadedOverview(props: {
+  tenantId: string;
+  summary: DashboardSummary;
+  create: () => void;
+  creating: boolean;
+}) {
+  const dashboard = useQuery(() => enterpriseQueries.dashboard(props.tenantId, props.summary.id));
+  return (
+    <Page class="gap-5">
+      <OverviewHeader
+        name={dashboard.data?.name ?? props.summary.name}
+        description={dashboard.data?.description ?? props.summary.description}
+        isDefault={dashboard.data?.isDefault ?? props.summary.isDefault}
+        dashboardId={props.summary.id}
+        tenantId={props.tenantId}
+        create={props.create}
+        creating={props.creating}
+      />
+      <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
+      <Show
+        when={(dashboard.data?.widgets.length ?? 0) > 0}
+        fallback={
+          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-6 text-center">
+            <p class="text-[13px] font-medium">This dashboard is empty</p>
+            <p class="mt-1 text-[12px] text-muted-foreground">
+              Add widgets from the dashboard editor to share tables, charts and notes.
+            </p>
+            <Button
+              as="a"
+              href={`/t/${props.tenantId}/dashboards/${props.summary.id}?edit=1`}
+              size="sm"
+              class="mt-3"
+            >
+              Edit dashboard
+            </Button>
+          </div>
+        }
+      >
+        <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
       </Show>
-    </a>
+    </Page>
+  );
+}
+
+function PreviewOverview(props: { tenantId: string; create: () => void; creating: boolean }) {
+  const widgets = createMemo(previewWidgets);
+  return (
+    <Page class="gap-5">
+      <OverviewHeader
+        name="Fleet overview"
+        preview
+        tenantId={props.tenantId}
+        create={props.create}
+        creating={props.creating}
+      />
+      <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
+      <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-3.5 py-3">
+        <p class="text-[12px] text-muted-foreground">
+          This is the built-in overview. Create a dashboard to add widgets, write team notes and
+          share a layout with everyone.
+        </p>
+        <Button size="sm" disabled={props.creating} onClick={props.create}>
+          {props.creating ? "Creating…" : "Create from this layout"}
+        </Button>
+      </div>
+    </Page>
   );
 }
 
 export default function TenantOverviewPage() {
   const params = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const tenantId = () => params.tenantId!;
-  const tenant = useQuery(() => ({
-    queryKey: enterpriseKeys.tenant(tenantId()),
-    queryFn: () => enterprise.getTenant(tenantId()),
-  }));
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "device"),
-    queryFn: () => enterprise.list(tenantId(), "device"),
-  }));
-  const health = useQuery(() => ({
-    queryKey: enterpriseKeys.deviceHealthSummary(tenantId()),
-    queryFn: () => enterprise.getDeviceHealthSummary(tenantId()),
-  }));
-  const groups = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "group"),
-    queryFn: () => enterprise.list(tenantId(), "group"),
-  }));
-  const policies = useQuery(() => ({
-    queryKey: enterpriseKeys.list(tenantId(), "policy"),
-    queryFn: () => enterprise.list(tenantId(), "policy"),
-  }));
-  const enrollment = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollment(tenantId()),
-    queryFn: () => enterprise.getTenantEnrollment(tenantId()),
-  }));
-  const apns = useQuery(() => ({
-    queryKey: enterpriseKeys.apns(tenantId()),
-    queryFn: () => enterprise.getApns(tenantId()),
-  }));
-  const credentials = useQuery(() => ({
-    queryKey: enterpriseKeys.credentialHealth(tenantId()),
-    queryFn: () => enterprise.getCredentialHealth(tenantId()),
-  }));
+  const dashboards = useQuery(() => enterpriseQueries.dashboards(tenantId()));
 
-  const credentialEntries = (): Array<{ label: string; info: CredentialInfo }> => {
-    const data = credentials.data;
-    if (!data) return [];
-    return [
-      { label: "APNs certificate", info: data.apns },
-      { label: "SCEP CA certificate", info: data.scepCa },
-    ];
-  };
-
-  const healthTotal = () => {
-    const counts = health.data?.counts;
-    if (!counts) return 0;
-    return Math.max(counts.total ?? 0, counts.healthy + counts.attention + counts.critical);
-  };
-
-  const healthCards = () => {
-    const counts = health.data?.counts;
-    return [
-      {
-        label: "Healthy",
-        value: counts?.healthy ?? 0,
-        href: `/t/${tenantId()}/devices?health=healthy`,
-        dot: "bg-success",
-      },
-      {
-        label: "Attention",
-        value: counts?.attention ?? 0,
-        href: `/t/${tenantId()}/devices?health=attention`,
-        dot: "bg-warning",
-      },
-      {
-        label: "Critical",
-        value: counts?.critical ?? 0,
-        href: `/t/${tenantId()}/devices?health=critical`,
-        dot: "bg-destructive",
-      },
-      {
-        label: "Stale (7d)",
-        value: counts?.stale ?? 0,
-        // The health summary derives staleness with the same 7-day threshold.
-        href: `/t/${tenantId()}/devices?health=stale`,
-        dot: "bg-muted-foreground/50",
-      },
-      {
-        label: "Unknown",
-        value: counts?.unknown ?? 0,
-        href: `/t/${tenantId()}/devices?health=unknown`,
-        dot: "bg-muted-foreground/30",
-      },
-    ];
-  };
-
-  const healthSegments = () => {
-    const counts = health.data?.counts;
-    const total = healthTotal();
-    return [
-      { label: "Healthy", value: counts?.healthy ?? 0, class: "bg-success", total },
-      { label: "Attention", value: counts?.attention ?? 0, class: "bg-warning", total },
-      { label: "Critical", value: counts?.critical ?? 0, class: "bg-destructive", total },
-    ];
-  };
-
-  const unhealthyTotal = () => {
-    const counts = health.data?.counts;
-    if (!counts) return 0;
-    return counts.attention + counts.critical + counts.unknown;
-  };
-
-  const attentionReasons = () => health.data?.reasons ?? [];
-  const attentionDevices = () => health.data?.devices ?? [];
-
-  /** The most severe reason is the one worth showing on a summary row. */
-  const primaryReason = (device: {
-    level: string;
-    reasons: ReadonlyArray<{ readonly label: string }>;
-  }) => {
-    const reason = device.reasons[0];
-    if (reason) return reason.label;
-    if (device.level === "unknown") return "Status unknown";
-    if (device.level === "critical") return "Needs immediate attention";
-    return "Needs attention";
-  };
-
-  const setupSteps = () => [
-    {
-      title: "Connect Apple push",
-      description: "Upload an APNs certificate so policy changes wake devices.",
-      done: apns.data?.configured === true,
-      href: `/t/${tenantId()}/settings/management`,
-      action: "Set up",
+  const create = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.createDashboard(tenantId(), { name: "Overview", template: "overview" }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(tenantId()) });
+      navigate(`/t/${tenantId()}/dashboards/${result.id}?edit=1`);
     },
-    {
-      title: "Configure SCEP",
-      description: "Sign device identity certificates with a SCEP CA.",
-      done: credentials.data?.scepCa.configured === true,
-      href: `/t/${tenantId()}/settings/management`,
-      action: "Configure",
-    },
-    {
-      title: "Enable enrollment",
-      description: "Turn on the enrollment links your users will visit.",
-      done: enrollment.data?.enabledApple === true,
-      href: `/t/${tenantId()}/settings/enrollment`,
-      action: "Enable",
-    },
-    {
-      title: "Enroll the first device",
-      description: "A device appears here as soon as it checks in.",
-      done: (devices.data?.rows.length ?? 0) > 0,
-      href: `/t/${tenantId()}/settings/enrollment`,
-      action: "Enroll",
-    },
-  ];
+  }));
 
-  const setupDone = () => setupSteps().filter((step) => step.done).length;
-  const setupProgress = () => Math.round((setupDone() / setupSteps().length) * 100);
+  const selected = () =>
+    dashboards.data?.dashboards.find((dashboard) => dashboard.isDefault) ??
+    dashboards.data?.dashboards[0];
 
   return (
-    <Page class="gap-6">
-      <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
-
-      <div class="grid gap-3 sm:grid-cols-3">
-        <StatCard
-          label="Devices"
-          value={devices.data?.rows.length ?? 0}
-          hint="Managed enrollments"
-          href={`/t/${tenantId()}/devices`}
-          icon={Laptop}
-        />
-        <StatCard
-          label="Groups"
-          value={groups.data?.rows.length ?? 0}
-          hint="Static and smart groups"
-          href={`/t/${tenantId()}/groups`}
-          icon={UsersRound}
-        />
-        <StatCard
-          label="Policies"
-          value={policies.data?.rows.length ?? 0}
-          hint="Configuration profiles"
-          href={`/t/${tenantId()}/policies`}
-          icon={ShieldCheck}
-        />
-      </div>
-
-      <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)] xl:gap-6">
-        <div class="flex min-w-0 flex-col gap-5">
-          <Panel
-            title="Device health"
-            description="Compliance rollup from enrollment, check-in freshness, declaration health, encryption and battery posture, and identity state."
-            actions={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate(`/t/${tenantId()}/devices`)}
-              >
-                View devices
-              </Button>
-            }
-          >
-            <div class="flex items-end justify-between gap-3">
-              <p class="text-[11.5px] font-[450] text-muted-foreground">Fleet mix</p>
-              <p class="text-[11px] text-muted-foreground">
-                <span class="text-[13px] font-semibold tabular-nums text-foreground">
-                  {healthTotal()}
-                </span>{" "}
-                devices
-              </p>
-            </div>
-            <div class="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
-              <Show when={healthTotal() > 0}>
-                <For each={healthSegments()}>
-                  {(segment) => (
-                    <Show when={segment.value > 0}>
-                      <div
-                        class={segment.class}
-                        style={{ width: `${(segment.value / segment.total) * 100}%` }}
-                        title={`${segment.label}: ${segment.value}`}
-                      />
-                    </Show>
-                  )}
-                </For>
-              </Show>
-            </div>
-            <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-              <For each={healthCards()}>
-                {(card) => (
-                  <button
-                    type="button"
-                    onClick={() => navigate(card.href)}
-                    class="group flex min-w-0 flex-col gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  >
-                    <span class="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                      <span class={cn("size-1.5 rounded-full", card.dot)} aria-hidden="true" />
-                      <span class="truncate">{card.label}</span>
-                    </span>
-                    <span class="text-[18px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
-                      {card.value}
-                    </span>
-                  </button>
-                )}
-              </For>
-            </div>
-            <Show when={health.isError}>
-              <QueryError error={health.error} class="mt-3" onRetry={() => void health.refetch()} />
-            </Show>
-          </Panel>
-
-          <Panel
-            title="Needs attention"
-            description="Devices that need a person, grouped by the signal that flagged them."
-            actions={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate(`/t/${tenantId()}/devices?health=attention`)}
-              >
-                Review devices
-              </Button>
-            }
-          >
-            <Show
-              when={unhealthyTotal() > 0}
-              fallback={
-                <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.015] px-3.5 py-3">
-                  <Check class="mt-0.5 size-4 shrink-0 text-success-foreground" />
-                  <div class="min-w-0">
-                    <p class="text-[13px] font-medium text-foreground">
-                      {health.data?.counts.total === 0
-                        ? "No devices enrolled yet"
-                        : "No devices need attention"}
-                    </p>
-                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                      {health.data?.counts.total === 0
-                        ? "Healthy and unhealthy devices appear here once they check in."
-                        : "Enrollment, check-ins, policy delivery, storage, encryption and battery signals are all clear."}
-                    </p>
-                  </div>
-                </div>
-              }
-            >
-              <div class="flex flex-wrap items-end gap-x-5 gap-y-2">
-                <div class="flex items-baseline gap-2">
-                  <p class="text-[26px] font-[540] leading-none tracking-[-0.035em] tabular-nums text-foreground">
-                    {unhealthyTotal()}
-                  </p>
-                  <p class="text-[11.5px] text-muted-foreground">
-                    of {health.data?.counts.total ?? 0} devices
-                  </p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <Show when={(health.data?.counts.critical ?? 0) > 0}>
-                    <Badge
-                      variant="outline"
-                      class="gap-1.5 border-destructive/25 bg-destructive/10 text-destructive"
-                    >
-                      <span class="size-1.5 rounded-full bg-destructive" aria-hidden="true" />
-                      {health.data?.counts.critical} critical
-                    </Badge>
-                  </Show>
-                  <Show when={(health.data?.counts.attention ?? 0) > 0}>
-                    <Badge
-                      variant="outline"
-                      class="gap-1.5 border-warning/25 bg-warning/10 text-warning-foreground"
-                    >
-                      <span class="size-1.5 rounded-full bg-warning" aria-hidden="true" />
-                      {health.data?.counts.attention} warning
-                    </Badge>
-                  </Show>
-                  <Show when={(health.data?.counts.unknown ?? 0) > 0}>
-                    <Badge variant="outline" class="gap-1.5 text-muted-foreground">
-                      <span
-                        class="size-1.5 rounded-full bg-muted-foreground/50"
-                        aria-hidden="true"
-                      />
-                      {health.data?.counts.unknown} unknown
-                    </Badge>
-                  </Show>
-                </div>
-              </div>
-
-              <Show when={attentionReasons().length > 0}>
-                <div class="mt-4 flex flex-wrap gap-1.5">
-                  <For each={attentionReasons().slice(0, 6)}>
-                    {(reason) => (
-                      <span class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1 text-[11px] text-foreground/85">
-                        <span
-                          class={cn(
-                            "size-1.5 rounded-full",
-                            reason.severity === "critical"
-                              ? "bg-destructive"
-                              : reason.severity === "warning"
-                                ? "bg-warning"
-                                : "bg-muted-foreground/50",
-                          )}
-                          aria-hidden="true"
-                        />
-                        {reason.label}
-                        <span class="tabular-nums text-muted-foreground">{reason.count}</span>
-                      </span>
-                    )}
-                  </For>
-                  <Show when={attentionReasons().length > 6}>
-                    <span class="px-1 py-1 text-[11px] text-muted-foreground">
-                      +{attentionReasons().length - 6} more signals
-                    </span>
-                  </Show>
-                </div>
-              </Show>
-
-              <ul class="mt-4 divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.07]">
-                <For each={attentionDevices()}>
-                  {(device) => (
-                    <li>
-                      <a
-                        href={`/t/${tenantId()}/devices/${device.id}`}
-                        class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-white/[0.03]"
-                      >
-                        <span class="flex min-w-0 items-center gap-2">
-                          <span
-                            class={cn(
-                              "size-1.5 shrink-0 rounded-full",
-                              device.level === "critical"
-                                ? "bg-destructive"
-                                : device.level === "attention"
-                                  ? "bg-warning"
-                                  : "bg-muted-foreground/50",
-                            )}
-                            aria-hidden="true"
-                          />
-                          <span class="truncate font-medium text-foreground">{device.name}</span>
-                        </span>
-                        <span class="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                          <span class="truncate">{primaryReason(device)}</span>
-                          <span class="text-muted-foreground/40" aria-hidden="true">
-                            ·
-                          </span>
-                          <span class="shrink-0">{relativeTime(device.lastSeenAt)}</span>
-                        </span>
-                      </a>
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <Show when={unhealthyTotal() > attentionDevices().length}>
-                <p class="mt-2 text-[11px] text-muted-foreground">
-                  Showing the {attentionDevices().length} most urgent. Review all devices for the
-                  rest.
-                </p>
-              </Show>
-            </Show>
-            <Show when={health.isError}>
-              <QueryError error={health.error} class="mt-3" onRetry={() => void health.refetch()} />
-            </Show>
-          </Panel>
-
-          <Panel
-            title="Recent devices"
-            flush
-            actions={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate(`/t/${tenantId()}/devices`)}
-              >
-                View all
-              </Button>
-            }
-          >
-            <Show
-              when={(devices.data?.rows.length ?? 0) > 0}
-              fallback={
-                <div class="px-5 py-10 text-center">
-                  <p class="text-[13px] font-medium text-foreground">No devices yet</p>
-                  <p class="mt-1 text-[12px] text-muted-foreground">
-                    Enroll a device and it will show up here after its first check-in.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    class="mt-3"
-                    onClick={() => navigate(`/t/${tenantId()}/settings/enrollment`)}
-                  >
-                    <LinkIcon class="size-4" />
-                    Enroll a device
-                  </Button>
-                </div>
-              }
-            >
-              <ul class="divide-y divide-white/[0.06]">
-                <For each={devices.data?.rows.slice(0, 5) ?? []}>
-                  {(device) => (
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/t/${tenantId()}/devices/${device.id}`)}
-                        class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60 sm:px-5"
-                      >
-                        <span class="min-w-0">
-                          <span class="block truncate text-[13px] font-medium text-foreground">
-                            {device.name}
-                          </span>
-                          <span class="block truncate text-[11.5px] text-muted-foreground">
-                            {device.model ?? device.serial ?? device.id}
-                          </span>
-                        </span>
-                        <DeviceStatusBadge status={device.status} />
-                      </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </Panel>
-        </div>
-
-        <div class="flex min-w-0 flex-col gap-5">
-          <Panel
-            title="Get started"
-            description="Finish these steps to put the tenant into production."
-          >
-            <div class="flex items-center justify-between gap-2">
-              <p class="text-[11.5px] text-muted-foreground">
-                <span class="font-medium text-foreground">{setupDone()}</span> of{" "}
-                {setupSteps().length} complete
-              </p>
-              <p class="text-[11px] font-medium tabular-nums text-muted-foreground">
-                {setupProgress()}%
-              </p>
-            </div>
-            <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
-              <div
-                class="h-full rounded-full bg-foreground/80 transition-[width] duration-500"
-                style={{ width: `${setupProgress()}%` }}
-              />
-            </div>
-            <div class="mt-3 -mx-1 divide-y divide-white/[0.05]">
-              <For each={setupSteps()}>
-                {(step, index) => (
-                  <SetupStep
-                    index={index() + 1}
-                    title={step.title}
-                    description={step.description}
-                    done={step.done}
-                    href={step.href}
-                    action={step.action}
-                  />
-                )}
-              </For>
-            </div>
-          </Panel>
-
-          <Panel
-            title="Enrollment"
-            description="Share the enrollment link with users, or configure the tenant in settings."
-            actions={
-              <Badge
-                variant="outline"
-                class={
-                  enrollment.data?.enabledApple
-                    ? "border-success/25 bg-success/10 text-success-foreground"
-                    : "text-muted-foreground"
-                }
-              >
-                {enrollment.data?.enabledApple ? "Enabled" : "Disabled"}
-              </Badge>
-            }
-          >
-            <Show when={enrollment.data?.code}>
-              {(code) => (
-                <div class="mb-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2">
-                  <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    Enrollment code
-                  </p>
-                  <p class="mt-0.5 truncate font-mono text-[12.5px] text-foreground">{code()}</p>
-                </div>
-              )}
-            </Show>
-            <div class="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => navigate(`/t/${tenantId()}/settings/enrollment`)}>
-                <LinkIcon class="size-4" />
-                Enrollment settings
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(`/t/${tenantId()}/settings`)}
-              >
-                <Settings class="size-4" />
-                Tenant settings
-              </Button>
-            </div>
-            <Show when={enrollment.isSuccess && !enrollment.data?.enabledApple}>
-              <p class="mt-3 flex items-start gap-2 text-[11.5px] leading-relaxed text-warning-foreground">
-                <CircleAlert class="mt-px size-3.5 shrink-0" />
-                Apple enrollment is turned off for this tenant.
-              </p>
-            </Show>
-            <Show when={enrollment.data}>
-              {(data) => (
-                <p class="mt-3 border-t border-white/[0.06] pt-3 text-[11px] text-muted-foreground">
-                  Up to <span class="text-foreground">{data().maxDevices}</span> devices · Windows{" "}
-                  {data().enabledWindows ? "on" : "off"} · Android{" "}
-                  {data().enabledAndroid ? "on" : "off"}
-                </p>
-              )}
-            </Show>
-          </Panel>
-
-          <Panel
-            title="Credentials"
-            description="Apple push and SCEP signing certificates, plus device identity expiry."
-            actions={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate(`/t/${tenantId()}/settings/management`)}
-              >
-                Manage credentials
-              </Button>
-            }
-          >
-            <Show
-              when={credentials.data}
-              fallback={
-                <Show
-                  when={credentials.isError}
-                  fallback={<p class="text-[12.5px] text-muted-foreground">Loading credentials…</p>}
-                >
-                  <QueryError
-                    error={credentials.error}
-                    onRetry={() => void credentials.refetch()}
-                  />
-                </Show>
-              }
-            >
-              {(data) => (
-                <ul class="divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.07]">
-                  <For each={credentialEntries()}>
-                    {(entry) => (
-                      <li class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 py-2.5">
-                        <span class="text-[12.5px] font-medium text-foreground">{entry.label}</span>
-                        <span class="flex flex-wrap items-center gap-2 text-[11px]">
-                          <Show when={entry.info.expiresAt}>
-                            <span class="text-muted-foreground">
-                              expires{" "}
-                              {new Date(entry.info.expiresAt!).toLocaleDateString(undefined, {
-                                dateStyle: "medium",
-                              })}
-                            </span>
-                          </Show>
-                          <span
-                            class={cn(
-                              "rounded-full border px-2 py-0.5 font-medium",
-                              credentialBadgeClass(entry.info.level),
-                            )}
-                          >
-                            {credentialDays(entry.info)}
-                          </span>
-                        </span>
-                      </li>
-                    )}
-                  </For>
-                  <li class="px-3 py-2.5">
-                    <p class="text-[12.5px] font-medium text-foreground">
-                      Device identity certificates
-                    </p>
-                    <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span class="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-warning-foreground">
-                        {data().deviceCertificates.expiringSoon} expiring in 30d
-                      </span>
-                      <span class="rounded-full border border-destructive/25 bg-destructive/10 px-2 py-0.5 text-destructive">
-                        {data().deviceCertificates.expired} expired
-                      </span>
-                      <span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-muted-foreground">
-                        {data().deviceCertificates.revoked} revoked
-                      </span>
-                    </div>
-                  </li>
-                </ul>
-              )}
-            </Show>
-            <Show when={apns.data?.configured}>
-              <p class="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-                APNs topic{" "}
-                <span class="break-all font-mono text-foreground">
-                  {apns.data?.topic ?? "configured"}
-                </span>
-                <Show when={apns.data?.expiresAt}>
-                  {" "}
-                  · expires {new Date(apns.data!.expiresAt!).toLocaleDateString()}
-                </Show>
-              </p>
-            </Show>
-          </Panel>
-        </div>
-      </div>
-    </Page>
+    <Show
+      when={dashboards.data}
+      fallback={
+        <Show
+          when={!dashboards.error}
+          fallback={
+            <Page>
+              <QueryError error={dashboards.error} onRetry={() => void dashboards.refetch()} />
+            </Page>
+          }
+        >
+          <PreviewOverview
+            tenantId={tenantId()}
+            create={() => create.mutate()}
+            creating={create.isPending}
+          />
+        </Show>
+      }
+    >
+      <Show
+        when={selected()}
+        fallback={
+          <PreviewOverview
+            tenantId={tenantId()}
+            create={() => create.mutate()}
+            creating={create.isPending}
+          />
+        }
+      >
+        {(summary) => (
+          <LoadedOverview
+            tenantId={tenantId()}
+            summary={summary()}
+            create={() => create.mutate()}
+            creating={create.isPending}
+          />
+        )}
+      </Show>
+    </Show>
   );
 }

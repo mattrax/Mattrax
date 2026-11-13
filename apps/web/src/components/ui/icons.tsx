@@ -162,6 +162,14 @@ export function Laptop(props: IconProps) {
   );
 }
 
+export function Star(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1L12 2Z" />
+    </Icon>
+  );
+}
+
 export function LayoutDashboard(props: IconProps) {
   return (
     <Icon {...props}>
@@ -218,6 +226,19 @@ export function Plus(props: IconProps) {
     <Icon {...props}>
       <path d="M5 12h14" />
       <path d="M12 5v14" />
+    </Icon>
+  );
+}
+
+export function GripVertical(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="5" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="9" cy="19" r="1" />
+      <circle cx="15" cy="5" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="15" cy="19" r="1" />
     </Icon>
   );
 }

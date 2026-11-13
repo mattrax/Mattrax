@@ -2,6 +2,9 @@ import {
   EnterpriseBadRequest,
   DeviceProtocol,
   DeviceStatus,
+  deviceQueryProblem,
+  parseDeviceQueryText,
+  type DeviceQuery,
   type DeviceSearchQuery,
   type DeviceSearchSort,
   type SortDirection,
@@ -33,6 +36,8 @@ export type DeviceSearchFilters = {
   readonly health?: DeviceHealthFilter;
   /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
   readonly push?: DevicePushFilter;
+  /** Structured device query from a shareable table URL. */
+  readonly query?: DeviceQuery;
   readonly limit: number;
   readonly offset: number;
   readonly sort: DeviceSearchSort;
@@ -85,6 +90,12 @@ export const normalizeDeviceSearchQuery = (
     if (!notSeenBefore || cutoff < notSeenBefore) notSeenBefore = cutoff;
   }
 
+  const structured = parseDeviceQueryText(query.query);
+  if (structured) {
+    const problem = deviceQueryProblem(structured);
+    if (problem) throw new EnterpriseBadRequest({ message: problem });
+  }
+
   return {
     q: optionalText(query.q),
     status: query.status,
@@ -93,6 +104,7 @@ export const normalizeDeviceSearchQuery = (
     notSeenBefore,
     health: query.health,
     push: query.push,
+    ...(structured ? { query: structured } : {}),
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),
     sort: query.sort ?? "name",

@@ -270,6 +270,12 @@ function navFor(tenantId: string | undefined): NavItem[] {
   return [
     { id: "overview", label: "Overview", href: base, match: (value) => value === base },
     {
+      id: "dashboards",
+      label: "Dashboards",
+      href: `${base}/dashboards`,
+      match: (value) => value.startsWith(`${base}/dashboards`),
+    },
+    {
       id: "devices",
       label: "Devices",
       href: `${base}/devices`,
@@ -294,23 +300,10 @@ function navFor(tenantId: string | undefined): NavItem[] {
       match: (value) => value.startsWith(`${base}/applications`),
     },
     {
-      id: "software",
-      label: "Software",
-      href: `${base}/software`,
-      match: (value) => value.startsWith(`${base}/software`),
-    },
-    {
-      id: "enrollment",
-      label: "Enrollment",
-      href: `${base}/settings/enrollment`,
-      match: (value) => value.startsWith(`${base}/settings/enrollment`),
-    },
-    {
       id: "settings",
       label: "Settings",
       href: `${base}/settings`,
-      match: (value) =>
-        value.startsWith(`${base}/settings`) && !value.startsWith(`${base}/settings/enrollment`),
+      match: (value) => value.startsWith(`${base}/settings`),
     },
   ];
 }

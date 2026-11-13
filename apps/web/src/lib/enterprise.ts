@@ -14,6 +14,8 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,
+  formatDeviceQueryText,
+  parseDeviceQueryText,
   type AndroidEnrollment,
   type AndroidEnterpriseInfo,
   type AndroidSignupResponse,
@@ -33,10 +35,19 @@ import {
   type AutopilotProfileInfo,
   type AutopilotSettingsResponse,
   type CreateAutopilotProfileRequest,
+  type DeviceCondition,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
+  type DeviceQuery,
   type DeviceSearchQuery,
   type DeviceSearchRow,
+  type Dashboard,
+  type DashboardDataset,
+  type DashboardQueryRequest,
+  type DashboardQueryResponse,
+  type DashboardSummary,
+  type DashboardWidget,
+  type DashboardWidgetType,
   type DynamicGroupCondition,
   type DynamicGroupKind,
   type DynamicGroupRules,
@@ -112,7 +123,9 @@ export type {
   DevicePreRegistrationImportResponse,
   DevicePreRegistrationImportResult,
   DevicePreRegistrationListResponse,
+  DeviceCondition,
   DevicePreRegistrationRow,
+  DeviceQuery,
   DevicePushErrorCode,
   DevicePushFailure,
   DevicePushHealthCounts,
@@ -125,6 +138,13 @@ export type {
   DynamicGroupCondition,
   DynamicGroupKind,
   DynamicGroupRules,
+  Dashboard,
+  DashboardDataset,
+  DashboardQueryRequest,
+  DashboardQueryResponse,
+  DashboardSummary,
+  DashboardWidget,
+  DashboardWidgetType,
   DownloadPolicyApplicationResponse as PolicyApplicationDownload,
   EffectivePolicyResponse,
   EnrollmentAttempt,
@@ -163,6 +183,8 @@ export type {
   WebhookTestResponse,
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain";
+
+export { formatDeviceQueryText, parseDeviceQueryText };
 
 type RouteParam = string | undefined;
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
@@ -214,6 +236,11 @@ export const enterpriseKeys = {
     ["enterprise", "device-pre-registrations", tenantId ?? ""] as const,
   search: (tenantId: RouteParam, term: string, limit = 30) =>
     ["enterprise", "search", tenantId ?? "", term, limit] as const,
+  dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", tenantId ?? ""] as const,
+  dashboard: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "dashboard", tenantId ?? "", id ?? ""] as const,
+  dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
+    ["enterprise", "dashboard-query", tenantId ?? "", request] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
   auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
     ["enterprise", "audit-search", tenantId ?? "", query] as const,
@@ -428,6 +455,113 @@ export const enterprise = {
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  listDashboards: (tenantId: RouteParam) =>
+    endpoint((api) => api.listDashboards({ params: { tenantId: required(tenantId, "tenantId") } })),
+  createDashboard: (
+    tenantId: RouteParam,
+    payload: { name: string; description?: string | null; template?: "overview" },
+  ) =>
+    endpoint((api) =>
+      api.createDashboard({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  getDashboard: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDashboard({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(id, "dashboardId"),
+        },
+      }),
+    ),
+  patchDashboard: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: Partial<Pick<DashboardSummary, "name" | "description" | "isDefault">>,
+  ) =>
+    endpoint((api) =>
+      api.patchDashboard({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(id, "dashboardId"),
+        },
+        payload,
+      }),
+    ),
+  deleteDashboard: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.deleteDashboard({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(id, "dashboardId"),
+        },
+      }),
+    ),
+  createDashboardWidget: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    payload: {
+      type: DashboardWidgetType;
+      title: string;
+      config: unknown;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+    },
+  ) =>
+    endpoint((api) =>
+      api.createDashboardWidget({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+        },
+        payload,
+      }),
+    ),
+  patchDashboardWidget: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    widgetId: RouteParam,
+    payload: Partial<Pick<DashboardWidget, "type" | "title" | "config" | "x" | "y" | "w" | "h">>,
+  ) =>
+    endpoint((api) =>
+      api.patchDashboardWidget({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          widgetId: required(widgetId, "widgetId"),
+        },
+        payload: payload as any,
+      }),
+    ),
+  deleteDashboardWidget: (tenantId: RouteParam, dashboardId: RouteParam, widgetId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteDashboardWidget({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          widgetId: required(widgetId, "widgetId"),
+        },
+      }),
+    ),
+  patchDashboardLayout: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    widgets: ReadonlyArray<{ id: string; x?: number; y?: number; w?: number; h?: number }>,
+  ) =>
+    endpoint((api) =>
+      api.patchDashboardLayout({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+        },
+        payload: { widgets },
+      }),
+    ),
+  queryDashboard: (tenantId: RouteParam, payload: DashboardQueryRequest) =>
+    endpoint((api) =>
+      api.queryDashboard({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
   /** Returns CSV text; callers turn it into a file download. */
   exportDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
@@ -1274,6 +1408,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.list(tenantId, entity, group),
       queryFn: () => enterprise.list(tenantId, entity, group),
       enabled: Boolean(tenantId),
+    }),
+  dashboards: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.dashboards(tenantId),
+      queryFn: () => enterprise.listDashboards(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  dashboard: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.dashboard(tenantId, id),
+      queryFn: () => enterprise.getDashboard(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
     }),
   item: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) =>
     enterpriseQueryOptions({

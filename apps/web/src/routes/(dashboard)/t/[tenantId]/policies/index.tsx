@@ -1,6 +1,6 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   EmptyState,
   formatDate,
@@ -10,6 +10,14 @@ import {
   relativeTime,
 } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
+import {
+  EntityQueryBar,
+  formatEntityQuery,
+  matchesEntityQuery,
+  parseEntityQuery,
+  type EntityCondition,
+  type EntityField,
+} from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
@@ -17,14 +25,36 @@ import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 
 const configurationCount = (row: PolicyRow) => Object.keys(row.configurations ?? {}).length;
 
+const fields: ReadonlyArray<EntityField<PolicyRow>> = [
+  { id: "name", label: "Name", kind: "text", get: (row) => row.name },
+  { id: "notes", label: "Notes", kind: "text", get: (row) => row.notes ?? "" },
+  { id: "priority", label: "Priority", kind: "number", get: (row) => row.priority ?? 0 },
+  {
+    id: "configurations",
+    label: "Configurations",
+    kind: "number",
+    get: (row) => configurationCount(row),
+  },
+];
+
 export default function PoliciesPage() {
   const params = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const [conditions, setConditions] = createSignal<EntityCondition[]>(
+    parseEntityQuery(param(searchParams.query), fields),
+  );
+  const updateConditions = (next: EntityCondition[]) => {
+    setConditions(next);
+    setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
+  };
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
-  const rows = () => policies.data?.rows ?? [];
+  const rows = () =>
+    (policies.data?.rows ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
 
   return (
     <Page>
@@ -48,23 +78,34 @@ export default function PoliciesPage() {
         actions={<LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>}
       />
       <MdmTable<PolicyRow>
-        rows={policies.data?.rows}
+        rows={rows()}
         loading={policies.isPending}
         error={policies.error}
         storageKey="policies"
+        toolbar={
+          <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+        }
         onRowClick={(row) => navigate(`/t/${params.tenantId}/policies/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="policy" selected={selected} clear={clear} />
         )}
         empty={
-          <EmptyState
-            icon={(props) => <ShieldCheck {...props} />}
-            title="No policies"
-            description="Create a policy to start configuring managed devices."
-            action={
-              <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
-            }
-          />
+          conditions().length > 0 ? (
+            <EmptyState
+              icon={(props) => <ShieldCheck {...props} />}
+              title="No matching policies"
+              description="Adjust the filter or clear it from the query bar."
+            />
+          ) : (
+            <EmptyState
+              icon={(props) => <ShieldCheck {...props} />}
+              title="No policies"
+              description="Create a policy to start configuring managed devices."
+              action={
+                <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+              }
+            />
+          )
         }
         columns={[
           {

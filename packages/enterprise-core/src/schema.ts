@@ -1281,6 +1281,60 @@ export const enterpriseGroup = mysqlTable(
   (table) => [index("enterprise_group_organization_id_idx").on(table.organizationId)],
 );
 
+/**
+ * A tenant-shared dashboard. Widgets live in `dashboard_widget` so a layout
+ * drag only touches the widgets it moves, and two administrators editing
+ * different widgets do not overwrite each other's work.
+ */
+export const dashboard = mysqlTable(
+  "dashboard",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    description: text("description"),
+    /** Exactly one dashboard per tenant is rendered at `/t/:id`. */
+    isDefault: boolean("is_default").notNull().default(false),
+    createdByUserId: id("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("dashboard_organization_id_idx").on(table.organizationId),
+    index("dashboard_organization_default_idx").on(table.organizationId, table.isDefault),
+  ],
+);
+
+export const dashboardWidget = mysqlTable(
+  "dashboard_widget",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    dashboardId: id("dashboard_id")
+      .notNull()
+      .references(() => dashboard.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 24 }).notNull(),
+    title: shortText("title").notNull(),
+    /** Widget-specific query/markdown configuration. */
+    config: json("config").notNull(),
+    /** Twelve-column grid coordinates, stored in grid units. */
+    x: int("x").notNull().default(0),
+    y: int("y").notNull().default(0),
+    w: int("w").notNull().default(4),
+    h: int("h").notNull().default(3),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("dashboard_widget_dashboard_idx").on(table.dashboardId),
+    index("dashboard_widget_organization_idx").on(table.organizationId),
+  ],
+);
+
 export const policy = mysqlTable(
   "policy",
   {
@@ -1580,6 +1634,8 @@ export const relations = defineRelations(
     vppAsset,
     deviceVppAssignment,
     enterpriseGroup,
+    dashboard,
+    dashboardWidget,
     policy,
     policyDeployment,
     configuration,

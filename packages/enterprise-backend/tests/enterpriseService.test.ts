@@ -202,6 +202,77 @@ describe("enterprise service tenant flow", () => {
     );
   });
 
+  it("creates shared dashboards and applies partial widget updates", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const created = await runEffect(
+      service.createDashboard(request(headers), tenant.id, {
+        name: "Ops",
+        template: "overview",
+      }),
+    );
+    const dashboard = await runEffect(
+      service.getDashboard(request(headers), tenant.id, created.id),
+    );
+    expect(dashboard).toMatchObject({ name: "Ops", isDefault: true });
+    expect(dashboard.widgets.length).toBeGreaterThan(0);
+
+    const widget = dashboard.widgets[0];
+    const patched = await runEffect(
+      service.patchDashboardWidget(request(headers), tenant.id, created.id, widget.id, {
+        title: "Renamed widget",
+      }),
+    );
+    expect(patched.title).toBe("Renamed widget");
+    // Omitted fields keep their previous values.
+    expect(patched.x).toBe(widget.x);
+    expect(patched.h).toBe(widget.h);
+
+    await runEffect(
+      service.patchDashboardLayout(request(headers), tenant.id, created.id, {
+        widgets: [{ id: widget.id, x: 2 }],
+      }),
+    );
+    const afterLayout = await runEffect(
+      service.getDashboard(request(headers), tenant.id, created.id),
+    );
+    const moved = afterLayout.widgets.find((item: { id: string }) => item.id === widget.id);
+    expect(moved.x).toBe(2);
+    expect(moved.y).toBe(widget.y);
+
+    const query = await runEffect(
+      service.queryDashboard(request(headers), tenant.id, {
+        dataset: "devices",
+        query: { all: [] },
+      }),
+    );
+    expect(query.total).toBe(0);
+    expect(query.buckets).toEqual([]);
+
+    const second = await runEffect(
+      service.createDashboard(request(headers), tenant.id, { name: "Second" }),
+    );
+    await runEffect(
+      service.patchDashboard(request(headers), tenant.id, second.id, { isDefault: true }),
+    );
+    const list = await runEffect(service.listDashboards(request(headers), tenant.id));
+    expect(list.dashboards.find((item: { id: string }) => item.id === second.id)?.isDefault).toBe(
+      true,
+    );
+    expect(list.dashboards.find((item: { id: string }) => item.id === created.id)?.isDefault).toBe(
+      false,
+    );
+
+    // Deleting the default promotes the remaining dashboard.
+    await runEffect(service.deleteDashboard(request(headers), tenant.id, second.id));
+    const afterDelete = await runEffect(service.listDashboards(request(headers), tenant.id));
+    expect(afterDelete.dashboards).toHaveLength(1);
+    expect(afterDelete.dashboards[0].isDefault).toBe(true);
+  });
+
   it("lists only tenants for the authenticated user", async () => {
     const { service, headers } = await makeContext();
     const owned = await runEffect(

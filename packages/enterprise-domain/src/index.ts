@@ -16,6 +16,8 @@ export * from "./branding.ts";
 export * from "./webhooks.ts";
 export * from "./deviceHealth.ts";
 export * from "./dynamicGroups.ts";
+export * from "./deviceQuery.ts";
+export * from "./dashboard.ts";
 export {
   applicationKey,
   applicationPrefix,

@@ -26,14 +26,26 @@ export type DynamicGroupSyncResult = {
 
 type DeviceRow = typeof s.device.$inferSelect;
 type DeclarationRow = typeof s.deviceDeclaration.$inferSelect;
+type ApplicationRow = typeof s.deviceApplication.$inferSelect;
 
-const deviceSnapshot = (device: DeviceRow, health: ReturnType<typeof deriveDeviceHealth>) => ({
+const deviceSnapshot = (
+  device: DeviceRow,
+  health: ReturnType<typeof deriveDeviceHealth>,
+  applications: ReadonlyArray<{ bundleId: string; name: string | null }> = [],
+) => ({
+  name: device.name,
   proto: device.proto,
   model: device.model,
   osVersion: device.osVersion,
+  osEdition: device.osEdition,
   serial: device.serial,
   assetTag: device.assetTag,
+  status: device.status,
+  batteryHealth: device.batteryHealth,
   lastSeenAt: device.lastSeenAt,
+  enrolledAt: device.enrolledAt,
+  fileVaultEnabled: device.fileVaultEnabled,
+  applications,
   health: { level: health.level, stale: health.stale },
 });
 
@@ -62,6 +74,39 @@ const loadDeclarations = (db: EnterpriseDb, deviceIds: ReadonlyArray<string>) =>
 
 const loadTenantDevices = (db: EnterpriseDb, organizationId: string) =>
   db.select().from(s.device).where(eq(s.device.organizationId, organizationId));
+
+const loadApplications = (
+  db: EnterpriseDb,
+  organizationId: string,
+  deviceIds: ReadonlyArray<string>,
+) =>
+  deviceIds.length === 0
+    ? Effect.succeed([])
+    : db
+        .select({
+          deviceId: s.deviceApplication.deviceId,
+          bundleId: s.deviceApplication.bundleId,
+          name: s.deviceApplication.name,
+        })
+        .from(s.deviceApplication)
+        .where(
+          and(
+            eq(s.deviceApplication.organizationId, organizationId),
+            inArray(s.deviceApplication.deviceId, [...deviceIds]),
+          ),
+        );
+
+const applicationsByDevice = (
+  rows: ReadonlyArray<Pick<ApplicationRow, "deviceId" | "bundleId" | "name">>,
+) => {
+  const map = new Map<string, Array<{ bundleId: string; name: string | null }>>();
+  for (const row of rows) {
+    const list = map.get(row.deviceId) ?? [];
+    list.push({ bundleId: row.bundleId, name: row.name });
+    map.set(row.deviceId, list);
+  }
+  return map;
+};
 
 /**
  * Recompute a single dynamic group.
@@ -124,6 +169,13 @@ export const syncDynamicGroup = (
       devices.map((device) => device.id),
     );
     const declarationsFor = declarationsByDevice(declarations);
+    const applications = applicationsByDevice(
+      yield* loadApplications(
+        db,
+        organizationId,
+        devices.map((device) => device.id),
+      ),
+    );
     const matching = new Set<string>();
     for (const device of devices) {
       const health = deriveDeviceHealth({
@@ -140,7 +192,13 @@ export const syncDynamicGroup = (
         now,
         ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
       });
-      if (evaluateDynamicGroupRules(rules, deviceSnapshot(device, health), { now }))
+      if (
+        evaluateDynamicGroupRules(
+          rules,
+          deviceSnapshot(device, health, applications.get(device.id) ?? []),
+          { now },
+        )
+      )
         matching.add(device.id);
     }
 
@@ -249,6 +307,9 @@ export const syncDynamicGroupsForDevice = (
     if (groups.length === 0) return [];
 
     const declarations = yield* loadDeclarations(db, [device.id]);
+    const applications = applicationsByDevice(
+      yield* loadApplications(db, organizationId, [device.id]),
+    );
     const health = deriveDeviceHealth({
       status: device.status,
       lastSeenAt: device.lastSeenAt,
@@ -286,7 +347,11 @@ export const syncDynamicGroupsForDevice = (
       evaluated.push(group.id);
       const matches =
         !manualGroups.has(group.id) &&
-        evaluateDynamicGroupRules(rules, deviceSnapshot(device, health), { now });
+        evaluateDynamicGroupRules(
+          rules,
+          deviceSnapshot(device, health, applications.get(device.id) ?? []),
+          { now },
+        );
       const isDynamicMember = dynamicGroups.has(group.id);
       if (matches && !isDynamicMember) toAdd.push(group.id);
       if (!matches && isDynamicMember) toRemove.push(group.id);
@@ -386,6 +451,13 @@ export const previewDynamicGroup = (
       devices.map((device) => device.id),
     );
     const declarationsFor = declarationsByDevice(declarations);
+    const applications = applicationsByDevice(
+      yield* loadApplications(
+        db,
+        organizationId,
+        devices.map((device) => device.id),
+      ),
+    );
     const matched: Array<{ id: string; name: string }> = [];
     for (const device of devices) {
       const health = deriveDeviceHealth({
@@ -402,7 +474,13 @@ export const previewDynamicGroup = (
         now,
         ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
       });
-      if (evaluateDynamicGroupRules(rules, deviceSnapshot(device, health), { now }))
+      if (
+        evaluateDynamicGroupRules(
+          rules,
+          deviceSnapshot(device, health, applications.get(device.id) ?? []),
+          { now },
+        )
+      )
         matched.push({ id: device.id, name: device.name });
     }
     matched.sort((left, right) => left.name.localeCompare(right.name));

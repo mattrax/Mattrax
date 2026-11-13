@@ -5,11 +5,11 @@ test.describe("software inventory and device security", () => {
   test("shows the tenant software inventory and scopes API results", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Software Tenant");
 
+    // The old Software destination now points at dashboards; inventory is a
+    // projection an administrator can render as a table widget.
     await gotoHydrated(page, `/t/${tenant.id}/software`);
-    await expect(page.getByRole("heading", { name: "Software", exact: true })).toBeVisible();
-    await expect(page.getByText("No software reported")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Managed", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Updates available" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/dashboards$`));
+    await expect(page.getByRole("heading", { name: "Dashboards", exact: true })).toBeVisible();
 
     const inventory = await api<{ applications: unknown[]; total: number }>(
       page,

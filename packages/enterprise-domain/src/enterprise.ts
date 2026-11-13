@@ -2,6 +2,18 @@ import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 import {
+  CreateDashboardRequest,
+  CreateDashboardWidgetRequest,
+  Dashboard,
+  DashboardLayoutRequest,
+  DashboardListResponse,
+  DashboardQueryRequest,
+  DashboardQueryResponse,
+  DashboardWidget,
+  PatchDashboardRequest,
+  PatchDashboardWidgetRequest,
+} from "./dashboard.ts";
+import {
   STEP_UP_ACTIONS,
   StepUpGrantResponse,
   StepUpMethods,
@@ -28,6 +40,12 @@ const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String 
 const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
 const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
 const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
+const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
+const TenantDashboardWidgetParam = {
+  tenantId: Schema.String,
+  dashboardId: Schema.String,
+  widgetId: Schema.String,
+};
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
@@ -1709,6 +1727,8 @@ export type DeviceHealthFilter = typeof DeviceHealthFilter.Type;
 export const DeviceSearchQuery = Schema.Struct({
   /** Matches name, serial, model, `dmIdentifier` and asset tag. */
   q: Schema.optional(Schema.String),
+  /** Shareable structured filter encoded by `formatDeviceQueryText`. */
+  query: Schema.optional(Schema.String),
   status: Schema.optional(DeviceStatus),
   proto: Schema.optional(DeviceProtocol),
   /** Only devices that are members of this group. */
@@ -2956,6 +2976,98 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       query: DeviceSearchQuery,
       success: DeviceSearchResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listDashboards", "/v1/tenants/:tenantId/dashboards", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: DashboardListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createDashboard", "/v1/tenants/:tenantId/dashboards", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: CreateDashboardRequest,
+      success: Schema.Struct({ id: Schema.String }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getDashboard", "/v1/tenants/:tenantId/dashboards/:dashboardId", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantDashboardParam,
+      success: Dashboard,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchDashboard", "/v1/tenants/:tenantId/dashboards/:dashboardId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantDashboardParam,
+      payload: PatchDashboardRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteDashboard", "/v1/tenants/:tenantId/dashboards/:dashboardId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantDashboardParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "createDashboardWidget",
+      "/v1/tenants/:tenantId/dashboards/:dashboardId/widgets",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDashboardParam,
+        payload: CreateDashboardWidgetRequest,
+        success: DashboardWidget,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchDashboardWidget",
+      "/v1/tenants/:tenantId/dashboards/:dashboardId/widgets/:widgetId",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDashboardWidgetParam,
+        payload: PatchDashboardWidgetRequest,
+        success: DashboardWidget,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteDashboardWidget",
+      "/v1/tenants/:tenantId/dashboards/:dashboardId/widgets/:widgetId",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDashboardWidgetParam,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchDashboardLayout",
+      "/v1/tenants/:tenantId/dashboards/:dashboardId/layout",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDashboardParam,
+        payload: DashboardLayoutRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("queryDashboard", "/v1/tenants/:tenantId/dashboard-query", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      payload: DashboardQueryRequest,
+      success: DashboardQueryResponse,
     }),
   )
   .add(
