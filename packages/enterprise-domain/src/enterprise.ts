@@ -1605,8 +1605,17 @@ export const PolicyDeploymentsResponse = Schema.Struct({
   deployments: Schema.Array(PolicyDeploymentInfo),
 });
 
+/** A tenant member returned by the command palette's cross-entity search. */
+export const UserSearchRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  role: Schema.String,
+});
+export type UserSearchRow = typeof UserSearchRow.Type;
+
 export const SearchResult = Schema.Struct({
-  rows: Schema.Array(Schema.Union([DeviceRow, GroupRow, PolicyRow])),
+  rows: Schema.Array(Schema.Union([DeviceRow, GroupRow, PolicyRow, UserSearchRow])),
 });
 
 export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) });

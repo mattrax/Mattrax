@@ -184,6 +184,24 @@ describe("enterprise service tenant flow", () => {
     ]);
   });
 
+  it("includes tenant members in cross-entity search", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const found = await runEffect(
+      service.search(request(headers), tenant.id, { q: "owner", limit: 10 }),
+    );
+    expect(found.rows).toContainEqual(
+      expect.objectContaining({
+        name: "Owner",
+        email: "owner@example.com",
+        role: "owner",
+      }),
+    );
+  });
+
   it("lists only tenants for the authenticated user", async () => {
     const { service, headers } = await makeContext();
     const owned = await runEffect(

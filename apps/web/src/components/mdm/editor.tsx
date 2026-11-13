@@ -15,6 +15,7 @@ import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 
@@ -96,12 +97,37 @@ export function PolicyConfigurationEditor() {
     setCanEdit(false);
   };
 
+  useCommands([
+    {
+      id: "policy-editor-save",
+      title: "Save policy changes",
+      subtitle: "Persist the edited configurations to the policy",
+      group: "This page",
+      shortcut: chord("s", { mod: true }),
+      enabled: () => canEdit() && dirty(),
+      run: () => {
+        save.mutate();
+      },
+    },
+    {
+      id: "policy-editor-edit",
+      title: "Toggle edit mode",
+      subtitle: "Switch between read-only and editable configurations",
+      group: "This page",
+      run: toggleEdit,
+    },
+    {
+      id: "policy-editor-discard",
+      title: "Discard unsaved edits",
+      subtitle: "Restore the policy's stored configurations",
+      group: "This page",
+      enabled: () => canEdit() && dirty(),
+      run: cancel,
+    },
+  ]);
+
   onSettled(() => {
     const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (canEdit() && dirty()) save.mutate();
-      }
       if (event.key === "Escape" && canEdit()) cancel();
     };
     window.addEventListener("keydown", handler);

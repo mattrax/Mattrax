@@ -7045,11 +7045,28 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(limit);
+        const users = yield* db
+          .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+            role: schema.member.role,
+          })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(
+            and(
+              eq(schema.member.organizationId, ctx.organization.id),
+              or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
+            ),
+          )
+          .limit(limit);
         return {
           rows: [
             ...devices.map(rowDevice),
             ...groups.map((row: EnterpriseGroup) => rowGroup(row)),
             ...(yield* Effect.all(policies.map((row) => rowPolicy(row)))),
+            ...users,
           ],
         };
       }),

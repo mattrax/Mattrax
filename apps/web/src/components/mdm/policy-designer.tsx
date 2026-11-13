@@ -43,6 +43,7 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import { authClient } from "~/lib/auth";
+import { chord, useCommands } from "~/lib/commands";
 import { errorMessage } from "~/lib/errors";
 import {
   collectionProperties,
@@ -978,6 +979,78 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setJustSaved(true);
     void props.onSave?.(policyDraft());
   };
+
+  useCommands([
+    {
+      id: "policy-designer-save",
+      title: "Save policy",
+      subtitle: "Save the designer draft to this policy",
+      group: "This page",
+      icon: Check,
+      shortcut: chord("s", { mod: true }),
+      enabled: canSave,
+      run: save,
+    },
+    {
+      id: "policy-designer-export",
+      title: "Export policy",
+      subtitle: "Download the artifact bundle",
+      group: "This page",
+      icon: Download,
+      shortcut: chord("e", { mod: true, shift: true }),
+      enabled: () => policySelectionCount(policyDraft()) > 0,
+      run: download,
+    },
+    {
+      id: "policy-designer-search",
+      title: "Focus setting search",
+      subtitle: "Jump to the catalogue search box",
+      group: "This page",
+      icon: Search,
+      shortcut: chord("f", { mod: true, shift: true }),
+      run: () => {
+        setMobileView("browse");
+        queueMicrotask(() =>
+          document.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')?.focus(),
+        );
+      },
+    },
+    {
+      id: "policy-designer-apple",
+      title: "Switch to Apple",
+      subtitle: "Edit the Apple selections in this policy",
+      group: "This page",
+      shortcut: chord("1", { alt: true }),
+      run: () => choosePlatform("apple"),
+    },
+    {
+      id: "policy-designer-windows",
+      title: "Switch to Windows",
+      subtitle: "Edit the Windows selections in this policy",
+      group: "This page",
+      shortcut: chord("2", { alt: true }),
+      run: () => choosePlatform("windows"),
+    },
+    {
+      id: "policy-designer-android",
+      title: "Switch to Android",
+      subtitle: "Edit the Android selections in this policy",
+      group: "This page",
+      shortcut: chord("3", { alt: true }),
+      run: () => choosePlatform("android"),
+    },
+    {
+      id: "policy-designer-clear",
+      title: "Clear current platform settings",
+      subtitle: "Remove the collections in the active platform draft",
+      group: "This page",
+      icon: RotateCcw,
+      enabled: () => selections().length > 0,
+      run: () => {
+        setStartOverOpen(true);
+      },
+    },
+  ]);
 
   const platformLabel = (id: PlatformId | null | undefined) => {
     if (!id) return "";
