@@ -7,14 +7,14 @@ test.describe("identity directory pages", () => {
     await gotoHydrated(page, `/t/${tenant.id}/settings/identity`);
     await expect(page.getByText("Single sign-on", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Directory sync" }).click();
+    await page.getByRole("link", { name: "Directory sync" }).click();
     await expect(page.getByText("Microsoft Entra directory sync")).toBeVisible();
     await expect(page.getByText(/Graph (not )?configured/)).toBeVisible();
     await expect(page.getByLabel("Automatic sync")).toBeVisible();
     await expect(page.getByLabel("Automatic sync")).toHaveValue("0");
     await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Domains" }).click();
+    await page.getByRole("link", { name: "Domains" }).click();
     await expect(page.getByText("Verified domains", { exact: true })).toBeVisible();
     await expect(page.getByText(/No verified domains yet/)).toBeVisible();
   });

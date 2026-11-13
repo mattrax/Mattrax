@@ -110,8 +110,15 @@ export async function verifyEmail(page: Page, email: string) {
 
 export async function signIn(page: Page, email: string, password = PASSWORD) {
   await page.goto("/login", { waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () => document.documentElement.dataset.hydrated === "true",
+    undefined,
+    { timeout: 20_000 },
+  );
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
+  await expect(page.locator("#email")).toHaveValue(email);
+  await expect(page.locator("#password")).toHaveValue(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 }

@@ -7,7 +7,7 @@ what a policy change will do to a fleet.
 
 - **Account** — a person who signs in. An account has a name, email, password, optional
   authenticator app and optional passkeys.
-- **Tenant** — an isolated workspace with its own devices, groups, policies, enrollment
+- **Tenant** — an isolated environment with its own devices, groups, policies, enrollment
   settings, branding, audit log, webhooks and billing subscription. Tenant ids are opaque
   and are never reused.
 - **Member** — the link between an account and a tenant, with a role.

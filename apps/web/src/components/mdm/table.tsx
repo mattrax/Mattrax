@@ -1,14 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Button, buttonVariants } from "~/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { ChevronsUpDown, Search as SearchIcon } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
@@ -207,35 +199,39 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 ? `${rows().length} rows`
                 : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger
+          <details class="group/columns relative">
+            <summary
               class={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "gap-1.5 focus-visible:ring-2 focus-visible:ring-ring/60",
+                "list-none gap-1.5 focus-visible:ring-2 focus-visible:ring-ring/60 [&::-webkit-details-marker]:hidden",
               )}
               aria-label="Choose visible columns"
             >
               <ChevronsUpDown class="size-3.5" />
               <span class="hidden sm:inline">Columns</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-52 rounded-xl border bg-popover p-1.5 shadow-2xl shadow-black/50">
-              <DropdownMenuLabel class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            </summary>
+            <div class="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+              <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Visible columns
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator class="my-1 h-px bg-border" />
+              </div>
+              <div class="my-1 h-px bg-border" />
               <For each={props.columns}>
                 {(column) => (
-                  <DropdownMenuCheckboxItem
-                    checked={!hidden()[column.id] && !column.defaultHidden}
-                    onChange={(value) => toggleColumn(column.id, value)}
-                    class="rounded-md px-2 py-1.5 text-[12.5px]"
-                  >
+                  <label class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-white/[0.05]">
+                    <input
+                      type="checkbox"
+                      class="size-3.5 accent-[var(--brand)]"
+                      checked={!hidden()[column.id] && !column.defaultHidden}
+                      onChange={(event) =>
+                        toggleColumn(column.id, event.currentTarget.checked)
+                      }
+                    />
                     {column.header}
-                  </DropdownMenuCheckboxItem>
+                  </label>
                 )}
               </For>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div>
+          </details>
         </div>
       </div>
 

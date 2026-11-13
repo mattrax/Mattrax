@@ -23,6 +23,7 @@ test.describe("passkeys", () => {
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.getByRole("button", { name: /sign in with a passkey/i }).click();
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 

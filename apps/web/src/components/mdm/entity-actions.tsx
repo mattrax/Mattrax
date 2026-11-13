@@ -12,10 +12,6 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { ErrorText } from "./common";
@@ -90,7 +86,7 @@ function ConfirmAction(props: {
 function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "policies" }) {
   const params = useParams();
   const qc = useQueryClient();
-  const [open, setOpen] = createSignal(false);
+  let scopeRef: HTMLDetailsElement | undefined;
   const [changes, setChanges] = createSignal<Record<string, "all" | "none">>({});
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
@@ -111,7 +107,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
       ),
     onSuccess: async () => {
       setChanges({});
-      setOpen(false);
+      scopeRef?.removeAttribute("open");
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     },
@@ -119,39 +115,39 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
   const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
 
   return (
-    <DropdownMenu open={open()} onOpenChange={setOpen}>
-      <DropdownMenuTrigger
-        class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+    <details ref={scopeRef} class="relative">
+      <summary
+        class={cn(buttonVariants({ variant: "outline", size: "sm" }), "list-none gap-1.5 [&::-webkit-details-marker]:hidden")}
         aria-label="Assign selected rows to groups"
       >
         Scope
-      </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-80 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
+      </summary>
+      <div class="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
         <For each={groupRows()}>
           {(group) => (
-            <DropdownMenuItem
-              closeOnSelect={false}
-              onSelect={() =>
+            <button
+              type="button"
+              onClick={() =>
                 setChanges((value) => ({
                   ...value,
                   [group.id]: value[group.id] === "all" ? "none" : "all",
                 }))
               }
-              class="flex justify-between"
+              class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
             >
               <span>{group.name}</span>
-              <span>
+              <span class="text-muted-foreground">
                 {changes()[group.id] === "all"
                   ? "Assign"
                   : changes()[group.id] === "none"
                     ? "Remove"
                     : ""}
               </span>
-            </DropdownMenuItem>
+            </button>
           )}
         </For>
         <ErrorText error={patch.error ?? groups.error} />
-        <div class="border-t p-2 text-right">
+        <div class="mt-1 flex items-center justify-between gap-2 border-t border-border px-2 pb-1 pt-2">
           <Button
             size="sm"
             disabled={Object.keys(changes()).length === 0 || patch.isPending}
@@ -160,8 +156,8 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
             Apply
           </Button>
         </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </div>
+    </details>
   );
 }
 

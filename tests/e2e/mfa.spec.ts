@@ -26,8 +26,10 @@ test.describe("authenticator MFA", () => {
     // Enrollment rotates the security revision, so the current session is gone.
     await card.getByRole("button", { name: /sign in again/i }).click();
     await expect(page).toHaveURL(/\/login/);
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
     await page.locator("#password").fill(PASSWORD);
+    await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();
 
     await expect(page.getByText(/two-factor authentication required/i)).toBeVisible();
@@ -36,7 +38,7 @@ test.describe("authenticator MFA", () => {
       return response.status;
     });
     expect(beforeMfa).toBe(401);
-    await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
+    await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
     await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
@@ -45,8 +47,10 @@ test.describe("authenticator MFA", () => {
     await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
     await page.locator("#password").fill(PASSWORD);
+    await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]!);
@@ -72,11 +76,13 @@ test.describe("authenticator MFA", () => {
     await disableForm.getByRole("button", { name: /^disable$/i }).click();
     await expect(enabledCard.getByText(/security settings updated/i)).toBeVisible();
 
-    await page.goto("/login");
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);
     await page.locator("#password").fill(PASSWORD);
+    await expect(page.locator("#password")).toHaveValue(PASSWORD);
     await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard|\/t\//);
+    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);
   });
 

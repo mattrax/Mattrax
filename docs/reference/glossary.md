@@ -29,7 +29,7 @@
 | **SCIM**             | System for Cross-domain Identity Management. Provisions users and groups.                                |
 | **Step-up**          | A recent re-authentication required for sensitive actions.                                               |
 | **SyncML**           | OMA-DM protocol used by Windows MDM.                                                                     |
-| **Tenant**           | An isolated workspace with its own devices, policies and billing.                                        |
+| **Tenant**           | An isolated environment with its own devices, policies and billing.                                        |
 | **VPP**              | Apple Volume Purchase Program, now Apps & Books.                                                         |
 | **WSTEP**            | Windows certificate enrollment protocol used by MDM.                                                     |
 | **Webhook**          | An outbound HMAC-signed event delivered to your endpoint.                                                |
