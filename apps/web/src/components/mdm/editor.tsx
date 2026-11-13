@@ -110,10 +110,15 @@ export function PolicyConfigurationEditor() {
 
   return (
     <Page wide>
+      <a
+        href={`/t/${params.tenantId}/policies/${params.policyId}`}
+        class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ← Back to policy
+      </a>
       <PageHeader
-        eyebrow="Policy"
         title={row()?.name ?? "Policy editor"}
-        description={dirty() ? "Policy has local changes" : "Policy has no local changes"}
+        description="Review and edit the configurations stored on this policy."
         meta={
           <Show when={row()}>
             <Badge variant="outline" class="gap-1.5 text-muted-foreground">
@@ -135,14 +140,6 @@ export function PolicyConfigurationEditor() {
         }
         actions={
           <>
-            <Button
-              as="a"
-              href={`/t/${params.tenantId}/policies/${params.policyId}`}
-              variant="ghost"
-              class="gap-1.5"
-            >
-              Back to policy
-            </Button>
             <Button
               as="a"
               href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
