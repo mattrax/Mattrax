@@ -53,7 +53,7 @@ These are implemented but not proven end to end in this repository.
 
 - [ ] `ORIGIN` is the public HTTPS origin.
 - [ ] `AUTH_SECRET` is generated, backed up and not rotated without re-sealing.
-- [ ] Hyperdrive points at a managed MySQL with TLS.
+- [ ] Hyperdrive points at a managed MySQL with TLS and `caching.disabled` is `true`.
 - [ ] R2 bucket and Email Sending are configured.
 - [ ] Migrations are applied before deploying code.
 - [ ] `/api/health` and `/api/ready` return 200.

@@ -13,6 +13,20 @@ This page lists the runtime configuration for the Cloud API Worker. Secrets are 
 Back up `AUTH_SECRET`. Rotating it makes existing sealed values unreadable. There is no
 online re-wrap; export and re-seal with the old secret before rotating.
 
+## Hyperdrive
+
+The API Worker reaches MySQL through Hyperdrive. Query caching must stay disabled:
+
+```bash
+cf hyperdrive update <hyperdrive-id> --caching-disabled true
+cf hyperdrive restart <hyperdrive-id>
+```
+
+Tenant creation writes the membership row and the next `/api/v1/me` reads it back. With the
+default 60-second query cache, a brand-new tenant can be missing from the switcher for about
+a minute even though the write succeeded. Disabling the cache keeps every read consistent
+with the write and avoids similar stale reads on policy and membership changes.
+
 ## Auth and origins
 
 | Variable          | Default  | Purpose                                    |
