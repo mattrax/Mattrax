@@ -64,6 +64,7 @@ import {
   lt,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
@@ -679,7 +680,7 @@ export const createEnterpriseService = ({
     access: "read" | "write" | "delete" = "read",
   ) =>
     Effect.gen(function* () {
-      const { user, apiToken } = yield* auth.requireUser({ headers: request.headers });
+      const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
 
       // An unverified address cannot reach tenant data through either a
       // browser session or a bearer token. Tokens resolve to their owner's user
@@ -740,7 +741,18 @@ export const createEnterpriseService = ({
           );
       }
 
-      return { user, organization, member };
+      const credential = apiToken
+        ? { type: "api_token" as const, id: apiToken.id, name: apiToken.name }
+        : oauth
+          ? {
+              type: "oauth" as const,
+              id: oauth.connectionId,
+              name: oauth.clientName,
+              clientId: oauth.clientId,
+            }
+          : undefined;
+
+      return { user, organization, member, credential };
     });
 
   const snapshotPolicy = (
@@ -791,6 +803,14 @@ export const createEnterpriseService = ({
     ctx: {
       readonly user: { readonly id: string; readonly email: string };
       readonly organization: { readonly id: string };
+      readonly credential?:
+        | { readonly type: "api_token"; readonly id: string; readonly name: string }
+        | {
+            readonly type: "oauth";
+            readonly id: string;
+            readonly name: string;
+            readonly clientId: string;
+          };
     },
     action: string,
     targetType: string,
@@ -798,6 +818,15 @@ export const createEnterpriseService = ({
     metadata?: unknown,
   ) =>
     Effect.gen(function* () {
+      const metadataObject =
+        metadata === undefined
+          ? {}
+          : typeof metadata === "object" && metadata !== null
+            ? (metadata as Record<string, unknown>)
+            : { value: metadata };
+      const enrichedMetadata = ctx.credential
+        ? { ...metadataObject, credential: ctx.credential }
+        : metadataObject;
       yield* db.insert(schema.auditLog).values({
         id: id(),
         organizationId: ctx.organization.id,
@@ -806,9 +835,18 @@ export const createEnterpriseService = ({
         action,
         targetType,
         targetId,
-        metadata: metadata === undefined ? null : (metadata as object),
+        metadata: Object.keys(enrichedMetadata).length === 0 ? null : enrichedMetadata,
         createdAt: now(),
       });
+      if (ctx.credential?.type === "oauth")
+        yield* db
+          .update(schema.mcpOAuthConnection)
+          .set({
+            lastUsedAt: now(),
+            lastAction: action,
+            requestCount: sql`${schema.mcpOAuthConnection.requestCount} + 1`,
+          })
+          .where(eq(schema.mcpOAuthConnection.id, ctx.credential.id));
       // A small set of administrator actions are also customer-facing. Device
       // lifecycle events are mostly emitted from the protocol path; deletion
       // only exists here.
@@ -8162,6 +8200,27 @@ export const createEnterpriseService = ({
       auth.requestEmailChange(webRequestFromRequest(request, origin), payload),
     verifyEmailChange: (_request, payload) => auth.verifyEmailChange(payload),
     listApiTokens: (request) => auth.listApiTokens(webRequestFromRequest(request, origin)),
+    listMcpConnections: (request) =>
+      auth.listMcpConnections(webRequestFromRequest(request, origin)),
+    revokeMcpConnection: (request, connectionId) =>
+      auth.revokeMcpConnection(webRequestFromRequest(request, origin), connectionId),
+    recordMcpActivity: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const body = payload as {
+          tool?: string;
+          method?: string;
+          path?: string;
+          status?: number;
+        };
+        yield* audit(ctx, "mcp.tool_called", "mcp", null, {
+          tool: body.tool,
+          method: body.method,
+          path: body.path,
+          status: body.status,
+        });
+        return ok;
+      }),
     createApiToken: (request, payload) =>
       auth.createApiToken(webRequestFromRequest(request, origin), payload),
     revokeApiToken: (request, tokenId) =>
@@ -8297,6 +8356,19 @@ export const enterpriseHandlers = (
     )
     .handle("listApiTokens", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listApiTokens(request)),
+    )
+    .handle("listMcpConnections", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listMcpConnections(request)),
+    )
+    .handle("revokeMcpConnection", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revokeMcpConnection(request, params.connectionId),
+      ),
+    )
+    .handle("recordMcpActivity", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.recordMcpActivity(request, params.tenantId, payload),
+      ),
     )
     .handle("createApiToken", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.createApiToken(request, payload)),

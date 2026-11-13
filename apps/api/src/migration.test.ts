@@ -164,7 +164,11 @@ describe("APNs push telemetry migration", () => {
 
 describe("scoped API token migration", () => {
   const names = migrationNames();
-  const tokenMigrations = names.filter((name) => readMigration(name).includes("`scopes`"));
+  const tokenMigrations = names.filter(
+    (name) =>
+      readMigration(name).includes("ALTER TABLE `account_api_token`") &&
+      readMigration(name).includes("`scopes`"),
+  );
 
   it("is added by exactly one migration", () => {
     expect(tokenMigrations).toHaveLength(1);

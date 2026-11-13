@@ -52,7 +52,53 @@ async function preloadSession(request: Request): Promise<void> {
  * `/api/*` and `/mdm/*` proxy to the API Worker over its `API` service
  * binding; every other request falls through to the page render.
  */
+const oauthMetadata = (url: URL): Response | undefined => {
+  const origin = url.origin;
+  const json = (body: unknown) =>
+    Response.json(body, {
+      headers: {
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+      },
+    });
+
+  if (
+    url.pathname === "/.well-known/oauth-protected-resource" ||
+    url.pathname === "/.well-known/oauth-protected-resource/mcp"
+  )
+    return json({
+      resource: `${origin}/mcp`,
+      authorization_servers: [origin],
+      bearer_methods_supported: ["header"],
+      scopes_supported: ["mcp"],
+      resource_name: "Mattrax MCP",
+      resource_documentation: `${origin}/docs/`,
+    });
+
+  if (
+    url.pathname === "/.well-known/oauth-authorization-server" ||
+    url.pathname === "/.well-known/oauth-authorization-server/api/mcp"
+  )
+    return json({
+      issuer: origin,
+      authorization_endpoint: `${origin}/api/oauth/authorize`,
+      token_endpoint: `${origin}/api/oauth/token`,
+      registration_endpoint: `${origin}/api/oauth/register`,
+      revocation_endpoint: `${origin}/api/oauth/revoke`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none"],
+      scopes_supported: ["mcp"],
+      service_documentation: `${origin}/docs/`,
+    });
+
+  return undefined;
+};
+
 const middleware: StartMiddleware = async (event, next) => {
+  const metadata = oauthMetadata(new URL(event.request.url));
+  if (metadata) return metadata;
   await preloadSession(event.request);
   return api(event, next);
 };

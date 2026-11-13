@@ -65,12 +65,27 @@ const actorLabel = (entry: AuditLogEntry) => {
   return entry.actorEmail;
 };
 
+const credentialOf = (entry: AuditLogEntry) => {
+  const metadata = entry.metadata;
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const credential = (metadata as Record<string, unknown>).credential;
+  if (!credential || typeof credential !== "object") return undefined;
+  const value = credential as { type?: unknown; name?: unknown };
+  if (value.type !== "api_token" && value.type !== "oauth") return undefined;
+  return {
+    type: value.type,
+    name: typeof value.name === "string" ? value.name : undefined,
+  };
+};
+
 /** Compact one-line metadata preview; the full JSON is in the export. */
 const summarizeMetadata = (metadata: unknown) => {
   if (metadata === null || metadata === undefined) return "";
   if (typeof metadata === "string") return metadata;
   if (typeof metadata !== "object") return JSON.stringify(metadata);
-  const rows = Object.entries(metadata as Record<string, unknown>);
+  const rows = Object.entries(metadata as Record<string, unknown>).filter(
+    ([key]) => key !== "credential",
+  );
   if (rows.length === 0) return "";
   return rows
     .slice(0, 3)
@@ -404,6 +419,14 @@ export default function AuditSettingsPage() {
                           title={actorLabel(entry)}
                         >
                           {actorLabel(entry)}
+                          <Show when={credentialOf(entry)}>
+                            {(credential) => (
+                              <span class="mt-1 block truncate text-[10.5px] text-muted-foreground/80">
+                                via {credential().type === "oauth" ? "MCP" : "API token"}
+                                {credential().name ? ` · ${credential().name}` : ""}
+                              </span>
+                            )}
+                          </Show>
                         </td>
                         <td class="px-3 py-3 align-top">
                           <Badge variant="secondary">{formatAction(entry.action)}</Badge>

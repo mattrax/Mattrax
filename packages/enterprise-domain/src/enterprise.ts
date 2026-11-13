@@ -46,6 +46,7 @@ const TenantDashboardWidgetParam = {
   dashboardId: Schema.String,
   widgetId: Schema.String,
 };
+const McpConnectionParam = { connectionId: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
@@ -2221,6 +2222,33 @@ export const CreateApiTokenRequest = Schema.Struct({
 });
 export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
 
+/** A user's consent grant to an OAuth MCP client. */
+export const McpConnectionInfo = Schema.Struct({
+  id: Schema.String,
+  clientId: Schema.String,
+  clientName: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  requestCount: Schema.Number,
+  lastAction: Schema.optional(NullableString),
+  lastUsedAt: Schema.optional(NullableString),
+  revokedAt: Schema.optional(NullableString),
+  createdAt: Schema.String,
+});
+export type McpConnectionInfo = typeof McpConnectionInfo.Type;
+export const McpConnectionsResponse = Schema.Struct({
+  connections: Schema.Array(McpConnectionInfo),
+});
+export type McpConnectionsResponse = typeof McpConnectionsResponse.Type;
+
+/** Activity heartbeat written by the MCP gateway for audit attribution. */
+export const McpActivityRequest = Schema.Struct({
+  tool: Schema.String,
+  method: Schema.String,
+  path: Schema.String,
+  status: Schema.Number,
+});
+export type McpActivityRequest = typeof McpActivityRequest.Type;
+
 export const AccountSessionInfo = Schema.Struct({
   id: Schema.String,
   current: Schema.Boolean,
@@ -2264,6 +2292,27 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", {
       error: EnterpriseAuthRequiredErrors,
       success: ApiTokensResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listMcpConnections", "/v1/account/mcp-connections", {
+      error: EnterpriseAuthRequiredErrors,
+      success: McpConnectionsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("revokeMcpConnection", "/v1/account/mcp-connections/:connectionId", {
+      error: EnterpriseAuthRequiredErrors,
+      params: McpConnectionParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("recordMcpActivity", "/v1/tenants/:tenantId/mcp/activity", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      payload: McpActivityRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(

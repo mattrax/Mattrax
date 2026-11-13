@@ -16,7 +16,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 
 export default function AccountPage() {
@@ -180,6 +180,22 @@ export default function AccountPage() {
       return;
     }
     await refetchSessions();
+  };
+
+  const connections = useQuery(() => enterpriseQueries.mcpConnections());
+  const [revoking, setRevoking] = createSignal<string | null>(null);
+  const [connectionError, setConnectionError] = createSignal<string | null>(null);
+  const revokeConnection = async (connectionId: string) => {
+    setRevoking(connectionId);
+    setConnectionError(null);
+    try {
+      await enterprise.revokeMcpConnection(connectionId);
+      await connections.refetch();
+    } catch (error) {
+      setConnectionError(errorMessage(error, "Could not revoke this MCP client"));
+    } finally {
+      setRevoking(null);
+    }
   };
 
   const [tokenName, setTokenName] = createSignal("");
@@ -654,6 +670,89 @@ export default function AccountPage() {
           <Show when={!tokensPending() && !tokensError() && (tokens()?.tokens.length ?? 0) === 0}>
             <p class="text-[12.5px] text-muted-foreground">
               No API tokens yet. Create one for the CLI or API.
+            </p>
+          </Show>
+        </div>
+      </Panel>
+
+      <Panel
+        title="Agent access (MCP)"
+        description="OAuth clients you have authorised to manage Mattrax through the Model Context Protocol. API tokens above work with MCP too. Revoking a client ends its access and refresh tokens immediately."
+      >
+        <div class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2">
+          <span class="text-[11.5px] text-muted-foreground">MCP endpoint</span>
+          <code class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">/mcp</code>
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard?.writeText(`${window.location.origin}/mcp`);
+            }}
+          >
+            Copy URL
+          </Button>
+          <Button as="a" href="/docs/" size="xs" variant="ghost">
+            Docs
+          </Button>
+        </div>
+        <Show when={connections.error}>
+          {(error) => (
+            <p role="alert" class="text-[12.5px] text-destructive">
+              {errorMessage(error(), "Could not load MCP connections")}
+            </p>
+          )}
+        </Show>
+        <Show when={connectionError()}>
+          {(message) => (
+            <p role="alert" class="mb-2 text-[12.5px] text-destructive">
+              {message()}
+            </p>
+          )}
+        </Show>
+        <div class="space-y-2">
+          <For each={connections.data?.connections ?? []}>
+            {(connection) => (
+              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-[12.5px] font-medium text-foreground">{connection.clientName}</p>
+                    <Show when={connection.revokedAt}>
+                      <Badge variant="destructive">Revoked</Badge>
+                    </Show>
+                  </div>
+                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {connection.scopes.join(", ")} · Connected{" "}
+                    {new Date(connection.createdAt).toLocaleDateString()} · Last used{" "}
+                    {connection.lastUsedAt
+                      ? new Date(connection.lastUsedAt).toLocaleString()
+                      : "never"}
+                    {connection.requestCount > 0
+                      ? ` · ${connection.requestCount} action${connection.requestCount === 1 ? "" : "s"}`
+                      : ""}
+                    {connection.lastAction ? ` · ${connection.lastAction}` : ""}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(connection.revokedAt) || revoking() === connection.id}
+                  onClick={() => void revokeConnection(connection.id)}
+                >
+                  {revoking() === connection.id ? "Revoking…" : "Revoke"}
+                </Button>
+              </div>
+            )}
+          </For>
+          <Show
+            when={
+              !connections.isPending &&
+              !connections.error &&
+              (connections.data?.connections.length ?? 0) === 0
+            }
+          >
+            <p class="text-[12.5px] text-muted-foreground">
+              No agent clients are connected. An OAuth-capable MCP client will appear here after you
+              authorise it.
             </p>
           </Show>
         </div>

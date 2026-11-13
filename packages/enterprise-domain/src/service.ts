@@ -51,6 +51,11 @@ export class EnterpriseAuth extends Context.Service<
       request: Request,
       payload: Dynamic,
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly listMcpConnections: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly revokeMcpConnection: (
+      request: Request,
+      connectionId: string,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly listApiTokens: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly createApiToken: (
       request: Request,

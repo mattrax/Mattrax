@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { Effect, Layer, Option, Redacted } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseForbidden,
+  EnterpriseNotFound,
   EnterpriseUnauthorized,
   STEP_UP_WINDOW_MILLIS,
   StepUpRequired,
@@ -121,6 +122,17 @@ const sha256 = (value: string) =>
     ),
   );
 
+/** MCP OAuth tokens use the same unpadded base64url digest as issuance. */
+const sha256Base64Url = (value: string) =>
+  Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))).pipe(
+    Effect.map((digest) =>
+      btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", ""),
+    ),
+  );
+
 const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
 
 /** Six digits, zero padded. Randomness comes from the platform CSPRNG. */
@@ -186,7 +198,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       const resolveApiToken = (request: Request) =>
         Effect.gen(function* () {
-          const authorization = request.headers.get("authorization") ?? "";
+          const authorization =
+            request.headers.get("authorization") ??
+            request.headers.get("x-mattrax-mcp-authorization") ??
+            "";
           const match = authorization.match(/^Bearer\s+(.+)$/i);
           if (!match) return undefined;
           const tokenHash = yield* sha256(match[1]);
@@ -201,18 +216,158 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           return item;
         });
 
+      /**
+       * MCP OAuth access tokens are opaque and hashed at rest. Resolving one
+       * yields the user and the consented client so tenant checks and audit
+       * attribution work exactly like they do for an account API token.
+       */
+      const resolveOAuthToken = (request: Request) =>
+        Effect.gen(function* () {
+          const authorization =
+            request.headers.get("authorization") ??
+            request.headers.get("x-mattrax-mcp-authorization") ??
+            "";
+          const match = authorization.match(/^Bearer\s+(.+)$/i);
+          if (!match) return undefined;
+          const tokenHash = yield* sha256Base64Url(match[1]);
+          const [row] = yield* db
+            .select({
+              tokenId: schema.mcpOAuthToken.id,
+              userId: schema.mcpOAuthConnection.userId,
+              connectionId: schema.mcpOAuthConnection.id,
+              clientId: schema.mcpOAuthClient.id,
+              clientName: schema.mcpOAuthClient.name,
+              scopes: schema.mcpOAuthConnection.scopes,
+            })
+            .from(schema.mcpOAuthToken)
+            .innerJoin(
+              schema.mcpOAuthConnection,
+              eq(schema.mcpOAuthToken.connectionId, schema.mcpOAuthConnection.id),
+            )
+            .innerJoin(
+              schema.mcpOAuthClient,
+              eq(schema.mcpOAuthConnection.clientId, schema.mcpOAuthClient.id),
+            )
+            .where(
+              and(
+                eq(schema.mcpOAuthToken.tokenHash, tokenHash),
+                eq(schema.mcpOAuthToken.kind, "access"),
+                isNull(schema.mcpOAuthToken.revokedAt),
+                gt(schema.mcpOAuthToken.expiresAt, new Date()),
+                isNull(schema.mcpOAuthConnection.revokedAt),
+              ),
+            )
+            .limit(1);
+          if (!row) return undefined;
+          const now = new Date();
+          yield* db
+            .update(schema.mcpOAuthToken)
+            .set({ lastUsedAt: now })
+            .where(eq(schema.mcpOAuthToken.id, row.tokenId));
+          yield* db
+            .update(schema.mcpOAuthConnection)
+            .set({ lastUsedAt: now })
+            .where(eq(schema.mcpOAuthConnection.id, row.connectionId));
+          return {
+            userId: row.userId,
+            connectionId: row.connectionId,
+            clientId: row.clientId,
+            clientName: row.clientName,
+            scopes: Array.isArray(row.scopes) ? row.scopes : ["mcp"],
+          };
+        });
+
       const requireUser = (requestLike: Request | { headers: HeadersRecord }) =>
         Effect.gen(function* () {
           const request = requestFrom(requestLike);
           const session = yield* resolveSession(request);
           const apiToken = session ? undefined : yield* resolveApiToken(request);
-          const userId = session?.subjectId ?? apiToken?.userId;
+          const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
+          if (oauth) {
+            const path = new URL(request.url).pathname;
+            const accountPath =
+              path === "/api/v1/deleteMe" ||
+              path.startsWith("/api/v1/account") ||
+              path.includes("email-change") ||
+              path.includes("email-verification") ||
+              path === "/api/v1/verify-email";
+            if (accountPath)
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message: "MCP tokens cannot manage account settings.",
+                }),
+              );
+          }
+          const userId = session?.subjectId ?? apiToken?.userId ?? oauth?.userId;
           if (!userId)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
           const user = yield* db.query.user.findFirst({ where: { id: userId } });
           if (!user || user.disabled)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
-          return { user, session, apiToken };
+          return { user, session, apiToken, oauth };
+        });
+
+      const listMcpConnections = (request: Request) =>
+        Effect.gen(function* () {
+          const { user } = yield* requireUser(request);
+          const rows = yield* db
+            .select({
+              id: schema.mcpOAuthConnection.id,
+              clientId: schema.mcpOAuthClient.id,
+              clientName: schema.mcpOAuthClient.name,
+              scopes: schema.mcpOAuthConnection.scopes,
+              lastUsedAt: schema.mcpOAuthConnection.lastUsedAt,
+              lastAction: schema.mcpOAuthConnection.lastAction,
+              requestCount: schema.mcpOAuthConnection.requestCount,
+              revokedAt: schema.mcpOAuthConnection.revokedAt,
+              createdAt: schema.mcpOAuthConnection.createdAt,
+            })
+            .from(schema.mcpOAuthConnection)
+            .innerJoin(
+              schema.mcpOAuthClient,
+              eq(schema.mcpOAuthConnection.clientId, schema.mcpOAuthClient.id),
+            )
+            .where(eq(schema.mcpOAuthConnection.userId, user.id))
+            .orderBy(desc(schema.mcpOAuthConnection.createdAt));
+          return {
+            connections: rows.map((row) => ({
+              id: row.id,
+              clientId: row.clientId,
+              clientName: row.clientName,
+              scopes: Array.isArray(row.scopes) ? row.scopes : ["mcp"],
+              requestCount: row.requestCount,
+              lastAction: row.lastAction,
+              lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+              revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
+              createdAt: row.createdAt.toISOString(),
+            })),
+          };
+        });
+
+      const revokeMcpConnection = (request: Request, connectionId: string) =>
+        Effect.gen(function* () {
+          const { user } = yield* requireUser(request);
+          const connection = yield* db.query.mcpOAuthConnection.findFirst({
+            where: { id: connectionId, userId: user.id },
+          });
+          if (!connection)
+            return yield* Effect.fail(
+              new EnterpriseNotFound({ message: "MCP connection not found" }),
+            );
+          const revokedAt = new Date();
+          yield* db
+            .update(schema.mcpOAuthConnection)
+            .set({ revokedAt })
+            .where(eq(schema.mcpOAuthConnection.id, connection.id));
+          yield* db
+            .update(schema.mcpOAuthToken)
+            .set({ revokedAt })
+            .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
+          yield* db
+            .update(schema.mcpOAuthCode)
+            .set({ consumedAt: revokedAt })
+            .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+          return { status: "ok" as const };
         });
 
       const listApiTokens = (request: Request) =>
@@ -237,7 +392,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const request = requestFrom(requestLike);
           const resolved = yield* requireUser(request);
-          if (resolved.apiToken) return resolved;
+          if (resolved.apiToken || resolved.oauth) return resolved;
           const sessionId = resolved.session?.sessionId as string | undefined;
           const grant = request.headers.get("x-mattrax-step-up");
           if (grant && sessionId) {
@@ -723,6 +878,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         stepUpTotp,
         beginStepUpPasskey,
         completeStepUpPasskey,
+        listMcpConnections,
+        revokeMcpConnection,
         listApiTokens,
         createApiToken,
         revokeApiToken,

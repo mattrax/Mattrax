@@ -17,7 +17,7 @@ test.describe("authentication and onboarding", () => {
 
     await page.goto("/dashboard");
     await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
-    await expect(page.getByRole("heading", { name: "Device health", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
   });
 
   test("asks for email first and keeps password-manager fields", async ({ page }) => {

@@ -16,6 +16,7 @@ import {
   runScheduledBackups,
   runScheduledEntraSync,
   scimRoutes,
+  mcpOAuthRoutes,
   androidRoutes,
   makeAppAuth,
   makeAuthLive,
@@ -448,6 +449,7 @@ const makeAppLayer = (env: Env, request: Request) => {
       clientSecret: env.AZURE_CLIENT_SECRET,
       authSecret: env.AUTH_SECRET,
     }).pipe(Layer.provide(HttpServer.layerServices)),
+    mcpOAuthRoutes({ origin: env.ORIGIN }).pipe(Layer.provide(HttpServer.layerServices)),
     ...(devMailbox
       ? [
           HttpRouter.add("GET", "/api/debug/emails", (debugRequest) => {

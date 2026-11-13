@@ -133,6 +133,7 @@ export type {
 export { androidRoutes } from "./androidRoutes.js";
 export type { AndroidRoutesOptions } from "./androidRoutes.js";
 export { scimRoutes } from "./scim.js";
+export { mcpOAuthRoutes } from "./mcpOAuth.js";
 export { makeSsoStrategy } from "./sso.js";
 export { signToken, verifyToken } from "./tokens.js";
 export { provisionEmailCredential } from "./emailCredential.js";

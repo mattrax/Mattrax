@@ -152,6 +152,16 @@ export default function LoginPage() {
       ? searchParams.returnTo[0]
       : searchParams.returnTo;
 
+  /**
+   * Browser-flow destinations such as an OAuth authorize URL are served by the
+   * API Worker, not the Solid router, so resume them with a full navigation.
+   */
+  const finishSignIn = () => {
+    const destination = returnTo() ?? "/dashboard";
+    if (destination.startsWith("/api/")) window.location.assign(destination);
+    else navigate(destination, { replace: true });
+  };
+
   /** Resolve SSO without showing a spinner on the email step. */
   const discover = (value: string, force = false) => {
     const key = emailKeyOf(value);
@@ -227,7 +237,7 @@ export default function LoginPage() {
       setMfaPending(true);
       return;
     }
-    navigate(returnTo() ?? "/dashboard", { replace: true });
+    finishSignIn();
   };
 
   const requestCode = async (event?: SubmitEvent) => {
@@ -267,7 +277,7 @@ export default function LoginPage() {
       setMfaPending(true);
       return;
     }
-    navigate(returnTo() ?? "/dashboard", { replace: true });
+    finishSignIn();
   };
 
   const startSso = async () => {
@@ -331,7 +341,7 @@ export default function LoginPage() {
       return;
     }
 
-    navigate(returnTo() ?? "/dashboard", { replace: true });
+    finishSignIn();
   };
 
   const ssoAvailable = () => {
@@ -375,12 +385,7 @@ export default function LoginPage() {
 
         <Show
           when={!mfaPending()}
-          fallback={
-            <MfaPending
-              email={email()}
-              onComplete={() => navigate(returnTo() ?? "/dashboard", { replace: true })}
-            />
-          }
+          fallback={<MfaPending email={email()} onComplete={finishSignIn} />}
         >
           <Show
             when={step() === "email"}

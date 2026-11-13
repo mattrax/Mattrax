@@ -41,6 +41,8 @@ import {
   type DeviceQuery,
   type DeviceSearchQuery,
   type DeviceSearchRow,
+  type McpConnectionInfo,
+  type McpConnectionsResponse,
   type Dashboard,
   type DashboardDataset,
   type DashboardQueryRequest,
@@ -135,6 +137,8 @@ export type {
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
+  McpConnectionInfo,
+  McpConnectionsResponse,
   DynamicGroupCondition,
   DynamicGroupKind,
   DynamicGroupRules,
@@ -236,6 +240,7 @@ export const enterpriseKeys = {
     ["enterprise", "device-pre-registrations", tenantId ?? ""] as const,
   search: (tenantId: RouteParam, term: string, limit = 30) =>
     ["enterprise", "search", tenantId ?? "", term, limit] as const,
+  mcpConnections: () => ["enterprise", "mcp-connections"] as const,
   dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", tenantId ?? ""] as const,
   dashboard: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "dashboard", tenantId ?? "", id ?? ""] as const,
@@ -455,6 +460,13 @@ export const enterprise = {
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  listMcpConnections: () => endpoint((api) => api.listMcpConnections({})),
+  revokeMcpConnection: (connectionId: RouteParam) =>
+    endpoint((api) =>
+      api.revokeMcpConnection({
+        params: { connectionId: required(connectionId, "connectionId") },
+      }),
     ),
   listDashboards: (tenantId: RouteParam) =>
     endpoint((api) => api.listDashboards({ params: { tenantId: required(tenantId, "tenantId") } })),
@@ -1408,6 +1420,12 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.list(tenantId, entity, group),
       queryFn: () => enterprise.list(tenantId, entity, group),
       enabled: Boolean(tenantId),
+    }),
+  mcpConnections: () =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.mcpConnections(),
+      queryFn: () => enterprise.listMcpConnections(),
+      enabled: !isServer,
     }),
   dashboards: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

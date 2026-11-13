@@ -301,6 +301,94 @@ export const accountApiToken = mysqlTable(
 );
 
 /**
+ * An OAuth client registered for an MCP server (usually through dynamic client
+ * registration). Public clients have no secret; PKCE binds the code exchange.
+ */
+export const mcpOAuthClient = mysqlTable(
+  "mcp_oauth_client",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    name: shortText("name").notNull(),
+    redirectUris: json("redirect_uris").$type<string[]>().notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+  },
+  (table) => [index("mcp_oauth_client_created_idx").on(table.createdAt)],
+);
+
+/**
+ * A user's authorisation of one MCP client. Revoking this row ends every access
+ * and refresh token issued for the connection.
+ */
+export const mcpOAuthConnection = mysqlTable(
+  "mcp_oauth_connection",
+  {
+    id: id().primaryKey(),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    clientId: varchar("client_id", { length: 255 })
+      .notNull()
+      .references(() => mcpOAuthClient.id, { onDelete: "cascade" }),
+    scopes: json("scopes").$type<string[]>().notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    lastAction: shortText("last_action"),
+    requestCount: int("request_count").notNull().default(0),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("mcp_oauth_connection_user_idx").on(table.userId),
+    index("mcp_oauth_connection_client_idx").on(table.clientId),
+  ],
+);
+
+/** Short-lived authorization codes, stored as a hash. */
+export const mcpOAuthCode = mysqlTable(
+  "mcp_oauth_code",
+  {
+    id: id().primaryKey(),
+    connectionId: id("connection_id")
+      .notNull()
+      .references(() => mcpOAuthConnection.id, { onDelete: "cascade" }),
+    clientId: varchar("client_id", { length: 255 }).notNull(),
+    codeHash: varchar("code_hash", { length: 255 }).notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: shortText("code_challenge").notNull(),
+    codeChallengeMethod: varchar("code_challenge_method", { length: 16 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("mcp_oauth_code_hash_unique").on(table.codeHash),
+    index("mcp_oauth_code_connection_idx").on(table.connectionId),
+  ],
+);
+
+/** Access and refresh tokens, stored as hashes. */
+export const mcpOAuthToken = mysqlTable(
+  "mcp_oauth_token",
+  {
+    id: id().primaryKey(),
+    connectionId: id("connection_id")
+      .notNull()
+      .references(() => mcpOAuthConnection.id, { onDelete: "cascade" }),
+    clientId: varchar("client_id", { length: 255 }).notNull(),
+    kind: varchar("kind", { length: 16, enum: ["access", "refresh"] }).notNull(),
+    tokenHash: varchar("token_hash", { length: 255 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("mcp_oauth_token_hash_unique").on(table.tokenHash),
+    index("mcp_oauth_token_connection_idx").on(table.connectionId),
+  ],
+);
+
+/**
  * Tenant-scoped audit trail. Entries are append-only from the application's
  * perspective; deleting a tenant removes its history with it.
  */
@@ -1601,6 +1689,10 @@ export const relations = defineRelations(
     invitation,
     subscription,
     accountApiToken,
+    mcpOAuthClient,
+    mcpOAuthConnection,
+    mcpOAuthCode,
+    mcpOAuthToken,
     auditLog,
     backupRun,
     webhookEndpoint,
