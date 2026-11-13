@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import {
@@ -8,6 +8,13 @@ import {
   EnterpriseDbError,
   EnterpriseForbidden,
   EnterpriseInternal,
+  EnterprisePermissionDenied,
+  BUILT_IN_ROLE_PERMISSIONS,
+  BUILT_IN_ROLE_LABELS,
+  BUILT_IN_TENANT_ROLES,
+  hasAnyWritePermission,
+  hasPermission,
+  isBuiltInTenantRole,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
@@ -127,6 +134,12 @@ import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
+import {
+  normalizePermissions,
+  permissionForMethod,
+  RequiredPermission,
+  resolveTenantRole,
+} from "./rbac.ts";
 import {
   deviceBucket,
   normalizeWidgetConfig,
@@ -369,7 +382,7 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     }),
   );
 
-const wrapServiceErrors = <S extends Record<string, any>>(service: S): S =>
+const wrapServiceErrors = <S extends Record<string, any>>(service: S, permissions = false): S =>
   new Proxy(service, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -377,7 +390,18 @@ const wrapServiceErrors = <S extends Record<string, any>>(service: S): S =>
       return (...args: Array<unknown>) => {
         const fn = value as unknown as (...args: Array<unknown>) => unknown;
         const result = fn.apply(target, args);
-        return Effect.isEffect(result) ? mapServiceErrors(result as any) : result;
+        if (!Effect.isEffect(result)) return result;
+        const method = String(property);
+        const permission = permissions ? permissionForMethod(method) : undefined;
+        const tenantId = typeof args[1] === "string" ? args[1] : undefined;
+        const mapped =
+          permission && tenantId
+            ? Effect.provideService(result as any, RequiredPermission, {
+                permission,
+                method,
+              })
+            : result;
+        return mapServiceErrors(mapped as any);
       };
     },
   });
@@ -819,10 +843,50 @@ export const createEnterpriseService = ({
       });
       if (!member)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
-      if (access === "write" && !canWriteTenant(member.role))
-        return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
-      if (access === "delete" && !canDeleteTenant(member.role))
-        return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
+
+      const role = yield* resolveTenantRole(db, member);
+      const required = yield* Effect.serviceOption(RequiredPermission);
+      const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
+      const deny = (permission: string) =>
+        diagnoseError(
+          new EnterprisePermissionDenied({
+            message: `Your role (${role.roleName}) does not include the ${permission} permission.`,
+            permission,
+            roleName: role.roleName,
+            roleKind: role.roleKind,
+          }),
+          {
+            code: "forbidden",
+            reason: "missing_permission",
+            details: {
+              permission,
+              roleId: role.roleId,
+              roleKey: role.roleKey,
+            },
+          },
+        );
+
+      if (requiredPermission && !hasPermission(role.permissions, requiredPermission))
+        return yield* Effect.fail(deny(requiredPermission));
+
+      // Direct/internal calls without the method-level permission still need a
+      // safe fallback. Custom roles use their explicit permissions.
+      if (!requiredPermission) {
+        if (role.roleKind === "custom") {
+          const fallback =
+            access === "delete"
+              ? "tenant.delete"
+              : access === "write"
+                ? "tenant.write"
+                : "tenant.read";
+          if (!hasPermission(role.permissions, fallback)) return yield* Effect.fail(deny(fallback));
+        } else {
+          if (access === "write" && !canWriteTenant(member.role))
+            return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
+          if (access === "delete" && !canDeleteTenant(member.role))
+            return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
+        }
+      }
 
       const organization = yield* db.query.organization.findFirst({
         where: { id: member.organizationId },
@@ -832,7 +896,7 @@ export const createEnterpriseService = ({
 
       // A tenant can require owners and admins to enroll an authenticator.
       // Members keep read access so they can reach their account page and enroll.
-      if (!hasMfaFactor(user) && canWriteTenant(member.role)) {
+      if (!hasMfaFactor(user) && hasAnyWritePermission(role.permissions)) {
         const sso = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: member.organizationId },
         });
@@ -856,7 +920,25 @@ export const createEnterpriseService = ({
             }
           : undefined;
 
-      return { user, organization, member, credential };
+      return {
+        user,
+        organization,
+        member,
+        role,
+        credential,
+        rbac: requiredPermission
+          ? {
+              permission: requiredPermission,
+              roleName: role.roleName,
+              roleKind: role.roleKind,
+              roleId: role.roleId,
+            }
+          : {
+              roleName: role.roleName,
+              roleKind: role.roleKind,
+              roleId: role.roleId,
+            },
+      };
     });
 
   const snapshotPolicy = (
@@ -915,6 +997,12 @@ export const createEnterpriseService = ({
             readonly name: string;
             readonly clientId: string;
           };
+      readonly rbac?: {
+        readonly permission?: string;
+        readonly roleName: string;
+        readonly roleKind: "built-in" | "custom";
+        readonly roleId?: string | null;
+      };
     },
     action: string,
     targetType: string,
@@ -928,9 +1016,11 @@ export const createEnterpriseService = ({
           : typeof metadata === "object" && metadata !== null
             ? (metadata as Record<string, unknown>)
             : { value: metadata };
-      const enrichedMetadata = ctx.credential
-        ? { ...metadataObject, credential: ctx.credential }
-        : metadataObject;
+      const enrichedMetadata = {
+        ...metadataObject,
+        ...(ctx.credential ? { credential: ctx.credential } : {}),
+        ...(ctx.rbac ? { rbac: ctx.rbac } : {}),
+      };
       yield* db.insert(schema.auditLog).values({
         id: id(),
         organizationId: ctx.organization.id,
@@ -2493,14 +2583,9 @@ export const createEnterpriseService = ({
       }),
     exportTenant: (request, tenantId, query) =>
       Effect.gen(function* () {
-        // A bundle carries member emails, application metadata and policy
-        // configuration. Restrict it to an owner even though admins can write.
-        const ctx = yield* requireTenant(request, tenantId, "write");
-        if (!hasOwnerRole(ctx.member.role))
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only a tenant owner can export this tenant" }),
-          );
-
+        // The method-level RBAC permission (tenant.export) gates this bundle,
+        // which contains member emails, application metadata and policy data.
+        const ctx = yield* requireTenant(request, tenantId, "read");
         return yield* buildTenantExport(db, ctx.organization, {
           includeAudit: query?.includeAudit === "true" || query?.includeAudit === "1",
         });
@@ -2508,10 +2593,6 @@ export const createEnterpriseService = ({
     runTenantBackup: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        if (!hasOwnerRole(ctx.member.role))
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only a tenant owner can back up this tenant" }),
-          );
         const result = yield* runTenantBackupForTenant(db, storage, ctx.organization.id, "manual", {
           actor: { userId: ctx.user.id, email: ctx.user.email },
         }).pipe(
@@ -2523,11 +2604,7 @@ export const createEnterpriseService = ({
       }),
     listTenantBackups: (request, tenantId) =>
       Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId, "write");
-        if (!hasOwnerRole(ctx.member.role))
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only a tenant owner can view tenant backups" }),
-          );
+        const ctx = yield* requireTenant(request, tenantId, "read");
         const rows = yield* listTenantBackupRuns(db, ctx.organization.id).pipe(
           Effect.mapError(() => new EnterpriseDbError({ message: "Could not load backup runs" })),
         );
@@ -2535,11 +2612,7 @@ export const createEnterpriseService = ({
       }),
     downloadTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId, "write");
-        if (!hasOwnerRole(ctx.member.role))
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only a tenant owner can download tenant backups" }),
-          );
+        const ctx = yield* requireTenant(request, tenantId, "read");
         yield* requireStepUp(auth, request, "backup-download");
         // Scoped lookup: an id from another tenant must look missing.
         const run = yield* db.query.backupRun.findFirst({
@@ -4039,6 +4112,180 @@ export const createEnterpriseService = ({
           rowCount: entries.length,
         };
       }),
+    listTenantRoles: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const custom = yield* db
+          .select()
+          .from(schema.tenantRole)
+          .where(eq(schema.tenantRole.organizationId, tenantId))
+          .orderBy(asc(schema.tenantRole.name));
+        const members = yield* db
+          .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
+          .from(schema.member)
+          .where(eq(schema.member.organizationId, tenantId));
+        const counts = new Map<string, number>();
+        for (const member of members)
+          if (member.customRoleId)
+            counts.set(member.customRoleId, (counts.get(member.customRoleId) ?? 0) + 1);
+        const builtIns = BUILT_IN_TENANT_ROLES.map((key) => ({
+          id: `builtin:${key}`,
+          name: BUILT_IN_ROLE_LABELS[key],
+          description:
+            key === "owner"
+              ? "Full control including deleting the tenant."
+              : key === "admin"
+                ? "Runs the tenant but cannot delete it."
+                : "Read-only access to tenant data.",
+          permissions: [...BUILT_IN_ROLE_PERMISSIONS[key]],
+          memberCount: members.filter(
+            (member) => !member.customRoleId && member.role.split(",").includes(key),
+          ).length,
+          builtIn: true,
+          createdAt: iso(ctx.organization.createdAt),
+          updatedAt: iso(ctx.organization.updatedAt),
+        }));
+        return {
+          roles: [
+            ...builtIns,
+            ...custom.map((role) => ({
+              id: role.id,
+              name: role.name,
+              description: role.description,
+              permissions: normalizePermissions(
+                Array.isArray(role.permissions) ? role.permissions : [],
+              ),
+              memberCount: counts.get(role.id) ?? 0,
+              builtIn: false,
+              createdAt: iso(role.createdAt),
+              updatedAt: iso(role.updatedAt),
+            })),
+          ],
+        };
+      }),
+    createTenantRole: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const body = payload as {
+          name?: string;
+          description?: string | null;
+          permissions?: ReadonlyArray<string>;
+        };
+        const name = body.name?.trim();
+        if (!name)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Give the role a name" }));
+        if (isBuiltInTenantRole(name.toLowerCase()))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "That name is reserved for a built-in role" }),
+          );
+        const permissions = normalizePermissions(body.permissions ?? []);
+        if (permissions.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose at least one permission" }),
+          );
+        const existing = yield* db.query.tenantRole.findFirst({
+          where: { organizationId: tenantId, name },
+        });
+        if (existing)
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "A role with that name already exists" }),
+          );
+        const roleId = id();
+        const timestamp = now();
+        yield* db.insert(schema.tenantRole).values({
+          id: roleId,
+          organizationId: tenantId,
+          name: name.slice(0, 80),
+          description: body.description?.trim().slice(0, 500) || null,
+          permissions,
+          createdByUserId: ctx.user.id,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        yield* audit(ctx, "role.created", "role", roleId, {
+          name,
+          permissions,
+        });
+        return { id: roleId };
+      }),
+    patchTenantRole: (request, tenantId, roleId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const role = yield* db.query.tenantRole.findFirst({
+          where: { id: roleId, organizationId: tenantId },
+        });
+        if (!role) return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+        const body = payload as {
+          name?: string;
+          description?: string | null;
+          permissions?: ReadonlyArray<string>;
+        };
+        const name = body.name?.trim();
+        if (name !== undefined && !name)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Give the role a name" }));
+        if (name && isBuiltInTenantRole(name.toLowerCase()))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "That name is reserved for a built-in role" }),
+          );
+        if (name && name !== role.name) {
+          const claimed = yield* db.query.tenantRole.findFirst({
+            where: { organizationId: tenantId, name },
+          });
+          if (claimed)
+            return yield* Effect.fail(
+              new EnterpriseConflict({ message: "A role with that name already exists" }),
+            );
+        }
+        const permissions =
+          body.permissions === undefined ? undefined : normalizePermissions(body.permissions);
+        if (permissions && permissions.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose at least one permission" }),
+          );
+        yield* db
+          .update(schema.tenantRole)
+          .set({
+            ...(name !== undefined ? { name: name.slice(0, 80) } : {}),
+            ...(body.description !== undefined
+              ? { description: body.description?.trim().slice(0, 500) || null }
+              : {}),
+            ...(permissions !== undefined ? { permissions } : {}),
+            updatedAt: now(),
+          })
+          .where(eq(schema.tenantRole.id, role.id));
+        yield* audit(ctx, "role.updated", "role", role.id, {
+          fields: Object.keys(body),
+          ...(name !== undefined ? { name } : {}),
+          ...(permissions !== undefined ? { permissions } : {}),
+        });
+        return ok;
+      }),
+    deleteTenantRole: (request, tenantId, roleId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const role = yield* db.query.tenantRole.findFirst({
+          where: { id: roleId, organizationId: tenantId },
+        });
+        if (!role) return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+        const [assigned] = yield* db
+          .select({ value: count() })
+          .from(schema.member)
+          .where(
+            and(
+              eq(schema.member.organizationId, tenantId),
+              eq(schema.member.customRoleId, role.id),
+            ),
+          );
+        if (Number(assigned?.value ?? 0) > 0)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "Reassign the members using this role before deleting it",
+            }),
+          );
+        yield* db.delete(schema.tenantRole).where(eq(schema.tenantRole.id, role.id));
+        yield* audit(ctx, "role.deleted", "role", role.id, { name: role.name });
+        return ok;
+      }),
     listTenantUsers: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId);
@@ -4049,29 +4296,65 @@ export const createEnterpriseService = ({
             name: schema.user.name,
             email: schema.user.email,
             role: schema.member.role,
+            customRoleId: schema.member.customRoleId,
             createdAt: schema.member.createdAt,
           })
           .from(schema.member)
           .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
           .where(eq(schema.member.organizationId, tenantId));
+        const customRoles = yield* db
+          .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
+          .from(schema.tenantRole)
+          .where(eq(schema.tenantRole.organizationId, tenantId));
+        const custom = new Map(customRoles.map((role) => [role.id, role.name]));
         return {
-          users: users.map((user: { createdAt: Date }) => ({
-            ...user,
-            createdAt: iso(user.createdAt),
-          })),
+          users: users.map((user) => {
+            const builtInName = user.role
+              .split(",")
+              .map((raw) => {
+                const part = raw.trim();
+                return isBuiltInTenantRole(part) ? BUILT_IN_ROLE_LABELS[part] : part;
+              })
+              .join(", ");
+            return {
+              memberId: user.memberId,
+              userId: user.userId,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              roleId: user.customRoleId ?? null,
+              roleName: user.customRoleId
+                ? (custom.get(user.customRoleId) ?? builtInName)
+                : builtInName,
+              roleKind: user.customRoleId ? ("custom" as const) : ("built-in" as const),
+              createdAt: iso(user.createdAt),
+            };
+          }),
         };
       }),
     inviteTenantUser: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { user } = ctx;
-        const body = payload as { email: string; role?: string; resend?: boolean };
+        const body = payload as {
+          email: string;
+          role?: string;
+          roleId?: string | null;
+          resend?: boolean;
+        };
         const role = body.role ?? "member";
-        if (!validRoles(role))
+        const customRole = body.roleId
+          ? yield* db.query.tenantRole.findFirst({
+              where: { id: body.roleId, organizationId: tenantId },
+            })
+          : undefined;
+        if (body.roleId && !customRole)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+        if (!customRole && !validRoles(role))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
-        if (hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
+        if (!customRole && hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Only an owner can invite another owner" }),
           );
@@ -4089,7 +4372,8 @@ export const createEnterpriseService = ({
           organizationId: tenantId,
           inviterId: user.id,
           email: body.email,
-          role,
+          role: customRole ? role : role,
+          customRoleId: customRole?.id ?? null,
           status: "pending",
           tokenHash,
           expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000),
@@ -4099,7 +4383,10 @@ export const createEnterpriseService = ({
         const inviteUrl = `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
         const branding = resolveTenantBranding(ctx.organization);
         const organization = branding.displayName;
-        const roleLabel = body.role ?? "member";
+        const roleLabel =
+          customRole?.name ??
+          BUILT_IN_ROLE_LABELS[role as keyof typeof BUILT_IN_ROLE_LABELS] ??
+          role;
         if (email) {
           yield* Effect.tryPromise({
             try: () =>
@@ -4123,6 +4410,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "member.invited", "invitation", invitationId, {
           email: body.email,
           role,
+          ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
         });
         return { id: invitationId, inviteUrl };
       }),
@@ -4161,6 +4449,7 @@ export const createEnterpriseService = ({
             organizationId: invitation.organizationId,
             userId: user.id,
             role: invitation.role ?? "member",
+            customRoleId: invitation.customRoleId ?? null,
             createdAt: now(),
             updatedAt: now(),
           });
@@ -4174,7 +4463,11 @@ export const createEnterpriseService = ({
           "member.joined",
           "user",
           user.id,
-          { invitationId: invitation.id, role: invitation.role ?? "member" },
+          {
+            invitationId: invitation.id,
+            role: invitation.role ?? "member",
+            ...(invitation.customRoleId ? { roleId: invitation.customRoleId } : {}),
+          },
         );
         return { tenantId: invitation.organizationId };
       }),
@@ -4185,12 +4478,18 @@ export const createEnterpriseService = ({
           .select()
           .from(schema.invitation)
           .where(eq(schema.invitation.organizationId, tenantId));
+        const customRoles = yield* db
+          .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
+          .from(schema.tenantRole)
+          .where(eq(schema.tenantRole.organizationId, tenantId));
+        const custom = new Map(customRoles.map((role) => [role.id, role.name]));
         return {
           invitations: invitations.map(
             (item: {
               id: string;
               email: string;
               role: string | null;
+              customRoleId?: string | null;
               status: string;
               expiresAt: Date;
               createdAt: Date;
@@ -4198,6 +4497,13 @@ export const createEnterpriseService = ({
               id: item.id,
               email: item.email,
               role: item.role,
+              roleId: item.customRoleId ?? null,
+              roleName: item.customRoleId
+                ? (custom.get(item.customRoleId) ?? "Custom role")
+                : item.role
+                  ? (BUILT_IN_ROLE_LABELS[item.role as keyof typeof BUILT_IN_ROLE_LABELS] ??
+                    item.role)
+                  : null,
               status: item.status,
               expiresAt: iso(item.expiresAt),
               createdAt: iso(item.createdAt),
@@ -4227,30 +4533,52 @@ export const createEnterpriseService = ({
         });
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
-        const body = payload as { role: string };
-        if (!validRoles(body.role))
+        const body = payload as { role?: string; roleId?: string | null };
+        const customRole =
+          body.roleId === undefined || body.roleId === null
+            ? undefined
+            : yield* db.query.tenantRole.findFirst({
+                where: { id: body.roleId, organizationId: tenantId },
+              });
+        if (body.roleId && !customRole)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+        if (body.role === undefined && body.roleId === undefined)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose a role for this member" }),
+          );
+        const role = body.role ?? member.role;
+        if (!customRole && !validRoles(role))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
-        if (
-          (hasOwnerRole(body.role) || hasOwnerRole(member.role)) &&
-          !hasOwnerRole(ctx.member.role)
-        )
+        if (customRole && body.role !== undefined && !validRoles(role))
           return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
+            new EnterpriseBadRequest({ message: "Choose a valid fallback role" }),
           );
-        const removingOwner = hasOwnerRole(member.role) && !hasOwnerRole(body.role);
+        if ((!customRole && hasOwnerRole(role)) || hasOwnerRole(member.role)) {
+          if (!hasOwnerRole(ctx.member.role))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
+            );
+        }
+        const removingOwner =
+          hasOwnerRole(member.role) && (Boolean(customRole) || !hasOwnerRole(role));
         if (removingOwner && (yield* ownerCount(tenantId)) <= 1)
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
           );
         yield* db
           .update(schema.member)
-          .set({ role: body.role, updatedAt: now() })
+          .set({
+            role,
+            customRoleId: customRole?.id ?? null,
+            updatedAt: now(),
+          })
           .where(eq(schema.member.id, memberId));
         yield* audit(ctx, "member.role_changed", "user", member.userId, {
           memberId,
-          role: body.role,
+          role,
+          ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
         });
         return ok;
       }),
@@ -8460,7 +8788,7 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   };
 
-  return wrapServiceErrors(service) as typeof service;
+  return wrapServiceErrors(service, true) as typeof service;
 };
 
 export const enterpriseHandlers = (
@@ -8764,6 +9092,26 @@ export const enterpriseHandlers = (
             });
           },
         ),
+      ),
+    )
+    .handle("listTenantRoles", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listTenantRoles(request, params.tenantId),
+      ),
+    )
+    .handle("createTenantRole", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createTenantRole(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchTenantRole", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantRole(request, params.tenantId, params.roleId, payload),
+      ),
+    )
+    .handle("deleteTenantRole", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteTenantRole(request, params.tenantId, params.roleId),
       ),
     )
     .handle("listTenantUsers", ({ request, params }) =>

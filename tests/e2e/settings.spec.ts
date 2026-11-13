@@ -68,8 +68,27 @@ test.describe("tenant settings", () => {
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
     await expect(page.getByText("Invite an administrator")).toBeVisible();
     const inviteRole = page.locator("select").first();
-    await expect(inviteRole.locator('option[value="auditor"]')).toHaveText("Auditor (read-only)");
-    await expect(inviteRole.locator('option[value="member"]')).toHaveText("Member");
+    await expect(inviteRole.locator('option[value="builtin:auditor"]')).toHaveText("Auditor");
+    await expect(inviteRole.locator('option[value="builtin:member"]')).toHaveText("Member");
+  });
+
+  test("creates a custom RBAC role", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "RBAC Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
+    await page.getByRole("button", { name: "Create role" }).first().click();
+    await page.getByLabel("Name").fill("Helpdesk");
+    await page.getByLabel("Description").fill("Front-line support");
+    await page.getByText("View devices", { exact: true }).click();
+    await page.getByRole("button", { name: "Create role" }).last().click();
+    await expect(page.locator("p").filter({ hasText: "Helpdesk" }).first()).toBeVisible();
+    await expect(page.getByText(/Front-line support/)).toBeVisible();
+    const roles = await api<{ roles: Array<{ name: string; builtIn: boolean }> }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/roles`,
+    );
+    expect(roles.roles).toContainEqual(
+      expect.objectContaining({ name: "Helpdesk", builtIn: false }),
+    );
   });
 
   test("edits tenant branding and previews it on the public enrollment page", async ({ page }) => {

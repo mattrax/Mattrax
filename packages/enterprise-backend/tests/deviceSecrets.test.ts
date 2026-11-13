@@ -148,7 +148,7 @@ describe("device recovery key reveal", () => {
           "device-1",
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
     expect(
       db.store.audit_log.some((entry: any) => entry.action === "device.recovery_key_viewed"),
     ).toBe(false);

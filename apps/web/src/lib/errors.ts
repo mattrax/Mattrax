@@ -41,6 +41,10 @@ const TAGS: Record<string, Mapping> = {
     message: "You don't have permission to do that.",
     variant: "permission",
   },
+  EnterprisePermissionDenied: {
+    message: "Your role does not allow that action.",
+    variant: "permission",
+  },
   EnterpriseNotFound: {
     message: "We couldn't find that. It may have been deleted or moved.",
     variant: "not-found",
@@ -314,6 +318,7 @@ export const errorPresentation = (
         "EnterpriseBadRequest",
         "EnterpriseNotFound",
         "EnterpriseForbidden",
+        "EnterprisePermissionDenied",
         "EnterpriseNotConfigured",
       ].includes(tag);
     return {

@@ -16,6 +16,12 @@ describe("errorPresentation", () => {
     expect(errorPresentation({ _tag: "EnterpriseForbidden", message: "Nope" }).variant).toBe(
       "permission",
     );
+    expect(
+      errorPresentation({
+        _tag: "EnterprisePermissionDenied",
+        message: "Your role (Helpdesk) does not include devices.write.",
+      }),
+    ).toMatchObject({ variant: "permission", message: expect.stringContaining("Helpdesk") });
   });
 
   it("understands raw { error } route envelopes", () => {

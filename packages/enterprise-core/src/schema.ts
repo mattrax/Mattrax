@@ -207,6 +207,27 @@ export const organization = mysqlTable(
   (table) => [uniqueIndex("organization_slug_unique").on(table.slug)],
 );
 
+/** Tenant-defined RBAC role. Built-in roles stay virtual in code. */
+export const tenantRole = mysqlTable(
+  "tenant_role",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    description: text("description"),
+    permissions: json("permissions").$type<string[]>().notNull(),
+    createdByUserId: id("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("tenant_role_organization_name_unique").on(table.organizationId, table.name),
+    index("tenant_role_organization_idx").on(table.organizationId),
+  ],
+);
+
 export const member = mysqlTable(
   "member",
   {
@@ -218,11 +239,14 @@ export const member = mysqlTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: varchar("role", { length: 32 }).notNull(),
+    /** Custom RBAC role; when set it replaces the built-in `role` capabilities. */
+    customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
     uniqueIndex("member_user_organization_unique").on(table.userId, table.organizationId),
+    index("member_custom_role_idx").on(table.customRoleId),
     index("member_organization_id_idx").on(table.organizationId),
   ],
 );
@@ -239,6 +263,7 @@ export const invitation = mysqlTable(
       .references(() => user.id, { onDelete: "cascade" }),
     email: varchar("email", { length: 320 }).notNull(),
     role: varchar("role", { length: 32 }),
+    customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
     status: varchar("status", { length: 32 }).notNull(),
     /** SHA-256 of the one-time acceptance token; the raw token is only in the invite link. */
     tokenHash: varchar("token_hash", { length: 255 }),
@@ -1685,6 +1710,7 @@ export const relations = defineRelations(
   {
     user,
     organization,
+    tenantRole,
     member,
     invitation,
     subscription,

@@ -363,10 +363,10 @@ describe("backup API", () => {
     const { service } = makeContext("admin");
     await expect(
       runEffect(service.runTenantBackup(request(headers), "org-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
     await expect(
       runEffect(service.listTenantBackups(request(headers), "org-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
   });
 
   it("does not expose another tenant's backup by id", async () => {

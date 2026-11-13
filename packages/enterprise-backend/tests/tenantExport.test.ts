@@ -282,7 +282,7 @@ describe("tenant export", () => {
 
     await expect(
       runEffect(context.service.exportTenant(request(headers), tenant.id, {})),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
   });
 });
 

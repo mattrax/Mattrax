@@ -422,7 +422,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
 
     db.store.member[0].role = "admin";
     await runEffect(service.patchTenant(request(headers), tenant.id, { name: "Allowed" }));
@@ -430,7 +430,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
   });
 
   it("allows auditors to read but not write or delete", async () => {
@@ -446,10 +446,52 @@ describe("enterprise service tenant flow", () => {
     });
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+  });
+
+  it("enforces custom role permissions and audits the effective role", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const role = await runEffect(
+      service.createTenantRole(request(headers), tenant.id, {
+        name: "Helpdesk",
+        permissions: ["tenant.read", "devices.read"],
+      }),
+    );
+    db.store.member[0].customRoleId = role.id;
+
+    await expect(
+      runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
+    ).rejects.toMatchObject({
+      _tag: "EnterprisePermissionDenied",
+      permission: "tenant.write",
+      roleName: "Helpdesk",
+      roleKind: "custom",
+    });
+
+    db.store.member[0].customRoleId = null;
+    await runEffect(
+      service.patchTenantRole(request(headers), tenant.id, role.id, {
+        permissions: ["tenant.read", "devices.read", "tenant.write"],
+      }),
+    );
+    db.store.member[0].customRoleId = role.id;
+    await runEffect(service.patchTenant(request(headers), tenant.id, { name: "Allowed" }));
+    const entry = db.store.audit_log.find(
+      (item: any) => item.action === "tenant.updated" && item.targetId === tenant.id,
+    );
+    expect(entry?.metadata).toMatchObject({
+      rbac: {
+        permission: "tenant.write",
+        roleName: "Helpdesk",
+        roleKind: "custom",
+      },
+    });
   });
 
   it("accepts auditor invitations and role changes", async () => {
@@ -807,7 +849,7 @@ describe("enterprise service billing flow", () => {
           returnUrl: "https://app.test/settings",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
   });
 
   it("reports unconfigured billing without failing the summary", async () => {
@@ -2897,7 +2939,7 @@ describe("device pre-registration", () => {
           rows: [{ serial: "C02A" }],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
   });
 });
 

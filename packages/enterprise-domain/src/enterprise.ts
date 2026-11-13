@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 import {
@@ -21,6 +22,7 @@ import {
   StepUpRequired,
   StepUpUnavailable,
 } from "./stepUp.ts";
+import { CreateTenantRoleRequest, PatchTenantRoleRequest, TenantRolesResponse } from "./rbac.ts";
 import {
   CreateWebhookEndpointRequest,
   CreateWebhookEndpointResponse,
@@ -46,6 +48,7 @@ const TenantDashboardWidgetParam = {
   dashboardId: Schema.String,
   widgetId: Schema.String,
 };
+const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
 const McpConnectionParam = { connectionId: Schema.String };
 const ApiTokenParam = { tokenId: Schema.String };
 
@@ -68,6 +71,16 @@ export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>
   "EnterpriseForbidden",
   {
     message: Schema.String,
+  },
+) {}
+/** A tenant member's RBAC role does not grant the endpoint's permission. */
+export class EnterprisePermissionDenied extends Schema.TaggedError<EnterprisePermissionDenied>()(
+  "EnterprisePermissionDenied",
+  {
+    message: Schema.String,
+    permission: Schema.String,
+    roleName: Schema.String,
+    roleKind: Schema.Literals(["built-in", "custom"]),
   },
 ) {}
 export class EnterpriseConflict extends Schema.TaggedError<EnterpriseConflict>()(
@@ -156,6 +169,7 @@ const EnterpriseTenantReadErrors = [
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   // Tenant policy can deny reads, for example when MFA enrollment is required.
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterprisePermissionDenied.pipe(HttpApiSchema.status(403)),
 ] as const;
 /** Read endpoints that validate user input (filters, cursors) can return 400. */
 const EnterpriseTenantValidatedReadErrors = [
@@ -405,7 +419,11 @@ export const TenantUser = Schema.Struct({
   userId: Schema.String,
   name: Schema.String,
   email: Schema.String,
+  /** Built-in role key; retained even when a custom role is assigned. */
   role: Schema.String,
+  roleId: Schema.optional(NullableString),
+  roleName: Schema.optional(Schema.String),
+  roleKind: Schema.optional(Schema.Literals(["built-in", "custom"])),
   createdAt: Schema.String,
 });
 export type TenantUser = typeof TenantUser.Type;
@@ -415,6 +433,7 @@ export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUse
 export const InviteTenantUserRequest = Schema.Struct({
   email: Schema.String,
   role: Schema.optional(Schema.String),
+  roleId: Schema.optional(NullableString),
   resend: Schema.optional(Schema.Boolean),
 });
 
@@ -422,6 +441,8 @@ export const TenantInvitation = Schema.Struct({
   id: Schema.String,
   email: Schema.String,
   role: Schema.optional(NullableString),
+  roleId: Schema.optional(NullableString),
+  roleName: Schema.optional(NullableString),
   status: Schema.String,
   expiresAt: Schema.String,
   createdAt: Schema.String,
@@ -432,7 +453,10 @@ export const TenantInvitationsResponse = Schema.Struct({
   invitations: Schema.Array(TenantInvitation),
 });
 
-export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
+export const PatchTenantUserRequest = Schema.Struct({
+  role: Schema.optional(Schema.String),
+  roleId: Schema.optional(NullableString),
+});
 
 export const SsoConfigResponse = Schema.Struct({
   enabled: Schema.Boolean,
@@ -2738,6 +2762,36 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: TenantUsersResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listTenantRoles", "/v1/tenants/:tenantId/roles", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: TenantRolesResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createTenantRole", "/v1/tenants/:tenantId/roles", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: CreateTenantRoleRequest,
+      success: Schema.Struct({ id: Schema.String }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchTenantRole", "/v1/tenants/:tenantId/roles/:roleId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantRoleParam,
+      payload: PatchTenantRoleRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteTenantRole", "/v1/tenants/:tenantId/roles/:roleId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantRoleParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(

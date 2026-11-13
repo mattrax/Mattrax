@@ -63,6 +63,10 @@ import {
   type TenantEnrollmentInfo,
   type TenantImportRequest,
   type TenantInfo,
+  type TenantRole,
+  type TenantRolesResponse,
+  type CreateTenantRoleRequest,
+  type PatchTenantRoleRequest,
   type UpdateAutopilotProfileRequest,
   type VppAssetInfo,
   type VppAssetsResponse,
@@ -173,6 +177,10 @@ export type {
   TenantImportRequest,
   TenantImportResponse,
   TenantInfo,
+  TenantRole,
+  TenantRolesResponse,
+  CreateTenantRoleRequest,
+  PatchTenantRoleRequest,
   TenantInvitation,
   TenantUser,
   UserInfo,
@@ -220,6 +228,7 @@ export const enterpriseKeys = {
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
     ["enterprise", "item", tenantId ?? "", entity, id ?? ""] as const,
   users: (tenantId: RouteParam) => ["enterprise", "tenant-users", tenantId ?? ""] as const,
+  roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", tenantId ?? ""] as const,
   invitations: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
@@ -1347,7 +1356,10 @@ export const enterprise = {
     endpoint((api) =>
       api.listTenantUsers({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  inviteUser: (tenantId: RouteParam, payload: { email: string; role?: string; resend?: boolean }) =>
+  inviteUser: (
+    tenantId: RouteParam,
+    payload: { email: string; role?: string; roleId?: string | null; resend?: boolean },
+  ) =>
     endpoint((api) =>
       api.inviteTenantUser({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
@@ -1364,14 +1376,45 @@ export const enterprise = {
         },
       }),
     ),
-  patchUser: (tenantId: RouteParam, memberId: RouteParam, role: string) =>
+  patchUser: (
+    tenantId: RouteParam,
+    memberId: RouteParam,
+    payload: { role?: string; roleId?: string | null },
+  ) =>
     endpoint((api) =>
       api.patchTenantUser({
         params: {
           tenantId: required(tenantId, "tenantId"),
           memberId: required(memberId, "memberId"),
         },
-        payload: { role },
+        payload,
+      }),
+    ),
+  listRoles: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listTenantRoles({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createRole: (tenantId: RouteParam, payload: CreateTenantRoleRequest) =>
+    endpoint((api) =>
+      api.createTenantRole({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  patchRole: (tenantId: RouteParam, roleId: RouteParam, payload: PatchTenantRoleRequest) =>
+    endpoint((api) =>
+      api.patchTenantRole({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          roleId: required(roleId, "roleId"),
+        },
+        payload,
+      }),
+    ),
+  deleteRole: (tenantId: RouteParam, roleId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteTenantRole({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          roleId: required(roleId, "roleId"),
+        },
       }),
     ),
   removeUser: (tenantId: RouteParam, memberId: RouteParam) =>
@@ -1521,6 +1564,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.auditLog(tenantId),
       queryFn: () => enterprise.listAuditLog(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  roles: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.roles(tenantId),
+      queryFn: () => enterprise.listRoles(tenantId),
       enabled: Boolean(tenantId),
     }),
   users: (tenantId: RouteParam) =>

@@ -96,13 +96,26 @@ const credentialOf = (entry: AuditLogEntry) => {
   };
 };
 
+const rbacOf = (entry: AuditLogEntry) => {
+  const metadata = entry.metadata;
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const rbac = (metadata as Record<string, unknown>).rbac;
+  if (!rbac || typeof rbac !== "object") return undefined;
+  const value = rbac as { roleName?: unknown; permission?: unknown; roleKind?: unknown };
+  return {
+    roleName: typeof value.roleName === "string" ? value.roleName : undefined,
+    permission: typeof value.permission === "string" ? value.permission : undefined,
+    roleKind: value.roleKind === "custom" ? "custom" : "built-in",
+  };
+};
+
 /** Compact one-line metadata preview; the full JSON is in the export. */
 const summarizeMetadata = (metadata: unknown) => {
   if (metadata === null || metadata === undefined) return "";
   if (typeof metadata === "string") return metadata;
   if (typeof metadata !== "object") return JSON.stringify(metadata);
   const rows = Object.entries(metadata as Record<string, unknown>).filter(
-    ([key]) => key !== "credential",
+    ([key]) => key !== "credential" && key !== "rbac",
   );
   if (rows.length === 0) return "";
   return rows
@@ -441,6 +454,15 @@ export default function AuditSettingsPage() {
                               <span class="mt-1 block truncate text-[10.5px] text-muted-foreground/80">
                                 via {credential().type === "oauth" ? "MCP" : "API token"}
                                 {credential().name ? ` · ${credential().name}` : ""}
+                              </span>
+                            )}
+                          </Show>
+                          <Show when={rbacOf(entry)}>
+                            {(rbac) => (
+                              <span class="mt-1 block truncate text-[10.5px] text-muted-foreground/80">
+                                {rbac().roleKind === "custom" ? "Custom role" : "Built-in role"}
+                                {rbac().roleName ? ` · ${rbac().roleName}` : ""}
+                                {rbac().permission ? ` · ${rbac().permission}` : ""}
                               </span>
                             )}
                           </Show>

@@ -109,6 +109,7 @@ export default defineConfig({
           items: [
             { text: "Overview", link: "/admin/" },
             { text: "Identity and access", link: "/admin/identity" },
+            { text: "Roles and permissions", link: "/admin/rbac" },
             { text: "Audit, webhooks and billing", link: "/admin/operations" },
           ],
         },

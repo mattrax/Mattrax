@@ -13,6 +13,7 @@ export {
 } from "./enterprise.ts";
 export * from "./enterprise.ts";
 export * from "./errors.ts";
+export * from "./rbac.ts";
 export * from "./branding.ts";
 export * from "./webhooks.ts";
 export * from "./deviceHealth.ts";

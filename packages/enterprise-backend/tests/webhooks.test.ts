@@ -209,13 +209,17 @@ describe("webhook endpoint CRUD", () => {
 
   it("limits the whole surface to owners and admins", async () => {
     const { service, headers } = makeContext({ role: "member" });
-    await expect(list(service)).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    await expect(list(service)).rejects.toMatchObject({
+      _tag: "EnterprisePermissionDenied",
+    });
     await expect(
       create(service, { url: "https://hooks.example.com/a", events: [] }),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
 
     const auditor = makeContext({ role: "auditor" });
-    await expect(list(auditor.service)).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    await expect(list(auditor.service)).rejects.toMatchObject({
+      _tag: "EnterprisePermissionDenied",
+    });
 
     const admin = makeContext({ role: "admin" });
     await expect(list(admin.service)).resolves.toMatchObject({ endpoints: [] });
