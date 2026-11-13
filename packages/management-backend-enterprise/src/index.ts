@@ -722,7 +722,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     /**
      * Tenant that owns Windows devices. When omitted, Windows enrollment fails
      * closed: Windows discovery/enrollment carries no tenant identity, so
-     * guessing would let an anonymous caller enrol into the wrong workspace.
+     * guessing would let an anonymous caller enrol into the wrong tenant.
      */
     readonly windowsOrganizationId?: string;
     readonly requireWindowsDeviceIdentity?: boolean;

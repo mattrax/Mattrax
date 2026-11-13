@@ -58,6 +58,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Motion tokens. Built-in easings are too weak for UI entrances, so these
+ * back every dashboard transition (`ease-swift`) and drawer move
+ * (`ease-glide`). Shared with the imperative CSS below. */
+@theme {
+  --ease-swift: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -158,18 +166,6 @@
   }
 }
 
-/*
- * The policy designer is a full-height workspace. Constrain the dashboard
- * inset to the viewport while it is mounted so the editor panes scroll
- * internally instead of the page growing with the catalogue.
- */
-main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
-  height: 100svh;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-}
-
 /* Dense setting rows go two-column only when the editor itself is wide
    enough, not when the whole viewport happens to be. */
 .designer-fields {
@@ -208,34 +204,42 @@ main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
  * ------------------------------------------------------------------------- */
 
 @layer components {
+  /*
+   * Page entrance. Applied by the shared `Page` frame, which remounts with the
+   * route, so it restarts on navigation without touching query state. Ends on
+   * `transform: none` so a finished animation never leaves a containing block
+   * behind for `position: fixed` children (e.g. the table selection bar).
+   */
   .page-enter {
-    animation: mattax-page-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: mattax-page-in 200ms var(--ease-swift) both;
   }
 
-  .slide-up-enter {
-    animation: mattax-slide-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Indeterminate segment while the router resolves the next page. */
+  .route-progress {
+    animation: mattax-route-progress 1.1s linear infinite;
   }
 }
 
 @keyframes mattax-page-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
-@keyframes mattax-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.995);
+@keyframes mattax-route-progress {
+  0% {
+    transform: translateX(-110%) scaleX(0.55);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+  55% {
+    transform: translateX(70%) scaleX(1);
+  }
+  100% {
+    transform: translateX(310%) scaleX(0.6);
   }
 }
 
@@ -246,6 +250,141 @@ main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
   }
   50% {
     opacity: 0.45;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion
+ *
+ * Functional motion only: route feedback, spatial continuity for overlays and
+ * press confirmation. Every rule animates `transform`/`opacity` (plus colour),
+ * stays at or under 200ms and is opt-in for `prefers-reduced-motion`.
+ *
+ * These selectors are intentionally unlayered so they replace the stock
+ * `animate-in`/`animate-out` utilities shipped in `styles/base.css` instead of
+ * competing with them inside the utilities layer.
+ * ------------------------------------------------------------------------- */
+
+@keyframes mattax-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mattax-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes mattax-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mattax-surface-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+/* Trigger-anchored menus grow from the popper's origin, never the centre. */
+@keyframes mattax-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Dialog: calm 180ms entry, quicker 120ms exit. Modals are not anchored to
+   * a trigger, so they stay centred (no transform-origin override). */
+  [data-slot="dialog-overlay"][data-expanded] {
+    animation: mattax-overlay-in 160ms var(--ease-swift) both;
+  }
+
+  [data-slot="dialog-overlay"][data-closed] {
+    animation: mattax-overlay-out 120ms var(--ease-swift) both;
+  }
+
+  [data-slot="dialog-content"][data-expanded] {
+    animation: mattax-surface-in 180ms var(--ease-swift) both;
+  }
+
+  [data-slot="dialog-content"][data-closed] {
+    animation: mattax-surface-out 120ms var(--ease-swift) both;
+  }
+
+  /* Sheets share the surface entry/exit; on a full-height panel the same
+   * 2% scale reads as depth without drawing attention to the edges. */
+  [data-slot="sheet-overlay"][data-expanded] {
+    animation: mattax-overlay-in 160ms var(--ease-swift) both;
+  }
+
+  [data-slot="sheet-overlay"][data-closed] {
+    animation: mattax-overlay-out 120ms var(--ease-swift) both;
+  }
+
+  [data-slot="sheet-content"][data-expanded] {
+    animation: mattax-surface-in 200ms var(--ease-glide) both;
+  }
+
+  [data-slot="sheet-content"][data-closed] {
+    animation: mattax-surface-out 140ms var(--ease-glide) both;
+  }
+
+  /* Tenant/user/switcher menus: 160ms fade + 2% scale from the trigger. */
+  [data-slot="dropdown-menu-content"][data-expanded],
+  [data-slot="dropdown-menu-sub-content"][data-expanded] {
+    animation: mattax-menu-in 160ms var(--ease-swift) both;
+  }
+
+  /* Shared button primitive: a 1px press, no layout shift. `scale` is its own
+   * property in Tailwind v4, so it composes with translate/rotate utilities. */
+  [data-slot="button"]:not(:disabled):active {
+    scale: 0.985;
+  }
+}
+
+/* Keep button transitions to the properties that actually change. This also
+ * replaces the primitive's `transition-all` (same specificity, unlayered). */
+[data-slot="button"] {
+  transition-property: color, background-color, border-color, opacity, box-shadow, scale;
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease-swift);
+}
+
+/* Command palette: open-only entrance. Keeping it mounted for an exit would
+ * complicate focus restore and scroll-lock teardown, so closing stays instant. */
+@media (prefers-reduced-motion: no-preference) {
+  .palette-overlay {
+    animation: mattax-overlay-in 140ms var(--ease-swift) both;
+  }
+
+  .palette-card {
+    animation: mattax-menu-in 160ms var(--ease-swift) both;
+    transform-origin: top center;
   }
 }
 
@@ -449,8 +588,22 @@ html:has(.dark) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-enter,
-  .slide-up-enter {
+  .page-enter {
+    animation: none;
+  }
+
+  /* Keep the "route is resolving" feedback without movement: a gentle opacity
+   * pulse on a static segment. */
+  .route-progress {
+    animation: mattax-pulse-soft 1.4s ease-in-out infinite;
+  }
+
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"] {
     animation: none;
   }
 }

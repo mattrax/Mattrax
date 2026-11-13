@@ -296,7 +296,7 @@ export function CommandPalette() {
   return (
     <Show when={open()}>
       <div
-        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm"
+        class="palette-overlay fixed inset-0 z-[60] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm"
         onClick={() => setOpen(false)}
       >
         <div
@@ -304,7 +304,7 @@ export function CommandPalette() {
           role="dialog"
           aria-modal="true"
           aria-label="Search Mattrax"
-          class="dark w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.09] bg-popover shadow-2xl shadow-black/70"
+          class="palette-card dark w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.09] bg-popover shadow-2xl shadow-black/70"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
             if (event.key !== "Tab" || !card) return;

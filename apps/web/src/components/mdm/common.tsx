@@ -12,7 +12,7 @@ export function Page(props: { children: JSX.Element; class?: string; wide?: bool
   return (
     <div
       class={cn(
-        "mx-auto flex w-full flex-1 flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8",
+        "page-enter mx-auto flex w-full flex-1 flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8",
         props.wide ? "max-w-none" : "max-w-[1180px]",
         props.class,
       )}
@@ -71,7 +71,7 @@ export function Panel(props: {
   return (
     <section
       class={cn(
-        "relative overflow-hidden rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)]",
+        "relative overflow-hidden rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] transition-[border-color,translate] duration-200 ease-swift hover:border-white/[0.11] motion-safe:hover:-translate-y-px",
         props.class,
       )}
     >
@@ -147,9 +147,9 @@ export function StatCard(props: {
   );
 
   const classes = cn(
-    "group flex min-w-0 flex-col rounded-xl border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-all duration-200",
+    "group flex min-w-0 flex-col rounded-xl border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
     (props.href ?? props.onClick) &&
-      "hover:border-white/[0.12] hover:bg-white/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+      "hover:border-white/[0.12] hover:bg-white/[0.045] motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
     props.class,
   );
 
@@ -202,7 +202,7 @@ export function DataTable<T>(props: {
 }) {
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <div class="overflow-hidden rounded-xl border border-white/[0.07] bg-card">
+      <div class="page-enter overflow-hidden rounded-xl border border-white/[0.07] bg-card">
         <table class="w-full text-[13px]">
           <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <tr>

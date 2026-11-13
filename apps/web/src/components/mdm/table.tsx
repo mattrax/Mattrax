@@ -254,7 +254,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         fallback={!props.error && !props.loading ? props.empty : undefined}
       >
         <div class="relative">
-          <div class="overflow-x-auto rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+          <div class="page-enter overflow-x-auto rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
           <table class="w-full text-[13px]">
             <caption class="sr-only">{props.caption ?? "Data table"}</caption>
             <thead class="border-b border-white/[0.07] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
@@ -302,9 +302,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 {(row) => (
                   <tr
                     class={cn(
-                      "transition-colors hover:bg-white/[0.028]",
+                      "transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-white/[0.028]",
                       props.onRowClick && "cursor-pointer",
-                      selected()[row.id] && "bg-brand/[0.06]",
+                      selected()[row.id] &&
+                        "bg-brand/[0.06] shadow-[inset_2px_0_0_var(--brand)]",
                     )}
                     tabindex={props.onRowClick ? "0" : undefined}
                     onClick={(event) => {

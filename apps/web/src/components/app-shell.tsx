@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "@solidjs/router";
+import { useIsRouting, useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, Errored, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
@@ -50,6 +50,11 @@ function tenantInitials(name: string) {
     .join("");
 }
 
+function prefersReducedMotion() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /** The tenant most recently used on this device, so unscoped pages still
  * have somewhere to go without guessing from the server's order. */
 export function readLastTenant(): string | undefined {
@@ -71,7 +76,7 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-9 min-w-0 max-w-[15rem] items-center gap-2 rounded-lg px-1.5 pr-2 sm:h-8 text-left outline-none transition-colors hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.07]"
+        class="group flex h-9 min-w-0 max-w-[15rem] items-center gap-2 rounded-lg px-1.5 pr-2 sm:h-8 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.07] motion-safe:active:scale-[0.985]"
         aria-label="Switch tenant"
       >
         <Show
@@ -171,7 +176,7 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-label="Search"
       class={cn(
-        "group flex h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] text-muted-foreground outline-none transition-colors hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60",
+        "group flex h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
         props.compact ? "w-9 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5" : "px-2.5",
       )}
     >
@@ -198,7 +203,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
   return (
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
-        class="flex size-9 items-center justify-center overflow-hidden rounded-full sm:size-8 bg-gradient-to-br from-white/[0.18] to-white/[0.06] text-[11px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.12] transition-shadow hover:ring-white/25 focus-visible:ring-2 focus-visible:ring-ring/60"
+        class="flex size-9 items-center justify-center overflow-hidden rounded-full sm:size-8 bg-gradient-to-br from-white/[0.18] to-white/[0.06] text-[11px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.12] transition-[box-shadow,scale] duration-150 ease-swift hover:ring-white/25 focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
         aria-label="Account menu"
       >
         <Show
@@ -377,6 +382,7 @@ export function AppShell(props: {
 }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
@@ -437,7 +443,11 @@ export function AppShell(props: {
       queueMicrotask(() => {
         navRef
           ?.querySelector<HTMLElement>('[aria-current="page"]')
-          ?.scrollIntoView({ inline: "center", block: "nearest" });
+          ?.scrollIntoView({
+            inline: "center",
+            block: "nearest",
+            behavior: prefersReducedMotion() ? "auto" : "smooth",
+          });
       });
     },
   );
@@ -498,7 +508,7 @@ export function AppShell(props: {
                       href={item.href}
                       aria-current={active() ? "page" : undefined}
                       class={cn(
-                        "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                        "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-[color,background-color,box-shadow] duration-200 ease-swift outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                         active()
                           ? "bg-white/[0.075] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
                           : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
@@ -516,6 +526,18 @@ export function AppShell(props: {
             />
           </div>
         </div>
+
+        {/* Route progress: a slim indeterminate segment pinned to the header
+            edge. It disappears the moment the router settles, so it never
+            competes with the page's own entrance. */}
+        <Show when={isRouting()}>
+          <div
+            class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
+            aria-hidden="true"
+          >
+            <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+          </div>
+        </Show>
       </header>
 
       <Show when={!location.pathname.endsWith("/design")}>
@@ -525,7 +547,10 @@ export function AppShell(props: {
       <main
         id="main"
         tabindex="-1"
-        class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 scroll-mt-24 flex-col focus:outline-none"
+        class={cn(
+          "relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 scroll-mt-24 flex-col transition-opacity duration-[140ms] ease-swift focus:outline-none",
+          isRouting() && "opacity-70",
+        )}
       >
         <Errored
           fallback={(error, reset) => (

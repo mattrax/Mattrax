@@ -186,6 +186,23 @@ function sessionStore(): SessionStore {
   return clientSessionStore;
 }
 
+/**
+ * Some deployments briefly serve a stale credential record immediately after
+ * registration. Remember the fresh address so the first password sign-in can
+ * retry that specific race instead of telling the user their new password is
+ * wrong.
+ */
+let recentRegistration: { email: string; at: number } | undefined;
+
+const isRecentRegistration = (email: string) =>
+  Boolean(
+    recentRegistration &&
+      recentRegistration.email === email &&
+      Date.now() - recentRegistration.at < 20_000,
+  );
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Keep every hook in this tab in sync after a sign-in, MFA or sign-out. */
 function commitSession(session: Session | null): void {
   if (!isServer) sessionStore().set(session);
@@ -209,14 +226,38 @@ export const authClient = {
   signIn: {
     email: (payload: { email: string; password: string }) =>
       result(async () => {
-        const completion = await request<unknown>("/signIn", {
-          method: "POST",
-          body: authBody(payload),
-        });
-        const state = completionState(completion);
-        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
-        if (state.session) commitSession(state.session);
-        return state;
+        const attempt = async () => {
+          const completion = await request<unknown>("/signIn", {
+            method: "POST",
+            body: authBody(payload),
+          });
+          const state = completionState(completion);
+          if (!state.user && !state.pending)
+            throw new Error("Additional authentication is required");
+          if (state.session) commitSession(state.session);
+          return state;
+        };
+
+        try {
+          return await attempt();
+        } catch (error) {
+          if (
+            (error as { _tag?: string })._tag !== "PasswordRejected" ||
+            !isRecentRegistration(payload.email)
+          )
+            throw error;
+          // Registration just succeeded; retry the first sign-in until the
+          // credential write is visible to this read.
+          for (let retry = 0; retry < 5; retry++) {
+            await sleep(400 * (retry + 1));
+            try {
+              return await attempt();
+            } catch (retryError) {
+              if ((retryError as { _tag?: string })._tag !== "PasswordRejected") throw retryError;
+            }
+          }
+          throw error;
+        }
       }),
   },
   emailCode: {
@@ -293,7 +334,7 @@ export const authClient = {
           // Registration and password writes can be briefly invisible to the
           // sign-in read (the API uses a pool). Retry a fresh credential once or
           // twice before concluding the address already belonged to someone.
-          for (let attempt = 0; attempt < 3; attempt++) {
+          for (let attempt = 0; attempt < 5; attempt++) {
             try {
               const completion = await request<unknown>("/signIn", {
                 method: "POST",
@@ -307,7 +348,7 @@ export const authClient = {
             } catch (error) {
               const tag = (error as { _tag?: string })._tag;
               if (tag !== "PasswordRejected") throw error;
-              if (attempt === 2) return { status: "existing-account", email: payload.email };
+              if (attempt === 4) return { status: "existing-account", email: payload.email };
               await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
             }
           }
