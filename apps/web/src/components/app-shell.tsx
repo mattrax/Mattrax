@@ -22,7 +22,7 @@ import {
   Search as SearchIcon,
   User,
 } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { meQueryOptions } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { errorPresentation } from "~/lib/errors";
 
@@ -67,11 +67,12 @@ export function rememberTenant(id: string | undefined) {
   localStorage.setItem(LAST_TENANT_KEY, id);
 }
 
-function TenantSwitcher(props: { activeId: string | undefined }) {
-  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
+function TenantSwitcher(props: { activeId: string | undefined; userId: string | undefined }) {
+  const me = useQuery(() => meQueryOptions(props.userId));
   const navigate = useNavigate();
   const active = () => me.data?.tenants.find((tenant) => tenant.id === props.activeId);
   const tenants = () => me.data?.tenants ?? [];
+  const loading = () => me.isPending && !me.data;
 
   return (
     <DropdownMenu placement="bottom-start">
@@ -95,8 +96,13 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
           )}
         </Show>
         <span class="min-w-0 truncate text-[13px] font-[450] text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
-          <Show when={active()} fallback="Select tenant">
-            {(tenant) => tenant().name}
+          <Show
+            when={!loading()}
+            fallback={<span class="block h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06]" />}
+          >
+            <Show when={active()} fallback="Select tenant">
+              {(tenant) => tenant().name}
+            </Show>
           </Show>
         </span>
         <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
@@ -184,6 +190,7 @@ function SearchButton(props: { compact?: boolean }) {
 }
 
 type ShellUser = {
+  id?: string;
   name?: string | null;
   email?: string | null;
   image?: string | null;
@@ -318,7 +325,7 @@ export function AppShell(props: {
   const navigate = useNavigate();
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
-  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
+  const me = useQuery(() => meQueryOptions(props.user?.id));
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
 
   onSettled(() => {
@@ -371,6 +378,53 @@ export function AppShell(props: {
   );
 
   let navRef: HTMLElement | undefined;
+  const [indicator, setIndicator] = createSignal<{ left: number; width: number } | null>(null);
+  const [indicatorReady, setIndicatorReady] = createSignal(false);
+  let indicatorFrame: number | undefined;
+
+  const measureIndicator = () => {
+    if (!navRef) return;
+    const activeLink = navRef.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!activeLink) {
+      setIndicator(null);
+      return;
+    }
+    setIndicator({
+      left: activeLink.offsetLeft + 12,
+      width: Math.max(0, activeLink.offsetWidth - 24),
+    });
+  };
+
+  const queueMeasure = () => {
+    if (typeof window === "undefined") return;
+    if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
+    indicatorFrame = requestAnimationFrame(() => {
+      indicatorFrame = undefined;
+      measureIndicator();
+    });
+  };
+
+  onSettled(() => {
+    queueMeasure();
+    requestAnimationFrame(() => setIndicatorReady(true));
+    const observer = new ResizeObserver(queueMeasure);
+    if (navRef) observer.observe(navRef);
+    window.addEventListener("resize", queueMeasure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", queueMeasure);
+      if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
+    };
+  });
+
+  createEffect(
+    () => {
+      location.pathname;
+      navItems();
+    },
+    () => queueMeasure(),
+  );
+
   createEffect(
     () => location.pathname,
     () => {
@@ -409,7 +463,7 @@ export function AppShell(props: {
           </a>
 
           <span class="mx-1 hidden h-3.5 w-px bg-white/[0.09] sm:block" aria-hidden="true" />
-          <TenantSwitcher activeId={activeId()} />
+          <TenantSwitcher activeId={activeId()} userId={props.user?.id} />
 
           <div class="ml-auto flex items-center gap-1">
             <SearchButton />
@@ -422,7 +476,7 @@ export function AppShell(props: {
             <nav
               ref={navRef}
               aria-label="Primary"
-              class="no-scrollbar -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
+              class="no-scrollbar relative -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
             >
               <For each={navItems()}>
                 {(item) => {
@@ -432,9 +486,9 @@ export function AppShell(props: {
                       href={item.href}
                       aria-current={active() ? "page" : undefined}
                       class={cn(
-                        "relative flex h-11 shrink-0 items-center px-3 text-[13px] font-[450] transition-colors duration-150 outline-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:rounded-full after:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60",
+                        "relative flex h-11 shrink-0 items-center px-3 text-[13px] font-[450] transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60",
                         active()
-                          ? "text-foreground after:bg-foreground"
+                          ? "text-foreground"
                           : "text-muted-foreground hover:text-foreground",
                       )}
                     >
@@ -443,6 +497,22 @@ export function AppShell(props: {
                   );
                 }}
               </For>
+              <Show when={indicator()}>
+                {(position) => (
+                  <span
+                    class={cn(
+                      "pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-full bg-foreground",
+                      indicatorReady() &&
+                        "transition-[transform,width] duration-200 ease-swift motion-reduce:transition-none",
+                    )}
+                    style={{
+                      transform: `translateX(${position().left}px)`,
+                      width: `${position().width}px`,
+                    }}
+                    aria-hidden="true"
+                  />
+                )}
+              </Show>
             </nav>
             <span
               class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden"

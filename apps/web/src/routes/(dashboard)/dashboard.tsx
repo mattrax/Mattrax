@@ -6,7 +6,8 @@ import { Page, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Sparkles } from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, meQueryOptions } from "~/lib/enterprise";
+import { authClient } from "~/lib/auth";
 import {
   parsePolicyDraft,
   policyPlatforms,
@@ -26,7 +27,8 @@ const parseDraft = (value: string | null): PolicyDraft | undefined => parsePolic
 export default function DashboardRedirectPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
+  const session = authClient.useSession();
+  const me = useQuery(() => meQueryOptions(session().data?.user?.id));
   const [draft, setDraft] = createSignal<PolicyDraft | undefined>();
   const [draftChecked, setDraftChecked] = createSignal(false);
   const [tenantId, setTenantId] = createSignal("");
@@ -50,7 +52,7 @@ export default function DashboardRedirectPage() {
   createEffect(
     () => ({
       ready: draftChecked(),
-      loading: me.isPending,
+      loading: me.isPending && !me.data,
       draft: draft(),
       tenants: me.data?.tenants,
     }),

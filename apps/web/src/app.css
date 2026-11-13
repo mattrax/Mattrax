@@ -163,6 +163,24 @@
   }
   html {
     @apply font-sans;
+    /* Reserve the scrollbar track so opening a dropdown (or any overlay that
+       toggles body overflow) cannot shift the centred dashboard. */
+    scrollbar-gutter: stable;
+    scrollbar-color: var(--border) transparent;
+    scrollbar-width: thin;
+  }
+  html::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  html::-webkit-scrollbar-thumb {
+    background: var(--border);
+    background-clip: padding-box;
+    border: 3px solid var(--background);
+    border-radius: 999px;
   }
 }
 

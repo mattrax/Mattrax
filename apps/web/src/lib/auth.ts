@@ -5,6 +5,8 @@ import { errorMessage } from "~/lib/errors";
 import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
 import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
 import { capturePostHog } from "~/lib/posthog";
+import { clearMeCache } from "~/lib/me-cache";
+import { clearSessionPresence } from "~/lib/session-presence";
 
 type AuthUser = {
   id: string;
@@ -148,7 +150,12 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
   const load = async () => {
     if (data() === undefined) setPending(true);
     try {
-      setData(await request<Session | null>("/getSession", { method: "POST", body: "{}" }));
+      const next = await request<Session | null>("/getSession", { method: "POST", body: "{}" });
+      setData(next);
+      if (next === null) {
+        clearMeCache();
+        clearSessionPresence();
+      }
     } catch {
       if (data() === undefined) setData(null);
     } finally {
@@ -206,7 +213,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Keep every hook in this tab in sync after a sign-in, MFA or sign-out. */
 function commitSession(session: Session | null): void {
-  if (!isServer) sessionStore().set(session);
+  if (isServer) return;
+  sessionStore().set(session);
+  if (session === null) {
+    clearMeCache();
+    clearSessionPresence();
+  }
 }
 
 const revealOf = <T>(envelope: AuthEnvelope<unknown>, kind: PrivateReveal["kind"]): T | undefined =>

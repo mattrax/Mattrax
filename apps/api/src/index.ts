@@ -72,6 +72,7 @@ import {
   type RequestAnalytics,
 } from "./analytics.js";
 import { checkReadiness } from "./readiness.js";
+import { withSessionPresence } from "./sessionPresence.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
 const rateLimiter = makeRateLimiter();
@@ -661,6 +662,11 @@ export default {
     }
 
     if (analytics.enabled) ctx.waitUntil(analytics.flush());
+
+    response = withSessionPresence(response, {
+      sessionCookieName: sessionCookie,
+      secure: new URL(request.url).protocol === "https:",
+    });
 
     return withRequestId(response, requestId);
   },

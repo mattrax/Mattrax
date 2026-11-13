@@ -2,7 +2,12 @@ import { env } from "cloudflare:workers";
 import type { StartMiddleware } from "@solidjs/vite-plugin";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
-import { type PreloadedSession, setPreloadedSession } from "~/lib/session-store";
+import {
+  getPreloadedSession,
+  type PreloadedSession,
+  setPreloadedSession,
+} from "~/lib/session-store";
+import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { setPostHogConfig } from "~/lib/posthog-config-store";
 
 const api = createAPIHandler(routes);
@@ -107,7 +112,31 @@ const middleware: StartMiddleware = async (event, next) => {
       host: (env as { POSTHOG_HOST?: string }).POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
     });
   await preloadSession(event.request);
-  return api(event, next);
+  const response = await api(event, next);
+
+  // Seed the client-visible presence cookie from the server's session check.
+  // API responses already mirror session cookie rotations themselves.
+  if (
+    event.request.method !== "GET" ||
+    !(response.headers.get("content-type") ?? "").includes("text/html")
+  )
+    return response;
+  const presence = getPreloadedSession(event.request);
+  if (presence === undefined) return response;
+  const secure = new URL(event.request.url).protocol === "https:";
+  const headers = new Headers(response.headers);
+  headers.append(
+    "set-cookie",
+    sessionPresenceSetCookie(
+      presence === null ? null : Date.now() + SESSION_PRESENCE_MAX_AGE_SECONDS * 1000,
+      secure,
+    ),
+  );
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 export default middleware;

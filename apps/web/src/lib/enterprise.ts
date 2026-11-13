@@ -1,9 +1,11 @@
 import { queryOptions } from "@tanstack/solid-query";
+import type { MeResponse } from "@mattrax/enterprise-domain";
 import { Effect } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
 import { errorField, errorTag } from "~/lib/errors";
+import { readMeCache, writeMeCache } from "~/lib/me-cache";
 import {
   requestStepUp,
   stepUpGrant,
@@ -1448,8 +1450,25 @@ export const enterprise = {
     endpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
+export const meQueryOptions = (userId?: string, enabled = true) => {
+  const cached = readMeCache(userId);
+  return queryOptions<MeResponse, unknown, MeResponse, ReturnType<typeof enterpriseKeys.me>>({
+    queryKey: enterpriseKeys.me(),
+    queryFn: async () => {
+      const data = (await enterprise.me()) as MeResponse;
+      writeMeCache(data);
+      return data;
+    },
+    enabled: !isServer && enabled,
+    // A cold load paints the last known shell immediately; the query still
+    // refreshes in the background.
+    placeholderData: cached?.data,
+    staleTime: 2 * 60_000,
+  });
+};
+
 export const enterpriseQueries = {
-  me: () => enterpriseQueryOptions({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }),
+  me: (userId?: string) => meQueryOptions(userId),
   tenants: () =>
     enterpriseQueryOptions({ queryKey: enterpriseKeys.tenants(), queryFn: enterprise.listTenants }),
   tenant: (tenantId: RouteParam) =>

@@ -1,15 +1,18 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, type ParentProps, Show } from "solid-js";
+import { createEffect, createSignal, type ParentProps, onSettled, Show } from "solid-js";
 import { AppShell } from "~/components/app-shell";
 import { QueryError } from "~/components/mdm/common";
 import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { meQueryOptions } from "~/lib/enterprise";
+import { errorTag } from "~/lib/errors";
+import { clearMeCache } from "~/lib/me-cache";
 import { reportGlobalError } from "~/lib/global-errors";
 import { syncPostHogTenant } from "~/lib/posthog";
+import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
 
 function DashboardBootScreen() {
   return (
@@ -28,31 +31,70 @@ export default function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const [presenceTick, setPresenceTick] = createSignal(0);
+  onSettled(() => {
+    const recheck = () => setPresenceTick((value) => value + 1);
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  });
+  const presenceState = () => {
+    presenceTick();
+    return readSessionPresence().state;
+  };
+  const presenceActive = () => presenceState() === "active";
+  const canLoadSession = () =>
+    Boolean(session().data?.user) || (session().isPending && presenceActive());
   // Session claims are a snapshot from sign-in. `me` reads the user row so a
   // verification completed in this tab takes effect without signing out.
-  const me = useQuery(() => ({
-    queryKey: enterpriseKeys.me(),
-    queryFn: enterprise.me,
-    // The server render has no reliable request context for this query; hydrate
-    // first and let the browser fetch it with the session cookie.
-    enabled: !isServer && Boolean(session().data?.user),
-  }));
+  const me = useQuery(() =>
+    meQueryOptions(session().data?.user?.id, !isServer && canLoadSession()),
+  );
+  const unauthorized = () => me.isError && errorTag(me.error) === "EnterpriseUnauthorized";
+  const shellUser = () =>
+    session().data?.user ?? (session().isPending && presenceActive() ? me.data?.user : undefined);
 
   createEffect(
     () => ({
       pending: session().isPending,
       user: session().data?.user,
-      mePending: me.isPending,
       verified: me.data?.user.emailVerified,
+      unauthorized: unauthorized(),
+      presence: presenceState(),
       path: `${location.pathname}${location.search}`,
     }),
-    ({ pending, user, mePending, verified, path }) => {
-      if (pending) return;
-      if (!user) {
+    ({ pending, user, verified, unauthorized, presence, path }) => {
+      const login = () => {
+        clearSessionPresence();
+        clearMeCache();
+        queryClient.clear();
         navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
+      };
+      if (presence === "expired") {
+        void session().refetch();
+        login();
         return;
       }
-      if (mePending || verified === undefined) return;
+      if (pending) {
+        // The shadow cookie is a fast path only: a present session still wins.
+        // Without one there is no reason to wait for a session HTTP request.
+        if (presence !== "active") login();
+        return;
+      }
+      if (!user) {
+        login();
+        return;
+      }
+      if (unauthorized) {
+        void session().refetch();
+        login();
+        return;
+      }
+      if (verified === undefined) return;
       if (!verified) {
         navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
       }
@@ -75,14 +117,22 @@ export default function DashboardLayout(props: ParentProps) {
       reportGlobalError(error);
       return;
     }
+    queryClient.clear();
     navigate("/login", { replace: true });
   };
 
   return (
-    <Show when={session().data?.user} fallback={<DashboardBootScreen />}>
+    <Show
+      when={!unauthorized() ? shellUser() : undefined}
+      fallback={
+        unauthorized() ? null : session().isPending && presenceActive() ? (
+          <DashboardBootScreen />
+        ) : null
+      }
+    >
       {(user) => (
         <Show
-          when={!me.isError}
+          when={!me.isError || me.data}
           fallback={
             <div class="dark flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
               <QueryError

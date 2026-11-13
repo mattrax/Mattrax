@@ -16,7 +16,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
-import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { enterprise, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 
 export default function AccountPage() {
@@ -224,7 +224,7 @@ export default function AccountPage() {
   const [tokenScope, setTokenScope] = createSignal<"read" | "write">("write");
   const [tokenExpiry, setTokenExpiry] = createSignal("never");
   const [tokenTenantId, setTokenTenantId] = createSignal("");
-  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
+  const me = useQuery(() => meQueryOptions(session().data?.user?.id));
   const tenants = () => me.data?.tenants ?? [];
   const tenantLabel = (tenantId?: string | null) =>
     tenantId
