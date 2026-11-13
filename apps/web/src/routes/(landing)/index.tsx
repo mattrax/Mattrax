@@ -98,26 +98,25 @@ export default function Page() {
 function Hero() {
   return (
     <section class="relative isolate overflow-hidden">
-      <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(60%_55%_at_50%_-10%,rgba(28,25,23,0.09),transparent_70%),radial-gradient(35%_45%_at_100%_10%,rgba(120,113,108,0.12),transparent_70%)]" />
-      <div class="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,rgba(28,25,23,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(28,25,23,0.045)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)]" />
+      <div class="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)]" />
 
       <div class="mx-auto grid max-w-7xl items-center gap-16 px-6 pb-20 pt-16 sm:px-8 xl:grid-cols-[1.02fr_0.98fr] xl:gap-12 lg:pb-28 lg:pt-24">
         <div class="max-w-2xl">
-          <div class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/70 px-3 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur">
+          <div class="inline-flex items-center gap-2 rounded-md border border-white/[0.07] bg-card px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
             <span class="relative flex size-1.5">
-              <span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-              <span class="relative inline-flex size-1.5 rounded-full bg-emerald-600" />
+              <span class="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+              <span class="relative inline-flex size-1.5 rounded-full bg-success" />
             </span>
             Apple, Windows and Android in one control plane
           </div>
 
-          <h1 class="mt-7 text-[3.2rem] font-medium leading-[0.94] tracking-[-0.055em] text-stone-950 sm:text-6xl lg:text-[3.9rem] xl:text-[4.2rem]">
+          <h1 class="mt-7 text-[2.7rem] font-[540] leading-[0.98] tracking-[-0.045em] text-foreground sm:text-5xl lg:text-[3.4rem] xl:text-[3.6rem]">
             Device management
             <br />
-            <span class="text-stone-400 xl:whitespace-nowrap">without the legacy.</span>
+            <span class="text-muted-foreground/80 xl:whitespace-nowrap">without the legacy.</span>
           </h1>
 
-          <p class="mt-7 max-w-xl text-base leading-7 text-stone-500 sm:text-lg">
+          <p class="mt-7 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
             Mattrax gives you enrollment, policy, inventory and remote actions for every platform —
             with a clean API, a real audit trail and a deployment model that fits how you work.
           </p>
@@ -126,7 +125,7 @@ function Hero() {
             <a href="/register">
               <Button
                 size="lg"
-                class="h-12 rounded-full bg-stone-950 px-8 text-stone-50 hover:bg-stone-800"
+                class="h-10 rounded-md bg-foreground px-6 text-background hover:bg-foreground/90"
               >
                 Start free
                 <ArrowIcon />
@@ -136,14 +135,14 @@ function Hero() {
               <Button
                 variant="outline"
                 size="lg"
-                class="h-12 rounded-full border-stone-300 bg-white/60 px-8 text-stone-700 hover:bg-white"
+                class="h-10 rounded-md border-white/[0.12] bg-transparent px-6 text-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
               >
                 Read the docs
               </Button>
             </a>
           </div>
 
-          <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">
+          <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium tracking-normal text-muted-foreground/80">
             <span>APNs</span>
             <Dot />
             <span>ABM</span>
@@ -179,17 +178,17 @@ function FleetPreview() {
 
   return (
     <div class="relative mx-auto w-full max-w-[560px] lg:max-w-none">
-      <div class="absolute -inset-6 -z-10 rounded-[36px] bg-gradient-to-br from-stone-200/60 via-transparent to-stone-100/30 blur-2xl" />
-      <div class="rounded-[30px] border border-stone-200 bg-white/75 p-2 shadow-[0_30px_80px_-30px_rgba(28,25,23,0.35)] backdrop-blur">
-        <div class="overflow-hidden rounded-[22px] border border-stone-200 bg-white">
-          <div class="flex items-center justify-between border-b border-stone-100 px-5 py-4">
+      <div />
+      <div class="rounded-lg border border-white/[0.07] bg-card p-2 shadow-[0_30px_80px_-30px_rgba(28,25,23,0.35)] backdrop-blur">
+        <div class="overflow-hidden rounded-md border border-white/[0.07] bg-card">
+          <div class="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
             <div class="flex items-center gap-2">
-              <span class="size-2 rounded-full bg-stone-200" />
-              <span class="size-2 rounded-full bg-stone-200" />
-              <span class="size-2 rounded-full bg-stone-200" />
+              <span class="size-2 rounded-full bg-white/[0.07]" />
+              <span class="size-2 rounded-full bg-white/[0.07]" />
+              <span class="size-2 rounded-full bg-white/[0.07]" />
             </div>
-            <div class="flex items-center gap-2 text-[11px] font-medium text-stone-400">
-              <span class="size-1.5 rounded-full bg-emerald-500" />
+            <div class="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/80">
+              <span class="size-1.5 rounded-full bg-success" />
               All systems operational
             </div>
           </div>
@@ -197,12 +196,14 @@ function FleetPreview() {
           <div class="p-5">
             <div class="flex items-start justify-between">
               <div>
-                <p class="text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">
+                <p class="text-[11px] font-medium tracking-normal text-muted-foreground/80">
                   Fleet overview
                 </p>
-                <p class="mt-1 text-2xl font-medium tracking-tight text-stone-900">1,284 devices</p>
+                <p class="mt-1 text-2xl font-medium tracking-tight text-foreground">
+                  1,284 devices
+                </p>
               </div>
-              <span class="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[10px] font-medium text-stone-500">
+              <span class="rounded-md border border-white/[0.07] bg-white/[0.02] px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
                 Live
               </span>
             </div>
@@ -216,19 +217,19 @@ function FleetPreview() {
             <div class="mt-5 space-y-2">
               <For each={devices}>
                 {(device) => (
-                  <div class="flex items-center gap-3 rounded-xl border border-stone-100 bg-stone-50/60 px-3 py-2.5">
-                    <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500">
+                  <div class="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
+                    <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-muted-foreground">
                       <DeviceGlyph detail={device.detail} />
                     </span>
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-xs font-medium text-stone-800">{device.name}</p>
-                      <p class="truncate text-[10px] text-stone-400">{device.detail}</p>
+                      <p class="truncate text-xs font-medium text-foreground/90">{device.name}</p>
+                      <p class="truncate text-[10px] text-muted-foreground/80">{device.detail}</p>
                     </div>
                     <span
-                      class={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      class={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium ${
                         device.tone === "warn"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-emerald-50 text-emerald-700"
+                          ? "bg-warning/10 text-warning-foreground"
+                          : "bg-success/10 text-success-foreground"
                       }`}
                     >
                       {device.state}
@@ -238,14 +239,14 @@ function FleetPreview() {
               </For>
             </div>
 
-            <div class="mt-4 flex items-center justify-between rounded-xl border border-stone-100 px-3 py-2.5">
-              <div class="flex items-center gap-2 text-[11px] text-stone-500">
+            <div class="mt-4 flex items-center justify-between rounded-lg border border-white/[0.07] px-3 py-2.5">
+              <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <SyncIcon />
                 Policy sync
               </div>
               <div class="flex items-center gap-2">
-                <span class="text-[10px] text-stone-400">1,278 delivered</span>
-                <span class="rounded-full bg-stone-900 px-2 py-0.5 text-[10px] font-medium text-stone-50">
+                <span class="text-[10px] text-muted-foreground/80">1,278 delivered</span>
+                <span class="rounded-md bg-card px-2 py-0.5 text-[10px] font-medium text-foreground">
                   100%
                 </span>
               </div>
@@ -253,27 +254,15 @@ function FleetPreview() {
           </div>
         </div>
       </div>
-
-      <div class="absolute -left-4 top-24 hidden rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-lg shadow-stone-900/5 sm:block">
-        <p class="text-[9px] font-medium uppercase tracking-[0.14em] text-stone-400">APNs</p>
-        <p class="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium text-stone-700">
-          <span class="size-1.5 rounded-full bg-emerald-500" />
-          Delivered in 0.8s
-        </p>
-      </div>
-      <div class="absolute -right-3 bottom-20 hidden rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-lg shadow-stone-900/5 sm:block">
-        <p class="text-[9px] font-medium uppercase tracking-[0.14em] text-stone-400">Audit</p>
-        <p class="mt-0.5 text-[11px] font-medium text-stone-700">policy.updated · just now</p>
-      </div>
     </div>
   );
 }
 
 function PreviewStat(props: { value: string; label: string }) {
   return (
-    <div class="rounded-xl border border-stone-100 bg-white p-3">
-      <p class="text-lg font-medium tracking-tight text-stone-900">{props.value}</p>
-      <p class="mt-0.5 text-[10px] text-stone-400">{props.label}</p>
+    <div class="rounded-lg border border-white/[0.07] bg-card p-3">
+      <p class="text-lg font-medium tracking-tight text-foreground">{props.value}</p>
+      <p class="mt-0.5 text-[10px] text-muted-foreground/80">{props.label}</p>
     </div>
   );
 }
@@ -286,47 +275,47 @@ function DeviceGlyph(props: { detail: string }) {
 
 function Platforms() {
   return (
-    <section id="platforms" class="border-y border-stone-200 bg-white">
+    <section id="platforms" class="border-y border-white/[0.07] bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-24">
         <div class="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div class="max-w-2xl">
             <SectionLabel>Platforms</SectionLabel>
-            <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+            <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
               One control plane.
               <br />
-              <span class="text-stone-400">Every operating system.</span>
+              <span class="text-muted-foreground/80">Every operating system.</span>
             </h2>
           </div>
-          <p class="max-w-md text-sm leading-6 text-stone-500">
+          <p class="max-w-md text-sm leading-6 text-muted-foreground">
             Native protocols, not a lowest-common-denominator agent. Each platform keeps its own
             enrollment, policy and inventory model — with one API and one audit trail.
           </p>
         </div>
 
-        <div class="mt-12 grid gap-4 lg:grid-cols-2">
+        <div class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <For each={platforms}>
             {(platform) => (
               <a
                 href={platform.href}
-                class="group relative overflow-hidden rounded-2xl border border-stone-200 bg-stone-50/40 p-7 transition hover:-translate-y-1 hover:border-stone-300 hover:bg-white hover:shadow-xl hover:shadow-stone-900/5"
+                class="group relative overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.015] p-7 transition hover:border-white/[0.12] hover:bg-white/[0.03]"
               >
                 <div class="flex items-start justify-between">
-                  <span class="flex size-11 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 shadow-sm">
+                  <span class="flex size-11 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-foreground/80">
                     <platform.icon class="size-5" />
                   </span>
-                  <ArrowIcon class="size-4 -translate-x-1 text-stone-300 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
+                  <ArrowIcon class="size-4 -translate-x-1 text-muted-foreground/60 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
                 </div>
-                <h3 class="mt-6 text-xl font-medium tracking-tight text-stone-900">
+                <h3 class="mt-6 text-xl font-medium tracking-tight text-foreground">
                   {platform.name}
                 </h3>
-                <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">
+                <p class="mt-1 text-[11px] font-medium tracking-normal text-muted-foreground/80">
                   {platform.tag}
                 </p>
-                <p class="mt-4 text-sm leading-6 text-stone-500">{platform.body}</p>
-                <ul class="mt-6 space-y-2 border-t border-stone-200/70 pt-5">
+                <p class="mt-4 text-sm leading-6 text-muted-foreground">{platform.body}</p>
+                <ul class="mt-6 space-y-2 border-t border-white/[0.07] pt-5">
                   <For each={platform.points}>
                     {(point) => (
-                      <li class="flex items-center gap-2 text-xs text-stone-600">
+                      <li class="flex items-center gap-2 text-xs text-muted-foreground">
                         <CheckIcon />
                         {point}
                       </li>
@@ -347,26 +336,26 @@ function FeatureGrid() {
     <section id="product" class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-28">
       <div class="max-w-2xl">
         <SectionLabel>Product</SectionLabel>
-        <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+        <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
           The work behind the dashboard.
         </h2>
-        <p class="mt-5 text-sm leading-6 text-stone-500 sm:text-base">
+        <p class="mt-5 text-sm leading-6 text-muted-foreground sm:text-base">
           Enrollment, policy resolution, inventory, security and automation are designed together,
           so a change in one place is visible everywhere it matters.
         </p>
       </div>
 
-      <div class="mt-12 grid gap-px overflow-hidden rounded-2xl border border-stone-200 bg-stone-200 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="mt-12 grid gap-px overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.07] sm:grid-cols-2 lg:grid-cols-3">
         <For each={features}>
           {(feature) => (
-            <div class="group bg-stone-50 p-7 transition hover:bg-white">
-              <span class="flex size-9 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 shadow-sm">
+            <div class="group bg-white/[0.02] p-7 transition hover:bg-card">
+              <span class="flex size-9 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-muted-foreground">
                 <feature.icon class="size-4" />
               </span>
-              <h3 class="mt-5 text-base font-medium tracking-tight text-stone-900">
+              <h3 class="mt-5 text-base font-medium tracking-tight text-foreground">
                 {feature.title}
               </h3>
-              <p class="mt-2 text-sm leading-6 text-stone-500">{feature.body}</p>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">{feature.body}</p>
             </div>
           )}
         </For>
@@ -377,17 +366,14 @@ function FeatureGrid() {
 
 function Developer() {
   return (
-    <section id="developers" class="relative overflow-hidden bg-stone-950">
-      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_80%_0%,rgba(120,113,108,0.25),transparent_70%)]" />
+    <section id="developers" class="relative overflow-hidden bg-white/[0.02]">
       <div class="mx-auto grid min-w-0 max-w-7xl gap-14 px-6 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-28">
         <div class="min-w-0">
-          <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-stone-500">
-            For builders
-          </p>
-          <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-50 sm:text-5xl">
+          <p class="text-[11px] font-medium tracking-normal text-muted-foreground">For builders</p>
+          <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             An API, not an afterthought.
           </h2>
-          <p class="mt-5 max-w-lg text-sm leading-6 text-stone-400 sm:text-base">
+          <p class="mt-5 max-w-lg text-sm leading-6 text-muted-foreground/80 sm:text-base">
             Everything the dashboard does is available over a typed REST API. Build a provisioning
             pipeline, sync inventory into your SIEM, or embed the protocol gateway in your own
             product.
@@ -410,7 +396,7 @@ function Developer() {
 
           <div class="mt-8 flex flex-wrap gap-3">
             <a href="/docs/api/" target="_self">
-              <Button class="rounded-full bg-stone-50 px-6 text-stone-900 hover:bg-white">
+              <Button class="rounded-md bg-foreground px-6 text-background hover:bg-foreground/90">
                 Explore the API
                 <ArrowIcon />
               </Button>
@@ -419,43 +405,45 @@ function Developer() {
         </div>
 
         <div class="relative min-w-0">
-          <div class="absolute -inset-4 rounded-3xl bg-stone-800/20 blur-2xl" />
-          <div class="relative overflow-hidden rounded-2xl border border-stone-800 bg-stone-900 shadow-2xl">
-            <div class="flex items-center justify-between border-b border-stone-800 px-5 py-3">
+          <div class="absolute -inset-4 rounded-lg bg-white/[0.03] blur-2xl" />
+          <div class="relative overflow-hidden rounded-lg border border-white/[0.08] bg-card shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/[0.08] px-5 py-3">
               <div class="flex items-center gap-2">
-                <span class="size-2 rounded-full bg-stone-700" />
-                <span class="size-2 rounded-full bg-stone-700" />
-                <span class="size-2 rounded-full bg-stone-700" />
+                <span class="size-2 rounded-full bg-white/[0.08]" />
+                <span class="size-2 rounded-full bg-white/[0.08]" />
+                <span class="size-2 rounded-full bg-white/[0.08]" />
               </div>
-              <span class="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">
+              <span class="text-[10px] font-medium tracking-normal text-muted-foreground">
                 TypeScript
               </span>
             </div>
-            <pre class="max-w-full overflow-x-auto p-5 text-[12.5px] leading-6 text-stone-300 sm:p-6">
+            <pre class="max-w-full overflow-x-auto p-5 text-[12.5px] leading-6 text-muted-foreground/60 sm:p-6">
               <code>
-                <span class="text-stone-500">{"// Implement one contract, own the product."}</span>
+                <span class="text-muted-foreground">
+                  {"// Implement one contract, own the product."}
+                </span>
                 {"\n"}
-                <span class="text-stone-500">{"import"}</span>
+                <span class="text-muted-foreground">{"import"}</span>
                 {" { ManagementBackendHttp } "}
-                <span class="text-stone-500">{"from"}</span>
+                <span class="text-muted-foreground">{"from"}</span>
                 {' "'}
-                <span class="text-stone-200">@mattrax/management-backend-http</span>
+                <span class="text-foreground/80">@mattrax/management-backend-http</span>
                 {'";\n\n'}
-                <span class="text-stone-500">{"const"}</span>
+                <span class="text-muted-foreground">{"const"}</span>
                 {" gateway = "}
-                <span class="text-stone-200">ManagementBackendHttp</span>
+                <span class="text-foreground/80">ManagementBackendHttp</span>
                 {"({\n  baseUrl: "}
-                <span class="text-emerald-300">"https://api.acme.dev"</span>
+                <span class="text-success">"https://api.acme.dev"</span>
                 {",\n  secret: process.env."}
-                <span class="text-stone-200">MATTRAX_WEBHOOK_SECRET</span>
+                <span class="text-foreground/80">MATTRAX_WEBHOOK_SECRET</span>
                 {"!,\n});\n\n"}
-                <span class="text-stone-500">{"// Apple, Windows, SCEP and DDM"}</span>
+                <span class="text-muted-foreground">{"// Apple, Windows, SCEP and DDM"}</span>
                 {"\n"}
-                <span class="text-stone-500">{"// are handled by the gateway."}</span>
+                <span class="text-muted-foreground">{"// are handled by the gateway."}</span>
               </code>
             </pre>
-            <div class="border-t border-stone-800 px-5 py-3 text-[11px] text-stone-500">
-              <span class="text-emerald-400">●</span> POST /webhook/apple/checkin · 200 · 12ms
+            <div class="border-t border-white/[0.08] px-5 py-3 text-[11px] text-muted-foreground">
+              <span class="text-success">●</span> POST /webhook/apple/checkin · 200 · 12ms
             </div>
           </div>
         </div>
@@ -467,12 +455,12 @@ function Developer() {
 function DeveloperPoint(props: { title: string; body: string }) {
   return (
     <div class="flex gap-3">
-      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-stone-700 text-stone-400">
+      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.1] text-muted-foreground/80">
         <CheckIcon class="size-3" />
       </span>
       <div>
-        <p class="text-sm font-medium text-stone-200">{props.title}</p>
-        <p class="mt-0.5 text-xs leading-5 text-stone-500">{props.body}</p>
+        <p class="text-sm font-medium text-foreground/80">{props.title}</p>
+        <p class="mt-0.5 text-xs leading-5 text-muted-foreground">{props.body}</p>
       </div>
     </div>
   );
@@ -480,17 +468,17 @@ function DeveloperPoint(props: { title: string; body: string }) {
 
 function Migration() {
   return (
-    <section id="migration" class="border-b border-stone-200 bg-white">
+    <section id="migration" class="border-b border-white/[0.07] bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-28">
         <div class="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
           <div>
             <SectionLabel>Migration</SectionLabel>
-            <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+            <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
               Moving from
               <br />
-              <span class="text-stone-400">another MDM?</span>
+              <span class="text-muted-foreground/80">another MDM?</span>
             </h2>
-            <p class="mt-5 max-w-md text-sm leading-6 text-stone-500 sm:text-base">
+            <p class="mt-5 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
               A migration is a re-enrollment project. We give you the primitives — CSV
               pre-registration, ABM reassignment, Autopilot import, profile re-upload and a
               coexistence plan — instead of pretending a vendor export is a drop-in.
@@ -499,7 +487,7 @@ function Migration() {
             <div class="mt-7 flex flex-wrap gap-2">
               <For each={migrations}>
                 {(vendor) => (
-                  <span class="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600">
+                  <span class="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-xs font-medium text-muted-foreground">
                     {vendor}
                   </span>
                 )}
@@ -509,7 +497,7 @@ function Migration() {
             <a
               href="/docs/migration/"
               target="_self"
-              class="mt-8 inline-flex items-center gap-2 text-sm font-medium text-stone-900 hover:text-stone-600"
+              class="mt-8 inline-flex items-center gap-2 text-sm font-medium text-foreground hover:text-muted-foreground"
             >
               Read the migration guide
               <ArrowIcon />
@@ -541,10 +529,12 @@ function Migration() {
 
 function MigrationStep(props: { number: string; title: string; body: string }) {
   return (
-    <div class="rounded-2xl border border-stone-200 bg-stone-50/50 p-5">
-      <p class="text-[10px] font-medium tracking-[0.18em] text-stone-400">{props.number}</p>
-      <p class="mt-6 text-sm font-medium text-stone-900">{props.title}</p>
-      <p class="mt-2 text-xs leading-5 text-stone-500">{props.body}</p>
+    <div class="rounded-lg border border-white/[0.07] bg-white/[0.015] p-5">
+      <p class="text-[10px] font-medium tracking-[0.18em] text-muted-foreground/80">
+        {props.number}
+      </p>
+      <p class="mt-6 text-sm font-medium text-foreground">{props.title}</p>
+      <p class="mt-2 text-xs leading-5 text-muted-foreground">{props.body}</p>
     </div>
   );
 }
@@ -563,26 +553,26 @@ function Enterprise() {
       <div class="grid gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
         <div>
           <SectionLabel>Enterprise</SectionLabel>
-          <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+          <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             Built for teams
             <br />
-            <span class="text-stone-400">that answer audits.</span>
+            <span class="text-muted-foreground/80">that answer audits.</span>
           </h2>
-          <p class="mt-5 max-w-md text-sm leading-6 text-stone-500 sm:text-base">
+          <p class="mt-5 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
             Multi-tenant from the database up, with the controls security teams ask for: step-up
             confirmation, scoped automation, immutable audit events and a backup you can actually
             download.
           </p>
           <div class="mt-8 flex flex-wrap gap-3">
             <a href="/register">
-              <Button class="rounded-full bg-stone-950 px-6 text-stone-50 hover:bg-stone-800">
+              <Button class="rounded-md bg-foreground px-6 text-background hover:bg-foreground/90">
                 Start free
               </Button>
             </a>
             <a href="mailto:hello@mattrax.app">
               <Button
                 variant="outline"
-                class="rounded-full border-stone-300 px-6 text-stone-700 hover:bg-stone-100"
+                class="rounded-md border-white/[0.12] bg-transparent px-6 text-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
               >
                 Talk to us
               </Button>
@@ -590,16 +580,16 @@ function Enterprise() {
           </div>
         </div>
 
-        <div class="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+        <div class="overflow-hidden rounded-lg border border-white/[0.07] bg-card">
           <For each={rows}>
             {(row, index) => (
               <div
                 class={`flex items-center justify-between gap-6 px-6 py-4 ${
-                  index() > 0 ? "border-t border-stone-100" : ""
+                  index() > 0 ? "border-t border-white/[0.07]" : ""
                 }`}
               >
-                <span class="text-sm text-stone-600">{row}</span>
-                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-500">
+                <span class="text-sm text-muted-foreground">{row}</span>
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-muted-foreground">
                   <CheckIcon class="size-3" />
                 </span>
               </div>
@@ -613,20 +603,20 @@ function Enterprise() {
 
 function Pricing() {
   return (
-    <section id="pricing" class="border-y border-stone-200 bg-white">
+    <section id="pricing" class="border-y border-white/[0.07] bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-28">
         <div class="max-w-2xl">
           <SectionLabel>Pricing</SectionLabel>
-          <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+          <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             Start small. Keep the exit.
           </h2>
-          <p class="mt-5 text-sm leading-6 text-stone-500 sm:text-base">
+          <p class="mt-5 text-sm leading-6 text-muted-foreground sm:text-base">
             Cloud is free during alpha. Every plan includes the dashboard, API and MDM endpoints for
             Apple, Windows and Android.
           </p>
         </div>
 
-        <div class="mt-12 grid gap-4 lg:grid-cols-2">
+        <div class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <PriceCard
             name="Cloud"
             price="Free"
@@ -667,49 +657,47 @@ function PriceCard(props: {
 }) {
   return (
     <div
-      class={`flex flex-col rounded-2xl border p-7 ${
+      class={`flex flex-col rounded-lg border p-7 ${
         props.highlighted
-          ? "border-stone-900 bg-stone-950 text-stone-50 shadow-xl shadow-stone-900/10"
-          : "border-stone-200 bg-stone-50/40"
+          ? "border-white/[0.16] bg-white/[0.045] text-foreground"
+          : "border-white/[0.07] bg-white/[0.015]"
       }`}
     >
       <div class="flex items-center justify-between">
-        <p class={`text-sm font-medium ${props.highlighted ? "text-stone-100" : "text-stone-900"}`}>
+        <p
+          class={`text-sm font-medium ${props.highlighted ? "text-foreground" : "text-foreground"}`}
+        >
           {props.name}
         </p>
         {props.highlighted && (
-          <span class="rounded-full bg-stone-800 px-2 py-0.5 text-[10px] font-medium text-stone-300">
+          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground/60">
             Recommended
           </span>
         )}
       </div>
       <div class="mt-5 flex items-baseline gap-1.5">
         <span
-          class={`text-4xl font-medium tracking-tight ${
-            props.highlighted ? "text-stone-50" : "text-stone-950"
+          class={`text-3xl font-[540] tracking-tight ${
+            props.highlighted ? "text-foreground" : "text-foreground"
           }`}
         >
           {props.price}
         </span>
         {props.suffix && (
-          <span class={`text-xs ${props.highlighted ? "text-stone-500" : "text-stone-400"}`}>
+          <span
+            class={`text-xs ${props.highlighted ? "text-muted-foreground" : "text-muted-foreground/80"}`}
+          >
             {props.suffix}
           </span>
         )}
       </div>
       <p
-        class={`mt-3 text-xs leading-5 ${props.highlighted ? "text-stone-400" : "text-stone-500"}`}
+        class={`mt-3 text-xs leading-5 ${props.highlighted ? "text-muted-foreground/80" : "text-muted-foreground"}`}
       >
         {props.body}
       </p>
       <a href={props.href} class="mt-6">
-        <Button
-          class={`w-full rounded-full ${
-            props.highlighted
-              ? "bg-stone-50 text-stone-900 hover:bg-white"
-              : "bg-stone-950 text-stone-50 hover:bg-stone-800"
-          }`}
-        >
+        <Button class="w-full rounded-md bg-foreground text-background hover:bg-foreground/90">
           {props.cta}
         </Button>
       </a>
@@ -718,10 +706,12 @@ function PriceCard(props: {
           {(feature) => (
             <li
               class={`flex items-center gap-2 text-xs ${
-                props.highlighted ? "text-stone-400" : "text-stone-600"
+                props.highlighted ? "text-muted-foreground/80" : "text-muted-foreground"
               }`}
             >
-              <CheckIcon class={props.highlighted ? "text-stone-500" : "text-stone-400"} />
+              <CheckIcon
+                class={props.highlighted ? "text-muted-foreground" : "text-muted-foreground/80"}
+              />
               {feature}
             </li>
           )}
@@ -737,26 +727,26 @@ function Faq() {
       <div class="grid gap-12 lg:grid-cols-[0.8fr_1.2fr]">
         <div>
           <SectionLabel>Questions</SectionLabel>
-          <h2 class="mt-4 text-4xl font-medium tracking-[-0.04em] text-stone-950 sm:text-5xl">
+          <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             The honest
             <br />
-            <span class="text-stone-400">answers.</span>
+            <span class="text-muted-foreground/80">answers.</span>
           </h2>
-          <p class="mt-5 max-w-sm text-sm leading-6 text-stone-500">
+          <p class="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">
             If something is preview or not implemented, the docs say so. The same applies here.
           </p>
         </div>
-        <div class="divide-y divide-stone-200 border-y border-stone-200">
+        <div class="divide-y divide-white/[0.07] border-y border-white/[0.07]">
           <For each={faqs}>
             {(faq) => (
               <details class="group py-5">
-                <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-sm font-medium text-stone-800">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-sm font-medium text-foreground/90">
                   {faq.q}
-                  <span class="text-stone-300 transition group-open:rotate-45">
+                  <span class="text-muted-foreground/60 transition group-open:rotate-45">
                     <PlusIcon />
                   </span>
                 </summary>
-                <p class="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{faq.a}</p>
+                <p class="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{faq.a}</p>
               </details>
             )}
           </For>
@@ -769,22 +759,19 @@ function Faq() {
 function FinalCta() {
   return (
     <section class="px-6 pb-20 sm:px-8">
-      <div class="relative mx-auto max-w-7xl overflow-hidden rounded-3xl border border-stone-200 bg-stone-950 px-8 py-16 text-center sm:px-16 sm:py-20">
-        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_70%_at_50%_0%,rgba(120,113,108,0.28),transparent_70%)]" />
+      <div class="relative mx-auto max-w-7xl overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.02] px-8 py-16 text-center sm:px-16 sm:py-20">
         <div class="relative">
-          <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-stone-500">
-            Get started
-          </p>
-          <h2 class="mx-auto mt-4 max-w-2xl text-4xl font-medium tracking-[-0.04em] text-stone-50 sm:text-5xl">
+          <p class="text-[11px] font-medium tracking-normal text-muted-foreground">Get started</p>
+          <h2 class="mx-auto mt-4 max-w-2xl text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             Your fleet, finally in one place.
           </h2>
-          <p class="mx-auto mt-4 max-w-lg text-sm leading-6 text-stone-400">
+          <p class="mx-auto mt-4 max-w-lg text-sm leading-6 text-muted-foreground/80">
             Create a tenant, enroll a device and deploy a policy in under five minutes. Free during
             alpha.
           </p>
           <div class="mt-8 flex flex-wrap justify-center gap-3">
             <a href="/register">
-              <Button class="h-12 rounded-full bg-stone-50 px-8 text-stone-900 hover:bg-white">
+              <Button class="h-10 rounded-md bg-foreground px-6 text-background hover:bg-foreground/90">
                 Start free
                 <ArrowIcon />
               </Button>
@@ -792,7 +779,7 @@ function FinalCta() {
             <a href="/docs/getting-started/quick-start" target="_self">
               <Button
                 variant="outline"
-                class="h-12 rounded-full border-stone-700 bg-transparent px-8 text-stone-300 hover:bg-stone-900 hover:text-stone-50"
+                class="h-10 rounded-md border-white/[0.1] bg-transparent px-6 text-muted-foreground/70 hover:bg-white/[0.04] hover:text-foreground"
               >
                 Quick start
               </Button>
@@ -806,14 +793,12 @@ function FinalCta() {
 
 function SectionLabel(props: { children: JSX.Element }) {
   return (
-    <p class="text-[11px] font-medium uppercase tracking-[0.2em] text-stone-400">
-      {props.children}
-    </p>
+    <p class="text-[11px] font-medium tracking-normal text-muted-foreground/80">{props.children}</p>
   );
 }
 
 function Dot() {
-  return <span class="size-0.5 rounded-full bg-stone-300" />;
+  return <span class="size-0.5 rounded-full bg-muted-foreground/50" />;
 }
 
 function ArrowIcon(props: { class?: string }) {
@@ -849,7 +834,7 @@ function CheckIcon(props: { class?: string }) {
       stroke-width="2.5"
       stroke-linecap="round"
       stroke-linejoin="round"
-      class={`${props.class ?? "text-stone-400"} shrink-0`}
+      class={`${props.class ?? "text-muted-foreground/80"} shrink-0`}
       aria-hidden="true"
     >
       <polyline points="20 6 9 17 4 12" />

@@ -38,7 +38,7 @@ export function UserDropdown(props: UserDropdownProps) {
       fallback={
         <div
           class={
-            props.placeholderClass ?? "h-8 w-8 rounded-full bg-stone-200 opacity-50 animate-pulse"
+            props.placeholderClass ?? "size-7 rounded-full bg-white/[0.08] opacity-50 animate-pulse"
           }
         />
       }
@@ -47,7 +47,12 @@ export function UserDropdown(props: UserDropdownProps) {
         when={props.user}
         fallback={
           props.signInHref ? (
-            <Button as="a" href={props.signInHref} size="sm" class="rounded-full h-52 text-white">
+            <Button
+              as="a"
+              href={props.signInHref}
+              size="sm"
+              class="h-8 rounded-md bg-foreground px-3 text-[12.5px] !text-[#08080a] hover:bg-foreground/90"
+            >
               Sign in
             </Button>
           ) : null
@@ -58,7 +63,7 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuTrigger
               class={
                 props.triggerClass ??
-                "flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-stone-900 text-stone-50 text-xs font-semibold hover:ring-2 hover:ring-stone-300 hover:ring-offset-1 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2"
+                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.1] transition-shadow hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               }
               aria-label="Account menu"
             >
@@ -74,12 +79,12 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuContent
               class={
                 props.contentClass ??
-                "w-56 rounded-xl border border-stone-200 bg-white p-1 shadow-lg overflow-hidden"
+                "w-[248px] overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]"
               }
             >
-              <div class="px-3 py-2 border-b border-stone-100">
-                <p class="text-sm font-medium text-stone-900 truncate">{user().name}</p>
-                <p class="text-xs text-stone-500 truncate mt-0.5">{user().email}</p>
+              <div class="px-2 py-2">
+                <p class="truncate text-[13px] font-medium text-foreground">{user().name}</p>
+                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
               </div>
 
               <div class="pt-1">
@@ -87,14 +92,14 @@ export function UserDropdown(props: UserDropdownProps) {
                   <DropdownMenuItem
                     as="a"
                     href="/dashboard"
-                    class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+                    class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-white/[0.07]"
                   >
                     Dashboard
                   </DropdownMenuItem>
                 </Show>
                 <DropdownMenuItem
                   onSelect={() => props.onSignOut()}
-                  class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+                  class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-white/[0.07]"
                 >
                   <LogOut class="mr-2 size-4" />
                   Sign out

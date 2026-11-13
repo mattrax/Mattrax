@@ -40,85 +40,11 @@ export default defineConfig({
       docRepoBaseUrl: "https://github.com/oscartbeaumont/mattraxe/tree/main/docs",
       text: "Edit this page on GitHub",
     },
-    socialLinks: [
-      {
-        icon: "github",
-        mode: "link",
-        content: "https://github.com/oscartbeaumont/mattraxe",
-      },
-    ],
     footer: {
       message:
         '<p>Mattrax — device management infrastructure. <a href="https://mattrax.app">mattrax.app</a> · <a href="/docs/llms.txt">llms.txt</a> · <a href="/docs/api/">API</a></p>',
     },
-    nav: [
-      { text: "Docs", link: "/" },
-      {
-        text: "Get started",
-        items: [
-          { text: "What is Mattrax?", link: "/getting-started/" },
-          { text: "Quick start", link: "/getting-started/quick-start" },
-          { text: "Core concepts", link: "/getting-started/concepts" },
-        ],
-      },
-      {
-        text: "Platforms",
-        items: [
-          { text: "Apple", link: "/platforms/apple/" },
-          { text: "Apple Business Manager", link: "/platforms/apple/abm" },
-          { text: "Apps & Books", link: "/platforms/apple/vpp" },
-          { text: "Windows", link: "/platforms/windows/" },
-          { text: "Entra ID", link: "/platforms/windows/entra-id" },
-          { text: "Autopilot", link: "/platforms/windows/autopilot" },
-          { text: "Android", link: "/platforms/android/" },
-        ],
-      },
-      {
-        text: "Manage",
-        items: [
-          { text: "Devices", link: "/manage/devices" },
-          { text: "Groups", link: "/manage/groups" },
-          { text: "Policies", link: "/manage/policies" },
-          { text: "Applications", link: "/manage/applications" },
-          { text: "Security", link: "/manage/security" },
-        ],
-      },
-      {
-        text: "Operate",
-        items: [
-          { text: "Configuration", link: "/operations/configuration" },
-          { text: "Monitoring", link: "/operations/monitoring" },
-          { text: "Troubleshooting", link: "/operations/troubleshooting" },
-        ],
-      },
-      {
-        text: "Build",
-        items: [
-          { text: "REST API", link: "/api/" },
-          { text: "API reference", link: "/api/reference" },
-          { text: "OpenAPI", link: "/api/openapi" },
-        ],
-      },
-      {
-        text: "Migrate",
-        items: [
-          { text: "Migration guide", link: "/migration/" },
-          { text: "From Jamf", link: "/migration/jamf" },
-          { text: "From Intune", link: "/migration/intune" },
-          { text: "From Kandji, Mosyle or Addigy", link: "/migration/other-mdms" },
-        ],
-      },
-      {
-        text: "Reference",
-        items: [
-          { text: "Architecture", link: "/reference/architecture" },
-          { text: "Production readiness", link: "/reference/production-readiness" },
-          { text: "Policy catalogue", link: "/reference/policy-catalogue" },
-          { text: "Glossary", link: "/reference/glossary" },
-        ],
-      },
-      { text: "mattrax.app", link: origin },
-    ],
+    nav: [{ text: "Mattrax", link: "https://e.mattrax.app/" }],
     sidebar: {
       "/": [
         {
