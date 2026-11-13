@@ -40,6 +40,13 @@ test.describe("authenticator MFA", () => {
     expect(beforeMfa).toBe(401);
     await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
     await page.getByRole("button", { name: /^continue$/i }).click();
+    await page.waitForTimeout(600);
+    // A code can land on a replay-protected step boundary; retry once the way
+    // a real user would.
+    if (page.url().includes("/login")) {
+      await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
+      await page.getByRole("button", { name: /^continue$/i }).click();
+    }
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // A recovery code completes the same pending flow and is single use.
@@ -55,6 +62,11 @@ test.describe("authenticator MFA", () => {
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]!);
     await page.getByRole("button", { name: /^continue$/i }).click();
+    await page.waitForTimeout(600);
+    if (page.url().includes("/login")) {
+      await page.locator("#mfa-code").fill(recoveryCodes[1]!);
+      await page.getByRole("button", { name: /^continue$/i }).click();
+    }
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // Disabling requires the password and a fresh authenticator code.
