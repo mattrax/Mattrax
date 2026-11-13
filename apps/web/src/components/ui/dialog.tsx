@@ -85,10 +85,6 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
           event.stopPropagation();
           context.close();
         }}
-        onInteractOutside={(event) => {
-          event.preventDefault();
-          context.close();
-        }}
         onOpenAutoFocus={() => {
           opener =
             document.activeElement instanceof HTMLElement ? document.activeElement : null;
