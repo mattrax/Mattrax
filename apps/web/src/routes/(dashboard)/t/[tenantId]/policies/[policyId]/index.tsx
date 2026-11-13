@@ -579,7 +579,14 @@ function ConfigurationCard(props: {
         <Show when={opened() && content()}>
           {(value) => <MobileconfigPreview content={value()} />}
         </Show>
-        <Show when={props.kind.includes("designer")}>
+        <Show
+          when={
+            props.kind.includes("designer") ||
+            (props.kind.startsWith("mttx.apple.declaration.") &&
+              isRecord(props.data) &&
+              props.data.designer === true)
+          }
+        >
           <div class="flex flex-wrap items-center gap-2">
             <Button
               as="a"
