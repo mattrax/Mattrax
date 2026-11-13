@@ -253,6 +253,22 @@ import type {
   EnterpriseSchema,
 } from "./schema.ts";
 
+export type EnterpriseAnalyticsIdentity = {
+  readonly userId: string;
+  readonly email?: string;
+  readonly name?: string;
+  readonly tenantId?: string;
+  readonly tenantName?: string;
+  readonly roleName?: string;
+  readonly roleKind?: "built-in" | "custom";
+};
+
+/** Request-scoped product analytics sink supplied by the host Worker. */
+export type EnterpriseAnalytics = {
+  identify(identity: EnterpriseAnalyticsIdentity): void;
+  capture(event: string, properties?: Record<string, unknown>): void;
+};
+
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
   /**
@@ -291,6 +307,8 @@ export type EnterpriseHandlersConfig = {
    * leave it unconfigured) to keep every plan unlimited.
    */
   readonly planLimits?: PlanLimitsConfig;
+  /** Optional product analytics sink for successful API operations. */
+  readonly analytics?: EnterpriseAnalytics;
   /** Transactional email binding. Invitations are logged when omitted. */
   readonly email?: {
     send(message: {
@@ -382,7 +400,41 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     }),
   );
 
-const wrapServiceErrors = <S extends Record<string, any>>(service: S, permissions = false): S =>
+const PRODUCT_EVENTS: Record<string, string> = {
+  createTenant: "tenant_created",
+  importTenant: "tenant_imported",
+  exportTenant: "tenant_exported",
+  createPolicy: "policy_created",
+  duplicatePolicy: "policy_duplicated",
+  createApplication: "application_created",
+  createGroup: "group_created",
+  createDashboard: "dashboard_created",
+  createDashboardWidget: "dashboard_widget_created",
+  createTenantRole: "role_created",
+  inviteTenantUser: "member_invited",
+  createApiToken: "api_token_created",
+  createScimToken: "scim_token_created",
+  createWebhookEndpoint: "webhook_created",
+  createAutopilotProfile: "autopilot_profile_created",
+  uploadAppleBusinessManagerToken: "abm_token_uploaded",
+  uploadVppToken: "vpp_token_uploaded",
+  createAndroidSignup: "android_signup_started",
+  patchTenantEnrollment: "enrollment_settings_updated",
+  resetTenantEnrollment: "enrollment_settings_reset",
+  deviceAction: "device_command_sent",
+  installApplication: "application_install_requested",
+  installVppAsset: "vpp_asset_install_requested",
+  runTenantBackup: "backup_started",
+  billingPortal: "billing_portal_opened",
+  patchTenant: "tenant_updated",
+  updateMe: "account_updated",
+};
+
+const wrapServiceErrors = <S extends Record<string, any>>(
+  service: S,
+  permissions = false,
+  analytics?: EnterpriseAnalytics,
+): S =>
   new Proxy(service, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -394,6 +446,7 @@ const wrapServiceErrors = <S extends Record<string, any>>(service: S, permission
         const method = String(property);
         const permission = permissions ? permissionForMethod(method) : undefined;
         const tenantId = typeof args[1] === "string" ? args[1] : undefined;
+        const startedAt = Date.now();
         const mapped =
           permission && tenantId
             ? Effect.provideService(result as any, RequiredPermission, {
@@ -401,7 +454,36 @@ const wrapServiceErrors = <S extends Record<string, any>>(service: S, permission
                 method,
               })
             : result;
-        return mapServiceErrors(mapped as any);
+        const withAnalytics = analytics
+          ? (mapped as Effect.Effect<unknown, unknown, unknown>).pipe(
+              Effect.tap((value) =>
+                Effect.sync(() => {
+                  const targetId =
+                    value &&
+                    typeof value === "object" &&
+                    typeof (value as { id?: unknown }).id === "string"
+                      ? (value as { id: string }).id
+                      : undefined;
+                  const properties = {
+                    method,
+                    ...(tenantId ? { tenant_id: tenantId } : {}),
+                    ...(permission ? { permission } : {}),
+                    ...(targetId ? { target_id: targetId } : {}),
+                    duration_ms: Date.now() - startedAt,
+                    status: "ok",
+                  };
+                  try {
+                    analytics.capture("api_operation", properties);
+                    const event = PRODUCT_EVENTS[method];
+                    if (event) analytics.capture(event, properties);
+                  } catch {
+                    // Analytics must never fail a successful API operation.
+                  }
+                }),
+              ),
+            )
+          : mapped;
+        return mapServiceErrors(withAnalytics as any);
       };
     },
   });
@@ -681,11 +763,43 @@ export const createEnterpriseService = ({
   webhookFetch,
   webhookTimeoutMs,
   planLimits,
+  analytics,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
   const auth = wrapServiceErrors(
     authService as unknown as Record<string, any>,
   ) as unknown as typeof authService;
+  const identifyUser = (
+    user: { readonly id: string; readonly email: string; readonly name?: string | null },
+    tenant?: {
+      readonly id: string;
+      readonly name?: string;
+      readonly displayName?: string | null;
+      readonly roleName?: string;
+      readonly roleKind?: "built-in" | "custom";
+    },
+  ) => {
+    if (!analytics) return;
+    try {
+      analytics.identify({
+        userId: user.id,
+        email: user.email,
+        ...(user.name ? { name: user.name } : {}),
+        ...(tenant
+          ? {
+              tenantId: tenant.id,
+              ...(tenant.displayName || tenant.name
+                ? { tenantName: tenant.displayName ?? tenant.name }
+                : {}),
+              ...(tenant.roleName ? { roleName: tenant.roleName } : {}),
+              ...(tenant.roleKind ? { roleKind: tenant.roleKind } : {}),
+            }
+          : {}),
+      });
+    } catch {
+      // Analytics must never fail an authenticated request.
+    }
+  };
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
   const applePush = makeApplePush({
     db,
@@ -919,6 +1033,14 @@ export const createEnterpriseService = ({
               clientId: oauth.clientId,
             }
           : undefined;
+
+      identifyUser(user, {
+        id: organization.id,
+        name: organization.name,
+        displayName: organization.displayName,
+        roleName: role.roleName,
+        roleKind: role.roleKind,
+      });
 
       return {
         user,
@@ -2361,6 +2483,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
+        identifyUser(user);
         // Do not disclose tenant membership to an unverified account. The
         // verification screen only needs the user record.
         const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
@@ -2401,6 +2524,7 @@ export const createEnterpriseService = ({
     updateMe: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         const body = payload as { name?: string; image?: string | null };
         yield* db
           .update(schema.user)
@@ -2415,6 +2539,7 @@ export const createEnterpriseService = ({
     deleteMe: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
 
         // Remove solo tenants with the account; keep shared tenants for the
         // remaining administrators.
@@ -2469,6 +2594,7 @@ export const createEnterpriseService = ({
     listAccountSessions: (request) =>
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(resolved.user);
         return {
           sessions: yield* listUserSessions(
             db,
@@ -2480,6 +2606,7 @@ export const createEnterpriseService = ({
     revokeAccountSession: (request, sessionId) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         const revoked = yield* revokeUserSession(db, user.id, sessionId);
         if (!revoked)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
@@ -2488,6 +2615,7 @@ export const createEnterpriseService = ({
     listTenants: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         if (!user.emailVerified)
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -2500,6 +2628,7 @@ export const createEnterpriseService = ({
     createTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         if (!user.emailVerified)
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -2642,6 +2771,7 @@ export const createEnterpriseService = ({
     importTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         const bundle = payload as TenantImportRequest;
 
         // The payload has already been decoded, so this bounds what a caller
@@ -4417,6 +4547,7 @@ export const createEnterpriseService = ({
     acceptInvitation: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        identifyUser(user);
         const body = payload as { token: string };
         const tokenHash = yield* sha256Hex(
           new TextEncoder().encode(body.token).buffer as ArrayBuffer,
@@ -8788,7 +8919,7 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   };
 
-  return wrapServiceErrors(service, true) as typeof service;
+  return wrapServiceErrors(service, true, analytics) as typeof service;
 };
 
 export const enterpriseHandlers = (

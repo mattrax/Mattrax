@@ -50,6 +50,7 @@ export default defineConfig({
       "@kobalte/core/tooltip",
       "@kobalte/core/polymorphic",
       "effect",
+      "posthog-js",
       "@yielded/auth",
       "@yielded/auth/EmailDelivery",
     ],

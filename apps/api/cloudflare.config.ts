@@ -79,11 +79,12 @@ export const apiWorker = {
     MAINTENANCE_BACKUP_CONCURRENCY: bindings.text("4"),
     /** Tenants synced concurrently by the scheduled Entra directory sync. */
     MAINTENANCE_ENTRA_SYNC_CONCURRENCY: bindings.text("2"),
-    /** Optional Sentry-compatible error tracking. */
-    SENTRY_DSN: bindings.secret(),
-    SENTRY_ENVIRONMENT: bindings.secret(),
-    SENTRY_SAMPLE_RATE: bindings.secret(),
-    SENTRY_MAX_EVENTS_PER_MINUTE: bindings.secret(),
+    /** PostHog project API key, ingestion host and error sampling. */
+    POSTHOG_KEY: bindings.secret(),
+    POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),
+    POSTHOG_ENVIRONMENT: bindings.secret(),
+    POSTHOG_ERROR_SAMPLE_RATE: bindings.secret(),
+    POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: bindings.secret(),
     /** Deployed version id used by `/api/ready`. */
     CF_VERSION_METADATA: bindings.versionMetadata(),
     // Shared edge limiters, only present when the deployment supplies a

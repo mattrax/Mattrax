@@ -39,6 +39,7 @@
     "fast-plist": "catalog:",
     "mysql2": "catalog:",
     "pkijs": "catalog:",
+    "posthog-node": "catalog:",
     "reflect-metadata": "catalog:",
     "stripe": "^23.1.0"
   },

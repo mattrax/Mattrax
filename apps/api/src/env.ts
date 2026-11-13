@@ -92,16 +92,18 @@ const ApiEnvSchema = Schema.Struct({
   /** Scheduled Entra directory sync: tenants synced concurrently (default 2). */
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
   /**
-   * Optional Sentry-compatible DSN for uncaught/5xx error events. Without it
-   * error tracking is disabled and only the structured request log is written.
+   * PostHog project API key. Without it product analytics and error tracking
+   * are disabled and only the structured request log is written.
    */
-  SENTRY_DSN: Schema.optional(nonEmptyString),
-  /** Sentry environment tag, e.g. `production` or `staging`. */
-  SENTRY_ENVIRONMENT: Schema.optional(nonEmptyString),
+  POSTHOG_KEY: Schema.optional(nonEmptyString),
+  /** PostHog ingestion host. Defaults to `https://us.i.posthog.com`. */
+  POSTHOG_HOST: Schema.optional(nonEmptyString),
+  /** PostHog environment tag, e.g. `production` or `staging`. */
+  POSTHOG_ENVIRONMENT: Schema.optional(nonEmptyString),
   /** Fraction of eligible errors to report, 0..1. Defaults to 1. */
-  SENTRY_SAMPLE_RATE: Schema.optional(nonEmptyString),
-  /** Maximum Sentry events per isolate per minute. Defaults to 20. */
-  SENTRY_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
+  POSTHOG_ERROR_SAMPLE_RATE: Schema.optional(nonEmptyString),
+  /** Maximum error events per isolate per minute. Defaults to 20. */
+  POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
 });
 
 const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
@@ -165,8 +167,11 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: emptyStringAsUndefined(
     (cfEnv as any).MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
   ),
-  SENTRY_DSN: emptyStringAsUndefined((cfEnv as any).SENTRY_DSN),
-  SENTRY_ENVIRONMENT: emptyStringAsUndefined((cfEnv as any).SENTRY_ENVIRONMENT),
-  SENTRY_SAMPLE_RATE: emptyStringAsUndefined((cfEnv as any).SENTRY_SAMPLE_RATE),
-  SENTRY_MAX_EVENTS_PER_MINUTE: emptyStringAsUndefined((cfEnv as any).SENTRY_MAX_EVENTS_PER_MINUTE),
+  POSTHOG_KEY: emptyStringAsUndefined((cfEnv as any).POSTHOG_KEY),
+  POSTHOG_HOST: emptyStringAsUndefined((cfEnv as any).POSTHOG_HOST),
+  POSTHOG_ENVIRONMENT: emptyStringAsUndefined((cfEnv as any).POSTHOG_ENVIRONMENT),
+  POSTHOG_ERROR_SAMPLE_RATE: emptyStringAsUndefined((cfEnv as any).POSTHOG_ERROR_SAMPLE_RATE),
+  POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: emptyStringAsUndefined(
+    (cfEnv as any).POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE,
+  ),
 });

@@ -114,17 +114,21 @@ Build-time namespace variables create Cloudflare Rate Limiting bindings:
 
 Without a binding, that bucket falls back to per-isolate counters.
 
-## Error tracking
+## Analytics and error tracking
 
-| Variable                       | Default | Purpose               |
-| ------------------------------ | ------- | --------------------- |
-| `SENTRY_DSN`                   | —       | Sentry-compatible DSN |
-| `SENTRY_ENVIRONMENT`           | —       | Environment tag       |
-| `SENTRY_SAMPLE_RATE`           | `1`     | `0`–`1`               |
-| `SENTRY_MAX_EVENTS_PER_MINUTE` | `20`    | Per-isolate cap       |
+| Variable                              | Default                    | Purpose                 |
+| ------------------------------------- | -------------------------- | ----------------------- |
+| `POSTHOG_KEY`                         | —                          | PostHog project API key |
+| `POSTHOG_HOST`                        | `https://us.i.posthog.com` | PostHog ingestion host  |
+| `POSTHOG_ENVIRONMENT`                 | —                          | Environment tag         |
+| `POSTHOG_ERROR_SAMPLE_RATE`           | `1`                        | Error sampling, `0`–`1` |
+| `POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE` | `20`                       | Per-isolate error cap   |
 
-Payloads contain a redacted message, request id, path, method, status, release and
-deployment id. Bodies, cookies, query strings, emails and tokens are excluded.
+`POSTHOG_KEY` is a write-only project key. Set it on both the dashboard and API
+Workers: the dashboard injects it into the HTML for browser analytics, and the API
+uses it for server-side product events and error tracking. Payloads contain a
+redacted message, request id, path, method, status, release and deployment id.
+Bodies, cookies, query strings, emails and tokens are excluded.
 
 ## Development only
 

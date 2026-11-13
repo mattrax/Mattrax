@@ -9,6 +9,7 @@ import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { reportGlobalError } from "~/lib/global-errors";
+import { syncPostHogTenant } from "~/lib/posthog";
 
 function DashboardBootScreen() {
   return (
@@ -56,6 +57,11 @@ export default function DashboardLayout(props: ParentProps) {
         navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
       }
     },
+  );
+
+  createEffect(
+    () => /^\/t\/([^/]+)/.exec(location.pathname)?.[1],
+    (tenantId) => syncPostHogTenant(tenantId),
   );
 
   const handleSignOut = async () => {

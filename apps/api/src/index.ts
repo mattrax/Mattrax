@@ -63,7 +63,14 @@ import {
   withRequestId,
 } from "./observability.js";
 import { makeRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
-import { createErrorTracker, shouldReportError, type ErrorTracker } from "./errorTracking.js";
+import {
+  authEventForRequest,
+  authOutcomeFromResponse,
+  createRequestAnalytics,
+  shouldReportError,
+  shouldTrackApiRequest,
+  type RequestAnalytics,
+} from "./analytics.js";
 import { checkReadiness } from "./readiness.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
@@ -76,28 +83,6 @@ const rateLimiter = makeRateLimiter();
  */
 const planLimits = parsePlanLimits(apiEnv.MATTRAX_PLAN_LIMITS);
 for (const warning of planLimits.warnings) console.warn(warning);
-
-/**
- * Error tracking is optional and per-isolate: the tracker (and therefore its
- * sampling and per-minute cap) is rebuilt only when the deployment changes.
- */
-let errorTracker: ErrorTracker | undefined;
-let errorTrackerDeployment: string | null | undefined;
-const errorTrackerFor = (env: Env): ErrorTracker => {
-  const deployment = deploymentId(env);
-  if (!errorTracker || errorTrackerDeployment !== deployment) {
-    errorTracker = createErrorTracker({
-      dsn: apiEnv.SENTRY_DSN,
-      environment: apiEnv.SENTRY_ENVIRONMENT,
-      release: version,
-      deploymentId: deployment,
-      sampleRate: Number(apiEnv.SENTRY_SAMPLE_RATE ?? "1"),
-      maxEventsPerMinute: Number(apiEnv.SENTRY_MAX_EVENTS_PER_MINUTE ?? "20"),
-    });
-    errorTrackerDeployment = deployment;
-  }
-  return errorTracker;
-};
 
 /**
  * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
@@ -259,7 +244,7 @@ const entraSyncJob = (env: Env) =>
     );
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
-const makeAppLayer = (env: Env, request: Request) => {
+const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) => {
   const androidConfig = androidDeliveryConfig();
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
@@ -413,6 +398,7 @@ const makeAppLayer = (env: Env, request: Request) => {
         : {}),
       android: androidConfig,
       planLimits,
+      analytics,
     }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
@@ -534,6 +520,19 @@ export default {
     const requestId = resolveRequestId(request);
     const startedAt = Date.now();
     const pathname = new URL(request.url).pathname;
+    const analytics = createRequestAnalytics({
+      key: apiEnv.POSTHOG_KEY,
+      host: apiEnv.POSTHOG_HOST,
+      environment: apiEnv.POSTHOG_ENVIRONMENT,
+      release: version,
+      deploymentId: deploymentId(env),
+      requestId,
+      method: request.method,
+      path: pathname,
+      headers: request.headers,
+      errorSampleRate: Number(apiEnv.POSTHOG_ERROR_SAMPLE_RATE ?? "1"),
+      maxErrorsPerMinute: Number(apiEnv.POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE ?? "20"),
+    });
 
     let response: Response;
     let uncaught: unknown;
@@ -590,7 +589,9 @@ export default {
         }
         const deviceRequest = new Request(request, { headers });
 
-        const handlerAndDispose = HttpRouter.toWebHandler(makeAppLayer(env, deviceRequest) as any);
+        const handlerAndDispose = HttpRouter.toWebHandler(
+          makeAppLayer(env, deviceRequest, analytics) as any,
+        );
         dispose = handlerAndDispose.dispose;
         const context = Context.makeUnsafe<any>(new Map());
         response = await handlerAndDispose.handler(deviceRequest, context);
@@ -622,23 +623,44 @@ export default {
       });
     }
 
-    // Sentry-style tracking is opt-in via SENTRY_DSN. Only uncaught failures
-    // and 5xx responses are eligible; the tracker also samples and caps the
-    // per-isolate rate so an outage cannot flood the provider.
-    if (shouldReportError(response.status, uncaught !== undefined)) {
-      const tracker = errorTrackerFor(env);
-      if (tracker.enabled)
-        ctx.waitUntil(
-          tracker.capture({
-            requestId,
-            method: request.method,
-            path: pathname,
-            status: response.status,
-            ...(errorTag ? { errorTag } : {}),
-            ...(uncaught !== undefined ? { error: uncaught } : {}),
-          }),
-        );
+    // PostHog product analytics. Paths are recorded without query strings and
+    // no bodies, cookies, headers or email addresses leave the Worker.
+    if (shouldTrackApiRequest(pathname, request.method)) {
+      const durationMs = Math.max(0, Date.now() - startedAt);
+      const tenantId = tenantIdFromPath(pathname);
+      analytics.capture("api_request", {
+        status: response.status,
+        duration_ms: durationMs,
+        outcome:
+          response.status >= 500 ? "server_error" : response.status >= 400 ? "client_error" : "ok",
+        ...(tenantId ? { tenant_id: tenantId } : {}),
+        ...(errorTag ? { error_tag: errorTag } : {}),
+      });
+      const conversion = authEventForRequest(pathname, request.method, response.status);
+      if (conversion === "auth_signed_in" || conversion === "auth_sso_signed_in") {
+        const outcome = await authOutcomeFromResponse(response);
+        if (outcome === "pending")
+          analytics.capture("auth_mfa_pending", { status: response.status });
+        else if (outcome !== undefined) analytics.capture(conversion, { status: response.status });
+      } else if (conversion) {
+        analytics.capture(conversion, { status: response.status });
+      }
     }
+
+    // PostHog error tracking is opt-in via POSTHOG_KEY. Only uncaught failures
+    // and 5xx responses are eligible; sampling and a per-isolate cap prevent
+    // an outage from flooding the provider.
+    if (shouldReportError(response.status, uncaught !== undefined)) {
+      analytics.captureError(
+        uncaught ?? new Error(`${request.method} ${pathname} responded ${response.status}`),
+        {
+          status: response.status,
+          ...(errorTag ? { error_tag: errorTag } : {}),
+        },
+      );
+    }
+
+    if (analytics.enabled) ctx.waitUntil(analytics.flush());
 
     return withRequestId(response, requestId);
   },

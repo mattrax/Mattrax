@@ -108,6 +108,7 @@ const makeContext = async (
     stripeClient?: any;
     apiToken?: any;
     db?: any;
+    analytics?: any;
   } = {},
 ) => {
   const db = overrides.db ?? makeDb();
@@ -149,6 +150,7 @@ const makeContext = async (
     authSecret: overrides.authSecret === null ? undefined : (overrides.authSecret ?? authSecret),
     apns: overrides.apns,
     email: overrides.email,
+    analytics: overrides.analytics,
   });
 
   return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
@@ -411,6 +413,67 @@ describe("enterprise service tenant flow", () => {
     expect(firstEnrollment.branding.supportEmail).toBe("first@example.test");
     expect(secondEnrollment.branding.displayName).toBe("Second Brand");
     expect(secondEnrollment.branding.supportEmail).toBe("hello@mattrax.app");
+  });
+
+  it("records product analytics for identified tenant operations", async () => {
+    const identified: any[] = [];
+    const captured: Array<{ event: string; properties: any }> = [];
+    const { service, headers } = await makeContext({
+      analytics: {
+        identify: (identity: any) => identified.push(identity),
+        capture: (event: string, properties: any) => captured.push({ event, properties }),
+      },
+    });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    expect(identified).toContainEqual(
+      expect.objectContaining({
+        userId: "user-1",
+        email: "owner@example.com",
+      }),
+    );
+    expect(captured).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "tenant_created",
+          properties: expect.objectContaining({
+            method: "createTenant",
+            target_id: tenant.id,
+            status: "ok",
+          }),
+        }),
+        expect.objectContaining({
+          event: "api_operation",
+          properties: expect.objectContaining({
+            method: "createTenant",
+            target_id: tenant.id,
+            status: "ok",
+          }),
+        }),
+      ]),
+    );
+
+    captured.length = 0;
+    await runEffect(service.getTenant(request(headers), tenant.id));
+    expect(identified).toContainEqual(
+      expect.objectContaining({
+        userId: "user-1",
+        tenantId: tenant.id,
+        roleName: "Owner",
+        roleKind: "built-in",
+      }),
+    );
+    expect(captured).toContainEqual(
+      expect.objectContaining({
+        event: "api_operation",
+        properties: expect.objectContaining({
+          method: "getTenant",
+          tenant_id: tenant.id,
+          permission: "tenant.read",
+        }),
+      }),
+    );
   });
 
   it("enforces tenant role access", async () => {

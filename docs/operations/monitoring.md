@@ -1,7 +1,7 @@
 # Monitoring
 
 Mattrax exposes liveness, readiness, structured logs and tenant-level health signals. There
-is no Prometheus metrics endpoint; use logs, Sentry and the health APIs.
+is no Prometheus metrics endpoint; use logs, PostHog and the health APIs.
 
 ## Health endpoints
 
@@ -40,11 +40,36 @@ carries `x-request-id`; a valid caller-supplied id is propagated.
 
 Successful health and readiness probes are not logged.
 
+## Product analytics
+
+The dashboard loads PostHog web analytics when `POSTHOG_KEY` is configured. It captures
+pageviews, autocaptured interactions and client exceptions, then identifies the user with
+their dashboard account id and email.
+
+The API captures product events server-side so usage is not lost to ad blockers or client
+failures:
+
+- `api_request` — method, path, status, duration, tenant and error tag for every
+  user-facing API call.
+- `auth_signed_in`, `auth_mfa_pending`, `auth_register_submitted`, `auth_signed_out`,
+  `auth_email_verified`,
+  `auth_password_reset_completed`, `auth_sso_signed_in` and
+  `member_invitation_accepted` conversion events. The dashboard emits
+  `auth_registered` only after registration and the first sign-in both succeed.
+- Named operation events such as `tenant_created`, `policy_created`,
+  `application_created`, `group_created`, `dashboard_created`, `member_invited`,
+  `role_created`, `device_command_sent`, `backup_started` and `billing_portal_opened`.
+
+Browser requests carry `x-posthog-session-id` and `x-posthog-distinct-id`. Once the API
+authenticates the request, the server uses the authenticated user id and tenant role for
+all captured events, so a session cannot spoof attribution. Tenant routes also set the
+`tenant` PostHog group for browser pageviews and interactions.
+
 ## Error tracking
 
-Set `SENTRY_DSN` to send uncaught errors and 5xx responses. Sampling and a per-isolate cap
-prevent storms. The payload excludes request bodies, cookies, query strings, emails and
-tokens.
+Set `POSTHOG_KEY` to send uncaught errors and 5xx responses to PostHog error tracking.
+Sampling and a per-isolate cap prevent storms. Payloads exclude request bodies, cookies,
+query strings, emails and tokens.
 
 ## Tenant health signals
 
@@ -94,7 +119,7 @@ by itself mark a device unhealthy. The overview only lists devices whose derived
 
 ## Log retention
 
-Cloudflare Workers logs and Sentry retention are configured in those products. The
+Cloudflare Workers logs and PostHog retention are configured in those products. The
 application does not store request logs. Audit retention is controlled by
 `MAINTENANCE_AUDIT_RETENTION_DAYS`.
 

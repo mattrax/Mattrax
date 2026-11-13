@@ -11,6 +11,9 @@ export const webWorker = {
   observability: { enabled: true },
   env: {
     API: bindings.worker({ worker: "mattrax-api" }),
+    /** Public PostHog project key and ingestion host, injected into the HTML shell. */
+    POSTHOG_KEY: bindings.secret(),
+    POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),
   },
 };
 

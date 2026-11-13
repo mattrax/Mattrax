@@ -4,6 +4,7 @@ import { apiFetch } from "~/lib/auth-api.server";
 import { errorMessage } from "~/lib/errors";
 import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
 import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
+import { capturePostHog } from "~/lib/posthog";
 
 type AuthUser = {
   id: string;
@@ -344,6 +345,7 @@ export const authClient = {
               if (!state.user && !state.pending)
                 throw new Error("Additional authentication is required");
               if (state.session) commitSession(state.session);
+              capturePostHog("auth_registered", { method: "password" });
               return { status: "signed-in" };
             } catch (error) {
               const tag = (error as { _tag?: string })._tag;

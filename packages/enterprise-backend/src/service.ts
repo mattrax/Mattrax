@@ -6,7 +6,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
-import { createEnterpriseService } from "./enterpriseHandlers.ts";
+import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseHandlers.ts";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "./android.ts";
 import type { AppleApiConfig } from "./appleBusinessManager.ts";
@@ -27,6 +27,8 @@ export type EnterpriseServiceOptions = {
   readonly appleApi?: AppleApiConfig;
   /** Deployment plan catalogue; omit for unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
+  /** Optional product analytics sink for successful API operations. */
+  readonly analytics?: EnterpriseAnalytics;
   readonly email?: {
     send(message: {
       to: string;
@@ -81,6 +83,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           android: options.android,
           appleApi: options.appleApi,
           planLimits: options.planLimits,
+          analytics: options.analytics,
           email: options.email,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,

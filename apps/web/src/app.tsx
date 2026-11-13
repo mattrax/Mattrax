@@ -3,11 +3,13 @@ import { createRouter } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { Errored, Loading, onSettled } from "solid-js";
+import { Errored, Loading, createEffect, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { errorPresentation, errorTag } from "~/lib/errors";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
 import { reportGlobalError } from "~/lib/global-errors";
+import { authClient } from "~/lib/auth";
+import { syncPostHogUser } from "~/lib/posthog";
 import "./app.css";
 
 // Data lives behind the API Worker's auth and only the browser has the session
@@ -43,6 +45,25 @@ const queryClient = new QueryClient({
 });
 
 const Router = createRouter({ routes: fileRoutes(pageRoutes) });
+
+/**
+ * Keep browser analytics identity aligned with the dashboard session. The
+ * server-side API capture uses the authenticated id; this makes browser
+ * pageviews, session ids and server events resolve to the same person.
+ */
+function PostHogIdentity() {
+  const session = authClient.useSession();
+  createEffect(
+    () => {
+      const state = session();
+      return state.isPending ? undefined : (state.data?.user ?? null);
+    },
+    (user) => {
+      if (user !== undefined) syncPostHogUser(user);
+    },
+  );
+  return null;
+}
 
 function BootSplash() {
   return (
@@ -101,6 +122,7 @@ export default function App() {
         <Head>
           <Title>Mattrax</Title>
           <QueryClientProvider client={queryClient}>
+            <PostHogIdentity />
             <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
               <Loading fallback={<BootSplash />}>{props.children}</Loading>
             </Errored>

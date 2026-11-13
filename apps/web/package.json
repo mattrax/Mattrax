@@ -26,6 +26,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "effect": "catalog:",
+    "posthog-js": "catalog:",
     "solid-js": "2.0.0-rc.21",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.5",

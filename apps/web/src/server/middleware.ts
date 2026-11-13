@@ -3,6 +3,7 @@ import type { StartMiddleware } from "@solidjs/vite-plugin";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import { type PreloadedSession, setPreloadedSession } from "~/lib/session-store";
+import { setPostHogConfig } from "~/lib/posthog-config-store";
 
 const api = createAPIHandler(routes);
 
@@ -99,6 +100,12 @@ const oauthMetadata = (url: URL): Response | undefined => {
 const middleware: StartMiddleware = async (event, next) => {
   const metadata = oauthMetadata(new URL(event.request.url));
   if (metadata) return metadata;
+  const posthogKey = (env as { POSTHOG_KEY?: string }).POSTHOG_KEY?.trim();
+  if (posthogKey)
+    setPostHogConfig(event.request, {
+      key: posthogKey,
+      host: (env as { POSTHOG_HOST?: string }).POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
+    });
   await preloadSession(event.request);
   return api(event, next);
 };

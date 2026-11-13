@@ -27,6 +27,8 @@ catalog:
   mysql2: ^3.24.6
   oxc-minify: ^0.157.0
   pkijs: ^4.0.1
+  posthog-js: ^1.448.0
+  posthog-node: ^5.73.0
   reflect-metadata: ^0.2.2
   typescript: ~7.0.2
   uqr: ^0.1.3

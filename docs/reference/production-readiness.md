@@ -21,7 +21,7 @@ real-vendor validation. It is a status page, not a marketing page.
 - Audit search/export, outbound webhooks with HMAC signatures and retries, Stripe billing,
   plan limits, tenant export/import and scheduled backups.
 - Security headers, request ids, structured logs, readiness checks, rate limits and
-  optional Sentry-compatible error tracking.
+  optional PostHog product analytics and error tracking.
 - Cloudflare Workers deployment for the dashboard and API, and a Node gateway for
   .
 
@@ -59,7 +59,7 @@ These are implemented but not proven end to end in this repository.
 - [ ] `/api/health` and `/api/ready` return 200.
 - [ ] Security headers are present.
 - [ ] Rate-limit namespaces are configured.
-- [ ] Sentry (or equivalent) is configured.
+- [ ] PostHog project key is configured for analytics and error tracking.
 - [ ] Daily and hourly crons are enabled.
 
 ### Identity

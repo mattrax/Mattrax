@@ -1,5 +1,9 @@
 export { createEnterpriseService, enterpriseHandlers } from "./enterpriseHandlers.js";
-export type { EnterpriseHandlersConfig } from "./enterpriseHandlers.js";
+export type {
+  EnterpriseAnalytics,
+  EnterpriseAnalyticsIdentity,
+  EnterpriseHandlersConfig,
+} from "./enterpriseHandlers.js";
 export {
   BillingWebhookError,
   billingWebhookRoutes,

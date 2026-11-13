@@ -1,14 +1,18 @@
 import { HydrationScript, getRequestEvent, isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import { getPreloadedSession } from "~/lib/session-store";
+import { getPostHogConfig } from "~/lib/posthog-config-store";
 
 /** The HTML shell for the app, rendered once on the server. */
 export default function Document(props: { children?: JSX.Element }) {
   // Hand the server's preloaded session to the browser before hydration. Without
   // it the first client render starts signed out while the server rendered the
   // signed-in shell, which makes Solid detach and duplicate the layout.
-  const preloaded = isServer ? getPreloadedSession(getRequestEvent()!.request) : undefined;
+  const request = isServer ? getRequestEvent()!.request : undefined;
+  const preloaded = request ? getPreloadedSession(request) : undefined;
   const serialized = preloaded === undefined ? undefined : JSON.stringify(preloaded);
+  const posthog = request ? getPostHogConfig(request) : undefined;
+  const serializedPostHog = posthog === undefined ? undefined : JSON.stringify(posthog);
 
   return (
     <html lang="en">
@@ -19,6 +23,9 @@ export default function Document(props: { children?: JSX.Element }) {
         <meta name="theme-color" content="#08080a" />
         {/* Must run before the async client entry injected into this head. */}
         <HydrationScript />
+        {serializedPostHog !== undefined && (
+          <script>{`window.__MATTRAX_POSTHOG__=${serializedPostHog.replace(/</g, "\\u003c")};`}</script>
+        )}
       </head>
 
       <body>
