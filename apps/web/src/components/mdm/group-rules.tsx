@@ -183,7 +183,7 @@ export function GroupRuleBuilder(props: {
             {(draft, index) => (
               <div class="flex flex-wrap items-center gap-2 rounded-lg border p-2">
                 <select
-                  class="rounded border bg-white px-2 py-1 text-sm disabled:opacity-50"
+                  class="h-8 rounded-lg border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:opacity-50"
                   disabled={props.disabled}
                   value={draft.field}
                   onChange={(event) => {
@@ -198,7 +198,7 @@ export function GroupRuleBuilder(props: {
                   </For>
                 </select>
                 <select
-                  class="rounded border bg-white px-2 py-1 text-sm disabled:opacity-50"
+                  class="h-8 rounded-lg border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:opacity-50"
                   disabled={props.disabled}
                   value={draft.op}
                   onChange={(event) => {
@@ -239,7 +239,7 @@ export function GroupRuleBuilder(props: {
                       }
                     >
                       <select
-                        class="rounded border bg-white px-2 py-1 text-sm disabled:opacity-50"
+                        class="h-8 rounded-lg border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:opacity-50"
                         disabled={props.disabled}
                         value={draft.value}
                         onChange={(event) => {
@@ -257,7 +257,7 @@ export function GroupRuleBuilder(props: {
                   }
                 >
                   <select
-                    class="rounded border bg-white px-2 py-1 text-sm disabled:opacity-50"
+                    class="h-8 rounded-lg border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:opacity-50"
                     disabled={props.disabled}
                     value={draft.value}
                     onChange={(event) => {

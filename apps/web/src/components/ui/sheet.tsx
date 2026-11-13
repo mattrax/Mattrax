@@ -72,7 +72,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
       <SheetPrimitive.Content
         data-slot="sheet-content"
         data-side={local.side}
-        class={cn("z-sheet-content", local.class)}
+        class={cn("dark z-sheet-content", local.class)}
         {...others}
       >
         {local.children}

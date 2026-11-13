@@ -37,7 +37,7 @@ const TooltipContent = <T extends ValidComponent = "div">(props: TooltipContentP
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         class={cn(
-          "z-50 z-tooltip-content w-fit max-w-xs origin-(--kb-tooltip-content-transform-origin) bg-foreground text-background",
+          "dark z-50 z-tooltip-content w-fit max-w-xs origin-(--kb-tooltip-content-transform-origin) bg-foreground text-background",
           local.class,
         )}
         {...others}

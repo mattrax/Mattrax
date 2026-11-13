@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { AccountSecurity } from "~/components/account-security";
+import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
@@ -260,175 +264,184 @@ export default function AccountPage() {
     }
   };
 
-  const inputClass =
-    "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors";
+  const selectClass =
+    "h-8 w-full rounded-lg bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30";
 
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6 max-w-2xl">
-      <div>
-        <h1 class="text-xl font-semibold text-stone-900">Account</h1>
-        <p class="text-sm text-stone-500 mt-1">
-          Manage your personal information and security settings.
-        </p>
-      </div>
+    <Page class="max-w-[860px]">
+      <PageHeader
+        eyebrow="Your account"
+        title="Account"
+        description="Manage your personal information and security settings."
+        meta={
+          <Show when={user()}>
+            {(current) => (
+              <>
+                <span class="break-all">{current().email}</span>
+                <Show
+                  when={current().emailVerified}
+                  fallback={<Badge variant="outline">Not verified</Badge>}
+                >
+                  <Badge
+                    variant="outline"
+                    class="border-success/25 bg-success/10 text-success-foreground"
+                  >
+                    Verified
+                  </Badge>
+                </Show>
+              </>
+            )}
+          </Show>
+        }
+      />
 
-      <section class="rounded-xl border border-border bg-card p-6">
-        <h2 class="text-sm font-semibold mb-1">Display name</h2>
-        <p class="text-sm text-muted-foreground mb-4">
-          This is the name visible to others in your organisation.
-        </p>
-        <form onSubmit={handleNameSave} class="flex gap-3 items-end">
-          <div class="flex-1 space-y-1.5">
-            <label for="name" class="text-xs font-medium text-stone-700">
-              Name
-            </label>
-            <input
-              id="name"
-              type="text"
-              required
-              value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
-              class={inputClass}
-              placeholder="Your name"
-            />
+      <Panel
+        title="Display name"
+        description="This is the name visible to others in your organisation."
+      >
+        <form onSubmit={handleNameSave} class="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div class="min-w-0 flex-1">
+            <Field label="Name">
+              <Input
+                id="name"
+                type="text"
+                required
+                class="h-8"
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
+                placeholder="Your name"
+              />
+            </Field>
           </div>
-          <button
-            type="submit"
-            disabled={namePending()}
-            class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors whitespace-nowrap"
-          >
+          <Button type="submit" disabled={namePending()}>
             {namePending() ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </form>
-        <Show when={nameError()}>{(msg) => <p class="mt-2 text-sm text-red-600">{msg()}</p>}</Show>
-        <Show when={nameSuccess()}>
-          <p class="mt-2 text-sm text-green-600">Name updated successfully.</p>
+        <Show when={nameError()}>
+          {(msg) => (
+            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+              {msg()}
+            </p>
+          )}
         </Show>
-      </section>
+        <Show when={nameSuccess()}>
+          <p class="mt-2 text-[12.5px] text-success-foreground">Name updated successfully.</p>
+        </Show>
+      </Panel>
 
-      <section class="rounded-xl border border-border bg-card p-6">
-        <h2 class="text-sm font-semibold mb-1">Email address</h2>
-        <p class="text-sm text-muted-foreground mb-1">
-          Your current email is <span class="font-medium text-stone-900">{user()?.email}</span>
-          <Show when={user()?.emailVerified}>
-            <span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+      <Panel
+        title="Email address"
+        description="A verification link will be sent to your new address. The change takes effect after you confirm it."
+      >
+        <p class="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+          Your current email is
+          <span class="font-medium text-foreground">{user()?.email}</span>
+          <Show
+            when={user()?.emailVerified}
+            fallback={<Badge variant="outline">Not verified</Badge>}
+          >
+            <Badge
+              variant="outline"
+              class="border-success/25 bg-success/10 text-success-foreground"
+            >
               Verified
-            </span>
+            </Badge>
           </Show>
-          <Show when={!user()?.emailVerified}>
-            <span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-              Not verified
-            </span>
-          </Show>
-        </p>
-        <p class="text-sm text-muted-foreground mb-4">
-          A verification link will be sent to your new address. The change takes effect after you
-          confirm it.
         </p>
         <Show
           when={!emailSent()}
           fallback={
-            <div class="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+            <div class="rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-success-foreground">
               Verification email sent. Please check your inbox and click the link to confirm the
               change.
             </div>
           }
         >
-          <form onSubmit={handleEmailChange} class="flex gap-3 items-end">
-            <div class="flex-1 space-y-1.5">
-              <label for="new-email" class="text-xs font-medium text-stone-700">
-                New email address
-              </label>
-              <input
-                id="new-email"
-                type="email"
-                required
-                value={newEmail()}
-                onInput={(e) => setNewEmail(e.currentTarget.value)}
-                class={inputClass}
-                placeholder="new@example.com"
-              />
+          <form onSubmit={handleEmailChange} class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="min-w-0 flex-1">
+              <Field label="New email address">
+                <Input
+                  id="new-email"
+                  type="email"
+                  required
+                  class="h-8"
+                  value={newEmail()}
+                  onInput={(e) => setNewEmail(e.currentTarget.value)}
+                  placeholder="new@example.com"
+                />
+              </Field>
             </div>
-            <button
-              type="submit"
-              disabled={emailPending()}
-              class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors whitespace-nowrap"
-            >
+            <Button type="submit" variant="secondary" disabled={emailPending()}>
               {emailPending() ? "Sending…" : "Send verification"}
-            </button>
+            </Button>
           </form>
         </Show>
-        <Show when={emailError()}>{(msg) => <p class="mt-2 text-sm text-red-600">{msg()}</p>}</Show>
-      </section>
+        <Show when={emailError()}>
+          {(msg) => (
+            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+              {msg()}
+            </p>
+          )}
+        </Show>
+      </Panel>
 
-      <section class="rounded-xl border border-border bg-card p-6">
-        <h2 class="text-sm font-semibold mb-1">Change password</h2>
-        <p class="text-sm text-muted-foreground mb-4">
-          Choose a strong password of at least 15 characters.
-        </p>
+      <Panel
+        title="Change password"
+        description="Choose a strong password of at least 15 characters."
+      >
         <form onSubmit={handlePasswordChange} class="space-y-3">
-          <div class="space-y-1.5">
-            <label for="current-password" class="text-xs font-medium text-stone-700">
-              Current password
-            </label>
-            <input
+          <Field label="Current password">
+            <Input
               id="current-password"
               type="password"
               required
               value={currentPassword()}
               onInput={(e) => setCurrentPassword(e.currentTarget.value)}
-              class={inputClass}
               placeholder="••••••••"
               autocomplete="current-password"
             />
-          </div>
-          <div class="space-y-1.5">
-            <label for="new-password" class="text-xs font-medium text-stone-700">
-              New password
-            </label>
-            <input
+          </Field>
+          <Field label="New password">
+            <Input
               id="new-password"
               type="password"
               required
               minlength={15}
               value={newPassword()}
               onInput={(e) => setNewPassword(e.currentTarget.value)}
-              class={inputClass}
               placeholder="••••••••"
               autocomplete="new-password"
             />
-          </div>
-          <div class="space-y-1.5">
-            <label for="confirm-password" class="text-xs font-medium text-stone-700">
-              Confirm new password
-            </label>
-            <input
+          </Field>
+          <Field label="Confirm new password">
+            <Input
               id="confirm-password"
               type="password"
               required
               minlength={15}
               value={confirmPassword()}
               onInput={(e) => setConfirmPassword(e.currentTarget.value)}
-              class={inputClass}
               placeholder="••••••••"
               autocomplete="new-password"
             />
-          </div>
-          <Show when={passwordError()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
-          <Show when={passwordSuccess()}>
-            <p class="text-sm text-green-600">Password changed successfully.</p>
+          </Field>
+          <Show when={passwordError()}>
+            {(msg) => (
+              <p role="alert" class="text-[12.5px] text-destructive">
+                {msg()}
+              </p>
+            )}
           </Show>
-          <div class="pt-1">
-            <button
-              type="submit"
-              disabled={passwordPending()}
-              class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
-            >
+          <Show when={passwordSuccess()}>
+            <p class="text-[12.5px] text-success-foreground">Password changed successfully.</p>
+          </Show>
+          <div class="border-t border-white/[0.06] pt-3">
+            <Button type="submit" disabled={passwordPending()}>
               {passwordPending() ? "Updating…" : "Update password"}
-            </button>
+            </Button>
           </div>
         </form>
-      </section>
+      </Panel>
 
       <AccountSecurity
         mfaEnabled={me.data?.user.mfaEnabled ?? false}
@@ -439,141 +452,102 @@ export default function AccountPage() {
         email={user()?.email ?? ""}
       />
 
-      <section class="rounded-xl border border-red-200 bg-card p-6">
-        <h2 class="text-sm font-semibold text-red-700 mb-1">Delete account</h2>
-        <p class="text-sm text-muted-foreground mb-4">
-          This removes your account and solo tenants you own. Tenants with other administrators are
-          kept. Type your email address to confirm.
-        </p>
-        <div class="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="email"
-            class={inputClass}
-            placeholder={user()?.email}
-            value={deleteConfirm()}
-            onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
-          />
-          <button
-            type="button"
-            disabled={deleteConfirm() !== user()?.email}
-            onClick={deleteAccount}
-            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-          >
-            Delete account
-          </button>
-        </div>
-        <Show when={deleteError()}>
-          {(msg) => <p class="mt-2 text-sm text-red-600">{msg()}</p>}
-        </Show>
-      </section>
-
       <Show when={sessionsError()}>
-        {(msg) => <p class="mb-4 text-sm text-red-600">{msg()}</p>}
+        {(msg) => (
+          <p role="alert" class="text-[12.5px] text-destructive">
+            {msg()}
+          </p>
+        )}
       </Show>
 
       <Show when={(sessions()?.sessions.length ?? 0) > 0}>
-        <section class="rounded-xl border border-border bg-card p-6">
-          <h2 class="text-sm font-semibold mb-1">Active sessions</h2>
-          <p class="text-sm text-muted-foreground mb-4">
-            Devices and browsers currently signed in to your account.
-          </p>
+        <Panel
+          title="Active sessions"
+          description="Devices and browsers currently signed in to your account."
+        >
           <div class="space-y-2">
             <For each={sessions()?.sessions ?? []}>
               {(item) => (
-                <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
-                  <div>
-                    <p class="font-medium text-stone-900">
-                      {item.method ?? "Password"}{" "}
+                <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div class="min-w-0">
+                    <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
+                      {item.method ?? "Password"}
                       <Show when={item.current}>
-                        <span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                        <Badge
+                          variant="outline"
+                          class="border-success/25 bg-success/10 text-success-foreground"
+                        >
                           This session
-                        </span>
+                        </Badge>
                       </Show>
                     </p>
-                    <p class="text-xs text-muted-foreground">
+                    <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
                       Signed in {new Date(item.createdAt).toLocaleString()} · expires{" "}
                       {new Date(item.expiresAt).toLocaleString()}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    class="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => revokeSession(item.id, item.current)}
                   >
                     {item.current ? "Sign out" : "Revoke"}
-                  </button>
+                  </Button>
                 </div>
               )}
             </For>
           </div>
-        </section>
+        </Panel>
       </Show>
 
-      <section class="rounded-xl border border-border bg-card p-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="text-sm font-semibold mb-1">API tokens</h2>
-            <p class="text-sm text-muted-foreground">
-              Create tokens for CLI and API access. Scope a token to read-only or to a single tenant
-              to limit what it can reach.
-            </p>
-          </div>
-          <button
-            type="button"
+      <Panel
+        title="API tokens"
+        description="Create tokens for CLI and API access. Scope a token to read-only or to a single tenant to limit what it can reach."
+        actions={
+          <Button
             onClick={() => {
               setTokenError(null);
               setTokenOpen(true);
             }}
-            class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 transition-colors whitespace-nowrap"
           >
             Create token
-          </button>
-        </div>
-
+          </Button>
+        }
+      >
         <Dialog open={tokenOpen()} onOpenChange={setTokenOpen}>
-          <DialogContent class="max-w-md rounded-xl bg-white p-6">
+          <DialogContent class="dark max-w-md text-foreground">
             <DialogHeader>
               <DialogTitle>Create API token</DialogTitle>
-              <DialogDescription class="mt-1 text-sm text-stone-500">
+              <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
                 The token inherits your permissions. Read-only tokens can view data but cannot
                 change it; a tenant-bound token is rejected for every other tenant.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleTokenCreate} class="mt-4 space-y-3">
-              <div class="space-y-1.5">
-                <label for="token-name" class="text-xs font-medium text-stone-700">
-                  Token name
-                </label>
-                <input
+              <Field label="Token name">
+                <Input
                   id="token-name"
                   required
                   value={tokenName()}
                   onInput={(e) => setTokenName(e.currentTarget.value)}
-                  class={inputClass}
                   placeholder="Work laptop CLI"
                 />
-              </div>
-              <div class="space-y-1.5">
-                <label for="token-scope" class="text-xs font-medium text-stone-700">
-                  Access
-                </label>
+              </Field>
+              <Field label="Access">
                 <select
                   id="token-scope"
-                  class={inputClass}
+                  class={selectClass}
                   value={tokenScope()}
                   onChange={(e) => setTokenScope(e.currentTarget.value as "read" | "write")}
                 >
                   <option value="read">Read only</option>
                   <option value="write">Read &amp; write</option>
                 </select>
-              </div>
-              <div class="space-y-1.5">
-                <label for="token-tenant" class="text-xs font-medium text-stone-700">
-                  Tenant
-                </label>
+              </Field>
+              <Field label="Tenant">
                 <select
                   id="token-tenant"
-                  class={inputClass}
+                  class={selectClass}
                   value={tokenTenantId()}
                   onChange={(e) => setTokenTenantId(e.currentTarget.value)}
                 >
@@ -584,14 +558,11 @@ export default function AccountPage() {
                     )}
                   </For>
                 </select>
-              </div>
-              <div class="space-y-1.5">
-                <label for="token-expiry" class="text-xs font-medium text-stone-700">
-                  Expiry
-                </label>
+              </Field>
+              <Field label="Expiry">
                 <select
                   id="token-expiry"
-                  class={inputClass}
+                  class={selectClass}
                   value={tokenExpiry()}
                   onChange={(e) => setTokenExpiry(e.currentTarget.value)}
                 >
@@ -600,24 +571,19 @@ export default function AccountPage() {
                   <option value="90">90 days</option>
                   <option value="365">1 year</option>
                 </select>
-              </div>
+              </Field>
               <Show when={tokenError()}>
-                {(msg) => <p class="text-sm text-red-600">{msg()}</p>}
+                {(msg) => (
+                  <p role="alert" class="text-[12.5px] text-destructive">
+                    {msg()}
+                  </p>
+                )}
               </Show>
-              <DialogFooter class="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setTokenOpen(false)}
-                  class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 transition-colors"
-                >
+              <DialogFooter class="border-t border-white/[0.06] pt-3">
+                <Button type="button" variant="outline" onClick={() => setTokenOpen(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
-                >
-                  Create token
-                </button>
+                </Button>
+                <Button type="submit">Create token</Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -625,20 +591,31 @@ export default function AccountPage() {
 
         <Show when={newToken()}>
           {(token) => (
-            <div class="mt-4 mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <p class="font-medium">Copy this token now. It will not be shown again.</p>
-              <code class="mt-2 block break-all rounded bg-white p-2 text-xs">{token()}</code>
+            <div class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3">
+              <p class="text-[12.5px] font-medium text-warning-foreground">
+                Copy this token now. It will not be shown again.
+              </p>
+              <code class="mt-2 block break-all rounded border border-white/[0.07] bg-black/30 p-2 font-mono text-[11.5px] text-foreground">
+                {token()}
+              </code>
             </div>
           )}
         </Show>
-        <Show when={tokenError()}>{(msg) => <p class="mb-3 text-sm text-red-600">{msg()}</p>}</Show>
-        <div class="mt-4 space-y-2">
+        <Show when={tokenError()}>
+          {(msg) => (
+            <p role="alert" class="mb-3 text-[12.5px] text-destructive">
+              {msg()}
+            </p>
+          )}
+        </Show>
+
+        <div class="space-y-2">
           <For each={tokens()?.tokens ?? []}>
             {(token) => (
-              <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
-                <div>
-                  <p class="font-medium text-stone-900">{token.name}</p>
-                  <p class="text-xs text-muted-foreground">
+              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <p class="text-[12.5px] font-medium text-foreground">{token.name}</p>
+                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
                     {scopeLabel(token.scopes)} · {tenantLabel(token.tenantId)} · {token.tokenPrefix}
                     ... · Created {new Date(token.createdAt).toLocaleDateString()} · Last used{" "}
                     {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleDateString() : "never"}
@@ -648,28 +625,74 @@ export default function AccountPage() {
                     </Show>
                   </p>
                   <Show when={token.revokedAt}>
-                    <p class="text-xs text-red-600">Revoked</p>
+                    <p class="mt-1 text-[11px] font-medium text-destructive">Revoked</p>
                   </Show>
                 </div>
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="outline"
                   disabled={Boolean(token.revokedAt)}
                   onClick={() => revokeToken(token.id)}
-                  class="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
                 >
                   Revoke
-                </button>
+                </Button>
               </div>
             )}
           </For>
           <Show when={tokensError()}>
-            {(msg) => <p class="mb-3 text-sm text-red-600">{msg()}</p>}
+            {(msg) => (
+              <p role="alert" class="text-[12.5px] text-destructive">
+                {msg()}
+              </p>
+            )}
           </Show>
           <Show when={!tokensPending() && !tokensError() && (tokens()?.tokens.length ?? 0) === 0}>
-            <p class="text-sm text-muted-foreground">No API tokens yet.</p>
+            <p class="text-[12.5px] text-muted-foreground">
+              No API tokens yet. Create one for the CLI or API.
+            </p>
           </Show>
         </div>
-      </section>
-    </div>
+      </Panel>
+
+      <Panel
+        class="border-destructive/25 bg-destructive/[0.025]"
+        header={
+          <div class="min-w-0">
+            <h2 class="text-[13px] font-semibold tracking-[-0.01em] text-destructive">
+              Delete account
+            </h2>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              This removes your account and solo tenants you own. Tenants with other administrators
+              are kept. Type your email address to confirm.
+            </p>
+          </div>
+        }
+      >
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="email"
+            class="h-9 sm:flex-1"
+            placeholder={user()?.email}
+            value={deleteConfirm()}
+            onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
+          />
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleteConfirm() !== user()?.email}
+            onClick={deleteAccount}
+          >
+            Delete account
+          </Button>
+        </div>
+        <Show when={deleteError()}>
+          {(msg) => (
+            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+              {msg()}
+            </p>
+          )}
+        </Show>
+      </Panel>
+    </Page>
   );
 }

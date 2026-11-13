@@ -18,7 +18,7 @@ test.describe("passkeys", () => {
     await expect(card.getByText(/last used/i)).toBeVisible();
 
     // Sign out, then use the passkey instead of a password.
-    await page.locator("[data-slot=sidebar-footer] [data-slot=dropdown-menu-trigger]").click();
+    await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);

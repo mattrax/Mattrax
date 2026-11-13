@@ -54,7 +54,7 @@ export default function AcceptInvitationPage() {
   );
 
   return (
-    <main class="flex min-h-svh items-center justify-center bg-stone-50 px-4">
+    <main class="auth-page dark flex min-h-svh items-center justify-center bg-background px-4 text-foreground">
       <Card class="w-full max-w-md bg-white">
         <CardHeader>
           <CardTitle>Accept invitation</CardTitle>

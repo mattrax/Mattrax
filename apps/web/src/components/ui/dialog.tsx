@@ -69,7 +69,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
       <DialogPrimitive.Content
         data-slot="dialog-content"
         class={cn(
-          "fixed top-1/2 left-1/2 z-50 z-dialog-content w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+          "dark fixed top-1/2 left-1/2 z-50 z-dialog-content w-full -translate-x-1/2 -translate-y-1/2 outline-none",
           local.class,
         )}
         {...others}

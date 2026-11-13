@@ -38,21 +38,26 @@ function ErrorFallback(props: { error: unknown; reset: () => void }) {
   console.error("Mattrax page error", props.error);
   const presentation = errorPresentation(props.error);
   return (
-    <div class="flex min-h-screen items-center justify-center bg-stone-50 p-6">
-      <div class="w-full max-w-md rounded-xl border bg-white p-6 shadow-sm">
-        <h1 class="text-lg font-semibold text-stone-900">{presentation.title}</h1>
-        <p class="mt-2 text-sm text-muted-foreground">{presentation.message}</p>
+    <div class="dark flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+      <div class="w-full max-w-md rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/50">
+        <span class="mb-5 flex size-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black">
+          M
+        </span>
+        <h1 class="text-lg font-semibold tracking-tight">{presentation.title}</h1>
+        <p class="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+          {presentation.message}
+        </p>
         <div class="mt-5 flex gap-2">
           <button
             type="button"
-            class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+            class="rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             onClick={props.reset}
           >
             Try again
           </button>
           <a
             href="/dashboard"
-            class="rounded-lg border px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            class="rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05]"
           >
             Go to dashboard
           </a>

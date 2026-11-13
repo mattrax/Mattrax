@@ -35,7 +35,7 @@ test.describe("authentication and onboarding", () => {
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
     await page.waitForTimeout(300);
 
-    await page.locator("[data-slot=sidebar-footer] [data-slot=dropdown-menu-trigger]").click();
+    await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);

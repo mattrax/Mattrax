@@ -56,7 +56,7 @@ function ConfirmAction(props: {
         {props.title}
       </Button>
       <Dialog open={open()} onOpenChange={setOpen}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="max-w-md rounded-xl border border-white/[0.09] bg-popover p-6">
           <DialogHeader>
             <DialogTitle>{props.title}</DialogTitle>
             <DialogDescription>{props.description}</DialogDescription>
@@ -122,7 +122,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
       <DropdownMenuTrigger class="inline-flex">
         <Button variant="outline">Scope</Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-80 rounded-xl bg-white p-1">
+      <DropdownMenuContent class="w-80 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
         <For each={groupRows()}>
           {(group) => (
             <DropdownMenuItem

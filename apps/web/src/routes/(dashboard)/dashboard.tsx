@@ -1,10 +1,10 @@
 import { useNavigate } from "@solidjs/router";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
-import { EmptyState, PageHeader, QueryError } from "~/components/mdm/common";
+import { EmptyState, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Building2, Plus } from "~/components/ui/icons";
+import { ArrowUpRight, Building2, Plus, Sparkles } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
@@ -18,6 +18,14 @@ const parseDraft = (value: string | null): Draft | undefined => {
     return undefined;
   }
 };
+
+const workspaceInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "?";
 
 /**
  * Workspace picker. Tenant ids always travel in the URL (`/t/:tenantId/...`),
@@ -65,13 +73,32 @@ export default function DashboardPage() {
     },
   }));
 
+  const workspaceCount = () => me.data?.tenants.length ?? 0;
+
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
+        eyebrow="Mattrax console"
         title="Workspaces"
         description="Choose a tenant to manage its devices, groups and policies."
+        meta={
+          <Show when={me.data}>
+            {(data) => (
+              <>
+                <span class="break-all text-muted-foreground">{data().user.email}</span>
+                <span class="text-muted-foreground/40" aria-hidden="true">
+                  ·
+                </span>
+                <span>
+                  {data().tenants.length} workspace
+                  {data().tenants.length === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
+          </Show>
+        }
         actions={
-          <Show when={me.data?.tenants.length}>
+          <Show when={workspaceCount() > 0}>
             <Button onClick={() => navigate("/tenants/new")}>
               <Plus class="size-4" />
               Create tenant
@@ -84,35 +111,54 @@ export default function DashboardPage() {
 
       <Show when={draft()}>
         {(current) => (
-          <div class="rounded-xl border border-stone-900 bg-stone-900 p-5 text-white">
-            <p class="text-xs uppercase tracking-[0.16em] text-stone-400">Policy draft ready</p>
-            <h2 class="mt-1 text-lg font-semibold">{current().name}</h2>
-            <p class="mt-1 text-sm text-stone-300">
-              {current().platform} · {current().selections.length} collections ·{" "}
-              {current().selections.reduce(
-                (total, selection) => total + Object.keys(selection.values).length,
-                0,
-              )}{" "}
-              settings
-            </p>
+          <Panel class="border-brand/25 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(91,100,255,0.13),transparent_62%)]">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <p class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-brand">
+                  <Sparkles class="size-3" />
+                  Policy draft ready
+                </p>
+                <h2 class="mt-2 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+                  {current().name}
+                </h2>
+                <p class="mt-1 text-[12.5px] text-muted-foreground">
+                  {current().platform} · {current().selections.length} collections ·{" "}
+                  {current().selections.reduce(
+                    (total, selection) => total + Object.keys(selection.values).length,
+                    0,
+                  )}{" "}
+                  settings
+                </p>
+              </div>
+              <a
+                href="/designer"
+                class="shrink-0 text-[11.5px] font-medium text-muted-foreground underline decoration-white/20 underline-offset-4 transition-colors hover:text-foreground"
+              >
+                Edit draft
+              </a>
+            </div>
+
             <Show
-              when={me.data?.tenants.length}
+              when={workspaceCount() > 0}
               fallback={
-                <p class="mt-4 text-sm text-stone-300">
+                <p class="mt-4 text-[12.5px] text-muted-foreground">
                   Create a workspace first and your draft will be waiting here.{" "}
-                  <a href="/tenants/new" class="underline hover:text-white">
+                  <a
+                    href="/tenants/new"
+                    class="font-medium text-foreground underline decoration-white/25 underline-offset-4 hover:text-brand"
+                  >
                     Create a workspace
                   </a>
                 </p>
               }
             >
-              <div class="mt-4 flex flex-wrap items-center gap-2">
+              <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
                 <label class="sr-only" for="draft-tenant">
                   Workspace
                 </label>
                 <select
                   id="draft-tenant"
-                  class="h-9 rounded-lg border border-stone-700 bg-stone-800 px-3 text-sm text-white"
+                  class="h-8 min-w-0 max-w-full rounded-lg border bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
                   value={tenantId()}
                   onChange={(event) => setTenantId(event.currentTarget.value)}
                 >
@@ -129,7 +175,7 @@ export default function DashboardPage() {
                 </Button>
                 <Button
                   variant="ghost"
-                  class="text-stone-300 hover:text-white"
+                  class="text-muted-foreground hover:text-foreground"
                   onClick={() => {
                     localStorage.removeItem("mattrax:designer-draft");
                     setDraft(undefined);
@@ -137,29 +183,27 @@ export default function DashboardPage() {
                 >
                   Discard
                 </Button>
-                <a href="/designer" class="text-xs text-stone-300 underline hover:text-white">
-                  Edit draft
-                </a>
               </div>
             </Show>
             <Show when={deployDraft.error}>
               {(error) => (
-                <p role="alert" class="mt-2 text-sm text-red-300">
+                <p role="alert" class="mt-2 text-[12.5px] text-destructive">
                   {errorMessage(error())}
                 </p>
               )}
             </Show>
-          </div>
+          </Panel>
         )}
       </Show>
 
       <Show
-        when={(me.data?.tenants.length ?? 0) > 0}
+        when={workspaceCount() > 0}
         fallback={
           <Show when={me.isSuccess}>
             <EmptyState
               title="No tenant yet"
               description="Tenants hold your devices, groups, policies, and team. Create one to get started."
+              icon={Building2}
               action={
                 <Button onClick={() => navigate("/tenants/new")}>
                   <Plus class="size-4" />
@@ -170,31 +214,41 @@ export default function DashboardPage() {
           </Show>
         }
       >
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <For each={me.data?.tenants ?? []}>
             {(tenant) => (
               <button
                 type="button"
                 onClick={() => navigate(`/t/${tenant.id}`)}
-                class="flex items-start gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:bg-muted/40"
+                class="group flex min-w-0 flex-col gap-3.5 rounded-xl border border-white/[0.07] bg-card p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-200 hover:border-white/[0.14] hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
-                <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-stone-900 text-white">
-                  <Building2 class="size-5" />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-semibold text-stone-900">
-                    {tenant.name}
+                <div class="flex min-w-0 items-start gap-3">
+                  <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[11px] font-semibold text-brand-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.22)]">
+                    {workspaceInitials(tenant.name)}
                   </span>
-                  <span class="block truncate text-xs text-muted-foreground">{tenant.slug}</span>
-                  <Badge variant="outline" class="mt-2 capitalize">
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-[13.5px] font-semibold text-foreground">
+                      {tenant.name}
+                    </span>
+                    <span class="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
+                      {tenant.slug}
+                    </span>
+                  </span>
+                  <ArrowUpRight class="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+                </div>
+                <div class="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
+                  <Badge variant="outline" class="capitalize text-muted-foreground">
                     {tenant.role}
                   </Badge>
-                </span>
+                  <span class="text-[11.5px] font-medium text-muted-foreground transition-colors group-hover:text-brand">
+                    Open
+                  </span>
+                </div>
               </button>
             )}
           </For>
         </div>
       </Show>
-    </div>
+    </Page>
   );
 }

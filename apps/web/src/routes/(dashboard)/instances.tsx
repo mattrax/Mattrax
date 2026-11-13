@@ -5,13 +5,14 @@ import {
   ErrorText,
   Field,
   formatDate,
+  Page,
   PageHeader,
+  Panel,
   QueryError,
 } from "~/components/mdm/common";
 import { errorMessage } from "~/lib/errors";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
   Dialog,
@@ -97,11 +98,21 @@ export default function InstancesPage() {
     },
   }));
 
+  const instanceCount = () => instances.data?.instances.length ?? 0;
+
   return (
-    <div class="flex flex-1 flex-col gap-6 p-6">
+    <Page>
       <PageHeader
+        eyebrow="Platform"
         title="Instances"
         description="Product keys for self-hosted and whitelabel Mattrax deployments."
+        meta={
+          <Show when={instances.isSuccess}>
+            <span>
+              {instanceCount()} registered instance{instanceCount() === 1 ? "" : "s"}
+            </span>
+          </Show>
+        }
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus class="size-4" />
@@ -111,118 +122,127 @@ export default function InstancesPage() {
       />
 
       <Show when={newKey()}>
-        <Card class="border-amber-200 bg-amber-50">
-          <CardHeader>
-            <CardTitle>Copy this product key now</CardTitle>
-          </CardHeader>
-          <CardContent class="space-y-2 text-sm text-amber-900">
-            <p>It is only shown once. Store it in the instance's secret manager.</p>
-            <code class="block break-all rounded-lg bg-white p-3 font-mono text-xs">
-              {newKey()}
-            </code>
-            <div class="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => navigator.clipboard.writeText(newKey()!)}
-              >
-                Copy
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setNewKey(null)}>
-                Dismiss
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <Panel class="border-warning/25 bg-warning/[0.05]" title="Copy this product key now">
+          <p class="text-[12.5px] leading-relaxed text-warning-foreground/90">
+            It is only shown once. Store it in the instance's secret manager.
+          </p>
+          <code class="mt-3 block break-all rounded-lg border border-white/[0.07] bg-black/30 p-3 font-mono text-[11.5px] text-foreground">
+            {newKey()}
+          </code>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigator.clipboard.writeText(newKey()!)}
+            >
+              Copy
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setNewKey(null)}>
+              Dismiss
+            </Button>
+          </div>
+        </Panel>
       </Show>
 
       <QueryError error={instances.error} onRetry={() => void instances.refetch()} />
 
       <Show
-        when={(instances.data?.instances.length ?? 0) > 0}
+        when={instanceCount() > 0}
         fallback={
-          <EmptyState
-            title="No instances"
-            description="Register a self-hosted deployment to issue it a product key."
-            action={
-              <Button onClick={() => setCreateOpen(true)}>
-                <Plus class="size-4" />
-                Register instance
-              </Button>
-            }
-          />
+          <Show when={instances.isSuccess}>
+            <EmptyState
+              title="No instances"
+              description="Register a self-hosted deployment to issue it a product key."
+              icon={Boxes}
+              action={
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus class="size-4" />
+                  Register instance
+                </Button>
+              }
+            />
+          </Show>
         }
       >
-        <div class="overflow-hidden rounded-xl border bg-card">
-          <table class="w-full text-sm">
-            <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th class="px-4 py-3">Key</th>
-                <th class="px-4 py-3">Description</th>
-                <th class="px-4 py-3">Users</th>
-                <th class="px-4 py-3">Devices</th>
-                <th class="px-4 py-3">Status</th>
-                <th class="px-4 py-3">Last seen</th>
-                <th class="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y">
-              <For each={instances.data?.instances ?? []}>
-                {(instance) => (
-                  <tr class="hover:bg-muted/25">
-                    <td class="px-4 py-3 font-mono text-xs">{instance.keyPrefix}…</td>
-                    <td class="px-4 py-3">{instance.description || "—"}</td>
-                    <td class="px-4 py-3">{instance.userCount}</td>
-                    <td class="px-4 py-3">{instance.deviceCount}</td>
-                    <td class="px-4 py-3">
-                      <Badge
-                        variant={
-                          instance.status === "active"
-                            ? "default"
-                            : instance.status === "revoked"
-                              ? "destructive"
-                              : "secondary"
-                        }
-                      >
-                        {instance.status}
-                      </Badge>
-                    </td>
-                    <td class="px-4 py-3 text-muted-foreground">
-                      {formatDate(instance.lastSeenAt)}
-                    </td>
-                    <td class="px-4 py-3 text-right">
-                      <div class="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEdit(instance);
-                            setEditDescription(instance.description ?? "");
-                          }}
-                          disabled={Boolean(instance.revokedAt)}
+        <Panel flush>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[760px] text-[13px]">
+              <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                <tr>
+                  <th class="px-4 py-2.5 font-medium">Key</th>
+                  <th class="px-4 py-2.5 font-medium">Description</th>
+                  <th class="px-4 py-2.5 font-medium">Users</th>
+                  <th class="px-4 py-2.5 font-medium">Devices</th>
+                  <th class="px-4 py-2.5 font-medium">Status</th>
+                  <th class="px-4 py-2.5 font-medium">Last seen</th>
+                  <th class="px-4 py-2.5 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/[0.05]">
+                <For each={instances.data?.instances ?? []}>
+                  {(instance) => (
+                    <tr class="transition-colors hover:bg-white/[0.025]">
+                      <td class="whitespace-nowrap px-4 py-3 font-mono text-[11.5px] text-muted-foreground">
+                        {instance.keyPrefix}…
+                      </td>
+                      <td class="px-4 py-3 text-foreground">{instance.description || "—"}</td>
+                      <td class="px-4 py-3 tabular-nums text-muted-foreground">
+                        {instance.userCount}
+                      </td>
+                      <td class="px-4 py-3 tabular-nums text-muted-foreground">
+                        {instance.deviceCount}
+                      </td>
+                      <td class="px-4 py-3">
+                        <Badge
+                          variant={
+                            instance.status === "active"
+                              ? "default"
+                              : instance.status === "revoked"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                          class="capitalize"
                         >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setRevoke(instance)}
-                          disabled={Boolean(instance.revokedAt)}
-                        >
-                          Revoke
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
+                          {instance.status}
+                        </Badge>
+                      </td>
+                      <td class="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                        {formatDate(instance.lastSeenAt)}
+                      </td>
+                      <td class="px-4 py-3">
+                        <div class="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEdit(instance);
+                              setEditDescription(instance.description ?? "");
+                            }}
+                            disabled={Boolean(instance.revokedAt)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setRevoke(instance)}
+                            disabled={Boolean(instance.revokedAt)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </Panel>
       </Show>
 
       <Dialog open={createOpen()} onOpenChange={setCreateOpen}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="dark max-w-md text-foreground">
           <DialogHeader>
             <DialogTitle>Register a self-hosted instance</DialogTitle>
           </DialogHeader>
@@ -246,7 +266,7 @@ export default function InstancesPage() {
       </Dialog>
 
       <Dialog open={edit() !== null} onOpenChange={(open) => !open && setEdit(null)}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="dark max-w-md text-foreground">
           <DialogHeader>
             <DialogTitle>Edit instance</DialogTitle>
           </DialogHeader>
@@ -272,11 +292,11 @@ export default function InstancesPage() {
       </Dialog>
 
       <Dialog open={revoke() !== null} onOpenChange={(open) => !open && setRevoke(null)}>
-        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+        <DialogContent class="dark max-w-md text-foreground">
           <DialogHeader>
             <DialogTitle>Revoke this instance?</DialogTitle>
           </DialogHeader>
-          <p class="text-sm text-muted-foreground">
+          <p class="text-[13px] leading-relaxed text-muted-foreground">
             The instance's licence checks will fail after its next monitor run. This cannot be
             undone.
           </p>
@@ -295,6 +315,6 @@ export default function InstancesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

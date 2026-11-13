@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
-import { ChevronsUpDown } from "~/components/ui/icons";
+import { ChevronsUpDown, Search as SearchIcon } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 
@@ -184,23 +184,26 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   return (
     <div class="space-y-3">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <Input
-            ref={searchInput}
-            placeholder={props.searchPlaceholder ?? "Search… (⌘F)"}
-            value={search()}
-            onInput={(e) => setSearch(e.currentTarget.value)}
-            class="max-w-xs"
-          />
+      <div class="flex flex-wrap items-center justify-between gap-2.5">
+        <div class="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md">
+          <div class="relative min-w-0 flex-1">
+            <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchInput}
+              placeholder={props.searchPlaceholder ?? "Search… (⌘F)"}
+              value={search()}
+              onInput={(e) => setSearch(e.currentTarget.value)}
+              class="h-8 w-full pl-8 text-[12.5px]"
+            />
+          </div>
           <Show when={search()}>
-            <Button variant="ghost" size="sm" onClick={() => setSearch("")}>
+            <Button variant="ghost" size="xs" onClick={() => setSearch("")}>
               Clear
             </Button>
           </Show>
         </div>
-        <div class="flex items-center gap-3">
-          <span class="text-sm text-muted-foreground">
+        <div class="flex items-center gap-2">
+          <span class="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
             {props.total !== undefined
               ? `${props.rows?.length ?? 0} of ${props.total}`
               : rows().length === (props.rows?.length ?? 0)
@@ -209,22 +212,22 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger class="inline-flex">
-              <Button variant="outline" size="sm">
-                <ChevronsUpDown class="size-4" />
-                Columns
+              <Button variant="outline" size="sm" class="gap-1.5">
+                <ChevronsUpDown class="size-3.5" />
+                <span class="hidden xs:inline">Columns</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-52 rounded-xl border bg-white p-1 shadow-lg">
-              <DropdownMenuLabel class="px-2 py-1 text-xs text-muted-foreground">
+            <DropdownMenuContent class="w-52 rounded-xl border bg-popover p-1.5 shadow-2xl shadow-black/50">
+              <DropdownMenuLabel class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Visible columns
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
+              <DropdownMenuSeparator class="my-1 h-px bg-border" />
               <For each={props.columns}>
                 {(column) => (
                   <DropdownMenuCheckboxItem
                     checked={!hidden()[column.id] && !column.defaultHidden}
                     onChange={(value) => toggleColumn(column.id, value)}
-                    class="rounded-md px-2 py-1.5 text-sm"
+                    class="rounded-md px-2 py-1.5 text-[12.5px]"
                   >
                     {column.header}
                   </DropdownMenuCheckboxItem>
@@ -241,10 +244,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <QueryError error={props.error} />
       </Show>
       <Show when={!props.error && props.loading}>
-        <div class="overflow-hidden rounded-xl border bg-card">
-          <div class="space-y-2 p-4">
-            <For each={[0, 1, 2, 3]}>
-              {() => <div class="h-10 animate-pulse rounded-lg bg-muted/60" />}
+        <div class="overflow-hidden rounded-xl border border-white/[0.07] bg-card">
+          <div class="space-y-1.5 p-3">
+            <For each={[0, 1, 2, 3, 4]}>
+              {() => <div class="h-11 animate-pulse rounded-lg bg-white/[0.035]" />}
             </For>
           </div>
         </div>
@@ -253,13 +256,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         when={!props.error && !props.loading && rows().length > 0}
         fallback={!props.error && !props.loading ? props.empty : undefined}
       >
-        <div class="overflow-x-auto rounded-xl border bg-card">
-          <table class="w-full text-sm">
-            <thead class="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div class="overflow-x-auto rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+          <table class="w-full text-[13px]">
+            <thead class="border-b border-white/[0.07] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
-                <th class="w-10 px-4 py-3">
+                <th class="w-10 px-3 py-2.5 sm:px-4">
                   <input
                     type="checkbox"
+                    class="size-3.5 accent-[var(--brand)]"
                     checked={allSelected()}
                     onChange={toggleAll}
                     aria-label="Select all rows"
@@ -267,28 +271,30 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 </th>
                 <For each={visibleColumns()}>
                   {(col) => (
-                    <th class={cn("px-4 py-3", col.class)}>
-                      <button
-                        type="button"
-                        class={cn("uppercase tracking-wide", col.sort && "hover:text-stone-900")}
-                        onClick={() => col.sort && toggleSort(col.sortId ?? col.id)}
-                      >
-                        {col.header}
-                        {sortIndicator(col)}
-                      </button>
+                    <th class={cn("whitespace-nowrap px-3 py-2.5 font-medium sm:px-4", col.class)}>
+                      <Show when={col.sort} fallback={col.header}>
+                        <button
+                          type="button"
+                          class="uppercase tracking-[0.12em] transition-colors hover:text-foreground"
+                          onClick={() => toggleSort(col.sortId ?? col.id)}
+                        >
+                          {col.header}
+                          {sortIndicator(col)}
+                        </button>
+                      </Show>
                     </th>
                   )}
                 </For>
               </tr>
             </thead>
-            <tbody class="divide-y">
+            <tbody class="divide-y divide-white/[0.055]">
               <For each={rows()}>
                 {(row) => (
                   <tr
                     class={cn(
-                      "hover:bg-muted/25",
+                      "transition-colors hover:bg-white/[0.028]",
                       props.onRowClick && "cursor-pointer",
-                      selected()[row.id] && "bg-muted/40",
+                      selected()[row.id] && "bg-brand/[0.06]",
                     )}
                     onClick={(event) => {
                       if (!props.onRowClick) return;
@@ -297,9 +303,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       props.onRowClick(row);
                     }}
                   >
-                    <td class="px-4 py-3">
+                    <td class="px-3 py-3 sm:px-4">
                       <input
                         type="checkbox"
+                        class="size-3.5 accent-[var(--brand)]"
                         checked={!!selected()[row.id]}
                         onChange={(e) => toggleRow(row, e.currentTarget.checked)}
                         aria-label={`Select ${row.name ?? row.id}`}
@@ -307,7 +314,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                     </td>
                     <For each={visibleColumns()}>
                       {(col) => (
-                        <td class={cn("px-4 py-3 align-middle", col.class)}>{col.cell(row)}</td>
+                        <td class={cn("px-3 py-3 align-middle sm:px-4", col.class)}>
+                          {col.cell(row)}
+                        </td>
                       )}
                     </For>
                   </tr>
@@ -321,10 +330,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       <Show when={props.footer}>{props.footer}</Show>
 
       <Show when={selectedRows().length > 0 && actions()}>
-        <div class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-xl">
-          <span class="text-sm font-medium">{selectedRows().length} selected</span>
+        <div class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-white/[0.1] bg-popover/95 px-4 py-2.5 shadow-2xl shadow-black/60 backdrop-blur-xl">
+          <span class="text-[12.5px] font-medium">{selectedRows().length} selected</span>
           {actions()}
-          <Button variant="ghost" onClick={clear}>
+          <Button variant="ghost" size="sm" onClick={clear}>
             Clear
           </Button>
         </div>

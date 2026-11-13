@@ -28,11 +28,16 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div class="min-h-screen flex items-center justify-center bg-stone-50">
+    <div class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="inline-flex items-center gap-2 mb-6">
-            <span class="font-semibold tracking-tight text-lg">Mattrax</span>
+            <span class="flex items-center gap-2.5">
+              <span class="flex size-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
+                M
+              </span>
+              <span class="text-[15px] font-semibold tracking-[-0.01em]">Mattrax</span>
+            </span>
           </a>
           <h1 class="text-2xl font-semibold text-stone-900">Reset your password</h1>
           <p class="text-stone-500 text-sm mt-1">

@@ -38,7 +38,7 @@ test.describe("tenant settings", () => {
 
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
     for (const [tab, text] of [
-      ["Administrators", /Invite an administrator/],
+      ["Members", /Invite an administrator/],
       ["Identity", /Single sign-on/],
       ["Enrollment", /Enrollment link/],
       ["Management", /Apple push notifications/],
@@ -120,6 +120,6 @@ test.describe("tenant settings", () => {
     await page.getByRole("button", { name: /download csr/i }).click();
     await download;
     // The endpoint may not be deployed in every environment; the UI must not crash.
-    await expect(page.getByRole("heading", { name: "Tenant settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   });
 });

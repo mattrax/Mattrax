@@ -9,6 +9,15 @@
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-muted: var(--brand-muted);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -74,6 +83,15 @@
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0.625rem;
+  --brand: oklch(0.58 0.2 275);
+  --brand-foreground: oklch(1 0 0);
+  --brand-muted: oklch(0.58 0.2 275 / 14%);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.985 0 0);
+  --success: oklch(0.7 0.15 155);
+  --success-foreground: oklch(0.3 0.08 155);
+  --warning: oklch(0.8 0.14 80);
+  --warning-foreground: oklch(0.35 0.1 80);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -86,36 +104,46 @@
 
 .dark {
   --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.87 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.371 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.185 0.004 285);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.2 0.004 285);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.97 0 0);
+  --primary-foreground: oklch(0.17 0 0);
+  --secondary: oklch(0.24 0.004 285);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted: oklch(0.225 0.004 285);
+  --muted-foreground: oklch(0.68 0.005 285);
+  --accent: oklch(0.26 0.005 285);
+  --accent-foreground: oklch(0.97 0 0);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(0.3 0.004 285 / 65%);
+  --input: oklch(0.35 0.004 285 / 60%);
+  --ring: oklch(0.65 0.19 276);
+  --chart-1: oklch(0.7 0.17 276);
+  --chart-2: oklch(0.72 0.16 190);
+  --chart-3: oklch(0.78 0.16 145);
+  --chart-4: oklch(0.82 0.15 85);
+  --chart-5: oklch(0.72 0.2 25);
+  --sidebar: oklch(0.17 0.004 285);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.65 0.19 276);
+  --sidebar-primary-foreground: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.24 0.004 285);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(0.3 0.004 285 / 65%);
+  --sidebar-ring: oklch(0.65 0.19 276);
+  --brand: oklch(0.68 0.19 276);
+  --brand-foreground: oklch(1 0 0);
+  --brand-muted: oklch(0.68 0.19 276 / 16%);
+  --surface: oklch(0.175 0.004 285);
+  --surface-raised: oklch(0.205 0.004 285);
+  --success: oklch(0.72 0.16 155);
+  --success-foreground: oklch(0.82 0.1 155);
+  --warning: oklch(0.8 0.15 80);
+  --warning-foreground: oklch(0.85 0.1 80);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -168,4 +196,256 @@ main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Console theme
+ *
+ * The dashboard renders inside a `.dark` shell while the marketing site and
+ * auth pages keep the light palette. These compatibility rules let the older
+ * content pages (which used the light stone palette) inherit the console
+ * surfaces without rewriting every table, callout and status chip at once.
+ * ------------------------------------------------------------------------- */
+
+@layer components {
+  .page-enter {
+    animation: mattax-page-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .slide-up-enter {
+    animation: mattax-slide-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes mattax-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mattax-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mattax-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.dark ::selection {
+  background: color-mix(in oklch, var(--brand) 35%, transparent);
+}
+
+.dark {
+  scrollbar-color: oklch(0.34 0.005 285) transparent;
+}
+
+.dark *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+  background-color: oklch(0.34 0.005 285 / 70%);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(0.44 0.005 285 / 80%);
+}
+
+/* Light-palette helpers used by the pre-console pages. */
+.dark .bg-white,
+.dark .bg-white\/80,
+.dark .bg-white\/90 {
+  background-color: var(--card);
+}
+
+.dark .bg-stone-50,
+.dark .bg-stone-50\/60,
+.dark .bg-stone-50\/80 {
+  background-color: var(--muted);
+}
+
+.dark .bg-stone-100 {
+  background-color: var(--secondary);
+}
+
+.dark .bg-stone-200 {
+  background-color: var(--muted);
+}
+
+.dark .hover\:bg-stone-50:hover,
+.dark .hover\:bg-stone-100:hover {
+  background-color: var(--accent);
+}
+
+.dark .text-stone-950,
+.dark .text-stone-900,
+.dark .text-stone-800 {
+  color: var(--foreground);
+}
+
+.dark .text-stone-700,
+.dark .text-stone-600 {
+  color: color-mix(in oklch, var(--foreground) 82%, transparent);
+}
+
+.dark .text-stone-500,
+.dark .text-stone-400 {
+  color: var(--muted-foreground);
+}
+
+.dark .border-stone-100,
+.dark .border-stone-200 {
+  border-color: var(--border);
+}
+
+.dark .border-stone-300 {
+  border-color: var(--input);
+}
+
+.dark .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-stone-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border);
+}
+
+.dark .bg-green-50,
+.dark .bg-green-50\/60 {
+  background-color: color-mix(in oklch, var(--success) 12%, transparent);
+}
+
+.dark .border-green-200 {
+  border-color: color-mix(in oklch, var(--success) 30%, transparent);
+}
+
+.dark .text-green-700,
+.dark .text-green-800,
+.dark .text-green-900 {
+  color: var(--success-foreground);
+}
+
+.dark .bg-amber-50,
+.dark .bg-amber-50\/60 {
+  background-color: color-mix(in oklch, var(--warning) 12%, transparent);
+}
+
+.dark .border-amber-200 {
+  border-color: color-mix(in oklch, var(--warning) 30%, transparent);
+}
+
+.dark .text-amber-700,
+.dark .text-amber-800,
+.dark .text-amber-900 {
+  color: var(--warning-foreground);
+}
+
+.dark .bg-red-50,
+.dark .bg-red-50\/60 {
+  background-color: color-mix(in oklch, var(--destructive) 12%, transparent);
+}
+
+.dark .border-red-200 {
+  border-color: color-mix(in oklch, var(--destructive) 30%, transparent);
+}
+
+.dark .text-red-600,
+.dark .text-red-700,
+.dark .text-red-800 {
+  color: var(--destructive);
+}
+
+.dark .bg-blue-50 {
+  background-color: color-mix(in oklch, var(--brand) 12%, transparent);
+}
+
+.dark .border-blue-200 {
+  border-color: color-mix(in oklch, var(--brand) 30%, transparent);
+}
+
+.dark .text-blue-700 {
+  color: var(--brand);
+}
+
+.dark input[type="checkbox"] {
+  border-radius: 4px;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+.dark select:not([multiple]) {
+  appearance: none;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a8a93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  padding-right: 2rem;
+  color: var(--foreground);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.dark select:not([multiple]):hover {
+  border-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+}
+
+.dark select:not([multiple]):focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent);
+}
+
+.dark .z-badge-variant-default {
+  background-color: var(--brand-muted);
+  color: color-mix(in oklch, var(--brand) 60%, white);
+  border-color: color-mix(in oklch, var(--brand) 30%, transparent);
+}
+
+.dark .z-badge-variant-secondary {
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .slide-up-enter {
+    animation: none;
+  }
+}
+
+/* Auth pages use the console palette but keep their compact centred card. */
+.auth-page .bg-stone-900 {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.auth-page .hover\:bg-stone-800:hover {
+  background-color: color-mix(in oklch, var(--primary) 90%, transparent);
 }

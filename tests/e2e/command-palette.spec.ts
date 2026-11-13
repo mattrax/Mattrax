@@ -15,7 +15,7 @@ test.describe("command palette", () => {
     await expect(input).toBeVisible();
 
     await input.fill("settings");
-    await page.getByRole("button", { name: /Tenant settings/i }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/settings`));
 
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {

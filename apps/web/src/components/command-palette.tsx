@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
+  Boxes,
   Laptop,
   LayoutDashboard,
   LinkIcon,
+  Package,
   Search,
   Settings,
   ShieldCheck,
@@ -103,6 +105,20 @@ export function CommandPalette() {
             icon: ShieldCheck,
           },
           {
+            id: "nav-applications",
+            label: "Applications",
+            group: "Navigation",
+            href: `${base()}/applications`,
+            icon: Package,
+          },
+          {
+            id: "nav-software",
+            label: "Software",
+            group: "Navigation",
+            href: `${base()}/software`,
+            icon: Boxes,
+          },
+          {
             id: "nav-enrollment",
             label: "Enrollment",
             group: "Navigation",
@@ -111,7 +127,7 @@ export function CommandPalette() {
           },
           {
             id: "nav-settings",
-            label: "Tenant settings",
+            label: "Settings",
             group: "Navigation",
             href: `${base()}/settings`,
             icon: Settings,
@@ -254,11 +270,11 @@ export function CommandPalette() {
   return (
     <Show when={open()}>
       <div
-        class="fixed inset-0 z-[60] flex items-start justify-center bg-stone-950/40 px-4 pt-[12vh]"
+        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm"
         onClick={() => setOpen(false)}
       >
         <div
-          class="w-full max-w-xl overflow-hidden rounded-xl border bg-white shadow-2xl"
+          class="dark w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.09] bg-popover shadow-2xl shadow-black/70"
           onClick={(event) => event.stopPropagation()}
         >
           <div class="flex items-center gap-2 border-b px-4 py-3">
@@ -268,7 +284,7 @@ export function CommandPalette() {
               value={query()}
               onInput={(event) => updateQuery(event.currentTarget.value)}
               placeholder="Search devices, groups, policies, or pages…"
-              class="flex-1 bg-transparent text-sm outline-none"
+              class="flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
             />
             <kbd class="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">esc</kbd>
           </div>
@@ -296,8 +312,8 @@ export function CommandPalette() {
                           class={cn(
                             "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm",
                             active() === items().indexOf(item)
-                              ? "bg-stone-100"
-                              : "hover:bg-stone-50",
+                              ? "bg-white/[0.07]"
+                              : "hover:bg-white/[0.04]",
                           )}
                         >
                           <Show when={item.icon}>
@@ -307,7 +323,7 @@ export function CommandPalette() {
                             }}
                           </Show>
                           <span class="min-w-0 flex-1">
-                            <span class="block truncate font-medium text-stone-900">
+                            <span class="block truncate font-medium text-foreground">
                               {item.label}
                             </span>
                             <Show when={item.hint}>

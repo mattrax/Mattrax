@@ -12,11 +12,11 @@ import {
 } from "~/lib/step-up-bus";
 
 const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors";
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
 const primaryButton =
-  "rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors";
+  "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50";
 const secondaryButton =
-  "rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 transition-colors";
+  "rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05] disabled:opacity-50";
 
 const labels: Record<StepUpMethod, string> = {
   password: "Password",
@@ -87,10 +87,10 @@ export function StepUpDialog() {
         <Show when={request()}>
           {(current) => (
             <div>
-              <DialogTitle class="text-base font-semibold text-stone-900">
+              <DialogTitle class="text-base font-semibold text-foreground">
                 Confirm it's you
               </DialogTitle>
-              <DialogDescription class="mt-1 text-sm text-stone-600">
+              <DialogDescription class="mt-1 text-sm text-muted-foreground">
                 For your security, confirm your identity to {stepUpActionLabel(current().action)}.
               </DialogDescription>
 
@@ -101,8 +101,8 @@ export function StepUpDialog() {
                       type="button"
                       class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
                         method() === item
-                          ? "bg-stone-900 text-white"
-                          : "border border-stone-300 text-stone-700 hover:bg-stone-100"
+                          ? "bg-brand text-brand-foreground"
+                          : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
                       }`}
                       onClick={() => choose(item)}
                     >
@@ -115,7 +115,7 @@ export function StepUpDialog() {
               <form onSubmit={submit} class="mt-4 space-y-3">
                 <Show when={method() === "password"}>
                   <div class="space-y-1.5">
-                    <label for="step-up-password" class="text-xs font-medium text-stone-700">
+                    <label for="step-up-password" class="text-xs font-medium text-foreground/90">
                       Current password
                     </label>
                     <input
@@ -132,7 +132,7 @@ export function StepUpDialog() {
 
                 <Show when={method() === "totp"}>
                   <div class="space-y-1.5">
-                    <label for="step-up-code" class="text-xs font-medium text-stone-700">
+                    <label for="step-up-code" class="text-xs font-medium text-foreground/90">
                       6-digit authenticator code
                     </label>
                     <input
@@ -149,13 +149,13 @@ export function StepUpDialog() {
                 </Show>
 
                 <Show when={method() === "passkey"}>
-                  <p class="text-sm text-stone-600">
+                  <p class="text-sm text-muted-foreground">
                     Use the passkey saved on this device or a nearby device.
                   </p>
                 </Show>
 
                 <Show when={error()}>
-                  {(message) => <p class="text-sm text-red-600">{message()}</p>}
+                  {(message) => <p class="text-sm text-destructive">{message()}</p>}
                 </Show>
 
                 <div class="flex gap-2">
