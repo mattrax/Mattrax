@@ -8,7 +8,7 @@ hero:
   text: Device management, documented.
   tagline: Everything you need to run Apple, Windows and Android fleets — from the first enrollment to production operations, migration and the management API.
   image:
-    src: /logo-rounded.png
+    src: /mattrax.png
     alt: Mattrax
   actions:
     - theme: brand
