@@ -188,7 +188,12 @@ import {
   syncVppAssets,
   vppInfo,
 } from "./volumePurchase.ts";
-import { countDeviceHealth, deriveDeviceHealth, normalizeDeviceHealth } from "./deviceHealth.ts";
+import {
+  countDeviceHealth,
+  deriveDeviceHealth,
+  groupDeviceHealthReasons,
+  normalizeDeviceHealth,
+} from "./deviceHealth.ts";
 import { loadCredentialHealth } from "./credentialHealth.ts";
 import {
   listTenantBackups as listTenantBackupRuns,
@@ -5622,7 +5627,31 @@ export const createEnterpriseService = ({
         const summaries = devices.map((device: EnterpriseDevice) =>
           rowDeviceHealth(device, byDevice.get(device.id) ?? []),
         );
-        return { counts: countDeviceHealth(summaries) };
+        const levelRank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
+        const attention = devices
+          .map((device: EnterpriseDevice, index: number) => ({
+            device,
+            summary: summaries[index]!,
+          }))
+          .filter((row) => row.summary.level !== "healthy")
+          .sort(
+            (left, right) =>
+              levelRank[left.summary.level] - levelRank[right.summary.level] ||
+              (right.summary.lastSeenAt ?? "").localeCompare(left.summary.lastSeenAt ?? ""),
+          )
+          .slice(0, 6)
+          .map(({ device, summary }) => ({
+            id: device.id,
+            name: device.name,
+            level: summary.level,
+            reasons: [...summary.reasons],
+            lastSeenAt: summary.lastSeenAt,
+          }));
+        return {
+          counts: countDeviceHealth(summaries),
+          reasons: groupDeviceHealthReasons(summaries),
+          devices: attention,
+        };
       }),
     getDevicePushHealth: (request, tenantId) =>
       Effect.gen(function* () {

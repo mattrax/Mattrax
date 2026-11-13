@@ -42,6 +42,7 @@ test.describe("tenant settings", () => {
       ["Identity", /Single sign-on/],
       ["Enrollment", /Enrollment link/],
       ["Management", /Apple push notifications/],
+      ["Delivery", /Recent failures/],
       ["Billing", /Billable devices|Plan/],
       ["General", /Tenant profile/],
     ] as const) {

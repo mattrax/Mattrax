@@ -1813,6 +1813,9 @@ describe("enterprise service APNs", () => {
       stale: 1,
       unknown: 0,
     });
+    expect(summary.reasons.map((group) => group.code)).toContain("declaration_invalid");
+    expect(summary.devices).toHaveLength(2);
+    expect(summary.devices[0]).toMatchObject({ level: "attention" });
 
     // The list filter must return exactly the devices the cards count.
     const attention = await runEffect(

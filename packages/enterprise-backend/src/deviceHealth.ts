@@ -8,6 +8,7 @@ export {
   countDeviceHealth,
   declarationReasonLabels,
   deriveDeviceHealth,
+  groupDeviceHealthReasons,
   isMacOsDevice,
   needsBatteryService,
   normalizeDeviceHealth,

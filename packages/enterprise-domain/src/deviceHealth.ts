@@ -269,3 +269,69 @@ export const countDeviceHealth = (
   }
   return counts;
 };
+
+/** Stable, human wording for a reason code, so grouped attention stays high level. */
+const REASON_GROUP_LABELS: Record<string, string> = {
+  status_unknown: "Enrollment status unknown",
+  enrollment_unenrolled: "Unenrolled",
+  enrollment_unenrolling: "Unenrolling",
+  enrollment_enrolling: "Enrollment incomplete",
+  never_seen: "Never checked in",
+  stale: "Not checking in",
+  declaration_invalid: "Policy not applied",
+  declaration_inactive: "Policy inactive",
+  disk_critical: "Storage full",
+  disk_low: "Storage low",
+  filevault_disabled: "FileVault off",
+  battery_service: "Battery service",
+};
+
+const SEVERITY_RANK: Record<DeviceHealthReason["severity"], number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+/**
+ * Collapse per-device rules into a small set of fleet-level signals. A device
+ * can be unhealthy for several reasons and the exact label may include a
+ * percentage, so groupings use the stable reason code.
+ */
+export const groupDeviceHealthReasons = (
+  summaries: ReadonlyArray<DeviceHealthSummary>,
+): ReadonlyArray<{
+  code: string;
+  label: string;
+  severity: DeviceHealthReason["severity"];
+  count: number;
+}> => {
+  const groups = new Map<
+    string,
+    { label: string; severity: DeviceHealthReason["severity"]; count: number }
+  >();
+  for (const summary of summaries) {
+    if (summary.level === "healthy") continue;
+    for (const item of summary.reasons) {
+      const existing = groups.get(item.code);
+      if (!existing) {
+        groups.set(item.code, {
+          label: REASON_GROUP_LABELS[item.code] ?? item.label,
+          severity: item.severity,
+          count: 1,
+        });
+        continue;
+      }
+      existing.count += 1;
+      if (SEVERITY_RANK[item.severity] < SEVERITY_RANK[existing.severity])
+        existing.severity = item.severity;
+    }
+  }
+  return [...groups.entries()]
+    .map(([code, group]) => ({ code, ...group }))
+    .sort((left, right) => {
+      const severity = SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity];
+      if (severity !== 0) return severity;
+      if (left.count !== right.count) return right.count - left.count;
+      return left.label.localeCompare(right.label);
+    });
+};

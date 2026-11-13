@@ -921,7 +921,34 @@ export const DeviceHealthCounts = Schema.Struct({
   unknown: Schema.Number,
 });
 export type DeviceHealthCounts = typeof DeviceHealthCounts.Type;
-export const DeviceHealthSummaryResponse = Schema.Struct({ counts: DeviceHealthCounts });
+export const DeviceHealthReasonGroup = Schema.Struct({
+  /** Stable rule code, for grouping across devices. */
+  code: Schema.String,
+  /** High-level wording suitable for an overview. */
+  label: Schema.String,
+  severity: DeviceHealthReasonSeverity,
+  /** Devices carrying this reason. */
+  count: Schema.Number,
+});
+export type DeviceHealthReasonGroup = typeof DeviceHealthReasonGroup.Type;
+
+/** A non-healthy device resolved to the fields the overview renders. */
+export const DeviceHealthAttentionDevice = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  level: DeviceHealthLevel,
+  reasons: Schema.Array(DeviceHealthReason),
+  lastSeenAt: NullableString,
+});
+export type DeviceHealthAttentionDevice = typeof DeviceHealthAttentionDevice.Type;
+
+export const DeviceHealthSummaryResponse = Schema.Struct({
+  counts: DeviceHealthCounts,
+  /** Fleet-level signals, critical first. Empty when every device is healthy. */
+  reasons: Schema.Array(DeviceHealthReasonGroup),
+  /** Worst devices to surface; the full list lives on the devices page. */
+  devices: Schema.Array(DeviceHealthAttentionDevice),
+});
 export type DeviceHealthSummaryResponse = typeof DeviceHealthSummaryResponse.Type;
 
 /**

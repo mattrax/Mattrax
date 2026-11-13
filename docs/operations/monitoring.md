@@ -85,6 +85,13 @@ database at least quarterly.
 - Webhook consecutive failures above 10.
 - Enrollment attempts failing with `bad_code`, `no_apns` or `limit`.
 
+## Delivery diagnostics
+
+APNs delivery counts and recent rejected pushes live in **Tenant settings → Delivery**.
+Push is a wake-up hint rather than the delivery mechanism itself, so a failed push does not
+by itself mark a device unhealthy. The overview only lists devices whose derived health
+(enrollment, check-in freshness, declarations, storage, encryption, battery) needs a person.
+
 ## Log retention
 
 Cloudflare Workers logs and Sentry retention are configured in those products. The

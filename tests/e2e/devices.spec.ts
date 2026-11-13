@@ -145,6 +145,8 @@ test.describe("device fleet management", () => {
         stale: number;
         unknown: number;
       };
+      reasons: unknown[];
+      devices: unknown[];
     }>(page, `/api/v1/tenants/${tenant.id}/device-health`);
     expect(summary.counts).toEqual({
       total: 0,
@@ -154,6 +156,8 @@ test.describe("device fleet management", () => {
       stale: 0,
       unknown: 0,
     });
+    expect(summary.reasons).toEqual([]);
+    expect(summary.devices).toEqual([]);
 
     await gotoHydrated(page, `/t/${tenant.id}`);
     await expect(page.getByRole("heading", { name: "Device health", exact: true })).toBeVisible();
@@ -170,7 +174,7 @@ test.describe("device fleet management", () => {
     expect(credentials.scepCa.level).toMatch(/missing|ok/);
     expect(credentials.deviceCertificates.total).toBe(0);
 
-    // APNs delivery health is summarized on the dashboard.
+    // APNs delivery health is a settings diagnostic, not overview content.
     const pushHealth = await api<{
       counts: {
         configured: number;
@@ -189,9 +193,14 @@ test.describe("device fleet management", () => {
       invalidToken: 0,
     });
     expect(pushHealth.recentFailures).toEqual([]);
+    await expect(page.getByRole("heading", { name: "Needs attention", exact: true })).toBeVisible();
+    await expect(page.getByText("No devices enrolled yet")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+    await gotoHydrated(page, `/t/${tenant.id}/settings/delivery`);
     await expect(
       page.getByRole("heading", { name: "Apple push delivery", exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recent failures", exact: true })).toBeVisible();
 
     // Device activity is tenant-scoped and missing devices are a 404.
     const missingActivity = await page.request.get(
@@ -202,7 +211,6 @@ test.describe("device fleet management", () => {
       "/api/v1/tenants/not-a-real-tenant/push-health",
     );
     expect(missingPushHealth.status()).toBe(404);
-    await expect(page.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
     const missingCredentials = await page.request.get(
       "/api/v1/tenants/not-a-real-tenant/credential-health",
     );

@@ -3,6 +3,7 @@ import {
   countDeviceHealth,
   declarationReasonLabels,
   deriveDeviceHealth,
+  groupDeviceHealthReasons,
   DEVICE_STALE_AFTER_DAYS,
 } from "../src/deviceHealth.js";
 
@@ -262,5 +263,36 @@ describe("declarationReasonLabels", () => {
       ]),
     ).toEqual(["Error: Invalid payload", "Plain reason"]);
     expect(declarationReasonLabels(null)).toEqual([]);
+  });
+});
+
+describe("groupDeviceHealthReasons", () => {
+  it("groups stable rule codes and counts the devices they flag", () => {
+    const health = (input: Parameters<typeof deriveDeviceHealth>[0]) =>
+      deriveDeviceHealth({ now, ...input });
+    const groups = groupDeviceHealthReasons([
+      health({ status: "enrolled", lastSeenAt: daysAgo(1) }),
+      health({ status: "enrolled", lastSeenAt: daysAgo(30) }),
+      health({ status: "unenrolled", lastSeenAt: daysAgo(1) }),
+      health({
+        status: "enrolled",
+        lastSeenAt: daysAgo(1),
+        diskTotal: 100,
+        diskUsed: 98,
+      }),
+    ]);
+    expect(groups).toEqual([
+      { code: "disk_critical", label: "Storage full", severity: "critical", count: 1 },
+      { code: "enrollment_unenrolled", label: "Unenrolled", severity: "critical", count: 1 },
+      { code: "stale", label: "Not checking in", severity: "warning", count: 1 },
+    ]);
+  });
+
+  it("returns nothing when every device is healthy", () => {
+    expect(
+      groupDeviceHealthReasons([
+        deriveDeviceHealth({ status: "enrolled", lastSeenAt: daysAgo(1), now }),
+      ]),
+    ).toEqual([]);
   });
 });

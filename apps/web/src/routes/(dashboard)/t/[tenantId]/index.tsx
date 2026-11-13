@@ -1,7 +1,14 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
-import { DeviceStatusBadge, Page, Panel, QueryError, StatCard } from "~/components/mdm/common";
+import {
+  DeviceStatusBadge,
+  Page,
+  Panel,
+  QueryError,
+  StatCard,
+  relativeTime,
+} from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -106,10 +113,6 @@ export default function TenantOverviewPage() {
     queryKey: enterpriseKeys.deviceHealthSummary(tenantId()),
     queryFn: () => enterprise.getDeviceHealthSummary(tenantId()),
   }));
-  const pushHealth = useQuery(() => ({
-    queryKey: enterpriseKeys.devicePushHealth(tenantId()),
-    queryFn: () => enterprise.getDevicePushHealth(tenantId()),
-  }));
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(tenantId(), "group"),
     queryFn: () => enterprise.list(tenantId(), "group"),
@@ -193,45 +196,25 @@ export default function TenantOverviewPage() {
     ];
   };
 
-  const pushCards = () => {
-    const counts = pushHealth.data?.counts;
-    return [
-      {
-        label: "Configured",
-        value: counts?.configured ?? 0,
-        href: `/t/${tenantId()}/devices`,
-        dot: "bg-foreground/60",
-        hint: "Apple devices with a push token",
-      },
-      {
-        label: "Attempted",
-        value: counts?.attempted ?? 0,
-        href: `/t/${tenantId()}/devices`,
-        dot: "bg-muted-foreground/50",
-        hint: "Devices with a recorded push",
-      },
-      {
-        label: "Succeeding",
-        value: counts?.succeeded ?? 0,
-        href: `/t/${tenantId()}/devices`,
-        dot: "bg-success",
-        hint: "Last push succeeded",
-      },
-      {
-        label: "Failing",
-        value: counts?.failing ?? 0,
-        href: `/t/${tenantId()}/devices?push=failing`,
-        dot: "bg-warning",
-        hint: "Last push failed",
-      },
-      {
-        label: "Invalid token",
-        value: counts?.invalidToken ?? 0,
-        href: `/t/${tenantId()}/devices?push=invalid`,
-        dot: "bg-destructive",
-        hint: "Device must re-enroll",
-      },
-    ];
+  const unhealthyTotal = () => {
+    const counts = health.data?.counts;
+    if (!counts) return 0;
+    return counts.attention + counts.critical + counts.unknown;
+  };
+
+  const attentionReasons = () => health.data?.reasons ?? [];
+  const attentionDevices = () => health.data?.devices ?? [];
+
+  /** The most severe reason is the one worth showing on a summary row. */
+  const primaryReason = (device: {
+    level: string;
+    reasons: ReadonlyArray<{ readonly label: string }>;
+  }) => {
+    const reason = device.reasons[0];
+    if (reason) return reason.label;
+    if (device.level === "unknown") return "Status unknown";
+    if (device.level === "critical") return "Needs immediate attention";
+    return "Needs attention";
   };
 
   const setupSteps = () => [
@@ -360,60 +343,150 @@ export default function TenantOverviewPage() {
           </Panel>
 
           <Panel
-            title="Apple push delivery"
-            description="Whether APNs wake-ups reach enrolled Apple devices. An invalid token means the device must enroll again."
+            title="Needs attention"
+            description="Devices that need a person, grouped by the signal that flagged them."
             actions={
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => navigate(`/t/${tenantId()}/devices?push=failing`)}
+                onClick={() => navigate(`/t/${tenantId()}/devices?health=attention`)}
               >
-                View failing
+                Review devices
               </Button>
             }
           >
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-              <For each={pushCards()}>
-                {(card) => (
-                  <a
-                    href={card.href}
-                    title={card.hint}
-                    class="group flex min-w-0 flex-col gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 transition-colors hover:border-white/[0.12] hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  >
-                    <span class="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                      <span class={cn("size-1.5 rounded-full", card.dot)} aria-hidden="true" />
-                      <span class="truncate">{card.label}</span>
-                    </span>
-                    <span class="text-[18px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
-                      {card.value}
-                    </span>
-                  </a>
-                )}
-              </For>
-            </div>
-            <Show when={(pushHealth.data?.recentFailures.length ?? 0) > 0}>
-              <ul class="mt-4 divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.07]">
-                <For each={pushHealth.data?.recentFailures ?? []}>
-                  {(failure) => (
-                    <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px]">
-                      <span class="font-medium text-foreground">{failure.deviceName}</span>
-                      <span class="text-[11px] text-muted-foreground">
-                        {failure.errorCode === "invalid_token"
-                          ? "Invalid token"
-                          : "Delivery failed"}{" "}
-                        · {failure.consecutiveFailures} consecutive
+            <Show
+              when={unhealthyTotal() > 0}
+              fallback={
+                <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.015] px-3.5 py-3">
+                  <Check class="mt-0.5 size-4 shrink-0 text-success-foreground" />
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-foreground">
+                      {health.data?.counts.total === 0
+                        ? "No devices enrolled yet"
+                        : "No devices need attention"}
+                    </p>
+                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                      {health.data?.counts.total === 0
+                        ? "Healthy and unhealthy devices appear here once they check in."
+                        : "Enrollment, check-ins, policy delivery, storage, encryption and battery signals are all clear."}
+                    </p>
+                  </div>
+                </div>
+              }
+            >
+              <div class="flex flex-wrap items-end gap-x-5 gap-y-2">
+                <div class="flex items-baseline gap-2">
+                  <p class="text-[26px] font-[540] leading-none tracking-[-0.035em] tabular-nums text-foreground">
+                    {unhealthyTotal()}
+                  </p>
+                  <p class="text-[11.5px] text-muted-foreground">
+                    of {health.data?.counts.total ?? 0} devices
+                  </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <Show when={(health.data?.counts.critical ?? 0) > 0}>
+                    <Badge
+                      variant="outline"
+                      class="gap-1.5 border-destructive/25 bg-destructive/10 text-destructive"
+                    >
+                      <span class="size-1.5 rounded-full bg-destructive" aria-hidden="true" />
+                      {health.data?.counts.critical} critical
+                    </Badge>
+                  </Show>
+                  <Show when={(health.data?.counts.attention ?? 0) > 0}>
+                    <Badge
+                      variant="outline"
+                      class="gap-1.5 border-warning/25 bg-warning/10 text-warning-foreground"
+                    >
+                      <span class="size-1.5 rounded-full bg-warning" aria-hidden="true" />
+                      {health.data?.counts.attention} warning
+                    </Badge>
+                  </Show>
+                  <Show when={(health.data?.counts.unknown ?? 0) > 0}>
+                    <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+                      <span
+                        class="size-1.5 rounded-full bg-muted-foreground/50"
+                        aria-hidden="true"
+                      />
+                      {health.data?.counts.unknown} unknown
+                    </Badge>
+                  </Show>
+                </div>
+              </div>
+
+              <Show when={attentionReasons().length > 0}>
+                <div class="mt-4 flex flex-wrap gap-1.5">
+                  <For each={attentionReasons().slice(0, 6)}>
+                    {(reason) => (
+                      <span class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.07] bg-white/[0.025] px-2 py-1 text-[11px] text-foreground/85">
+                        <span
+                          class={cn(
+                            "size-1.5 rounded-full",
+                            reason.severity === "critical"
+                              ? "bg-destructive"
+                              : reason.severity === "warning"
+                                ? "bg-warning"
+                                : "bg-muted-foreground/50",
+                          )}
+                          aria-hidden="true"
+                        />
+                        {reason.label}
+                        <span class="tabular-nums text-muted-foreground">{reason.count}</span>
                       </span>
+                    )}
+                  </For>
+                  <Show when={attentionReasons().length > 6}>
+                    <span class="px-1 py-1 text-[11px] text-muted-foreground">
+                      +{attentionReasons().length - 6} more signals
+                    </span>
+                  </Show>
+                </div>
+              </Show>
+
+              <ul class="mt-4 divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.07]">
+                <For each={attentionDevices()}>
+                  {(device) => (
+                    <li>
+                      <a
+                        href={`/t/${tenantId()}/devices/${device.id}`}
+                        class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-white/[0.03]"
+                      >
+                        <span class="flex min-w-0 items-center gap-2">
+                          <span
+                            class={cn(
+                              "size-1.5 shrink-0 rounded-full",
+                              device.level === "critical"
+                                ? "bg-destructive"
+                                : device.level === "attention"
+                                  ? "bg-warning"
+                                  : "bg-muted-foreground/50",
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span class="truncate font-medium text-foreground">{device.name}</span>
+                        </span>
+                        <span class="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                          <span class="truncate">{primaryReason(device)}</span>
+                          <span class="text-muted-foreground/40" aria-hidden="true">
+                            ·
+                          </span>
+                          <span class="shrink-0">{relativeTime(device.lastSeenAt)}</span>
+                        </span>
+                      </a>
                     </li>
                   )}
                 </For>
               </ul>
+              <Show when={unhealthyTotal() > attentionDevices().length}>
+                <p class="mt-2 text-[11px] text-muted-foreground">
+                  Showing the {attentionDevices().length} most urgent. Review all devices for the
+                  rest.
+                </p>
+              </Show>
             </Show>
-            <Show when={pushHealth.isError}>
-              <QueryError
-                error={pushHealth.error}
-                class="mt-3"
-                onRetry={() => void pushHealth.refetch()}
-              />
+            <Show when={health.isError}>
+              <QueryError error={health.error} class="mt-3" onRetry={() => void health.refetch()} />
             </Show>
           </Panel>
 
