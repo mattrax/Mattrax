@@ -155,7 +155,7 @@ function Callout(props: { tone: "warning" | "danger"; children: JSX.Element; cla
   return (
     <div
       class={cn(
-        "flex items-start gap-2.5 rounded-xl border p-4",
+        "flex items-start gap-2.5 rounded-lg border p-4",
         props.tone === "danger"
           ? "border-destructive/25 bg-destructive/[0.07]"
           : "border-warning/25 bg-warning/[0.07]",

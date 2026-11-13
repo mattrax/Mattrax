@@ -157,7 +157,7 @@ export default function NewApplicationPage() {
 
         <div class="space-y-5">
           <Panel>
-            <div class="flex size-8 items-center justify-center rounded-lg border border-brand/25 bg-brand-muted text-brand">
+            <div class="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-muted-foreground">
               <Package class="size-4" />
             </div>
             <h2 class="mt-3 text-[13px] font-semibold text-foreground">Delivery today</h2>

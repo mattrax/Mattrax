@@ -111,7 +111,7 @@ export default function PolicyAssignmentsPage() {
         }
       />
 
-      <div class="rounded-xl border border-brand/25 bg-brand/[0.06] p-4">
+      <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
         <p class="text-[13px] font-semibold text-foreground">Precedence</p>
         <ol class="mt-1.5 list-decimal space-y-0.5 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
           <For each={precedence}>{(item) => <li>{item}</li>}</For>

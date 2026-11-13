@@ -265,7 +265,7 @@ export default function ApplicationDetailPage() {
 
                   <Show when={vppAsset()}>
                     {(asset) => (
-                      <div class="rounded-lg border border-brand/25 bg-brand/[0.06] p-3">
+                      <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
                         <div class="flex flex-wrap items-center gap-2">
                           <Badge class="text-[10px]">VPP</Badge>
                           <span class="text-[13px] font-medium text-foreground">

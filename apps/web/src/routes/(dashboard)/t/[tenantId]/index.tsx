@@ -100,7 +100,7 @@ function SetupStep(props: {
         </span>
       </span>
       <Show when={!props.done}>
-        <span class="mt-px flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-brand">
+        <span class="mt-px flex shrink-0 items-center gap-0.5 text-[11px] font-[500] text-muted-foreground transition-colors group-hover:text-foreground">
           {props.action}
           <ChevronRight class="size-3" aria-hidden="true" />
         </span>
@@ -219,7 +219,7 @@ export default function TenantOverviewPage() {
         label: "Configured",
         value: counts?.configured ?? 0,
         href: `/t/${tenantId()}/devices`,
-        dot: "bg-brand",
+        dot: "bg-foreground/60",
         hint: "Apple devices with a push token",
       },
       {
@@ -291,32 +291,33 @@ export default function TenantOverviewPage() {
     <Page class="gap-6">
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
-      <div class="flex min-w-0 items-start gap-3.5">
-        <span class="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-gradient-to-b from-white/[0.1] to-white/[0.02] text-[13px] font-semibold tracking-wide text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
+      <div class="flex min-w-0 items-start gap-3">
+        <span class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border border-white/[0.09] bg-white/[0.04] text-[11px] font-semibold tracking-[0.02em] text-foreground/90">
           {tenantInitials(tenant.data?.displayName ?? tenant.data?.name)}
         </span>
         <div class="min-w-0 flex-1">
           <PageHeader
-            eyebrow="Tenant"
             title={tenant.data?.displayName ?? tenant.data?.name ?? "Tenant"}
             meta={
               <Show when={tenant.data} fallback={<span>Loading tenant…</span>}>
                 {(detail) => (
                   <>
-                    <Badge variant="outline" class="capitalize text-muted-foreground">
-                      {detail().role}
-                    </Badge>
+                    <span class="capitalize">{detail().role}</span>
                     <span class="text-muted-foreground/40" aria-hidden="true">
                       ·
                     </span>
-                    <span class="break-all font-mono text-[11px]">{detail().slug}</span>
+                    <span class="break-all font-mono text-[10.5px]">{detail().slug}</span>
                   </>
                 )}
               </Show>
             }
             actions={
-              <Button variant="outline" onClick={() => navigate(`/t/${tenantId()}/settings`)}>
-                <Settings class="size-4" />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(`/t/${tenantId()}/settings`)}
+              >
+                <Settings class="size-3.5" />
                 Tenant settings
               </Button>
             }
@@ -348,7 +349,7 @@ export default function TenantOverviewPage() {
         />
       </div>
 
-      <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,336px)] xl:gap-6">
+      <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)] xl:gap-6">
         <div class="flex min-w-0 flex-col gap-5">
           <Panel
             title="Device health"
@@ -364,9 +365,7 @@ export default function TenantOverviewPage() {
             }
           >
             <div class="flex items-end justify-between gap-3">
-              <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                Fleet mix
-              </p>
+              <p class="text-[11.5px] font-[450] text-muted-foreground">Fleet mix</p>
               <p class="text-[11px] text-muted-foreground">
                 <span class="text-[13px] font-semibold tabular-nums text-foreground">
                   {healthTotal()}
@@ -547,7 +546,7 @@ export default function TenantOverviewPage() {
             </div>
             <div class="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
               <div
-                class="h-full rounded-full bg-brand transition-[width] duration-500"
+                class="h-full rounded-full bg-foreground/80 transition-[width] duration-500"
                 style={{ width: `${setupProgress()}%` }}
               />
             </div>
@@ -571,7 +570,14 @@ export default function TenantOverviewPage() {
             title="Enrollment"
             description="Share the enrollment link with users, or configure the tenant in settings."
             actions={
-              <Badge variant={enrollment.data?.enabledApple ? "default" : "outline"}>
+              <Badge
+                variant="outline"
+                class={
+                  enrollment.data?.enabledApple
+                    ? "border-success/25 bg-success/10 text-success-foreground"
+                    : "text-muted-foreground"
+                }
+              >
                 {enrollment.data?.enabledApple ? "Enabled" : "Disabled"}
               </Badge>
             }

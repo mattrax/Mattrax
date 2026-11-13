@@ -459,12 +459,11 @@ export default function DeviceDetailPage() {
         }
       >
         <>
-          <section class="relative overflow-hidden rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)]">
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(60%_100%_at_20%_0%,rgba(91,100,255,0.1),transparent_75%)]" />
+          <section class="relative overflow-hidden rounded-lg border border-white/[0.08] bg-card">
             <div class="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
               <div class="flex min-w-0 items-start gap-3.5">
-                <span class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-brand">
-                  <DeviceGlyph proto={row()!.proto} class="size-5" />
+                <span class="flex size-9 shrink-0 items-center justify-center rounded-md border border-white/[0.09] bg-white/[0.04] text-foreground/80">
+                  <DeviceGlyph proto={row()!.proto} class="size-4.5" />
                 </span>
                 <div class="min-w-0">
                   <a
@@ -474,7 +473,7 @@ export default function DeviceDetailPage() {
                     <ArrowLeft class="size-3" />
                     All devices
                   </a>
-                  <h1 class="truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[24px]">
+                  <h1 class="truncate text-[20px] font-[540] leading-tight tracking-[-0.025em] text-foreground sm:text-[22px]">
                     {row()!.name}
                   </h1>
                   <div class="mt-2 flex flex-wrap items-center gap-1.5">

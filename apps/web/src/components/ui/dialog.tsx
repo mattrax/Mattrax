@@ -86,8 +86,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
           context.close();
         }}
         onOpenAutoFocus={() => {
-          opener =
-            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();

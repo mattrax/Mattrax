@@ -197,8 +197,8 @@ let recentRegistration: { email: string; at: number } | undefined;
 const isRecentRegistration = (email: string) =>
   Boolean(
     recentRegistration &&
-      recentRegistration.email === email &&
-      Date.now() - recentRegistration.at < 20_000,
+    recentRegistration.email === email &&
+    Date.now() - recentRegistration.at < 20_000,
   );
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

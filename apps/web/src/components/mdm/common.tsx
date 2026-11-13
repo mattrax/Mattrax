@@ -2,7 +2,14 @@ import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { CheckCircle2, CircleAlert, Laptop, MonitorSmartphone, Smartphone, TabletSmartphone } from "~/components/ui/icons";
+import {
+  CheckCircle2,
+  CircleAlert,
+  Laptop,
+  MonitorSmartphone,
+  Smartphone,
+  TabletSmartphone,
+} from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
@@ -13,7 +20,7 @@ export function Page(props: { children: JSX.Element; class?: string; wide?: bool
     <div
       class={cn(
         "page-enter mx-auto flex w-full flex-1 flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8",
-        props.wide ? "max-w-none" : "max-w-[1180px]",
+        props.wide ? "max-w-none" : "max-w-[1280px]",
         props.class,
       )}
     >
@@ -32,16 +39,11 @@ export function PageHeader(props: {
   return (
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div class="min-w-0">
-        <Show when={props.eyebrow}>
-          <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            {props.eyebrow}
-          </p>
-        </Show>
-        <h1 class="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[26px]">
+        <h1 class="truncate text-[21px] font-[540] leading-[1.15] tracking-[-0.025em] text-foreground sm:text-[22px]">
           {props.title}
         </h1>
         <Show when={props.description}>
-          <p class="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">
             {props.description}
           </p>
         </Show>
@@ -71,21 +73,21 @@ export function Panel(props: {
   return (
     <section
       class={cn(
-        "relative overflow-hidden rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] transition-[border-color,translate] duration-200 ease-swift hover:border-white/[0.11] motion-safe:hover:-translate-y-px",
+        "relative overflow-hidden rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] transition-[border-color,translate] duration-200 ease-swift hover:border-white/[0.11] motion-safe:hover:-translate-y-px",
         props.class,
       )}
     >
       <Show when={props.header ?? props.title}>
-        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3 sm:px-4">
           <Show
             when={props.header}
             fallback={
               <div class="min-w-0 flex-1 basis-0">
-                <h2 class="text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+                <h2 class="text-[15px] font-[540] leading-5 tracking-[-0.01em] text-foreground">
                   {props.title}
                 </h2>
                 <Show when={props.description}>
-                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
                     {props.description}
                   </p>
                 </Show>
@@ -99,7 +101,7 @@ export function Panel(props: {
           </Show>
         </div>
       </Show>
-      <div class={props.flush ? "" : "p-4 sm:p-5"}>{props.children}</div>
+      <div class={props.flush ? "" : "p-4"}>{props.children}</div>
     </section>
   );
 }
@@ -126,28 +128,22 @@ export function StatCard(props: {
   const content = (
     <>
       <div class="flex items-center justify-between gap-2">
-        <p class="truncate text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-          {props.label}
-        </p>
+        <p class="truncate text-[11.5px] font-[450] text-muted-foreground">{props.label}</p>
         <Show when={props.icon}>
-          {(icon) => (
-            <span class="text-muted-foreground/60">
-              {icon()({ class: "size-3.5" })}
-            </span>
-          )}
+          {(icon) => <span class="text-muted-foreground/60">{icon()({ class: "size-3.5" })}</span>}
         </Show>
       </div>
-      <p class={cn("mt-2 text-[26px] font-semibold leading-none tracking-[-0.03em]", toneClass())}>
+      <p class={cn("mt-2 text-[24px] font-[540] leading-none tracking-[-0.035em]", toneClass())}>
         {props.value}
       </p>
       <Show when={props.hint}>
-        <p class="mt-1.5 truncate text-[11px] text-muted-foreground/80">{props.hint}</p>
+        <p class="mt-1.5 truncate text-[11px] text-muted-foreground/85">{props.hint}</p>
       </Show>
     </>
   );
 
   const classes = cn(
-    "group flex min-w-0 flex-col rounded-xl border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
+    "group flex min-w-0 flex-col rounded-lg border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
     (props.href ?? props.onClick) &&
       "hover:border-white/[0.12] hover:bg-white/[0.045] motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
     props.class,
@@ -178,8 +174,8 @@ export function EmptyState(props: {
   icon?: (props: { class?: string }) => JSX.Element;
 }) {
   return (
-    <div class="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
-      <div class="mb-3.5 flex size-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.035] text-muted-foreground">
+    <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.012] px-6 py-10 text-center">
+      <div class="mb-3.5 flex size-10 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-muted-foreground">
         <Show when={props.icon} fallback={<CircleAlert class="size-4.5" />}>
           {(icon) => icon()({ class: "size-4.5" })}
         </Show>
@@ -202,7 +198,7 @@ export function DataTable<T>(props: {
 }) {
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <div class="page-enter overflow-hidden rounded-xl border border-white/[0.07] bg-card">
+      <div class="page-enter overflow-hidden rounded-lg border border-white/[0.07] bg-card">
         <table class="w-full text-[13px]">
           <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <tr>
@@ -257,10 +253,7 @@ export function QueryError(props: { error: unknown; onRetry?: () => void; class?
   return (
     <Show when={props.error}>
       <div
-        class={cn(
-          "rounded-xl border border-destructive/25 bg-destructive/[0.07] p-4",
-          props.class,
-        )}
+        class={cn("rounded-lg border border-destructive/25 bg-destructive/[0.07] p-4", props.class)}
       >
         <div class="flex items-start gap-2.5">
           <CircleAlert class="mt-px size-4 shrink-0 text-destructive" />
@@ -320,7 +313,10 @@ const healthStyles: Record<string, { class: string; label: string }> = {
     class: "border-warning/25 bg-warning/10 text-warning-foreground",
     label: "Attention",
   },
-  critical: { class: "border-destructive/25 bg-destructive/10 text-destructive", label: "Critical" },
+  critical: {
+    class: "border-destructive/25 bg-destructive/10 text-destructive",
+    label: "Critical",
+  },
   unknown: {
     class: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
     label: "Unknown",

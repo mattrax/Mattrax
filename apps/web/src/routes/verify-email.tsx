@@ -31,11 +31,11 @@ export default function VerifyEmailPage() {
       <div class="w-full max-w-sm rounded-xl border bg-white p-6 text-center shadow-sm">
         <a href="/" class="mb-6 inline-flex items-center gap-2">
           <span class="flex items-center gap-2.5">
-              <span class="flex size-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
-                M
-              </span>
-              <span class="text-[15px] font-semibold tracking-[-0.01em]">Mattrax</span>
+            <span class="flex size-7 items-center justify-center rounded-md border border-white/[0.14] bg-white/[0.045] text-[11px] font-semibold text-foreground">
+              M
             </span>
+            <span class="text-[15px] font-semibold tracking-[-0.01em]">Mattrax</span>
+          </span>
         </a>
         <h1 class="text-xl font-semibold text-stone-900">
           {status() === "ok"

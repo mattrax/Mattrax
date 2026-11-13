@@ -197,7 +197,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             {props.total !== undefined
               ? `${props.rows?.length ?? 0} of ${props.total}`
               : rows().length === (props.rows?.length ?? 0)
-                ? `${rows().length} rows`
+                ? `${rows().length} ${rows().length === 1 ? "row" : "rows"}`
                 : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
           <div class="relative">
@@ -215,7 +215,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               <span class="hidden sm:inline">Columns</span>
             </button>
             <Show when={columnsOpen()}>
-              <div class="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+              <div class="absolute right-0 z-50 mt-1 w-52 rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
                 <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   Visible columns
                 </div>
@@ -227,9 +227,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                         type="checkbox"
                         class="size-3.5 accent-[var(--brand)]"
                         checked={!hidden()[column.id] && !column.defaultHidden}
-                        onChange={(event) =>
-                          toggleColumn(column.id, event.currentTarget.checked)
-                        }
+                        onChange={(event) => toggleColumn(column.id, event.currentTarget.checked)}
                       />
                       {column.header}
                     </label>
@@ -247,7 +245,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <QueryError error={props.error} />
       </Show>
       <Show when={!props.error && props.loading}>
-        <div class="overflow-hidden rounded-xl border border-white/[0.07] bg-card">
+        <div class="overflow-hidden rounded-lg border border-white/[0.08] bg-card">
           <div class="space-y-1.5 p-3">
             <For each={[0, 1, 2, 3, 4]}>
               {() => <div class="h-11 animate-pulse rounded-lg bg-white/[0.035]" />}
@@ -260,7 +258,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         fallback={
           !props.error && !props.loading ? (
             search().trim() ? (
-              <div class="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
+              <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.012] px-6 py-10 text-center">
                 <p class="text-[13.5px] font-semibold text-foreground">
                   No matches for “{search().trim()}”
                 </p>
@@ -278,100 +276,99 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative">
-          <div class="page-enter overflow-x-auto rounded-xl border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-          <table class="w-full text-[13px]">
-            <caption class="sr-only">{props.caption ?? "Data table"}</caption>
-            <thead class="border-b border-white/[0.07] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              <tr>
-                <th scope="col" class="w-10 px-3 py-2.5 sm:px-4">
-                  <input
-                    ref={(el) => (selectAllRef = el)}
-                    type="checkbox"
-                    class="size-4 accent-[var(--brand)]"
-                    checked={allSelected()}
-                    onChange={toggleAll}
-                    aria-label="Select all rows"
-                  />
-                </th>
-                <For each={visibleColumns()}>
-                  {(col) => (
-                    <th
-                      scope="col"
-                      aria-sort={
-                        sort()?.id === (col.sortId ?? col.id)
-                          ? sort()!.dir === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : undefined
-                      }
-                      class={cn("whitespace-nowrap px-3 py-2.5 font-medium sm:px-4", col.class)}
+          <div class="page-enter overflow-x-auto rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+            <table class="w-full text-[13px]">
+              <caption class="sr-only">{props.caption ?? "Data table"}</caption>
+              <thead class="border-b border-white/[0.07] bg-white/[0.015] text-left text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/90">
+                <tr>
+                  <th scope="col" class="w-10 px-3 py-2.5 sm:px-4">
+                    <input
+                      ref={(el) => (selectAllRef = el)}
+                      type="checkbox"
+                      class="size-4 accent-[var(--brand)]"
+                      checked={allSelected()}
+                      onChange={toggleAll}
+                      aria-label="Select all rows"
+                    />
+                  </th>
+                  <For each={visibleColumns()}>
+                    {(col) => (
+                      <th
+                        scope="col"
+                        aria-sort={
+                          sort()?.id === (col.sortId ?? col.id)
+                            ? sort()!.dir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
+                        class={cn("whitespace-nowrap px-3 py-2.5 font-medium sm:px-4", col.class)}
+                      >
+                        <Show when={col.sort} fallback={col.header}>
+                          <button
+                            type="button"
+                            class="min-h-6 uppercase tracking-[0.12em] transition-colors hover:text-foreground"
+                            onClick={() => toggleSort(col.sortId ?? col.id)}
+                          >
+                            {col.header}
+                            <span aria-hidden="true">{sortIndicator(col)}</span>
+                          </button>
+                        </Show>
+                      </th>
+                    )}
+                  </For>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/[0.055]">
+                <For each={rows()}>
+                  {(row) => (
+                    <tr
+                      class={cn(
+                        "transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-white/[0.028]",
+                        props.onRowClick && "cursor-pointer",
+                        selected()[row.id] && "bg-brand/[0.06] shadow-[inset_2px_0_0_var(--brand)]",
+                      )}
+                      tabindex={props.onRowClick ? "0" : undefined}
+                      onClick={(event) => {
+                        if (!props.onRowClick) return;
+                        const target = event.target as HTMLElement;
+                        if (target.closest("a,button,input,select,textarea")) return;
+                        props.onRowClick(row);
+                      }}
+                      onKeyDown={(event) => {
+                        if (!props.onRowClick) return;
+                        const target = event.target as HTMLElement;
+                        if (target.closest("a,button,input,select,textarea")) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          props.onRowClick(row);
+                        }
+                      }}
                     >
-                      <Show when={col.sort} fallback={col.header}>
-                        <button
-                          type="button"
-                          class="min-h-6 uppercase tracking-[0.12em] transition-colors hover:text-foreground"
-                          onClick={() => toggleSort(col.sortId ?? col.id)}
-                        >
-                          {col.header}
-                          <span aria-hidden="true">{sortIndicator(col)}</span>
-                        </button>
-                      </Show>
-                    </th>
+                      <td class="px-3 py-3 sm:px-4">
+                        <input
+                          type="checkbox"
+                          class="size-4 accent-[var(--brand)]"
+                          checked={!!selected()[row.id]}
+                          onChange={(e) => toggleRow(row, e.currentTarget.checked)}
+                          aria-label={`Select ${row.name ?? row.id}`}
+                        />
+                      </td>
+                      <For each={visibleColumns()}>
+                        {(col) => (
+                          <td class={cn("px-3 py-3 align-middle sm:px-4", col.class)}>
+                            {col.cell(row)}
+                          </td>
+                        )}
+                      </For>
+                    </tr>
                   )}
                 </For>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/[0.055]">
-              <For each={rows()}>
-                {(row) => (
-                  <tr
-                    class={cn(
-                      "transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-white/[0.028]",
-                      props.onRowClick && "cursor-pointer",
-                      selected()[row.id] &&
-                        "bg-brand/[0.06] shadow-[inset_2px_0_0_var(--brand)]",
-                    )}
-                    tabindex={props.onRowClick ? "0" : undefined}
-                    onClick={(event) => {
-                      if (!props.onRowClick) return;
-                      const target = event.target as HTMLElement;
-                      if (target.closest("a,button,input,select,textarea")) return;
-                      props.onRowClick(row);
-                    }}
-                    onKeyDown={(event) => {
-                      if (!props.onRowClick) return;
-                      const target = event.target as HTMLElement;
-                      if (target.closest("a,button,input,select,textarea")) return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        props.onRowClick(row);
-                      }
-                    }}
-                  >
-                    <td class="px-3 py-3 sm:px-4">
-                      <input
-                        type="checkbox"
-                        class="size-4 accent-[var(--brand)]"
-                        checked={!!selected()[row.id]}
-                        onChange={(e) => toggleRow(row, e.currentTarget.checked)}
-                        aria-label={`Select ${row.name ?? row.id}`}
-                      />
-                    </td>
-                    <For each={visibleColumns()}>
-                      {(col) => (
-                        <td class={cn("px-3 py-3 align-middle sm:px-4", col.class)}>
-                          {col.cell(row)}
-                        </td>
-                      )}
-                    </For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
           </div>
           <span
-            class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-card to-transparent sm:hidden"
+            class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-lg bg-gradient-to-l from-card to-transparent sm:hidden"
             aria-hidden="true"
           />
         </div>
@@ -380,7 +377,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       <Show when={props.footer}>{props.footer}</Show>
 
       <Show when={selectedRows().length > 0 && actions()}>
-        <div class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-xl border border-white/[0.1] bg-popover/95 px-4 py-2.5 shadow-2xl shadow-black/60 backdrop-blur-xl">
+        <div class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-lg border border-white/[0.1] bg-popover/95 px-4 py-2.5 shadow-2xl shadow-black/60 backdrop-blur-xl">
           <span class="text-[12.5px] font-medium">{selectedRows().length} selected</span>
           {actions()}
           <Button variant="ghost" size="sm" onClick={clear}>

@@ -212,7 +212,7 @@ export default function PolicyDesignerPage() {
           <Show
             when={policy.isError}
             fallback={
-              <div class="m-6 rounded-xl border border-border bg-card p-6 text-[13px] text-muted-foreground">
+              <div class="m-6 rounded-lg border border-border bg-card p-6 text-[13px] text-muted-foreground">
                 Loading the policy…
               </div>
             }
@@ -245,7 +245,7 @@ export default function PolicyDesignerPage() {
         </Show>
 
         <Show when={otherPlatforms().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-brand/25 bg-brand/[0.06] px-3 py-2 text-[12px] text-foreground sm:px-4">
+          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[12px] text-foreground sm:px-4">
             <div class="min-w-0 flex-1">
               <p class="font-semibold">This policy has a saved designer configuration</p>
               <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">

@@ -73,21 +73,21 @@ export default function NewPolicyPage() {
         </Panel>
 
         <Panel class="hidden lg:block">
-          <div class="flex size-8 items-center justify-center rounded-lg border border-brand/25 bg-brand-muted text-brand">
+          <div class="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-muted-foreground">
             <ShieldCheck class="size-4" />
           </div>
           <h2 class="mt-3 text-[13px] font-semibold text-foreground">What happens next</h2>
           <ol class="mt-2 space-y-2 text-[12px] leading-relaxed text-muted-foreground">
             <li class="flex gap-2">
-              <span class="font-mono text-[10px] text-brand">01</span>
+              <span class="font-mono text-[10px] text-muted-foreground">01</span>
               Add restrictions, certificates or a custom profile in the advanced editor.
             </li>
             <li class="flex gap-2">
-              <span class="font-mono text-[10px] text-brand">02</span>
+              <span class="font-mono text-[10px] text-muted-foreground">02</span>
               Or open the designer to build the policy visually from the catalogue.
             </li>
             <li class="flex gap-2">
-              <span class="font-mono text-[10px] text-brand">03</span>
+              <span class="font-mono text-[10px] text-muted-foreground">03</span>
               Assign the policy to groups or devices, then sync.
             </li>
           </ol>

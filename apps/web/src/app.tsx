@@ -57,9 +57,7 @@ function ErrorFallback(props: { error: unknown; reset: () => void }) {
           M
         </span>
         <h1 class="text-lg font-semibold tracking-tight">{presentation.title}</h1>
-        <p class="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-          {presentation.message}
-        </p>
+        <p class="mt-2 text-[13px] leading-relaxed text-muted-foreground">{presentation.message}</p>
         <div class="mt-5 flex gap-2">
           <button
             type="button"

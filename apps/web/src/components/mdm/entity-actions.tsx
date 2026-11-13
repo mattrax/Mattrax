@@ -11,8 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {
-} from "~/components/ui/dropdown-menu";
+import {} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { ErrorText } from "./common";
 import {
@@ -53,7 +52,7 @@ function ConfirmAction(props: {
         {props.title}
       </Button>
       <Dialog open={open()} onOpenChange={setOpen}>
-        <DialogContent class="max-w-md rounded-xl border border-white/[0.09] bg-popover p-6">
+        <DialogContent class="max-w-md rounded-lg border border-white/[0.09] bg-popover p-6">
           <DialogHeader>
             <DialogTitle>{props.title}</DialogTitle>
             <DialogDescription>{props.description}</DialogDescription>
@@ -130,41 +129,41 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
         Scope
       </Button>
       <Show when={open()}>
-      <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
-        <For each={groupRows()}>
-          {(group) => (
-            <button
-              type="button"
-              onClick={() =>
-                setChanges((value) => ({
-                  ...value,
-                  [group.id]: value[group.id] === "all" ? "none" : "all",
-                }))
-              }
-              class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
+        <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+          <For each={groupRows()}>
+            {(group) => (
+              <button
+                type="button"
+                onClick={() =>
+                  setChanges((value) => ({
+                    ...value,
+                    [group.id]: value[group.id] === "all" ? "none" : "all",
+                  }))
+                }
+                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
+              >
+                <span>{group.name}</span>
+                <span class="text-muted-foreground">
+                  {changes()[group.id] === "all"
+                    ? "Assign"
+                    : changes()[group.id] === "none"
+                      ? "Remove"
+                      : ""}
+                </span>
+              </button>
+            )}
+          </For>
+          <ErrorText error={patch.error ?? groups.error} />
+          <div class="mt-1 flex items-center justify-between gap-2 border-t border-border px-2 pb-1 pt-2">
+            <Button
+              size="sm"
+              disabled={Object.keys(changes()).length === 0 || patch.isPending}
+              onClick={() => patch.mutate()}
             >
-              <span>{group.name}</span>
-              <span class="text-muted-foreground">
-                {changes()[group.id] === "all"
-                  ? "Assign"
-                  : changes()[group.id] === "none"
-                    ? "Remove"
-                    : ""}
-              </span>
-            </button>
-          )}
-        </For>
-        <ErrorText error={patch.error ?? groups.error} />
-        <div class="mt-1 flex items-center justify-between gap-2 border-t border-border px-2 pb-1 pt-2">
-          <Button
-            size="sm"
-            disabled={Object.keys(changes()).length === 0 || patch.isPending}
-            onClick={() => patch.mutate()}
-          >
-            Apply
-          </Button>
+              Apply
+            </Button>
+          </div>
         </div>
-      </div>
       </Show>
     </div>
   );

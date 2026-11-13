@@ -17,6 +17,7 @@ import {
   ChevronsUpDown,
   CircleAlert,
   LogOut,
+  Plus,
   Search as SearchIcon,
   Sparkles,
   User,
@@ -76,49 +77,40 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-9 min-w-0 max-w-[15rem] items-center gap-2 rounded-lg px-1.5 pr-2 sm:h-8 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.07] motion-safe:active:scale-[0.985]"
+        class="group flex h-7 min-w-0 max-w-[14rem] items-center gap-2 rounded-md px-1.5 pr-2 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.08] motion-safe:active:scale-[0.985]"
         aria-label="Switch tenant"
+        title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         <Show
           when={active()}
           fallback={
-            <span class="flex size-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-muted-foreground">
-              <Building2 class="size-3.5" />
+            <span class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-white/10 bg-white/[0.04] text-muted-foreground">
+              <Building2 class="size-2.5" />
             </span>
           }
         >
           {(tenant) => (
-            <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand text-[10px] font-semibold text-brand-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.25)]">
+            <span class="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.09] text-[8px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.08]">
               {tenantInitials(tenant().name)}
             </span>
           )}
         </Show>
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-[13px] font-medium leading-4 text-foreground">
-            <Show when={active()} fallback="Select tenant">
-              {(tenant) => tenant().name}
-            </Show>
-          </span>
-          <Show when={active()}>
-            {(tenant) => (
-              <span class="block truncate text-[10px] leading-3 text-muted-foreground">
-                <span class="capitalize">{tenant().role}</span> ·{" "}
-                <span class="normal-case">{tenant().slug}</span>
-              </span>
-            )}
+        <span class="min-w-0 truncate text-[13px] font-[450] text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
+          <Show when={active()} fallback="Select tenant">
+            {(tenant) => tenant().name}
           </Show>
         </span>
-        <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground" />
+        <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="w-72 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
-        <div class="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <DropdownMenuContent class="w-[288px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
+        <div class="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
           Tenants
         </div>
         <Show
           when={tenants().length > 0}
           fallback={
-            <div class="px-2 py-3 text-xs text-muted-foreground">
+            <div class="px-2.5 py-3 text-[12px] text-muted-foreground">
               You don't belong to a tenant yet.
             </div>
           }
@@ -134,32 +126,35 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
                   rememberTenant(tenant.id);
                   navigate(`/t/${tenant.id}`);
                 }}
-                class="mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm outline-none focus:bg-white/[0.06]"
+                class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-sm outline-none focus:bg-white/[0.07] data-highlighted:bg-white/[0.07]"
               >
-                <span class="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.06]">
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.08] text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.06]">
                   {tenantInitials(tenant.name)}
                 </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-[13px] font-medium">{tenant.name}</span>
-                  <span class="block truncate text-[11px] text-muted-foreground">
-                    <span class="capitalize">{tenant.role}</span> ·{" "}
+                <span class="min-w-0 flex-1 leading-none">
+                  <span class="block truncate text-[13px] font-[450] text-foreground">
+                    {tenant.name}
+                  </span>
+                  <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
+                    <span class="capitalize">{tenant.role}</span>
+                    <span class="px-1 text-muted-foreground/40">·</span>
                     <span class="normal-case">{tenant.slug}</span>
                   </span>
                 </span>
                 <Show when={props.activeId === tenant.id}>
-                  <Check class="size-3.5 shrink-0 text-brand" />
+                  <Check class="size-3.5 shrink-0 text-foreground" />
                 </Show>
               </DropdownMenuItem>
             )}
           </For>
         </Show>
-        <DropdownMenuSeparator class="my-1 h-px bg-border" />
+        <div class="mx-1 my-1 h-px bg-white/[0.07]" />
         <DropdownMenuItem
           onSelect={() => navigate("/tenants/new")}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-white/[0.07] focus:text-foreground"
         >
-          <span class="flex size-7 items-center justify-center rounded-md bg-white/[0.04] text-muted-foreground">
-            <Sparkles class="size-3.5" />
+          <span class="flex size-5 items-center justify-center text-muted-foreground">
+            <Plus class="size-3.5" />
           </span>
           Create tenant
         </DropdownMenuItem>
@@ -169,8 +164,7 @@ function TenantSwitcher(props: { activeId: string | undefined }) {
 }
 
 function SearchButton(props: { compact?: boolean }) {
-  const open = () =>
-    window.dispatchEvent(new Event("mattrax:open-command-palette"));
+  const open = () => window.dispatchEvent(new Event("mattrax:open-command-palette"));
 
   return (
     <button
@@ -178,13 +172,12 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-label="Search"
       class={cn(
-        "group flex h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
-        props.compact ? "w-9 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5" : "px-2.5",
+        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
+        props.compact ? "w-7 justify-center px-0 sm:w-auto sm:justify-start sm:px-2" : "px-2",
       )}
     >
       <SearchIcon class="size-3.5" />
-      <span class="hidden text-xs sm:inline">Search</span>
-      <kbd class="ml-6 hidden rounded border border-white/[0.08] bg-white/[0.04] px-1 py-px font-sans text-[10px] text-muted-foreground sm:inline">
+      <kbd class="hidden rounded border border-white/[0.08] bg-white/[0.03] px-1 py-px font-sans text-[9.5px] text-muted-foreground/80 sm:inline">
         ⌘K
       </kbd>
     </button>
@@ -205,21 +198,16 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
   return (
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
-        class="flex size-9 items-center justify-center overflow-hidden rounded-full sm:size-8 bg-gradient-to-br from-white/[0.18] to-white/[0.06] text-[11px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.12] transition-[box-shadow,scale] duration-150 ease-swift hover:ring-white/25 focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
+        class="flex size-6 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[9.5px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.1] transition-[box-shadow,scale] duration-150 ease-swift hover:ring-white/20 focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
         aria-label="Account menu"
       >
-        <Show
-          when={user()?.image}
-          fallback={<span>{initials(user()?.name)}</span>}
-        >
-          {(image) => (
-            <img src={image()} alt={user()?.name ?? ""} class="size-full object-cover" />
-          )}
+        <Show when={user()?.image} fallback={<span>{initials(user()?.name)}</span>}>
+          {(image) => <img src={image()} alt={user()?.name ?? ""} class="size-full object-cover" />}
         </Show>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-64 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
+      <DropdownMenuContent class="w-[248px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
         <div class="flex items-center gap-2.5 px-2 py-2">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[11px] font-semibold ring-1 ring-inset ring-white/[0.08]">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9.5px] font-semibold ring-1 ring-inset ring-white/[0.08]">
             {initials(user()?.name)}
           </span>
           <span class="min-w-0">
@@ -230,21 +218,21 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => navigate("/account")}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
           <User class="size-3.5 text-muted-foreground" />
           Account settings
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => navigate("/instances")}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
           <Boxes class="size-3.5 text-muted-foreground" />
           Instances
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => navigate("/docs/")}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
@@ -253,7 +241,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           as="a"
           role="menuitem"
           href="mailto:hello@mattrax.app?subject=Mattrax%20feedback"
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
           <Sparkles class="size-3.5 text-muted-foreground" />
           Send feedback
@@ -261,7 +249,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => props.onSignOut()}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-muted-foreground outline-none focus:bg-white/[0.06] focus:text-foreground"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-white/[0.07] focus:text-foreground"
         >
           <LogOut class="size-3.5" />
           Sign out
@@ -293,11 +281,11 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
 
   return (
     <Show when={user() && !user()!.emailVerified && !dismissed()}>
-      <div class="relative border-b border-warning/20 bg-warning/[0.07]">
-        <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[12px] text-warning-foreground sm:px-6 lg:px-8">
-          <CircleAlert class="size-3.5 shrink-0" />
-          <span class="font-medium">Verify your email</span>
-          <span class="hidden text-warning-foreground/75 sm:inline">
+      <div class="relative border-b border-white/[0.07] bg-white/[0.02]">
+        <div class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-1.5 text-[11.5px] text-muted-foreground sm:px-5 lg:px-6">
+          <span class="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
+          <span class="font-[500] text-foreground">Verify your email</span>
+          <span class="hidden text-muted-foreground sm:inline">
             to enable passwordless sign-in and account recovery.
           </span>
           <Show
@@ -312,7 +300,7 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
               type="button"
               disabled={sending()}
               onClick={resend}
-              class="font-medium underline decoration-warning-foreground/40 underline-offset-2 transition-colors hover:decoration-warning-foreground disabled:opacity-60"
+              class="font-medium text-warning-foreground underline decoration-warning-foreground/30 underline-offset-2 transition-colors hover:decoration-warning-foreground disabled:opacity-60"
             >
               {sending() ? "Sending…" : "Resend email"}
             </button>
@@ -327,9 +315,9 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
               setDismissed(true);
               sessionStorage.setItem("mattrax:verify-banner-dismissed", "1");
             }}
-            class="ml-auto rounded p-1.5 text-warning-foreground/60 transition-colors hover:bg-warning/10 hover:text-warning-foreground"
+            class="ml-auto rounded p-1 text-muted-foreground/60 transition-colors hover:bg-white/[0.05] hover:text-muted-foreground"
           >
-            <X class="size-3.5" />
+            <X class="size-3" />
           </button>
         </div>
       </div>
@@ -340,16 +328,41 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
 function navFor(tenantId: string | undefined): NavItem[] {
   if (!tenantId) {
     return [
-      { id: "instances", label: "Instances", href: "/instances", match: (value) => value === "/instances" },
-      { id: "docs", label: "Documentation", href: "/docs/", match: (value) => value.startsWith("/docs") },
+      {
+        id: "instances",
+        label: "Instances",
+        href: "/instances",
+        match: (value) => value === "/instances",
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        href: "/docs/",
+        match: (value) => value.startsWith("/docs"),
+      },
     ];
   }
   const base = `/t/${tenantId}`;
   return [
     { id: "overview", label: "Overview", href: base, match: (value) => value === base },
-    { id: "devices", label: "Devices", href: `${base}/devices`, match: (value) => value.startsWith(`${base}/devices`) },
-    { id: "groups", label: "Groups", href: `${base}/groups`, match: (value) => value.startsWith(`${base}/groups`) },
-    { id: "policies", label: "Policies", href: `${base}/policies`, match: (value) => value.startsWith(`${base}/policies`) },
+    {
+      id: "devices",
+      label: "Devices",
+      href: `${base}/devices`,
+      match: (value) => value.startsWith(`${base}/devices`),
+    },
+    {
+      id: "groups",
+      label: "Groups",
+      href: `${base}/groups`,
+      match: (value) => value.startsWith(`${base}/groups`),
+    },
+    {
+      id: "policies",
+      label: "Policies",
+      href: `${base}/policies`,
+      match: (value) => value.startsWith(`${base}/policies`),
+    },
     {
       id: "applications",
       label: "Applications",
@@ -372,7 +385,8 @@ function navFor(tenantId: string | undefined): NavItem[] {
       id: "settings",
       label: "Settings",
       href: `${base}/settings`,
-      match: (value) => value.startsWith(`${base}/settings`) && !value.startsWith(`${base}/settings/enrollment`),
+      match: (value) =>
+        value.startsWith(`${base}/settings`) && !value.startsWith(`${base}/settings/enrollment`),
     },
   ];
 }
@@ -443,13 +457,11 @@ export function AppShell(props: {
     () => location.pathname,
     () => {
       queueMicrotask(() => {
-        navRef
-          ?.querySelector<HTMLElement>('[aria-current="page"]')
-          ?.scrollIntoView({
-            inline: "center",
-            block: "nearest",
-            behavior: prefersReducedMotion() ? "auto" : "smooth",
-          });
+        navRef?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({
+          inline: "nearest",
+          block: "nearest",
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+        });
       });
     },
   );
@@ -462,23 +474,22 @@ export function AppShell(props: {
       >
         Skip to content
       </a>
-      <div class="pointer-events-none fixed inset-x-0 top-0 z-0 h-72 bg-[radial-gradient(70%_100%_at_50%_0%,rgba(91,100,255,0.09),transparent_75%)]" />
-      <header class="sticky top-0 z-40 border-b border-white/[0.065] bg-background/85 backdrop-blur-xl">
+      <header class="sticky top-0 z-40 border-b border-white/[0.07] bg-background">
         <div class="mx-auto flex h-12 max-w-[1600px] items-center gap-2 px-3 sm:px-5 lg:px-6">
           <a
             href="/dashboard"
             class="flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             aria-label="Mattrax home"
           >
-            <span class="flex size-7 items-center justify-center rounded-[7px] bg-gradient-to-b from-white to-white/85 text-[13px] font-bold tracking-tight text-black shadow-[inset_0_1px_0_rgba(255,255,255,.8),0_2px_8px_rgba(0,0,0,.4)]">
+            <span class="flex size-5 items-center justify-center rounded-[4px] border border-white/[0.14] bg-white/[0.045] text-[9.5px] font-semibold leading-none text-foreground">
               M
             </span>
-            <span class="hidden text-[13px] font-semibold tracking-[-0.01em] text-foreground sm:block">
+            <span class="hidden text-[13px] font-[480] tracking-[-0.01em] text-foreground sm:block">
               Mattrax
             </span>
           </a>
 
-          <span class="mx-1 hidden h-4 w-px bg-white/[0.08] sm:block" aria-hidden="true" />
+          <span class="mx-1 hidden h-3.5 w-px bg-white/[0.09] sm:block" aria-hidden="true" />
           <TenantSwitcher activeId={activeId()} />
 
           <div class="ml-auto flex items-center gap-1">
@@ -486,11 +497,10 @@ export function AppShell(props: {
             <a
               href="/docs/"
               aria-label="Documentation"
-              class="hidden size-8 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 sm:flex"
+              class="hidden size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-white/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 sm:flex"
             >
               <BookOpen class="size-4" />
             </a>
-            <span class="mx-1 hidden h-4 w-px bg-white/[0.08] sm:block" aria-hidden="true" />
             <UserMenu user={props.user} onSignOut={props.onSignOut} />
           </div>
         </div>
@@ -510,10 +520,10 @@ export function AppShell(props: {
                       href={item.href}
                       aria-current={active() ? "page" : undefined}
                       class={cn(
-                        "relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-[color,background-color,box-shadow] duration-200 ease-swift outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                        "relative flex h-11 shrink-0 items-center px-3 text-[13px] font-[450] transition-colors duration-150 outline-none after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:rounded-full after:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60",
                         active()
-                          ? "bg-white/[0.075] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
-                          : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                          ? "text-foreground after:bg-foreground"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                     >
                       {item.label}
@@ -556,36 +566,33 @@ export function AppShell(props: {
       >
         <Errored
           fallback={(error, reset) => {
-            const value =
-              typeof error === "function" ? (error as () => unknown)() : error;
+            const value = typeof error === "function" ? (error as () => unknown)() : error;
             console.error("Mattrax page render error", value);
             return (
-            <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
-              <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
-                <h2 class="text-[14px] font-semibold text-foreground">
-                  This page couldn't load
-                </h2>
-                <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-                  {value instanceof Error ? value.message : "An unexpected error occurred."}
-                </p>
-                <div class="mt-4 flex gap-2">
-                  <button
-                    type="button"
-                    class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
-                    onClick={() => reset()}
-                  >
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg border border-white/[0.09] px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/[0.05]"
-                    onClick={() => window.location.reload()}
-                  >
-                    Reload
-                  </button>
+              <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
+                <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
+                  <h2 class="text-[14px] font-semibold text-foreground">This page couldn't load</h2>
+                  <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                    {value instanceof Error ? value.message : "An unexpected error occurred."}
+                  </p>
+                  <div class="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
+                      onClick={() => reset()}
+                    >
+                      Try again
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-lg border border-white/[0.09] px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/[0.05]"
+                      onClick={() => window.location.reload()}
+                    >
+                      Reload
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
             );
           }}
         >
@@ -598,21 +605,21 @@ export function AppShell(props: {
 
       <Show when={!location.pathname.endsWith("/design")}>
         <footer class="relative z-0 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground sm:px-6 lg:px-8">
-        <span>Mattrax</span>
-        <a class="transition-colors hover:text-muted-foreground" href="/docs/">
-          Documentation
-        </a>
-        <a class="transition-colors hover:text-muted-foreground" href="mailto:hello@mattrax.app">
-          Support
-        </a>
-        <a
-          class="ml-auto inline-flex items-center gap-1 transition-colors hover:text-muted-foreground"
-          href="https://status.otbeaumont.me"
-          target="_blank"
-          rel="noopener"
-        >
-          All systems operational
-          <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
+          <span>Mattrax</span>
+          <a class="transition-colors hover:text-muted-foreground" href="/docs/">
+            Documentation
+          </a>
+          <a class="transition-colors hover:text-muted-foreground" href="mailto:hello@mattrax.app">
+            Support
+          </a>
+          <a
+            class="ml-auto inline-flex items-center gap-1 transition-colors hover:text-muted-foreground"
+            href="https://status.otbeaumont.me"
+            target="_blank"
+            rel="noopener"
+          >
+            All systems operational
+            <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
           </a>
         </footer>
       </Show>

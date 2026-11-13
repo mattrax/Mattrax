@@ -334,19 +334,17 @@ const enterpriseQueryOptions = <
   queryFn: () => T;
   enabled?: boolean;
 }) =>
-  queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>(
-    {
-      ...(options as {
-        queryKey: TQueryKey;
-        queryFn: () => Promise<EndpointData<T>>;
-        enabled?: boolean;
-      }),
-      // The API Worker authenticates with the browser's cookie; a server render
-      // has no reliable way to forward it through every endpoint. Keep all
-      // endpoint queries idle during SSR and let hydration fetch them.
-      enabled: !isServer && (options.enabled ?? true),
-    },
-  );
+  queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>({
+    ...(options as {
+      queryKey: TQueryKey;
+      queryFn: () => Promise<EndpointData<T>>;
+      enabled?: boolean;
+    }),
+    // The API Worker authenticates with the browser's cookie; a server render
+    // has no reliable way to forward it through every endpoint. Keep all
+    // endpoint queries idle during SSR and let hydration fetch them.
+    enabled: !isServer && (options.enabled ?? true),
+  });
 
 export const enterprise = {
   me: () => endpoint((api) => api.me({})),

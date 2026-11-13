@@ -44,15 +44,18 @@ export default function DashboardRedirectPage() {
     (tenants) => {
       if (tenantId() || !tenants?.length) return;
       const remembered = readLastTenant();
-      setTenantId(
-        tenants.find((tenant) => tenant.id === remembered)?.id ?? tenants[0]!.id,
-      );
+      setTenantId(tenants.find((tenant) => tenant.id === remembered)?.id ?? tenants[0]!.id);
     },
   );
 
   // Wait for both the local draft check and the tenant list before redirecting.
   createEffect(
-    () => ({ ready: draftChecked(), loading: me.isPending, draft: draft(), tenants: me.data?.tenants }),
+    () => ({
+      ready: draftChecked(),
+      loading: me.isPending,
+      draft: draft(),
+      tenants: me.data?.tenants,
+    }),
     ({ ready, loading, draft: current, tenants }) => {
       if (!ready || loading) return;
       if (current && (tenants?.length ?? 0) > 0) return;
@@ -102,12 +105,10 @@ export default function DashboardRedirectPage() {
                 <Sparkles class="size-3" />
                 Designer handoff
               </span>
-              <h1 class="mt-3 text-[22px] font-semibold tracking-[-0.02em]">
-                Policy draft ready
-              </h1>
+              <h1 class="mt-3 text-[22px] font-semibold tracking-[-0.02em]">Policy draft ready</h1>
               <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                {current().name} · {current().platform} · {current().selections.length}{" "}
-                collections ·{" "}
+                {current().name} · {current().platform} · {current().selections.length} collections
+                ·{" "}
                 {current().selections.reduce(
                   (total, selection) => total + Object.keys(selection.values).length,
                   0,
@@ -140,10 +141,7 @@ export default function DashboardRedirectPage() {
                       {(tenant) => <option value={tenant.id}>{tenant.name}</option>}
                     </For>
                   </select>
-                  <Button
-                    disabled={deployDraft.isPending}
-                    onClick={() => deployDraft.mutate()}
-                  >
+                  <Button disabled={deployDraft.isPending} onClick={() => deployDraft.mutate()}>
                     {deployDraft.isPending ? "Creating policy…" : "Create policy & continue"}
                   </Button>
                   <Button

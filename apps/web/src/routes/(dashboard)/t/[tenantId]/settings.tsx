@@ -29,7 +29,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
       queueMicrotask(() => {
         tabNav
           ?.querySelector<HTMLElement>('[aria-current="page"]')
-          ?.scrollIntoView({ inline: "center", block: "nearest" });
+          ?.scrollIntoView({ inline: "nearest", block: "nearest" });
       });
     },
   );
@@ -56,7 +56,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                 class={cn(
                   "relative -mb-px shrink-0 whitespace-nowrap rounded-t-md px-2.5 pb-2.5 pt-2 text-[12.5px] font-medium transition-colors",
                   isActive()
-                    ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-brand"
+                    ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
                     : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
                 )}
                 aria-current={isActive() ? "page" : undefined}

@@ -248,7 +248,7 @@ export default function GroupDetailPage() {
 
       <ErrorText error={sync.error} />
 
-      <div class="flex flex-col gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <Show when={row()}>
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Show when={row()!.kind === "dynamic"}>
@@ -421,10 +421,10 @@ export default function GroupDetailPage() {
           when={kind() !== "dynamic"}
           fallback={
             <div class="space-y-5">
-              <div class="flex items-start gap-2.5 rounded-xl border border-brand/25 bg-brand/[0.07] p-3.5 text-[12.5px] text-foreground">
-                <Info class="mt-px size-4 shrink-0 text-brand" />
+              <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3.5 text-[12.5px] text-foreground">
+                <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
                 <div class="min-w-0">
-                  <p class="font-medium text-brand">Dynamic membership</p>
+                  <p class="font-medium text-foreground">Dynamic membership</p>
                   <p class="mt-1 leading-relaxed text-muted-foreground">
                     Devices are added to this group automatically when they match the rules. Manual
                     device assignment is disabled; switch to a manual group to choose devices
@@ -520,10 +520,10 @@ export default function GroupDetailPage() {
 
       <Show when={tab() === "policies"}>
         <div class="space-y-5">
-          <div class="flex items-start gap-2.5 rounded-xl border border-brand/25 bg-brand/[0.07] p-3.5 text-[12.5px] text-foreground">
-            <Info class="mt-px size-4 shrink-0 text-brand" />
+          <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3.5 text-[12.5px] text-foreground">
+            <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
             <div class="min-w-0">
-              <p class="font-medium text-brand">Policy precedence</p>
+              <p class="font-medium text-foreground">Policy precedence</p>
               <p class="mt-1 leading-relaxed text-muted-foreground">
                 Group includes deliver a policy to every member. A group exclude vetoes that policy
                 for all groups; a direct device include can still override it. Highest policy

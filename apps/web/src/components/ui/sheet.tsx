@@ -76,8 +76,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
         data-side={local.side}
         class={cn("dark z-sheet-content text-foreground", local.class)}
         onOpenAutoFocus={() => {
-          opener =
-            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();

@@ -74,13 +74,11 @@ function FleetSummary(props: {
   }>;
 }) {
   return (
-    <div class="hidden grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.06] sm:grid sm:grid-cols-4">
+    <div class="hidden grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.06] sm:grid sm:grid-cols-4">
       <For each={props.items}>
         {(item) => (
           <div class="min-w-0 bg-card px-3.5 py-3 sm:px-4">
-            <p class="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              {item.label}
-            </p>
+            <p class="truncate text-[11px] font-[450] text-muted-foreground">{item.label}</p>
             <p
               class={`mt-1.5 text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${
                 summaryTones[item.tone ?? "default"]
@@ -414,7 +412,9 @@ export default function DevicesPage() {
         label: "Enrolled",
         value: rows.filter((row) => row.status === "enrolled").length,
         hint: `of ${rows.length} on this page`,
-        tone: "success" as const,
+        tone: rows.some((row) => row.status === "enrolled")
+          ? ("success" as const)
+          : ("default" as const),
       },
       {
         label: "Stale 7d",
@@ -494,9 +494,8 @@ export default function DevicesPage() {
             <Button
               as="a"
               href={`/t/${params.tenantId}/settings/enrollment`}
-              variant="outline"
               size="sm"
-              class="h-8 border-brand/30 bg-brand/10 text-[12.5px] text-brand hover:bg-brand/15 hover:text-brand"
+              class="h-8 text-[12px]"
             >
               Enroll device
             </Button>
@@ -512,7 +511,7 @@ export default function DevicesPage() {
       <Show when={exportTruncated()}>
         <div
           role="status"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/25 bg-warning/[0.07] px-3.5 py-2.5 text-[12.5px] text-warning-foreground"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3.5 py-2.5 text-[12.5px] text-warning-foreground"
         >
           <span>
             The export reached the {10_000}-row limit and was truncated. Narrow the filters to
@@ -545,7 +544,7 @@ export default function DevicesPage() {
         }}
         searchPlaceholder="Search name, serial, model, asset tag…"
         toolbar={
-          <div class="rounded-xl border border-white/[0.07] bg-white/[0.02] p-2">
+          <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2">
             <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
               <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-1 lg:flex-wrap lg:items-center">
                 <select
@@ -678,7 +677,7 @@ export default function DevicesPage() {
           </div>
         }
         footer={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5">
             <span class="text-[12px] tabular-nums text-muted-foreground">
               Page {page() + 1} of {pageCount()}
               <Show when={total() > 0}>

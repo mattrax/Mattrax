@@ -194,7 +194,7 @@ export default function IntegrationsSettingsPage() {
         <Show
           when={(webhooks.data?.endpoints.length ?? 0) > 0}
           fallback={
-            <div class="rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
+            <div class="rounded-lg border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
               <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
               <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                 Add an endpoint to receive signed device and enrollment events.

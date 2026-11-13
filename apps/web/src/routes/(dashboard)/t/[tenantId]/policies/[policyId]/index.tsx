@@ -357,7 +357,7 @@ export default function PolicyDetailPage() {
       </div>
 
       <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
-        <DialogContent class="max-w-md rounded-xl p-6">
+        <DialogContent class="max-w-md rounded-lg p-6">
           <DialogHeader>
             <DialogTitle>Delete {row()?.name ?? "policy"}?</DialogTitle>
           </DialogHeader>
