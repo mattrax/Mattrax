@@ -91,7 +91,7 @@ test.describe("groups and policies", () => {
     await expect(page).toHaveURL(/\/editor$/);
 
     await page.getByRole("button", { name: /^edit$/i }).click();
-    await page.getByRole("button", { name: /^device$/i }).click();
+    await page.getByRole("button", { name: /^restrictions$/i }).click();
     await page.getByRole("checkbox").first().uncheck();
     await page.getByRole("button", { name: /^save$/i }).click();
     const detailUrl = page.url().replace(/\/editor$/, "");

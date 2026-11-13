@@ -102,7 +102,7 @@ import {
 } from "./autopilot.ts";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
-import { parseMobileconfigPreview } from "./mobileconfig.ts";
+import { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.ts";
 import { tokenScopes } from "./enterpriseAuth.ts";
 import {
   ApnsService,
@@ -729,21 +729,36 @@ export const createEnterpriseService = ({
       const snapshot = Object.fromEntries(
         configurations.map((configuration: any) => [configuration.kind, configuration.data]),
       );
+      // `max(version)` can come from a stale Hyperdrive replica, so the first
+      // INSERT may collide with the unique (policy_id, version) index even
+      // though the read said the slot was free. Retry with a higher version
+      // instead of trusting a fresh read: every retry is a lower-bound + n, so
+      // it eventually lands above the true maximum without waiting for the
+      // replica to catch up.
       const [current] = yield* db
         .select({ version: schema.policyDeployment.version })
         .from(schema.policyDeployment)
         .where(eq(schema.policyDeployment.policyId, policyId))
         .orderBy(desc(schema.policyDeployment.version))
         .limit(1);
-      yield* db.insert(schema.policyDeployment).values({
-        id: id(),
-        organizationId: ctx.organization.id,
-        policyId,
-        version: (current?.version ?? 0) + 1,
-        snapshot,
-        createdByUserId: ctx.user.id,
-        createdAt: now(),
+      const base = current?.version ?? 0;
+      let attempt = 1;
+      const insertOnce = Effect.suspend(() => {
+        const version = base + attempt;
+        attempt += 1;
+        return Effect.gen(function* () {
+          yield* db.insert(schema.policyDeployment).values({
+            id: id(),
+            organizationId: ctx.organization.id,
+            policyId,
+            version,
+            snapshot,
+            createdByUserId: ctx.user.id,
+            createdAt: now(),
+          });
+        });
       });
+      yield* Effect.retry(insertOnce, { times: 20 });
     });
 
   const audit = (
@@ -1941,9 +1956,6 @@ export const createEnterpriseService = ({
           }
         }
 
-        yield* db
-          .delete(schema.platformInstance)
-          .where(eq(schema.platformInstance.issuedByUserId, user.id));
         yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
         yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
@@ -6916,6 +6928,17 @@ export const createEnterpriseService = ({
         yield* snapshotPolicy(ctx, newId);
         return { id: newId };
       }),
+    extractMobileconfig: (payload) =>
+      Effect.gen(function* () {
+        const body = payload as { mobileconfig: string };
+        return yield* Effect.tryPromise({
+          try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+            }),
+        });
+      }),
     previewMobileconfig: (payload) =>
       Effect.gen(function* () {
         const body = payload as { mobileconfig: string };
@@ -8328,6 +8351,9 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) =>
         service.duplicatePolicy(request, params.tenantId, params.id, payload),
       ),
+    )
+    .handle("extractMobileconfig", ({ payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.extractMobileconfig(payload)),
     )
     .handle("previewMobileconfig", ({ payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)),

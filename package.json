@@ -15,7 +15,6 @@
     "format": "vp fmt && vp lint",
     "typecheck": "pnpm -r --if-present run cf:types && tsc -b",
     "api": "pnpm --filter @mattrax/api --",
-    "mserver": "pnpm --filter @mattrax/server --",
     "web": "pnpm --filter @mattrax/web --",
     "doc": "rspress dev docs --port 9060",
     "doc:build": "rspress build docs",

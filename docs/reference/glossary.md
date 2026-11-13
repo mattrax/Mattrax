@@ -24,7 +24,6 @@
 | **OMA-URI**          | Windows policy node path used in SyncML.                                                                 |
 | **Policy**           | A named container with priority and configurations.                                                      |
 | **Pre-registration** | A serial-based record that names and groups a device before enrollment.                                  |
-| **Product key**      | A Platform API key that licenses a whitelabel gateway instance.                                          |
 | **SCEP**             | Simple Certificate Enrollment Protocol. Issues Apple/Windows device identities.                          |
 | **SCIM**             | System for Cross-domain Identity Management. Provisions users and groups.                                |
 | **Step-up**          | A recent re-authentication required for sensitive actions.                                               |

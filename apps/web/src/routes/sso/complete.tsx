@@ -33,12 +33,13 @@ export default function SsoCompletePage() {
     <div class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
       <div class="w-full max-w-sm rounded-xl border bg-white p-6 text-center shadow-sm">
         <a href="/" class="mb-6 inline-flex items-center gap-2">
-          <span class="flex items-center gap-2.5">
-            <span class="flex size-7 items-center justify-center rounded-md border border-white/[0.14] bg-white/[0.045] text-[11px] font-semibold text-foreground">
-              M
-            </span>
-            <span class="text-[15px] font-semibold tracking-[-0.01em]">Mattrax</span>
-          </span>
+          <img
+            src="/assets/brand/mattrax-white.png"
+            alt="Mattrax"
+            class="h-4 w-auto"
+            width="922"
+            height="142"
+          />
         </a>
         <Show
           when={!mfaPending()}

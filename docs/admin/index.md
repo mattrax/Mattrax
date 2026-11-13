@@ -13,7 +13,7 @@ of it lives under **Settings**.
 - Metadata.
 
 Branding is used by the public enrollment page, Apple enrollment profiles, the DDM
-organization declaration, invitation emails and whitelabel configuration endpoints.
+organization declaration and invitation emails.
 
 ```bash
 curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID" \

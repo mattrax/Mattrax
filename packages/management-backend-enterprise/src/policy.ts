@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
   signAppleAssetToken,
@@ -139,6 +139,17 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   isRecord(value) ? value : undefined;
 
+/** Signed profiles are CMS/PKCS#7 DER or PEM with an embedded plist. */
+const isSignedMobileconfig = (bytes: Uint8Array, text: string): boolean => {
+  const pem = /-----BEGIN (?:PKCS7|CMS)-----/.test(text);
+  const der =
+    bytes.length > 3 &&
+    bytes[0] === 0x30 &&
+    (bytes[1] === 0x82 || bytes[1] === 0x81 || bytes[1] === 0x80);
+  const embedded = text.includes("<plist") || text.includes("<?xml");
+  return (pem || der) && embedded;
+};
+
 const payloadsFromMobileconfig = (
   root: Record<string, unknown>,
 ): Array<Record<string, unknown>> => {
@@ -183,12 +194,18 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
           return yield* Effect.fail(`"${kind}.content" is not valid base64`);
         }
         const text = new TextDecoder().decode(bytes);
-        const plist = yield* parsePlist(text).pipe(
-          Effect.mapError(
-            (cause) =>
-              `"${kind}.content" is not a valid mobileconfig plist: ${cause.message ?? String(cause)}`,
-          ),
-        );
+        const parsed = yield* Effect.exit(parsePlist(text));
+        if (Exit.isFailure(parsed)) {
+          // A CMS/PKCS#7-wrapped profile keeps its code signature and is
+          // deployed verbatim. We only check that it carries an embedded
+          // plist; the device is responsible for validating the signer.
+          if (isSignedMobileconfig(bytes, text)) return;
+          const cause = parsed.cause;
+          return yield* Effect.fail(
+            `"${kind}.content" is not a valid mobileconfig plist: ${String(cause)}`,
+          );
+        }
+        const plist = parsed.value;
         if (!isRecord(plist))
           return yield* Effect.fail(`"${kind}.content" must contain a plist dictionary`);
         if (plist.PayloadType !== "Configuration")

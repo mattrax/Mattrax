@@ -51,7 +51,6 @@ refuses non-HTTPS reset links. To run the dev server over HTTPS instead, run
 | `pnpm doc:build`     | Build the documentation site.                    |
 | `pnpm web dev`       | Run only the web app (and its API Worker).       |
 | `pnpm api dev`       | Run only the API app.                            |
-| `pnpm mserver dev`   | Run only the whitelabel/self-hosted server app.  |
 | `pnpm catalog:split` | Rebuild the split Windows policy catalogue.      |
 | `pnpm catalog:check` | Verify the committed catalogue split is current. |
 
@@ -67,22 +66,18 @@ users and tenants, so it is safe to point at a disposable database.
 
 ## Architecture
 
-The repository is split into layers so the hosted product and the whitelabel
-gateway share protocol code without sharing product decisions:
+The repository is split into protocol, management and product layers so each
+piece can be tested in isolation:
 
 | Layer               | Packages / apps                                                   |
 | ------------------- | ----------------------------------------------------------------- |
 | Protocol            | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist`, `policy-apple` |
 | Management contract | `management-backend`, `management-backend-http`                   |
 | Hosted management   | `management-backend-enterprise`, `apps/api`                       |
-| Product contracts   | `enterprise-domain`, `platform-api`                               |
-| Product backends    | `enterprise-backend`, `platform-backend`                          |
+| Product contracts   | `enterprise-domain`                                               |
+| Product backends    | `enterprise-backend`                                              |
 | Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)                    |
-| Surfaces            | `apps/web` (dashboard, landing, docs), `apps/mttx` (self-hosted)  |
-
-Whitelabel deployments run `apps/mttx`, which imports only the protocol and
-management layers and talks to a customer-owned webhook. They must never import
-`@mattrax/enterprise-*`.
+| Surfaces            | `apps/web` (dashboard, landing, docs)                             |
 
 ## Cloud
 

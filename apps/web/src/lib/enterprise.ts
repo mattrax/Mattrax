@@ -931,6 +931,8 @@ export const enterprise = {
     ),
   previewMobileconfig: (mobileconfig: string) =>
     endpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
+  extractMobileconfig: (mobileconfig: string) =>
+    endpoint((api) => api.extractMobileconfig({ payload: { mobileconfig } })),
   getApns: (tenantId: RouteParam) =>
     endpoint((api) => api.getApns({ params: { tenantId: required(tenantId, "tenantId") } })),
   getAppleBusinessManager: (

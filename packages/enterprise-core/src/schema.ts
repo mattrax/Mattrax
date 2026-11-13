@@ -1511,33 +1511,6 @@ export const organizationDeviceUsage = mysqlTable(
   (table) => [primaryKey({ columns: [table.organizationId, table.period] })],
 );
 
-/**
- * Product keys for self-hosted/whitelabel instances. The plaintext key is only
- * shown once at creation; the server stores a SHA-256 hash and a display prefix.
- */
-export const platformInstance = mysqlTable(
-  "platform_instance",
-  {
-    id: id().primaryKey(),
-    keyPrefix: shortText("key_prefix").notNull(),
-    keyHash: varchar("key_hash", { length: 255 }).notNull(),
-    description: text("description"),
-    issuedByUserId: id("issued_by_user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    userCount: int("user_count").notNull().default(0),
-    deviceCount: int("device_count").notNull().default(0),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-    lastSeenAt: timestamp("last_seen_at"),
-    revokedAt: timestamp("revoked_at"),
-  },
-  (table) => [
-    uniqueIndex("platform_instance_key_hash_unique").on(table.keyHash),
-    index("platform_instance_issued_by_idx").on(table.issuedByUserId),
-  ],
-);
-
 /** Identities issued by the SCEP CA, used to authenticate renewals. */
 export const scepIssuedCertificate = mysqlTable(
   "scep_issued_certificate",
@@ -1617,7 +1590,6 @@ export const relations = defineRelations(
     applicationDevice,
     devicePolicy,
     organizationDeviceUsage,
-    platformInstance,
     scepCa,
     scepIssuedCertificate,
     authPasskeyCredentials,
@@ -1945,9 +1917,6 @@ export const relations = defineRelations(
         from: r.organizationDeviceUsage.organizationId,
         to: r.organization.id,
       }),
-    },
-    platformInstance: {
-      issuedBy: r.one.user({ from: r.platformInstance.issuedByUserId, to: r.user.id }),
     },
   }),
 );

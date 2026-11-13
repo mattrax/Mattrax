@@ -23,7 +23,7 @@ real-vendor validation. It is a status page, not a marketing page.
 - Security headers, request ids, structured logs, readiness checks, rate limits and
   optional Sentry-compatible error tracking.
 - Cloudflare Workers deployment for the dashboard and API, and a Node gateway for
-  whitelabel.
+  .
 
 ## Validation gaps
 

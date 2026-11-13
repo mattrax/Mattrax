@@ -253,19 +253,15 @@ Responses use `{ _tag: "Success", value }`, `{ _tag: "Failure", error }` or
 
 ## Non-Enterprise routes
 
-| Method         | Path                                  | Auth             | Purpose                       |
-| -------------- | ------------------------------------- | ---------------- | ----------------------------- |
-| `POST`         | `/api/v1/billing/webhook`             | Stripe signature | Subscription and invoice sync |
-| `GET`          | `/api/v1/sso/azure/start`             | Public           | Begin Entra OIDC              |
-| `GET`          | `/api/v1/sso/azure/callback`          | Signed state     | Complete Entra OIDC           |
-| `GET`          | `/api/v1/android/signup/callback`     | Signed state     | Finish Android signup         |
-| `POST`         | `/api/v1/android/pubsub`              | Google OIDC      | Android notifications         |
-| `*`            | `/scim/v2/:tenantId/...`              | SCIM bearer      | SCIM 2.0                      |
-| `GET`          | `/api/platform/status`                | Public           | Platform status               |
-| `GET/POST`     | `/api/platform/instances`             | Session/bearer   | List/create instances         |
-| `PATCH/DELETE` | `/api/platform/instances/:instanceId` | Session/bearer   | Update/revoke                 |
-| `POST`         | `/api/platform/instances/verify`      | Product key HMAC | Licence check                 |
-| `POST`         | `/api/platform/instances/apns/sign`   | Product key HMAC | Sign an APNs CSR              |
+| Method | Path                              | Auth             | Purpose                       |
+| ------ | --------------------------------- | ---------------- | ----------------------------- |
+| `POST` | `/api/v1/billing/webhook`         | Stripe signature | Subscription and invoice sync |
+| `GET`  | `/api/v1/sso/azure/start`         | Public           | Begin Entra OIDC              |
+| `GET`  | `/api/v1/sso/azure/callback`      | Signed state     | Complete Entra OIDC           |
+| `GET`  | `/api/v1/android/signup/callback` | Signed state     | Finish Android signup         |
+| `POST` | `/api/v1/android/pubsub`          | Google OIDC      | Android notifications         |
+| `*`    | `/scim/v2/:tenantId/...`          | SCIM bearer      | SCIM 2.0                      |
+| `GET`  | `/api/platform/status`            | Public           | Platform status               |
 
 ## Protocol routes
 

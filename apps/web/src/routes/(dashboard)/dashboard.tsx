@@ -7,17 +7,15 @@ import { Button } from "~/components/ui/button";
 import { Sparkles } from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
+import {
+  parsePolicyDraft,
+  policyPlatforms,
+  policySelectionCount,
+  policyToConfigurations,
+  type PolicyDraft,
+} from "~/lib/policy-designer/build";
 
-const parseDraft = (value: string | null): Draft | undefined => {
-  if (!value) return undefined;
-  try {
-    const draft = JSON.parse(value) as Draft;
-    return draft.version === 1 ? draft : undefined;
-  } catch {
-    return undefined;
-  }
-};
+const parseDraft = (value: string | null): PolicyDraft | undefined => parsePolicyDraft(value);
 
 /**
  * `/dashboard` is the stable post-sign-in URL, not a tenant picker. Tenants are
@@ -29,7 +27,7 @@ export default function DashboardRedirectPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
-  const [draft, setDraft] = createSignal<Draft | undefined>();
+  const [draft, setDraft] = createSignal<PolicyDraft | undefined>();
   const [draftChecked, setDraftChecked] = createSignal(false);
   const [tenantId, setTenantId] = createSignal("");
 
@@ -72,7 +70,7 @@ export default function DashboardRedirectPage() {
       const policy = await enterprise.createPolicy(tenant, { name: current.name });
       try {
         await enterprise.patchPolicy(tenant, policy.id, {
-          configurations: artifactToConfigurations(current),
+          configurations: policyToConfigurations(current),
         });
       } catch (error) {
         await enterprise.deletePolicies(tenant, [policy.id]).catch(() => undefined);
@@ -107,12 +105,17 @@ export default function DashboardRedirectPage() {
               </span>
               <h1 class="mt-3 text-[22px] font-semibold tracking-[-0.02em]">Policy draft ready</h1>
               <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                {current().name} · {current().platform} · {current().selections.length} collections
-                ·{" "}
-                {current().selections.reduce(
-                  (total, selection) => total + Object.keys(selection.values).length,
-                  0,
-                )}{" "}
+                {current().name} ·{" "}
+                {policyPlatforms(current())
+                  .map((platform) => platform[0]!.toUpperCase() + platform.slice(1))
+                  .join(", ")}{" "}
+                · {policySelectionCount(current())} collections ·{" "}
+                {Object.values(current().platforms)
+                  .flat()
+                  .reduce(
+                    (total, selection) => total + Object.keys(selection?.values ?? {}).length,
+                    0,
+                  )}{" "}
                 settings
               </p>
 

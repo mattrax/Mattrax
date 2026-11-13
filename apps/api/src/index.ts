@@ -24,8 +24,6 @@ import {
   sessionCookie,
   type CredentialExpiryNotification,
 } from "@mattrax/enterprise-backend";
-import { platformApi } from "@mattrax/platform-api";
-import { PlatformServiceLive, platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
@@ -140,7 +138,6 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
   .add(authHttp)
   .add(appleMdmApi)
-  .add(platformApi)
   .annotateMerge(
     OpenApi.annotations({
       title: "Mattrax Cloud API",
@@ -153,7 +150,6 @@ const apiRoot = HttpApi.make("Mattrax")
 const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
-  HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
 ).pipe(authHttps.middleware);
 
 const handlersLayer = Layer.mergeAll(
@@ -437,10 +433,6 @@ const makeAppLayer = (env: Env, request: Request) => {
         ),
       ),
     ),
-    PlatformServiceLive({
-      cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
-      cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
-    }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
     AzureOidcLive().pipe(Layer.provide(FetchHttpClient.layer)),
     androidManagementLayer(androidConfig),
   );

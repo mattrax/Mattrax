@@ -141,5 +141,4 @@ DEV_HTTPS=1 pnpm web dev
 
 ## Next
 
-- [Self-hosting](/operations/self-hosting)
 - [Monitoring](/operations/monitoring)

@@ -28,8 +28,6 @@
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },
     { "path": "./apps/api" },
-    { "path": "./apps/mttx" },
-    { "path": "./apps/web" },
-    { "path": "./apps/example-whitelabel" }
+    { "path": "./apps/web" }
   ]
 }

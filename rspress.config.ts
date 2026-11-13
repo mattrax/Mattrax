@@ -11,13 +11,13 @@ export default defineConfig({
   siteOrigin: origin,
   title: "Mattrax",
   description:
-    "Documentation for Mattrax device management — Apple, Windows and Android fleets, the REST API, self-hosting and migration.",
+    "Documentation for Mattrax device management — Apple, Windows and Android fleets, the REST API and migration.",
   lang: "en",
   logo: {
-    light: "/mark.svg",
-    dark: "/mark.svg",
-    width: 36,
-    height: 36,
+    light: "/mattrax.png",
+    dark: "/mattrax-white.png",
+    width: 104,
+    height: 16,
   },
   icon: "/favicon.ico",
   globalStyles: path.resolve("docs/styles/global.css"),
@@ -86,11 +86,9 @@ export default defineConfig({
       {
         text: "Operate",
         items: [
-          { text: "Self-hosting", link: "/operations/self-hosting" },
           { text: "Configuration", link: "/operations/configuration" },
           { text: "Monitoring", link: "/operations/monitoring" },
           { text: "Troubleshooting", link: "/operations/troubleshooting" },
-          { text: "Whitelabel gateway", link: "/operations/whitelabel/" },
         ],
       },
       {
@@ -99,8 +97,6 @@ export default defineConfig({
           { text: "REST API", link: "/api/" },
           { text: "API reference", link: "/api/reference" },
           { text: "OpenAPI", link: "/api/openapi" },
-          { text: "Management backend", link: "/operations/whitelabel/management-backend" },
-          { text: "Whitelabel enrollment", link: "/operations/whitelabel/enrollment" },
         ],
       },
       {
@@ -194,21 +190,9 @@ export default defineConfig({
           collapsible: true,
           collapsed: true,
           items: [
-            { text: "Self-hosting", link: "/operations/self-hosting" },
             { text: "Configuration", link: "/operations/configuration" },
             { text: "Monitoring", link: "/operations/monitoring" },
             { text: "Troubleshooting", link: "/operations/troubleshooting" },
-          ],
-        },
-        {
-          text: "Whitelabel",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            { text: "Overview", link: "/operations/whitelabel/" },
-            { text: "Management backend", link: "/operations/whitelabel/management-backend" },
-            { text: "Enrollment", link: "/operations/whitelabel/enrollment" },
-            { text: "Deployment", link: "/operations/whitelabel/deployment" },
           ],
         },
         {

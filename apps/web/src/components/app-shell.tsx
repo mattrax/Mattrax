@@ -10,16 +10,16 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import {
+  Activity,
   BookOpen,
-  Boxes,
   Building2,
   Check,
   ChevronsUpDown,
   CircleAlert,
+  HelpCircle,
   LogOut,
   Plus,
   Search as SearchIcon,
-  Sparkles,
   User,
   X,
 } from "~/components/ui/icons";
@@ -224,14 +224,10 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           Account settings
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => navigate("/instances")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
-        >
-          <Boxes class="size-3.5 text-muted-foreground" />
-          Instances
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => navigate("/docs/")}
+          as="a"
+          role="menuitem"
+          href="/docs/"
+          target="_self"
           class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
           <BookOpen class="size-3.5 text-muted-foreground" />
@@ -240,11 +236,22 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         <DropdownMenuItem
           as="a"
           role="menuitem"
-          href="mailto:hello@mattrax.app?subject=Mattrax%20feedback"
+          href="mailto:hello@mattrax.app?subject=Mattrax%20support"
           class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
         >
-          <Sparkles class="size-3.5 text-muted-foreground" />
-          Send feedback
+          <HelpCircle class="size-3.5 text-muted-foreground" />
+          Support
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          as="a"
+          role="menuitem"
+          href="https://status.otbeaumont.me"
+          target="_blank"
+          rel="noopener"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
+        >
+          <Activity class="size-3.5 text-muted-foreground" />
+          System status
         </DropdownMenuItem>
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
@@ -326,22 +333,7 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
 }
 
 function navFor(tenantId: string | undefined): NavItem[] {
-  if (!tenantId) {
-    return [
-      {
-        id: "instances",
-        label: "Instances",
-        href: "/instances",
-        match: (value) => value === "/instances",
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        href: "/docs/",
-        match: (value) => value.startsWith("/docs"),
-      },
-    ];
-  }
+  if (!tenantId) return [];
   const base = `/t/${tenantId}`;
   return [
     { id: "overview", label: "Overview", href: base, match: (value) => value === base },
@@ -481,12 +473,13 @@ export function AppShell(props: {
             class="flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             aria-label="Mattrax home"
           >
-            <span class="flex size-5 items-center justify-center rounded-[4px] border border-white/[0.14] bg-white/[0.045] text-[9.5px] font-semibold leading-none text-foreground">
-              M
-            </span>
-            <span class="hidden text-[13px] font-[480] tracking-[-0.01em] text-foreground sm:block">
-              Mattrax
-            </span>
+            <img
+              src="/assets/brand/mattrax-white.png"
+              alt="Mattrax"
+              class="h-3.5 w-auto"
+              width="922"
+              height="142"
+            />
           </a>
 
           <span class="mx-1 hidden h-3.5 w-px bg-white/[0.09] sm:block" aria-hidden="true" />
@@ -494,13 +487,6 @@ export function AppShell(props: {
 
           <div class="ml-auto flex items-center gap-1">
             <SearchButton />
-            <a
-              href="/docs/"
-              aria-label="Documentation"
-              class="hidden size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-white/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 sm:flex"
-            >
-              <BookOpen class="size-4" />
-            </a>
             <UserMenu user={props.user} onSignOut={props.onSignOut} />
           </div>
         </div>
@@ -602,27 +588,6 @@ export function AppShell(props: {
           {pageLabel()}
         </div>
       </main>
-
-      <Show when={!location.pathname.endsWith("/design")}>
-        <footer class="relative z-0 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground sm:px-6 lg:px-8">
-          <span>Mattrax</span>
-          <a class="transition-colors hover:text-muted-foreground" href="/docs/">
-            Documentation
-          </a>
-          <a class="transition-colors hover:text-muted-foreground" href="mailto:hello@mattrax.app">
-            Support
-          </a>
-          <a
-            class="ml-auto inline-flex items-center gap-1 transition-colors hover:text-muted-foreground"
-            href="https://status.otbeaumont.me"
-            target="_blank"
-            rel="noopener"
-          >
-            All systems operational
-            <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
-          </a>
-        </footer>
-      </Show>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 # Architecture
 
 Mattrax is a TypeScript monorepo. Protocol code is shared; product decisions are not. That
-boundary is what lets the hosted product and the whitelabel gateway coexist.
+boundary keeps protocol handling independent from product state.
 
 ## Layers
 
@@ -10,13 +10,10 @@ boundary is what lets the hosted product and the whitelabel gateway coexist.
 | Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`, `policy-apple` | Wire protocols and payloads                    |
 | Management contract | `management-backend`, `management-backend-http`                                 | Interface and HMAC webhook binding             |
 | Hosted management   | `management-backend-enterprise`, `apps/api`                                     | Enterprise implementation                      |
-| Product contracts   | `enterprise-domain`, `platform-api`                                             | Effect HTTP contracts and schemas              |
-| Product backends    | `enterprise-backend`, `platform-backend`                                        | Handlers, services, integrations               |
+| Product contracts   | `enterprise-domain`                                                             | Effect HTTP contracts and schemas              |
+| Product backends    | `enterprise-backend`                                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/mttx`, `apps/example-whitelabel`, `apps/apns-relay`           | Dashboard, gateway, examples, push relay       |
-
-Whitelabel deployments import the protocol and management layers. They must never import
-`@mattrax/enterprise-*`.
+| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`                                       | Dashboard, API, push relay                     |
 
 ## Cloud topology
 
@@ -111,11 +108,9 @@ Migrations live in `apps/api/migrations` and are applied with Drizzle Kit.
 | `packages/enterprise-backend/src/enterpriseHandlers.ts` | Enterprise handlers                     |
 | `packages/management-backend-enterprise/src/index.ts`   | Apple/Windows management                |
 | `packages/enterprise-core/src/schema.ts`                | Database schema                         |
-| `apps/mttx/src/app.ts`                                  | Gateway composition                     |
 | `packages/management-backend-http/src/layer.ts`         | Webhook signing                         |
 | `packages/scep/src/pkcs7.ts`                            | SCEP CA and certificate issuance        |
 
 ## Next
 
 - [Production readiness](/reference/production-readiness)
-- [Self-hosting](/operations/self-hosting)

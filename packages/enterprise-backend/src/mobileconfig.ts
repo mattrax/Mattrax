@@ -236,3 +236,16 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
     payloads: payloads.map(payloadPreview),
   };
 };
+
+/**
+ * Return the embedded plist for an uploaded profile. Signed profiles are
+ * unwrapped but the signature is intentionally not verified here: the caller
+ * is asking to drop it and edit the contents.
+ */
+export const extractMobileconfigPlist = async (base64: string): Promise<string> => {
+  const bytes = decodeBase64(base64);
+  const text = await textFromBytes(bytes);
+  if (!text.includes("<plist") && !text.includes("<?xml"))
+    throw new Error("No plist content could be extracted from this profile");
+  return text;
+};

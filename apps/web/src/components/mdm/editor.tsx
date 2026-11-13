@@ -1,6 +1,15 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, Match, onSettled, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onSettled,
+  Show,
+  Switch,
+} from "solid-js";
 import { ErrorText, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
@@ -17,18 +26,23 @@ const keys = {
   windows: "mttx.windows.custom.default",
 } as const;
 
+const isCustomProfile = (kind: string, value: unknown) =>
+  /^mttx\.apple\.custom\.[^.]+$/.test(kind) &&
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { content?: unknown }).content === "string";
+
 type Config = Record<string, any>;
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent p-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
 const sections = [
-  { id: "security", label: "Security", hint: "Certificate" },
-  { id: "applications", label: "Applications", hint: "Soon" },
-  { id: "device", label: "Device", hint: "Restrictions" },
+  { id: "custom", label: "Profiles", hint: "mobileconfig" },
+  { id: "security", label: "Certificates", hint: "PEM" },
+  { id: "device", label: "Restrictions", hint: "Apple" },
   { id: "windows", label: "Windows", hint: "OMA-URI" },
-  { id: "custom", label: "Custom profile", hint: "mobileconfig" },
-  { id: "raw", label: "Advanced JSON", hint: "Raw" },
+  { id: "raw", label: "JSON", hint: "Raw" },
 ] as const;
 
 export function PolicyConfigurationEditor() {
@@ -40,7 +54,7 @@ export function PolicyConfigurationEditor() {
   }));
   const row = () => policy.data as PolicyRow | undefined;
   const [canEdit, setCanEdit] = createSignal(false);
-  const [active, setActive] = createSignal("security");
+  const [active, setActive] = createSignal("custom");
   const [config, setConfig] = createSignal<Config>({});
   const [initial, setInitial] = createSignal("{}");
   const [raw, setRaw] = createSignal("{}");
@@ -95,7 +109,7 @@ export function PolicyConfigurationEditor() {
   });
 
   return (
-    <Page>
+    <Page wide>
       <PageHeader
         eyebrow="Policy"
         title={row()?.name ?? "Policy editor"}
@@ -123,19 +137,18 @@ export function PolicyConfigurationEditor() {
           <>
             <Button
               as="a"
+              href={`/t/${params.tenantId}/policies/${params.policyId}`}
+              variant="ghost"
+              class="gap-1.5"
+            >
+              Back to policy
+            </Button>
+            <Button
+              as="a"
               href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
               variant="outline"
             >
               Open designer
-            </Button>
-            <Button
-              as="a"
-              href="https://configure.mattrax.app"
-              target="_blank"
-              rel="noreferrer"
-              variant="outline"
-            >
-              Browse settings
             </Button>
             <Button variant={canEdit() ? "default" : "outline"} onClick={toggleEdit}>
               {!canEdit() ? "Edit" : dirty() ? "Save" : "Done"}
@@ -168,14 +181,6 @@ export function PolicyConfigurationEditor() {
             <Switch>
               <Match when={active() === "security"}>
                 <SecuritySection config={config()} setKey={setKey} />
-              </Match>
-              <Match when={active() === "applications"}>
-                <ApplicationSection
-                  config={config()}
-                  setKey={setKey}
-                  tenantId={params.tenantId}
-                  policyId={params.policyId}
-                />
               </Match>
               <Match when={active() === "device"}>
                 <DeviceSection config={config()} setKey={setKey} />
@@ -221,17 +226,16 @@ export function PolicyConfigurationEditor() {
 }
 
 function activeTitle(active: string) {
-  if (active === "applications") return "Applications";
-  if (active === "custom") return "Custom profile";
+  if (active === "custom") return "Profiles";
   if (active === "device") return "Device restrictions";
   if (active === "windows") return "Windows configuration";
-  if (active === "raw") return "Advanced JSON";
-  return "Security";
+  if (active === "raw") return "JSON";
+  return "Certificates";
 }
 
 function sectionDescription(active: string) {
-  if (active === "applications") return "Package delivery for this policy.";
-  if (active === "custom") return "Upload and inspect a .mobileconfig profile.";
+  if (active === "custom")
+    return "Upload .mobileconfig profiles. Signed profiles deploy exactly as supplied.";
   if (active === "device") return "Restrictions applied to every device in scope.";
   if (active === "windows") return "SyncML policy nodes for Windows devices.";
   if (active === "raw") return "The full configuration map, as stored on the policy.";
@@ -323,24 +327,6 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
   );
 }
 
-function ApplicationSection(_props: {
-  config: Config;
-  setKey: (key: string, value: unknown) => void;
-  tenantId?: string;
-  policyId?: string;
-}) {
-  return (
-    <div class="space-y-3">
-      <p class="text-[13px] font-medium text-foreground">Application deployment</p>
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Remote app installers are not wired into Apple declarative management yet. Packages can
-        still be uploaded to the policy API for future use, but they will not be delivered to
-        devices.
-      </p>
-    </div>
-  );
-}
-
 function DeviceSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
   const device = () => (props.config[keys.device] ?? { camera: true }) as { camera?: boolean };
   return (
@@ -419,54 +405,162 @@ function CustomSection(props: {
   setKey: (key: string, value: unknown) => void;
   policyId: string;
 }) {
-  const custom = () => props.config[keys.custom] as { content?: string } | null | undefined;
-  const upload = async () =>
-    props.setKey(keys.custom, {
-      content: arrayBufferToBase64(
-        await (await selectFile("application/x-apple-aspen-config,.mobileconfig")).arrayBuffer(),
-      ),
-    });
-  const download = () => {
-    const content = custom()?.content;
-    if (!content) return;
-    const url = URL.createObjectURL(
-      new Blob([base64ToArrayBuffer(content)], { type: "application/x-apple-aspen-config" }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${props.policyId}.mobileconfig`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  const [error, setError] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal<string | null>(null);
+  const profiles = () =>
+    Object.entries(props.config).filter(([kind, value]) => isCustomProfile(kind, value));
+
+  const nextKind = () => {
+    for (let index = 1; ; index++) {
+      const kind = `mttx.apple.custom.uploaded${index === 1 ? "" : index}`;
+      if (!(kind in props.config)) return kind;
+    }
   };
+
+  const upload = async () => {
+    setError(null);
+    try {
+      const file = await selectFile("application/x-apple-aspen-config,.mobileconfig");
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const head = new TextDecoder().decode(bytes.slice(0, 512));
+      const signed =
+        (bytes[0] === 0x30 && (bytes[1] === 0x82 || bytes[1] === 0x81 || bytes[1] === 0x80)) ||
+        /-----BEGIN (?:PKCS7|CMS)-----/.test(head);
+      props.setKey(nextKind(), {
+        content: arrayBufferToBase64(buffer),
+        fileName: file.name,
+        signed,
+      });
+    } catch (cause) {
+      if (cause instanceof Error && /abort/i.test(cause.name)) return;
+      setError(cause instanceof Error ? cause.message : "Could not read that file.");
+    }
+  };
+
+  const extract = async (kind: string) => {
+    const value = props.config[kind] as { content: string; fileName?: string };
+    setBusy(kind);
+    setError(null);
+    try {
+      const result = await enterprise.extractMobileconfig(value.content);
+      props.setKey(kind, {
+        ...value,
+        content: arrayBufferToBase64(new TextEncoder().encode(result.plist).buffer),
+        signed: false,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove the signature.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <Show
-      when={custom()}
-      fallback={
-        <div class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5">
-          <p class="text-[12.5px] text-muted-foreground">Upload your own .mobileconfig file.</p>
-          <Button onClick={upload}>Upload</Button>
+    <div class="space-y-4">
+      <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-[13px] font-medium text-foreground">Existing profiles</p>
+          <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+            Signed profiles keep their signature and deploy byte-for-byte. Remove the signature only
+            when you need to edit the profile here.
+          </p>
         </div>
-      }
-    >
-      {(value) => (
-        <div class="space-y-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-[12.5px] text-muted-foreground">
-              You have uploaded a mobileconfig file.
-            </p>
-            <div class="flex flex-wrap gap-2">
-              <Button onClick={download}>Download</Button>
-              <Button onClick={upload}>Replace</Button>
-              <Button variant="outline" onClick={() => props.setKey(keys.custom, null)}>
-                Remove
-              </Button>
-            </div>
-          </div>
-          <Show when={value().content}>
-            <MobileconfigPreview content={value().content!} />
-          </Show>
+        <Button onClick={upload}>Upload profile</Button>
+      </div>
+
+      <Show when={error()}>{(message) => <ErrorText error={message()} />}</Show>
+
+      <Show
+        when={profiles().length > 0}
+        fallback={
+          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+            No profiles uploaded yet.
+          </p>
+        }
+      >
+        <div class="space-y-3">
+          <For each={profiles()}>
+            {([kind, value]) => {
+              const profile = value as {
+                content: string;
+                fileName?: string;
+                signed?: boolean;
+              };
+              return (
+                <div class="overflow-hidden rounded-lg border border-border">
+                  <div class="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2">
+                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                      {kind}
+                    </span>
+                    <Show when={profile.signed}>
+                      <Badge
+                        variant="outline"
+                        class="border-success/25 bg-success/10 text-success-foreground"
+                      >
+                        Signed · read-only
+                      </Badge>
+                    </Show>
+                    <Show when={profile.signed}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy() === kind}
+                        onClick={() => void extract(kind)}
+                      >
+                        {busy() === kind ? "Removing…" : "Remove signature & edit"}
+                      </Button>
+                    </Show>
+                    <Button size="sm" variant="ghost" onClick={() => props.setKey(kind, null)}>
+                      Remove
+                    </Button>
+                  </div>
+                  <div class="p-3">
+                    <Show when={kind === "mttx.apple.custom.designer"}>
+                      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                        This profile is generated by the designer. Edit it there so the draft and
+                        the compiled profile stay in sync.
+                      </p>
+                    </Show>
+                    <Show
+                      when={!profile.signed && kind !== "mttx.apple.custom.designer"}
+                      fallback={
+                        <Show when={kind !== "mttx.apple.custom.designer"}>
+                          <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                            {profile.fileName ?? "Uploaded profile"} is deployed unchanged. Devices
+                            verify its signature with the certificate it already trusts.
+                          </p>
+                        </Show>
+                      }
+                    >
+                      <label class="space-y-1.5">
+                        <span class="text-[12px] font-medium text-foreground/90">
+                          Profile plist
+                        </span>
+                        <textarea
+                          class={`${textareaClass} min-h-56 font-mono text-[11px] leading-relaxed`}
+                          value={decodeText(profile.content)}
+                          onInput={(event) => {
+                            props.setKey(kind, {
+                              ...profile,
+                              content: arrayBufferToBase64(
+                                new TextEncoder().encode(event.currentTarget.value).buffer,
+                              ),
+                              signed: false,
+                            });
+                          }}
+                        />
+                      </label>
+                    </Show>
+                  </div>
+                </div>
+              );
+            }}
+          </For>
         </div>
-      )}
-    </Show>
+      </Show>
+    </div>
   );
 }
+
+const decodeText = (content: string) => new TextDecoder().decode(base64ToArrayBuffer(content));

@@ -35,8 +35,8 @@ test.describe("policy designer", () => {
     const draft = await page.evaluate(() =>
       JSON.parse(localStorage.getItem("mattrax:designer-draft") ?? "null"),
     );
-    expect(draft.platform).toBe("apple");
-    expect(draft.selections.length).toBeGreaterThan(0);
+    expect(draft.version).toBe(2);
+    expect(draft.platforms.apple.length).toBeGreaterThan(0);
   });
 
   test("saves the same designer draft into a tenant policy", async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /^Save policy$/ }).click();
     await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
     await expect(page.getByText("Deployment history")).toBeVisible();
-    await expect(page.getByText(/mttx.apple.custom.designer/)).toBeVisible();
+    await expect(page.getByText("Apple configuration").first()).toBeVisible();
 
     // The draft is stored with the policy, so it survives clearing browser
     // storage and opens in the same editor on another device.
@@ -97,22 +97,22 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /^create policy$/i }).click();
     await expect(page).toHaveURL(/\/editor$/);
     await page.getByRole("button", { name: /^edit$/i }).click();
-    await page.getByRole("button", { name: /^device$/i }).click();
+    await page.getByRole("button", { name: /^restrictions$/i }).click();
     await page.getByRole("checkbox").first().uncheck();
     await page.getByRole("button", { name: /^save$/i }).click();
     const policyUrl = page.url().replace(/\/editor$/, "");
 
     await gotoHydrated(page, `${policyUrl}/design`);
-    await expect(page.getByText("This policy already has settings")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeDisabled();
+    await expect(
+      page.getByText("This policy also has settings from the policy editor"),
+    ).toBeVisible();
     await page.getByRole("button", { name: /security baseline/i }).click();
-    await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeDisabled();
-    await page.getByLabel("Replace the existing configurations when I save").check();
     await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeEnabled();
     await page.getByRole("button", { name: /^Save policy$/ }).click();
     await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText(/mttx.apple.custom.designer/)).toBeVisible();
-    await expect(page.getByText("Device restrictions")).toHaveCount(0);
+    await expect(page.getByText("Apple configuration").first()).toBeVisible();
+    // Designer saves leave configurations created in the policy editor alone.
+    await expect(page.getByText("Device restrictions")).toBeVisible();
   });
 
   test("exports Android array enums as arrays", async ({ page }) => {
@@ -215,7 +215,7 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /security baseline/i }).click();
     await page.getByRole("button", { name: /^Save policy$/ }).click();
     await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText(/mttx.windows.custom.designer/)).toBeVisible();
+    await expect(page.getByText("Windows configuration").first()).toBeVisible();
   });
 
   test("saves and rehydrates an Apple DDM declaration", async ({ page }) => {
@@ -231,7 +231,7 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /^Add to policy$/ }).click();
     await page.getByRole("button", { name: /^Save policy$/ }).click();
     await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText(/mttx.apple.declaration/)).toBeVisible();
+    await expect(page.getByText("Declaration").first()).toBeVisible();
 
     await page.evaluate(() => localStorage.clear());
     await gotoHydrated(page, `${policyUrl}/design`);

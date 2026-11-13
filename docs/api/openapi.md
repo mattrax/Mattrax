@@ -48,13 +48,10 @@ The document includes request and response schemas for the Enterprise API. Proto
 
 - Protocol routes are documented in [Apple](/platforms/apple/), [Windows](/platforms/windows/)
   and [Android](/platforms/android/).
-- The whitelabel contract is documented in
-  [Management backend](/operations/whitelabel/management-backend).
 
 ## Notes
 
-- The document is generated at build time from the deployed code. A self-hosted deployment
-  may expose endpoints added after the Cloud document was generated.
+- The document is generated at build time from the deployed code.
 - Authentication is not described by an OpenAPI security scheme in every route; use the
   `Authorization` header described in [REST API](/api/).
 - Scalar is served from a CDN. If your CSP blocks it, use the JSON document directly.

@@ -5,7 +5,7 @@ follow at the end.
 
 ## Before you start
 
-- A Mattrax Cloud account, or a self-hosted deployment (see [Self-hosting](/operations/self-hosting)).
+- A Mattrax account.
 - An Apple device running a supported version of macOS, iOS or iPadOS.
 - An APNs push certificate for the tenant. Mattrax generates the CSR; you sign it with
   Apple and upload the `.pem`.

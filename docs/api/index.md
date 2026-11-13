@@ -1,15 +1,13 @@
 # REST API
 
-The Enterprise API is a typed JSON API served by the Cloud API Worker. The same paths are
-available on a self-hosted deployment.
+The Enterprise API is a typed JSON API served by the Cloud API Worker.
 
 ## Base URL
 
-| Deployment         | Base                                                         |
-| ------------------ | ------------------------------------------------------------ |
-| Mattrax Cloud      | `https://e.mattrax.app/api/v1`                               |
-| Self-hosted        | `https://<your-origin>/api/v1`                               |
-| Whitelabel gateway | No Enterprise API; see [Whitelabel](/operations/whitelabel/) |
+| Deployment    | Base                           |
+| ------------- | ------------------------------ |
+| Mattrax Cloud | `https://e.mattrax.app/api/v1` |
+| Self-hosted   | `https://<your-origin>/api/v1` |
 
 The OpenAPI document is at `/api/openapi.json`; the interactive Scalar UI is at `/api/docs`.
 See [OpenAPI](/api/openapi).

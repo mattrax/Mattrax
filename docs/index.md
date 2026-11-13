@@ -2,13 +2,13 @@
 pageType: home
 title: Mattrax
 titleSuffix: Device management, documented
-description: Run Apple, Windows and Android fleets from one control plane — hosted, self-hosted or whitelabel.
+description: Run Apple, Windows and Android fleets from one control plane.
 hero:
   name: Mattrax
   text: Device management, documented.
   tagline: Everything you need to run Apple, Windows and Android fleets — from the first enrollment to production operations, migration and the management API.
   image:
-    src: /mark.svg
+    src: /logo-rounded.png
     alt: Mattrax
   actions:
     - theme: brand
@@ -31,11 +31,11 @@ features:
     icon: /icons/android.svg
     link: /platforms/android/
   - title: Operate
-    details: Self-host on Cloudflare, configure secrets, monitor health, upgrade safely and recover from incidents.
+    details: Configure secrets, monitor health, investigate incidents and keep a fleet running reliably.
     icon: /icons/wrench.svg
-    link: /operations/self-hosting
+    link: /operations/configuration
   - title: Build
-    details: A typed REST API, OpenAPI reference, outbound webhooks and the TypeScript whitelabel management contract.
+    details: A typed REST API, OpenAPI reference, outbound webhooks.
     icon: /icons/puzzle.svg
     link: /api/
   - title: Migrate

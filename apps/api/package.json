@@ -29,8 +29,6 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-enterprise": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
-    "@mattrax/platform-api": "workspace:*",
-    "@mattrax/platform-backend": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "@yielded/auth": "catalog:",

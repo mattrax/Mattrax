@@ -66,11 +66,14 @@ function TopNavigation() {
   return (
     <header class="sticky top-0 z-50 border-b border-stone-200/80 bg-stone-50/80 backdrop-blur-xl">
       <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 sm:px-8">
-        <a href="/" class="flex shrink-0 items-center gap-2.5">
-          <span class="flex size-7 items-center justify-center rounded-lg bg-stone-950 text-[13px] font-semibold text-stone-50">
-            M
-          </span>
-          <span class="text-[15px] font-semibold tracking-tight">Mattrax</span>
+        <a href="/" class="flex shrink-0 items-center gap-2.5" aria-label="Mattrax home">
+          <img
+            src="/assets/brand/mattrax.png"
+            alt="Mattrax"
+            class="h-4 w-auto"
+            width="922"
+            height="142"
+          />
         </a>
 
         <nav class="hidden items-center gap-7 text-[13px] md:flex">
@@ -144,15 +147,17 @@ function Footer() {
       <div class="mx-auto max-w-7xl px-6 py-14 sm:px-8">
         <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
-            <a href="/" class="flex items-center gap-2.5">
-              <span class="flex size-7 items-center justify-center rounded-lg bg-stone-950 text-[13px] font-semibold text-stone-50">
-                M
-              </span>
-              <span class="text-[15px] font-semibold tracking-tight">Mattrax</span>
+            <a href="/" class="flex items-center gap-2.5" aria-label="Mattrax home">
+              <img
+                src="/assets/brand/mattrax.png"
+                alt="Mattrax"
+                class="h-4 w-auto"
+                width="922"
+                height="142"
+              />
             </a>
             <p class="mt-4 max-w-xs text-xs leading-5 text-stone-500">
-              Device management infrastructure for Apple, Windows and Android fleets — hosted,
-              self-hosted or embedded in your product.
+              Device management infrastructure for Apple, Windows and Android fleets.
             </p>
             <p class="mt-5 flex items-center gap-2 text-[11px] text-stone-400">
               <span class="size-1.5 rounded-full bg-emerald-500" />
@@ -174,7 +179,6 @@ function Footer() {
             links={[
               { href: "/docs/", label: "Documentation", target: "_self" },
               { href: "/docs/api/", label: "REST API", target: "_self" },
-              { href: "/docs/operations/whitelabel/", label: "Whitelabel", target: "_self" },
               { href: "/docs/migration/", label: "Migration", target: "_self" },
             ]}
           />

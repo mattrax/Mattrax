@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useBeforeLeave, useNavigate } from "@solidjs/router";
 import type { JSX } from "@solidjs/web";
 import {
   createEffect,
@@ -31,7 +31,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  ShieldCheck,
   TriangleAlert,
   X,
 } from "~/components/ui/icons";
@@ -63,15 +62,22 @@ import {
   typeLabel,
 } from "~/lib/policy-designer/catalog";
 import {
-  buildArtifact,
+  PLATFORM_ORDER,
+  buildPolicyBundle,
   catalogDefault,
   defaultValues,
+  draftForPlatform,
+  emptyPolicyDraft,
   isChangedValue,
   isConfiguredValue,
+  parsePolicyDraft,
+  policyPlatforms,
+  policySelectionCount,
   sameValue,
   validateDraft,
   valueKey,
   type Draft,
+  type PolicyDraft,
   type Selection,
   type ValidationIssue,
 } from "~/lib/policy-designer/build";
@@ -122,15 +128,6 @@ const formatValue = (value: unknown) => {
   return String(value);
 };
 
-const relativeTime = (timestamp: number, now: number) => {
-  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
-  if (seconds < 15) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
-};
-
 const templateSets: Record<
   PlatformId,
   Array<{ label: string; description: string; keys: string[] }>
@@ -168,34 +165,28 @@ const templateSets: Record<
   ],
 };
 
-const parseStoredDraft = (value: string | null): Draft | undefined => {
-  if (!value) return undefined;
-  try {
-    const draft = JSON.parse(value) as Draft;
-    return draft.version === 1 && Array.isArray(draft.selections) ? draft : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const serializeDraft = (draft: Draft) =>
-  JSON.stringify({ platform: draft.platform, name: draft.name, selections: draft.selections });
+const serializePolicy = (policy: PolicyDraft) =>
+  JSON.stringify({
+    name: policy.name,
+    platforms: PLATFORM_ORDER.map((platform) => [
+      platform,
+      policy.platforms[platform] ?? [],
+    ]).filter(([, selections]) => (selections as Selection[]).length > 0),
+  });
 
 const SECTION_PAGE = 60;
 const SECTION_PAGE_INCREMENT = 40;
 
 export type PolicyDesignerProps = {
   readonly mode?: "public" | "dashboard";
-  readonly initialDraft?: Draft;
+  readonly initialDraft?: PolicyDraft;
   /** The draft currently persisted on the policy, used for honest save status. */
-  readonly persistedDraft?: Draft;
-  /** Saved designer drafts per platform, so switching platforms rehydrates them. */
-  readonly platformDrafts?: Partial<Record<PlatformId, Draft>>;
+  readonly persistedDraft?: PolicyDraft;
   readonly saving?: boolean;
   readonly saveDisabled?: boolean;
   readonly error?: unknown;
   readonly storageKey?: string;
-  readonly onSave?: (draft: Draft) => Promise<void> | void;
+  readonly onSave?: (draft: PolicyDraft) => Promise<void> | void;
   /** Optional page-level links rendered in the compact top bar. */
   readonly pageActions?: JSX.Element;
   /** Reports platform changes so a parent can warn about saved configurations. */
@@ -209,7 +200,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   // while this editor is mounted.
   const initialDraft = untrack(() => props.initialDraft);
   const storageKey = untrack(() => props.storageKey) ?? "mattrax:designer-autosave";
-  const [platform, setPlatform] = createSignal<PlatformId>(initialDraft?.platform ?? "apple");
+  const initialPlatform = () => policyPlatforms(initialDraft ?? emptyPolicyDraft())[0] ?? "apple";
+  const [platform, setPlatform] = createSignal<PlatformId>(initialPlatform());
   const [name, setName] = createSignal(initialDraft?.name ?? "My MDM policy");
   const [query, setQuery] = createSignal("");
   const [filterQuery, setFilterQuery] = createSignal("");
@@ -235,12 +227,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     apple: [],
     android: [],
     windows: [],
-    ...(initialDraft ? { [initialDraft.platform]: initialDraft.selections } : {}),
+    ...(initialDraft?.platforms ?? {}),
   });
   const [notice, setNotice] = createSignal<string | null>(null);
   const [liveMessage, setLiveMessage] = createSignal("");
-  const [savedAt, setSavedAt] = createSignal<number | null>(initialDraft?.savedAt ?? null);
-  const [clock, setClock] = createSignal(Date.now());
   const [showDeprecated, setShowDeprecated] = createSignal(false);
   const [visibleCount, setVisibleCount] = createSignal(SECTION_PAGE);
   const [collapsedGroups, setCollapsedGroups] = createSignal<Record<string, boolean>>({});
@@ -259,10 +249,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       }
     >
   >({});
-  const [previewOpen, setPreviewOpen] = createSignal(false);
   const [startOverOpen, setStartOverOpen] = createSignal(false);
-  const [pendingPlatform, setPendingPlatform] = createSignal<PlatformId | null>(null);
   const [removeTarget, setRemoveTarget] = createSignal<Selection | null>(null);
+  const [justSaved, setJustSaved] = createSignal(false);
   let requestId = 0;
   const requestIds = new Map<PlatformId, number>();
   let errorRef: HTMLDivElement | undefined;
@@ -274,14 +263,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     },
   );
 
-  const initialSnapshot = untrack(() =>
-    serializeDraft({
-      version: 1,
-      platform: platform(),
-      name: name(),
-      selections: selectionMap()[platform()] ?? [],
-    }),
-  );
+  const initialSnapshot = untrack(() => {
+    const policy = emptyPolicyDraft(name());
+    policy.platforms = { ...selectionMap() };
+    return serializePolicy(policy);
+  });
 
   const data = () => indexes()[platform()] ?? null;
   const catalogError = () => indexErrors()[platform()] ?? null;
@@ -383,25 +369,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     beginLoad(target, true);
   };
 
-  const applyPlatform = (next: PlatformId, discard: boolean) => {
-    if (discard) {
-      const current = platform();
-      setSelectionMap((value) => ({ ...value, [current]: [] }));
-      setInvalidStructured({});
-      setActiveKey(null);
-      setLiveMessage(`Switched to ${platformLabel(next)}. Previous selections were discarded.`);
-    }
-    setPendingPlatform(null);
+  /**
+   * Switching platform is non-destructive: each platform keeps its own
+   * selections in `selectionMap`, so all of them can be edited and exported as
+   * one policy.
+   */
+  const applyPlatform = (next: PlatformId) => {
     setPlatform(next);
-    const saved = props.platformDrafts?.[next];
-    if (saved && (selectionMap()[next]?.length ?? 0) === 0) {
-      setSelectionMap((value) => ({ ...value, [next]: saved.selections }));
-      setActiveKey(saved.selections[0]?.collectionId ?? null);
-      if (saved.selections.length > 0)
-        setNotice(`Loaded the saved ${platformLabel(next)} settings from this policy.`);
-    } else {
-      setActiveKey(null);
-    }
+    setActiveKey(selectionMap()[next]?.[0]?.collectionId ?? null);
     setQuery("");
     setFilterQuery("");
     setFilterMode("all");
@@ -413,11 +388,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const choosePlatform = (next: PlatformId) => {
     if (platform() === next) return;
-    if (selections().length > 0) {
-      setPendingPlatform(next);
-      return;
-    }
-    applyPlatform(next, false);
+    applyPlatform(next);
   };
 
   const selections = () => selectionMap()[platform()] ?? [];
@@ -433,29 +404,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       .catch((error) => setManifestError(errorMessage(error)));
 
     if (!initialDraft) {
-      const stored = parseStoredDraft(localStorage.getItem(storageKey));
+      const stored = parsePolicyDraft(localStorage.getItem(storageKey));
       if (stored) {
-        setPlatform(stored.platform);
+        setPlatform(policyPlatforms(stored)[0] ?? "apple");
         setName(stored.name);
-        setSelectionMap((current) => ({ ...current, [stored.platform]: stored.selections }));
+        setSelectionMap((current) => ({ ...current, ...stored.platforms }));
         setNotice("Restored your last draft.");
       }
     }
     beginLoad(platform());
 
-    const ticker = setInterval(() => setClock(Date.now()), 30_000);
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      const dirty = props.mode === "dashboard" ? dirtySincePolicy() : dirtySinceLoad();
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    if (props.mode === "dashboard") window.addEventListener("beforeunload", beforeUnload);
-
-    return () => {
-      clearInterval(ticker);
-      window.removeEventListener("beforeunload", beforeUnload);
-    };
+    return () => {};
   });
 
   // Autosave drafts so the “design before sign-up” promise is real. The short
@@ -463,24 +422,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(autosaveTimer));
   createEffect(
-    () => ({ platform: platform(), name: name(), selections: selections() }),
+    () => ({ name: name(), selections: selectionMap() }),
     (value) => {
       clearTimeout(autosaveTimer);
       // Do not rewrite the browser draft merely because the editor mounted.
-      // Stamping a fresh `savedAt` on load made stale drafts look newer than
-      // the policy and silently override it.
-      if (serializeDraft({ version: 1, ...value }) === initialSnapshot) return;
+      if (
+        serializePolicy({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
+        initialSnapshot
+      )
+        return;
       autosaveTimer = setTimeout(() => {
         try {
-          const draft: Draft & { savedAt: number } = {
-            version: 1,
-            platform: value.platform,
+          const policy: PolicyDraft = {
+            version: 2,
             name: value.name,
-            selections: value.selections,
+            platforms: value.selections,
             savedAt: Date.now(),
           };
-          localStorage.setItem(storageKey, JSON.stringify(draft));
-          setSavedAt(draft.savedAt);
+          localStorage.setItem(storageKey, JSON.stringify(policy));
         } catch {
           // Storage can be unavailable in private mode; exporting still works.
         }
@@ -494,6 +453,27 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     () => ({ data: data(), active: activeKey(), selections: selections() }),
     (value) => {
       if (!value.data) return;
+      // Drafts written by older builds used `apple:<identifier>` instead of the
+      // catalogue key (`apple/profiles/<identifier>#Name`). Resolve them against
+      // the loaded index rather than showing an empty editor.
+      const normalised = value.selections.map((selection) => {
+        if (
+          value.data!.collections.some((collection) => keyOf(collection) === selection.collectionId)
+        )
+          return selection;
+        const match =
+          value.data!.collections.find(
+            (collection) =>
+              collection.identifier === selection.identifier && collection.name === selection.name,
+          ) ??
+          value.data!.collections.find(
+            (collection) => collection.identifier === selection.identifier,
+          );
+        return match ? { ...selection, collectionId: keyOf(match) } : selection;
+      });
+      if (normalised.some((selection, index) => selection !== value.selections[index]))
+        setSelections(() => normalised);
+
       if (
         value.active &&
         value.data.collections.some((collection) => keyOf(collection) === value.active)
@@ -501,7 +481,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         ensureCollection(collectionIdOf(value.active));
         return;
       }
-      const first = value.selections[0];
+      const first = normalised[0];
       setActiveKey(first ? first.collectionId : null);
       if (first) ensureCollection(collectionIdOf(first.collectionId));
     },
@@ -662,10 +642,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     let total = 0;
     let configured = 0;
     let changed = 0;
+    const selectionPlatform: PlatformId = selection.collectionId.startsWith("windows")
+      ? "windows"
+      : selection.collectionId.startsWith("android")
+        ? "android"
+        : "apple";
     for (const property of selection.properties) {
       if (property.category === "Envelope") continue;
       total += 1;
-      const value = selection.values[valueKey(property, platform())];
+      const value = selection.values[valueKey(property, selectionPlatform)];
       if (isConfiguredValue(value)) configured += 1;
       if (isChangedValue(property, value)) changed += 1;
     }
@@ -688,15 +673,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       }));
   });
 
-  const draft = (): Draft => ({
-    version: 1,
-    platform: platform(),
+  const policyDraft = (): PolicyDraft => ({
+    version: 2,
     name: name(),
-    selections: selections(),
+    platforms: selectionMap(),
   });
 
+  const draft = (): Draft => draftForPlatform(policyDraft(), platform());
+
   const issues = createMemo<ValidationIssue[]>(() => [
-    ...validateDraft(draft()),
+    ...PLATFORM_ORDER.flatMap((target) => validateDraft(draftForPlatform(policyDraft(), target))),
     ...Object.values(invalidStructured()).map((field) => ({
       severity: "error" as const,
       collectionId: field.collectionId,
@@ -717,11 +703,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     let total = 0;
     let configured = 0;
     let changed = 0;
-    for (const selection of selections()) {
-      const stats = statsFor(selection);
-      total += stats.total;
-      configured += stats.configured;
-      changed += stats.changed;
+    for (const target of PLATFORM_ORDER) {
+      for (const selection of selectionMap()[target] ?? []) {
+        const stats = statsFor(selection);
+        total += stats.total;
+        configured += stats.configured;
+        changed += stats.changed;
+      }
     }
     return { total, configured, changed };
   });
@@ -733,24 +721,43 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       (issue) => issue.collectionId === collectionId && issue.propertyKey === propertyKey,
     );
 
-  const dirtySinceLoad = () => serializeDraft(draft()) !== initialSnapshot;
+  const dirtySinceLoad = () => serializePolicy(policyDraft()) !== initialSnapshot;
   const dirtySincePolicy = () =>
     props.persistedDraft === undefined ||
-    serializeDraft(draft()) !== serializeDraft(props.persistedDraft);
+    serializePolicy(policyDraft()) !== serializePolicy(props.persistedDraft);
 
-  const browserSavedLabel = () => {
-    const at = savedAt();
-    if (!at) return "Autosaves in this browser";
-    return `Saved to this browser · ${relativeTime(at, clock())}`;
-  };
+  createEffect(
+    () => [props.error, name(), selectionMap()] as const,
+    ([error, , selections], previous) => {
+      if (error) setJustSaved(false);
+      else if (previous && JSON.stringify(selections) !== JSON.stringify(previous[2]))
+        setJustSaved(false);
+    },
+  );
+
   const saveStatus = () => {
-    if (props.saving) return "Saving to policy…";
-    if (props.mode === "dashboard") {
-      if (!dirtySincePolicy()) return "Saved to policy";
-      return `${browserSavedLabel()} · not saved to policy`;
-    }
-    return browserSavedLabel();
+    if (props.saving) return "Saving…";
+    if (props.mode === "dashboard")
+      return dirtySincePolicy() ? "Unsaved changes" : "Saved to policy";
+    return dirtySinceLoad() ? "Unsaved draft" : "Draft saved";
   };
+
+  // In-app navigation goes through the router's guard; closing the tab or a
+  // hard reload falls back to the browser's own prompt.
+  useBeforeLeave((event) => {
+    if (props.mode !== "dashboard" || props.saving || justSaved() || !dirtySincePolicy()) return;
+    event.preventDefault();
+    if (window.confirm("You have unsaved policy changes. Leave without saving?")) event.retry(true);
+  });
+  onSettled(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (props.mode !== "dashboard" || !dirtySincePolicy()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    if (props.mode === "dashboard") window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  });
 
   const addCollection = (collection: Collection) => {
     const key = keyOf(collection);
@@ -911,33 +918,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   };
 
   const download = () => {
-    if (selections().length === 0) return;
+    if (policySelectionCount(policyDraft()) === 0) return;
     if (blockingIssues().length > 0) {
       setIssuesOpen(true);
-      setNotice(
-        `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before exporting.`,
-      );
       return;
     }
     try {
-      const artifact = buildArtifact(draft());
-      const blob = new Blob([artifact.content], { type: artifact.contentType });
+      const bundle = buildPolicyBundle(policyDraft());
+      if (!bundle) return;
+      const blob = new Blob([bundle.content as BlobPart], { type: bundle.contentType });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = artifact.fileName;
+      anchor.download = bundle.fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice(`Exported ${artifact.fileName}`);
     } catch (error) {
       setNotice(`Could not export the policy: ${errorMessage(error)}`);
     }
   };
 
   const deploy = () => {
-    if (selections().length === 0) return;
+    if (policySelectionCount(policyDraft()) === 0) return;
     if (blockingIssues().length > 0) {
       setIssuesOpen(true);
       setNotice(
@@ -946,7 +950,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       return;
     }
     try {
-      localStorage.setItem("mattrax:designer-draft", JSON.stringify(draft()));
+      localStorage.setItem("mattrax:designer-draft", JSON.stringify(policyDraft()));
     } catch {
       setNotice("Could not save the draft in this browser. Export the artifact instead.");
       return;
@@ -957,12 +961,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const canSave = () =>
     Boolean(props.onSave) &&
-    selections().length > 0 &&
+    policySelectionCount(policyDraft()) > 0 &&
     !props.saveDisabled &&
     blockingIssues().length === 0;
   const disabledHint = () => {
     if (props.saveDisabled) return "Confirm the replacement option above before saving.";
-    if (selections().length === 0) return "Add a template or a setting to get started.";
+    if (policySelectionCount(policyDraft()) === 0)
+      return "Add a template or a setting to get started.";
     if (blockingIssues().length > 0)
       return `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before saving.`;
     return null;
@@ -970,7 +975,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const save = () => {
     if (!canSave()) return;
-    void props.onSave?.(draft());
+    setJustSaved(true);
+    void props.onSave?.(policyDraft());
   };
 
   const platformLabel = (id: PlatformId | null | undefined) => {
@@ -1079,11 +1085,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <button
             type="button"
             aria-pressed={platform() === item.id ? "true" : "false"}
-            title={
-              selections().length > 0 && platform() !== item.id
-                ? `Switching platforms discards the ${selections().length} collection${selections().length === 1 ? "" : "s"} in this draft`
-                : undefined
-            }
+            title={`Edit ${item.short} settings`}
             onClick={() => choosePlatform(item.id)}
             class={cn(
               "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none",
@@ -1093,6 +1095,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             )}
           >
             {item.short}
+            <Show when={(selectionMap()[item.id]?.length ?? 0) > 0}>
+              <span class="ml-1 tabular-nums opacity-60">{selectionMap()[item.id]!.length}</span>
+            </Show>
           </button>
         )}
       </For>
@@ -1125,7 +1130,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       <div class="shrink-0 border-b border-border px-4 py-3">
         <h2 class="text-[13px] font-semibold text-foreground">Summary</h2>
         <p class="mt-0.5 text-[11px] text-muted-foreground">
-          {platformName()} · {selections().length} collection{selections().length === 1 ? "" : "s"}
+          {policyPlatforms(policyDraft()).length} platform
+          {policyPlatforms(policyDraft()).length === 1 ? "" : "s"} ·{" "}
+          {policySelectionCount(policyDraft())} collection
+          {policySelectionCount(policyDraft()) === 1 ? "" : "s"}
         </p>
       </div>
       <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
@@ -1153,7 +1161,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               Sets
             </dt>
             <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-              {selections().length}
+              {policySelectionCount(policyDraft())}
             </dd>
           </div>
           <div class="bg-card px-2 py-2">
@@ -1231,54 +1239,77 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </Show>
         </div>
 
-        <div class="space-y-1.5">
+        <div class="space-y-3">
           <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Collections
           </h3>
           <Show
-            when={selections().length > 0}
+            when={policySelectionCount(policyDraft()) > 0}
             fallback={
               <p class="text-[11px] text-muted-foreground">
                 Add a collection from the catalogue or start from a baseline.
               </p>
             }
           >
-            <ul class="space-y-0.5">
-              <For each={selections()}>
-                {(selection) => {
-                  const stats = () => statsFor(selection);
-                  return (
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          selectCollection(selection.collectionId);
-                          setSummaryOpen(false);
+            <For each={PLATFORM_ORDER}>
+              {(target) => (
+                <Show when={(selectionMap()[target]?.length ?? 0) > 0}>
+                  <div class="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (platform() !== target) choosePlatform(target);
+                        setSummaryOpen(false);
+                      }}
+                      class={cn(
+                        "flex w-full items-center justify-between gap-2 rounded px-1 text-left text-[10px] font-medium uppercase tracking-wide transition-colors hover:text-foreground",
+                        platform() === target ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      <span>{platformLabel(target)}</span>
+                      <span class="tabular-nums">{selectionMap()[target]!.length}</span>
+                    </button>
+                    <ul class="space-y-0.5">
+                      <For each={selectionMap()[target]}>
+                        {(selection) => {
+                          const stats = () => statsFor(selection);
+                          return (
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (platform() !== target) choosePlatform(target);
+                                  selectCollection(selection.collectionId);
+                                  setSummaryOpen(false);
+                                }}
+                                class={cn(
+                                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:outline-none",
+                                  activeKey() === selection.collectionId && "bg-muted",
+                                )}
+                              >
+                                <span class="min-w-0 flex-1 truncate text-foreground">
+                                  {selection.name}
+                                </span>
+                                <span class="shrink-0 tabular-nums text-muted-foreground">
+                                  {stats().changed}/{stats().total}
+                                </span>
+                              </button>
+                            </li>
+                          );
                         }}
-                        class={cn(
-                          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:outline-none",
-                          activeKey() === selection.collectionId && "bg-muted",
-                        )}
-                      >
-                        <span class="min-w-0 flex-1 truncate text-foreground">
-                          {selection.name}
-                        </span>
-                        <span class="shrink-0 tabular-nums text-muted-foreground">
-                          {stats().changed}/{stats().total}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                }}
-              </For>
-            </ul>
+                      </For>
+                    </ul>
+                  </div>
+                </Show>
+              )}
+            </For>
           </Show>
         </div>
 
         <div class="space-y-2 rounded-lg border border-border bg-muted/30 p-2.5">
           <p class="text-[11px] leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
-              ? "Saving replaces this policy's designer configuration. Advanced-editor settings need explicit confirmation."
+              ? "Saving replaces this policy's designer configuration. Policy editor settings need explicit confirmation."
               : "Export the artifact now, or deploy it into a Mattrax tenant."}
           </p>
           <button
@@ -1287,7 +1318,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             disabled={selections().length === 0}
             class="text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Start over
+            Clear {platformName()} settings
           </button>
         </div>
       </div>
@@ -1305,21 +1336,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-background/85 backdrop-blur">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
+          <div class="shrink-0">{props.pageActions}</div>
+          <span class="hidden h-4 w-px bg-border sm:block" aria-hidden="true" />
           <div class="flex min-w-0 items-center gap-2.5">
-            <span class="hidden size-7 shrink-0 items-center justify-center rounded-lg border border-brand/25 bg-brand-muted text-brand sm:inline-flex">
-              <ShieldCheck class="size-4" />
-            </span>
             <div class="min-w-0">
               <h2 class="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
                 {name() || "Untitled policy"}
               </h2>
               <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
-                <span class="truncate">{platformName()}</span>
+                <span class="truncate">
+                  {policyPlatforms(policyDraft()).length} platform
+                  {policyPlatforms(policyDraft()).length === 1 ? "" : "s"}
+                </span>
                 <span class="text-muted-foreground/40" aria-hidden="true">
                   ·
                 </span>
                 <span class="tabular-nums">
-                  {manifest()?.stats[platform()]?.properties.toLocaleString() ?? "…"} settings
+                  {policySelectionCount(policyDraft())} collection
+                  {policySelectionCount(policyDraft()) === 1 ? "" : "s"}
                 </span>
                 <span class="text-muted-foreground/40" aria-hidden="true">
                   ·
@@ -1348,7 +1382,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <div class="order-3 w-full sm:order-none sm:w-auto">{platformPills()}</div>
 
           <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-            {props.pageActions}
             <span class="hidden xl:inline-flex">{issuesButton()}</span>
             <Button
               size="sm"
@@ -1362,20 +1395,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setPreviewOpen(true)}
-                disabled={selections().length === 0}
-              >
-                Preview
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
                 onClick={download}
-                disabled={selections().length === 0 || blockingIssues().length > 0}
+                disabled={policySelectionCount(policyDraft()) === 0 || blockingIssues().length > 0}
                 title={
                   blockingIssues().length > 0
                     ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before exporting`
-                    : selections().length === 0
+                    : policySelectionCount(policyDraft()) === 0
                       ? "Add a setting to enable export"
                       : undefined
                 }
@@ -1388,7 +1413,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Button
                     size="sm"
                     onClick={deploy}
-                    disabled={selections().length === 0 || blockingIssues().length > 0}
+                    disabled={
+                      policySelectionCount(policyDraft()) === 0 || blockingIssues().length > 0
+                    }
                     title={
                       blockingIssues().length > 0
                         ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
@@ -2202,7 +2229,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           size="sm"
           variant="outline"
           onClick={download}
-          disabled={selections().length === 0 || blockingIssues().length > 0}
+          disabled={policySelectionCount(policyDraft()) === 0 || blockingIssues().length > 0}
         >
           Export
         </Button>
@@ -2212,7 +2239,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             <Button
               size="sm"
               onClick={deploy}
-              disabled={selections().length === 0 || blockingIssues().length > 0}
+              disabled={policySelectionCount(policyDraft()) === 0 || blockingIssues().length > 0}
             >
               Deploy
             </Button>
@@ -2228,45 +2255,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       <p role="status" aria-live="polite" class="sr-only">
         {liveMessage()}
       </p>
-
-      {/* Destructive platform switch */}
-      <Dialog
-        open={pendingPlatform() !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPlatform(null);
-        }}
-      >
-        <DialogContent class="max-w-md rounded-xl p-5">
-          <DialogHeader>
-            <DialogTitle class="text-base">
-              Switch to {platformLabel(pendingPlatform())}?
-            </DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-              This draft has {selections().length} {platformName()} collection
-              {selections().length === 1 ? "" : "s"}. Switching platforms replaces the draft with a
-              new {platformLabel(pendingPlatform())} draft; the current selections will be
-              discarded.
-              {props.mode === "dashboard"
-                ? " Saved policy settings are not deleted until you save."
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter class="mt-4 flex-row justify-end gap-2 bg-transparent p-0">
-            <Button variant="outline" onClick={() => setPendingPlatform(null)}>
-              Keep {platformName()}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const next = pendingPlatform();
-                if (next) applyPlatform(next, true);
-              }}
-            >
-              Switch and discard
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Remove a collection */}
       <Dialog
@@ -2378,39 +2366,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </ul>
           <DialogFooter class="mt-4 flex-row justify-end bg-transparent p-0">
             <Button variant="outline" onClick={() => setIssuesOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Artifact preview */}
-      <Dialog open={previewOpen()} onOpenChange={setPreviewOpen}>
-        <DialogContent class="max-h-[85vh] max-w-3xl overflow-hidden rounded-xl p-5">
-          <DialogHeader>
-            <DialogTitle class="text-base">Artifact preview</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] text-muted-foreground">
-              {(() => {
-                try {
-                  const artifact = buildArtifact(draft());
-                  return `${artifact.fileName} · ${artifact.contentType}`;
-                } catch {
-                  return "The artifact cannot be generated yet.";
-                }
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          <pre class="mt-3 max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground">
-            {(() => {
-              try {
-                return buildArtifact(draft()).content;
-              } catch (error) {
-                return errorMessage(error);
-              }
-            })()}
-          </pre>
-          <DialogFooter class="mt-3 flex-row justify-end bg-transparent p-0">
-            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
               Close
             </Button>
           </DialogFooter>

@@ -1,27 +1,17 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createSignal, onSettled, Show } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 import { QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
-import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
-import type { PlatformId } from "~/lib/policy-designer/catalog";
-
-const parseDraft = (value: unknown): Draft | undefined => {
-  if (!value) return undefined;
-  let parsed = value;
-  if (typeof value === "string") {
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      return undefined;
-    }
-  }
-  const draft = parsed as Draft | undefined;
-  return draft?.version === 1 && Array.isArray(draft.selections) ? draft : undefined;
-};
+import {
+  emptyPolicyDraft,
+  parsePolicyDraft,
+  policyToConfigurations,
+  type PolicyDraft,
+} from "~/lib/policy-designer/build";
 
 const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
@@ -38,17 +28,6 @@ const isDesignerDeclaration = (kind: string, value: unknown) =>
 const isDesignerConfiguration = (kind: string, value: unknown) =>
   CUSTOM_DESIGNER_KINDS.has(kind) || isDesignerDeclaration(kind, value);
 
-const platformForKind = (kind: string): PlatformId | undefined => {
-  if (kind === "mttx.apple.custom.designer" || kind.startsWith("mttx.apple.declaration."))
-    return "apple";
-  if (kind === "mttx.windows.custom.designer") return "windows";
-  if (kind === "mttx.android.policy.designer") return "android";
-  return undefined;
-};
-
-const platformLabel = (platform: PlatformId) =>
-  platform.charAt(0).toUpperCase() + platform.slice(1);
-
 export default function PolicyDesignerPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -62,8 +41,6 @@ export default function PolicyDesignerPage() {
   const configurations = () => row()?.configurations ?? {};
   const [ready, setReady] = createSignal(false);
   const [replaceExisting, setReplaceExisting] = createSignal(false);
-  const [replaceOtherPlatforms, setReplaceOtherPlatforms] = createSignal(false);
-  const [activePlatform, setActivePlatform] = createSignal<PlatformId>("apple");
 
   /**
    * The designer keeps its source draft in the policy configuration alongside
@@ -72,10 +49,10 @@ export default function PolicyDesignerPage() {
    * localStorage copy, so fall back to that first.
    */
   const configurationDraft = () => {
-    let latest: Draft | undefined;
+    let latest: PolicyDraft | undefined;
     for (const [kind, value] of Object.entries(configurations())) {
       if (!isDesignerConfiguration(kind, value)) continue;
-      const draft = parseDraft(isRecord(value) ? value.draft : undefined);
+      const draft = parsePolicyDraft(isRecord(value) ? value.draft : undefined);
       if (!draft) continue;
       if (!latest || (draft.savedAt ?? 0) > (latest.savedAt ?? 0)) latest = draft;
     }
@@ -84,13 +61,9 @@ export default function PolicyDesignerPage() {
   const localStorageDraft = () =>
     typeof localStorage === "undefined"
       ? undefined
-      : parseDraft(localStorage.getItem(storageKey()));
+      : parsePolicyDraft(localStorage.getItem(storageKey()));
 
-  /**
-   * Prefer whichever draft is actually newer. The autosave effect does not
-   * rewrite the browser copy on mount, so a stale local draft can no longer
-   * pose as newer than the policy and silently overwrite it.
-   */
+  /** Prefer whichever saved copy is actually newer. */
   const designerDraft = () => {
     const local = localStorageDraft();
     const saved = configurationDraft();
@@ -99,69 +72,25 @@ export default function PolicyDesignerPage() {
     return (local.savedAt ?? 0) > (saved.savedAt ?? 0) ? local : saved;
   };
 
-  /** Rehydrate the saved draft for a platform when switching back to it. */
-  const platformDrafts = () => {
-    const drafts: Partial<Record<PlatformId, Draft>> = {};
-    for (const [kind, value] of Object.entries(configurations())) {
-      if (!isDesignerConfiguration(kind, value)) continue;
-      const draft = parseDraft(isRecord(value) ? value.draft : undefined);
-      if (!draft) continue;
-      const platform = draft.platform ?? platformForKind(kind);
-      if (!platform) continue;
-      const existing = drafts[platform];
-      if (!existing || (draft.savedAt ?? 0) > (existing.savedAt ?? 0)) drafts[platform] = draft;
-    }
-    return drafts;
-  };
-
   const foreignConfigurations = () =>
     Object.entries(configurations())
       .filter(([kind, value]) => !isDesignerConfiguration(kind, value))
       .map(([kind]) => kind);
-  const blocked = () => foreignConfigurations().length > 0 && !replaceExisting();
-
-  /** Platforms with a designer configuration stored on the policy. */
-  const savedDesignerPlatforms = () => {
-    const platforms = new Set<PlatformId>();
-    for (const [kind, value] of Object.entries(configurations())) {
-      if (!isDesignerConfiguration(kind, value)) continue;
-      const draft = parseDraft(isRecord(value) ? value.draft : undefined);
-      const platform = draft?.platform ?? platformForKind(kind);
-      if (platform) platforms.add(platform);
-    }
-    return [...platforms];
-  };
-  const otherPlatforms = () =>
-    savedDesignerPlatforms().filter((platform) => platform !== activePlatform());
-
-  createEffect(
-    () => designerDraft(),
-    (draft) => {
-      if (draft) setActivePlatform(draft.platform);
-    },
-  );
 
   onSettled(() => {
     setReady(true);
   });
 
   const save = useMutation(() => ({
-    mutationFn: (draft: Draft) => {
-      const next = artifactToConfigurations(draft);
-      // Designer declaration configurations are replaced as a set; delete the
-      // ones that disappeared. Advanced-editor configurations are only deleted
-      // after the explicit replacement confirmation. Designer configurations
-      // saved for another platform are kept unless the user explicitly opts in
-      // to replacing them, so a platform switch cannot silently delete them.
+    mutationFn: (draft: PolicyDraft) => {
+      const next = policyToConfigurations(draft);
+      // Designer configurations are replaced as a set. Advanced-editor
+      // configurations are only deleted after the explicit replacement
+      // confirmation, so saving the designer cannot silently drop them.
       for (const [kind, value] of Object.entries(configurations())) {
         if (kind in next) continue;
-        if (isDesignerDeclaration(kind, value) || CUSTOM_DESIGNER_KINDS.has(kind)) {
-          const platform = platformForKind(kind);
-          if (platform && platform !== draft.platform && !replaceOtherPlatforms()) continue;
-          next[kind] = null;
-        } else if (replaceExisting() && !isDesignerConfiguration(kind, value)) {
-          next[kind] = null;
-        }
+        if (isDesignerConfiguration(kind, value)) next[kind] = null;
+        else if (replaceExisting()) next[kind] = null;
       }
       return enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: row()?.name,
@@ -179,26 +108,16 @@ export default function PolicyDesignerPage() {
   }));
 
   const pageActions = () => (
-    <>
-      <Button
-        as="a"
-        size="icon-sm"
-        variant="outline"
-        href={`/t/${params.tenantId}/policies/${params.policyId}`}
-        aria-label="Back to policy"
-        title="Back to policy"
-      >
-        <ArrowLeft class="size-3.5" />
-      </Button>
-      <Button
-        as="a"
-        size="sm"
-        variant="outline"
-        href={`/t/${params.tenantId}/policies/${params.policyId}/editor`}
-      >
-        Advanced editor
-      </Button>
-    </>
+    <Button
+      as="a"
+      size="sm"
+      variant="ghost"
+      href={`/t/${params.tenantId}/policies/${params.policyId}`}
+      class="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeft class="size-3.5" />
+      Back to policy
+    </Button>
   );
 
   return (
@@ -224,12 +143,11 @@ export default function PolicyDesignerPage() {
         }
       >
         <Show when={foreignConfigurations().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning-foreground sm:px-4">
+          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[12px] text-foreground sm:px-4">
             <div class="min-w-0 flex-1">
-              <p class="font-semibold">This policy already has settings</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-warning-foreground/80">
-                Saving from the designer replaces configurations created in the advanced editor.
-                Export your artifact first, or confirm the replacement.
+              <p class="font-semibold">This policy also has settings from the policy editor</p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                Saving here updates the designer configurations and keeps them.
               </p>
             </div>
             <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
@@ -239,29 +157,7 @@ export default function PolicyDesignerPage() {
                 checked={replaceExisting()}
                 onChange={(event) => setReplaceExisting(event.currentTarget.checked)}
               />
-              Replace the existing configurations when I save
-            </label>
-          </div>
-        </Show>
-
-        <Show when={otherPlatforms().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[12px] text-foreground sm:px-4">
-            <div class="min-w-0 flex-1">
-              <p class="font-semibold">This policy has a saved designer configuration</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                {otherPlatforms().map(platformLabel).join(" and ")} settings are stored on this
-                policy. Saving this {platformLabel(activePlatform())} draft keeps them unless you
-                choose to replace them.
-              </p>
-            </div>
-            <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
-              <input
-                type="checkbox"
-                class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand)] sm:mt-0"
-                checked={replaceOtherPlatforms()}
-                onChange={(event) => setReplaceOtherPlatforms(event.currentTarget.checked)}
-              />
-              Replace saved designer settings from other platforms when I save
+              Also replace the policy editor configurations
             </label>
           </div>
         </Show>
@@ -269,21 +165,12 @@ export default function PolicyDesignerPage() {
         <PolicyDesigner
           mode="dashboard"
           pageActions={pageActions()}
-          initialDraft={
-            designerDraft() ?? {
-              version: 1,
-              platform: "apple",
-              name: row()?.name ?? "My MDM policy",
-              selections: [],
-            }
-          }
-          persistedDraft={configurationDraft()}
-          platformDrafts={platformDrafts()}
+          initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
+          persistedDraft={configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
           storageKey={storageKey()}
           saving={save.isPending}
-          saveDisabled={blocked()}
+          saveDisabled={false}
           error={save.error}
-          onPlatformChange={setActivePlatform}
           onSave={(draft) => {
             void save.mutate(draft);
           }}

@@ -1,4 +1,5 @@
 import { collectionProperties, type Collection, type PlatformId, type Property } from "./catalog";
+import { buildZip } from "./zip";
 
 export type Selection = {
   collectionId: string;
@@ -547,4 +548,150 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
     };
   }
   return {};
+};
+
+/**
+ * A policy can target several operating systems at once. The v1 draft only
+ * carried one platform; v2 keeps a selection list per platform so switching
+ * tabs never discards work and one export can bundle every artifact.
+ */
+export type PolicyDraft = {
+  version: 2;
+  name: string;
+  platforms: Partial<Record<PlatformId, Selection[]>>;
+  savedAt?: number;
+};
+
+export const PLATFORM_ORDER: PlatformId[] = ["apple", "windows", "android"];
+
+export const emptyPolicyDraft = (name = "My policy"): PolicyDraft => ({
+  version: 2,
+  name,
+  platforms: { apple: [], windows: [], android: [] },
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Accept both the persisted v1 draft (one platform) and the multi-platform v2
+ * draft. Anything that cannot be trusted is ignored rather than half-loaded.
+ */
+export const parsePolicyDraft = (value: unknown): PolicyDraft | undefined => {
+  if (!value) return undefined;
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!isRecord(parsed)) return undefined;
+  const name = typeof parsed.name === "string" ? parsed.name : "My policy";
+  const savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : undefined;
+  if (parsed.version === 1 && Array.isArray(parsed.selections)) {
+    const platform = parsed.platform;
+    if (platform !== "apple" && platform !== "windows" && platform !== "android") return undefined;
+    return {
+      version: 2,
+      name,
+      platforms: { [platform]: parsed.selections as Selection[] },
+      ...(savedAt ? { savedAt } : {}),
+    };
+  }
+  if (parsed.version !== 2 || !isRecord(parsed.platforms)) return undefined;
+  const platforms: Partial<Record<PlatformId, Selection[]>> = {};
+  for (const platform of PLATFORM_ORDER) {
+    const selections = parsed.platforms[platform];
+    if (Array.isArray(selections)) platforms[platform] = selections as Selection[];
+  }
+  return { version: 2, name, platforms, ...(savedAt ? { savedAt } : {}) };
+};
+
+export const policyPlatforms = (policy: PolicyDraft): PlatformId[] =>
+  PLATFORM_ORDER.filter((platform) => (policy.platforms[platform]?.length ?? 0) > 0);
+
+export const policySelectionCount = (policy: PolicyDraft) =>
+  PLATFORM_ORDER.reduce((total, platform) => total + (policy.platforms[platform]?.length ?? 0), 0);
+
+export const draftForPlatform = (policy: PolicyDraft, platform: PlatformId): Draft => ({
+  version: 1,
+  platform,
+  name: policy.name,
+  selections: policy.platforms[platform] ?? [],
+  ...(policy.savedAt ? { savedAt: policy.savedAt } : {}),
+});
+
+/** Every artifact represented by the policy, in platform order. */
+export const buildArtifacts = (policy: PolicyDraft): ExportArtifact[] =>
+  policyPlatforms(policy).map((platform) => buildArtifact(draftForPlatform(policy, platform)));
+
+export type PolicyBundle = {
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly content: string | Uint8Array;
+  readonly artifactCount: number;
+};
+
+/**
+ * A single-platform policy exports its native artifact; a multi-platform policy
+ * exports one ZIP so the operator gets everything in one download.
+ */
+export const buildPolicyBundle = (policy: PolicyDraft): PolicyBundle | null => {
+  const artifacts = buildArtifacts(policy);
+  if (artifacts.length === 0) return null;
+  if (artifacts.length === 1) {
+    const artifact = artifacts[0]!;
+    return {
+      fileName: artifact.fileName,
+      contentType: artifact.contentType,
+      content: artifact.content,
+      artifactCount: 1,
+    };
+  }
+  const base = identifierSafe(policy.name || "policy");
+  return {
+    fileName: `${base}.zip`,
+    contentType: "application/zip",
+    content: buildZip(
+      artifacts.map((artifact) => ({ name: artifact.fileName, content: artifact.content })),
+    ),
+    artifactCount: artifacts.length,
+  };
+};
+
+/** Which configuration row carries the full multi-platform draft. */
+const draftAnchor = (
+  platform: PlatformId,
+  configurations: Record<string, unknown>,
+): string | undefined => {
+  if (platform === "windows")
+    return "mttx.windows.custom.designer" in configurations
+      ? "mttx.windows.custom.designer"
+      : undefined;
+  if (platform === "android")
+    return "mttx.android.policy.designer" in configurations
+      ? "mttx.android.policy.designer"
+      : undefined;
+  if ("mttx.apple.custom.designer" in configurations) return "mttx.apple.custom.designer";
+  return Object.keys(configurations).find((kind) => kind.startsWith("mttx.apple.declaration."));
+};
+
+/** Build the configuration map for every platform in one policy. */
+export const policyToConfigurations = (policy: PolicyDraft): Record<string, unknown> => {
+  const savedAt = policy.savedAt ?? Date.now();
+  const snapshot: PolicyDraft = { ...policy, savedAt };
+  const configurations: Record<string, unknown> = {};
+  for (const platform of policyPlatforms(policy)) {
+    Object.assign(configurations, artifactToConfigurations(draftForPlatform(policy, platform)));
+  }
+  for (const platform of PLATFORM_ORDER) {
+    const kind = draftAnchor(platform, configurations);
+    if (!kind) continue;
+    const current = configurations[kind];
+    if (!isRecord(current)) continue;
+    configurations[kind] = { ...current, draft: snapshot };
+  }
+  return configurations;
 };

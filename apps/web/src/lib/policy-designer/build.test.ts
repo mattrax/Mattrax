@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   artifactToConfigurations,
+  buildPolicyBundle,
   buildWindowsNodes,
   catalogDefault,
+  parsePolicyDraft,
+  policyToConfigurations,
   validateDraft,
   type Draft,
   type Selection,
@@ -142,5 +145,60 @@ describe("artifactToConfigurations", () => {
     const forward = Object.keys(artifactToConfigurations(draft("apple", [first, second]))).sort();
     const reversed = Object.keys(artifactToConfigurations(draft("apple", [second, first]))).sort();
     expect(forward).toEqual(reversed);
+  });
+});
+
+describe("multi-platform policy drafts", () => {
+  const appleSelection = {
+    ...selection([], {}),
+    collectionId: "apple/profiles/com.apple.universalaccess#Accessibility",
+    identifier: "com.apple.universalaccess",
+    kind: "profile" as const,
+    surface: "profiles",
+    name: "Accessibility",
+  };
+  const windowsSelection = {
+    ...selection([], {}),
+    collectionId: "windows/settings/bitlocker#BitLocker",
+    identifier: "bitlocker",
+    kind: "csp" as const,
+    surface: "settings",
+    name: "BitLocker",
+  };
+  const policy = {
+    version: 2 as const,
+    name: "Cross platform",
+    platforms: { apple: [appleSelection], windows: [windowsSelection] },
+  };
+
+  it("upgrades a v1 draft without losing its selections", () => {
+    const parsed = parsePolicyDraft(draft("apple", [appleSelection]));
+    expect(parsed?.version).toBe(2);
+    expect(parsed?.platforms.apple).toEqual([appleSelection]);
+  });
+
+  it("builds one configuration per platform and keeps the full draft", () => {
+    const configurations = policyToConfigurations(policy);
+    expect(Object.keys(configurations).sort()).toEqual([
+      "mttx.apple.custom.designer",
+      "mttx.windows.custom.designer",
+    ]);
+    for (const value of Object.values(configurations)) {
+      expect(parsePolicyDraft((value as { draft?: unknown }).draft)).toMatchObject({
+        version: 2,
+        platforms: { apple: [appleSelection], windows: [windowsSelection] },
+      });
+    }
+  });
+
+  it("bundles multiple artifacts into a zip", () => {
+    const bundle = buildPolicyBundle(policy);
+    expect(bundle?.contentType).toBe("application/zip");
+    expect(bundle?.artifactCount).toBe(2);
+    const text = new TextDecoder().decode(bundle!.content as Uint8Array);
+    expect(text).toContain("Cross-platform.mobileconfig");
+    expect(text).toContain("Cross-platform.syncml.xml");
+    // A store-only ZIP starts with two local file headers.
+    expect(bundle?.content).toBeInstanceOf(Uint8Array);
   });
 });

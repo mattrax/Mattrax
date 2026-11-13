@@ -3375,6 +3375,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.post("extractMobileconfig", "/v1/policy/extract-mobileconfig", {
+      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      payload: Schema.Struct({ mobileconfig: Schema.String }),
+      success: Schema.Struct({ plist: Schema.String }),
+    }),
+  )
+  .add(
     HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
       error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
       payload: Schema.Struct({ mobileconfig: Schema.String }),

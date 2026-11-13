@@ -82,12 +82,13 @@ export default function ResetPasswordPage() {
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="inline-flex items-center gap-2 mb-6">
-            <span class="flex items-center gap-2.5">
-              <span class="flex size-7 items-center justify-center rounded-md border border-white/[0.14] bg-white/[0.045] text-[11px] font-semibold text-foreground">
-                M
-              </span>
-              <span class="text-[15px] font-semibold tracking-[-0.01em]">Mattrax</span>
-            </span>
+            <img
+              src="/assets/brand/mattrax-white.png"
+              alt="Mattrax"
+              class="h-4 w-auto"
+              width="922"
+              height="142"
+            />
           </a>
           <h1 class="text-2xl font-semibold text-stone-900">Choose a new password</h1>
           <p class="text-stone-500 text-sm mt-1">Must be at least 15 characters</p>

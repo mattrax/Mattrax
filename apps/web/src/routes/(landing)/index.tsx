@@ -58,7 +58,7 @@ const features = [
   {
     icon: TerminalIcon,
     title: "An automation surface",
-    body: "A typed REST API with OpenAPI and Scalar, HMAC-signed webhooks and a TypeScript management contract for whitelabel gateways.",
+    body: "A typed REST API with OpenAPI and Scalar, scoped tokens and HMAC-signed webhooks.",
   },
 ];
 
@@ -74,16 +74,8 @@ const faqs = [
     a: "No. Mattrax derives device health from enrollment, declaration, disk, FileVault and battery signals. It is not a compliance policy engine and does not integrate with Conditional Access. Keep Intune or another signal if you depend on that.",
   },
   {
-    q: "Can I self-host the full product?",
-    a: "Yes. Cloud runs as two Cloudflare Workers with MySQL, R2 and Email Sending. The self-hosting guide covers Hyperdrive, secrets, migrations, deployment and operations.",
-  },
-  {
     q: "Is Android production ready?",
     a: "Android Enterprise delivery is implemented behind deployment credentials, but signup, Pub/Sub, enrollment, policy convergence and commands have not been validated against real devices in this repository. Treat it as preview.",
-  },
-  {
-    q: "Can I embed this in my own product?",
-    a: "Yes. The whitelabel gateway terminates Apple and Windows protocols and calls your backend over a signed TypeScript/HTTP management contract. It has no tenants, dashboard or device database of its own.",
   },
 ];
 
@@ -140,7 +132,7 @@ function Hero() {
                 <ArrowIcon />
               </Button>
             </a>
-            <a href="/docs/">
+            <a href="/docs/" target="_self">
               <Button
                 variant="outline"
                 size="lg"
@@ -311,7 +303,7 @@ function Platforms() {
           </p>
         </div>
 
-        <div class="mt-12 grid gap-4 lg:grid-cols-3">
+        <div class="mt-12 grid gap-4 lg:grid-cols-2">
           <For each={platforms}>
             {(platform) => (
               <a
@@ -417,18 +409,10 @@ function Developer() {
           </div>
 
           <div class="mt-8 flex flex-wrap gap-3">
-            <a href="/docs/api/">
+            <a href="/docs/api/" target="_self">
               <Button class="rounded-full bg-stone-50 px-6 text-stone-900 hover:bg-white">
                 Explore the API
                 <ArrowIcon />
-              </Button>
-            </a>
-            <a href="/docs/operations/whitelabel/">
-              <Button
-                variant="outline"
-                class="rounded-full border-stone-700 bg-transparent px-6 text-stone-300 hover:bg-stone-900 hover:text-stone-50"
-              >
-                Whitelabel docs
               </Button>
             </a>
           </div>
@@ -524,6 +508,7 @@ function Migration() {
 
             <a
               href="/docs/migration/"
+              target="_self"
               class="mt-8 inline-flex items-center gap-2 text-sm font-medium text-stone-900 hover:text-stone-600"
             >
               Read the migration guide
@@ -571,7 +556,6 @@ function Enterprise() {
     "Audit search, CSV/JSON export and webhooks",
     "Scheduled tenant backups and export/import",
     "Scoped API tokens with optional tenant binding",
-    "Self-hosted Cloud or whitelabel gateway",
   ];
 
   return (
@@ -637,12 +621,12 @@ function Pricing() {
             Start small. Keep the exit.
           </h2>
           <p class="mt-5 text-sm leading-6 text-stone-500 sm:text-base">
-            Cloud is free during alpha. Self-host it on your own Cloudflare account, or run the
-            whitelabel gateway inside your product.
+            Cloud is free during alpha. Every plan includes the dashboard, API and MDM endpoints for
+            Apple, Windows and Android.
           </p>
         </div>
 
-        <div class="mt-12 grid gap-4 lg:grid-cols-3">
+        <div class="mt-12 grid gap-4 lg:grid-cols-2">
           <PriceCard
             name="Cloud"
             price="Free"
@@ -658,31 +642,12 @@ function Pricing() {
             ]}
           />
           <PriceCard
-            name="Self-hosted"
-            price="Your infra"
-            body="The full product on your Cloudflare account."
-            cta="Read the guide"
-            href="/docs/operations/self-hosting"
-            highlighted
-            features={[
-              "Dashboard, API and MDM",
-              "MySQL, R2 and Email Sending",
-              "SSO, SCIM, audit and backups",
-              "You own the data and secrets",
-            ]}
-          />
-          <PriceCard
             name="Enterprise"
             price="Custom"
-            body="Whitelabel, procurement and support."
+            body="Procurement, security review and support."
             cta="Contact us"
             href="mailto:hello@mattrax.app"
-            features={[
-              "Whitelabel gateway",
-              "Security review support",
-              "Migration planning",
-              "Priority support",
-            ]}
+            features={["Security review support", "Migration planning", "Priority support"]}
           />
         </div>
       </div>
@@ -824,7 +789,7 @@ function FinalCta() {
                 <ArrowIcon />
               </Button>
             </a>
-            <a href="/docs/getting-started/quick-start">
+            <a href="/docs/getting-started/quick-start" target="_self">
               <Button
                 variant="outline"
                 class="h-12 rounded-full border-stone-700 bg-transparent px-8 text-stone-300 hover:bg-stone-900 hover:text-stone-50"
