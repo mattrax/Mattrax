@@ -1,14 +1,14 @@
 import { createSignal, For, onSettled, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { QrCode } from "~/components/mdm/qr-code";
+import { Button } from "~/components/ui/button";
+import { CircleAlert, ShieldCheck } from "~/components/ui/icons";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
+import { cn } from "~/lib/utils";
 
 const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors";
-const primaryButton =
-  "rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors";
-const secondaryButton =
-  "rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 transition-colors";
+  "h-9 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none sm:text-[13px] transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 type PasskeySummary = {
   credentialId: string;
@@ -180,41 +180,56 @@ export function AccountSecurity(props: {
   };
 
   return (
-    <section class="rounded-xl border border-border bg-card p-6">
-      <h2 class="text-sm font-semibold mb-1">Multi-factor authentication</h2>
-      <p class="text-sm text-muted-foreground mb-4">
-        Protect your account with an authenticator app or a passkey. Either one satisfies
-        multi-factor sign-in; passkeys also let you sign in without a password.
-      </p>
+    <section class="rounded-xl border border-white/[0.07] bg-card p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] sm:p-5">
+      <div class="flex items-start gap-3">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+          <ShieldCheck class="size-4" />
+        </span>
+        <div class="min-w-0">
+          <h2 class="mb-1 text-[13px] font-semibold text-foreground">
+            Multi-factor authentication
+          </h2>
+          <p class="text-xs leading-relaxed text-muted-foreground">
+            Protect your account with an authenticator app or a passkey. Either one satisfies
+            multi-factor sign-in; passkeys also let you sign in without a password.
+          </p>
+        </div>
+      </div>
 
       <Show when={props.mfaRequired && !props.mfaEnabled}>
-        <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <Banner tone="warning" class="mt-4">
           A workspace where you are an owner or admin requires MFA. Add a passkey or enable an
           authenticator to regain access to its settings.
-        </div>
+        </Banner>
       </Show>
 
       <Show when={signedOut()}>
-        <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-          <p class="font-medium">Security settings updated.</p>
-          <p class="mt-1">For your security, sign in again with your new factor.</p>
-          <button type="button" class={`${primaryButton} mt-3`} onClick={finishSignIn}>
+        <div class="mt-4 rounded-lg border border-success/25 bg-success/[0.06] px-3 py-2.5 text-[13px]">
+          <p class="font-medium text-foreground">Security settings updated.</p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            For your security, sign in again with your new factor.
+          </p>
+          <Button type="button" size="sm" class="mt-3" onClick={finishSignIn}>
             Sign in again
-          </button>
+          </Button>
         </div>
       </Show>
 
       <Show when={recoveryCodes()}>
         {(codes) => (
-          <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            <p class="font-medium">Save these one-time recovery codes now.</p>
-            <p class="mt-1 text-xs">
+          <div class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-[13px]">
+            <p class="font-medium text-foreground">Save these one-time recovery codes now.</p>
+            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
               Each code can be used once if you lose access to your authenticator. They are not
               shown again.
             </p>
             <div class="mt-3 grid grid-cols-2 gap-1 font-mono text-xs">
               <For each={codes()}>
-                {(code) => <span class="rounded bg-white px-2 py-1">{code}</span>}
+                {(code) => (
+                  <span class="rounded-md border border-white/[0.07] bg-black/25 px-2 py-1 text-foreground">
+                    {code}
+                  </span>
+                )}
               </For>
             </div>
           </div>
@@ -222,58 +237,55 @@ export function AccountSecurity(props: {
       </Show>
 
       {/* ---- Passkeys ------------------------------------------------------ */}
-      <div class="space-y-3 border-t pt-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p class="text-sm font-medium text-stone-900">Passkeys</p>
-            <p class="text-xs text-muted-foreground">
+      <div class="mt-5 border-t border-white/[0.06] pt-4">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="text-[13px] font-medium text-foreground">Passkeys</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               Sign in with Face ID, Touch ID, Windows Hello or a security key. Passkeys are
               phishing-resistant.
             </p>
           </div>
-          <span
-            class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              props.passkeyEnabled ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"
-            }`}
-          >
+          <Chip tone={props.passkeyEnabled ? "success" : "neutral"}>
             {props.passkeyEnabled ? "Enabled" : "Not set up"}
-          </span>
+          </Chip>
         </div>
 
         <Show
           when={passkeysLoaded() && passkeys().length > 0}
           fallback={
-            <p class="text-xs text-muted-foreground">
+            <p class="mt-3 text-xs text-muted-foreground">
               No passkeys yet. Add one to sign in without a password.
             </p>
           }
         >
-          <ul class="divide-y rounded-lg border">
+          <ul class="mt-3 divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
             <For each={passkeys()}>
               {(item) => (
-                <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                   <div class="min-w-0">
-                    <p class="truncate font-medium text-stone-900">{item.name}</p>
+                    <p class="truncate text-[13px] font-medium text-foreground">{item.name}</p>
                     <p class="text-xs text-muted-foreground">
                       Added {formatDate(item.createdAtMillis)} · Last used{" "}
                       {formatDate(item.lastUsedAtMillis)}
                     </p>
                   </div>
-                  <button
+                  <Button
                     type="button"
-                    class="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    size="sm"
+                    variant="destructive"
                     disabled={removingId() === item.credentialId}
                     onClick={() => void removePasskey(item.credentialId)}
                   >
                     {removingId() === item.credentialId ? "Removing…" : "Remove"}
-                  </button>
+                  </Button>
                 </li>
               )}
             </For>
           </ul>
         </Show>
 
-        <form onSubmit={addPasskey} class="flex flex-col gap-2 sm:flex-row">
+        <form onSubmit={addPasskey} class="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             class={inputClass}
             placeholder="Name this passkey (for example, MacBook)"
@@ -281,87 +293,77 @@ export function AccountSecurity(props: {
             maxlength={128}
             onInput={(event) => setPasskeyName(event.currentTarget.value)}
           />
-          <button
-            type="submit"
-            class={`${primaryButton} whitespace-nowrap`}
-            disabled={passkeyPending() || signedOut()}
-          >
+          <Button type="submit" class="shrink-0" disabled={passkeyPending() || signedOut()}>
             {passkeyPending() ? "Waiting for your device…" : "Add a passkey"}
-          </button>
+          </Button>
         </form>
-        <p class="text-xs text-muted-foreground">
+        <p class="mt-2 text-xs text-muted-foreground">
           Adding or removing a passkey asks you to confirm your identity first.
         </p>
         <Show when={passkeyError()}>
-          {(message) => <p class="text-sm text-red-600">{message()}</p>}
+          {(message) => <p class="mt-2 text-[13px] text-destructive">{message()}</p>}
         </Show>
       </div>
 
       {/* ---- Authenticator app --------------------------------------------- */}
-      <div class="mt-5 space-y-3 border-t pt-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p class="text-sm font-medium text-stone-900">Authenticator app</p>
-            <p class="text-xs text-muted-foreground">
+      <div class="mt-5 border-t border-white/[0.06] pt-4">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="text-[13px] font-medium text-foreground">Authenticator app</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               A time-based code from an app such as 1Password or Google Authenticator.
             </p>
           </div>
-          <span
-            class={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              props.totpEnabled ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"
-            }`}
-          >
+          <Chip tone={props.totpEnabled ? "success" : "neutral"}>
             {props.totpEnabled ? "Enabled" : "Not set up"}
-          </span>
+          </Chip>
         </div>
 
         <Show when={!props.totpEnabled && !signedOut()}>
           <Show
             when={enrollment()}
             fallback={
-              <div>
+              <div class="mt-3">
                 <Show
                   when={props.hasPassword}
                   fallback={
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <Banner tone="warning">
                       Set a password for this account before enabling an authenticator app. Password
                       and authenticator are required together; passwordless or SSO-only accounts
                       should use a passkey instead.
-                    </div>
+                    </Banner>
                   }
                 >
-                  <button
-                    type="button"
-                    class={primaryButton}
-                    disabled={enrollPending()}
-                    onClick={begin}
-                  >
+                  <Button type="button" disabled={enrollPending()} onClick={begin}>
                     {enrollPending() ? "Starting…" : "Enable authenticator app"}
-                  </button>
+                  </Button>
                 </Show>
                 <Show when={enrollError()}>
-                  {(message) => <p class="mt-2 text-sm text-red-600">{message()}</p>}
+                  {(message) => <p class="mt-2 text-[13px] text-destructive">{message()}</p>}
                 </Show>
               </div>
             }
           >
             {(current) => (
-              <div class="space-y-4">
-                <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
-                  <QrCode value={current().uri} label="Authenticator setup QR code" />
-                  <div class="min-w-0 flex-1 space-y-2 text-sm">
-                    <p class="font-medium text-stone-900">Scan this QR code</p>
-                    <p class="text-muted-foreground">
+              <div class="mt-3 space-y-4">
+                <div class="flex flex-col gap-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-start">
+                  <QrCode value={current().uri} label="Authenticator setup QR code" size={144} />
+                  <div class="min-w-0 flex-1 space-y-2">
+                    <p class="text-[13px] font-medium text-foreground">Scan this QR code</p>
+                    <p class="text-xs leading-relaxed text-muted-foreground">
                       Use your authenticator app, or enter this setup key manually:
                     </p>
-                    <code class="block break-all rounded-lg border bg-stone-50 px-3 py-2 font-mono text-xs">
+                    <code class="block break-all rounded-md border border-white/[0.07] bg-black/25 px-3 py-2 font-mono text-xs text-foreground">
                       {current().manualKey}
                     </code>
                   </div>
                 </div>
                 <form onSubmit={confirm} class="space-y-3">
                   <div class="space-y-1.5">
-                    <label for="totp-confirm-code" class="text-xs font-medium text-stone-700">
+                    <label
+                      for="totp-confirm-code"
+                      class="block text-xs font-medium text-muted-foreground"
+                    >
                       Enter the 6-digit code from your app
                     </label>
                     <input
@@ -376,15 +378,15 @@ export function AccountSecurity(props: {
                     />
                   </div>
                   <Show when={enrollError()}>
-                    {(message) => <p class="text-sm text-red-600">{message()}</p>}
+                    {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
                   </Show>
-                  <div class="flex gap-2">
-                    <button type="submit" class={primaryButton} disabled={enrollPending()}>
+                  <div class="flex flex-wrap gap-2">
+                    <Button type="submit" disabled={enrollPending()}>
                       {enrollPending() ? "Confirming…" : "Confirm and enable"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      class={secondaryButton}
+                      variant="outline"
                       onClick={() => {
                         setEnrollment(null);
                         setEnrollCode("");
@@ -392,7 +394,7 @@ export function AccountSecurity(props: {
                       }}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </div>
@@ -401,81 +403,127 @@ export function AccountSecurity(props: {
         </Show>
 
         <Show when={props.totpEnabled && !signedOut()}>
-          <div class="space-y-5">
+          <div class="mt-3 space-y-5">
             <form onSubmit={regenerate} class="space-y-2">
-              <p class="text-sm font-medium text-stone-900">Regenerate recovery codes</p>
-              <p class="text-xs text-muted-foreground">
+              <p class="text-[13px] font-medium text-foreground">Regenerate recovery codes</p>
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 This replaces every existing recovery code. Enter your current password and an
                 authenticator code to confirm.
               </p>
-              <input
-                type="password"
-                required
-                autocomplete="current-password"
-                placeholder="Current password"
-                value={regeneratePassword()}
-                onInput={(event) => setRegeneratePassword(event.currentTarget.value)}
-                class={inputClass}
-              />
-              <div class="flex gap-2">
+              <div class="space-y-2">
                 <input
+                  type="password"
                   required
-                  autocomplete="one-time-code"
-                  inputmode="numeric"
-                  placeholder="000000"
-                  value={regenerateCode()}
-                  onInput={(event) => setRegenerateCode(event.currentTarget.value)}
+                  autocomplete="current-password"
+                  placeholder="Current password"
+                  value={regeneratePassword()}
+                  onInput={(event) => setRegeneratePassword(event.currentTarget.value)}
                   class={inputClass}
                 />
-                <button type="submit" class={secondaryButton} disabled={regeneratePending()}>
-                  {regeneratePending() ? "Generating…" : "Regenerate"}
-                </button>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    required
+                    autocomplete="one-time-code"
+                    inputmode="numeric"
+                    placeholder="000000"
+                    value={regenerateCode()}
+                    onInput={(event) => setRegenerateCode(event.currentTarget.value)}
+                    class={inputClass}
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    class="shrink-0"
+                    disabled={regeneratePending()}
+                  >
+                    {regeneratePending() ? "Generating…" : "Regenerate"}
+                  </Button>
+                </div>
               </div>
               <Show when={regenerateError()}>
-                {(message) => <p class="text-sm text-red-600">{message()}</p>}
+                {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
               </Show>
             </form>
 
-            <form onSubmit={disable} class="space-y-2 border-t pt-4">
-              <p class="text-sm font-medium text-red-700">Disable authenticator app</p>
-              <p class="text-xs text-muted-foreground">
+            <form onSubmit={disable} class="space-y-2 border-t border-white/[0.06] pt-4">
+              <p class="text-[13px] font-medium text-destructive">Disable authenticator app</p>
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 This removes the second factor and invalidates your sessions. Enter your current
                 password and an authenticator code to confirm.
               </p>
-              <input
-                type="password"
-                required
-                autocomplete="current-password"
-                placeholder="Current password"
-                value={disablePassword()}
-                onInput={(event) => setDisablePassword(event.currentTarget.value)}
-                class={inputClass}
-              />
-              <div class="flex gap-2">
+              <div class="space-y-2">
                 <input
+                  type="password"
                   required
-                  autocomplete="one-time-code"
-                  inputmode="numeric"
-                  placeholder="000000"
-                  value={disableCode()}
-                  onInput={(event) => setDisableCode(event.currentTarget.value)}
+                  autocomplete="current-password"
+                  placeholder="Current password"
+                  value={disablePassword()}
+                  onInput={(event) => setDisablePassword(event.currentTarget.value)}
                   class={inputClass}
                 />
-                <button
-                  type="submit"
-                  class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-                  disabled={disablePending()}
-                >
-                  {disablePending() ? "Disabling…" : "Disable"}
-                </button>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    required
+                    autocomplete="one-time-code"
+                    inputmode="numeric"
+                    placeholder="000000"
+                    value={disableCode()}
+                    onInput={(event) => setDisableCode(event.currentTarget.value)}
+                    class={inputClass}
+                  />
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    class="shrink-0"
+                    disabled={disablePending()}
+                  >
+                    {disablePending() ? "Disabling…" : "Disable"}
+                  </Button>
+                </div>
               </div>
               <Show when={disableError()}>
-                {(message) => <p class="text-sm text-red-600">{message()}</p>}
+                {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
               </Show>
             </form>
           </div>
         </Show>
       </div>
     </section>
+  );
+}
+
+const chipTones = {
+  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  success: "border-success/25 bg-success/10 text-success-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+} as const;
+
+function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
+  return (
+    <span
+      class={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        chipTones[props.tone],
+      )}
+    >
+      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {props.children}
+    </span>
+  );
+}
+
+function Banner(props: { tone: "warning"; children: JSX.Element; class?: string }) {
+  return (
+    <div
+      role="status"
+      class={cn(
+        "flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.06] px-3 py-2 text-xs leading-relaxed text-warning-foreground",
+        props.class,
+      )}
+    >
+      <CircleAlert class="mt-px size-3.5 shrink-0" />
+      <span>{props.children}</span>
+    </div>
   );
 }

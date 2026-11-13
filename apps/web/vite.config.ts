@@ -80,6 +80,12 @@ export default defineConfig({
         ssr: new PageFileSystemRouter({ dir: routesDir, extensions, httpMethods: true }),
       },
       buildInputs: "client",
+      // Eagerly import route modules instead of wrapping every page in
+      // `lazy()`. The streaming SSR manifest in this Vite/Solid RC combination
+      // does not always serialize the `?pick=` module id the client needs, which
+      // leaves hydration detached and duplicates the signed-in shell. One
+      // dashboard bundle is a fair trade for deterministic hydration.
+      codeSplitting: false,
     }),
     // Map the Worker to Solid's `ssr` environment so the server render and the
     // API proxies run in workerd, with service bindings available.

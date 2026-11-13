@@ -121,49 +121,88 @@ const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
   }
 };
 
-type CompletionState = { user?: AuthUser; pending?: boolean };
+type CompletionState = { user?: AuthUser; session?: Session; pending?: boolean };
 
 const completionState = (completion: unknown): CompletionState => {
   const value = completion as { _tag?: string; session?: Session } | undefined;
-  if (value?._tag === "Authenticated") return { user: userFromSession(value.session) };
+  if (value?._tag === "Authenticated")
+    return { user: userFromSession(value.session), session: value.session };
   if (value?._tag === "PendingAuthentication") return { pending: true };
   throw new Error("Authentication did not complete");
 };
+
+type SessionStore = {
+  data: () => Session | null | undefined;
+  pending: () => boolean;
+  load: () => Promise<void>;
+  set: (session: Session | null) => void;
+  ensureLoaded: () => void;
+};
+
+function createSessionStore(initial: Session | null | undefined): SessionStore {
+  const [data, setData] = createSignal<Session | null | undefined>(initial);
+  const [pending, setPending] = createSignal(initial === undefined);
+  let started = false;
+
+  const load = async () => {
+    if (data() === undefined) setPending(true);
+    try {
+      setData(await request<Session | null>("/getSession", { method: "POST", body: "{}" }));
+    } catch {
+      if (data() === undefined) setData(null);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return {
+    data,
+    pending,
+    load,
+    set: (session) => setData(session),
+    ensureLoaded: () => {
+      if (started) return;
+      started = true;
+      // A preloaded answer (including a signed-out one) already matches the
+      // server render. Only ask the API when the server could not preload.
+      if (data() === undefined) void load();
+    },
+  };
+}
+
+/** One store per request on the server and one per tab in the browser. */
+let clientSessionStore: SessionStore | undefined;
+
+function sessionStore(): SessionStore {
+  if (isServer) {
+    return createSessionStore(
+      getPreloadedSession(getRequestEvent()!.request) as Session | null | undefined,
+    );
+  }
+  if (!clientSessionStore) {
+    const initial = (globalThis as { __MATTRAX_SESSION__?: Session | null }).__MATTRAX_SESSION__;
+    clientSessionStore = createSessionStore(initial);
+  }
+  return clientSessionStore;
+}
+
+/** Keep every hook in this tab in sync after a sign-in, MFA or sign-out. */
+function commitSession(session: Session | null): void {
+  if (!isServer) sessionStore().set(session);
+}
 
 const revealOf = <T>(envelope: AuthEnvelope<unknown>, kind: PrivateReveal["kind"]): T | undefined =>
   envelope.private?.find((item) => item.kind === kind)?.payload as T | undefined;
 
 export const authClient = {
   useSession: () => {
-    // The page middleware preloads the session on the server so the first
-    // render already knows the user; hydration adopts that value. Without a
-    // preload (for example a failed API call) the client asks after hydration.
-    const event = isServer ? getRequestEvent() : undefined;
-    const initial = event
-      ? (getPreloadedSession(event.request) as Session | null | undefined)
-      : undefined;
-    const [data, setData] = createSignal<Session | null | undefined>(initial);
-    const [pending, setPending] = createSignal(initial === undefined);
-
-    const load = async () => {
-      setPending(true);
-      try {
-        setData(await request<Session | null>("/getSession", { method: "POST", body: "{}" }));
-      } catch {
-        setData(null);
-      } finally {
-        setPending(false);
-      }
-    };
-
-    onSettled(() => {
-      if (!isServer && data() === undefined) void load();
-    });
+    const store = sessionStore();
+    onSettled(store.ensureLoaded);
 
     const accessor = () => ({
-      data: { user: userFromSession(data() ?? undefined) },
-      isPending: pending(),
-      refetch: load,
+      data: { user: userFromSession(store.data() ?? undefined) },
+      isPending: store.pending(),
+      refetch: store.load,
     });
     return accessor;
   },
@@ -176,6 +215,7 @@ export const authClient = {
         });
         const state = completionState(completion);
         if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+        if (state.session) commitSession(state.session);
         return state;
       }),
   },
@@ -223,6 +263,7 @@ export const authClient = {
         });
         const state = completionState(response.completion);
         if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+        if (state.session) commitSession(state.session);
         return state;
       }),
   },
@@ -257,6 +298,7 @@ export const authClient = {
             const state = completionState(completion);
             if (!state.user && !state.pending)
               throw new Error("Additional authentication is required");
+            if (state.session) commitSession(state.session);
             return { status: "signed-in" };
           } catch (error) {
             if ((error as { _tag?: string })._tag === "PasswordRejected")
@@ -274,11 +316,13 @@ export const authClient = {
       });
       const state = completionState(completion);
       if (!state.user && !state.pending) throw new Error("Additional authentication is required");
+      if (state.session) commitSession(state.session);
       return state;
     }),
   signOut: (_options?: unknown) =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });
+      commitSession(null);
       return { status: "ok" as const };
     }),
   verifyTotpPending: (code: string) =>
@@ -287,7 +331,9 @@ export const authClient = {
         method: "POST",
         body: authBody({ code }),
       });
-      return completionState(completion);
+      const state = completionState(completion);
+      if (state.session) commitSession(state.session);
+      return state;
     }),
   /**
    * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
@@ -323,6 +369,7 @@ export const authClient = {
       });
       const state = completionState(completion);
       if (!state.user && !state.pending) throw new Error("Authentication did not complete");
+      if (state.session) commitSession(state.session);
       return state;
     }),
   /** Complete a pending password/email/SSO sign-in with a passkey. */
@@ -354,7 +401,9 @@ export const authClient = {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
-      return completionState(completion);
+      const state = completionState(completion);
+      if (state.session) commitSession(state.session);
+      return state;
     }),
   listPasskeys: () =>
     result(() =>
@@ -432,7 +481,9 @@ export const authClient = {
         method: "POST",
         body: authBody({ code }),
       });
-      return completionState(completion);
+      const state = completionState(completion);
+      if (state.session) commitSession(state.session);
+      return state;
     }),
   beginTotpEnrollment: (accountName: string) =>
     result(async () => {

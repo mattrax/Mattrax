@@ -428,6 +428,15 @@ export function AppShell(props: {
     return known[0]?.id;
   });
 
+  createEffect(
+    () => activeId(),
+    (id) => {
+      if (!id) return;
+      rememberTenant(id);
+      setLastTenant(id);
+    },
+  );
+
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const navItems = createMemo(() => navFor(scopedTenant()));
 

@@ -19,7 +19,10 @@ export default function IdentitySettingsLayout(props: ParentProps) {
   };
   return (
     <div class="flex flex-col gap-5">
-      <nav class="flex gap-1 border-b" aria-label="Identity sections">
+      <nav
+        class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-white/[0.07] sm:bg-white/[0.02] sm:p-1"
+        aria-label="Identity sections"
+      >
         <For each={tabs}>
           {(tab) => {
             const href = tab.id ? `${base()}/${tab.id}` : base();
@@ -29,24 +32,20 @@ export default function IdentitySettingsLayout(props: ParentProps) {
                 type="button"
                 onClick={() => navigate(href)}
                 class={cn(
-                  "relative whitespace-nowrap px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-stone-900",
-                  isActive() && "text-stone-900",
+                  "relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
+                  isActive()
+                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
+                    : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
                 )}
                 aria-current={isActive() ? "page" : undefined}
               >
                 {tab.label}
-                <span
-                  class={cn(
-                    "absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-stone-900",
-                    isActive() ? "opacity-100" : "opacity-0",
-                  )}
-                />
               </button>
             );
           }}
         </For>
       </nav>
-      {props.children}
+      <div class="flex min-w-0 flex-col">{props.children}</div>
     </div>
   );
 }

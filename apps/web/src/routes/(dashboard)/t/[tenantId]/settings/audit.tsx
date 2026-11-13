@@ -2,10 +2,9 @@ import { useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useInfiniteQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { ErrorText, QueryError } from "~/components/mdm/common";
+import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   enterprise,
   enterpriseKeys,
@@ -16,8 +15,9 @@ import {
 const PAGE_SIZE = 50;
 const SYSTEM_ACTOR = "system";
 
-const inputClass = "h-9 w-full rounded-lg border bg-white px-3 text-sm text-stone-800";
-const selectClass = "h-9 w-full rounded-lg border bg-white px-3 text-sm text-stone-800";
+const inputClass =
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
+const selectClass = inputClass;
 
 /** Common actions offered as suggestions; any exact action name is accepted. */
 const KNOWN_ACTIONS = [
@@ -226,233 +226,243 @@ export default function AuditSettingsPage() {
   };
 
   return (
-    <div class="space-y-6">
+    <div class="grid gap-5">
       <QueryError error={log.error} onRetry={() => void log.refetch()} />
-      <Card>
-        <CardHeader>
-          <CardTitle>Audit log</CardTitle>
-          <p class="text-sm text-muted-foreground">
-            A chronological record of tenant changes and device lifecycle events. Entries are
-            append-only and retained for the lifetime of the tenant.
-          </p>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">Action</span>
-              <input
-                class={inputClass}
-                list="audit-action-suggestions"
-                placeholder="e.g. device.enrolled"
-                value={action()}
-                onInput={(event) => setAction(event.currentTarget.value)}
-              />
-              <datalist id="audit-action-suggestions">
-                <For each={KNOWN_ACTIONS}>{(value) => <option value={value} />}</For>
-              </datalist>
-            </label>
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">Actor</span>
-              <input
-                class={inputClass}
-                placeholder="Email or user id"
-                value={actor()}
-                onInput={(event) => setActor(event.currentTarget.value)}
-              />
-            </label>
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">Target type</span>
-              <select
-                class={selectClass}
-                value={targetType()}
-                onChange={(event) => setTargetType(event.currentTarget.value)}
-              >
-                <option value="">Any target</option>
-                <option value="device">Device</option>
-                <option value="device_command">Device command</option>
-                <option value="group">Group</option>
-                <option value="policy">Policy</option>
-                <option value="application">Application</option>
-                <option value="user">User</option>
-                <option value="tenant">Tenant</option>
-                <option value="enrollment">Enrollment</option>
-                <option value="apns">APNs</option>
-                <option value="entra">Entra</option>
-                <option value="sso">SSO</option>
-                <option value="scim_token">SCIM token</option>
-              </select>
-            </label>
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">Target id</span>
-              <input
-                class={inputClass}
-                placeholder="Contains…"
-                value={targetId()}
-                onInput={(event) => setTargetId(event.currentTarget.value)}
-              />
-            </label>
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">From</span>
-              <input
-                type="date"
-                class={inputClass}
-                value={fromDate()}
-                max={toDate() || undefined}
-                onInput={(event) => setFromDate(event.currentTarget.value)}
-              />
-            </label>
-            <label class="space-y-1 text-sm">
-              <span class="text-muted-foreground">To</span>
-              <input
-                type="date"
-                class={inputClass}
-                value={toDate()}
-                min={fromDate() || undefined}
-                onInput={(event) => setToDate(event.currentTarget.value)}
-              />
-            </label>
+
+      <Panel
+        title="Audit log"
+        description="A chronological record of tenant changes and device lifecycle events. Entries are append-only and retained for the lifetime of the tenant."
+      >
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              Action
+            </span>
+            <input
+              class={inputClass}
+              list="audit-action-suggestions"
+              placeholder="e.g. device.enrolled"
+              value={action()}
+              onInput={(event) => setAction(event.currentTarget.value)}
+            />
+            <datalist id="audit-action-suggestions">
+              <For each={KNOWN_ACTIONS}>{(value) => <option value={value} />}</For>
+            </datalist>
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              Actor
+            </span>
+            <input
+              class={inputClass}
+              placeholder="Email or user id"
+              value={actor()}
+              onInput={(event) => setActor(event.currentTarget.value)}
+            />
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              Target type
+            </span>
+            <select
+              class={selectClass}
+              value={targetType()}
+              onChange={(event) => setTargetType(event.currentTarget.value)}
+            >
+              <option value="">Any target</option>
+              <option value="device">Device</option>
+              <option value="device_command">Device command</option>
+              <option value="group">Group</option>
+              <option value="policy">Policy</option>
+              <option value="application">Application</option>
+              <option value="user">User</option>
+              <option value="tenant">Tenant</option>
+              <option value="enrollment">Enrollment</option>
+              <option value="apns">APNs</option>
+              <option value="entra">Entra</option>
+              <option value="sso">SSO</option>
+              <option value="scim_token">SCIM token</option>
+            </select>
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              Target id
+            </span>
+            <input
+              class={inputClass}
+              placeholder="Contains…"
+              value={targetId()}
+              onInput={(event) => setTargetId(event.currentTarget.value)}
+            />
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              From
+            </span>
+            <input
+              type="date"
+              class={inputClass}
+              value={fromDate()}
+              max={toDate() || undefined}
+              onInput={(event) => setFromDate(event.currentTarget.value)}
+            />
+          </label>
+          <label class="space-y-1.5">
+            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+              To
+            </span>
+            <input
+              type="date"
+              class={inputClass}
+              value={toDate()}
+              min={fromDate() || undefined}
+              onInput={(event) => setToDate(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+
+        <Show when={rangeError()}>{(error) => <ErrorText error={error()} />}</Show>
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void exportAudit("csv")}
+            disabled={exporting() !== null || Boolean(rangeError())}
+          >
+            {exporting() === "csv" ? "Exporting…" : "Export CSV"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void exportAudit("json")}
+            disabled={exporting() !== null || Boolean(rangeError())}
+          >
+            {exporting() === "json" ? "Exporting…" : "Export JSON"}
+          </Button>
+          <Show when={hasFilters()}>
+            <Button variant="ghost" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          </Show>
+          <span class="text-xs text-muted-foreground" aria-live="polite">
+            <Show
+              when={entries().length > 0}
+              fallback={log.isPending ? "Loading audit events…" : "No matching events"}
+            >
+              {entries().length} event{entries().length === 1 ? "" : "s"} loaded · newest first
+            </Show>
+          </span>
+        </div>
+
+        <Show when={exportError()}>
+          <ErrorText error={exportError()} />
+        </Show>
+        <Show when={exportTruncated()}>
+          <div
+            role="status"
+            class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs text-warning-foreground"
+          >
+            <span>
+              The export reached the 10,000-row limit and was truncated. Narrow the filters to
+              export the rest.
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setExportTruncated(false)}>
+              Dismiss
+            </Button>
           </div>
+        </Show>
 
-          <Show when={rangeError()}>{(error) => <ErrorText error={error()} />}</Show>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => void exportAudit("csv")}
-              disabled={exporting() !== null || Boolean(rangeError())}
+        <Show
+          when={entries().length > 0}
+          fallback={
+            <p class="mt-4 text-[13px] text-muted-foreground">
+              {log.isPending ? "Loading audit events…" : "No audit events match these filters."}
+            </p>
+          }
+        >
+          <div class="mt-4 overflow-x-auto rounded-lg border border-white/[0.07]">
+            <table class="w-full min-w-[720px] text-left text-[13px]">
+              <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <tr>
+                  <th class="px-3 py-2.5 font-medium">When</th>
+                  <th class="px-3 py-2.5 font-medium">Actor</th>
+                  <th class="px-3 py-2.5 font-medium">Action</th>
+                  <th class="px-3 py-2.5 font-medium">Target</th>
+                  <th class="hidden px-3 py-2.5 font-medium lg:table-cell">Details</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/[0.05]">
+                <For each={entries()}>
+                  {(entry) => {
+                    const summary = () => summarizeMetadata(entry.metadata);
+                    return (
+                      <tr class="transition-colors hover:bg-white/[0.02]">
+                        <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">
+                          {formatDate(entry.createdAt)}
+                        </td>
+                        <td
+                          class="max-w-[14rem] truncate px-3 py-3 align-top text-muted-foreground"
+                          title={actorLabel(entry)}
+                        >
+                          {actorLabel(entry)}
+                        </td>
+                        <td class="px-3 py-3 align-top">
+                          <Badge variant="secondary">{formatAction(entry.action)}</Badge>
+                          <code class="mt-1 block break-all text-[11px] text-muted-foreground">
+                            {entry.action}
+                          </code>
+                        </td>
+                        <td class="px-3 py-3 align-top text-xs text-muted-foreground">
+                          <span class="block">{entry.targetType}</span>
+                          <Show when={entry.targetId}>
+                            <code class="break-all text-xs">{entry.targetId}</code>
+                          </Show>
+                          {/* Details column is hidden on small screens; keep a
+                              compact metadata line visible here instead. */}
+                          <Show when={summary()}>
+                            <span class="mt-1 block break-words text-xs lg:hidden">
+                              {summary()}
+                            </span>
+                          </Show>
+                        </td>
+                        <td class="hidden max-w-[22rem] px-3 py-3 align-top lg:table-cell">
+                          <Show
+                            when={summary()}
+                            fallback={<span class="text-xs text-muted-foreground">—</span>}
+                          >
+                            <span
+                              class="block truncate text-xs text-muted-foreground"
+                              title={summary()}
+                            >
+                              {summary()}
+                            </span>
+                          </Show>
+                        </td>
+                      </tr>
+                    );
+                  }}
+                </For>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex justify-center pt-3">
+            <Show
+              when={log.hasNextPage}
+              fallback={
+                <span class="text-xs text-muted-foreground">All matching events are loaded.</span>
+              }
             >
-              {exporting() === "csv" ? "Exporting…" : "Export CSV"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void exportAudit("json")}
-              disabled={exporting() !== null || Boolean(rangeError())}
-            >
-              {exporting() === "json" ? "Exporting…" : "Export JSON"}
-            </Button>
-            <Show when={hasFilters()}>
-              <Button variant="ghost" onClick={clearFilters}>
-                Clear filters
+              <Button
+                variant="outline"
+                onClick={() => void log.fetchNextPage()}
+                disabled={log.isFetchingNextPage}
+              >
+                {log.isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </Show>
-            <span class="text-sm text-muted-foreground" aria-live="polite">
-              <Show
-                when={entries().length > 0}
-                fallback={log.isPending ? "Loading audit events…" : "No matching events"}
-              >
-                {entries().length} event{entries().length === 1 ? "" : "s"} loaded · newest first
-              </Show>
-            </span>
           </div>
-
-          <Show when={exportError()}>
-            <ErrorText error={exportError()} />
-          </Show>
-          <Show when={exportTruncated()}>
-            <div
-              role="status"
-              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-            >
-              <span>
-                The export reached the 10,000-row limit and was truncated. Narrow the filters to
-                export the rest.
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => setExportTruncated(false)}>
-                Dismiss
-              </Button>
-            </div>
-          </Show>
-
-          <Show
-            when={entries().length > 0}
-            fallback={
-              <p class="text-sm text-muted-foreground">
-                {log.isPending ? "Loading audit events…" : "No audit events match these filters."}
-              </p>
-            }
-          >
-            <div class="overflow-x-auto">
-              <table class="w-full min-w-[720px] text-left text-sm">
-                <thead class="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th class="px-2 py-2 font-medium">When</th>
-                    <th class="px-2 py-2 font-medium">Actor</th>
-                    <th class="px-2 py-2 font-medium">Action</th>
-                    <th class="px-2 py-2 font-medium">Target</th>
-                    <th class="hidden px-2 py-2 font-medium lg:table-cell">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={entries()}>
-                    {(entry) => {
-                      const summary = () => summarizeMetadata(entry.metadata);
-                      return (
-                        <tr class="border-b last:border-0">
-                          <td class="whitespace-nowrap px-2 py-3 text-muted-foreground">
-                            {formatDate(entry.createdAt)}
-                          </td>
-                          <td class="max-w-[14rem] truncate px-2 py-3" title={actorLabel(entry)}>
-                            {actorLabel(entry)}
-                          </td>
-                          <td class="px-2 py-3">
-                            <Badge variant="secondary">{formatAction(entry.action)}</Badge>
-                            <code class="mt-1 block text-[11px] text-muted-foreground">
-                              {entry.action}
-                            </code>
-                          </td>
-                          <td class="px-2 py-3 text-muted-foreground">
-                            <span class="block">{entry.targetType}</span>
-                            <Show when={entry.targetId}>
-                              <code class="break-all text-xs">{entry.targetId}</code>
-                            </Show>
-                            {/* Details column is hidden on small screens; keep a
-                                compact metadata line visible here instead. */}
-                            <Show when={summary()}>
-                              <span class="mt-1 block break-words text-xs lg:hidden">
-                                {summary()}
-                              </span>
-                            </Show>
-                          </td>
-                          <td class="hidden max-w-[22rem] px-2 py-3 lg:table-cell">
-                            <Show
-                              when={summary()}
-                              fallback={<span class="text-muted-foreground">—</span>}
-                            >
-                              <span
-                                class="block truncate text-xs text-muted-foreground"
-                                title={summary()}
-                              >
-                                {summary()}
-                              </span>
-                            </Show>
-                          </td>
-                        </tr>
-                      );
-                    }}
-                  </For>
-                </tbody>
-              </table>
-            </div>
-            <div class="flex justify-center pt-2">
-              <Show
-                when={log.hasNextPage}
-                fallback={
-                  <span class="text-xs text-muted-foreground">All matching events are loaded.</span>
-                }
-              >
-                <Button
-                  variant="outline"
-                  onClick={() => void log.fetchNextPage()}
-                  disabled={log.isFetchingNextPage}
-                >
-                  {log.isFetchingNextPage ? "Loading…" : "Load more"}
-                </Button>
-              </Show>
-            </div>
-          </Show>
-          <ErrorText error={log.error} />
-        </CardContent>
-      </Card>
+        </Show>
+        <ErrorText error={log.error} />
+      </Panel>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_EVENT_TYPES,
@@ -10,10 +11,8 @@ import {
   type WebhookEventType,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
-import { ErrorText, Field, QueryError } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
+import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +25,7 @@ import { Input } from "~/components/ui/input";
 import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { cn } from "~/lib/utils";
 
 /**
  * Settings → Integrations: outbound event webhooks.
@@ -170,63 +170,61 @@ export default function IntegrationsSettingsPage() {
   };
 
   return (
-    <div class="grid gap-6">
+    <div class="grid gap-5">
       <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
 
-      <Card>
-        <CardHeader class="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle>Outbound webhooks</CardTitle>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Send device lifecycle and enrollment events to your own HTTPS endpoint. Every delivery
-              is signed with HMAC-SHA256.
-            </p>
-          </div>
+      <Panel
+        title="Outbound webhooks"
+        description="Send device lifecycle and enrollment events to your own HTTPS endpoint. Every delivery is signed with HMAC-SHA256."
+        actions={
           <Show when={canManage()}>
             <Button onClick={openCreate}>
               <Plus class="size-4" />
               Add endpoint
             </Button>
           </Show>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <Show when={!canManage() && tenant.data}>
-            <p class="rounded-lg border bg-stone-50 p-3 text-sm text-muted-foreground">
-              Only a tenant owner or admin can manage webhook endpoints.
-            </p>
-          </Show>
+        }
+      >
+        <Show when={!canManage() && tenant.data}>
+          <p class="mb-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs text-muted-foreground">
+            Only a tenant owner or admin can manage webhook endpoints.
+          </p>
+        </Show>
 
-          <Show
-            when={(webhooks.data?.endpoints.length ?? 0) > 0}
-            fallback={
-              <div class="rounded-xl border border-dashed p-8 text-center">
-                <p class="text-sm font-medium">No webhook endpoints yet</p>
-                <p class="mt-1 text-sm text-muted-foreground">
-                  Add an endpoint to receive signed device and enrollment events.
-                </p>
-              </div>
-            }
-          >
+        <Show
+          when={(webhooks.data?.endpoints.length ?? 0) > 0}
+          fallback={
+            <div class="rounded-xl border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
+              <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
+              <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                Add an endpoint to receive signed device and enrollment events.
+              </p>
+            </div>
+          }
+        >
+          <div class="space-y-3">
             <For each={webhooks.data?.endpoints ?? []}>
               {(endpoint) => (
-                <div class="rounded-xl border p-4">
-                  <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div class="min-w-0 space-y-1">
-                      <p class="break-all font-mono text-sm">{endpoint.url}</p>
+                <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-4">
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0 space-y-1.5">
+                      <p class="break-all font-mono text-[12.5px] text-foreground">
+                        {endpoint.url}
+                      </p>
                       <Show when={endpoint.description}>
-                        <p class="text-sm text-muted-foreground">{endpoint.description}</p>
+                        <p class="text-[13px] text-muted-foreground">{endpoint.description}</p>
                       </Show>
-                      <div class="flex flex-wrap items-center gap-2 pt-1">
-                        <Badge variant={endpoint.enabled ? "default" : "outline"}>
+                      <div class="flex flex-wrap items-center gap-2 pt-0.5">
+                        <Chip tone={endpoint.enabled ? "success" : "neutral"}>
                           {endpoint.enabled ? "Enabled" : "Disabled"}
-                        </Badge>
+                        </Chip>
                         <Show when={endpoint.secretPrefix}>
-                          <span class="text-xs text-muted-foreground">
+                          <span class="font-mono text-[11px] text-muted-foreground">
                             Signing secret ····{endpoint.secretPrefix}
                           </span>
                         </Show>
                         <Show when={endpoint.lastDeliveryAt}>
-                          <span class="text-xs text-muted-foreground">
+                          <span class="text-[11px] text-muted-foreground">
                             Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()} ·{" "}
                             {endpoint.lastDeliveryStatus ?? "unknown"}
                           </span>
@@ -234,7 +232,7 @@ export default function IntegrationsSettingsPage() {
                       </div>
                     </div>
                     <Show when={canManage()}>
-                      <div class="flex flex-wrap gap-2">
+                      <div class="flex shrink-0 flex-wrap gap-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -277,7 +275,7 @@ export default function IntegrationsSettingsPage() {
                       }
                     >
                       {(event) => (
-                        <span class="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+                        <span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted-foreground">
                           {WEBHOOK_EVENT_LABELS[event]}
                         </span>
                       )}
@@ -285,28 +283,31 @@ export default function IntegrationsSettingsPage() {
                   </div>
 
                   <Show when={endpoint.consecutiveFailures > 0}>
-                    <p class="mt-3 flex items-start gap-2 text-xs text-amber-700">
-                      <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
-                      {endpoint.consecutiveFailures} consecutive failed delivery
-                      {endpoint.consecutiveFailures === 1 ? "" : "ies"}. We retry failed deliveries
-                      automatically.
+                    <p class="mt-3 flex items-start gap-2 text-xs leading-relaxed text-warning-foreground">
+                      <CircleAlert class="mt-px size-3.5 shrink-0" />
+                      <span>
+                        {endpoint.consecutiveFailures} consecutive failed delivery
+                        {endpoint.consecutiveFailures === 1 ? "" : "ies"}. We retry failed
+                        deliveries automatically.
+                      </span>
                     </p>
                   </Show>
 
                   <Show when={testResults()[endpoint.id]}>
                     {(result) => (
                       <div
-                        class={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                        class={cn(
+                          "mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs leading-relaxed",
                           result().status === "succeeded"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : "border-red-200 bg-red-50 text-red-700"
-                        }`}
+                            ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                            : "border-destructive/25 bg-destructive/[0.07] text-destructive",
+                        )}
                       >
                         <Show
                           when={result().status === "succeeded"}
-                          fallback={<CircleAlert class="mt-0.5 size-3.5 shrink-0" />}
+                          fallback={<CircleAlert class="mt-px size-3.5 shrink-0" />}
                         >
-                          <CheckCircle2 class="mt-0.5 size-3.5 shrink-0" />
+                          <CheckCircle2 class="mt-px size-3.5 shrink-0" />
                         </Show>
                         <span>
                           {result().status === "succeeded"
@@ -319,15 +320,15 @@ export default function IntegrationsSettingsPage() {
                 </div>
               )}
             </For>
-          </Show>
+          </div>
+        </Show>
 
-          <p class="text-xs text-muted-foreground">
-            Deliveries are retried automatically after a failure and delivery history is removed
-            after 30 days. Endpoints must be public HTTPS URLs; localhost and private addresses are
-            rejected.
-          </p>
-        </CardContent>
-      </Card>
+        <p class="mt-4 text-xs leading-relaxed text-muted-foreground">
+          Deliveries are retried automatically after a failure and delivery history is removed after
+          30 days. Endpoints must be public HTTPS URLs; localhost and private addresses are
+          rejected.
+        </p>
+      </Panel>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
         <DialogContent>
@@ -355,7 +356,7 @@ export default function IntegrationsSettingsPage() {
                 required
               />
               <Show when={urlProblem()}>
-                <p class="text-xs text-red-600">{urlProblem()}</p>
+                <p class="text-xs text-destructive">{urlProblem()}</p>
               </Show>
             </Field>
             <Field label="Description" hint="Optional note for your team.">
@@ -366,33 +367,32 @@ export default function IntegrationsSettingsPage() {
               />
             </Field>
             <div class="space-y-2">
-              <p class="text-sm font-medium">Events</p>
-              <label class="flex items-center gap-2 text-sm">
+              <p class="text-[13px] font-medium text-foreground">Events</p>
+              <label class="flex items-start gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
+                  class="mt-0.5 size-3.5 shrink-0 accent-brand"
                   checked={allEvents()}
                   onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
                 />
                 Deliver all events, including future events
               </label>
-              <div
-                class={
-                  allEvents() ? "grid gap-2 opacity-50 sm:grid-cols-2" : "grid gap-2 sm:grid-cols-2"
-                }
-              >
+              <div class={cn("grid gap-2 sm:grid-cols-2", allEvents() && "opacity-50")}>
                 <For each={WEBHOOK_EVENT_TYPES}>
                   {(event) => (
-                    <label class="flex items-start gap-2 text-sm">
+                    <label class="flex items-start gap-2 text-xs">
                       <input
                         type="checkbox"
-                        class="mt-0.5"
+                        class="mt-0.5 size-3.5 shrink-0 accent-brand"
                         checked={allEvents() || events().includes(event)}
                         disabled={allEvents()}
                         onChange={() => toggleEvent(event)}
                       />
-                      <span>
-                        <span class="font-medium">{WEBHOOK_EVENT_LABELS[event]}</span>
-                        <span class="block font-mono text-[11px] text-muted-foreground">
+                      <span class="min-w-0">
+                        <span class="block font-medium text-foreground">
+                          {WEBHOOK_EVENT_LABELS[event]}
+                        </span>
+                        <span class="block break-all font-mono text-[11px] text-muted-foreground">
                           {event}
                         </span>
                       </span>
@@ -401,9 +401,10 @@ export default function IntegrationsSettingsPage() {
                 </For>
               </div>
             </div>
-            <label class="flex items-center gap-2 text-sm">
+            <label class="flex items-center gap-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
+                class="size-3.5 accent-brand"
                 checked={enabled()}
                 onChange={(event) => setEnabled(event.currentTarget.checked)}
               />
@@ -430,19 +431,20 @@ export default function IntegrationsSettingsPage() {
               Copy this secret now. It is only shown once; rotate it later if it is lost.
             </DialogDescription>
           </DialogHeader>
-          <div class="flex gap-2">
-            <Input value={secret() ?? ""} readonly class="font-mono text-xs" />
+          <div class="flex flex-col gap-2 sm:flex-row">
+            <Input value={secret() ?? ""} readonly class="min-w-0 flex-1 font-mono" />
             <Button
               type="button"
               variant="outline"
+              class="shrink-0"
               onClick={() => void navigator.clipboard?.writeText(secret() ?? "")}
             >
               Copy
             </Button>
           </div>
-          <p class="text-xs text-muted-foreground">
-            Verify deliveries with the <code>X-Mattrax-Signature</code> header: HMAC-SHA256 over{" "}
-            <code>timestamp + "." + rawBody</code>.
+          <p class="text-xs leading-relaxed text-muted-foreground">
+            Verify deliveries with the <code class="font-mono">X-Mattrax-Signature</code> header:
+            HMAC-SHA256 over <code class="font-mono">timestamp + "." + rawBody</code>.
           </p>
           <DialogFooter>
             <Button onClick={() => setSecret(null)}>I have copied it</Button>
@@ -461,7 +463,7 @@ export default function IntegrationsSettingsPage() {
               Deliveries stop immediately and delivery history is removed. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <p class="break-all font-mono text-sm">{deleteTarget()?.url}</p>
+          <p class="break-all font-mono text-[13px]">{deleteTarget()?.url}</p>
           <ErrorText error={remove.error} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
@@ -511,5 +513,26 @@ export default function IntegrationsSettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+const chipTones = {
+  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  success: "border-success/25 bg-success/10 text-success-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+} as const;
+
+function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
+  return (
+    <span
+      class={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        chipTones[props.tone],
+      )}
+    >
+      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {props.children}
+    </span>
   );
 }

@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
   isLogoUrl,
@@ -11,9 +12,8 @@ import {
   type TenantImportRequest,
   type TenantImportResponse,
 } from "@mattrax/enterprise-domain";
-import { ErrorText, Field, QueryError } from "~/components/mdm/common";
+import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -22,8 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
 
 export default function GeneralSettingsPage() {
@@ -286,36 +288,36 @@ export default function GeneralSettingsPage() {
   });
 
   return (
-    <div class="grid gap-6 xl:grid-cols-2">
+    <div class="grid gap-5 xl:grid-cols-2">
       <QueryError
         class="xl:col-span-2"
         error={tenant.error}
         onRetry={() => void tenant.refetch()}
       />
-      <Card>
-        <CardHeader>
-          <CardTitle>Tenant profile</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            class="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              save.mutate();
-            }}
-          >
-            <Field label="Name" hint="Internal tenant name used by the dashboard.">
+
+      <Panel
+        title="Tenant profile"
+        description="The name, identifiers and branding shown across the dashboard and enrollment pages."
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <div class="divide-y divide-white/[0.05]">
+            <FieldRow label="Name" hint="Internal tenant name used by the dashboard.">
               <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} required />
-            </Field>
-            <Field label="Slug" hint="Used in URLs and when generating identifiers.">
+            </FieldRow>
+            <FieldRow label="Slug" hint="Used in URLs and when generating identifiers.">
               <Input
                 value={slug()}
                 pattern="[a-z0-9-]+"
                 onInput={(e) => setSlug(e.currentTarget.value.toLowerCase())}
                 required
               />
-            </Field>
-            <Field
+            </FieldRow>
+            <FieldRow
               label="Display name"
               hint="Shown on the enrollment page, Apple profile and tenant emails. Falls back to the name above."
             >
@@ -325,10 +327,12 @@ export default function GeneralSettingsPage() {
                 onInput={(e) => setDisplayName(e.currentTarget.value)}
               />
               <Show when={brandingErrors().displayName}>
-                <p class="text-xs text-red-600">{brandingErrors().displayName}</p>
+                <span class="mt-1.5 block text-xs text-destructive">
+                  {brandingErrors().displayName}
+                </span>
               </Show>
-            </Field>
-            <Field
+            </FieldRow>
+            <FieldRow
               label="Logo"
               hint="An https URL, an inline data: image URL, or an absolute path."
             >
@@ -338,10 +342,10 @@ export default function GeneralSettingsPage() {
                 onInput={(e) => setLogo(e.currentTarget.value)}
               />
               <Show when={brandingErrors().logo}>
-                <p class="text-xs text-red-600">{brandingErrors().logo}</p>
+                <span class="mt-1.5 block text-xs text-destructive">{brandingErrors().logo}</span>
               </Show>
-            </Field>
-            <Field label="Support email" hint="Shown to people enrolling a device.">
+            </FieldRow>
+            <FieldRow label="Support email" hint="Shown to people enrolling a device.">
               <Input
                 type="email"
                 value={supportEmail()}
@@ -349,15 +353,17 @@ export default function GeneralSettingsPage() {
                 onInput={(e) => setSupportEmail(e.currentTarget.value)}
               />
               <Show when={brandingErrors().supportEmail}>
-                <p class="text-xs text-red-600">{brandingErrors().supportEmail}</p>
+                <span class="mt-1.5 block text-xs text-destructive">
+                  {brandingErrors().supportEmail}
+                </span>
               </Show>
-            </Field>
-            <Field label="Brand colour" hint="Used for accents on the public enrollment page.">
+            </FieldRow>
+            <FieldRow label="Brand colour" hint="Used for accents on the public enrollment page.">
               <div class="flex items-center gap-2">
                 <input
                   type="color"
                   aria-label="Brand colour picker"
-                  class="h-9 w-12 cursor-pointer rounded-md border bg-white p-1"
+                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-white/[0.03] p-1"
                   value={colorValue()}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
@@ -368,53 +374,59 @@ export default function GeneralSettingsPage() {
                 />
               </div>
               <Show when={brandingErrors().brandColor}>
-                <p class="text-xs text-red-600">{brandingErrors().brandColor}</p>
-              </Show>
-            </Field>
-            <ErrorText error={save.error} />
-            <div class="flex items-center gap-2">
-              <Button type="submit" disabled={save.isPending || hasBrandingErrors()}>
-                {save.isPending ? "Saving…" : "Save changes"}
-              </Button>
-              <Show when={tenant.data}>
-                <span class="text-xs text-muted-foreground">
-                  Created {new Date(tenant.data!.createdAt).toLocaleDateString()}
+                <span class="mt-1.5 block text-xs text-destructive">
+                  {brandingErrors().brandColor}
                 </span>
               </Show>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            </FieldRow>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+            <Show when={tenant.data}>
+              <span class="text-xs text-muted-foreground">
+                Created {new Date(tenant.data!.createdAt).toLocaleDateString()}
+              </span>
+            </Show>
+            <Button type="submit" class="ml-auto" disabled={save.isPending || hasBrandingErrors()}>
+              {save.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+          <ErrorText error={save.error} />
+        </form>
+      </Panel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Branding preview</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="overflow-hidden rounded-xl border">
-            <div class="h-2" style={{ "background-color": preview().brandColor }} />
-            <div class="space-y-4 p-5">
+      <div class="flex min-w-0 flex-col gap-5">
+        <Panel
+          title="Branding preview"
+          description="How the public enrollment page looks with the values above."
+        >
+          <div class="overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.015]">
+            <div class="h-1.5" style={{ "background-color": preview().brandColor }} />
+            <div class="space-y-4 p-4">
               <div class="flex items-center gap-3">
                 <Show when={preview().logo && isLogoUrl(preview().logo!)}>
-                  <img src={preview().logo!} alt="" class="size-10 rounded-md object-contain" />
+                  <img
+                    src={preview().logo!}
+                    alt=""
+                    class="size-10 shrink-0 rounded-md bg-white/[0.04] object-contain p-1"
+                  />
                 </Show>
-                <div>
-                  <p class="text-base font-semibold text-stone-900">
+                <div class="min-w-0">
+                  <p class="truncate text-[13.5px] font-semibold text-foreground">
                     Enroll in {preview().displayName}
                   </p>
                   <p class="text-xs text-muted-foreground">Device enrollment</p>
                 </div>
               </div>
               <div
-                class="rounded-lg px-3 py-2 text-center text-sm font-medium text-white"
-                style={{ "background-color": preview().brandColor }}
+                class="rounded-lg px-3 py-2 text-center text-[13px] font-medium"
+                style={{ "background-color": preview().brandColor, color: "#fff" }}
               >
                 Continue
               </div>
               <p class="text-xs text-muted-foreground">
                 Need help? Contact{" "}
                 <a
-                  class="underline"
+                  class="break-all underline underline-offset-2"
                   style={{ color: preview().brandColor }}
                   href={`mailto:${preview().supportEmail}`}
                 >
@@ -423,78 +435,109 @@ export default function GeneralSettingsPage() {
               </p>
             </div>
           </div>
-          <p class="text-xs text-muted-foreground">
+          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
             This preview uses the values above before you save. Unset values fall back to the
             Mattrax defaults.
           </p>
-        </CardContent>
-      </Card>
+        </Panel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Tenant details</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-3 text-sm">
-          <Row label="Tenant ID" value={params.tenantId ?? ""} mono />
-          <Row label="Your role" value={tenant.data?.role ?? "…"} />
-          <Row label="Devices" value="Managed from the Devices page" />
-          <p class="pt-2 text-xs text-muted-foreground">
+        <Panel title="Tenant details">
+          <div class="divide-y divide-white/[0.05] text-[13px]">
+            <DetailRow label="Tenant ID">
+              <span class="break-all font-mono text-xs text-muted-foreground">
+                {params.tenantId ?? ""}
+              </span>
+            </DetailRow>
+            <DetailRow label="Your role">
+              <span class="font-medium capitalize text-foreground">{tenant.data?.role ?? "…"}</span>
+            </DetailRow>
+            <DetailRow label="Devices">
+              <span class="text-right text-foreground">Managed from the Devices page</span>
+            </DetailRow>
+          </div>
+          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
             Tenant resources (devices, groups, policies, members) are isolated from every other
             tenant.
           </p>
-        </CardContent>
-      </Card>
+        </Panel>
+      </div>
 
-      <Card class="xl:col-span-2">
-        <CardHeader>
-          <CardTitle>Data and backups</CardTitle>
-        </CardHeader>
-        <CardContent class="grid gap-6 lg:grid-cols-2">
-          <div class="space-y-3">
-            <p class="text-sm font-medium">Export tenant</p>
-            <p class="text-sm text-muted-foreground">
-              Download a versioned JSON bundle containing this tenant's profile and branding,
-              groups, policies and configurations, application metadata, enrollment settings and
-              pre-registrations. APNs/SCEP private keys, token hashes, passwords, sessions and
-              stored object bytes are never included.
-            </p>
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={includeAudit()}
-                onChange={(event) => setIncludeAudit(event.currentTarget.checked)}
-              />
-              Include the audit log (up to 10,000 recent entries)
-            </label>
-            <Button variant="outline" onClick={exportTenant} disabled={!isOwner() || exporting()}>
-              {exporting() ? "Preparing…" : "Export tenant"}
-            </Button>
-            <Show when={tenant.data && !isOwner()}>
-              <p class="text-xs text-muted-foreground">
-                Only the tenant owner can export or import tenant data.
+      <Panel
+        class="xl:col-span-2"
+        title="Data and backups"
+        description="Versioned JSON bundles for moving a workspace between deployments."
+      >
+        <div class="divide-y divide-white/[0.05]">
+          <section class="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+            <div class="min-w-0 max-w-2xl">
+              <h3 class="text-[13px] font-semibold text-foreground">Export tenant</h3>
+              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Download a versioned JSON bundle containing this tenant's profile and branding,
+                groups, policies and configurations, application metadata, enrollment settings and
+                pre-registrations. APNs/SCEP private keys, token hashes, passwords, sessions and
+                stored object bytes are never included.
               </p>
-            </Show>
-            <ErrorText error={exportError()} />
-          </div>
-          <div class="space-y-3" id="restore">
-            <p class="text-sm font-medium">Import tenant</p>
-            <p class="text-sm text-muted-foreground">
-              Create a new tenant owned by you from a previously exported bundle. Internal ids are
-              re-mapped, a free slug is chosen automatically, and the import is applied as one
-              transaction.
-            </p>
-            <p class="text-xs text-muted-foreground">
-              Members, devices, audit history and SCEP certificates are not imported. Uploaded
-              application files must be re-uploaded after import.
-            </p>
-            <Button variant="outline" onClick={openImport} disabled={!isOwner()}>
-              Import tenant
-            </Button>
-          </div>
+              <label class="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                  checked={includeAudit()}
+                  onChange={(event) => setIncludeAudit(event.currentTarget.checked)}
+                />
+                Include the audit log (up to 10,000 recent entries)
+              </label>
+              <Show when={tenant.data && !isOwner()}>
+                <p class="mt-2 text-xs text-muted-foreground">
+                  Only the tenant owner can export or import tenant data.
+                </p>
+              </Show>
+              <ErrorText error={exportError()} />
+            </div>
+            <div class="shrink-0">
+              <Button variant="outline" onClick={exportTenant} disabled={!isOwner() || exporting()}>
+                {exporting() ? "Preparing…" : "Export tenant"}
+              </Button>
+            </div>
+          </section>
+
+          <section
+            class="flex flex-col gap-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:gap-8"
+            id="restore"
+          >
+            <div class="min-w-0 max-w-2xl">
+              <h3 class="text-[13px] font-semibold text-foreground">Import tenant</h3>
+              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Create a new tenant owned by you from a previously exported bundle. Internal ids are
+                re-mapped, a free slug is chosen automatically, and the import is applied as one
+                transaction.
+              </p>
+              <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Members, devices, audit history and SCEP certificates are not imported. Uploaded
+                application files must be re-uploaded after import.
+              </p>
+            </div>
+            <div class="shrink-0">
+              <Button variant="outline" onClick={openImport} disabled={!isOwner()}>
+                Import tenant
+              </Button>
+            </div>
+          </section>
+
           <Show when={isOwner()}>
-            <div class="space-y-3 lg:col-span-2">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="text-sm font-medium">Automatic tenant backups</p>
+            <section class="pt-5">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0 max-w-2xl">
+                  <h3 class="text-[13px] font-semibold text-foreground">
+                    Automatic tenant backups
+                  </h3>
+                  <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    A JSON bundle is written to private object storage every day and after manual
+                    runs. Bundles use the same shape as the export above: credentials, private keys,
+                    token hashes and object bytes are never included. Downloads are authenticated
+                    and go through the API; the R2 object is never public. Restore by downloading a
+                    backup and importing it as a new tenant below.
+                  </p>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => backupNow.mutate()}
@@ -503,29 +546,22 @@ export default function GeneralSettingsPage() {
                   {backupNow.isPending ? "Backing up…" : "Back up now"}
                 </Button>
               </div>
-              <p class="text-sm text-muted-foreground">
-                A JSON bundle is written to private object storage every day and after manual runs.
-                Bundles use the same shape as the export above: credentials, private keys, token
-                hashes and object bytes are never included. Downloads are authenticated and go
-                through the API; the R2 object is never public. Restore by downloading a backup and
-                importing it as a new tenant below.
-              </p>
+
               <Show when={backups.isError || backupNow.isError}>
                 <ErrorText error={backups.error ?? backupNow.error} />
               </Show>
               <Show when={backupDownloadError()}>{(error) => <ErrorText error={error()} />}</Show>
+
               <Show when={latestBackup()}>
                 {(latest) => (
-                  <div class="rounded-lg border bg-stone-50 p-3 text-sm">
+                  <div class="mt-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-[13px]">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                      <span>
+                      <span class="text-muted-foreground">
                         Last backup:{" "}
-                        <span class="font-medium">
+                        <span class="font-medium text-foreground">
                           {latest().status === "succeeded" ? "Succeeded" : latest().status}
                         </span>{" "}
-                        <span class="text-muted-foreground">
-                          {new Date(latest().startedAt).toLocaleString()}
-                        </span>
+                        <span>{new Date(latest().startedAt).toLocaleString()}</span>
                       </span>
                       <Show when={latest().status === "succeeded"}>
                         <Button
@@ -538,28 +574,32 @@ export default function GeneralSettingsPage() {
                       </Show>
                     </div>
                     <Show when={latest().error}>
-                      <p class="mt-1 text-xs text-red-600">{latest().error}</p>
+                      <p class="mt-1 text-xs text-destructive">{latest().error}</p>
                     </Show>
                   </div>
                 )}
               </Show>
+
               <Show when={backupWarning()}>
                 {(warning) => (
                   <p
-                    class={
+                    role="status"
+                    class={cn(
+                      "mt-3 rounded-lg border px-3 py-2 text-xs",
                       latestBackup()?.status === "failed"
-                        ? "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-                        : "rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-                    }
+                        ? "border-destructive/25 bg-destructive/[0.07] text-destructive"
+                        : "border-warning/25 bg-warning/[0.07] text-warning-foreground",
+                    )}
                   >
                     {warning()}
                   </p>
                 )}
               </Show>
+
               <Show when={(backups.data?.backups ?? []).length > 0}>
-                <div class="overflow-hidden rounded-lg border">
-                  <table class="w-full text-left text-xs">
-                    <thead class="bg-stone-50 text-muted-foreground">
+                <div class="mt-4 overflow-x-auto rounded-lg border border-white/[0.07]">
+                  <table class="w-full min-w-[34rem] text-left text-xs">
+                    <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                       <tr>
                         <th class="px-3 py-2 font-medium">Started</th>
                         <th class="px-3 py-2 font-medium">Trigger</th>
@@ -568,35 +608,39 @@ export default function GeneralSettingsPage() {
                         <th class="px-3 py-2 font-medium" />
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="divide-y divide-white/[0.05]">
                       {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
-                        <tr class="border-t">
-                          <td class="px-3 py-2">{new Date(run.startedAt).toLocaleString()}</td>
-                          <td class="px-3 py-2 capitalize">{run.trigger}</td>
+                        <tr>
+                          <td class="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                            {new Date(run.startedAt).toLocaleString()}
+                          </td>
+                          <td class="px-3 py-2 capitalize text-muted-foreground">{run.trigger}</td>
                           <td class="px-3 py-2">
-                            <span
-                              class={
+                            <StatusChip
+                              tone={
                                 run.status === "succeeded"
-                                  ? "text-emerald-700"
+                                  ? "success"
                                   : run.status === "failed"
-                                    ? "text-red-700"
-                                    : "text-amber-700"
+                                    ? "danger"
+                                    : "warning"
                               }
                             >
                               {run.status}
-                            </span>
+                            </StatusChip>
                             <Show when={run.error}>
-                              <span class="ml-1 text-red-600" title={run.error ?? ""}>
+                              <span class="ml-1 text-xs text-destructive" title={run.error ?? ""}>
                                 ({run.error?.slice(0, 60)})
                               </span>
                             </Show>
                           </td>
-                          <td class="px-3 py-2">{formatBackupSize(run.sizeBytes)}</td>
+                          <td class="px-3 py-2 text-muted-foreground">
+                            {formatBackupSize(run.sizeBytes)}
+                          </td>
                           <td class="px-3 py-2 text-right">
                             <Show when={run.status === "succeeded"}>
                               <button
                                 type="button"
-                                class="underline"
+                                class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
                                 onClick={() => void downloadBackup(run.id)}
                               >
                                 Download
@@ -609,18 +653,22 @@ export default function GeneralSettingsPage() {
                   </table>
                 </div>
               </Show>
-              <p class="text-xs text-muted-foreground">
+
+              <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Backups older than the configured retention window are deleted automatically. Need
                 to restore?{" "}
-                <a class="underline" href="#restore">
+                <a
+                  class="text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                  href="#restore"
+                >
                   Import a bundle
                 </a>
                 .
               </p>
-            </div>
+            </section>
           </Show>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       <input
         ref={importFileInput}
@@ -646,12 +694,14 @@ export default function GeneralSettingsPage() {
                 {importFileName() ? "Choose another bundle" : "Choose bundle"}
               </Button>
               <Show when={importFileName()}>
-                <span class="text-xs text-muted-foreground">{importFileName()}</span>
+                <span class="min-w-0 break-all text-xs text-muted-foreground">
+                  {importFileName()}
+                </span>
               </Show>
             </div>
             <Show when={importSummary()}>
               {(summary) => (
-                <div class="space-y-2 rounded-lg border bg-stone-50 p-3 text-sm">
+                <div class="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-sm">
                   <p class="font-medium">
                     {summary().name}
                     <Show when={summary().slug}>
@@ -675,15 +725,15 @@ export default function GeneralSettingsPage() {
           </Show>
           <Show when={importResult()}>
             {(result) => (
-              <div class="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                <p class="font-medium">Imported {result().slug}</p>
-                <p>
+              <div class="space-y-2 rounded-lg border border-success/25 bg-success/[0.07] p-3 text-sm">
+                <p class="font-medium text-success-foreground">Imported {result().slug}</p>
+                <p class="text-muted-foreground">
                   {result().counts.groups} groups, {result().counts.policies} policies,{" "}
                   {result().counts.applications} applications and {result().counts.preRegistrations}{" "}
                   pre-registrations.
                 </p>
                 <Show when={result().applicationsWithoutFiles > 0}>
-                  <p class="text-xs">
+                  <p class="text-xs text-muted-foreground">
                     {result().applicationsWithoutFiles} uploaded application
                     {result().applicationsWithoutFiles === 1 ? "" : "s"} need the file re-uploaded.
                   </p>
@@ -719,14 +769,19 @@ export default function GeneralSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Card class="border-red-200 xl:col-span-2">
-        <CardHeader>
-          <CardTitle class="text-red-700">Danger zone</CardTitle>
-        </CardHeader>
-        <CardContent class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p class="text-sm font-medium">Delete this tenant</p>
-            <p class="text-sm text-muted-foreground">
+      <Panel
+        class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
+        header={
+          <div class="flex items-center gap-2">
+            <TriangleAlert class="size-4 text-destructive" />
+            <h2 class="text-[13px] font-semibold text-destructive">Danger zone</h2>
+          </div>
+        }
+      >
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <p class="text-[13px] font-medium text-foreground">Delete this tenant</p>
+            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
               Devices are sent an unenroll request and all tenant data is permanently removed.
             </p>
             <ErrorText error={del.error} />
@@ -734,8 +789,8 @@ export default function GeneralSettingsPage() {
           <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
             Delete tenant
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
         <DialogContent>
@@ -770,13 +825,52 @@ export default function GeneralSettingsPage() {
   );
 }
 
-function Row(props: { label: string; value: string; mono?: boolean }) {
+/** A form row in the OpenCode-console style: label and hint on the left, the
+ * control pinned to the right on desktop and stacked on narrow screens. */
+function FieldRow(props: { label: string; hint?: string; children: JSX.Element }) {
   return (
-    <div class="flex items-center justify-between gap-4">
-      <span class="text-muted-foreground">{props.label}</span>
-      <span class={props.mono ? "truncate font-mono text-xs" : "text-right font-medium"}>
-        {props.value}
+    <label class="flex flex-col gap-2 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+      <span class="min-w-0">
+        <span class="block text-[13px] font-medium leading-snug text-foreground">
+          {props.label}
+        </span>
+        <Show when={props.hint}>
+          <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+            {props.hint}
+          </span>
+        </Show>
       </span>
+      <span class="w-full min-w-0 sm:w-[19rem] sm:shrink-0">{props.children}</span>
+    </label>
+  );
+}
+
+function DetailRow(props: { label: string; children: JSX.Element }) {
+  return (
+    <div class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+      <span class="shrink-0 text-xs text-muted-foreground">{props.label}</span>
+      <span class="min-w-0 text-right">{props.children}</span>
     </div>
+  );
+}
+
+const chipTones = {
+  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  success: "border-success/25 bg-success/10 text-success-foreground",
+  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+} as const;
+
+function StatusChip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
+  return (
+    <span
+      class={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
+        chipTones[props.tone],
+      )}
+    >
+      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {props.children}
+    </span>
   );
 }

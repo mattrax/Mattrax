@@ -1,12 +1,10 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { ErrorText, QueryError } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
+import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
+import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 
@@ -88,75 +86,84 @@ export default function IdentitySettingsPage() {
   };
 
   return (
-    <div class="grid gap-6 xl:grid-cols-2">
+    <div class="grid gap-5 xl:grid-cols-2">
       <QueryError class="xl:col-span-2" error={tokens.error ?? sso.error} />
-      <Card>
-        <CardHeader>
-          <CardTitle>SCIM provisioning</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <p class="text-sm text-muted-foreground">
-            Connect an identity provider's SCIM client to create, update and deactivate tenant users
-            and groups automatically.
-          </p>
-          <div class="rounded-lg border bg-stone-50 p-3 text-sm">
-            <p class="font-medium">SCIM base URL</p>
-            <code class="mt-1 block break-all text-xs">{baseUrl()}</code>
-            <p class="mt-2 text-xs text-muted-foreground">
-              Use a bearer token below. Supported resources: Users and Groups.
-            </p>
-          </div>
-          <form
-            class="flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate();
-            }}
-          >
-            <Input
-              required
-              placeholder="Token name"
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-            />
-            <Button disabled={create.isPending}>Create token</Button>
-          </form>
-          <ErrorText error={create.error} />
-          <Show when={created()}>
-            {(value) => (
-              <div class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                <p class="font-medium">Copy this token now. It will not be shown again.</p>
-                <code class="mt-2 block break-all rounded bg-white p-2 text-xs">
-                  {value().token}
-                </code>
-                <Button
-                  size="sm"
-                  class="mt-2"
-                  variant="outline"
-                  onClick={() => navigator.clipboard.writeText(value().token)}
-                >
-                  Copy token
-                </Button>
-              </div>
-            )}
-          </Show>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>SCIM tokens</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-2">
-          <Show
-            when={(tokens.data?.tokens.length ?? 0) > 0}
-            fallback={<p class="text-sm text-muted-foreground">No SCIM tokens yet.</p>}
-          >
+      <Panel
+        title="SCIM provisioning"
+        description="Connect an identity provider's SCIM client to create, update and deactivate tenant users and groups automatically."
+      >
+        <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            SCIM base URL
+          </p>
+          <code class="mt-1.5 block break-all font-mono text-xs text-foreground">{baseUrl()}</code>
+          <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Use a bearer token below. Supported resources: Users and Groups.
+          </p>
+        </div>
+
+        <form
+          class="mt-4 flex flex-col gap-2 sm:flex-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            create.mutate();
+          }}
+        >
+          <Input
+            required
+            placeholder="Token name"
+            value={name()}
+            onInput={(event) => setName(event.currentTarget.value)}
+            class="min-w-0 flex-1"
+          />
+          <Button type="submit" class="shrink-0" disabled={create.isPending}>
+            Create token
+          </Button>
+        </form>
+        <ErrorText error={create.error} />
+
+        <Show when={created()}>
+          {(value) => (
+            <div class="mt-4 rounded-lg border border-success/25 bg-success/[0.06] p-3 text-sm">
+              <p class="font-medium text-foreground">
+                Copy this token now. It will not be shown again.
+              </p>
+              <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-xs text-muted-foreground">
+                {value().token}
+              </code>
+              <Button
+                size="sm"
+                class="mt-2"
+                variant="outline"
+                onClick={() => navigator.clipboard.writeText(value().token)}
+              >
+                Copy token
+              </Button>
+            </div>
+          )}
+        </Show>
+      </Panel>
+
+      <Panel
+        title="SCIM tokens"
+        description="Tokens used by your identity provider to call the SCIM API."
+        flush
+      >
+        <Show
+          when={(tokens.data?.tokens.length ?? 0) > 0}
+          fallback={
+            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">No SCIM tokens yet.</p>
+          }
+        >
+          <ul class="divide-y divide-white/[0.05]">
             <For each={tokens.data?.tokens ?? []}>
               {(token) => (
-                <div class="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                <li class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                   <span class="min-w-0">
-                    <strong class="block truncate">{token.name}</strong>
+                    <strong class="block truncate text-[13px] font-medium text-foreground">
+                      {token.name}
+                    </strong>
                     <span class="block text-xs text-muted-foreground">
                       Created {new Date(token.createdAt).toLocaleDateString()}
                       {token.lastUsedAt
@@ -167,115 +174,146 @@ export default function IdentitySettingsPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    class="shrink-0 self-start sm:self-auto"
                     disabled={revoke.isPending}
                     onClick={() => revoke.mutate(token.id)}
                   >
                     Revoke
                   </Button>
-                </div>
+                </li>
               )}
             </For>
-          </Show>
+          </ul>
+        </Show>
+        <div class="px-4 pb-4 sm:px-5">
           <ErrorText error={tokens.error || revoke.error} />
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
-      <Card class="xl:col-span-2">
-        <CardHeader>
-          <CardTitle>Single sign-on</CardTitle>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="flex items-start gap-3">
-            <span class="rounded-lg bg-stone-100 p-2 text-stone-600">
-              <ShieldCheck class="size-5" />
-            </span>
-            <div>
-              <p class="text-sm font-medium">Microsoft Entra ID</p>
-              <p class="mt-1 text-sm text-muted-foreground">
-                Let members sign in with your Entra tenant. SCIM provisioning above can keep the
-                member list in sync.
-              </p>
-            </div>
+      <Panel
+        class="xl:col-span-2"
+        title="Single sign-on"
+        description="Let members sign in with your Microsoft Entra tenant."
+      >
+        <div class="flex items-start gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+            <ShieldCheck class="size-4" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-[13px] font-medium text-foreground">Microsoft Entra ID</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              Let members sign in with your Entra tenant. SCIM provisioning above can keep the
+              member list in sync.
+            </p>
           </div>
-          <form
-            class="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveSso.mutate();
-            }}
-          >
-            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
-              <span>
-                <strong class="block">Enable single sign-on</strong>
-                <span class="text-muted-foreground">
-                  Shows an Entra sign-in option for this tenant.
-                </span>
+        </div>
+
+        <form
+          class="mt-4 divide-y divide-white/[0.05]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveSso.mutate();
+          }}
+        >
+          <ToggleSetting
+            title="Enable single sign-on"
+            description="Shows an Entra sign-in option for this tenant."
+            checked={ssoEnabled()}
+            onChange={setSsoEnabled}
+          />
+          <label class="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+            <span class="min-w-0">
+              <span class="block text-[13px] font-medium leading-snug text-foreground">
+                Microsoft Entra tenant ID
               </span>
-              <input
-                type="checkbox"
-                checked={ssoEnabled()}
-                onChange={(event) => setSsoEnabled(event.currentTarget.checked)}
-              />
-            </label>
-            <label class="space-y-1.5 text-sm">
-              <span class="font-medium">Microsoft Entra tenant ID</span>
+              <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                The directory (tenant) ID from Entra ID.
+              </span>
+            </span>
+            <span class="w-full min-w-0 sm:w-[19rem] sm:shrink-0">
               <Input
                 placeholder="00000000-0000-0000-0000-000000000000"
                 value={azureTenantId()}
                 onInput={(event) => setAzureTenantId(event.currentTarget.value)}
               />
-            </label>
-            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
-              <span>
-                <strong class="block">Create members on first sign-in</strong>
-                <span class="text-muted-foreground">
-                  Users with an account in this Entra tenant join as members.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={autoProvision()}
-                onChange={(event) => setAutoProvision(event.currentTarget.checked)}
-              />
-            </label>
-            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
-              <span>
-                <strong class="block">Require MFA for owners and admins</strong>
-                <span class="text-muted-foreground">
-                  Owners and admins must enroll an authenticator app before they can access this
-                  workspace. Members can still view it.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={requireMfa()}
-                onChange={(event) => setRequireMfa(event.currentTarget.checked)}
-              />
-            </label>
-            <div class="flex flex-wrap gap-2">
-              <Button type="submit" disabled={saveSso.isPending}>
-                Save SSO settings
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!sso.data?.enabled || !sso.data?.azureTenantId}
-                onClick={startSso}
-              >
-                Test sign-in
-              </Button>
-            </div>
-            <Show when={ssoError()}>
-              {(message) => (
-                <p role="alert" class="text-sm text-red-600">
-                  {message()}
-                </p>
-              )}
-            </Show>
+            </span>
+          </label>
+          <ToggleSetting
+            title="Create members on first sign-in"
+            description="Users with an account in this Entra tenant join as members."
+            checked={autoProvision()}
+            onChange={setAutoProvision}
+          />
+          <ToggleSetting
+            title="Require MFA for owners and admins"
+            description="Owners and admins must enroll an authenticator app before they can access this workspace. Members can still view it."
+            checked={requireMfa()}
+            onChange={setRequireMfa}
+          />
+
+          <div class="flex flex-wrap gap-2 pt-4">
+            <Button type="submit" disabled={saveSso.isPending}>
+              Save SSO settings
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!sso.data?.enabled || !sso.data?.azureTenantId}
+              onClick={startSso}
+            >
+              Test sign-in
+            </Button>
+          </div>
+          <Show when={ssoError()}>
+            {(message) => (
+              <p role="alert" class="pt-3 text-[13px] text-destructive">
+                {message()}
+              </p>
+            )}
+          </Show>
+          <div class="pt-3">
             <ErrorText error={saveSso.error || sso.error} />
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </form>
+      </Panel>
     </div>
+  );
+}
+
+function ToggleSetting(props: {
+  title: string;
+  description?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label class="flex cursor-pointer items-start justify-between gap-4 py-3.5">
+      <span class="min-w-0">
+        <span class="block text-[13px] font-medium leading-snug text-foreground">
+          {props.title}
+        </span>
+        <Show when={props.description}>
+          <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+            {props.description}
+          </span>
+        </Show>
+      </span>
+      <span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center">
+        <input
+          type="checkbox"
+          class="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+          checked={props.checked}
+          onChange={(event) => props.onChange(event.currentTarget.checked)}
+        />
+        <span
+          aria-hidden="true"
+          class="h-5 w-9 rounded-full border border-white/[0.12] bg-white/[0.08] transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
+        />
+        <span
+          aria-hidden="true"
+          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.4)] transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
+        />
+      </span>
+    </label>
   );
 }

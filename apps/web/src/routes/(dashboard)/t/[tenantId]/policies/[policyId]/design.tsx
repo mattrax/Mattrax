@@ -204,7 +204,7 @@ export default function PolicyDesignerPage() {
   return (
     <div
       data-policy-designer
-      class="flex h-[calc(100svh-92px)] min-h-0 flex-1 flex-col overflow-hidden bg-background"
+      class="flex h-[calc(100svh-92px)] max-h-[calc(100svh-92px)] min-h-0 shrink-0 flex-col overflow-hidden bg-background"
     >
       <Show
         when={ready() && policy.data}
