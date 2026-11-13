@@ -290,21 +290,28 @@ export const authClient = {
               registration: { name: payload.name },
             }),
           });
-          try {
-            const completion = await request<unknown>("/signIn", {
-              method: "POST",
-              body: authBody({ email: payload.email, password: payload.password }),
-            });
-            const state = completionState(completion);
-            if (!state.user && !state.pending)
-              throw new Error("Additional authentication is required");
-            if (state.session) commitSession(state.session);
-            return { status: "signed-in" };
-          } catch (error) {
-            if ((error as { _tag?: string })._tag === "PasswordRejected")
-              return { status: "existing-account", email: payload.email };
-            throw error;
+          // Registration and password writes can be briefly invisible to the
+          // sign-in read (the API uses a pool). Retry a fresh credential once or
+          // twice before concluding the address already belonged to someone.
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const completion = await request<unknown>("/signIn", {
+                method: "POST",
+                body: authBody({ email: payload.email, password: payload.password }),
+              });
+              const state = completionState(completion);
+              if (!state.user && !state.pending)
+                throw new Error("Additional authentication is required");
+              if (state.session) commitSession(state.session);
+              return { status: "signed-in" };
+            } catch (error) {
+              const tag = (error as { _tag?: string })._tag;
+              if (tag !== "PasswordRejected") throw error;
+              if (attempt === 2) return { status: "existing-account", email: payload.email };
+              await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+            }
           }
+          return { status: "existing-account", email: payload.email };
         },
       ),
   },

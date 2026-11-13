@@ -6,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
@@ -111,9 +110,9 @@ function TenantSwitcher(props: {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent class="w-72 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
-        <DropdownMenuLabel class="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <div class="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Workspaces
-        </DropdownMenuLabel>
+        </div>
         <Show
           when={tenants().length > 0}
           fallback={
@@ -127,6 +126,7 @@ function TenantSwitcher(props: {
               <DropdownMenuItem
                 as="a"
                 href={`/t/${tenant.id}`}
+                role="menuitem"
                 onClick={(event) => {
                   event.preventDefault();
                   rememberTenant(tenant.id);
@@ -264,6 +264,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         </DropdownMenuItem>
         <DropdownMenuItem
           as="a"
+          role="menuitem"
           href="mailto:hello@mattrax.app?subject=Mattrax%20feedback"
           class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
         >
