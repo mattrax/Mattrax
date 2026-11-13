@@ -670,6 +670,16 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const { user, apiToken } = yield* auth.requireUser({ headers: request.headers });
 
+      // An unverified address cannot reach tenant data through either a
+      // browser session or a bearer token. Tokens resolve to their owner's user
+      // row, so this also closes the token-creation bypass.
+      if (!user.emailVerified)
+        return yield* Effect.fail(
+          new EnterpriseForbidden({
+            message: "Verify your email address before accessing this tenant.",
+          }),
+        );
+
       if (apiToken) {
         // A tenant-bound token cannot be used against another tenant. Report it
         // as missing so token holders cannot probe tenant existence.
@@ -1880,7 +1890,9 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
-        const tenants = yield* listTenantInfo(user.id);
+        // Do not disclose tenant membership to an unverified account. The
+        // verification screen only needs the user record.
+        const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
         const memberships = yield* db.query.member.findMany({
           where: { userId: user.id },
         });
@@ -2005,12 +2017,24 @@ export const createEnterpriseService = ({
     listTenants: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before accessing tenants.",
+            }),
+          );
         const tenants = yield* listTenantInfo(user.id);
         return { tenants };
       }),
     createTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before creating a tenant.",
+            }),
+          );
         const body = payload as {
           name: string;
           slug: string;
@@ -7489,7 +7513,8 @@ export const createEnterpriseService = ({
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),
-    verifyEmail: (_request, payload) => auth.verifyEmail(payload),
+    verifyEmail: (request, payload) =>
+      auth.verifyEmail(webRequestFromRequest(request, origin), payload),
     requestEmailChange: (request, payload) =>
       auth.requestEmailChange(webRequestFromRequest(request, origin), payload),
     verifyEmailChange: (_request, payload) => auth.verifyEmailChange(payload),

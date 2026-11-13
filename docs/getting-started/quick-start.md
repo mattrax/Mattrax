@@ -14,7 +14,8 @@ follow at the end.
 ## 1. Create an account and tenant
 
 1. Open `/register` on your deployment and create an account.
-2. Verify your email.
+2. Enter the six-digit code sent to your email. The dashboard stays locked until the
+   address is verified.
 3. Create a tenant. The account that creates it becomes the `owner`.
 4. Open **Settings → General** and set the tenant name, display name, support email and
    brand colour. These values appear on the enrollment page and in profiles.

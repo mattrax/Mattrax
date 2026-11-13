@@ -77,11 +77,35 @@ export async function register(page: Page, options: { name?: string; email?: str
   if (!response) throw new Error("Registration request was never sent");
   if (!response.ok())
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
+
+  // Registration ends on the code step until the address is proven.
+  await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
+  const code = await verificationCode(page, email);
+  await page.locator("#verification-code").fill(code);
+  await page.getByRole("button", { name: /verify email/i }).click();
   // A cold dev server compiles the dashboard route on the first navigation,
   // which can take longer than the default test timeout.
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
-  await verifyEmail(page, email);
   return { email, password: PASSWORD };
+}
+
+/** Read the six-digit code from the dev mailbox used by browser tests. */
+export async function verificationCode(page: Page, email: string) {
+  let code = "";
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/debug/emails");
+        if (!response.ok()) return "";
+        const messages = (await response.json()) as Array<{ to: string; text: string }>;
+        const message = messages.find((item) => item.to === email);
+        code = message?.text.match(/code is (\d{6})/)?.[1] ?? "";
+        return code;
+      },
+      { timeout: 20_000 },
+    )
+    .not.toBe("");
+  return code;
 }
 
 /** Confirm the registration email through the dev mailbox used by browser tests. */

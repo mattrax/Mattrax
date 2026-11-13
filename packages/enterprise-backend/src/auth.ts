@@ -32,7 +32,6 @@ import { SecureRandom } from "effect/crypto";
 import { and, eq } from "drizzle-orm";
 import { provisionEmailCredential } from "./emailCredential.ts";
 import { makeStepUpServiceLive, verifyStepUpGrant } from "./stepUp.ts";
-import { signToken } from "./tokens.ts";
 
 export const sessionCookie = "__Host-mattrax_session";
 
@@ -274,40 +273,9 @@ export const makeAuthLive = ({
                 appAuth.strategies.email.persistence.moduleId as string,
                 event.snapshot.subjectId,
               );
-              if (event.snapshot.action === "registration" && authSecret && origin) {
-                const user = yield* db.query.user
-                  .findFirst({ where: { id: event.snapshot.subjectId } })
-                  .pipe(Effect.catch(() => Effect.succeed(undefined)));
-                if (user) {
-                  const token = yield* signToken(authSecret, {
-                    sub: user.id,
-                    email: user.email,
-                    exp: Date.now() + 24 * 60 * 60 * 1000,
-                    purpose: "email-verify",
-                  }).pipe(Effect.catch(() => Effect.succeed("")));
-                  const link = token
-                    ? `${origin}/verify-email?token=${encodeURIComponent(token)}`
-                    : "";
-                  if (token && email) {
-                    yield* Effect.tryPromise({
-                      try: () =>
-                        email.send({
-                          to: user.email,
-                          from: {
-                            name: "Mattrax",
-                            email: emailFrom ?? "hello@mattrax.cloud",
-                          },
-                          subject: "Verify your Mattrax email address",
-                          text: `Welcome to Mattrax. Verify your email address by opening this link:\n\n${link}\n\nThis link expires in 24 hours.`,
-                          html: `<p>Welcome to Mattrax.</p><p><a href="${link}">Verify your email address</a></p><p>This link expires in 24 hours.</p>`,
-                        }),
-                      catch: () => EmailDelivery.EmailNotAccepted.make({}),
-                    }).pipe(Effect.catch(() => Effect.void));
-                  } else if (token) {
-                    console.log("VERIFY EMAIL", user.email, link);
-                  }
-                }
-              }
+              // Registration verification is initiated by the web flow as a
+              // six-digit code (see enterpriseAuth.requestEmailVerification),
+              // so the auth runtime does not send a second link email here.
             }
             return [];
           }),

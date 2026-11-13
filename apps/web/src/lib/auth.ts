@@ -582,12 +582,12 @@ export const authClient = {
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>
     result(() =>
-      request<{ status: "ok" }>("/v1/account/email-verification", {
+      request<{ status: "ok"; challenge?: string }>("/v1/account/email-verification", {
         method: "POST",
         body: "{}",
       }),
     ),
-  verifyEmail: (payload: { token: string }) =>
+  verifyEmail: (payload: { token?: string; code?: string; challenge?: string }) =>
     result(() =>
       request<{ status: "ok" }>("/v1/verify-email", {
         method: "POST",

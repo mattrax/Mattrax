@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { EnterpriseAuth } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
@@ -19,9 +19,15 @@ const makeContext = (initial: Record<string, any[]> = {}) => {
   const db = makeDb(initial);
   const appAuth = {
     verifySession: () => Effect.succeed({ subjectId: "user-1", sessionId: "session-1" }),
+    strategies: { email: { persistence: { moduleId: "email" } } },
   };
+  // The production value is the auth definition itself, which is both
+  // Effect-like and carries the strategy metadata used when provisioning.
+  const appAuthService = Object.assign(Effect.succeed(appAuth), {
+    strategies: appAuth.strategies,
+  });
   const Live = makeEnterpriseAuthLive({
-    appAuth: Effect.succeed(appAuth) as any,
+    appAuth: appAuthService as any,
     origin,
     authSecret,
   }).pipe(Layer.provide(Layer.succeed(Db, db as any)));
@@ -230,5 +236,65 @@ describe("enterprise API tokens", () => {
         }),
       ),
     ).resolves.toMatchObject({ item: { scopes: ["read"], tenantId: "tenant-1" } });
+  });
+});
+
+describe("email verification", () => {
+  const unverified = () => {
+    const seed = seedUserAndTenant();
+    seed.user = [{ ...seed.user[0], emailVerified: false }];
+    return seed;
+  };
+
+  it("verifies a six-digit code and consumes it", async () => {
+    const { db, run } = makeContext(unverified());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const requested = await run((auth) => auth.requestEmailVerification(session()));
+      const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
+      const code = call?.[2] as string;
+      expect(code).toMatch(/^\d{6}$/);
+      expect(requested.challenge).toEqual(expect.any(String));
+
+      const result = await run((auth) =>
+        auth.verifyEmail(session(), { code, challenge: requested.challenge }),
+      );
+      expect(result).toEqual({ status: "ok" });
+      expect(db.store.user[0]!.emailVerified).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("rejects a wrong code and counts the attempt", async () => {
+    const { db, run } = makeContext(unverified());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const requested = await run((auth) => auth.requestEmailVerification(session()));
+      const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
+      const code = call?.[2] as string;
+      const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
+      await expect(
+        run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
+      ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+      expect(db.store.user[0]!.emailVerified).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("requires the current email to be verified before changing it", async () => {
+    const { run } = makeContext(unverified());
+    await expect(
+      run((auth) => auth.requestEmailChange(session(), { newEmail: "new@example.com" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("will not issue API tokens to an unverified account", async () => {
+    const { run } = makeContext(unverified());
+    const grant = await grantFor("api-token-create");
+    await expect(
+      run((auth) => auth.createApiToken(session(grant), { name: "CLI" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
   });
 });

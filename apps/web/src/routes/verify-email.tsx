@@ -1,58 +1,123 @@
-import { useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
+import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
 
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = createSignal<"pending" | "ok" | "error">("pending");
+  const navigate = useNavigate();
+  const session = authClient.useSession();
+  const [tokenStatus, setTokenStatus] = createSignal<"pending" | "ok" | "error" | null>(null);
   const [message, setMessage] = createSignal("Verifying your email address…");
 
+  const token = () =>
+    Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
+  const returnTo = () =>
+    Array.isArray(searchParams.returnTo) ? searchParams.returnTo[0] : searchParams.returnTo;
+
   onSettled(() => {
-    const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
-    if (!token) {
-      setStatus("error");
-      setMessage("This verification link is missing its token.");
-      return;
-    }
+    document.title = "Verify email · Mattrax";
+    if (!token()) return;
+    setTokenStatus("pending");
     void (async () => {
-      const result = await authClient.verifyEmail({ token });
+      const result = await authClient.verifyEmail({ token: token()! });
       if (result.error) {
-        setStatus("error");
+        setTokenStatus("error");
         setMessage(result.error.message ?? "This verification link is invalid or expired.");
         return;
       }
-      setStatus("ok");
+      await session().refetch();
+      setTokenStatus("ok");
       setMessage("Your email address is verified.");
     })();
   });
 
   return (
     <div class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
-      <div class="w-full max-w-sm rounded-xl border bg-white p-6 text-center shadow-sm">
-        <a href="/" class="mb-6 inline-flex items-center gap-2">
-          <img
-            src="/assets/brand/mattrax-white.png"
-            alt="Mattrax"
-            class="h-4 w-auto"
-            width="922"
-            height="142"
-          />
-        </a>
-        <h1 class="text-xl font-semibold text-stone-900">
-          {status() === "ok"
-            ? "Email verified"
-            : status() === "error"
-              ? "Verification failed"
-              : "Verifying email"}
-        </h1>
-        <p class="mt-2 text-sm text-stone-500">{message()}</p>
-        <Show when={status() !== "pending"}>
-          <a
-            href="/dashboard"
-            class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
-          >
-            Continue to dashboard
+      <div class="w-full max-w-sm px-4">
+        <div class="mb-8 text-center">
+          <a href="/" class="inline-flex items-center gap-2 mb-6">
+            <img
+              src="/assets/brand/mattrax-white.png"
+              alt="Mattrax"
+              class="h-4 w-auto"
+              width="922"
+              height="142"
+            />
           </a>
+        </div>
+
+        <Show when={token()}>
+          <div class="space-y-5 text-center">
+            <h1 class="text-2xl font-semibold text-stone-900">
+              {tokenStatus() === "ok"
+                ? "Email verified"
+                : tokenStatus() === "error"
+                  ? "Verification failed"
+                  : "Verifying email"}
+            </h1>
+            <p class="text-sm text-stone-500">{message()}</p>
+            <Show when={tokenStatus() !== "pending"}>
+              <a
+                href={returnTo() ?? "/dashboard"}
+                class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+              >
+                Continue to dashboard
+              </a>
+            </Show>
+          </div>
+        </Show>
+
+        <Show when={!token()}>
+          <Show
+            when={!session().isPending}
+            fallback={<p class="text-center text-sm text-stone-500">Checking your session…</p>}
+          >
+            <Show
+              when={session().data?.user}
+              fallback={
+                <div class="space-y-5 text-center">
+                  <h1 class="text-2xl font-semibold text-stone-900">Verify your email</h1>
+                  <p class="text-sm text-stone-500">
+                    Sign in first, then we can send a verification code to your address.
+                  </p>
+                  <a
+                    href={`/login?returnTo=${encodeURIComponent(returnTo() ?? "/dashboard")}`}
+                    class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                  >
+                    Sign in
+                  </a>
+                </div>
+              }
+            >
+              {(user) => (
+                <Show
+                  when={!user().emailVerified}
+                  fallback={
+                    <div class="space-y-5 text-center">
+                      <h1 class="text-2xl font-semibold text-stone-900">Email verified</h1>
+                      <p class="text-sm text-stone-500">{user().email} is already verified.</p>
+                      <a
+                        href={returnTo() ?? "/dashboard"}
+                        class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                      >
+                        Continue to dashboard
+                      </a>
+                    </div>
+                  }
+                >
+                  <EmailCodeForm
+                    email={user().email}
+                    autoSend
+                    onVerified={async () => {
+                      await session().refetch();
+                      navigate(returnTo() ?? "/dashboard", { replace: true });
+                    }}
+                  />
+                </Show>
+              )}
+            </Show>
+          </Show>
         </Show>
       </div>
     </div>

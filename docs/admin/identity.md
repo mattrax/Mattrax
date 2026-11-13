@@ -21,6 +21,8 @@ groups.
 4. Choose whether to create members on first sign-in.
 5. Optionally require MFA for owners and admins.
 
+New accounts verify their address with a six-digit email code before the dashboard or any
+tenant API is available, and an address cannot be changed until the current one is verified.
 Users sign in from the login page with their work email or the SSO button. The OIDC flow
 validates state, issuer and audience; the Entra object id maps to a local user.
 

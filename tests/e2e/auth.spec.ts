@@ -17,7 +17,7 @@ test.describe("authentication and onboarding", () => {
 
     await page.goto("/dashboard");
     await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
-    await expect(page.getByRole("heading", { name: "Onboard Tenant" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Device health", exact: true })).toBeVisible();
   });
 
   test("signs out and back in", async ({ page }) => {

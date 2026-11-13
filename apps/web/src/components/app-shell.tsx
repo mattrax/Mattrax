@@ -21,10 +21,8 @@ import {
   Plus,
   Search as SearchIcon,
   User,
-  X,
 } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import { authClient } from "~/lib/auth";
 import { cn } from "~/lib/utils";
 
 type NavItem = {
@@ -266,72 +264,6 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
   );
 }
 
-function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
-  const user = () => props.user;
-  const [dismissed, setDismissed] = createSignal(false);
-  const [sent, setSent] = createSignal(false);
-  const [sending, setSending] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-
-  onSettled(() => {
-    if (sessionStorage.getItem("mattrax:verify-banner-dismissed") === "1") setDismissed(true);
-  });
-
-  const resend = async () => {
-    setSending(true);
-    setError(null);
-    const result = await authClient.requestEmailVerification();
-    setSending(false);
-    if (result.error) setError(result.error.message ?? "Could not send the email.");
-    else setSent(true);
-  };
-
-  return (
-    <Show when={user() && !user()!.emailVerified && !dismissed()}>
-      <div class="relative border-b border-white/[0.07] bg-white/[0.02]">
-        <div class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-1.5 text-[11.5px] text-muted-foreground sm:px-5 lg:px-6">
-          <span class="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
-          <span class="font-[500] text-foreground">Verify your email</span>
-          <span class="hidden text-muted-foreground sm:inline">
-            to enable passwordless sign-in and account recovery.
-          </span>
-          <Show
-            when={!sent()}
-            fallback={
-              <span class="font-medium text-success-foreground">
-                Verification email sent — check your inbox.
-              </span>
-            }
-          >
-            <button
-              type="button"
-              disabled={sending()}
-              onClick={resend}
-              class="font-medium text-warning-foreground underline decoration-warning-foreground/30 underline-offset-2 transition-colors hover:decoration-warning-foreground disabled:opacity-60"
-            >
-              {sending() ? "Sending…" : "Resend email"}
-            </button>
-          </Show>
-          <Show when={error()}>
-            {(message) => <span class="text-destructive">{message()}</span>}
-          </Show>
-          <button
-            type="button"
-            aria-label="Dismiss email verification reminder"
-            onClick={() => {
-              setDismissed(true);
-              sessionStorage.setItem("mattrax:verify-banner-dismissed", "1");
-            }}
-            class="ml-auto rounded p-1 text-muted-foreground/60 transition-colors hover:bg-white/[0.05] hover:text-muted-foreground"
-          >
-            <X class="size-3" />
-          </button>
-        </div>
-      </div>
-    </Show>
-  );
-}
-
 function navFor(tenantId: string | undefined): NavItem[] {
   if (!tenantId) return [];
   const base = `/t/${tenantId}`;
@@ -537,10 +469,6 @@ export function AppShell(props: {
           </div>
         </Show>
       </header>
-
-      <Show when={!location.pathname.endsWith("/design")}>
-        <EmailVerificationBanner user={props.user} />
-      </Show>
 
       <main
         id="main"

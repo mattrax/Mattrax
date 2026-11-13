@@ -121,6 +121,19 @@ const sha256 = (value: string) =>
     ),
   );
 
+const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
+
+/** Six digits, zero padded. Randomness comes from the platform CSPRNG. */
+const generateEmailCode = () => {
+  const bytes = crypto.getRandomValues(new Uint32Array(1));
+  return String(bytes[0]! % 1_000_000).padStart(6, "0");
+};
+
+const emailCodeHash = (authSecret: string, subjectId: string, code: string) =>
+  sha256(`${authSecret}:email-code:${subjectId}:${code}`);
+
+const verified = Effect.succeed({ status: "ok" as const });
+
 export type EnterpriseAuthOptions = {
   readonly appAuth: AppAuthService;
   readonly origin: string;
@@ -383,6 +396,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       ) =>
         Effect.gen(function* () {
           const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
+          if (!user.emailVerified)
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message: "Verify your email address before creating API tokens.",
+              }),
+            );
           const name = body.name?.trim();
           if (!name)
             return yield* Effect.fail(
@@ -478,6 +497,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const requestEmailChange = (request: Request, body: { newEmail: string }) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
+          if (!user.emailVerified)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Verify your current email address before changing it",
+              }),
+            );
           const newEmail = body.newEmail.trim().toLowerCase();
           if (!newEmail || !newEmail.includes("@"))
             return yield* Effect.fail(
@@ -518,7 +543,16 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const requestEmailVerification = (request: Request) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
-          if (user.emailVerified) return { status: "ok" as const };
+          if (user.emailVerified) return verified;
+
+          const code = generateEmailCode();
+          const challenge = yield* signToken(authSecret, {
+            sub: user.id,
+            email: user.email,
+            exp: Date.now() + EMAIL_CODE_TTL_MS,
+            purpose: "email-verify-code",
+            codeHash: yield* emailCodeHash(authSecret, user.id, code),
+          });
           const token = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
@@ -532,22 +566,83 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 email.send({
                   to: user.email,
                   from: { name: "Mattrax", email: "hello@mattrax.cloud" },
-                  subject: "Verify your Mattrax email address",
-                  text: `Verify your Mattrax email address by opening this link:\n\n${link}\n\nThis link expires in 24 hours.`,
-                  html: `<p>Verify your Mattrax email address by opening this link:</p><p><a href="${link}">${link}</a></p><p>This link expires in 24 hours.</p>`,
+                  subject: "Your Mattrax verification code",
+                  text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                  html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes.</p><p>You can also verify by opening <a href="${link}">this link</a>. The link expires in 24 hours.</p>`,
                 }),
               catch: () =>
                 new EnterpriseBadRequest({ message: "Could not send the verification email" }),
             });
           } else {
-            console.log("VERIFY EMAIL", user.email, link);
+            console.log("VERIFY EMAIL CODE", user.email, code, link);
           }
-          return { status: "ok" as const };
+          return { status: "ok" as const, challenge };
         });
 
-      const verifyEmail = (body: { token: string }) =>
+      const verifyEmail = (
+        request: Request,
+        body: { token?: string; code?: string; challenge?: string },
+      ) =>
         Effect.gen(function* () {
-          const payload = yield* verifyToken(authSecret, body.token).pipe(
+          if (body.code !== undefined) {
+            const { user } = yield* requireUser(request);
+            if (user.emailVerified) return verified;
+            const code = body.code.trim();
+            if (!/^\d{6}$/.test(code))
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({ message: "Enter the six-digit code" }),
+              );
+            const challenge = yield* verifyToken(authSecret, body.challenge ?? "").pipe(
+              Effect.catch(() =>
+                Effect.fail(
+                  new EnterpriseBadRequest({
+                    message: "Request a new code and try again.",
+                  }),
+                ),
+              ),
+            );
+            const codeHash = (challenge as typeof challenge & { codeHash?: unknown }).codeHash;
+            if (
+              challenge.exp <= Date.now() ||
+              challenge.purpose !== "email-verify-code" ||
+              typeof codeHash !== "string" ||
+              challenge.sub !== user.id ||
+              challenge.email.toLowerCase() !== user.email.toLowerCase()
+            )
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: "That code is invalid or has expired. Request a new one.",
+                }),
+              );
+            const hash = yield* emailCodeHash(authSecret, user.id, code);
+            if (hash !== codeHash)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: "That code is invalid or has expired. Request a new one.",
+                }),
+              );
+            yield* db
+              .update(schema.user)
+              .set({ emailVerified: true, updatedAt: new Date() })
+              .where(eq(schema.user.id, user.id));
+            yield* db
+              .update((schema as any).authIdentifiers)
+              .set({ verifiedAt: Date.now() })
+              .where(
+                and(
+                  eq((schema as any).authIdentifiers.subjectId, user.id),
+                  eq((schema as any).authIdentifiers.namespace, "email"),
+                ),
+              );
+            yield* provisionEmailCredential(
+              db,
+              options.appAuth.strategies.email.persistence.moduleId as string,
+              user.id,
+            );
+            return { status: "ok" as const };
+          }
+
+          const payload = yield* verifyToken(authSecret, body.token ?? "").pipe(
             Effect.catch(() =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),

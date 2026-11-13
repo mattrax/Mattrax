@@ -45,8 +45,7 @@ test.describe("top navigation", () => {
     await expect(page.locator("header")).toHaveCount(1);
   });
 
-  test("shows one email verification reminder at a time", async ({ page }) => {
-    // Register without confirming the email so the reminder is visible.
+  test("keeps unverified accounts out of the dashboard", async ({ page }) => {
     await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#name").fill("Unverified User");
@@ -54,15 +53,27 @@ test.describe("top navigation", () => {
     await page.locator("#password").fill(PASSWORD);
     await page.locator("#confirm-password").fill(PASSWORD);
     await page.getByRole("button", { name: /create account/i }).click();
-    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
-    await gotoHydrated(page, "/dashboard");
-    await expect(page.getByText("Verify your email", { exact: true })).toHaveCount(1);
+    await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
 
-    // Dismissing the reminder hides it for the rest of the session.
-    await page.getByRole("button", { name: /dismiss email verification reminder/i }).click();
-    await expect(page.getByText("Verify your email", { exact: true })).toHaveCount(0);
-    await page.reload();
-    await expect(page.getByText("Verify your email", { exact: true })).toHaveCount(0);
+    // The API refuses tenant work until the address is verified.
+    const blocked = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/tenants", { method: "GET" });
+      return response.status;
+    });
+    expect(blocked).toBe(403);
+    const blockedCreate = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/tenants", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
+        body: JSON.stringify({ name: "Blocked", slug: `blocked-${Date.now()}` }),
+      });
+      return response.status;
+    });
+    expect(blockedCreate).toBe(403);
+
+    await gotoHydrated(page, "/dashboard");
+    await expect(page).toHaveURL(/\/verify-email/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Verify your email" })).toBeVisible();
   });
 
   test("opens the tenant switcher from an unscoped page", async ({ page }) => {

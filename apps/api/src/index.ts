@@ -330,7 +330,9 @@ const makeAppLayer = (env: Env, request: Request) => {
     appAuth,
     origin: env.ORIGIN,
     authSecret: env.AUTH_SECRET,
-    email: (env as any).EMAIL,
+    // Use the same development mailbox as sign-in proofs so verification
+    // codes are visible at /api/debug/emails locally.
+    email,
   });
 
   const proofContextLayer: Layer.Layer<Proofs.ProofRequestContext> = Layer.succeed(

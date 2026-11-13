@@ -1,9 +1,12 @@
 import { useLocation, useNavigate } from "@solidjs/router";
+import { useQuery } from "@tanstack/solid-query";
+import { isServer } from "@solidjs/web";
 import { createEffect, type ParentProps, Show } from "solid-js";
 import { AppShell } from "~/components/app-shell";
 import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 function DashboardBootScreen() {
   return (
@@ -22,16 +25,33 @@ export default function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  // Session claims are a snapshot from sign-in. `me` reads the user row so a
+  // verification completed in this tab takes effect without signing out.
+  const me = useQuery(() => ({
+    queryKey: enterpriseKeys.me(),
+    queryFn: enterprise.me,
+    // The server render has no reliable request context for this query; hydrate
+    // first and let the browser fetch it with the session cookie.
+    enabled: !isServer && Boolean(session().data?.user),
+  }));
 
   createEffect(
     () => ({
       pending: session().isPending,
       user: session().data?.user,
+      mePending: me.isPending,
+      verified: me.data?.user.emailVerified,
       path: `${location.pathname}${location.search}`,
     }),
-    ({ pending, user, path }) => {
-      if (!pending && !user) {
+    ({ pending, user, mePending, verified, path }) => {
+      if (pending) return;
+      if (!user) {
         navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
+        return;
+      }
+      if (mePending || verified === undefined) return;
+      if (!verified) {
+        navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
       }
     },
   );

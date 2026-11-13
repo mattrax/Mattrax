@@ -222,6 +222,7 @@ const EnterpriseStepUpFactorErrors = [
 ] as const;
 const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 const EnterprisePublicEmailErrors = [
+  ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
@@ -665,8 +666,19 @@ export const CreateInvitationResponse = Schema.Struct({
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String });
 
-export const VerifyEmailRequest = Schema.Struct({ token: Schema.String });
-export const EmailVerificationResponse = Schema.Struct({ status: Schema.Literal("ok") });
+export const VerifyEmailRequest = Schema.Struct({
+  /** Link-based verification from an email. */
+  token: Schema.optional(Schema.String),
+  /** Six-digit code entered while signed in. */
+  code: Schema.optional(Schema.String),
+  /** Signed challenge returned by `requestEmailVerification`. */
+  challenge: Schema.optional(Schema.String),
+});
+export const EmailVerificationResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** Present when a verification code was issued. */
+  challenge: Schema.optional(Schema.String),
+});
 
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -2320,7 +2332,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("listTenants", "/v1/tenants", {
-      error: EnterpriseAuthRequiredErrors,
+      error: [...EnterpriseAuthRequiredErrors, EnterpriseForbidden.pipe(HttpApiSchema.status(403))],
       success: TenantListResponse,
     }),
   )
