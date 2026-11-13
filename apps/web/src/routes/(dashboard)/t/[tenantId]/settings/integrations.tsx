@@ -172,6 +172,7 @@ export default function IntegrationsSettingsPage() {
   return (
     <div class="grid gap-5">
       <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
+      <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
       <Panel
         title="Outbound webhooks"

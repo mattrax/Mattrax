@@ -5,14 +5,22 @@ import { Db, schema } from "@mattrax/enterprise-core";
 
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
-const scimError = (status: number, detail: string) =>
+const scimError = (status: number, detail: string, scimType?: string) =>
   json(
     {
       schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
       status: String(status),
+      ...(scimType ? { scimType } : {}),
       detail,
     },
     status,
+  );
+
+/** Malformed JSON is a client error, not an internal failure. */
+const readJson = (request: HttpServerRequest.HttpServerRequest) =>
+  request.json.pipe(
+    Effect.map((body) => ({ valid: true as const, body })),
+    Effect.catchCause(() => Effect.succeed({ valid: false as const, body: undefined })),
   );
 
 const sha256 = (value: string) =>
@@ -378,7 +386,12 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
     const parsed = parsePath(request);
     if (!parsed) return scimError(404, "Unknown SCIM endpoint");
     const ctx = yield* authenticate(request, parsed.tenantId).pipe(
-      Effect.catch((response) => Effect.succeed(response as any)),
+      Effect.catch((error) =>
+        // Authentication failures are pre-built SCIM responses; anything else
+        // (such as a database outage) must reach the 500 handler instead of
+        // being mistaken for a context object.
+        HttpServerResponse.isHttpServerResponse(error) ? Effect.succeed(error) : Effect.fail(error),
+      ),
     );
     if (HttpServerResponse.isHttpServerResponse(ctx)) return ctx;
 
@@ -398,7 +411,11 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
     const method = request.method;
     if (parsed.resource === "Users" && !parsed.id) {
       if (method === "GET") return yield* listUsers(ctx);
-      if (method === "POST") return yield* createUser(ctx, yield* request.json);
+      if (method === "POST") {
+        const body = yield* readJson(request);
+        if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+        return yield* createUser(ctx, body.body);
+      }
       return scimError(405, "Method not allowed");
     }
     if (parsed.resource === "Users" && parsed.id) {
@@ -408,13 +425,21 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
           ? json(userResource(found.user, found.member))
           : scimError(404, "User not found");
       }
-      if (method === "PATCH") return yield* patchUser(ctx, parsed.id, yield* request.json);
+      if (method === "PATCH") {
+        const body = yield* readJson(request);
+        if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+        return yield* patchUser(ctx, parsed.id, body.body);
+      }
       if (method === "DELETE") return yield* deleteUser(ctx, parsed.id);
       return scimError(405, "Method not allowed");
     }
     if (parsed.resource === "Groups" && !parsed.id) {
       if (method === "GET") return yield* listGroups(ctx);
-      if (method === "POST") return yield* createGroup(ctx, yield* request.json);
+      if (method === "POST") {
+        const body = yield* readJson(request);
+        if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+        return yield* createGroup(ctx, body.body);
+      }
       return scimError(405, "Method not allowed");
     }
     if (parsed.resource === "Groups" && parsed.id) {
@@ -425,10 +450,15 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
           : scimError(404, "Group not found");
       }
       if (method === "PATCH") {
-        const body = (yield* request.json) as any;
-        const members = body.Operations?.find((op: any) => op.path === "members")?.value;
+        const parsedBody = yield* readJson(request);
+        if (!parsedBody.valid)
+          return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+        const body = parsedBody.body as any;
+        const members = body?.Operations?.find((op: any) => op.path === "members")?.value;
         if (Array.isArray(members)) return yield* replaceGroupMembers(ctx, parsed.id, members);
-        return json(groupResource((yield* findGroup(ctx, parsed.id))!.group, []));
+        const found = yield* findGroup(ctx, parsed.id);
+        if (!found) return scimError(404, "Group not found");
+        return json(groupResource(found.group, []));
       }
       if (method === "DELETE") return yield* deleteGroup(ctx, parsed.id);
       return scimError(405, "Method not allowed");
@@ -436,8 +466,8 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
     return scimError(404, "Unknown SCIM endpoint");
   }).pipe(
     Effect.catchCause((cause) =>
-      Effect.succeed(scimError(500, "SCIM request failed")).pipe(
-        Effect.tap(() => Effect.logError(cause)),
+      Effect.logError("SCIM request failed", cause).pipe(
+        Effect.as(scimError(500, "SCIM request failed")),
       ),
     ),
   );

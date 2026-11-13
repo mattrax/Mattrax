@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import {
@@ -7,6 +7,7 @@ import {
   EnterpriseConflict,
   EnterpriseDbError,
   EnterpriseForbidden,
+  EnterpriseInternal,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
@@ -31,6 +32,9 @@ import {
   validateTenantBranding,
   dynamicGroupRulesProblem,
   defaultOverviewWidgets,
+  defaultErrorCode,
+  diagnoseError,
+  errorDiagnostic,
   evaluateDeviceQuery,
   type DashboardQueryRequest,
   type DashboardWidgetType,
@@ -285,6 +289,98 @@ export type EnterpriseHandlersConfig = {
     }): Promise<unknown>;
   };
 };
+
+const isModelledError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
+  const tag = (error as { _tag?: unknown })._tag;
+  return typeof tag === "string" && (tag.startsWith("Enterprise") || tag.startsWith("StepUp"));
+};
+
+const expectedClientTags = new Set([
+  "EnterpriseUnauthorized",
+  "EnterpriseForbidden",
+  "EnterpriseNotFound",
+  "EnterpriseBadRequest",
+  "EnterpriseConflict",
+  "EnterpriseTenantHasMembers",
+  "EnterpriseLastTenantUser",
+  "StepUpRequired",
+  "StepUpUnavailable",
+]);
+
+const logServiceFailure = (error: unknown, causeText?: string) => {
+  const tag =
+    typeof error === "object" && error !== null && "_tag" in error
+      ? String((error as { _tag?: unknown })._tag)
+      : undefined;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : String(error);
+  return Effect.logError(
+    "Enterprise service failure",
+    JSON.stringify({
+      tag,
+      message,
+      code: errorDiagnostic(error)?.code ?? (tag ? defaultErrorCode(tag) : "internal_error"),
+      diagnostic: errorDiagnostic(error),
+      cause: causeText?.slice(0, 8_000),
+    }),
+  );
+};
+
+/**
+ * Every enterprise/auth method is wrapped once here: known tagged failures keep
+ * their tag and reduced message; anything else is logged in full and replaced
+ * with a serializable internal error. This prevents raw SQL/provider defects
+ * from becoming bodyless 500s that clients cannot explain.
+ */
+const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.catchCause((cause) => {
+      const error = Cause.squash(cause);
+      if (isModelledError(error)) {
+        const tag =
+          typeof error === "object" && error !== null && "_tag" in error
+            ? String((error as { _tag?: unknown })._tag)
+            : "";
+        const log = expectedClientTags.has(tag)
+          ? Effect.void
+          : logServiceFailure(error, Cause.pretty(cause));
+        return Effect.flatMap(log, () => Effect.fail(error as E));
+      }
+      const internal = diagnoseError(
+        new EnterpriseInternal({
+          message: "Something went wrong on our side. Try again shortly.",
+        }),
+        {
+          code: "internal_error",
+          retryable: true,
+          details: {
+            cause: error instanceof Error ? error.message : String(error),
+          },
+        },
+      );
+      return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
+        Effect.fail(internal as E),
+      );
+    }),
+  );
+
+const wrapServiceErrors = <S extends Record<string, any>>(service: S): S =>
+  new Proxy(service, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function") return value;
+      return (...args: Array<unknown>) => {
+        const fn = value as unknown as (...args: Array<unknown>) => unknown;
+        const result = fn.apply(target, args);
+        return Effect.isEffect(result) ? mapServiceErrors(result as any) : result;
+      };
+    },
+  });
 
 type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
   readonly db: EnterpriseDb;
@@ -563,7 +659,9 @@ export const createEnterpriseService = ({
   planLimits,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
-  const auth = authService;
+  const auth = wrapServiceErrors(
+    authService as unknown as Record<string, any>,
+  ) as unknown as typeof authService;
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
   const applePush = makeApplePush({
     db,
@@ -700,13 +798,19 @@ export const createEnterpriseService = ({
         const scopes = tokenScopes(apiToken.scopes);
         if (access === "read" && !scopes.has("read"))
           return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "This token is not allowed to read this tenant" }),
+            diagnoseError(
+              new EnterpriseForbidden({ message: "This token is not allowed to read this tenant" }),
+              { code: "token_scope", reason: "read_scope_missing" },
+            ),
           );
         if ((access === "write" || access === "delete") && !scopes.has("write"))
           return yield* Effect.fail(
-            new EnterpriseForbidden({
-              message: "This token is read-only and cannot modify this tenant",
-            }),
+            diagnoseError(
+              new EnterpriseForbidden({
+                message: "This token is read-only and cannot modify this tenant",
+              }),
+              { code: "token_scope", reason: "write_scope_missing" },
+            ),
           );
       }
 
@@ -1308,7 +1412,12 @@ export const createEnterpriseService = ({
       if (cause.reason === "invalid") return new EnterpriseBadRequest({ message: cause.message });
       return new EnterpriseUpstreamError({ message: cause.message });
     }
-    return new EnterpriseUpstreamError({ message: String(cause) });
+    return diagnoseError(
+      new EnterpriseUpstreamError({
+        message: "Microsoft Autopilot returned an unexpected response. Try again shortly.",
+      }),
+      { code: "upstream_error", details: { cause: String(cause) } },
+    );
   };
 
   /**
@@ -2322,7 +2431,10 @@ export const createEnterpriseService = ({
         });
         if (existing)
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "That tenant slug is already in use" }),
+            diagnoseError(
+              new EnterpriseBadRequest({ message: "That tenant slug is already in use" }),
+              { code: "slug_taken", field: "slug" },
+            ),
           );
         const branding = yield* brandingOrFail(body);
         const tenantId = id();
@@ -2986,7 +3098,10 @@ export const createEnterpriseService = ({
           });
           if (claimed && claimed.id !== tenantId)
             return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "That tenant URL is already in use" }),
+              diagnoseError(
+                new EnterpriseBadRequest({ message: "That tenant URL is already in use" }),
+                { code: "slug_taken", field: "slug" },
+              ),
             );
         }
         const branding = yield* brandingOrFail(body);
@@ -3020,9 +3135,12 @@ export const createEnterpriseService = ({
         const count = yield* memberCount(tenantId);
         if (count > 1)
           return yield* Effect.fail(
-            new EnterpriseTenantHasMembers({
-              message: "Cannot delete a tenant with more than one user",
-            }),
+            diagnoseError(
+              new EnterpriseTenantHasMembers({
+                message: "Cannot delete a tenant with more than one user",
+              }),
+              { code: "tenant_has_members" },
+            ),
           );
         yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
         return ok;
@@ -4023,7 +4141,11 @@ export const createEnterpriseService = ({
             new EnterpriseNotFound({ message: "Invitation not found or already used" }),
           );
         if (invitation.expiresAt <= now())
-          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invitation expired" }));
+          return yield* Effect.fail(
+            diagnoseError(new EnterpriseBadRequest({ message: "Invitation expired" }), {
+              code: "invitation_expired",
+            }),
+          );
         if (invitation.email.toLowerCase() !== user.email.toLowerCase())
           return yield* Effect.fail(
             new EnterpriseForbidden({
@@ -4138,9 +4260,12 @@ export const createEnterpriseService = ({
         const count = yield* memberCount(tenantId);
         if (count <= 1)
           return yield* Effect.fail(
-            new EnterpriseLastTenantUser({
-              message: "Cannot remove the last tenant user; delete the tenant instead",
-            }),
+            diagnoseError(
+              new EnterpriseLastTenantUser({
+                message: "Cannot remove the last tenant user; delete the tenant instead",
+              }),
+              { code: "last_tenant_user" },
+            ),
           );
         const member = yield* db.query.member.findFirst({
           where: { id: memberId, organizationId: tenantId },
@@ -8335,7 +8460,7 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   };
 
-  return service;
+  return wrapServiceErrors(service) as typeof service;
 };
 
 export const enterpriseHandlers = (

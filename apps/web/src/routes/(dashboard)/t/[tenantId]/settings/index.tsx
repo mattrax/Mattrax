@@ -27,6 +27,24 @@ import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
+import { errorPresentation } from "~/lib/errors";
+
+/**
+ * Turn an HTTP failure into a friendly message. Tagged API failures are
+ * normalised by `errorPresentation`; anything else keeps the status fallback
+ * instead of surfacing a raw response body.
+ */
+const responseFailure = async (response: Response, fallback: string) => {
+  const text = await response.text().catch(() => "");
+  let body: unknown = text;
+  try {
+    body = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    // Plain-text error bodies are replaced by the status fallback below.
+  }
+  const presentation = errorPresentation(body, fallback);
+  return new Error(presentation.tag ? presentation.message : fallback);
+};
 
 export default function GeneralSettingsPage() {
   const params = useParams();
@@ -173,7 +191,7 @@ export default function GeneralSettingsPage() {
         return result;
       });
       if (!response.ok)
-        throw new Error((await response.text()) || `Download failed (${response.status})`);
+        throw await responseFailure(response, `Download failed (${response.status})`);
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
@@ -201,8 +219,7 @@ export default function GeneralSettingsPage() {
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/export${suffix}`,
         { credentials: "include" },
       );
-      if (!response.ok)
-        throw new Error((await response.text()) || `Export failed (${response.status})`);
+      if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??

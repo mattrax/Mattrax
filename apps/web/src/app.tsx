@@ -1,17 +1,27 @@
 import { Head, Title } from "@solidjs/meta";
 import { createRouter } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { errorPresentation, errorTag } from "~/lib/errors";
+import { GlobalErrorBanner } from "~/components/global-error-banner";
+import { reportGlobalError } from "~/lib/global-errors";
 import "./app.css";
 
 // Data lives behind the API Worker's auth and only the browser has the session
 // it expects. Keeping queries idle during SSR avoids holding the document open
 // (and serializing transport errors) while the client fetches after hydration.
 const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      // Mutations that render their own inline error opt out with
+      // `meta: { inlineError: true }` to avoid showing the same failure twice.
+      if (mutation.meta?.inlineError) return;
+      reportGlobalError(error);
+    },
+  }),
   defaultOptions: {
     queries: {
       enabled: !isServer,
@@ -94,6 +104,7 @@ export default function App() {
             <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
               <Loading fallback={<BootSplash />}>{props.children}</Loading>
             </Errored>
+            <GlobalErrorBanner />
           </QueryClientProvider>
         </Head>
       )}

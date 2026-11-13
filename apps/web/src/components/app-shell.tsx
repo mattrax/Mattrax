@@ -24,6 +24,7 @@ import {
 } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
+import { errorPresentation } from "~/lib/errors";
 
 type NavItem = {
   id: string;
@@ -475,12 +476,13 @@ export function AppShell(props: {
           fallback={(error, reset) => {
             const value = typeof error === "function" ? (error as () => unknown)() : error;
             console.error("Mattrax page render error", value);
+            const presentation = errorPresentation(value);
             return (
               <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
                 <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
-                  <h2 class="text-[14px] font-semibold text-foreground">This page couldn't load</h2>
+                  <h2 class="text-[14px] font-semibold text-foreground">{presentation.title}</h2>
                   <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-                    {value instanceof Error ? value.message : "An unexpected error occurred."}
+                    {presentation.message}
                   </p>
                   <div class="mt-4 flex gap-2">
                     <button

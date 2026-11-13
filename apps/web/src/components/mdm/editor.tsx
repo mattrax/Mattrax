@@ -10,13 +10,14 @@ import {
   Show,
   Switch,
 } from "solid-js";
-import { ErrorText, Page, PageHeader, Panel } from "~/components/mdm/common";
+import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 
 const keys = {
@@ -184,6 +185,7 @@ export function PolicyConfigurationEditor() {
           </>
         }
       />
+      <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
       <div class="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
         <EditorNav active={active()} setActive={setActive} canEdit={canEdit()} />
         <Panel
@@ -457,7 +459,7 @@ function CustomSection(props: {
       });
     } catch (cause) {
       if (cause instanceof Error && /abort/i.test(cause.name)) return;
-      setError(cause instanceof Error ? cause.message : "Could not read that file.");
+      setError(errorMessage(cause, "Could not read that file."));
     }
   };
 
@@ -473,7 +475,7 @@ function CustomSection(props: {
         signed: false,
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not remove the signature.");
+      setError(errorMessage(cause, "Could not remove the signature."));
     } finally {
       setBusy(null);
     }

@@ -10,7 +10,7 @@ import {
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
-import { errorMessage } from "~/lib/errors";
+import { errorPresentation } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 /** The standard page frame: comfortable gutters, a compact masthead and a
@@ -239,10 +239,15 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 }
 
 export function ErrorText(props: { error: unknown }) {
+  const presentation = () => errorPresentation(props.error);
+  const showTitle = () => !["validation", "server"].includes(presentation().variant);
   return (
     <Show when={props.error}>
-      <p role="alert" class="text-sm text-destructive">
-        {errorMessage(props.error)}
+      <p role="alert" aria-live="polite" class="text-sm text-destructive">
+        <Show when={showTitle()}>
+          <span class="font-medium">{presentation().title}. </span>
+        </Show>
+        {presentation().message}
       </p>
     </Show>
   );
@@ -250,22 +255,33 @@ export function ErrorText(props: { error: unknown }) {
 
 /** A query failure with an optional retry, used by list and detail pages. */
 export function QueryError(props: { error: unknown; onRetry?: () => void; class?: string }) {
+  const presentation = () => errorPresentation(props.error);
   return (
     <Show when={props.error}>
       <div
+        role="alert"
+        aria-live="polite"
         class={cn("rounded-lg border border-destructive/25 bg-destructive/[0.07] p-4", props.class)}
       >
         <div class="flex items-start gap-2.5">
           <CircleAlert class="mt-px size-4 shrink-0 text-destructive" />
           <div class="min-w-0">
-            <p role="alert" class="text-[13px] text-foreground">
-              {errorMessage(props.error)}
+            <p class="text-[13px] font-medium text-foreground">{presentation().title}</p>
+            <p class="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+              {presentation().message}
             </p>
-            <Show when={props.onRetry}>
-              <Button size="sm" variant="outline" class="mt-3" onClick={() => props.onRetry?.()}>
-                Try again
-              </Button>
-            </Show>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <Show when={props.onRetry}>
+                <Button size="sm" variant="outline" onClick={() => props.onRetry?.()}>
+                  Try again
+                </Button>
+              </Show>
+              <Show when={presentation().variant === "auth"}>
+                <Button as="a" href="/login" size="sm" variant="outline">
+                  Sign in again
+                </Button>
+              </Show>
+            </div>
           </div>
         </div>
       </div>

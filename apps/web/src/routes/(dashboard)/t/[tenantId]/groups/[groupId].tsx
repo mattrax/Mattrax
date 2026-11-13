@@ -520,6 +520,7 @@ export default function GroupDetailPage() {
 
       <Show when={tab() === "policies"}>
         <div class="space-y-5">
+          <QueryError error={policies.error} onRetry={() => void policies.refetch()} />
           <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3.5 text-[12.5px] text-foreground">
             <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
             <div class="min-w-0">
@@ -536,17 +537,19 @@ export default function GroupDetailPage() {
             title="Policy assignments"
             description="Include delivers the policy to members; exclude removes it for this group."
           >
-            <AssignmentTable
-              rows={policies.data?.rows ?? []}
-              selected={new Set(policyModes().keys())}
-              toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
-              mode={(id) => policyModes().get(id)}
-              setMode={setPolicyMode}
-              href={(id) => `/t/${params.tenantId}/policies/${id}`}
-              emptyTitle="No policies yet"
-              emptyDescription="Create a policy first, then return here to include or exclude it for this group's members."
-              emptyIcon={ShieldCheck}
-            />
+            <Show when={!policies.isError}>
+              <AssignmentTable
+                rows={policies.data?.rows ?? []}
+                selected={new Set(policyModes().keys())}
+                toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
+                mode={(id) => policyModes().get(id)}
+                setMode={setPolicyMode}
+                href={(id) => `/t/${params.tenantId}/policies/${id}`}
+                emptyTitle="No policies yet"
+                emptyDescription="Create a policy first, then return here to include or exclude it for this group's members."
+                emptyIcon={ShieldCheck}
+              />
+            </Show>
           </Panel>
         </div>
       </Show>

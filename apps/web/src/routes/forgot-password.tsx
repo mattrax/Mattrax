@@ -1,6 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { createSignal, Show, untrack } from "solid-js";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function ForgotPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -27,7 +28,7 @@ export default function ForgotPasswordPage() {
     setPending(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Something went wrong");
+      setError(errorMessage(result.error, "Something went wrong"));
       return;
     }
 

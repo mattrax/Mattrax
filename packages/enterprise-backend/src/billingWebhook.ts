@@ -362,16 +362,18 @@ export const billingWebhookRoutes = (config: BillingWebhookConfig) =>
       const signature = Array.isArray(signatureHeader)
         ? (signatureHeader[0] ?? null)
         : (signatureHeader ?? null);
-      const payload = yield* request.text.pipe(
-        Effect.mapError(() => fail("Could not read the webhook request body")),
-      );
 
-      return yield* processStripeWebhook({
-        db,
-        payload,
-        signature,
-        webhookSecret: config.webhookSecret,
-        deviceMonthlyPriceId: config.deviceMonthlyPriceId,
+      return yield* Effect.gen(function* () {
+        const body = yield* request.text.pipe(
+          Effect.mapError(() => fail("Could not read the webhook request body", 500)),
+        );
+        return yield* processStripeWebhook({
+          db,
+          payload: body,
+          signature,
+          webhookSecret: config.webhookSecret,
+          deviceMonthlyPriceId: config.deviceMonthlyPriceId,
+        });
       }).pipe(
         Effect.as(json({ received: true })),
         Effect.tapError((error) => Effect.logWarning(`Stripe webhook rejected: ${error.message}`)),

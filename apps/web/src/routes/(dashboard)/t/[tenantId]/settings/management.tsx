@@ -322,9 +322,13 @@ export default function ManagementSettingsPage() {
         description="APNs wakes enrolled Apple devices so policy and app changes apply immediately instead of waiting for the next poll."
       >
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Chip tone={apns.data?.configured ? "success" : "warning"}>
-            {apns.data?.configured ? "Configured" : "Not configured"}
-          </Chip>
+          <Show when={apns.data}>
+            {(data) => (
+              <Chip tone={data().configured ? "success" : "warning"}>
+                {data().configured ? "Configured" : "Not configured"}
+              </Chip>
+            )}
+          </Show>
           <Show when={apns.data?.topic}>
             <span class="break-all font-mono text-[11px] text-muted-foreground">
               {apns.data!.topic}
@@ -341,19 +345,21 @@ export default function ManagementSettingsPage() {
         </div>
 
         <Show
-          when={!apns.data?.configured}
+          when={apns.data && !apns.data.configured}
           fallback={
-            <div class="mt-4 flex items-start gap-3 rounded-lg border border-success/25 bg-success/[0.06] p-4 text-[13px]">
-              <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success-foreground" />
-              <div>
-                <p class="font-medium text-foreground">
-                  Apple devices can receive push notifications
-                </p>
-                <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Renew the certificate before it expires to keep devices checking in promptly.
-                </p>
+            <Show when={apns.data}>
+              <div class="mt-4 flex items-start gap-3 rounded-lg border border-success/25 bg-success/[0.06] p-4 text-[13px]">
+                <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success-foreground" />
+                <div>
+                  <p class="font-medium text-foreground">
+                    Apple devices can receive push notifications
+                  </p>
+                  <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Renew the certificate before it expires to keep devices checking in promptly.
+                  </p>
+                </div>
               </div>
-            </div>
+            </Show>
           }
         >
           <div class="mt-4 flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/[0.06] p-4 text-[13px]">
@@ -484,7 +490,14 @@ export default function ManagementSettingsPage() {
                 )}
               </Show>
             </div>
-            <Show when={android.data} fallback={<p class="text-muted-foreground">Loading…</p>}>
+            <Show
+              when={android.data}
+              fallback={
+                <Show when={!android.error}>
+                  <p class="text-muted-foreground">Loading…</p>
+                </Show>
+              }
+            >
               {(data) => (
                 <>
                   <Show when={!data().configured}>
@@ -576,6 +589,7 @@ export default function ManagementSettingsPage() {
             <ShieldCheck class="size-4" />
           </span>
           <div class="min-w-0 flex-1 space-y-3">
+            <QueryError error={abm.error} onRetry={() => void abm.refetch()} />
             <div class="flex flex-wrap items-center gap-2">
               <p class="font-medium text-foreground">Automated Device Enrollment</p>
               <Show when={abm.data}>
@@ -594,7 +608,14 @@ export default function ManagementSettingsPage() {
                 )}
               </Show>
             </div>
-            <Show when={abm.data} fallback={<p class="text-muted-foreground">Loading…</p>}>
+            <Show
+              when={abm.data}
+              fallback={
+                <Show when={!abm.error}>
+                  <p class="text-muted-foreground">Loading…</p>
+                </Show>
+              }
+            >
               {(data) => (
                 <>
                   <Show when={!data().configured}>
@@ -722,6 +743,7 @@ export default function ManagementSettingsPage() {
             <Boxes class="size-4" />
           </span>
           <div class="min-w-0 flex-1 space-y-3">
+            <QueryError error={vpp.error} onRetry={() => void vpp.refetch()} />
             <div class="flex flex-wrap items-center gap-2">
               <p class="font-medium text-foreground">Volume licences</p>
               <Show when={vpp.data}>
@@ -740,7 +762,14 @@ export default function ManagementSettingsPage() {
                 )}
               </Show>
             </div>
-            <Show when={vpp.data} fallback={<p class="text-muted-foreground">Loading…</p>}>
+            <Show
+              when={vpp.data}
+              fallback={
+                <Show when={!vpp.error}>
+                  <p class="text-muted-foreground">Loading…</p>
+                </Show>
+              }
+            >
               {(data) => (
                 <>
                   <Show when={!data().configured}>
@@ -833,11 +862,16 @@ export default function ManagementSettingsPage() {
         title="Windows Autopilot"
         description="Register hardware hashes and publish deployment profiles through Microsoft Graph."
       >
+        <QueryError error={autopilot.error} onRetry={() => void autopilot.refetch()} />
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <MonitorSmartphone class="size-4 text-muted-foreground" />
-          <Chip tone={autopilot.data?.configured ? "success" : "warning"}>
-            {autopilot.data?.configured ? "Connected to Microsoft Graph" : "Not configured"}
-          </Chip>
+          <Show when={autopilot.data}>
+            {(data) => (
+              <Chip tone={data().configured ? "success" : "warning"}>
+                {data().configured ? "Connected to Microsoft Graph" : "Not configured"}
+              </Chip>
+            )}
+          </Show>
           <Show when={autopilot.data?.azureTenantId}>
             <span class="break-all font-mono text-[11px] text-muted-foreground">
               {autopilot.data!.azureTenantId}
@@ -850,7 +884,11 @@ export default function ManagementSettingsPage() {
 
         <Show
           when={autopilot.data}
-          fallback={<p class="mt-3 text-[13px] text-muted-foreground">Loading…</p>}
+          fallback={
+            <Show when={!autopilot.error}>
+              <p class="mt-3 text-[13px] text-muted-foreground">Loading…</p>
+            </Show>
+          }
         >
           {(data) => (
             <>
@@ -1106,12 +1144,19 @@ export default function ManagementSettingsPage() {
 
               <div class="mt-5 border-t border-white/[0.06] pt-4">
                 <p class="text-[13px] font-medium text-foreground">Autopilot devices</p>
+                <QueryError
+                  class="mt-3"
+                  error={autopilotDevices.error}
+                  onRetry={() => void autopilotDevices.refetch()}
+                />
                 <Show
                   when={(autopilotDevices.data?.devices.length ?? 0) > 0}
                   fallback={
-                    <p class="mt-2 text-xs text-muted-foreground">
-                      No Autopilot devices yet. Import hardware hashes or sync from Graph.
-                    </p>
+                    <Show when={!autopilotDevices.error}>
+                      <p class="mt-2 text-xs text-muted-foreground">
+                        No Autopilot devices yet. Import hardware hashes or sync from Graph.
+                      </p>
+                    </Show>
                   }
                 >
                   <div class="mt-3 overflow-x-auto rounded-lg border border-white/[0.07]">
@@ -1173,12 +1218,19 @@ export default function ManagementSettingsPage() {
 
               <div class="mt-5 border-t border-white/[0.06] pt-4">
                 <p class="text-[13px] font-medium text-foreground">Deployment profiles</p>
+                <QueryError
+                  class="mt-3"
+                  error={autopilotProfiles.error}
+                  onRetry={() => void autopilotProfiles.refetch()}
+                />
                 <Show
                   when={(autopilotProfiles.data?.profiles.length ?? 0) > 0}
                   fallback={
-                    <p class="mt-2 text-xs text-muted-foreground">
-                      No profiles yet. Create one above, then assign it to an Entra group.
-                    </p>
+                    <Show when={!autopilotProfiles.error}>
+                      <p class="mt-2 text-xs text-muted-foreground">
+                        No profiles yet. Create one above, then assign it to an Entra group.
+                      </p>
+                    </Show>
                   }
                 >
                   <div class="mt-3 space-y-3">

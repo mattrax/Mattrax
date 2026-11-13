@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createEffect, type ParentProps, Show } from "solid-js";
 import { AppShell } from "~/components/app-shell";
+import { QueryError } from "~/components/mdm/common";
 import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { reportGlobalError } from "~/lib/global-errors";
 
 function DashboardBootScreen() {
   return (
@@ -57,18 +59,40 @@ export default function DashboardLayout(props: ParentProps) {
   );
 
   const handleSignOut = async () => {
-    await authClient.signOut();
+    try {
+      const result = await authClient.signOut();
+      if (result.error) {
+        reportGlobalError(result.error);
+        return;
+      }
+    } catch (error) {
+      reportGlobalError(error);
+      return;
+    }
     navigate("/login", { replace: true });
   };
 
   return (
     <Show when={session().data?.user} fallback={<DashboardBootScreen />}>
       {(user) => (
-        <AppShell user={user()} onSignOut={handleSignOut}>
-          {props.children}
-          <CommandPalette />
-          <StepUpDialog />
-        </AppShell>
+        <Show
+          when={!me.isError}
+          fallback={
+            <div class="dark flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
+              <QueryError
+                class="w-full max-w-md"
+                error={me.error}
+                onRetry={() => void me.refetch()}
+              />
+            </div>
+          }
+        >
+          <AppShell user={user()} onSignOut={handleSignOut}>
+            {props.children}
+            <CommandPalette />
+            <StepUpDialog />
+          </AppShell>
+        </Show>
       )}
     </Show>
   );

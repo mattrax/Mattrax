@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import {
   EmptyState,
+  ErrorText,
   LinkButton,
   Page,
   PageHeader,
@@ -15,6 +16,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { LayoutDashboard, Plus, Star } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 
 export default function DashboardsPage() {
   const params = useParams();
@@ -23,11 +25,14 @@ export default function DashboardsPage() {
   const dashboards = useQuery(() => enterpriseQueries.dashboards(params.tenantId));
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
+  const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
+  const [removeError, setRemoveError] = createSignal<unknown>(null);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
 
   const create = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: async () => {
       const title = name().trim();
       if (!title) throw new Error("Give the dashboard a name first");
@@ -39,18 +44,29 @@ export default function DashboardsPage() {
       await invalidate();
       navigate(`/t/${params.tenantId}/dashboards/${result.id}?edit=1`);
     },
-    onError: (cause) =>
-      setError(cause instanceof Error ? cause.message : "Could not create the dashboard"),
+    onError: (cause) => setError(errorMessage(cause, "Could not create the dashboard. Try again.")),
   }));
 
   const makeDefault = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.patchDashboard(params.tenantId, id, { isDefault: true }),
-    onSuccess: invalidate,
+    onMutate: () => setMakeDefaultError(null),
+    onSuccess: async () => {
+      setMakeDefaultError(null);
+      await invalidate();
+    },
+    onError: (cause) => setMakeDefaultError(cause),
   }));
 
   const remove = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.deleteDashboard(params.tenantId, id),
-    onSuccess: invalidate,
+    onMutate: () => setRemoveError(null),
+    onSuccess: async () => {
+      setRemoveError(null);
+      await invalidate();
+    },
+    onError: (cause) => setRemoveError(cause),
   }));
 
   return (
@@ -103,6 +119,13 @@ export default function DashboardsPage() {
           </p>
         </Show>
       </Panel>
+
+      <Show when={makeDefaultError() || removeError()}>
+        <div class="space-y-2">
+          <ErrorText error={makeDefaultError()} />
+          <ErrorText error={removeError()} />
+        </div>
+      </Show>
 
       <Show
         when={(dashboards.data?.dashboards.length ?? 0) > 0}

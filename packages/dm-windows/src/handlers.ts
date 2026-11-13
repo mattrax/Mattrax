@@ -7,6 +7,49 @@ function textRequest(request: HttpServerRequest.HttpServerRequest) {
 }
 
 /**
+ * `WindowsMdmError` is deliberately a plain value object, not an `Error`, so
+ * `instanceof Error` would discard every curated message. Anything else (an
+ * unexpected defect) must not leak its message into the SOAP fault.
+ */
+function describeFailure(cause: Cause.Cause<unknown>, fallback: string) {
+  try {
+    const error = Cause.squash(cause);
+    const candidate = error as { readonly _tag?: unknown; readonly message?: unknown } | null;
+    if (
+      candidate?._tag === "WindowsMdmError" &&
+      typeof candidate.message === "string" &&
+      candidate.message.trim()
+    )
+      return candidate.message;
+  } catch {
+    // An empty/interrupted cause has nothing to describe.
+  }
+  return fallback;
+}
+
+const escapeXml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
+const fallbackFaultEnvelope = (message: string) =>
+  `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><s:Fault><s:Code><s:Value>s:Receiver</s:Value></s:Code><s:Reason><s:Text xml:lang="en-us">${escapeXml(message)}</s:Text></s:Reason></s:Fault></s:Body></s:Envelope>`;
+
+/** The fault encoder can itself fail (for example on a serialization defect). */
+function encodeFault(service: WindowsMdmService.Service, message: string) {
+  try {
+    const encoded = Effect.runSync(service.fault(message));
+    if (typeof encoded === "string" && encoded.trim()) return encoded;
+  } catch {
+    // Fall through to a minimal, fixed envelope.
+  }
+  return fallbackFaultEnvelope(message);
+}
+
+/**
  * Tenant identity for Windows protocol requests comes from the enrollment URL
  * (`?tenant=<signed token>`); device identity comes from the edge-verified mTLS
  * headers, which the API Worker only sets after checking the certificate.
@@ -41,12 +84,8 @@ function soapHandler(
       const response = yield* handle(service, body, requestContext(request)).pipe(
         Effect.matchCause({
           onSuccess: (value) => value,
-          onFailure: (cause) => {
-            const error = Cause.squash(cause);
-            return Effect.runSync(
-              service.fault(error instanceof Error ? error.message : "Invalid SOAP request"),
-            );
-          },
+          onFailure: (cause) =>
+            encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
         }),
       );
       return HttpServerResponse.text(response, {
@@ -62,12 +101,8 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
     const response = yield* service.management(body, requestContext(request)).pipe(
       Effect.matchCause({
         onSuccess: (value) => value,
-        onFailure: (cause) => {
-          const error = Cause.squash(cause);
-          return Effect.runSync(
-            service.fault(error instanceof Error ? error.message : "Invalid SyncML request"),
-          );
-        },
+        onFailure: (cause) =>
+          encodeFault(service, describeFailure(cause, "Invalid SyncML request")),
       }),
     );
     return HttpServerResponse.text(response, { contentType: "application/vnd.syncml.dm+xml" });

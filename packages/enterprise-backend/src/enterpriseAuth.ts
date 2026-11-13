@@ -10,6 +10,7 @@ import {
   StepUpRequired,
   StepUpService,
   StepUpUnavailable,
+  diagnoseError,
   type StepUpAction,
 } from "@mattrax/enterprise-domain";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -285,17 +286,21 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
           if (oauth) {
             const path = new URL(request.url).pathname;
+            const method = request.method.toUpperCase();
             const accountPath =
-              path === "/api/v1/deleteMe" ||
               path.startsWith("/api/v1/account") ||
+              (path === "/api/v1/me" && method !== "GET") ||
               path.includes("email-change") ||
               path.includes("email-verification") ||
               path === "/api/v1/verify-email";
             if (accountPath)
               return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message: "MCP tokens cannot manage account settings.",
-                }),
+                diagnoseError(
+                  new EnterpriseForbidden({
+                    message: "MCP tokens cannot manage account settings.",
+                  }),
+                  { code: "mcp_account_scope" },
+                ),
               );
           }
           const userId = session?.subjectId ?? apiToken?.userId ?? oauth?.userId;
@@ -352,7 +357,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           });
           if (!connection)
             return yield* Effect.fail(
-              new EnterpriseNotFound({ message: "MCP connection not found" }),
+              diagnoseError(new EnterpriseNotFound({ message: "MCP connection not found" }), {
+                code: "mcp_connection_revoked",
+              }),
             );
           const revokedAt = new Date();
           yield* db
@@ -575,16 +582,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             const ownScopes = tokenScopes(apiToken.scopes);
             if (!scopes.every((scope) => ownScopes.has(scope)))
               return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message: "An API token cannot create a token with broader scopes",
-                }),
+                diagnoseError(
+                  new EnterpriseForbidden({
+                    message: "An API token cannot create a token with broader scopes",
+                  }),
+                  { code: "token_scope", reason: "scope_escalation" },
+                ),
               );
             const tokenTenantId = body.tenantId ?? null;
             if (apiToken.tenantId && apiToken.tenantId !== tokenTenantId)
               return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message: "A tenant-bound API token can only create tokens for that tenant",
-                }),
+                diagnoseError(
+                  new EnterpriseForbidden({
+                    message: "A tenant-bound API token can only create tokens for that tenant",
+                  }),
+                  { code: "token_scope", reason: "tenant_scope_escalation" },
+                ),
               );
           }
 

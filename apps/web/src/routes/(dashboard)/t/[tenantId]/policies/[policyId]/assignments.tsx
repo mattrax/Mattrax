@@ -1,7 +1,14 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { ErrorText, LinkButton, Page, PageHeader, Panel } from "~/components/mdm/common";
+import {
+  ErrorText,
+  LinkButton,
+  Page,
+  PageHeader,
+  Panel,
+  QueryError,
+} from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -111,6 +118,8 @@ export default function PolicyAssignmentsPage() {
         }
       />
 
+      <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+
       <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
         <p class="text-[13px] font-semibold text-foreground">Precedence</p>
         <ol class="mt-1.5 list-decimal space-y-0.5 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
@@ -200,7 +209,14 @@ export default function PolicyAssignmentsPage() {
                 <Show
                   when={(devices.data?.rows.length ?? 0) > 0}
                   fallback={
-                    <p class="text-[12.5px] text-muted-foreground">No devices enrolled yet.</p>
+                    <Show
+                      when={devices.isError}
+                      fallback={
+                        <p class="text-[12.5px] text-muted-foreground">No devices enrolled yet.</p>
+                      }
+                    >
+                      <QueryError error={devices.error} onRetry={() => void devices.refetch()} />
+                    </Show>
                   }
                 >
                   <div class="relative max-w-xs">

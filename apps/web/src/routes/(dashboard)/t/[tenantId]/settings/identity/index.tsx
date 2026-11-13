@@ -79,7 +79,7 @@ export default function IdentitySettingsPage() {
         window.location.href = body.url;
         return;
       }
-      setSsoError(body.error ?? "Single sign-on is not available for this tenant.");
+      setSsoError(errorMessage(body, "Single sign-on is not available for this tenant."));
     } catch (error) {
       setSsoError(errorMessage(error));
     }

@@ -5,7 +5,10 @@ import { Db, schema } from "@mattrax/enterprise-core";
 import { provisionEmailCredential, signToken, verifyToken } from "@mattrax/enterprise-backend";
 
 const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
-  HttpServerResponse.jsonUnsafe(body, { status, ...(headers ? { headers } : {}) });
+  HttpServerResponse.jsonUnsafe(body, {
+    status,
+    headers: { "cache-control": "no-store", ...(headers ?? {}) },
+  });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
@@ -113,7 +116,13 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           "set-cookie": `__Host-sso_state=${encodeURIComponent(state)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
         },
       );
-    }).pipe(Effect.catch((error) => Effect.succeed(json({ error: String(error) }, 500))));
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("Azure SSO start failed", cause).pipe(
+          Effect.as(json({ error: "Could not start SSO sign-in" }, 500)),
+        ),
+      ),
+    );
 
   const callback = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -124,9 +133,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       if (!code || !state) return json({ error: "Missing OIDC code or state" }, 400);
       if (request.cookies["__Host-sso_state"] !== state)
         return json({ error: "SSO state does not match this browser" }, 400);
-      const payload = yield* verifyToken(options.authSecret!, state).pipe(
-        Effect.catch(() => Effect.fail(new Error("Invalid SSO state"))),
+      const verified = yield* verifyToken(options.authSecret!, state).pipe(
+        Effect.map((payload) => ({ ok: true as const, payload })),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Azure SSO state verification failed", cause).pipe(
+            Effect.as({ ok: false as const }),
+          ),
+        ),
       );
+      if (!verified.ok) return json({ error: "SSO state is invalid" }, 400);
+      const payload = verified.payload;
       if (payload.exp <= Date.now() || payload.purpose !== "sso-state")
         return json({ error: "SSO state expired" }, 400);
       const tenantId = payload.sub;
@@ -139,7 +155,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         return json({ error: "SSO is not enabled for this tenant" }, 404);
 
       const oidc = yield* AzureOidc;
-      const discovery = yield* oidc.discovery(config.azureTenantId);
+      const discovery = yield* oidc
+        .discovery(config.azureTenantId)
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("Azure SSO discovery failed", cause).pipe(Effect.as(null)),
+          ),
+        );
+      if (!discovery) return json({ error: "Could not contact the identity provider" }, 502);
       if (!discovery.token_endpoint)
         return json({ error: "Identity provider has no token endpoint" }, 502);
 
@@ -157,22 +180,32 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
               scope: "openid profile email",
             }),
           }),
-        catch: (cause) => new Error(`Token exchange failed: ${String(cause)}`),
-      });
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("Azure SSO token exchange request failed", cause).pipe(Effect.as(null)),
+        ),
+      );
+      if (!tokenResponse) return json({ error: "Could not contact the identity provider" }, 502);
       if (!tokenResponse.ok)
-        return json({ error: `Token exchange failed (${tokenResponse.status})` }, 502);
+        return json({ error: "Identity provider rejected the token exchange" }, 502);
       const tokens = (yield* Effect.tryPromise({
         try: () => tokenResponse.json(),
-        catch: () => new Error("Invalid token response"),
-      })) as { id_token?: string };
-      if (!tokens.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
+        catch: () => null,
+      })) as { id_token?: string } | null;
+      if (!tokens?.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
 
       const claims = yield* oidc
         .validateJwt(tokens.id_token, {
           tenantIds: [config.azureTenantId],
           audience: options.clientId!,
         })
-        .pipe(Effect.catch(() => Effect.fail(new Error("Invalid ID token"))));
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Azure SSO ID token validation failed", cause).pipe(Effect.as(null)),
+          ),
+        );
+      if (!claims) return json({ error: "Identity provider token was rejected" }, 400);
       if (claims.nonce !== payload.nonce)
         return json({ error: "Identity provider nonce did not match" }, 400);
       const email = safeEmail(claims);
@@ -263,13 +296,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         status: 302,
         headers: {
           location,
+          "cache-control": "no-store",
           "set-cookie": "__Host-sso_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
         },
       });
     }).pipe(
-      Effect.catch((error) =>
-        Effect.succeed(
-          json({ error: error instanceof Error ? error.message : String(error) }, 400),
+      Effect.catchCause((cause) =>
+        Effect.logError("Azure SSO callback failed", cause).pipe(
+          Effect.as(json({ error: "Could not complete SSO sign-in" }, 500)),
         ),
       ),
     );

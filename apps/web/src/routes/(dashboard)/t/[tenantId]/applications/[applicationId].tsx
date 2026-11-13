@@ -9,6 +9,7 @@ import {
   PageHeader,
   Panel,
   PlatformBadge,
+  QueryError,
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -263,6 +264,9 @@ export default function ApplicationDetailPage() {
                     </Show>
                   </div>
 
+                  <QueryError error={vpp.error} onRetry={() => void vpp.refetch()} />
+                  <QueryError error={vppAssets.error} onRetry={() => void vppAssets.refetch()} />
+
                   <Show when={vppAsset()}>
                     {(asset) => (
                       <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
@@ -292,7 +296,7 @@ export default function ApplicationDetailPage() {
                     )}
                   </Show>
 
-                  <Show when={vpp.data?.configured && !vppAsset()}>
+                  <Show when={vpp.data?.configured && vppAssets.data && !vppAsset()}>
                     <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[11.5px] leading-relaxed text-warning-foreground">
                       <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                       <span>

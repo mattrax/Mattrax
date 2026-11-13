@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
+import { ErrorText, Field, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -140,9 +140,21 @@ export default function NewGroupPage() {
               <Show
                 when={(deviceList.data?.rows.length ?? 0) > 0}
                 fallback={
-                  <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
-                    No devices enrolled yet.
-                  </p>
+                  <Show
+                    when={deviceList.isError}
+                    fallback={
+                      <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                        No devices enrolled yet.
+                      </p>
+                    }
+                  >
+                    <div class="p-4 sm:p-5">
+                      <QueryError
+                        error={deviceList.error}
+                        onRetry={() => void deviceList.refetch()}
+                      />
+                    </div>
+                  </Show>
                 }
               >
                 <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">
@@ -179,9 +191,21 @@ export default function NewGroupPage() {
             <Show
               when={(policyList.data?.rows.length ?? 0) > 0}
               fallback={
-                <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
-                  No policies yet.
-                </p>
+                <Show
+                  when={policyList.isError}
+                  fallback={
+                    <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                      No policies yet.
+                    </p>
+                  }
+                >
+                  <div class="p-4 sm:p-5">
+                    <QueryError
+                      error={policyList.error}
+                      onRetry={() => void policyList.refetch()}
+                    />
+                  </div>
+                </Show>
               }
             >
               <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">

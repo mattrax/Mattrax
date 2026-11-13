@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createMemo, For, Show } from "solid-js";
 import { defaultOverviewWidgets } from "@mattrax/enterprise-domain";
-import { Page, QueryError } from "~/components/mdm/common";
+import { ErrorText, Page, QueryError } from "~/components/mdm/common";
 import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -68,51 +68,67 @@ function OverviewHeader(props: {
   tenantId: string;
   create: () => void;
   creating: boolean;
+  error?: unknown;
 }) {
   return (
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <p class="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          Overview
-        </p>
-        <div class="mt-1 flex flex-wrap items-center gap-2">
-          <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">{props.name}</h1>
-          <Show when={props.isDefault}>
-            <Badge variant="secondary" class="gap-1">
-              <Star class="size-3" />
-              Default
-            </Badge>
-          </Show>
-          <Show when={props.preview}>
-            <Badge variant="outline">Built-in preview</Badge>
-          </Show>
+    <>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            Overview
+          </p>
+          <div class="mt-1 flex flex-wrap items-center gap-2">
+            <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">{props.name}</h1>
+            <Show when={props.isDefault}>
+              <Badge variant="secondary" class="gap-1">
+                <Star class="size-3" />
+                Default
+              </Badge>
+            </Show>
+            <Show when={props.preview}>
+              <Badge variant="outline">Built-in preview</Badge>
+            </Show>
+          </div>
+          <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+            {props.description?.trim() ||
+              "Shared live views of your fleet. Create a dashboard to make this page your own."}
+          </p>
         </div>
-        <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
-          {props.description?.trim() ||
-            "Shared live views of your fleet. Create a dashboard to make this page your own."}
-        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <Show when={props.dashboardId}>
+            {(id) => (
+              <Button
+                as="a"
+                href={`/t/${props.tenantId}/dashboards/${id()}`}
+                size="sm"
+                variant="outline"
+              >
+                Open dashboard
+              </Button>
+            )}
+          </Show>
+          <Button as="a" href={`/t/${props.tenantId}/dashboards`} size="sm" variant="ghost">
+            All dashboards
+          </Button>
+          <Button size="sm" disabled={props.creating} onClick={props.create}>
+            {props.creating ? "Creating…" : props.preview ? "Customise overview" : "New dashboard"}
+          </Button>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Show when={props.dashboardId}>
-          {(id) => (
-            <Button
-              as="a"
-              href={`/t/${props.tenantId}/dashboards/${id()}`}
-              size="sm"
-              variant="outline"
-            >
-              Open dashboard
-            </Button>
-          )}
-        </Show>
-        <Button as="a" href={`/t/${props.tenantId}/dashboards`} size="sm" variant="ghost">
-          All dashboards
-        </Button>
-        <Button size="sm" disabled={props.creating} onClick={props.create}>
-          {props.creating ? "Creating…" : props.preview ? "Customise overview" : "New dashboard"}
-        </Button>
-      </div>
-    </div>
+      <Show when={props.error}>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <ErrorText error={props.error} />
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={props.creating}
+            onClick={() => props.create()}
+          >
+            Try again
+          </Button>
+        </div>
+      </Show>
+    </>
   );
 }
 
@@ -121,6 +137,7 @@ function LoadedOverview(props: {
   summary: DashboardSummary;
   create: () => void;
   creating: boolean;
+  error?: unknown;
 }) {
   const dashboard = useQuery(() => enterpriseQueries.dashboard(props.tenantId, props.summary.id));
   return (
@@ -133,6 +150,7 @@ function LoadedOverview(props: {
         tenantId={props.tenantId}
         create={props.create}
         creating={props.creating}
+        error={props.error}
       />
       <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
       <Show
@@ -160,7 +178,12 @@ function LoadedOverview(props: {
   );
 }
 
-function PreviewOverview(props: { tenantId: string; create: () => void; creating: boolean }) {
+function PreviewOverview(props: {
+  tenantId: string;
+  create: () => void;
+  creating: boolean;
+  error?: unknown;
+}) {
   const widgets = createMemo(previewWidgets);
   return (
     <Page class="gap-5">
@@ -170,6 +193,7 @@ function PreviewOverview(props: { tenantId: string; create: () => void; creating
         tenantId={props.tenantId}
         create={props.create}
         creating={props.creating}
+        error={props.error}
       />
       <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
       <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-3.5 py-3">
@@ -193,6 +217,7 @@ export default function TenantOverviewPage() {
   const dashboards = useQuery(() => enterpriseQueries.dashboards(tenantId()));
 
   const create = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () =>
       enterprise.createDashboard(tenantId(), { name: "Overview", template: "overview" }),
     onSuccess: async (result) => {
@@ -221,6 +246,7 @@ export default function TenantOverviewPage() {
             tenantId={tenantId()}
             create={() => create.mutate()}
             creating={create.isPending}
+            error={create.error}
           />
         </Show>
       }
@@ -232,6 +258,7 @@ export default function TenantOverviewPage() {
             tenantId={tenantId()}
             create={() => create.mutate()}
             creating={create.isPending}
+            error={create.error}
           />
         }
       >
@@ -241,6 +268,7 @@ export default function TenantOverviewPage() {
             summary={summary()}
             create={() => create.mutate()}
             creating={create.isPending}
+            error={create.error}
           />
         )}
       </Show>

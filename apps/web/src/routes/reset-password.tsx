@@ -3,6 +3,7 @@ import { Effect, Redacted } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import { parseLinkFragment } from "@yielded/auth/EmailDelivery";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 type ResetLink = {
   flowId: string;
@@ -69,7 +70,7 @@ export default function ResetPasswordPage() {
     setPending(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Could not reset password");
+      setError(errorMessage(result.error, "Could not reset password"));
       return;
     }
 

@@ -1,7 +1,7 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
-import { Page, QueryError, relativeTime } from "~/components/mdm/common";
+import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
 import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
@@ -23,6 +23,7 @@ import {
   type DashboardWidgetType,
   type DeviceQuery,
 } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 type Layout = { x: number; y: number; w: number; h: number };
@@ -164,6 +165,11 @@ export default function DashboardPage() {
   const [name, setName] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [settingsError, setSettingsError] = createSignal<string | null>(null);
+  const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
+  const [removeDashboardError, setRemoveDashboardError] = createSignal<unknown>(null);
+  const [removeWidgetError, setRemoveWidgetError] = createSignal<unknown>(null);
+  const [layoutError, setLayoutError] = createSignal<unknown>(null);
+  const [pendingLayout, setPendingLayout] = createSignal<Array<{ id: string } & Layout>>([]);
   let gridRef: HTMLDivElement | undefined;
   let cleanDrag: (() => void) | undefined;
 
@@ -196,6 +202,7 @@ export default function DashboardPage() {
   };
 
   const saveSettings = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () =>
       enterprise.patchDashboard(params.tenantId, params.dashboardId, {
         name: name(),
@@ -206,24 +213,35 @@ export default function DashboardPage() {
       await invalidate();
     },
     onError: (cause) =>
-      setSettingsError(cause instanceof Error ? cause.message : "Could not save the dashboard"),
+      setSettingsError(errorMessage(cause, "Could not save the dashboard. Try again.")),
   }));
 
   const makeDefault = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () =>
       enterprise.patchDashboard(params.tenantId, params.dashboardId, { isDefault: true }),
-    onSuccess: invalidate,
+    onMutate: () => setMakeDefaultError(null),
+    onSuccess: async () => {
+      setMakeDefaultError(null);
+      await invalidate();
+    },
+    onError: (cause) => setMakeDefaultError(cause),
   }));
 
   const removeDashboard = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () => enterprise.deleteDashboard(params.tenantId, params.dashboardId),
+    onMutate: () => setRemoveDashboardError(null),
     onSuccess: async () => {
+      setRemoveDashboardError(null);
       await queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
       navigate(`/t/${params.tenantId}/dashboards`, { replace: true });
     },
+    onError: (cause) => setRemoveDashboardError(cause),
   }));
 
   const saveWidget = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: async () => {
       const value = draft();
       const title = value.title.trim();
@@ -260,19 +278,34 @@ export default function DashboardPage() {
       setFormError(null);
       await invalidate();
     },
-    onError: (cause) =>
-      setFormError(cause instanceof Error ? cause.message : "Could not save the widget"),
+    onError: (cause) => setFormError(errorMessage(cause, "Could not save the widget. Try again.")),
   }));
 
   const removeWidget = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (widget: DashboardWidget) =>
       enterprise.deleteDashboardWidget(params.tenantId, params.dashboardId, widget.id),
-    onSuccess: invalidate,
+    onMutate: () => setRemoveWidgetError(null),
+    onSuccess: async () => {
+      setRemoveWidgetError(null);
+      await invalidate();
+    },
+    onError: (cause) => setRemoveWidgetError(cause),
   }));
 
   const saveLayout = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (widgets: Array<{ id: string } & Layout>) =>
       enterprise.patchDashboardLayout(params.tenantId, params.dashboardId, widgets),
+    onMutate: (widgets) => {
+      setLayoutError(null);
+      setPendingLayout(widgets);
+    },
+    onSuccess: () => {
+      setLayoutError(null);
+      setPendingLayout([]);
+    },
+    onError: (cause) => setLayoutError(cause),
   }));
 
   const openCreate = () => {
@@ -432,6 +465,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <Show when={makeDefaultError() || removeDashboardError()}>
+        <div class="space-y-2">
+          <ErrorText error={makeDefaultError()} />
+          <ErrorText error={removeDashboardError()} />
+        </div>
+      </Show>
+
       <Show when={editing()}>
         <div class="rounded-lg border border-white/[0.07] bg-card p-3.5">
           <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
@@ -482,6 +522,24 @@ export default function DashboardPage() {
               Delete dashboard
             </Button>
           </div>
+        </div>
+      </Show>
+
+      <Show when={removeWidgetError()}>
+        <ErrorText error={removeWidgetError()} />
+      </Show>
+
+      <Show when={layoutError()}>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <ErrorText error={layoutError()} />
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={saveLayout.isPending || pendingLayout().length === 0}
+            onClick={() => saveLayout.mutate(pendingLayout())}
+          >
+            {saveLayout.isPending ? "Retrying…" : "Try again"}
+          </Button>
         </div>
       </Show>
 

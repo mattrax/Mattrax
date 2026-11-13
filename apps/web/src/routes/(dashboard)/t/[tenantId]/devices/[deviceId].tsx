@@ -1119,10 +1119,20 @@ export default function DeviceDetailPage() {
                     <Show
                       when={abmDevice.data}
                       fallback={
-                        <p class="text-muted-foreground">
-                          This serial is not in the tenant's Apple Business Manager inventory.
-                          Upload an ABM credential and sync devices in Settings → Management.
-                        </p>
+                        <Show
+                          when={abmDevice.isError}
+                          fallback={
+                            <p class="text-muted-foreground">
+                              This serial is not in the tenant's Apple Business Manager inventory.
+                              Upload an ABM credential and sync devices in Settings → Management.
+                            </p>
+                          }
+                        >
+                          <QueryError
+                            error={abmDevice.error}
+                            onRetry={() => void abmDevice.refetch()}
+                          />
+                        </Show>
                       }
                     >
                       {(abm) => (
@@ -1386,36 +1396,48 @@ export default function DeviceDetailPage() {
                 </Show>
               </Panel>
 
-              <Show when={(commands.data?.commands.length ?? 0) > 0}>
+              <Show when={(commands.data?.commands.length ?? 0) > 0 || commands.isError}>
                 <Panel
                   flush
                   title="Command history"
                   description="Remote commands sent to this device."
                 >
-                  <ul class="max-h-72 divide-y divide-white/[0.05] overflow-auto">
-                    <For each={commands.data?.commands ?? []}>
-                      {(command) => (
-                        <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
-                          <div class="flex items-center justify-between gap-2">
-                            <strong class="min-w-0 truncate font-medium text-foreground">
-                              {command.requestType}
-                            </strong>
-                            <span class="shrink-0 capitalize text-muted-foreground">
-                              {command.status}
-                            </span>
-                          </div>
-                          <Show when={command.resultStatus || command.resultDetail}>
-                            <p class="mt-1 text-muted-foreground">
-                              {command.resultStatus ?? ""} {command.resultDetail ?? ""}
+                  <Show
+                    when={!commands.isError}
+                    fallback={
+                      <div class="p-4 sm:p-5">
+                        <QueryError
+                          error={commands.error}
+                          onRetry={() => void commands.refetch()}
+                        />
+                      </div>
+                    }
+                  >
+                    <ul class="max-h-72 divide-y divide-white/[0.05] overflow-auto">
+                      <For each={commands.data?.commands ?? []}>
+                        {(command) => (
+                          <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                            <div class="flex items-center justify-between gap-2">
+                              <strong class="min-w-0 truncate font-medium text-foreground">
+                                {command.requestType}
+                              </strong>
+                              <span class="shrink-0 capitalize text-muted-foreground">
+                                {command.status}
+                              </span>
+                            </div>
+                            <Show when={command.resultStatus || command.resultDetail}>
+                              <p class="mt-1 text-muted-foreground">
+                                {command.resultStatus ?? ""} {command.resultDetail ?? ""}
+                              </p>
+                            </Show>
+                            <p class="mt-1 text-muted-foreground/70">
+                              {formatDate(command.createdAt)}
                             </p>
-                          </Show>
-                          <p class="mt-1 text-muted-foreground/70">
-                            {formatDate(command.createdAt)}
-                          </p>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </Panel>
               </Show>
 

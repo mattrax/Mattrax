@@ -132,9 +132,22 @@ export class EnterpriseUpstreamError extends Schema.TaggedError<EnterpriseUpstre
     message: Schema.String,
   },
 ) {}
+/**
+ * A failure that was not individually modelled by an endpoint. The backend
+ * logs the original cause; clients get a stable, serializable fallback instead
+ * of an empty 500 response.
+ */
+export class EnterpriseInternal extends Schema.TaggedError<EnterpriseInternal>()(
+  "EnterpriseInternal",
+  {
+    message: Schema.String,
+  },
+) {}
 
 const EnterpriseAuthRequiredErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
+  // Every authenticated endpoint maps unexpected failures to this typed 500.
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
 ] as const;
 const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
 const EnterpriseTenantReadErrors = [
@@ -215,11 +228,15 @@ const EnterpriseAppleWriteErrors = [
   EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
-const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
+const EnterpriseNoDomainErrors = [
+  ...EnterpriseDbErrors,
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+] as const;
 const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 /** Sensitive account/tenant actions also require a recent step-up. */
@@ -243,11 +260,13 @@ const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 const EnterprisePublicEmailErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
 const EnterprisePublicNotFoundErrors = [
   ...EnterpriseDbErrors,
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 const EnterprisePublicEnrollmentProfileErrors = [
@@ -2290,19 +2309,19 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       success: ApiTokensResponse,
     }),
   )
   .add(
     HttpApiEndpoint.get("listMcpConnections", "/v1/account/mcp-connections", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       success: McpConnectionsResponse,
     }),
   )
   .add(
     HttpApiEndpoint.delete("revokeMcpConnection", "/v1/account/mcp-connections/:connectionId", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       params: McpConnectionParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -2317,7 +2336,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("stepUpMethods", "/v1/account/step-up", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       success: StepUpMethods,
     }),
   )
@@ -2354,6 +2373,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: [
         ...EnterpriseAuthRequiredErrors,
         ...EnterpriseDbErrors,
+        EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
         EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
         EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
         ...EnterpriseStepUpRequired,
@@ -2378,7 +2398,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("listAccountSessions", "/v1/account/sessions", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       success: AccountSessionsResponse,
     }),
   )
@@ -2391,7 +2411,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("me", "/v1/me", {
-      error: EnterpriseAuthRequiredErrors,
+      error: EnterpriseAccountErrors,
       success: MeResponse,
     }),
   )
@@ -2733,6 +2753,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: [
         ...EnterpriseAuthRequiredErrors,
         ...EnterpriseDbErrors,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
         EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
         EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
       ],

@@ -10,6 +10,7 @@ import {
   type DeviceQuery,
 } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
+import { errorPresentation } from "~/lib/errors";
 
 const CHART_COLORS = [
   "var(--brand)",
@@ -143,8 +144,16 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
         <Show
           when={!result.error}
           fallback={
-            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px] text-destructive">
-              This query could not run. Check the dashboard settings.
+            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
+              <p class="font-medium text-destructive">{errorPresentation(result.error).title}</p>
+              <p class="mt-0.5 text-muted-foreground">{errorPresentation(result.error).message}</p>
+              <button
+                type="button"
+                class="mt-2 rounded border border-white/[0.1] px-2 py-1 text-[10.5px] text-foreground hover:bg-white/[0.05]"
+                onClick={() => void result.refetch()}
+              >
+                Try again
+              </button>
             </div>
           }
         >

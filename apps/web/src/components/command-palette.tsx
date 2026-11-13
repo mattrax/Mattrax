@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import { Button } from "~/components/ui/button";
 import {
   Activity,
   BookOpen,
@@ -29,6 +30,8 @@ import {
   type CommandShortcut,
 } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
+import { reportGlobalError } from "~/lib/global-errors";
 import { cn } from "~/lib/utils";
 
 const RECENTS_KEY = "mattrax:recents";
@@ -180,7 +183,16 @@ export function CommandPalette() {
         keywords: ["logout", "signout"],
         shortcut: chord("l", { mod: true, shift: true }),
         run: async () => {
-          await authClient.signOut();
+          try {
+            const result = await authClient.signOut();
+            if (result.error) {
+              reportGlobalError(result.error);
+              return;
+            }
+          } catch (error) {
+            reportGlobalError(error);
+            return;
+          }
           window.location.assign("/login");
         },
       },
@@ -764,15 +776,42 @@ export function CommandPalette() {
             </kbd>
           </div>
           <div id="command-palette-list" role="listbox" class="max-h-[60vh] overflow-auto p-2">
+            <Show when={results.error}>
+              {(error) => (
+                <div
+                  role="alert"
+                  class="mx-1 mb-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
+                      <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                        {errorMessage(error(), "Search is unavailable right now.")}
+                      </p>
+                    </div>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={results.isFetching}
+                      onClick={() => void results.refetch()}
+                    >
+                      {results.isFetching ? "Retrying…" : "Try again"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Show>
             <Show
               when={items().length > 0}
               fallback={
-                <div class="px-3 py-8 text-center">
-                  <p class="text-[13px] text-muted-foreground">No results.</p>
-                  <p class="mt-1 text-[11px] text-muted-foreground/70">
-                    Try a device, policy, person, setting or a query like “devices critical”.
-                  </p>
-                </div>
+                <Show when={!results.error}>
+                  <div class="px-3 py-8 text-center">
+                    <p class="text-[13px] text-muted-foreground">No results.</p>
+                    <p class="mt-1 text-[11px] text-muted-foreground/70">
+                      Try a device, policy, person, setting or a query like “devices critical”.
+                    </p>
+                  </div>
+                </Show>
               }
             >
               <For each={grouped()}>

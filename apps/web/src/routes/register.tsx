@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ export default function RegisterPage() {
   const [existingAccount, setExistingAccount] = createSignal<string | null>(null);
   const [step, setStep] = createSignal<"details" | "verify">("details");
   const [sentCode, setSentCode] = createSignal(false);
+  const [verificationError, setVerificationError] = createSignal<string | null>(null);
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const session = authClient.useSession();
 
@@ -50,7 +52,7 @@ export default function RegisterPage() {
     setPending(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Could not create account");
+      setError(errorMessage(result.error, "Could not create account"));
       return;
     }
 
@@ -64,6 +66,11 @@ export default function RegisterPage() {
     // endpoint refuses unverified users until this step completes.
     const verification = await authClient.requestEmailVerification();
     setSentCode(!verification.error);
+    setVerificationError(
+      verification.error
+        ? errorMessage(verification.error, "Could not send a verification code. Try again.")
+        : null,
+    );
     setChallenge(verification.data?.challenge);
     setStep("verify");
   };
@@ -94,6 +101,7 @@ export default function RegisterPage() {
               email={email()}
               sentInitially={sentCode()}
               initialChallenge={challenge()}
+              initialError={verificationError()}
               onVerified={async () => {
                 await session().refetch();
                 navigate(returnTo() ?? "/dashboard", { replace: true });

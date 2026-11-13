@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
@@ -23,7 +24,7 @@ export default function VerifyEmailPage() {
       const result = await authClient.verifyEmail({ token: token()! });
       if (result.error) {
         setTokenStatus("error");
-        setMessage(result.error.message ?? "This verification link is invalid or expired.");
+        setMessage(errorMessage(result.error, "This verification link is invalid or expired."));
         return;
       }
       await session().refetch();

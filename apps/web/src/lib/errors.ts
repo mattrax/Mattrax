@@ -46,6 +46,10 @@ const TAGS: Record<string, Mapping> = {
     variant: "not-found",
   },
   EnterpriseBadRequest: { message: "That request couldn't be completed.", variant: "validation" },
+  EnterpriseConflict: {
+    message: "That change conflicts with something that already exists.",
+    variant: "validation",
+  },
   EnterpriseTenantHasMembers: {
     message: "This tenant still has other members. Remove them before deleting it.",
     variant: "validation",
@@ -75,6 +79,10 @@ const TAGS: Record<string, Mapping> = {
     variant: "server",
   },
   EnterpriseDbError: {
+    message: "Something went wrong on our side. Try again shortly.",
+    variant: "server",
+  },
+  EnterpriseInternal: {
     message: "Something went wrong on our side. Try again shortly.",
     variant: "server",
   },
@@ -197,6 +205,12 @@ const messageOf = (error: unknown): string | undefined => {
   if (isRecord(error)) {
     const message = error.message;
     if (typeof message === "string" && message.trim()) return message.trim();
+    const nested = error.error;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+    if (isRecord(nested)) {
+      const nestedMessage = nested.message;
+      if (typeof nestedMessage === "string" && nestedMessage.trim()) return nestedMessage.trim();
+    }
   }
   return undefined;
 };
@@ -301,7 +315,6 @@ export const errorPresentation = (
         "EnterpriseNotFound",
         "EnterpriseForbidden",
         "EnterpriseNotConfigured",
-        "EnterpriseUpstreamError",
       ].includes(tag);
     return {
       title: TITLES[mapped.variant],

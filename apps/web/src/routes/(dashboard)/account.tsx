@@ -43,19 +43,23 @@ export default function AccountPage() {
   const [deleteError, setDeleteError] = createSignal<string | null>(null);
   const deleteAccount = async () => {
     setDeleteError(null);
-    const response = await fetch("/api/v1/me", {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "x-effect-auth-csrf": "1" },
-    });
-    if (!response.ok) {
-      const body = (await response.json().catch(() => undefined)) as
-        | { message?: string; error?: { message?: string } }
-        | undefined;
-      setDeleteError(errorMessage(body ?? { message: `Request failed (${response.status})` }));
-      return;
+    try {
+      const response = await fetch("/api/v1/me", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "x-effect-auth-csrf": "1" },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => undefined)) as
+          | { message?: string; error?: { message?: string } }
+          | undefined;
+        setDeleteError(errorMessage(body ?? { message: `Request failed (${response.status})` }));
+        return;
+      }
+      window.location.href = "/";
+    } catch (error) {
+      setDeleteError(errorMessage(error, "Could not delete your account. Try again."));
     }
-    window.location.href = "/";
   };
 
   const [name, setName] = createSignal("");
@@ -122,6 +126,7 @@ export default function AccountPage() {
   const [tokens, setTokens] = createSignal<ApiTokens>();
   const [tokensPending, setTokensPending] = createSignal(false);
   const [tokensError, setTokensError] = createSignal<string | null>(null);
+  const [revokingToken, setRevokingToken] = createSignal<string | null>(null);
   const refetchTokens = async () => {
     setTokensPending(true);
     setTokensError(null);
@@ -165,21 +170,35 @@ export default function AccountPage() {
     if (!isServer) void refetchSessions();
   });
   const revokeSession = async (id: string, current: boolean) => {
+    setSessionsError(null);
     if (current) {
-      await authClient.signOut();
+      try {
+        const result = await authClient.signOut();
+        if (result.error) {
+          setSessionsError(errorMessage(result.error, "Could not sign out. Try again."));
+          return;
+        }
+      } catch (error) {
+        setSessionsError(errorMessage(error, "Could not sign out. Try again."));
+        return;
+      }
       navigate("/login", { replace: true });
       return;
     }
-    const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "x-effect-auth-csrf": "1" },
-    });
-    if (!response.ok) {
-      setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
-      return;
+    try {
+      const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "x-effect-auth-csrf": "1" },
+      });
+      if (!response.ok) {
+        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+        return;
+      }
+      await refetchSessions();
+    } catch (error) {
+      setSessionsError(errorMessage(error, "Could not revoke that session. Try again."));
     }
-    await refetchSessions();
   };
 
   const connections = useQuery(() => enterpriseQueries.mcpConnections());
@@ -243,8 +262,16 @@ export default function AccountPage() {
   };
 
   const revokeToken = async (tokenId: string) => {
-    await authClient.revokeApiToken(tokenId);
-    await refetchTokens();
+    setTokenError(null);
+    setRevokingToken(tokenId);
+    try {
+      await authClient.revokeApiToken(tokenId);
+      await refetchTokens();
+    } catch (error) {
+      setTokenError(errorMessage(error, "Could not revoke that token. Try again."));
+    } finally {
+      setRevokingToken(null);
+    }
   };
 
   const handlePasswordChange = async (e: SubmitEvent) => {
@@ -652,10 +679,10 @@ export default function AccountPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={Boolean(token.revokedAt)}
-                  onClick={() => revokeToken(token.id)}
+                  disabled={Boolean(token.revokedAt) || revokingToken() === token.id}
+                  onClick={() => void revokeToken(token.id)}
                 >
-                  Revoke
+                  {revokingToken() === token.id ? "Revoking…" : "Revoke"}
                 </Button>
               </div>
             )}

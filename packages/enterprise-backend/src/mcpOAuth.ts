@@ -29,6 +29,15 @@ const html = (body: string) =>
 const errorResponse = (error: string, description: string, status = 400) =>
   json({ error, error_description: description }, status);
 
+/**
+ * Internal failures (database, provider, serialization) are logged in full but
+ * never described to the OAuth client. The RFC error envelope stays intact.
+ */
+const internalError = (context: string, cause: unknown) =>
+  Effect.logError(`MCP OAuth ${context} failed`, cause).pipe(
+    Effect.as(errorResponse("server_error", "An unexpected error occurred", 500)),
+  );
+
 const escapeHtml = (value: string) =>
   value
     .replaceAll("&", "&amp;")
@@ -92,7 +101,11 @@ const resolveUser = (request: HttpServerRequest.HttpServerRequest) =>
         },
         unknown
       >
-    ).pipe(Effect.catch(() => Effect.succeed(null)));
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("MCP OAuth session lookup failed", cause).pipe(Effect.as(null)),
+      ),
+    );
   });
 
 const tokenResponse = (accessToken: string, refreshToken: string, expiresIn: number) =>
@@ -259,9 +272,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         201,
         { "access-control-allow-origin": "*" },
       );
-    }).pipe(
-      Effect.catch((error) => Effect.succeed(errorResponse("server_error", String(error), 500))),
-    );
+    }).pipe(Effect.catchCause((cause) => internalError("registration", cause)));
 
   const authorizeGet = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -290,9 +301,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         codeChallenge,
         scope: url.searchParams.get("scope")?.trim() || "mcp",
       });
-    }).pipe(
-      Effect.catch((error) => Effect.succeed(errorResponse("server_error", String(error), 500))),
-    );
+    }).pipe(Effect.catchCause((cause) => internalError("authorisation request", cause)));
 
   const authorizePost = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -363,9 +372,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       target.searchParams.set("code", code);
       if (state) target.searchParams.set("state", state);
       return redirect(target.toString());
-    }).pipe(
-      Effect.catch((error) => Effect.succeed(errorResponse("server_error", String(error), 500))),
-    );
+    }).pipe(Effect.catchCause((cause) => internalError("authorisation decision", cause)));
 
   const token = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -442,9 +449,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       }
 
       return errorResponse("unsupported_grant_type", "Use authorization_code or refresh_token");
-    }).pipe(
-      Effect.catch((error) => Effect.succeed(errorResponse("server_error", String(error), 500))),
-    );
+    }).pipe(Effect.catchCause((cause) => internalError("token exchange", cause)));
 
   const revoke = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -458,7 +463,13 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         .set({ revokedAt: new Date() })
         .where(eq(schema.mcpOAuthToken.tokenHash, tokenHash));
       return json({}, 200);
-    }).pipe(Effect.catch(() => Effect.succeed(json({}, 200))));
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("MCP OAuth token revocation failed", cause).pipe(
+          Effect.as(json({ error: "temporarily_unavailable" }, 503)),
+        ),
+      ),
+    );
 
   return Layer.mergeAll(
     HttpRouter.add("POST", "/api/oauth/register", register),

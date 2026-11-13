@@ -52,23 +52,90 @@ const unauthorized = (origin: string, request: Request) =>
     request,
   );
 
+/** Upstream/API failures must not be reported as an authentication problem. */
+const unavailable = (request: Request) =>
+  withCors(
+    new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "The Mattrax API is temporarily unavailable" },
+        id: null,
+      }),
+      {
+        status: 503,
+        headers: { "content-type": "application/json", "retry-after": "30" },
+      },
+    ),
+    request,
+  );
+
+const statusMessage = (status: number) => {
+  if (status === 400) return "Bad request";
+  if (status === 401) return "Unauthorized";
+  if (status === 403) return "Forbidden";
+  if (status === 404) return "Not found";
+  if (status === 409) return "Conflict";
+  if (status === 422) return "Unprocessable request";
+  if (status === 429) return "Too many requests";
+  if (status >= 500) return "The Mattrax API returned an internal error";
+  return "Request failed";
+};
+
+/**
+ * Tool errors are model-visible. Keep only a short, single-line description:
+ * never return a full REST response body to the MCP client.
+ */
+const failureMessage = (operation: string, status: number, data: unknown) => {
+  // Internal server errors often carry diagnostic text. Never forward it.
+  const description =
+    status >= 500
+      ? undefined
+      : typeof data === "string"
+        ? data
+        : typeof data === "object" && data !== null
+          ? ((data as { error?: unknown; message?: unknown; detail?: unknown }).error ??
+            (data as { message?: unknown }).message ??
+            (data as { detail?: unknown }).detail)
+          : undefined;
+  const summary =
+    typeof description === "string" && description.trim()
+      ? description.trim().replace(/\s+/g, " ").slice(0, 200)
+      : statusMessage(status);
+  return `${operation} failed (${status}): ${summary}`;
+};
+
+/** `String.fromCharCode(...bytes)` overflows the argument limit for large bodies. */
+const toBase64 = (bytes: Uint8Array) => {
+  const chunkSize = 0x8000;
+  const chunks: string[] = [];
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(index, index + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+};
+
 const apiFetch = async (
   authorization: string,
   path: string,
   init: { method?: string; body?: unknown } = {},
 ) => {
-  const response = await env.API.fetch(
-    new Request(`${API_BASE}${path}`, {
-      method: init.method ?? "GET",
-      headers: {
-        authorization,
-        "x-mattrax-mcp-authorization": authorization,
-        accept: "application/json",
-        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-    }),
-  );
+  let response: Response;
+  try {
+    response = await env.API.fetch(
+      new Request(`${API_BASE}${path}`, {
+        method: init.method ?? "GET",
+        headers: {
+          authorization,
+          "x-mattrax-mcp-authorization": authorization,
+          accept: "application/json",
+          ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+      }),
+    );
+  } catch {
+    throw new Error("The Mattrax API could not be reached");
+  }
   const contentType = response.headers.get("content-type") ?? "";
   let data: unknown;
   if (contentType.includes("application/json") || contentType.includes("+json")) {
@@ -84,7 +151,7 @@ const apiFetch = async (
     const bytes = new Uint8Array(await response.arrayBuffer());
     data = {
       contentType,
-      base64: btoa(String.fromCharCode(...bytes)),
+      base64: toBase64(bytes),
       bytes: bytes.byteLength,
     };
   }
@@ -101,17 +168,22 @@ const recordActivity = async (
   tenantId: string,
   entry: { tool: string; method: string; path: string; status: number },
 ) => {
-  await env.API.fetch(
-    new Request(`${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`, {
-      method: "POST",
-      headers: {
-        authorization,
-        "x-mattrax-mcp-authorization": authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(entry),
-    }),
-  ).catch(() => undefined);
+  try {
+    const response = await env.API.fetch(
+      new Request(`${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`, {
+        method: "POST",
+        headers: {
+          authorization,
+          "x-mattrax-mcp-authorization": authorization,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(entry),
+      }),
+    );
+    if (!response.ok) console.error(`MCP activity recording failed with status ${response.status}`);
+  } catch (cause) {
+    console.error("MCP activity recording failed", cause);
+  }
 };
 
 const queryString = (value: unknown) => {
@@ -237,10 +309,7 @@ const buildTools = (authorization: string, me: MeResponse) => {
             path,
             status: result.status,
           });
-          if (!result.ok)
-            throw new Error(
-              `Search failed (${result.status}): ${typeof result.data === "string" ? result.data : JSON.stringify(result.data)}`,
-            );
+          if (!result.ok) throw new Error(failureMessage("Search", result.status, result.data));
           return result.data;
         },
         catch: (error) => error,
@@ -249,6 +318,8 @@ const buildTools = (authorization: string, me: MeResponse) => {
       Effect.tryPromise({
         try: async () => {
           const result = await apiFetch(authorization, "/api/openapi.json");
+          if (!result.ok)
+            throw new Error(failureMessage("OpenAPI discovery", result.status, result.data));
           return result.data;
         },
         catch: (error) => error,
@@ -272,10 +343,7 @@ const buildTools = (authorization: string, me: MeResponse) => {
             path,
             status: result.status,
           });
-          if (!result.ok)
-            throw new Error(
-              `Query failed (${result.status}): ${typeof result.data === "string" ? result.data : JSON.stringify(result.data)}`,
-            );
+          if (!result.ok) throw new Error(failureMessage("Query", result.status, result.data));
           return result.data;
         },
         catch: (error) => error,
@@ -304,6 +372,10 @@ const buildTools = (authorization: string, me: MeResponse) => {
               path,
               status: result.status,
             });
+          if (!result.ok)
+            throw new Error(
+              failureMessage(`${endpoint.method} ${endpoint.path}`, result.status, result.data),
+            );
           return { status: result.status, body: result.data };
         },
         catch: (error) => error,
@@ -339,17 +411,39 @@ const handleMcp = async (request: Request): Promise<Response> => {
   const authorization = request.headers.get("authorization") ?? "";
   if (!/^Bearer\s+\S+/i.test(authorization)) return unauthorized(url.origin, request);
 
-  const meResponse = await env.API.fetch(
-    new Request("https://api.mattrax.internal/api/v1/me", {
-      headers: {
-        authorization,
-        "x-mattrax-mcp-authorization": authorization,
-        accept: "application/json",
-      },
-    }),
-  );
-  if (!meResponse.ok) return unauthorized(url.origin, request);
-  const me = (await meResponse.json()) as MeResponse;
+  let meResponse: Response;
+  try {
+    meResponse = await env.API.fetch(
+      new Request("https://api.mattrax.internal/api/v1/me", {
+        headers: {
+          authorization,
+          "x-mattrax-mcp-authorization": authorization,
+          accept: "application/json",
+        },
+      }),
+    );
+  } catch (cause) {
+    console.error("MCP identity lookup failed", cause);
+    return unavailable(request);
+  }
+  // Only a rejected credential is an MCP authentication failure. Anything else
+  // (including a 5xx or a malformed response) is an availability problem.
+  if (meResponse.status === 401 || meResponse.status === 403)
+    return unauthorized(url.origin, request);
+  if (!meResponse.ok) {
+    console.error(`MCP identity lookup failed with status ${meResponse.status}`);
+    return unavailable(request);
+  }
+  let me: MeResponse;
+  try {
+    const body = (await meResponse.json()) as Partial<MeResponse> | null;
+    if (!body || typeof body !== "object" || !body.user || !Array.isArray(body.tenants))
+      throw new Error("Unexpected identity response");
+    me = body as MeResponse;
+  } catch (cause) {
+    console.error("MCP identity response could not be read", cause);
+    return unavailable(request);
+  }
 
   const layer = mcpLayer(authorization, me).pipe(Layer.provide(HttpServer.layerServices));
   const web = HttpRouter.toWebHandler(layer as any);

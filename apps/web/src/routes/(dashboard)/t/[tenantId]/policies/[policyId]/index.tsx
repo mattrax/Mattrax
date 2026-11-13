@@ -311,6 +311,7 @@ export default function PolicyDetailPage() {
       <ViewTabs base={`/t/${params.tenantId}/policies/${params.policyId}`} active="overview" />
 
       <ErrorText error={sync.error} />
+      <ErrorText error={dup.error} />
 
       <div class="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
         <Panel title="Details" description="Metadata saved with this policy.">

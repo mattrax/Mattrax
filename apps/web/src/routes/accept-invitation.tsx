@@ -3,6 +3,7 @@ import { createEffect, createSignal, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function AcceptInvitationPage() {
   const [params] = useSearchParams();
@@ -38,7 +39,7 @@ export default function AcceptInvitationPage() {
       }
       navigate(`/t/${body.tenantId}/devices`, { replace: true });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not accept the invitation");
+      setError(errorMessage(cause, "Could not accept the invitation"));
     } finally {
       setPending(false);
     }

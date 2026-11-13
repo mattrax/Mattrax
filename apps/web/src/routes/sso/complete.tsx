@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
+import { errorMessage } from "~/lib/errors";
 
 export default function SsoCompletePage() {
   const [searchParams] = useSearchParams();
@@ -24,7 +25,7 @@ export default function SsoCompletePage() {
     void (async () => {
       const result = await authClient.ssoSignIn(token);
       if (result.error) {
-        setError(result.error.message ?? "Single sign-on failed.");
+        setError(errorMessage(result.error, "Single sign-on failed."));
         return;
       }
       if (result.data?.pending) {

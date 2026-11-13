@@ -11,9 +11,27 @@ import {
   type AuditLogEntry,
   type AuditSearchQuery,
 } from "~/lib/enterprise";
+import { errorPresentation } from "~/lib/errors";
 
 const PAGE_SIZE = 50;
 const SYSTEM_ACTOR = "system";
+
+/**
+ * Turn an HTTP failure into a friendly message. Tagged API failures are
+ * normalised by `errorPresentation`; anything else keeps the status fallback
+ * instead of surfacing a raw response body.
+ */
+const responseFailure = async (response: Response, fallback: string) => {
+  const text = await response.text().catch(() => "");
+  let body: unknown = text;
+  try {
+    body = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    // Plain-text error bodies are replaced by the status fallback below.
+  }
+  const presentation = errorPresentation(body, fallback);
+  return new Error(presentation.tag ? presentation.message : fallback);
+};
 
 const inputClass =
   "h-8 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
@@ -220,8 +238,7 @@ export default function AuditSettingsPage() {
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/audit/export?${query}`,
         { credentials: "include" },
       );
-      if (!response.ok)
-        throw new Error((await response.text()) || `Export failed (${response.status})`);
+      if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const body = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
       const type = format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8";

@@ -3,6 +3,7 @@ import { type ParentProps, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { UserDropdown } from "~/components/user-dropdown";
 import { authClient } from "~/lib/auth";
+import { reportGlobalError } from "~/lib/global-errors";
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
@@ -59,7 +60,16 @@ function TopNavigation() {
     href.startsWith("/") && !href.startsWith("/#") && location.pathname === href;
 
   const handleLogout = async () => {
-    await authClient.signOut();
+    try {
+      const result = await authClient.signOut();
+      if (result.error) {
+        reportGlobalError(result.error);
+        return;
+      }
+    } catch (error) {
+      reportGlobalError(error);
+      return;
+    }
     window.location.href = "/";
   };
 

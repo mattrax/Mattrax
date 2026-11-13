@@ -10,6 +10,7 @@ import {
   Page,
   PageHeader,
   PlatformBadge,
+  QueryError,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityActions } from "~/components/mdm/entity-actions";
@@ -38,8 +39,26 @@ import {
   toDeviceImportPayload,
   type DeviceImportParseResult,
 } from "~/lib/device-import";
+import { errorPresentation } from "~/lib/errors";
 
 const PAGE_SIZE = 50;
+
+/**
+ * Turn an HTTP failure into a friendly message. Tagged API failures are
+ * normalised by `errorPresentation`; anything else keeps the status fallback
+ * instead of surfacing a raw response body.
+ */
+const responseFailure = async (response: Response, fallback: string) => {
+  const text = await response.text().catch(() => "");
+  let body: unknown = text;
+  try {
+    body = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    // Plain-text error bodies are replaced by the status fallback below.
+  }
+  const presentation = errorPresentation(body, fallback);
+  return new Error(presentation.tag ? presentation.message : fallback);
+};
 
 const FILTER_PARAM_KEYS = [
   "q",
@@ -475,8 +494,7 @@ export default function DevicesPage() {
         `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/devices/export${suffix}`,
         { credentials: "include" },
       );
-      if (!response.ok)
-        throw new Error((await response.text()) || `Export failed (${response.status})`);
+      if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const csv = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -533,6 +551,8 @@ export default function DevicesPage() {
       />
 
       <FleetSummary items={fleet()} />
+
+      <QueryError error={groups.error} onRetry={() => void groups.refetch()} />
 
       <Show when={exportError()}>
         <ErrorText error={exportError()} />

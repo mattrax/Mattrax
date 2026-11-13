@@ -13,6 +13,7 @@ import {
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { ArrowLeft, Building2, Eye, EyeOff, KeyRound } from "~/components/ui/icons";
+import { errorMessage } from "~/lib/errors";
 
 type Step = "email" | "password";
 
@@ -230,7 +231,7 @@ export default function LoginPage() {
     const result = await authClient.passkeySignIn();
     setPasskeyPending(false);
     if (result.error) {
-      setError(result.error.message ?? "That passkey wasn't accepted");
+      setError(errorMessage(result.error, "That passkey wasn't accepted"));
       return;
     }
     if (result.data?.pending) {
@@ -250,7 +251,7 @@ export default function LoginPage() {
     });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "Could not send a sign-in code");
+      setError(errorMessage(result.error, "Could not send a sign-in code"));
       return;
     }
     setFlow(result.data!);
@@ -270,7 +271,7 @@ export default function LoginPage() {
     });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "That code is not valid");
+      setError(errorMessage(result.error, "That code is not valid"));
       return;
     }
     if (result.data?.pending) {
@@ -311,7 +312,7 @@ export default function LoginPage() {
         reason: body.error ?? "Single sign-on is not available for that email",
         retryable: response.status >= 500 && response.status !== 503,
       });
-      setError(body.error ?? "Single sign-on is not available for that email");
+      setError(errorMessage(body, "Single sign-on is not available for that email"));
     } catch {
       setError("Could not reach the sign-in service");
     } finally {
@@ -332,7 +333,7 @@ export default function LoginPage() {
     setPending(false);
 
     if (result.error) {
-      setError(result.error.message ?? "Invalid email or password");
+      setError(errorMessage(result.error, "Invalid email or password"));
       return;
     }
 

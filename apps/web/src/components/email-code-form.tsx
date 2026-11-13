@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/solid-query";
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage } from "~/lib/errors";
 
 /**
  * Six-digit email verification shared by registration and the standalone
@@ -15,6 +16,8 @@ export function EmailCodeForm(props: {
   sentInitially?: boolean;
   /** Signed challenge that belongs to the initially sent code. */
   initialChallenge?: string;
+  /** A failure from the caller's initial send attempt. */
+  initialError?: string | null;
   onVerified: () => void | Promise<void>;
   onBack?: () => void;
   backLabel?: string;
@@ -24,7 +27,7 @@ export function EmailCodeForm(props: {
   const [code, setCode] = createSignal("");
   const [pending, setPending] = createSignal(false);
   const [sending, setSending] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<string | null>(props.initialError ?? null);
   const [notice, setNotice] = createSignal<string | null>(
     props.sentInitially ? "A verification code is on its way." : null,
   );
@@ -54,7 +57,7 @@ export function EmailCodeForm(props: {
     const result = await authClient.requestEmailVerification();
     setSending(false);
     if (result.error) {
-      setError(result.error.message ?? "Could not send a verification code.");
+      setError(errorMessage(result.error, "Could not send a verification code."));
       return;
     }
     setChallenge(result.data?.challenge ?? "");
@@ -83,7 +86,7 @@ export function EmailCodeForm(props: {
     const result = await authClient.verifyEmail({ code: code(), challenge: challenge() });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "That code is invalid or has expired.");
+      setError(errorMessage(result.error, "That code is invalid or has expired."));
       return;
     }
     await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
