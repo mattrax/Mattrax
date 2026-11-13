@@ -1,12 +1,12 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
-import { EmptyState, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
+import { readLastTenant } from "~/components/app-shell";
+import { Page, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ArrowUpRight, Building2, Plus, Sparkles } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { Sparkles } from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
 
 const parseDraft = (value: string | null): Draft | undefined => {
@@ -19,33 +19,45 @@ const parseDraft = (value: string | null): Draft | undefined => {
   }
 };
 
-const workspaceInitials = (name: string) =>
-  name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("") || "?";
-
 /**
- * Workspace picker. Tenant ids always travel in the URL (`/t/:tenantId/...`),
- * so this page never stores a selection; choosing a workspace navigates to its
- * tenant-scoped route.
+ * `/dashboard` is the stable post-sign-in URL, not a tenant picker. Tenants are
+ * chosen from the top-bar switcher. When the public designer hands over a
+ * draft we pause here to deploy it into the current tenant; every other visit
+ * redirects straight to the remembered tenant.
  */
-export default function DashboardPage() {
+export default function DashboardRedirectPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
   const [draft, setDraft] = createSignal<Draft | undefined>();
-  const [tenantId, setTenantId] = createSignal<string>("");
+  const [draftChecked, setDraftChecked] = createSignal(false);
+  const [tenantId, setTenantId] = createSignal("");
 
   onSettled(() => {
-    const stored = parseDraft(localStorage.getItem("mattrax:designer-draft"));
-    if (stored) setDraft(stored);
+    const wantsDraft = Boolean(searchParams.designerDraft);
+    if (wantsDraft) setDraft(parseDraft(localStorage.getItem("mattrax:designer-draft")));
+    setDraftChecked(true);
   });
+
   createEffect(
     () => me.data?.tenants,
     (tenants) => {
-      if (!tenantId() && tenants?.[0]) setTenantId(tenants[0].id);
+      if (tenantId() || !tenants?.length) return;
+      const remembered = readLastTenant();
+      setTenantId(
+        tenants.find((tenant) => tenant.id === remembered)?.id ?? tenants[0]!.id,
+      );
+    },
+  );
+
+  // Wait for both the local draft check and the tenant list before redirecting.
+  createEffect(
+    () => ({ ready: draftChecked(), loading: me.isPending, draft: draft(), tenants: me.data?.tenants }),
+    ({ ready, loading, draft: current, tenants }) => {
+      if (!ready || loading) return;
+      if (current && (tenants?.length ?? 0) > 0) return;
+      const tenant = tenants?.find((item) => item.id === tenantId()) ?? tenants?.[0];
+      navigate(tenant ? `/t/${tenant.id}` : "/tenants/new", { replace: true });
     },
   );
 
@@ -53,14 +65,13 @@ export default function DashboardPage() {
     mutationFn: async () => {
       const current = draft();
       const tenant = tenantId() || me.data?.tenants[0]?.id;
-      if (!current || !tenant) throw new Error("Choose a workspace first");
+      if (!current || !tenant) throw new Error("Choose a tenant first");
       const policy = await enterprise.createPolicy(tenant, { name: current.name });
       try {
         await enterprise.patchPolicy(tenant, policy.id, {
           configurations: artifactToConfigurations(current),
         });
       } catch (error) {
-        // Do not leave an empty policy behind when the draft cannot be saved.
         await enterprise.deletePolicies(tenant, [policy.id]).catch(() => undefined);
         throw error;
       }
@@ -73,182 +84,96 @@ export default function DashboardPage() {
     },
   }));
 
-  const workspaceCount = () => me.data?.tenants.length ?? 0;
-
   return (
-    <Page>
-      <PageHeader
-        eyebrow="Mattrax console"
-        title="Workspaces"
-        description="Choose a tenant to manage its devices, groups and policies."
-        meta={
-          <Show when={me.data}>
-            {(data) => (
-              <>
-                <span class="break-all text-muted-foreground">{data().user.email}</span>
-                <span class="text-muted-foreground/40" aria-hidden="true">
-                  ·
-                </span>
-                <span>
-                  {data().tenants.length} workspace
-                  {data().tenants.length === 1 ? "" : "s"}
-                </span>
-              </>
-            )}
-          </Show>
-        }
-        actions={
-          <Show when={workspaceCount() > 0}>
-            <Button onClick={() => navigate("/tenants/new")}>
-              <Plus class="size-4" />
-              Create tenant
-            </Button>
-          </Show>
-        }
-      />
-
-      <QueryError error={me.error} onRetry={() => void me.refetch()} />
-
-      <Show when={draft()}>
-        {(current) => (
-          <Panel class="border-brand/25 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(91,100,255,0.13),transparent_62%)]">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div class="min-w-0">
-                <p class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-brand">
-                  <Sparkles class="size-3" />
-                  Policy draft ready
-                </p>
-                <h2 class="mt-2 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
-                  {current().name}
-                </h2>
-                <p class="mt-1 text-[12.5px] text-muted-foreground">
-                  {current().platform} · {current().selections.length} collections ·{" "}
-                  {current().selections.reduce(
-                    (total, selection) => total + Object.keys(selection.values).length,
-                    0,
-                  )}{" "}
-                  settings
-                </p>
-              </div>
-              <a
-                href="/designer"
-                class="shrink-0 text-[11.5px] font-medium text-muted-foreground underline decoration-white/20 underline-offset-4 transition-colors hover:text-foreground"
-              >
-                Edit draft
-              </a>
-            </div>
-
-            <Show
-              when={workspaceCount() > 0}
-              fallback={
-                <p class="mt-4 text-[12.5px] text-muted-foreground">
-                  Create a workspace first and your draft will be waiting here.{" "}
-                  <a
-                    href="/tenants/new"
-                    class="font-medium text-foreground underline decoration-white/25 underline-offset-4 hover:text-brand"
-                  >
-                    Create a workspace
-                  </a>
-                </p>
-              }
-            >
-              <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
-                <label class="sr-only" for="draft-tenant">
-                  Workspace
-                </label>
-                <select
-                  id="draft-tenant"
-                  class="h-8 min-w-0 max-w-full rounded-lg border bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
-                  value={tenantId()}
-                  onChange={(event) => setTenantId(event.currentTarget.value)}
-                >
-                  <For each={me.data?.tenants ?? []}>
-                    {(tenant) => <option value={tenant.id}>{tenant.name}</option>}
-                  </For>
-                </select>
-                <Button
-                  variant="secondary"
-                  disabled={deployDraft.isPending}
-                  onClick={() => deployDraft.mutate()}
-                >
-                  {deployDraft.isPending ? "Creating policy…" : "Create policy & continue"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  class="text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    localStorage.removeItem("mattrax:designer-draft");
-                    setDraft(undefined);
-                  }}
-                >
-                  Discard
-                </Button>
-              </div>
-            </Show>
-            <Show when={deployDraft.error}>
-              {(error) => (
-                <p role="alert" class="mt-2 text-[12.5px] text-destructive">
-                  {errorMessage(error())}
-                </p>
-              )}
-            </Show>
-          </Panel>
-        )}
-      </Show>
-
-      <Show
-        when={workspaceCount() > 0}
-        fallback={
-          <Show when={me.isSuccess}>
-            <EmptyState
-              title="No tenant yet"
-              description="Tenants hold your devices, groups, policies, and team. Create one to get started."
-              icon={Building2}
-              action={
-                <Button onClick={() => navigate("/tenants/new")}>
-                  <Plus class="size-4" />
-                  Create tenant
-                </Button>
-              }
-            />
-          </Show>
-        }
-      >
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <For each={me.data?.tenants ?? []}>
-            {(tenant) => (
-              <button
-                type="button"
-                onClick={() => navigate(`/t/${tenant.id}`)}
-                class="group flex min-w-0 flex-col gap-3.5 rounded-xl border border-white/[0.07] bg-card p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-200 hover:border-white/[0.14] hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              >
-                <div class="flex min-w-0 items-start gap-3">
-                  <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[11px] font-semibold text-brand-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.22)]">
-                    {workspaceInitials(tenant.name)}
-                  </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[13.5px] font-semibold text-foreground">
-                      {tenant.name}
-                    </span>
-                    <span class="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
-                      {tenant.slug}
-                    </span>
-                  </span>
-                  <ArrowUpRight class="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
-                </div>
-                <div class="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
-                  <Badge variant="outline" class="capitalize text-muted-foreground">
-                    {tenant.role}
-                  </Badge>
-                  <span class="text-[11.5px] font-medium text-muted-foreground transition-colors group-hover:text-brand">
-                    Open
-                  </span>
-                </div>
-              </button>
-            )}
-          </For>
+    <Show
+      when={draft()}
+      fallback={
+        <div class="flex flex-1 items-center justify-center py-24">
+          <p class="text-[12px] text-muted-foreground">Opening your tenant…</p>
         </div>
-      </Show>
-    </Page>
+      }
+    >
+      {(current) => (
+        <Page class="max-w-[640px]">
+          <Panel class="overflow-hidden">
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(70%_100%_at_30%_0%,rgba(91,100,255,0.16),transparent_75%)]" />
+            <div class="relative p-5 sm:p-6">
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand">
+                <Sparkles class="size-3" />
+                Designer handoff
+              </span>
+              <h1 class="mt-3 text-[22px] font-semibold tracking-[-0.02em]">
+                Policy draft ready
+              </h1>
+              <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                {current().name} · {current().platform} · {current().selections.length}{" "}
+                collections ·{" "}
+                {current().selections.reduce(
+                  (total, selection) => total + Object.keys(selection.values).length,
+                  0,
+                )}{" "}
+                settings
+              </p>
+
+              <Show
+                when={(me.data?.tenants.length ?? 0) > 0}
+                fallback={
+                  <div class="mt-5 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                    Create a tenant before deploying this draft.{" "}
+                    <a href="/tenants/new" class="font-medium underline underline-offset-2">
+                      Create tenant
+                    </a>
+                  </div>
+                }
+              >
+                <div class="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <label class="sr-only" for="draft-tenant">
+                    Tenant
+                  </label>
+                  <select
+                    id="draft-tenant"
+                    class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground"
+                    value={tenantId()}
+                    onChange={(event) => setTenantId(event.currentTarget.value)}
+                  >
+                    <For each={me.data?.tenants ?? []}>
+                      {(tenant) => <option value={tenant.id}>{tenant.name}</option>}
+                    </For>
+                  </select>
+                  <Button
+                    disabled={deployDraft.isPending}
+                    onClick={() => deployDraft.mutate()}
+                  >
+                    {deployDraft.isPending ? "Creating policy…" : "Create policy & continue"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      localStorage.removeItem("mattrax:designer-draft");
+                      setDraft(undefined);
+                    }}
+                  >
+                    Discard
+                  </Button>
+                  <a
+                    href="/designer"
+                    class="text-[12px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Edit draft
+                  </a>
+                </div>
+              </Show>
+              <Show when={deployDraft.error}>
+                {(error) => (
+                  <p role="alert" class="mt-3 text-[12.5px] text-destructive">
+                    {errorMessage(error())}
+                  </p>
+                )}
+              </Show>
+            </div>
+          </Panel>
+        </Page>
+      )}
+    </Show>
   );
 }

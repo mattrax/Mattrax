@@ -170,13 +170,19 @@ export default function LoginPage() {
                         autocomplete="one-time-code"
                         required
                         placeholder="000000"
+                        aria-invalid={error() ? "true" : undefined}
+                        aria-describedby={error() ? "login-code-error" : undefined}
                         value={code()}
                         onInput={(e) => setCode(e.currentTarget.value)}
                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-center text-lg tracking-[0.4em] text-stone-900 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
                       />
                     </div>
                     <Show when={error()}>
-                      {(msg) => <p class="text-sm text-red-600">{msg()}</p>}
+                      {(msg) => (
+                        <p id="login-code-error" role="alert" class="text-sm text-destructive">
+                          {msg()}
+                        </p>
+                      )}
                     </Show>
                     <button
                       type="submit"
@@ -209,13 +215,21 @@ export default function LoginPage() {
                       type="email"
                       required
                       autocomplete="email"
+                      aria-invalid={error() ? "true" : undefined}
+                      aria-describedby={error() ? "email-code-error" : undefined}
                       placeholder="you@example.com"
                       value={email()}
                       onInput={(e) => setEmail(e.currentTarget.value)}
                       class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
                     />
                   </div>
-                  <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+                  <Show when={error()}>
+                    {(msg) => (
+                      <p id="email-code-error" role="alert" class="text-sm text-destructive">
+                        {msg()}
+                      </p>
+                    )}
+                  </Show>
                   <button
                     type="submit"
                     disabled={pending()}
@@ -273,6 +287,8 @@ export default function LoginPage() {
                     required
                     autocomplete="current-password"
                     placeholder="••••••••"
+                    aria-invalid={error() ? "true" : undefined}
+                    aria-describedby={error() ? "login-error" : undefined}
                     value={password()}
                     onInput={(e) => setPassword(e.currentTarget.value)}
                     class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 pr-10 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
@@ -288,7 +304,13 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+              <Show when={error()}>
+                {(msg) => (
+                  <p id="login-error" role="alert" class="text-sm text-destructive">
+                    {msg()}
+                  </p>
+                )}
+              </Show>
 
               <button
                 type="submit"

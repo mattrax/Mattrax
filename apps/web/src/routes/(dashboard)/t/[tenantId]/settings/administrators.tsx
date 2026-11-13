@@ -101,6 +101,7 @@ export default function AdministratorsSettingsPage() {
           <Input
             type="email"
             required
+            aria-label="Invitee email address"
             placeholder="teammate@example.com"
             value={email()}
             onInput={(e) => setEmail(e.currentTarget.value)}
@@ -150,7 +151,7 @@ export default function AdministratorsSettingsPage() {
 
       <Panel
         title="Administrators"
-        description="Everyone with access to this workspace."
+        description="Everyone with access to this tenant."
         actions={
           <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <UsersRound class="size-3.5" />

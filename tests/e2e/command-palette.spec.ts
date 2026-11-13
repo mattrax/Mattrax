@@ -15,7 +15,7 @@ test.describe("command palette", () => {
     await expect(input).toBeVisible();
 
     await input.fill("settings");
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("option", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/settings`));
 
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -26,7 +26,7 @@ test.describe("command palette", () => {
     await expect(input).toBeVisible();
     await input.fill("Quarterly");
     // Entity results come from the server search endpoint after the debounce.
-    await expect(page.getByRole("button", { name: /Quarterly Ops/i })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Quarterly Ops/i })).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(input).toBeHidden();

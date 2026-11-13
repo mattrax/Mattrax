@@ -297,7 +297,7 @@ export default function TenantOverviewPage() {
         </span>
         <div class="min-w-0 flex-1">
           <PageHeader
-            eyebrow="Workspace"
+            eyebrow="Tenant"
             title={tenant.data?.displayName ?? tenant.data?.name ?? "Tenant"}
             meta={
               <Show when={tenant.data} fallback={<span>Loading tenant…</span>}>
@@ -317,7 +317,7 @@ export default function TenantOverviewPage() {
             actions={
               <Button variant="outline" onClick={() => navigate(`/t/${tenantId()}/settings`)}>
                 <Settings class="size-4" />
-                Workspace settings
+                Tenant settings
               </Button>
             }
           />
@@ -534,7 +534,7 @@ export default function TenantOverviewPage() {
         <div class="flex min-w-0 flex-col gap-5">
           <Panel
             title="Get started"
-            description="Finish these steps to put the workspace into production."
+            description="Finish these steps to put the tenant into production."
           >
             <div class="flex items-center justify-between gap-2">
               <p class="text-[11.5px] text-muted-foreground">

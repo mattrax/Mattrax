@@ -1,4 +1,4 @@
-import { useLocation, useNavigate, useParams } from "@solidjs/router";
+import { useLocation, useParams } from "@solidjs/router";
 import { For, type ParentProps } from "solid-js";
 import { cn } from "~/lib/utils";
 
@@ -11,7 +11,6 @@ const tabs = [
 export default function IdentitySettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const base = () => `/t/${params.tenantId}/settings/identity`;
   const active = () => {
     const rest = location.pathname.slice(base().length).replace(/^\//, "");
@@ -28,9 +27,8 @@ export default function IdentitySettingsLayout(props: ParentProps) {
             const href = tab.id ? `${base()}/${tab.id}` : base();
             const isActive = () => active() === tab.id;
             return (
-              <button
-                type="button"
-                onClick={() => navigate(href)}
+              <a
+                href={href}
                 class={cn(
                   "relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
                   isActive()
@@ -40,7 +38,7 @@ export default function IdentitySettingsLayout(props: ParentProps) {
                 aria-current={isActive() ? "page" : undefined}
               >
                 {tab.label}
-              </button>
+              </a>
             );
           }}
         </For>

@@ -54,7 +54,7 @@ test.describe("top navigation", () => {
     await page.locator("#password").fill(PASSWORD);
     await page.locator("#confirm-password").fill(PASSWORD);
     await page.getByRole("button", { name: /create account/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 45_000 });
+    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
     await gotoHydrated(page, "/dashboard");
     await expect(page.getByText("Verify your email", { exact: true })).toHaveCount(1);
 
@@ -65,13 +65,12 @@ test.describe("top navigation", () => {
     await expect(page.getByText("Verify your email", { exact: true })).toHaveCount(0);
   });
 
-  test("opens the workspace switcher from an unscoped page", async ({ page }) => {
+  test("opens the tenant switcher from an unscoped page", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Switch Tenant");
     const second = await createTenant(page, "Second Tenant");
 
-    await gotoHydrated(page, "/dashboard");
-    await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
-    await page.getByRole("button", { name: "Switch workspace" }).click();
+    await gotoHydrated(page, "/account");
+    await page.getByRole("button", { name: "Switch tenant" }).click();
     const item = page.getByRole("menuitem", { name: /Second Tenant/i });
     await expect(item).toBeVisible();
     await item.click();
@@ -85,13 +84,13 @@ test.describe("top navigation", () => {
     expect(me.tenants.some((entry: { id: string }) => entry.id === second.id)).toBe(true);
   });
 
-  test("remembers the last workspace from the switcher", async ({ page }) => {
+  test("remembers the last tenant from the switcher", async ({ page }) => {
     const first = await bootstrapTenant(page, "Remember One");
     const second = await createTenant(page, "Remember Two");
 
     await gotoHydrated(page, `/t/${second.id}/devices`);
     await gotoHydrated(page, "/dashboard");
-    await page.getByRole("button", { name: "Switch workspace" }).click();
+    await page.getByRole("button", { name: "Switch tenant" }).click();
     await expect(page.getByRole("menuitem", { name: /Remember One/i })).toBeVisible();
     await page.getByRole("menuitem", { name: /Remember One/i }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${first.id}`));
@@ -102,7 +101,7 @@ test.describe("mobile navigation", () => {
   test("navigates from the scrollable top tabs", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const tenant = await bootstrapTenant(page, "Mobile Tenant");
-    await expect(page.getByRole("button", { name: "Switch workspace" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Switch tenant" })).toBeVisible();
     await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/groups`));
     await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();

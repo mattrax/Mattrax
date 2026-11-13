@@ -24,7 +24,7 @@ test.describe("passkeys", () => {
     await expect(page).toHaveURL(/\/login/);
 
     await page.getByRole("button", { name: /sign in with a passkey/i }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 45_000 });
+    await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
     // Removing the last passkey needs another step-up and signs this session out.
     await gotoHydrated(page, "/account");

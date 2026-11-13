@@ -74,7 +74,7 @@ function FleetSummary(props: {
   }>;
 }) {
   return (
-    <div class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.06] sm:grid-cols-4">
+    <div class="hidden grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.06] sm:grid sm:grid-cols-4">
       <For each={props.items}>
         {(item) => (
           <div class="min-w-0 bg-card px-3.5 py-3 sm:px-4">
@@ -408,7 +408,7 @@ export default function DevicesPage() {
       {
         label: "Devices",
         value: total(),
-        hint: hasFilters() ? "Matching current filters" : "In this workspace",
+        hint: hasFilters() ? "Matching current filters" : "In this tenant",
       },
       {
         label: "Enrolled",

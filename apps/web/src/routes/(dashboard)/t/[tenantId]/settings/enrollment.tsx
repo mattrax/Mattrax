@@ -99,6 +99,7 @@ export default function EnrollmentSettingsPage() {
         <div class="flex flex-col gap-2 sm:flex-row">
           <Input
             readonly
+            aria-label="Device enrollment URL"
             value={url()}
             onClick={(e) => e.currentTarget.select()}
             class="min-w-0 flex-1"
@@ -165,6 +166,7 @@ export default function EnrollmentSettingsPage() {
           <div class="flex flex-col gap-2 sm:flex-row">
             <Input
               readonly
+              aria-label="Windows enrollment discovery URL"
               value={enrollment.data?.windowsDiscoveryUrl ?? ""}
               onClick={(e) => e.currentTarget.select()}
               class="min-w-0 flex-1"

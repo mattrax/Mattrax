@@ -266,7 +266,7 @@ export default function PolicyDetailPage() {
                   <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                   <span>
                     Android delivery is not configured. This policy is saved, but no Android device
-                    will receive it until the workspace is connected to Android Enterprise.
+                    will receive it until the tenant is connected to Android Enterprise.
                   </span>
                 </div>
               </Show>

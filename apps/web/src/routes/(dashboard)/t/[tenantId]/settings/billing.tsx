@@ -125,7 +125,7 @@ export default function BillingSettingsPage() {
         </div>
       </Panel>
 
-      <Panel title="Usage" description="How billing is calculated for this workspace.">
+      <Panel title="Usage" description="How billing is calculated for this tenant.">
         <div class="space-y-3 text-xs leading-relaxed text-muted-foreground">
           <p>
             Billing is based on enrolled devices. Devices that check out stop counting toward the

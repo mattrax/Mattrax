@@ -79,7 +79,7 @@ export default function IdentitySettingsPage() {
         window.location.href = body.url;
         return;
       }
-      setSsoError(body.error ?? "Single sign-on is not available for this workspace.");
+      setSsoError(body.error ?? "Single sign-on is not available for this tenant.");
     } catch (error) {
       setSsoError(errorMessage(error));
     }
@@ -112,6 +112,7 @@ export default function IdentitySettingsPage() {
         >
           <Input
             required
+            aria-label="SCIM token name"
             placeholder="Token name"
             value={name()}
             onInput={(event) => setName(event.currentTarget.value)}
@@ -246,7 +247,7 @@ export default function IdentitySettingsPage() {
           />
           <ToggleSetting
             title="Require MFA for owners and admins"
-            description="Owners and admins must enroll an authenticator app before they can access this workspace. Members can still view it."
+            description="Owners and admins must enroll an authenticator app before they can access this tenant. Members can still view it."
             checked={requireMfa()}
             onChange={setRequireMfa}
           />

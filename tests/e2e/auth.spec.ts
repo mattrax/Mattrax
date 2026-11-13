@@ -3,16 +3,9 @@ import { createTenant, register, gotoHydrated } from "./helpers";
 
 test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
-    const { email } = await register(page, { name: "Onboard User" });
-    await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
-    await expect(page.getByText("No tenant yet")).toBeVisible();
-
-    await page
-      .getByRole("button", { name: /create tenant/i })
-      .first()
-      .click();
-    await page.waitForURL(/\/tenants\/new/);
+    await register(page, { name: "Onboard User" });
+    await expect(page).toHaveURL(/\/tenants\/new/);
+    await expect(page.getByRole("heading", { name: "Create tenant" })).toBeVisible();
     const suffix = Math.random().toString(36).slice(2, 8);
     await page.locator("input").first().fill("Onboard Tenant");
     await page.locator("input").nth(1).fill(`onboard-tenant-${suffix}`);
@@ -23,10 +16,8 @@ test.describe("authentication and onboarding", () => {
     await expect(page).toHaveURL(/\/t\/[^/]+\/devices/);
 
     await page.goto("/dashboard");
-    await expect(
-      page.getByRole("main").getByRole("button", { name: /Onboard Tenant/ }),
-    ).toBeVisible();
-    await expect(page.getByText(email)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
+    await expect(page.getByRole("heading", { name: "Onboard Tenant" })).toBeVisible();
   });
 
   test("signs out and back in", async ({ page }) => {

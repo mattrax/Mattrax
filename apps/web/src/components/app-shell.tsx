@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Errored, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DropdownMenu,
@@ -16,7 +16,6 @@ import {
   Check,
   ChevronsUpDown,
   CircleAlert,
-  LayoutDashboard,
   LogOut,
   Search as SearchIcon,
   Sparkles,
@@ -51,8 +50,8 @@ function tenantInitials(name: string) {
     .join("");
 }
 
-/** The workspace most recently used on this device, so unscoped pages still
- * have somewhere to go without guessing from the server's tenant order. */
+/** The tenant most recently used on this device, so unscoped pages still
+ * have somewhere to go without guessing from the server's order. */
 export function readLastTenant(): string | undefined {
   if (typeof localStorage === "undefined") return undefined;
   return localStorage.getItem(LAST_TENANT_KEY) ?? undefined;
@@ -63,10 +62,7 @@ export function rememberTenant(id: string | undefined) {
   localStorage.setItem(LAST_TENANT_KEY, id);
 }
 
-function TenantSwitcher(props: {
-  activeId: string | undefined;
-  onOpenWorkspaces: () => void;
-}) {
+function TenantSwitcher(props: { activeId: string | undefined }) {
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
   const navigate = useNavigate();
   const active = () => me.data?.tenants.find((tenant) => tenant.id === props.activeId);
@@ -75,8 +71,8 @@ function TenantSwitcher(props: {
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-8 min-w-0 max-w-[15rem] items-center gap-2 rounded-lg px-1.5 pr-2 text-left outline-none transition-colors hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.07]"
-        aria-label="Switch workspace"
+        class="group flex h-9 min-w-0 max-w-[15rem] items-center gap-2 rounded-lg px-1.5 pr-2 sm:h-8 text-left outline-none transition-colors hover:bg-white/[0.055] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.07]"
+        aria-label="Switch tenant"
       >
         <Show
           when={active()}
@@ -94,7 +90,7 @@ function TenantSwitcher(props: {
         </Show>
         <span class="min-w-0 flex-1">
           <span class="block truncate text-[13px] font-medium leading-4 text-foreground">
-            <Show when={active()} fallback="Select workspace">
+            <Show when={active()} fallback="Select tenant">
               {(tenant) => tenant().name}
             </Show>
           </span>
@@ -111,13 +107,13 @@ function TenantSwitcher(props: {
 
       <DropdownMenuContent class="w-72 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
         <div class="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Workspaces
+          Tenants
         </div>
         <Show
           when={tenants().length > 0}
           fallback={
             <div class="px-2 py-3 text-xs text-muted-foreground">
-              You don't belong to a workspace yet.
+              You don't belong to a tenant yet.
             </div>
           }
         >
@@ -152,22 +148,13 @@ function TenantSwitcher(props: {
         </Show>
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
-          onSelect={props.onOpenWorkspaces}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
-        >
-          <span class="flex size-7 items-center justify-center rounded-md bg-white/[0.04] text-muted-foreground">
-            <LayoutDashboard class="size-3.5" />
-          </span>
-          All workspaces
-        </DropdownMenuItem>
-        <DropdownMenuItem
           onSelect={() => navigate("/tenants/new")}
           class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
         >
           <span class="flex size-7 items-center justify-center rounded-md bg-white/[0.04] text-muted-foreground">
             <Sparkles class="size-3.5" />
           </span>
-          Create workspace
+          Create tenant
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -184,8 +171,8 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-label="Search"
       class={cn(
-        "group flex h-8 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] text-muted-foreground outline-none transition-colors hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60",
-        props.compact ? "w-8 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5" : "px-2.5",
+        "group flex h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.025] text-muted-foreground outline-none transition-colors hover:bg-white/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60",
+        props.compact ? "w-9 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5" : "px-2.5",
       )}
     >
       <SearchIcon class="size-3.5" />
@@ -211,7 +198,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
   return (
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
-        class="flex size-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-white/[0.18] to-white/[0.06] text-[11px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.12] transition-shadow hover:ring-white/25 focus-visible:ring-2 focus-visible:ring-ring/60"
+        class="flex size-9 items-center justify-center overflow-hidden rounded-full sm:size-8 bg-gradient-to-br from-white/[0.18] to-white/[0.06] text-[11px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.12] transition-shadow hover:ring-white/25 focus-visible:ring-2 focus-visible:ring-ring/60"
         aria-label="Account menu"
       >
         <Show
@@ -240,13 +227,6 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         >
           <User class="size-3.5 text-muted-foreground" />
           Account settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => navigate("/dashboard")}
-          class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] outline-none focus:bg-white/[0.06]"
-        >
-          <LayoutDashboard class="size-3.5 text-muted-foreground" />
-          All workspaces
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => navigate("/instances")}
@@ -340,7 +320,7 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
               setDismissed(true);
               sessionStorage.setItem("mattrax:verify-banner-dismissed", "1");
             }}
-            class="ml-auto rounded p-1 text-warning-foreground/60 transition-colors hover:bg-warning/10 hover:text-warning-foreground"
+            class="ml-auto rounded p-1.5 text-warning-foreground/60 transition-colors hover:bg-warning/10 hover:text-warning-foreground"
           >
             <X class="size-3.5" />
           </button>
@@ -353,12 +333,6 @@ function EmailVerificationBanner(props: { user: ShellUser | undefined }) {
 function navFor(tenantId: string | undefined): NavItem[] {
   if (!tenantId) {
     return [
-      {
-        id: "workspaces",
-        label: "Workspaces",
-        href: "/dashboard",
-        match: (value) => value === "/dashboard" || value === "/tenants/new",
-      },
       { id: "instances", label: "Instances", href: "/instances", match: (value) => value === "/instances" },
       { id: "docs", label: "Documentation", href: "/docs/", match: (value) => value.startsWith("/docs") },
     ];
@@ -440,6 +414,33 @@ export function AppShell(props: {
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const navItems = createMemo(() => navFor(scopedTenant()));
+  const pageLabel = createMemo(() => {
+    const path = location.pathname;
+    if (path === "/account") return "Account";
+    if (path === "/tenants/new") return "Create tenant";
+    if (path === "/dashboard") return "Tenant";
+    if (path.startsWith("/docs")) return "Documentation";
+    return navItems().find((item) => item.match(path))?.label ?? "Tenant";
+  });
+
+  createEffect(
+    () => pageLabel(),
+    (label) => {
+      if (typeof document !== "undefined") document.title = `${label} · Mattrax`;
+    },
+  );
+
+  let navRef: HTMLElement | undefined;
+  createEffect(
+    () => location.pathname,
+    () => {
+      queueMicrotask(() => {
+        navRef
+          ?.querySelector<HTMLElement>('[aria-current="page"]')
+          ?.scrollIntoView({ inline: "center", block: "nearest" });
+      });
+    },
+  );
 
   return (
     <div class="dark flex min-h-svh flex-col bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
@@ -466,7 +467,7 @@ export function AppShell(props: {
           </a>
 
           <span class="mx-1 hidden h-4 w-px bg-white/[0.08] sm:block" aria-hidden="true" />
-          <TenantSwitcher activeId={activeId()} onOpenWorkspaces={() => navigate("/dashboard")} />
+          <TenantSwitcher activeId={activeId()} />
 
           <div class="ml-auto flex items-center gap-1">
             <SearchButton />
@@ -485,6 +486,7 @@ export function AppShell(props: {
         <div class="mx-auto flex max-w-[1600px] items-center gap-3 px-3 sm:px-5 lg:px-6">
           <div class="relative min-w-0 flex-1">
             <nav
+              ref={navRef}
               aria-label="Primary"
               class="no-scrollbar -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
             >
@@ -520,12 +522,50 @@ export function AppShell(props: {
         <EmailVerificationBanner user={props.user} />
       </Show>
 
-      <main id="main" class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col">
-        {props.children}
+      <main
+        id="main"
+        tabindex="-1"
+        class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 scroll-mt-24 flex-col focus:outline-none"
+      >
+        <Errored
+          fallback={(error, reset) => (
+            <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
+              <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
+                <h2 class="text-[14px] font-semibold text-foreground">
+                  This page couldn't load
+                </h2>
+                <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                  {error instanceof Error ? error.message : "An unexpected error occurred."}
+                </p>
+                <div class="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
+                    onClick={() => reset()}
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg border border-white/[0.09] px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/[0.05]"
+                    onClick={() => window.location.reload()}
+                  >
+                    Reload
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        >
+          {props.children}
+        </Errored>
+        <div aria-live="polite" class="sr-only">
+          {pageLabel()}
+        </div>
       </main>
 
       <Show when={!location.pathname.endsWith("/design")}>
-        <footer class="relative z-10 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground/60 sm:px-6 lg:px-8">
+        <footer class="relative z-0 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1 px-4 py-5 text-[11px] text-muted-foreground sm:px-6 lg:px-8">
         <span>Mattrax</span>
         <a class="transition-colors hover:text-muted-foreground" href="/docs/">
           Documentation

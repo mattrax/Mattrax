@@ -45,7 +45,7 @@ test.describe("tenant settings", () => {
       ["Billing", /Billable devices|Plan/],
       ["General", /Tenant profile/],
     ] as const) {
-      await tabs.getByRole("button", { name: tab }).click();
+      await tabs.getByRole("link", { name: tab }).click();
       await expect(page.getByText(text).first()).toBeVisible();
     }
 
@@ -55,9 +55,11 @@ test.describe("tenant settings", () => {
     await expect(name).toHaveValue("Renamed Tenant");
 
     await page.goto("/dashboard");
-    await expect(
-      page.getByRole("main").getByRole("button", { name: /Renamed Tenant/ }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
+    const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
+    expect(me.tenants.find((item: { id: string }) => item.id === tenant.id).name).toBe(
+      "Renamed Tenant",
+    );
   });
 
   test("shows the auditor role in administrator settings", async ({ page }) => {

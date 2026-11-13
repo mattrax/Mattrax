@@ -1438,7 +1438,7 @@ export const enabledTenant = (tenantId: Accessor<string | undefined>) => () => B
 /**
  * Pick the tenant the UI should show. Tenant-scoped APIs always take the
  * tenant id from the URL; the first membership is only a fallback for
- * non-tenant routes (for example the workspace picker or account page).
+ * non-tenant routes (for example the tenant picker or account page).
  */
 export function resolveActiveTenant(
   me: { tenants: readonly TenantInfo[] } | undefined,

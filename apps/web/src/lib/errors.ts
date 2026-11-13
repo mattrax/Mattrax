@@ -47,11 +47,11 @@ const TAGS: Record<string, Mapping> = {
   },
   EnterpriseBadRequest: { message: "That request couldn't be completed.", variant: "validation" },
   EnterpriseTenantHasMembers: {
-    message: "This workspace still has other members. Remove them before deleting it.",
+    message: "This tenant still has other members. Remove them before deleting it.",
     variant: "validation",
   },
   EnterpriseLastTenantUser: {
-    message: "You can't remove the last owner of a workspace.",
+    message: "You can't remove the last owner of a tenant.",
     variant: "validation",
   },
   EnterpriseStripeError: {

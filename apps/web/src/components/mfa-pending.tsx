@@ -111,6 +111,8 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
             </label>
             <input
               id="mfa-code"
+              aria-invalid={error() ? "true" : undefined}
+              aria-describedby={error() ? "mfa-error" : undefined}
               required
               autocomplete="one-time-code"
               inputmode={mode() === "totp" ? "numeric" : "text"}
@@ -126,7 +128,13 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
             Use the passkey saved on this device or a nearby device.
           </p>
         </Show>
-        <Show when={error()}>{(message) => <p class="text-sm text-red-600">{message()}</p>}</Show>
+        <Show when={error()}>
+          {(message) => (
+            <p id="mfa-error" role="alert" class="text-sm text-destructive">
+              {message()}
+            </p>
+          )}
+        </Show>
         <button
           type="submit"
           disabled={pending()}

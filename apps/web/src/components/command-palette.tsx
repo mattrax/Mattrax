@@ -43,6 +43,8 @@ export function CommandPalette() {
   const [query, setQuery] = createSignal("");
   const [debouncedQuery, setDebouncedQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
+  let card: HTMLDivElement | undefined;
+  let opener: HTMLElement | null = null;
   const [recents, setRecents] = createSignal(readRecents());
   const tenantId = () => params.tenantId;
   const base = () => (tenantId() ? `/t/${tenantId()}` : "");
@@ -212,6 +214,10 @@ export function CommandPalette() {
     localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   };
 
+  const rememberOpener = () => {
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  };
+
   const run = (item: Item | undefined) => {
     if (!item) return;
     remember(item);
@@ -233,10 +239,14 @@ export function CommandPalette() {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        if (!open()) rememberOpener();
         setOpen((value) => !value);
       }
       if (!open()) return;
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        queueMicrotask(() => opener?.focus({ preventScroll: true }));
+      }
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setActive((value) => Math.min(value + 1, items().length - 1));
@@ -250,7 +260,10 @@ export function CommandPalette() {
         run(items()[active()]);
       }
     };
-    const openEvent = () => setOpen(true);
+    const openEvent = () => {
+      rememberOpener();
+      setOpen(true);
+    };
     window.addEventListener("keydown", handler);
     window.addEventListener("mattrax:open-command-palette", openEvent);
     return () => {
@@ -267,6 +280,19 @@ export function CommandPalette() {
     },
   );
 
+  createEffect(
+    () => open(),
+    (isOpen) => {
+      if (typeof document === "undefined") return;
+      const root = document.documentElement;
+      const previous = root.style.overflow;
+      if (isOpen) root.style.overflow = "hidden";
+      return () => {
+        root.style.overflow = previous;
+      };
+    },
+  );
+
   return (
     <Show when={open()}>
       <div
@@ -274,21 +300,46 @@ export function CommandPalette() {
         onClick={() => setOpen(false)}
       >
         <div
+          ref={card}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search Mattrax"
           class="dark w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.09] bg-popover shadow-2xl shadow-black/70"
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Tab" || !card) return;
+            const focusable = Array.from(
+              card.querySelectorAll<HTMLElement>("input, button, a[href]"),
+            );
+            if (focusable.length === 0) return;
+            event.preventDefault();
+            const current = focusable.indexOf(document.activeElement as HTMLElement);
+            const next = event.shiftKey
+              ? (current - 1 + focusable.length) % focusable.length
+              : (current + 1) % focusable.length;
+            focusable[next]?.focus();
+          }}
         >
           <div class="flex items-center gap-2 border-b px-4 py-3">
             <Search class="size-4 text-muted-foreground" />
             <input
               ref={input}
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="command-palette-list"
+              aria-autocomplete="list"
+              aria-label="Search devices, groups, policies or pages"
+              aria-activedescendant={
+                items()[active()] ? `command-palette-option-${active()}` : undefined
+              }
               value={query()}
               onInput={(event) => updateQuery(event.currentTarget.value)}
               placeholder="Search devices, groups, policies, or pages…"
-              class="flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
+              class="flex-1 bg-transparent text-base sm:text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
             />
             <kbd class="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">esc</kbd>
           </div>
-          <div class="max-h-[55vh] overflow-auto p-2">
+          <div id="command-palette-list" role="listbox" class="max-h-[55vh] overflow-auto p-2">
             <Show
               when={items().length > 0}
               fallback={
@@ -307,6 +358,9 @@ export function CommandPalette() {
                       {(item) => (
                         <button
                           type="button"
+                          role="option"
+                          id={`command-palette-option-${items().indexOf(item)}`}
+                          aria-selected={active() === items().indexOf(item) ? "true" : "false"}
                           onMouseEnter={() => setActive(items().indexOf(item))}
                           onClick={() => run(item)}
                           class={cn(

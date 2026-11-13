@@ -79,7 +79,7 @@ export async function register(page: Page, options: { name?: string; email?: str
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
   // A cold dev server compiles the dashboard route on the first navigation,
   // which can take longer than the default test timeout.
-  await page.waitForURL(/\/dashboard/, { timeout: 45_000 });
+  await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
   await verifyEmail(page, email);
   return { email, password: PASSWORD };
 }
@@ -113,7 +113,7 @@ export async function signIn(page: Page, email: string, password = PASSWORD) {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
-  await page.waitForURL(/\/dashboard|\/t\//, { timeout: 45_000 });
+  await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 }
 
 export async function createTenant(page: Page, name: string) {

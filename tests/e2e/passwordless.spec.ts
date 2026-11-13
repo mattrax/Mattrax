@@ -30,8 +30,8 @@ test.describe("passwordless sign-in", () => {
 
     await page.locator("#code").fill(code);
     await page.getByRole("button", { name: /^sign in$/i }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: /workspace|dashboard|devices/i })).toBeVisible({
+    await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: /tenant|create tenant|devices/i })).toBeVisible({
       timeout: 20_000,
     });
   });

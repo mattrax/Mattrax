@@ -119,7 +119,7 @@
   --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.7 0.19 22);
   --border: oklch(0.3 0.004 285 / 65%);
-  --input: oklch(0.35 0.004 285 / 60%);
+  --input: oklch(0.44 0.004 285 / 75%);
   --ring: oklch(0.65 0.19 276);
   --chart-1: oklch(0.7 0.17 276);
   --chart-2: oklch(0.72 0.16 190);
@@ -253,8 +253,23 @@ main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
   background: color-mix(in oklch, var(--brand) 35%, transparent);
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
+html:has(.dark) {
+  background-color: oklch(0.145 0 0);
+  color-scheme: dark;
+}
+
 .dark {
   scrollbar-color: oklch(0.34 0.005 285) transparent;
+}
+
+/* Brand fills carry white text at 10–13px, so use a darker fill than the
+   text/link brand token to clear AA contrast. */
+.dark .bg-brand {
+  background-color: oklch(0.58 0.19 276);
 }
 
 .dark *::-webkit-scrollbar {
@@ -441,6 +456,21 @@ main[data-slot="sidebar-inset"]:has([data-policy-designer]) {
 }
 
 /* Auth pages use the console palette but keep their compact centred card. */
+/* iOS zooms the viewport when a focused field is under 16px. */
+.auth-page input,
+.auth-page textarea,
+.auth-page select {
+  font-size: 16px;
+}
+
+@media (min-width: 640px) {
+  .auth-page input,
+  .auth-page textarea,
+  .auth-page select {
+    font-size: 14px;
+  }
+}
+
 .auth-page .bg-stone-900 {
   background-color: var(--primary);
   color: var(--primary-foreground);

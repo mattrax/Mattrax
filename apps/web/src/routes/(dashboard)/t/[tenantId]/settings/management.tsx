@@ -915,6 +915,7 @@ export default function ManagementSettingsPage() {
                   </div>
                   <textarea
                     class={textareaClass}
+                    aria-label="Autopilot CSV import"
                     placeholder={
                       "Device Serial Number,Hardware Hash,Group Tag\nABC123,base64hash...,Engineering"
                     }

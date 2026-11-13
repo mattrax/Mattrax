@@ -33,11 +33,11 @@ export default function NewTenantPage() {
         class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
       >
         <ArrowLeft class="size-3.5" />
-        Back to workspaces
+        Back to dashboard
       </a>
 
       <PageHeader
-        eyebrow="New workspace"
+        eyebrow="New tenant"
         title="Create tenant"
         description="Tenants scope all MDM resources and team access."
       />

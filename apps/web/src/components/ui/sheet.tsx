@@ -66,13 +66,23 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
     props,
   );
   const [local, others] = splitProps(mergedProps, ["class", "children", "side", "showCloseButton"]);
+  let opener: HTMLElement | null = null;
   return (
-    <>
+    <SheetPrimitive.Portal>
       <SheetOverlay />
       <SheetPrimitive.Content
+        aria-modal="true"
         data-slot="sheet-content"
         data-side={local.side}
-        class={cn("dark z-sheet-content", local.class)}
+        class={cn("dark z-sheet-content text-foreground", local.class)}
+        onOpenAutoFocus={() => {
+          opener =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener?.focus({ preventScroll: true });
+        }}
         {...others}
       >
         {local.children}
@@ -89,7 +99,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
           </SheetPrimitive.CloseButton>
         </Show>
       </SheetPrimitive.Content>
-    </>
+    </SheetPrimitive.Portal>
   );
 };
 

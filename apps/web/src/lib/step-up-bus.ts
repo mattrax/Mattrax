@@ -108,7 +108,7 @@ export const cancelStepUp = (error: unknown = new Error("Confirmation cancelled"
 export const stepUpActionLabel = (action: StepUpAction): string => {
   switch (action) {
     case "tenant-delete":
-      return "delete this workspace";
+      return "delete this tenant";
     case "api-token-create":
       return "create an API token";
     case "api-token-revoke":
@@ -120,13 +120,13 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
     case "recovery-key-reveal":
       return "reveal this recovery key";
     case "backup-download":
-      return "download this workspace backup";
+      return "download this tenant backup";
     case "device-command":
       return "run this device action";
     case "billing-portal":
       return "open the billing portal";
     case "sso-policy":
-      return "change the workspace sign-in policy";
+      return "change the tenant sign-in policy";
     case "passkey-enroll":
       return "add a passkey";
     case "passkey-remove":

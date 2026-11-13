@@ -368,6 +368,7 @@ export default function GeneralSettingsPage() {
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
                 <Input
+                  aria-label="Brand colour hex value"
                   value={brandColor()}
                   placeholder={DEFAULT_BRAND_COLOR}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
@@ -465,7 +466,7 @@ export default function GeneralSettingsPage() {
       <Panel
         class="xl:col-span-2"
         title="Data and backups"
-        description="Versioned JSON bundles for moving a workspace between deployments."
+        description="Versioned JSON bundles for moving a tenant between deployments."
       >
         <div class="divide-y divide-white/[0.05]">
           <section class="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">

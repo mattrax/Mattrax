@@ -1279,7 +1279,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <p class="text-[11px] leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
               ? "Saving replaces this policy's designer configuration. Advanced-editor settings need explicit confirmation."
-              : "Export the artifact now, or deploy it into a Mattrax workspace."}
+              : "Export the artifact now, or deploy it into a Mattrax tenant."}
           </p>
           <button
             type="button"
@@ -1770,7 +1770,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <Show
             when={activeSummary()}
             fallback={
-              <div class="mx-auto w-full max-w-xl px-5 py-8">
+              <div class="mx-auto h-full w-full max-w-xl overflow-y-auto px-5 py-8">
                 <h2 class="text-base font-semibold tracking-tight text-foreground">
                   Start a policy
                 </h2>

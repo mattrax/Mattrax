@@ -709,7 +709,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message:
-                "This workspace requires multi-factor authentication. Enable an authenticator on your account first.",
+                "This tenant requires multi-factor authentication. Enable an authenticator on your account first.",
             }),
           );
       }
@@ -1934,7 +1934,7 @@ export const createEnterpriseService = ({
             )
               return yield* Effect.fail(
                 new EnterpriseForbidden({
-                  message: "Transfer ownership of this workspace before deleting your account.",
+                  message: "Transfer ownership of this tenant before deleting your account.",
                 }),
               );
             yield* db.delete(schema.member).where(eq(schema.member.id, membership.id));
@@ -2673,7 +2673,7 @@ export const createEnterpriseService = ({
           });
           if (claimed && claimed.id !== tenantId)
             return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "That workspace URL is already in use" }),
+              new EnterpriseBadRequest({ message: "That tenant URL is already in use" }),
             );
         }
         const branding = yield* brandingOrFail(body);
@@ -3251,7 +3251,7 @@ export const createEnterpriseService = ({
           if (claimed && claimed.organizationId !== ctx.organization.id)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
-                message: "That Entra tenant is already linked to another workspace",
+                message: "That Entra tenant is already linked to another tenant",
               }),
             );
         }
@@ -3260,7 +3260,7 @@ export const createEnterpriseService = ({
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message:
-                  "Enable an authenticator app for your own account before requiring MFA for the workspace.",
+                  "Enable an authenticator app for your own account before requiring MFA for the tenant.",
               }),
             );
           const privileged = yield* db
@@ -3638,7 +3638,7 @@ export const createEnterpriseService = ({
         const role = body.role ?? "member";
         if (!validRoles(role))
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Choose a valid workspace role" }),
+            new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
         if (hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
           return yield* Effect.fail(
@@ -3795,7 +3795,7 @@ export const createEnterpriseService = ({
         const body = payload as { role: string };
         if (!validRoles(body.role))
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Choose a valid workspace role" }),
+            new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
           );
         if (
           (hasOwnerRole(body.role) || hasOwnerRole(member.role)) &&

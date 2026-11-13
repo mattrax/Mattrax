@@ -198,7 +198,7 @@ export function AccountSecurity(props: {
 
       <Show when={props.mfaRequired && !props.mfaEnabled}>
         <Banner tone="warning" class="mt-4">
-          A workspace where you are an owner or admin requires MFA. Add a passkey or enable an
+          A tenant where you are an owner or admin requires MFA. Add a passkey or enable an
           authenticator to regain access to its settings.
         </Banner>
       </Show>
@@ -288,6 +288,7 @@ export function AccountSecurity(props: {
         <form onSubmit={addPasskey} class="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             class={inputClass}
+            aria-label="Passkey name"
             placeholder="Name this passkey (for example, MacBook)"
             value={passkeyName()}
             maxlength={128}

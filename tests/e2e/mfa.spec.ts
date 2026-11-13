@@ -38,7 +38,7 @@ test.describe("authenticator MFA", () => {
     expect(beforeMfa).toBe(401);
     await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // A recovery code completes the same pending flow and is single use.
     await page.getByRole("button", { name: "Account menu" }).click();
@@ -51,7 +51,7 @@ test.describe("authenticator MFA", () => {
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]!);
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // Disabling requires the password and a fresh authenticator code.
     await gotoHydrated(page, "/account");

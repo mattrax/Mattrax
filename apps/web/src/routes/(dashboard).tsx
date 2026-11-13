@@ -12,7 +12,7 @@ function DashboardBootScreen() {
         <span class="flex size-9 animate-pulse items-center justify-center rounded-xl bg-gradient-to-b from-white to-white/80 text-[14px] font-bold text-black">
           M
         </span>
-        <p class="text-[12px] text-muted-foreground">Loading your workspace…</p>
+        <p class="text-[12px] text-muted-foreground">Loading your tenant…</p>
       </div>
     </div>
   );

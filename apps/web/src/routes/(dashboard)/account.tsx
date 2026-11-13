@@ -489,6 +489,11 @@ export default function AccountPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    aria-label={
+                      item.current
+                        ? "Sign out of this session"
+                        : `Revoke ${item.method ?? "password"} session signed in ${new Date(item.createdAt).toLocaleString()}`
+                    }
                     onClick={() => revokeSession(item.id, item.current)}
                   >
                     {item.current ? "Sign out" : "Revoke"}
@@ -671,6 +676,7 @@ export default function AccountPage() {
         <div class="flex flex-col gap-2 sm:flex-row">
           <Input
             type="email"
+            aria-label="Type your email address to confirm account deletion"
             class="h-9 sm:flex-1"
             placeholder={user()?.email}
             value={deleteConfirm()}

@@ -123,6 +123,8 @@ export function StepUpDialog() {
                       type="password"
                       required
                       autocomplete="current-password"
+                      aria-invalid={error() ? "true" : undefined}
+                      aria-describedby={error() ? "step-up-error" : undefined}
                       value={password()}
                       onInput={(event) => setPassword(event.currentTarget.value)}
                       class={inputClass}
@@ -141,6 +143,8 @@ export function StepUpDialog() {
                       autocomplete="one-time-code"
                       inputmode="numeric"
                       placeholder="000000"
+                      aria-invalid={error() ? "true" : undefined}
+                      aria-describedby={error() ? "step-up-error" : undefined}
                       value={code()}
                       onInput={(event) => setCode(event.currentTarget.value)}
                       class={inputClass}
@@ -155,7 +159,11 @@ export function StepUpDialog() {
                 </Show>
 
                 <Show when={error()}>
-                  {(message) => <p class="text-sm text-destructive">{message()}</p>}
+                  {(message) => (
+                    <p id="step-up-error" role="alert" class="text-sm text-destructive">
+                      {message()}
+                    </p>
+                  )}
                 </Show>
 
                 <div class="flex gap-2">

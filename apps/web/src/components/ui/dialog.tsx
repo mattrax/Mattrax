@@ -63,15 +63,25 @@ type DialogContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
 const DialogContent = <T extends ValidComponent = "div">(props: DialogContentProps<T>) => {
   const mergedProps = mergeProps({ showCloseButton: true } as DialogContentProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
+  let opener: HTMLElement | null = null;
   return (
-    <>
+    <DialogPrimitive.Portal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        aria-modal="true"
         data-slot="dialog-content"
         class={cn(
-          "dark fixed top-1/2 left-1/2 z-50 z-dialog-content w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+          "dark fixed top-1/2 left-1/2 z-50 z-dialog-content w-full -translate-x-1/2 -translate-y-1/2 text-foreground outline-none",
           local.class,
         )}
+        onOpenAutoFocus={() => {
+          opener =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener?.focus({ preventScroll: true });
+        }}
         {...others}
       >
         {local.children}
@@ -88,7 +98,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
           </DialogPrimitive.CloseButton>
         </Show>
       </DialogPrimitive.Content>
-    </>
+    </DialogPrimitive.Portal>
   );
 };
 

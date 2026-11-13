@@ -1,7 +1,8 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -119,8 +120,11 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
 
   return (
     <DropdownMenu open={open()} onOpenChange={setOpen}>
-      <DropdownMenuTrigger class="inline-flex">
-        <Button variant="outline">Scope</Button>
+      <DropdownMenuTrigger
+        class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+        aria-label="Assign selected rows to groups"
+      >
+        Scope
       </DropdownMenuTrigger>
       <DropdownMenuContent class="w-80 rounded-xl border border-border bg-popover p-1.5 shadow-2xl shadow-black/50">
         <For each={groupRows()}>
