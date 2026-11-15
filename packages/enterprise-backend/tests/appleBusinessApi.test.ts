@@ -131,7 +131,11 @@ const makeFetch = () => {
   return { fetchImpl, calls };
 };
 
-const makeContext = async () => {
+const makeContext = async (
+  overrides: {
+    readonly android?: Parameters<typeof createEnterpriseService>[0]["android"];
+  } = {},
+) => {
   const db = makeDb();
   const now = new Date();
 
@@ -187,6 +191,8 @@ const makeContext = async () => {
     status: "enrolled",
     name: "Mac 1",
     serial: "SERIAL-1",
+    osEdition: "macOS",
+    osVersion: "14.0",
     enrolledAt: now,
     lastSeenAt: now,
   });
@@ -232,6 +238,7 @@ const makeContext = async () => {
     auth: auth as any,
     authSecret,
     appleApi: { fetch: fetchImpl },
+    android: overrides.android,
   });
 
   return { db, service, headers: { cookie: "mattrax_session=test" } };
@@ -345,6 +352,263 @@ describe("Apple Business Manager API flow", () => {
 
     expect(released).toMatchObject({ status: "ok", released: 1, failed: 0 });
     expect(db.store.vpp_asset[0]).toMatchObject({ availableLicenses: 5, assignedLicenses: 0 });
+  });
+
+  it("queues an InstallEnterpriseApplication for an uploaded Apple package", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.application.push({
+      id: "app-upload",
+      organizationId,
+      name: "Office",
+      platform: "apple",
+      bundleId: "com.microsoft.Office",
+      version: "16.0",
+      source: "upload",
+      fileName: "Office.pkg",
+      contentType: "application/vnd.apple.installer+xml",
+      size: 4,
+      sha256: "a".repeat(64),
+      r2Key: "a/org-1/app-upload/sha",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-upload" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-upload"),
+    );
+
+    expect(result).toMatchObject({ status: "ok", queued: 1, skipped: 0 });
+    expect(db.store.device_command[0]).toMatchObject({
+      requestType: "InstallEnterpriseApplication",
+      deviceId: "device-1",
+    });
+
+    // SAFETY: the queued payload is produced by this test's install path and
+    // the assertions verify the manifest keys it wrote.
+    const payload = db.store.device_command[0]!.payload as any;
+    expect(payload.Manifest.items[0].metadata["bundle-identifier"]).toBe("com.microsoft.Office");
+    expect(payload.Manifest.items[0].assets[0].sha256).toBe("a".repeat(64));
+    expect(payload.Manifest.items[0].assets[0].url).toContain(
+      "/mdm/apple/assets/app.app-upload?token=",
+    );
+  });
+
+  it("reports an uploaded .ipa instead of queueing an install it cannot perform", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.application.push({
+      id: "app-ipa",
+      organizationId,
+      name: "Internal iOS",
+      platform: "apple",
+      bundleId: "com.example.internal",
+      version: "1.0",
+      source: "upload",
+      fileName: "Internal.ipa",
+      contentType: "application/octet-stream",
+      sha256: "b".repeat(64),
+      r2Key: "a/org-1/app-ipa/sha",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-ipa" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-ipa"),
+    );
+
+    expect(result).toMatchObject({ queued: 0 });
+    expect(result.message).toContain("OTA manifest");
+    expect(db.store.device_command).toHaveLength(0);
+  });
+
+  it("does not queue an uploaded .pkg for an iPhone", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.device.push({
+      id: "iphone-1",
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "iPhone",
+      serial: "IPHONE-1",
+      osEdition: "iOS",
+      osVersion: "17.0",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.application.push({
+      id: "app-pkg-ios",
+      organizationId,
+      name: "Office",
+      platform: "apple",
+      bundleId: "com.microsoft.Office",
+      version: "16.0",
+      source: "upload",
+      fileName: "Office.pkg",
+      contentType: "application/vnd.apple.installer+xml",
+      sha256: "c".repeat(64),
+      r2Key: "a/org-1/app-pkg-ios/sha",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "iphone-1", applicationId: "app-pkg-ios" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-pkg-ios"),
+    );
+
+    expect(result).toMatchObject({ queued: 0, skipped: 1 });
+    expect(result.message).toContain("macOS only");
+    expect(db.store.device_command).toHaveLength(0);
+  });
+
+  it("queues an MSI Exec for a Windows application", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.device.push({
+      id: "win-1",
+      organizationId,
+      proto: "win",
+      status: "enrolled",
+      name: "PC 1",
+      serial: "WIN-SERIAL",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.application.push({
+      id: "win-app",
+      organizationId,
+      name: "Chrome",
+      platform: "win",
+      bundleId: "8A69D345-D564-463C-AFF1-A69D9E530F96",
+      version: "120.0",
+      source: "manifest",
+      manifestUrl: "https://cdn.example.test/chrome.msi",
+      fileName: "chrome.msi",
+      sha256: "c".repeat(64),
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "win-1", applicationId: "win-app" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "win-app"),
+    );
+
+    expect(result).toMatchObject({ status: "ok", queued: 1, skipped: 0 });
+    const command = db.store.device_command[0]!;
+    expect(command).toMatchObject({ requestType: "InstallApplication", deviceId: "win-1" });
+
+    // SAFETY: the InstallApplication payload for a Windows MSI is constructed
+    // by windowsMsiInstallPayload, which always returns these fields.
+    const payload = command.payload as any;
+    expect(payload.kind).toBe("Exec");
+    expect(payload.format).toBe("xml");
+    expect(payload.locURI).toContain(encodeURIComponent("{8A69D345-D564-463C-AFF1-A69D9E530F96}"));
+    expect(payload.data).toContain("<ContentURL>https://cdn.example.test/chrome.msi</ContentURL>");
+  });
+
+  it("reports a Windows .exe instead of queueing an MSI install", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.device.push({
+      id: "win-1",
+      organizationId,
+      proto: "win",
+      status: "enrolled",
+      name: "PC 1",
+      serial: "WIN-SERIAL",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.application.push({
+      id: "win-exe",
+      organizationId,
+      name: "Tool",
+      platform: "win",
+      bundleId: "{8A69D345-D564-463C-AFF1-A69D9E530F96}",
+      source: "manifest",
+      manifestUrl: "https://cdn.example.test/tool.exe",
+      fileName: "tool.exe",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "win-1", applicationId: "win-exe" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "win-exe"),
+    );
+
+    expect(result).toMatchObject({ queued: 0 });
+    expect(result.message).toContain("Intune Management Extension");
+    expect(db.store.device_command).toHaveLength(0);
+  });
+
+  it("does not claim Android success when Android Management is not configured", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.device.push({
+      id: "android-1",
+      organizationId,
+      proto: "android",
+      status: "enrolled",
+      name: "Pixel",
+      serial: "ANDROID-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.application.push({
+      id: "android-app",
+      organizationId,
+      name: "Gmail",
+      platform: "android",
+      bundleId: "com.google.android.gm",
+      source: "store",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "android-1", applicationId: "android-app" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "android-app"),
+    );
+
+    expect(result).toMatchObject({ queued: 0 });
+    expect(result.message).toContain("not configured");
+    expect(db.store.device_command).toHaveLength(0);
+  });
+
+  it("reports Apple applications that have no file or bundle id", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.application.push({
+      id: "app-empty",
+      organizationId,
+      name: "Empty",
+      platform: "apple",
+      source: "upload",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-empty" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-empty"),
+    );
+
+    expect(result).toMatchObject({ queued: 0 });
+    expect(result.message).toContain("Upload the installer");
+    expect(db.store.device_command).toHaveLength(0);
   });
 
   it("fails VPP installs closed when the token is inactive and reports no licence", async () => {

@@ -17,6 +17,7 @@ import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { PasswordInput } from "~/components/ui/password-input";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   parsePolicyDraft,
   type PolicyConfiguration,
@@ -249,6 +251,7 @@ export default function PolicyDetailPage() {
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [addOpen, setAddOpen] = createSignal(false);
+  const [seeded, setSeeded] = createSignal(false);
   createEffect(
     () => row()?.id,
     () => {
@@ -258,9 +261,23 @@ export default function PolicyDetailPage() {
         setName(policy.name);
         setNotes(policy.notes ?? "");
         setPriority(String(policy.priority ?? 0));
+        setSeeded(true);
       }
     },
   );
+
+  const dirty = () =>
+    seeded() &&
+    Boolean(row()) &&
+    writable() &&
+    (name() !== row()!.name ||
+      notes() !== (row()!.notes ?? "") ||
+      priority() !== String(row()!.priority ?? 0));
+
+  const unsaved = useUnsavedChanges(dirty, {
+    title: "Discard policy metadata changes?",
+    description: "The name, notes or conflict priority on this policy have not been saved.",
+  });
 
   const invalidate = async () => {
     await qc.invalidateQueries({
@@ -340,6 +357,7 @@ export default function PolicyDetailPage() {
 
   return (
     <Page>
+      {unsaved.prompt}
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
 
       <PageHeader
@@ -625,7 +643,7 @@ function ConfigurationCard(props: {
     >
       <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[13px] transition-colors hover:bg-muted/40">
         <span class="flex min-w-0 items-center gap-2.5">
-          <span class="flex size-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-muted-foreground">
+          <span class="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground">
             <Show
               when={props.kind.includes("wifi")}
               fallback={
@@ -662,7 +680,7 @@ function ConfigurationCard(props: {
           <div class="flex flex-wrap gap-1.5">
             <For each={info().collections.slice(0, 24)}>
               {(collection) => (
-                <span class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.07] bg-white/[0.03] px-2 py-1 text-[11px] text-foreground/85">
+                <span class="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-foreground/85">
                   {collection.label}
                 </span>
               )}
@@ -808,7 +826,7 @@ function AddConfigurationDialog(props: {
             onClick={() => setPreset("wifi")}
             class={
               preset() === "wifi"
-                ? "rounded-lg border border-foreground/25 bg-white/[0.05] p-3 text-left"
+                ? "rounded-lg border border-foreground/25 bg-hover p-3 text-left"
                 : "rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/40"
             }
           >
@@ -823,7 +841,7 @@ function AddConfigurationDialog(props: {
             onClick={() => setPreset("passcode")}
             class={
               preset() === "passcode"
-                ? "rounded-lg border border-foreground/25 bg-white/[0.05] p-3 text-left"
+                ? "rounded-lg border border-foreground/25 bg-hover p-3 text-left"
                 : "rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/40"
             }
           >
@@ -864,8 +882,7 @@ function AddConfigurationDialog(props: {
               </Field>
               <Show when={security() !== "open"}>
                 <Field label="Password">
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={password()}
                     onInput={(event) => setPassword(event.currentTarget.value)}
                   />
@@ -876,7 +893,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={autoJoin()}
                   onChange={(event) => setAutoJoin(event.currentTarget.checked)}
                 />
@@ -885,7 +902,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={hidden()}
                   onChange={(event) => setHidden(event.currentTarget.checked)}
                 />
@@ -896,7 +913,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={apple()}
                   onChange={(event) => setApple(event.currentTarget.checked)}
                 />
@@ -905,7 +922,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={windows()}
                   onChange={(event) => setWindows(event.currentTarget.checked)}
                 />
@@ -930,7 +947,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={requireAlphanumeric()}
                   onChange={(event) => setRequireAlphanumeric(event.currentTarget.checked)}
                 />
@@ -939,7 +956,7 @@ function AddConfigurationDialog(props: {
               <label class="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  class="size-3.5 accent-[var(--brand)]"
+                  class="size-3.5 accent-[var(--brand-solid)]"
                   checked={allowSimple()}
                   onChange={(event) => setAllowSimple(event.currentTarget.checked)}
                 />

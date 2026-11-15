@@ -15,7 +15,18 @@ import {
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
 import { PlistValue } from "@mattrax/plist";
-import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
+import {
+  appleOsFamily,
+  buildAppleEnrollmentProfile,
+  buildInstallApplicationPayload,
+  buildInstallEnterpriseApplicationPayload,
+  buildAppleManifest,
+  appleInstallAssetExpiresAt,
+  signAppleAssetToken,
+  isApplePackageUpload,
+  verifyAppleAssetToken,
+} from "@mattrax/dm-apple";
+import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import {
   InternalServerError,
   ManagementBackend,
@@ -73,9 +84,11 @@ import {
   commandStatusIsActive,
   deviceCommandExpiresAt,
   installApplicationTarget,
+  isApplicationInstallRequest,
   planCommandDelivery,
   reconcileDeviceCommands,
   shouldRetryInstall,
+  shouldRetryInstallBundle,
   type CommandPayload,
 } from "./commands.ts";
 import {
@@ -84,16 +97,22 @@ import {
   buildAssetDeclaration,
   buildConfigurationDeclaration,
   buildLegacyProfile,
+  CATALOGUE_APPLICATION_ASSET_KIND,
+  catalogueApplicationAssetIdentifier,
   certificateAllowsOrganization,
   configurationAssetIdentifier,
   configurationAssetServerToken,
   configurationDeclarationIdentifier,
   configurationServerToken,
+  isApplicationKind,
   isCertificateKind,
+  parseAppleApplicationConfiguration,
+  parseCatalogueApplicationAssetIdentifier,
   parseConfigurationKind,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
   verifyAssetRequestToken,
+  type AppleApplicationConfiguration,
   type DeclarationContext,
   type PolicyConfigurationRow,
 } from "./policy.ts";
@@ -342,7 +361,11 @@ const declarationItemsForDevice = (
   mode: "ddm" | "legacy",
 ): Effect.Effect<DdmDeclarationItems, unknown, Db> =>
   Effect.gen(function* () {
-    const { configurations: rows } = yield* scopedConfigurations(device, mode);
+    const { configurations: scoped } = yield* scopedConfigurations(device, mode);
+    // Application configurations are delivered as imperative install commands,
+    // not declarations: there is no declaration type that installs an arbitrary
+    // uploaded `.pkg` on every supported OS.
+    const rows = scoped.filter((row) => !isApplicationKind(row.kind));
     const groups = new Map<string, Array<{ kind: string; policyId: string }>>();
 
     for (const row of rows) {
@@ -1082,8 +1105,15 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly planLimits?: PlanLimitsConfig;
     /** Federated Entra WSTEP options; omitted disables Federated discovery. */
     readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
+    /**
+     * Read one object from tenant storage. Used to serve uploaded `.pkg`
+     * artefacts to devices through a signed, expiring asset URL. Omitting it
+     * makes uploaded application installs fail closed (they are reported as not
+     * deliverable rather than returning an empty package).
+     */
+    readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
   }): ManagementBackend.Service => {
-    const { db, origin, apns, authSecret } = options;
+    const { db, origin, apns, authSecret, readApplicationObject } = options;
 
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
       effect.pipe(Effect.provideService(Db, db));
@@ -1278,6 +1308,315 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         return Boolean(member);
       });
 
+    type CatalogueApplication = typeof s.application.$inferSelect;
+
+    type ResolvedPolicyApplication = {
+      readonly catalogueApplicationId?: string;
+      readonly source: "upload" | "manifest" | "store";
+      readonly bundleId: string;
+      readonly version: string;
+      readonly title: string;
+      readonly sha256?: string;
+      readonly fileName?: string;
+      readonly contentType?: string;
+      readonly manifestUrl?: string;
+      readonly storeId?: string;
+      readonly configuration?: Schema.JsonObject;
+      readonly managementFlags?: number;
+    };
+
+    type ResolvedPolicyApplicationResult = {
+      readonly application?: ResolvedPolicyApplication;
+      readonly reason?: string;
+    };
+
+    /**
+     * Combine the policy configuration with the catalogue row it references.
+     * Returns null (with a reason) when the app cannot be installed at all, so
+     * the caller logs the reason instead of queueing a command Apple rejects.
+     */
+    const resolvePolicyApplication = (
+      configuration: AppleApplicationConfiguration,
+      catalogue: CatalogueApplication | undefined,
+    ): ResolvedPolicyApplicationResult => {
+      if (configuration.type === "catalogue") {
+        if (!catalogue)
+          return {
+            reason:
+              "the referenced application is not in this tenant's catalogue (it may have been deleted)",
+          };
+
+        if (!catalogue.bundleId)
+          return {
+            reason: "the catalogue entry has no bundle identifier, so installs cannot be tracked",
+          };
+
+        const version = catalogue.version ?? "0";
+        const title = catalogue.name;
+
+        if (catalogue.source === "upload") {
+          if (!catalogue.r2Key || !catalogue.sha256)
+            return { reason: "the catalogue entry has no uploaded file" };
+
+          if (
+            !isApplePackageUpload({
+              fileName: catalogue.fileName,
+              contentType: catalogue.contentType,
+            })
+          )
+            return {
+              reason:
+                "the uploaded file is not a .pkg; iOS enterprise apps need an OTA manifest URL",
+            };
+
+          return {
+            application: {
+              catalogueApplicationId: catalogue.id,
+              source: "upload",
+              bundleId: catalogue.bundleId,
+              version,
+              title,
+              sha256: catalogue.sha256,
+              fileName: catalogue.fileName ?? undefined,
+              contentType: catalogue.contentType ?? undefined,
+              configuration: configuration.configuration,
+              managementFlags: 1,
+            },
+          };
+        }
+
+        if (catalogue.source === "store") {
+          if (!catalogue.storeId) return { reason: "the catalogue entry has no App Store id" };
+
+          return {
+            application: {
+              catalogueApplicationId: catalogue.id,
+              source: "store",
+              bundleId: catalogue.bundleId,
+              version,
+              title,
+              storeId: catalogue.storeId,
+              configuration: configuration.configuration,
+              managementFlags: 1,
+            },
+          };
+        }
+
+        if (!catalogue.manifestUrl) return { reason: "the catalogue entry has no manifest URL" };
+
+        return {
+          application: {
+            catalogueApplicationId: catalogue.id,
+            source: "manifest",
+            bundleId: catalogue.bundleId,
+            version,
+            title,
+            manifestUrl: catalogue.manifestUrl,
+            configuration: configuration.configuration,
+            managementFlags: 1,
+          },
+        };
+      }
+
+      return {
+        application: {
+          source: configuration.source,
+          bundleId: configuration.bundleId,
+          version: configuration.version ?? "0",
+          title: configuration.title ?? configuration.bundleId,
+          sha256: configuration.sha256,
+          fileName: configuration.fileName,
+          contentType: configuration.contentType,
+          manifestUrl: configuration.manifestUrl,
+          storeId: configuration.storeId,
+          configuration: configuration.configuration,
+          managementFlags: configuration.managementFlags ?? 1,
+        },
+      };
+    };
+
+    const serverOrigin = origin.replace(/\/+$/, "");
+
+    /**
+     * Queue installs for `mttx.apple.application.<id>` policy configurations.
+     *
+     * The command carries a device-bound, expiring URL for the package, so it
+     * is built per device rather than shared. Work is skipped when the device
+     * already reports the bundle or has an attempt in flight, and retries are
+     * bounded by the same three-a-day budget as catalogue installs.
+     */
+    const queuePolicyApplicationInstalls = (
+      device: DeviceRow,
+      configurations: ReadonlyArray<PolicyConfigurationRow>,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        const rows = configurations.filter((configuration) =>
+          isApplicationKind(configuration.kind),
+        );
+
+        if (rows.length === 0) return;
+
+        const catalogue = yield* db
+          .select()
+          .from(s.application)
+          .where(eq(s.application.organizationId, device.organizationId));
+
+        const catalogueById = new Map(catalogue.map((app) => [app.id, app]));
+
+        const installed = yield* db
+          .select({ bundleId: s.deviceApplication.bundleId })
+          .from(s.deviceApplication)
+          .where(eq(s.deviceApplication.deviceId, device.id));
+
+        const installedBundles = new Set(installed.map((row) => row.bundleId));
+
+        const history = yield* db
+          .select({
+            requestType: s.deviceCommand.requestType,
+            payload: s.deviceCommand.payload,
+            createdAt: s.deviceCommand.createdAt,
+          })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, [
+                "InstallApplication",
+                "InstallEnterpriseApplication",
+              ]),
+              gte(
+                s.deviceCommand.createdAt,
+                new Date(at.getTime() - DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS),
+              ),
+            ),
+          )
+          .orderBy(desc(s.deviceCommand.createdAt))
+          .limit(20);
+
+        const macos = appleOsFamily(device.osEdition) === "macOS";
+
+        // A store app in a policy has no licence consumer. When Apps and Books
+        // is configured, installing it here would bypass the licence pool, so
+        // it is skipped in favour of the applications page, which assigns a
+        // licence first.
+        const [vpp] = yield* db
+          .select({ organizationId: s.vppToken.organizationId })
+          .from(s.vppToken)
+          .where(eq(s.vppToken.organizationId, device.organizationId))
+          .limit(1);
+
+        for (const row of [...rows].sort((left, right) =>
+          `${left.policyId}:${left.kind}`.localeCompare(`${right.policyId}:${right.kind}`),
+        )) {
+          const configuration = parseAppleApplicationConfiguration(row.data);
+
+          if (!configuration) {
+            yield* Effect.logWarning(
+              `Policy application ${row.policyId}/${row.kind} is not a valid Apple application configuration and was not delivered to ${device.id}`,
+            );
+            continue;
+          }
+
+          const resolved = resolvePolicyApplication(
+            configuration,
+            configuration.type === "catalogue"
+              ? catalogueById.get(configuration.applicationId!)
+              : undefined,
+          );
+
+          if (!resolved.application) {
+            yield* Effect.logWarning(
+              `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: ${resolved.reason}`,
+            );
+            continue;
+          }
+
+          const application = resolved.application;
+
+          if (installedBundles.has(application.bundleId)) continue;
+
+          if (!shouldRetryInstallBundle(history, { bundleId: application.bundleId, now: at }))
+            continue;
+
+          if (application.source === "store" && vpp) {
+            yield* Effect.logWarning(
+              `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: Apps and Books is configured, so install it from the applications page to consume a licence`,
+            );
+            continue;
+          }
+
+          let requestType = "InstallApplication";
+          let payload: CommandPayload;
+
+          if (application.source === "upload") {
+            if (!macos) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} is a .pkg and was not delivered to ${device.id}: uploaded packages install on macOS only`,
+              );
+              continue;
+            }
+
+            if (!readApplicationObject) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: tenant storage is not configured for package delivery`,
+              );
+              continue;
+            }
+
+            if (!application.sha256 || !application.fileName) continue;
+
+            const identifier = application.catalogueApplicationId
+              ? catalogueApplicationAssetIdentifier(application.catalogueApplicationId)
+              : configurationAssetIdentifier(row.policyId, row.kind);
+
+            const token = yield* Effect.tryPromise({
+              try: () =>
+                signAppleAssetToken(authSecret ?? "", {
+                  policyId: application.catalogueApplicationId ?? row.policyId,
+                  kind: application.catalogueApplicationId
+                    ? CATALOGUE_APPLICATION_ASSET_KIND
+                    : row.kind,
+                  deviceId: device.id,
+                  expiresAt: appleInstallAssetExpiresAt(at.getTime()),
+                }),
+              catch: internal,
+            });
+
+            const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+
+            requestType = "InstallEnterpriseApplication";
+            payload = buildInstallEnterpriseApplicationPayload({
+              manifest: buildAppleManifest({
+                url,
+                sha256: application.sha256,
+                bundleId: application.bundleId,
+                version: application.version,
+                title: application.title,
+              }),
+              configuration: application.configuration,
+              managementFlags: application.managementFlags,
+            });
+          } else if (application.source === "store" && application.storeId) {
+            payload = buildInstallApplicationPayload({
+              storeId: application.storeId,
+              configuration: application.configuration,
+              managementFlags: application.managementFlags,
+            });
+          } else if (application.source === "manifest" && application.manifestUrl) {
+            payload = buildInstallApplicationPayload({
+              manifestUrl: application.manifestUrl,
+              configuration: application.configuration,
+              managementFlags: application.managementFlags,
+            });
+          } else {
+            continue;
+          }
+
+          yield* queueAppleCommand(device, requestType, payload, at);
+        }
+      });
+
     /**
      * Re-queue an app install that is still assigned to the device after the
      * device proved it missing, so legacy (non-declarative) app delivery
@@ -1330,11 +1669,15 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           const application = applications.find(
             (candidate) =>
               (target.manifestUrl != null && candidate.manifestUrl === target.manifestUrl) ||
-              (target.storeId != null && candidate.storeId === target.storeId),
+              (target.storeId != null && candidate.storeId === target.storeId) ||
+              (target.bundleId != null && candidate.bundleId === target.bundleId),
           );
 
           if (!application?.bundleId) continue;
 
+          // A policy-owned install may target a catalogue app that is not
+          // assigned through the catalogue. The policy check-in re-queues that
+          // install, so only catalogue-assigned work is retried here.
           if (!(yield* applicationAssignedToDevice(device.id, application.id))) continue;
 
           if (!shouldRetryInstall(history, { ...install, now: at })) continue;
@@ -1403,7 +1746,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (active.length === 0) return;
 
-        const installCommands = active.filter((row) => row.requestType === "InstallApplication");
+        const installCommands = active.filter((row) =>
+          isApplicationInstallRequest(row.requestType),
+        );
 
         const applications =
           installCommands.length > 0
@@ -1425,7 +1770,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             .filter(
               (application) =>
                 (target.manifestUrl != null && application.manifestUrl === target.manifestUrl) ||
-                (target.storeId != null && application.storeId === target.storeId),
+                (target.storeId != null && application.storeId === target.storeId) ||
+                (target.bundleId != null && application.bundleId === target.bundleId),
             )
             .flatMap((application) => (application.bundleId ? [application.bundleId] : []));
         };
@@ -1476,7 +1822,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         yield* requeueMissingInstalls(
           device,
-          active.filter((row) => failed.has(row.id) && row.requestType === "InstallApplication"),
+          active.filter(
+            (row) => failed.has(row.id) && isApplicationInstallRequest(row.requestType),
+          ),
           at,
         );
       }).pipe(
@@ -2208,11 +2556,23 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             const modeChangedToLegacy =
               decision.mode === "legacy" && appleState?.declarationMode !== "legacy";
 
-            if (decision.mode === "legacy") {
-              const scoped = yield* scopedConfigurations(device, "legacy").pipe(
-                Effect.mapError(internal),
-              );
+            const scoped = yield* scopedConfigurations(
+              device,
+              decision.mode === "legacy" ? "legacy" : "ddm",
+            ).pipe(Effect.mapError(internal));
 
+            // Application installs are imperative commands, not declarations, so
+            // they are queued for both delivery modes. `scoped` already applied
+            // policy precedence and exclusions.
+            yield* queuePolicyApplicationInstalls(device, scoped.configurations, at).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  `Failed to queue policy application installs for ${device.id}: ${String(error)}`,
+                ),
+              ),
+            );
+
+            if (decision.mode === "legacy") {
               const skippedNote = describeSkippedConfigurations(scoped.skipped);
 
               const reason = skippedNote ? `${decision.reason} ${skippedNote}` : decision.reason;
@@ -2243,9 +2603,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .set({ ddmDeclarationsToken: null })
                   .where(eq(s.device.id, device.id));
 
-              yield* syncLegacyPolicy(device, scoped.configurations, at).pipe(
-                Effect.mapError(internal),
-              );
+              yield* syncLegacyPolicy(
+                device,
+                scoped.configurations.filter(
+                  (configuration) => !isApplicationKind(configuration.kind),
+                ),
+                at,
+              ).pipe(Effect.mapError(internal));
             } else if (appleState?.declarationMode === "legacy") {
               // Back on declarative management: retire the legacy profiles so a
               // setting is not applied by both channels, and force a sync.
@@ -2545,6 +2909,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               const configurations = rows
                 .filter((row) => row.groupId === identifier)
+                .filter((row) => !isApplicationKind(row.kind))
                 .map((row) => configurationDeclarationIdentifier(row.policyId, row.kind));
 
               if (configurations.length === 0) return null;
@@ -2642,6 +3007,67 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       getAppleAsset: (identityCertificate, identifier, token) =>
         provideDb(
           Effect.gen(function* () {
+            const readObject = readApplicationObject;
+
+            const readContent = (key: string): Effect.Effect<Uint8Array | null> =>
+              readObject
+                ? Effect.tryPromise({
+                    try: () => readObject(key),
+                    catch: (cause) =>
+                      new Error(`Could not read application object ${key}: ${String(cause)}`),
+                  }).pipe(Effect.catch(() => Effect.succeed(null)))
+                : Effect.succeed(null);
+
+            // Catalogue app installs use their own signed identifier because
+            // the upload belongs to the application row, not to a policy.
+            const catalogueApplicationId = parseCatalogueApplicationAssetIdentifier(identifier);
+
+            if (catalogueApplicationId) {
+              if (!token) return null;
+
+              const [application] = yield* db
+                .select()
+                .from(s.application)
+                .where(eq(s.application.id, catalogueApplicationId))
+                .limit(1)
+                .pipe(Effect.mapError(internal));
+
+              if (!application?.r2Key || !application.sha256) return null;
+
+              const assetToken = yield* Effect.tryPromise({
+                try: () =>
+                  verifyAppleAssetToken(authSecret ?? "", token, {
+                    policyId: catalogueApplicationId,
+                    kind: CATALOGUE_APPLICATION_ASSET_KIND,
+                  }),
+                catch: internal,
+              });
+
+              if (!assetToken) return null;
+
+              const [assetDevice] = yield* db
+                .select({ organizationId: s.device.organizationId, status: s.device.status })
+                .from(s.device)
+                .where(eq(s.device.id, assetToken.deviceId))
+                .limit(1)
+                .pipe(Effect.mapError(internal));
+
+              if (
+                assetDevice?.organizationId !== application.organizationId ||
+                assetDevice.status !== "enrolled"
+              )
+                return null;
+
+              const content = yield* readContent(application.r2Key);
+
+              if (!content) return null;
+
+              return {
+                content,
+                contentType: application.contentType ?? "application/octet-stream",
+              };
+            }
+
             const parsed = splitConfigurationAssetIdentifier(identifier);
 
             if (!parsed) return null;
@@ -2659,7 +3085,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .limit(1)
               .pipe(Effect.mapError(internal));
 
-            if (!row || !isCertificateKind(row.configuration.kind)) return null;
+            if (!row) return null;
+            const configKind = row.configuration.kind;
+            const certificate = isCertificateKind(configKind);
+            const application = isApplicationKind(configKind);
+
+            if (!certificate && !application) return null;
 
             const data = Schema.decodeUnknownOption(Schema.Json)(row.configuration.data);
 
@@ -2667,14 +3098,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             const configRow: PolicyConfigurationRow = {
               policyId: row.configuration.policyId,
-              kind: row.configuration.kind,
+              kind: configKind,
               data: data.value,
               hash: row.configuration.hash,
               organizationId: row.policy.organizationId,
             };
 
             // Tenant-scoped: either the device presents an identity
-            // certificate from the owning tenant, or the DDM asset URL carries
+            // certificate from the owning tenant, or the DDM/install URL carries
             // a valid, unexpired token bound to a device that still belongs to
             // that tenant and is enrolled.
             const tenantAllowed =
@@ -2704,7 +3135,32 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (!tenantAllowed && !tokenAllowed) return null;
 
-            return buildAssetContent(configRow);
+            if (certificate) return buildAssetContent(configRow);
+
+            const configuration = parseAppleApplicationConfiguration(configRow.data);
+
+            if (
+              configuration?.type !== "inline" ||
+              configuration.source !== "upload" ||
+              !configuration.sha256 ||
+              !configuration.fileName
+            )
+              return null;
+
+            const content = yield* readContent(
+              policyApplicationKey(
+                row.policy.organizationId,
+                row.configuration.policyId,
+                configuration.sha256,
+              ),
+            );
+
+            if (!content) return null;
+
+            return {
+              content,
+              contentType: configuration.contentType ?? "application/octet-stream",
+            };
           }),
         ),
 
@@ -2780,6 +3236,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly requireAppleDeviceIdentity?: boolean;
       readonly planLimits?: PlanLimitsConfig;
       readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
+      readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
     },
   ) =>
     Layer.effect(
@@ -2837,6 +3294,7 @@ export {
   dispatchWebhookEvent,
   generateWebhookSecret,
   pruneWebhookDeliveries,
+  replayWebhookDelivery,
   retryFailedWebhookDeliveries,
   sendTestWebhook,
   signWebhookDelivery,
@@ -2848,7 +3306,8 @@ export {
   type WebhookDeliveryOutcome,
   type WebhookEndpointRow,
   type WebhookEventInput,
-  type WebhookPayload,
+  WebhookPayload,
+  type WebhookReplayResult,
   type WebhookRetryOptions,
   type WebhookRetryResult,
 } from "./webhooks.ts";

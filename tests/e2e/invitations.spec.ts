@@ -152,7 +152,7 @@ test.describe("invitations", () => {
     await register(invitee, { email, name: "Invited User" });
     await gotoHydrated(invitee, invitation.inviteUrl);
     await invitee.getByRole("button", { name: /^Join / }).click();
-    await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+    await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
     const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.some((item: { id: string }) => item.id === tenant.id)).toBe(true);
@@ -168,9 +168,7 @@ test.describe("invitations", () => {
     const email = uniqueEmail("ui-invitee");
 
     await openAdministrators(page, tenant.id);
-    await expect(
-      page.getByRole("heading", { name: "Invite a member", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Invite a member", exact: true })).toBeVisible();
 
     await inviteThroughUi(page, email, "builtin:member");
     await expect(page.getByText("Email sent", { exact: true })).toBeVisible();
@@ -197,7 +195,7 @@ test.describe("invitations", () => {
       ).toBeVisible();
       await expect(invitee.getByText(maskEmail(email), { exact: true })).toBeVisible();
       await invitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
-      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
       const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
       const membership = me.tenants.find((item: { id: string }) => item.id === tenant.id);
@@ -243,7 +241,7 @@ test.describe("invitations", () => {
       await gotoHydrated(invitee, link);
       await expect(invitee.getByText(roleName, { exact: true })).toBeVisible();
       await invitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
-      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
       const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
 
@@ -297,7 +295,7 @@ test.describe("invitations", () => {
       await register(invitee, { email, name: "Rotated Invitee" });
       await gotoHydrated(invitee, newLink);
       await invitee.getByRole("button", { name: /^Join / }).click();
-      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
     } finally {
       await inviteeContext.close();
     }
@@ -415,7 +413,7 @@ test.describe("invitations", () => {
       await register(member, { email, name: "Read Only Member" });
       await gotoHydrated(member, invitation.inviteUrl);
       await member.getByRole("button", { name: /^Join / }).click();
-      await expect(member).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+      await expect(member).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
       await openAdministrators(member, tenant.id);
       await expect(member.getByRole("heading", { name: "Members", exact: true })).toBeVisible();

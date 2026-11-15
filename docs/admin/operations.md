@@ -210,6 +210,33 @@ POST   /api/v1/tenants/:tenantId/webhooks/:webhookId/rotate-secret
 POST   /api/v1/tenants/:tenantId/webhooks/:webhookId/test
 ```
 
+### Delivery history
+
+Every attempt is stored for 30 days and is readable from the dashboard's
+Settings → Integrations → Deliveries tab or the API:
+
+```text
+GET  /api/v1/tenants/:tenantId/webhooks/:webhookId/deliveries
+GET  /api/v1/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId
+POST /api/v1/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId/replay
+```
+
+- The list is newest first and keyset paginated with `cursor`; `limit` defaults
+  to 25 and is capped at 100.
+- `event` filters to one event name (`device.enrolled`, `webhook.test`, …) and
+  `status` to `succeeded` or `failed`.
+- The window is the retention window: rows older than 30 days are gone, so a
+  cursor can never page past it.
+- The single-delivery read returns the exact JSON payload that was signed,
+  alongside the recorded status, attempt, response code and truncated error.
+- Replay re-sends the stored payload with the same `X-Mattrax-Delivery` header
+  (the payload's `id`), re-signed with the endpoint's current secret, and
+  records a new attempt row. Receivers can therefore dedupe a replay exactly
+  like an automatic retry. The original row is never modified.
+
+Reads need `webhooks.read`; replay needs `webhooks.write`. Both are owner/admin
+permissions in the built-in roles.
+
 ## Billing
 
 Billing is optional. Without Stripe secrets the API reports `configured: false` instead of
@@ -226,18 +253,66 @@ STRIPE_DEVICE_MONTHLY_PRICE_ID=price_...
 ```
 
 Point Stripe at `POST /api/v1/billing/webhook`. Mattrax handles subscription created,
-updated and deleted plus invoice paid/succeeded/failed. Tenants are resolved by
-`metadata.organizationId` or the stored Stripe customer id.
+updated and deleted, invoice paid/succeeded/failed and
+`checkout.session.completed` (which links the customer and records the plan; the
+subscription event then fills in the period). Tenants are resolved by
+`metadata.organizationId` or the stored Stripe customer id, and a redelivered
+event is skipped by the transactional event-id ledger.
 
 ### Portal and summary
 
 ```text
 GET  /api/v1/tenants/:tenantId/billing
 POST /api/v1/tenants/:tenantId/billing/portal
+POST /api/v1/tenants/:tenantId/billing/checkout
+GET  /api/v1/tenants/:tenantId/billing/invoices
 ```
 
-The portal requires owner/admin and step-up. The summary includes plan, status,
-`billableDevices`, device and tenant limits, usage and over-limit flags.
+The portal and checkout both require owner/admin (`billing.write`) and step-up.
+The summary includes plan, status, `billableDevices`, device and tenant limits,
+usage and over-limit flags.
+
+### Checkout
+
+`POST …/billing/checkout` creates a Stripe Checkout Session for
+`STRIPE_DEVICE_MONTHLY_PRICE_ID` and returns `{ url }` for the browser to
+follow. The body accepts an optional `trialDays` (1–730).
+
+- `metadata.organizationId` and `client_reference_id` carry the tenant, and the
+  same metadata is copied onto the subscription, so
+  `checkout.session.completed` and every later subscription/invoice event
+  resolve to the same tenant.
+- The success and cancel URLs are built from the deployment `ORIGIN`
+  (`/t/<tenantId>/settings/billing`), never from the request body. A portal
+  `returnUrl` outside `ORIGIN` is replaced by that page, and a Stripe response
+  that is not an absolute HTTPS URL is rejected as an upstream failure.
+- The first line item quantity is the number of enrolled devices (minimum 1).
+  Seat changes thereafter are handled by reconciliation, not by a second
+  Checkout Session.
+- A deployment without a Stripe key or price id returns
+  `EnterpriseStripeError` ("Billing is not configured for this deployment"),
+  rendered as a configuration notice instead of a 500.
+
+### Seats
+
+One seat is one device in the `enrolled` state — the same number the dashboard
+shows as `billableDevices`. Reconciling sets the subscription item quantity to
+that count (never above the plan's device limit when `MATTRAX_PLAN_LIMITS` caps
+it) with `proration_behavior: none`, so month-to-month churn settles on the next
+renewal instead of emitting credit notes.
+
+- Unenrolling or deleting devices reconciles immediately.
+- A device enrols through the protocol layer, which has no Stripe client, so the
+  nightly maintenance sweep brings the quantity in line within 24 hours.
+- The same sweep retries a Stripe customer rename that failed inline when a
+  tenant was renamed, and repairs any drift introduced in the Stripe dashboard.
+
+### Invoices
+
+`GET …/billing/invoices` lists up to 24 invoices for the tenant's Stripe
+customer, newest first: number, status, total/amount due/paid, dates and the
+hosted/PDF links. Without a Stripe customer the list is empty without calling
+Stripe.
 
 ### Plan limits
 

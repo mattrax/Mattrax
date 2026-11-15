@@ -138,6 +138,7 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: "REST API", link: "/api/" },
+            { text: "CLI", link: "/api/cli" },
             { text: "Reference", link: "/api/reference" },
             { text: "OpenAPI", link: "/api/openapi" },
           ],
@@ -164,6 +165,7 @@ export default defineConfig({
             { text: "Production readiness", link: "/reference/production-readiness" },
             { text: "Policy catalogue", link: "/reference/policy-catalogue" },
             { text: "Catalogue sources", link: "/reference/catalogue-sources" },
+            { text: "Project history", link: "/reference/history" },
             { text: "Glossary", link: "/reference/glossary" },
           ],
         },

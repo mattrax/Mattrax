@@ -1158,6 +1158,53 @@ export const webhookDelivery = mysqlTable(
 );
 
 /**
+ * Durable queue for transactional email that is not part of the one-time
+ * onboarding flow. A request renders the message and inserts a row; the cron
+ * drains due rows with exponential backoff and a bounded concurrency.
+ *
+ * `dedupeKey` (unique, nullable) makes enqueue idempotent where a claim is
+ * possible, e.g. one message per invitation generation. `organizationId` and
+ * `subjectUserId` scope a permanent failure to the tenant audit log or the
+ * account audit stream respectively. Cluster indexes keep the drain bounded to
+ * due rows and let an operator inspect one tenant's delivery history.
+ */
+export const emailOutbox = mysqlTable(
+  "email_outbox",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id").references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    subjectUserId: id("subject_user_id").references(() => user.id, { onDelete: "cascade" }),
+    /** Envelope recipient; one row per recipient so addresses never leak. */
+    recipient: varchar("recipient", { length: 320 }).notNull(),
+    /** Template name for operations and audit, e.g. `invitation`. */
+    template: shortText("template").notNull(),
+    /** Idempotency key; `null` when the message cannot be claimed. */
+    dedupeKey: shortText("dedupe_key"),
+    /** Rendered envelope and bodies, so the drain never re-renders. */
+    payload: json("payload").notNull(),
+    status: varchar("status", { length: 16, enum: ["pending", "sent", "failed"] })
+      .notNull()
+      .default("pending"),
+    attempts: int("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at").notNull(),
+    /** Set while one isolate owns the row; a stale value can be reclaimed. */
+    claimedAt: timestamp("claimed_at"),
+    /** Truncated, secret-free description of the last provider failure. */
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull(),
+    sentAt: timestamp("sent_at"),
+  },
+  (table) => [
+    // Multiple `null`s are allowed by MySQL, so only claimed rows collide.
+    uniqueIndex("email_outbox_dedupe_key_unique").on(table.dedupeKey),
+    index("email_outbox_status_next_attempt_idx").on(table.status, table.nextAttemptAt),
+    index("email_outbox_organization_created_idx").on(table.organizationId, table.createdAt),
+  ],
+);
+
+/**
  * One scheduled or manual tenant backup attempt. The JSON bundle lives in R2
  * under `backups/<organizationId>/<timestamp>.json`; this row is the index and
  * status record. `retention = pinned` opts a run out of the age-based prune.
@@ -1478,6 +1525,13 @@ export const device = mysqlTable(
   (table) => [
     index("device_organization_id_idx").on(table.organizationId),
     uniqueIndex("device_organization_serial_unique").on(table.organizationId, table.serial),
+    // Fleet lists sort and paginate inside one tenant. Without a composite
+    // index every page is a filesort over the tenant's whole fleet, which is
+    // the hottest query in the product.
+    index("device_organization_name_idx").on(table.organizationId, table.name),
+    index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
+    index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
+    index("device_organization_enrolled_idx").on(table.organizationId, table.enrolledAt),
   ],
 );
 

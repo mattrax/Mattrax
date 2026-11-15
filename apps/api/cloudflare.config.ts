@@ -140,6 +140,22 @@ export const apiWorker = {
      * failing while the `EMAIL` binding is absent.
      */
     MATTRAX_EMAIL_DISABLED: bindings.secret(),
+    /**
+     * Outbound email without the Cloudflare `EMAIL` binding: `resend`,
+     * `postmark`, `smtp` (self-hosted mail relay) or `disabled`. Empty leaves
+     * the hosted default (the `EMAIL` binding) in place.
+     */
+    MAIL_TRANSPORT: bindings.text(""),
+    /** Verified sender for every transactional email, e.g. `a@example.com`. */
+    MAIL_FROM: bindings.text(""),
+    /** Base URL of the self-hosted `apps/mail-relay` SMTP sidecar. */
+    MAIL_RELAY_URL: bindings.text(""),
+    /** Postmark message stream; empty uses the provider default. */
+    MAIL_POSTMARK_STREAM: bindings.text(""),
+    /** Outbox deliveries in flight per maintenance run. */
+    MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: bindings.text("4"),
+    /** Attempts before queued mail is permanently failed. */
+    MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: bindings.text("5"),
     /** PostHog project API key, ingestion host and error sampling. */
     POSTHOG_KEY: bindings.secret(),
     POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),
@@ -178,16 +194,39 @@ export type ApiEnv = InferEnv<ApiConfig>;
  */
 const useAppleProfileSigning = Boolean(process.env.APPLE_PROFILE_SIGNING_CERT);
 
+/**
+ * Provider credentials are only declared when the deploy supplies them, for the
+ * same reason as the Apple identity above: `cf deploy` refuses a declared
+ * secret with no value. A self-hosted container passes them as plain bindings
+ * from its own environment instead (see `apps/selfhost`).
+ */
+const EMAIL_PROVIDER_SECRETS = [
+  "RESEND_API_KEY",
+  "POSTMARK_SERVER_TOKEN",
+  "MAIL_RELAY_SECRET",
+] as const;
+
+const emailProviderSecrets: Record<string, ReturnType<typeof bindings.secret>> = {};
+
+for (const name of EMAIL_PROVIDER_SECRETS)
+  if (process.env[name]) emailProviderSecrets[name] = bindings.secret();
+
+/** Values that only exist when the API Worker is built with a mail provider. */
+const emailProviderEnv =
+  Object.keys(emailProviderSecrets).length > 0
+    ? { ...apiWorker.env, ...emailProviderSecrets }
+    : apiWorker.env;
+
 export default defineConfig({
   worker: useAppleProfileSigning
     ? {
         ...apiWorker,
         env: {
-          ...apiWorker.env,
+          ...emailProviderEnv,
           APPLE_PROFILE_SIGNING_CERT: bindings.secret(),
           APPLE_PROFILE_SIGNING_KEY: bindings.secret(),
           APPLE_PROFILE_SIGNING_CHAIN: bindings.secret(),
         },
       }
-    : apiWorker,
+    : { ...apiWorker, env: emailProviderEnv },
 });

@@ -1,9 +1,10 @@
 import { useLocation, useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, type ParentProps, Show } from "solid-js";
+import { createEffect, createSignal, type ParentProps, onHydrationEnd, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
+import { canonicalTenantParam } from "~/lib/tenant";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import {
   AccessDenied,
@@ -26,12 +27,30 @@ export default function TenantLayout(props: ParentProps) {
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
   const { can } = useCan();
 
+  const [hydrated, setHydrated] = createSignal(false);
+
+  if (!isServer)
+    onHydrationEnd(() => {
+      setHydrated(true);
+    });
+
   // A tenant can appear in `me` after this component mounted (another tab
   // created one, or an invitation was just accepted), so a missing id gets one
   // fresh read before it is treated as unknown.
   let rechecked: string | undefined;
 
   const tenant = () => resolveActiveTenant(me.data, params.tenantId);
+
+  /**
+   * Slugs are the shareable, human-readable form of a tenant URL. An id still
+   * opens the same tenant (bookmarks and integrations keep working) but the
+   * address bar is rewritten to the canonical slug.
+   */
+  const canonicalParam = () => {
+    const current = tenant();
+
+    return current ? canonicalTenantParam(current) : undefined;
+  };
 
   // Only guard paths we know. Unknown routes fall through so new pages are not
   // accidentally locked out while the map catches up.
@@ -54,6 +73,11 @@ export default function TenantLayout(props: ParentProps) {
         tenantId: params.tenantId,
         loaded: me.data !== undefined,
         found: tenant() !== undefined,
+        tenantRowId: tenant()?.id,
+        canonical: canonicalParam(),
+        path: location.pathname,
+        search: location.search,
+        hydrated: hydrated(),
         denied: tag === "EnterpriseForbidden" || tag === "EnterpriseNotFound",
         failed: me.isError,
         pending: me.isPlaceholderData || me.isFetching,
@@ -71,7 +95,22 @@ export default function TenantLayout(props: ParentProps) {
         return;
       }
 
-      if (state.failed || !state.loaded || state.found) return;
+      // A cached/preloaded shell is enough to know the tenant's canonical
+      // segment; a background `/me` refresh failing must not strand an id URL.
+      if (state.found) {
+        // Only an id URL is rewritten. A slug is already canonical (and a
+        // just-saved slug may not be in the refreshed membership shell yet).
+        if (state.hydrated && state.canonical && state.tenantId === state.tenantRowId) {
+          const prefix = `/t/${state.tenantId}`;
+          const rest = state.path.startsWith(prefix) ? state.path.slice(prefix.length) : "";
+
+          navigate(`/t/${state.canonical}${rest}${state.search}`, { replace: true });
+        }
+
+        return;
+      }
+
+      if (state.failed || !state.loaded) return;
 
       // An in-flight fetch (including the first request that replaces cached
       // placeholder data) may still add the tenant; wait for it to settle.

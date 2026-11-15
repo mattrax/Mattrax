@@ -244,3 +244,66 @@ export async function compileAndroidPolicyWithHash(
 
   return { policy, hash: await androidPolicyHash(policy) };
 }
+
+/** One application assignment the Android management API should apply. */
+export type AndroidAssignedApplication = {
+  /** Android package name, for example `com.google.android.gm`. */
+  readonly packageName: string;
+};
+
+/** A valid Android application package name (`com.example.app`). */
+export const isAndroidPackageName = (value: string): boolean =>
+  /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(value);
+
+/**
+ * Add assigned Managed Google Play applications to a compiled policy.
+ *
+ * An application already described by a policy fragment is left exactly as the
+ * operator configured it: that fragment may choose a different `installType`
+ * (for example `AVAILABLE` or `BLOCKED`), an update mode, or a managed
+ * configuration. Only packages the policy does not mention are appended, so the
+ * assignment is a floor (installed as required) rather than an override.
+ *
+ * Removing an application from the assignment list removes it from the policy
+ * on the next compile, which is how Google is told to uninstall an app it
+ * force-installed.
+ */
+export function mergeAssignedAndroidApplications(
+  policy: Schema.JsonObject,
+  applications: ReadonlyArray<AndroidAssignedApplication>,
+): Schema.JsonObject {
+  const configured = Array.isArray(policy["applications"])
+    ? policy["applications"].filter((entry) => Schema.is(Schema.JsonObject)(entry))
+    : [];
+
+  const packages = new Set(
+    configured.flatMap((entry) => {
+      const packageName = entry["packageName"];
+
+      return Schema.is(Schema.String)(packageName) ? [packageName] : [];
+    }),
+  );
+
+  const assigned = new Set<string>();
+
+  for (const application of applications)
+    if (isAndroidPackageName(application.packageName)) assigned.add(application.packageName);
+
+  const added = [...assigned]
+    .filter((packageName) => !packages.has(packageName))
+    .sort()
+    .map((packageName) => ({
+      packageName,
+      installType: "FORCE_INSTALLED" as const,
+      autoUpdateMode: "AUTO_UPDATE_DEFAULT" as const,
+    }));
+
+  if (added.length === 0) return policy;
+
+  const existing = Array.isArray(policy["applications"]) ? policy["applications"] : [];
+  const applicationsValue: Schema.Json[] = [...existing];
+
+  for (const entry of added) applicationsValue.push(entry);
+
+  return { ...policy, applications: applicationsValue };
+}

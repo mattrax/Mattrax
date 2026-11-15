@@ -73,6 +73,26 @@ redistribution terms are not stated by the mirror. Treat the generated Windows c
 a stored copy of Microsoft Graph data and review the terms before redistributing it outside
 Mattrax.
 
+## Third-party applications
+
+**Source:** `data/catalog/third-party-apps.json`, copied verbatim to
+`apps/web/public/catalog/third-party-apps.json` for the designer.
+
+This is a curated catalogue, not a wholesale import:
+
+- Apple managed-preference keys and descriptions follow
+  [`ProfileManifests`](https://github.com/ProfileManifests/ProfileManifests) (the manifests
+  behind iMazing Profile Editor and ProfileCreator) and the
+  [`ProfileManifestsMirror`](https://github.com/Jamf-Custom-Profile-Schemas/ProfileManifestsMirror)
+  Jamf JSON renders. ProfileManifests itself has no licence file, so only the small set of
+  keys Mattrax ships is transcribed — no upstream data file is redistributed.
+- Windows keys use Google Chrome and Microsoft Edge ADMX through Microsoft's Policy CSP;
+  each entry carries the full OMA-URI.
+- Android keys are each app's AppConfig/Managed Google Play managed configuration.
+- `sources` in the JSON records the vendor documentation and the ProfileManifests projects.
+- Tests validate the schema and every compiled platform artefact; adding an application is
+  a data edit.
+
 ## Licensing summary
 
 | Platform | Upstream licence             | Notes                                            |

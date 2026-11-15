@@ -78,13 +78,13 @@ device assignment.
 
 ## Configuration kinds
 
-| Kind                          | Delivered as                                                      | Notes                                                                |
-| ----------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `mttx.apple.device`           | Legacy profile via DDM                                            | Currently only `{ "camera": boolean }`                               |
-| `mttx.apple.custom.<id>`      | Legacy profile via DDM                                            | Your uploaded `.mobileconfig`, served verbatim                       |
-| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Certificate is a PEM asset with SHA-256 and size                     |
-| `mttx.apple.declaration.<id>` | Raw Apple declaration                                             | You supply `kind` and `configuration`                                |
-| `mttx.apple.application.<id>` | —                                                                 | Rejected: application deployment is not implemented through policies |
+| Kind                          | Delivered as                                                      | Notes                                                   |
+| ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
+| `mttx.apple.device`           | Legacy profile via DDM                                            | Currently only `{ "camera": boolean }`                  |
+| `mttx.apple.custom.<id>`      | Legacy profile via DDM                                            | Your uploaded `.mobileconfig`, served verbatim          |
+| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Certificate is a PEM asset with SHA-256 and size        |
+| `mttx.apple.declaration.<id>` | Raw Apple declaration                                             | You supply `kind` and `configuration`                   |
+| `mttx.apple.application.<id>` | Imperative install command                                        | Catalogue reference or inline manifest/store/upload app |
 
 The `<id>` suffix is up to 20 alphanumeric characters.
 
@@ -182,7 +182,8 @@ debugging a device.
 ## Limitations
 
 - `mttx.apple.device` is not a general restrictions editor. Use custom profiles or DDM.
-- `mttx.apple.application.<id>` is rejected.
+- `mttx.apple.application.<id>` is delivered as an install command, not a declaration, so
+  it does not appear in DDM declaration lists. Uploaded packages install on macOS only.
 - Profiles are pulled through DDM on capable devices; pre-DDM devices receive
   `InstallProfile` commands instead. `mttx.apple.device` and custom profiles have a legacy
   equivalent, raw declarations do not.

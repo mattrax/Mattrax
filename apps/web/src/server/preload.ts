@@ -204,7 +204,10 @@ export async function preloadSession(
       revision !== undefined &&
       revision.sid === payload.sid &&
       revision.ver === payload.ver &&
-      (tenantInPath === undefined || payload.tenants.some((tenant) => tenant.id === tenantInPath))
+      (tenantInPath === undefined ||
+        payload.tenants.some(
+          (tenant) => tenant.id === tenantInPath || tenant.slug === tenantInPath,
+        ))
     ) {
       return {
         session: {

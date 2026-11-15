@@ -1,4 +1,5 @@
 import { Meta, Title } from "@solidjs/meta";
+import { BrandLogo } from "~/components/brand-logo";
 import { useNavigate } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, onSettled, Show } from "solid-js";
 import type { InvitationPreviewResponse } from "@mattrax/enterprise-domain/client";
@@ -268,23 +269,17 @@ export default function AcceptInvitationPage() {
   };
 
   return (
-    <main class="auth-page dark flex min-h-svh items-center justify-center bg-background px-4 py-10 text-foreground">
+    <main class="auth-page flex min-h-svh items-center justify-center bg-background px-4 py-10 text-foreground">
       <Title>Accept invitation · Mattrax</Title>
       <Meta name="referrer" content="no-referrer" />
       <div class="w-full max-w-md">
         <div class="mb-7 text-center">
           <a href="/" class="inline-flex items-center gap-2">
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-4 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-4" />
           </a>
         </div>
 
-        <div class="rounded-xl border border-white/[0.08] bg-card p-5 shadow-2xl shadow-black/40 sm:p-6">
+        <div class="rounded-xl border border-border bg-card p-5 shadow-2xl sm:p-6">
           <Show when={preview()?.tenant}>
             {(tenant) => (
               <div class="mb-4 flex items-center gap-3">
@@ -292,7 +287,7 @@ export default function AcceptInvitationPage() {
                   when={tenant().logo}
                   fallback={
                     <span
-                      class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.05] text-[13px] font-semibold text-foreground"
+                      class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-hover text-[13px] font-semibold text-foreground"
                       aria-hidden="true"
                     >
                       {(tenant().displayName ?? tenant().name).slice(0, 1).toUpperCase()}
@@ -305,7 +300,7 @@ export default function AcceptInvitationPage() {
                       alt=""
                       width="40"
                       height="40"
-                      class="size-10 shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] object-contain p-1"
+                      class="size-10 shrink-0 rounded-lg border border-border bg-surface object-contain p-1"
                     />
                   )}
                 </Show>

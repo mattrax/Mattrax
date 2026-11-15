@@ -5,6 +5,7 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseNotConfigured,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
   STEP_UP_WINDOW_MILLIS,
@@ -23,7 +24,9 @@ import {
   ONBOARDING_SUPPORT_EMAIL,
   sendWelcomeEmailOnce,
 } from "./onboardingEmails.ts";
-import type { EmailReplyTo, EmailTransport } from "./email.ts";
+import type { EmailAddress, EmailReplyTo, EmailTransport } from "./email.ts";
+import { DEFAULT_EMAIL_FROM } from "./email.ts";
+import { sendTransactionalEmail } from "./emailOutbox.ts";
 import {
   signStepUpFlow,
   signStepUpGrant,
@@ -219,6 +222,8 @@ export type EnterpriseAuthOptions = {
   readonly origin: string;
   readonly authSecret: string;
   readonly email?: EmailTransport;
+  /** Envelope sender for verification and email-change mail. */
+  readonly emailFrom?: EmailAddress;
   /** Reply-To for the one-time welcome email. Defaults to the documented address. */
   readonly onboardingReplyTo?: EmailReplyTo;
   /** Support address in the welcome footer. Defaults to the sender address. */
@@ -252,12 +257,44 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       const { origin, authSecret, email } = options;
 
+      const emailFrom = options.emailFrom ?? DEFAULT_EMAIL_FROM;
+
+      /** Queue one account email, or deliver it through the local mailbox. */
+      const deliver = (
+        input: {
+          readonly template: "email_verification" | "email_change_confirm" | "email_change_notice";
+          readonly dedupeKey?: string;
+          readonly message: {
+            readonly to: string;
+            readonly subject: string;
+            readonly text: string;
+            readonly html: string;
+          };
+        },
+        recipient: string,
+        userId: string,
+      ) =>
+        sendTransactionalEmail({
+          db,
+          email,
+          template: input.template,
+          recipient,
+          subjectUserId: userId,
+          dedupeKey: input.dedupeKey,
+          message: { from: emailFrom, ...input.message },
+        });
+
       /**
        * The welcome email is a best-effort side effect of proving an address.
        * The claim inside `sendWelcomeEmailOnce` makes it once-only and a
        * provider failure can never turn a successful verification into an
        * error response.
+       *
+       * A deployment that configured `MAIL_FROM` must send from that verified
+       * address; the hosted default keeps the founder persona in the From name.
        */
+      const onboardingFrom = emailFrom.email === DEFAULT_EMAIL_FROM.email ? undefined : emailFrom;
+
       const sendWelcomeAfterVerification = (user: {
         readonly id: string;
         readonly name: string | null;
@@ -272,6 +309,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           origin,
           replyTo: options.onboardingReplyTo ?? DEFAULT_ONBOARDING_REPLY_TO,
           supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
+          from: onboardingFrom,
         }).pipe(Effect.catchCause(() => Effect.void));
 
       /**
@@ -940,9 +978,20 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               new EnterpriseBadRequest({ message: "That email address is already in use" }),
             );
 
+          // Both addresses must be reachable: the new one confirms the change
+          // and the old one can cancel it. Without a mailer there is no safe
+          // way to run the ceremony, so say so instead of logging a link.
+          if (!email)
+            return yield* Effect.fail(
+              new EnterpriseNotConfigured({
+                message: "This deployment cannot send email, so the address cannot be changed",
+              }),
+            );
+
           const now = new Date();
           const confirmToken = randomToken();
           const cancelToken = randomToken();
+          const changeId = newId();
 
           // One live request per account: a new request supersedes any pending
           // one, which also invalidates its links.
@@ -958,7 +1007,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             );
 
           yield* db.insert(schema.accountEmailChange).values({
-            id: newId(),
+            id: changeId,
             userId: user.id,
             oldEmail: user.email,
             newEmail,
@@ -973,63 +1022,62 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           const confirmLink = emailChangeLinkFor(origin, confirmToken);
 
-          if (email) {
-            yield* Effect.tryPromise({
-              try: () =>
-                email.send({
-                  to: newEmail,
-                  from: { name: "Mattrax", email: "hello@mattrax.cloud" },
-                  subject: "Confirm your new Mattrax email address",
-                  text: `Confirm your new Mattrax email address by opening this link:\n\n${confirmLink}\n\nThe link works once and expires in one hour.`,
-                  html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${confirmLink}">${confirmLink}</a></p><p>The link works once and expires in one hour.</p>`,
-                }),
-              catch: () =>
-                new EnterpriseBadRequest({ message: "Could not send the verification email" }),
+          /** Abort the ceremony and drop every live link for this account. */
+          const abort = (message: string) =>
+            Effect.gen(function* () {
+              yield* db
+                .update(schema.accountEmailChange)
+                .set({ cancelledAt: new Date(), updatedAt: new Date() })
+                .where(
+                  and(
+                    eq(schema.accountEmailChange.userId, user.id),
+                    isNull(schema.accountEmailChange.consumedAt),
+                  ),
+                );
+
+              return yield* Effect.fail(new EnterpriseBadRequest({ message }));
             });
-          } else {
-            console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, confirmLink);
-          }
+
+          const confirmation = yield* deliver(
+            {
+              template: "email_change_confirm",
+              dedupeKey: `email_change_confirm:${changeId}`,
+              message: {
+                to: newEmail,
+                subject: "Confirm your new Mattrax email address",
+                text: `Confirm your new Mattrax email address by opening this link:\n\n${confirmLink}\n\nThe link works once and expires in one hour.`,
+                html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${confirmLink}">${confirmLink}</a></p><p>The link works once and expires in one hour.</p>`,
+              },
+            },
+            newEmail,
+            user.id,
+          );
+
+          if (confirmation === "failed")
+            return yield* abort("Could not send the verification email");
 
           // The old address is the account's recovery channel, so it is told
           // about the attempt and can stop it without signing in.
           const cancelLink = emailChangeCancelLinkFor(origin, cancelToken);
 
-          if (email) {
-            yield* Effect.tryPromise({
-              try: () =>
-                email.send({
-                  to: user.email,
-                  from: { name: "Mattrax", email: "hello@mattrax.cloud" },
-                  subject: "Your Mattrax email address is being changed",
-                  text: `Someone signed in to your Mattrax account and asked to change its email address to ${newEmail}.\n\nIf this was you, no action is needed: the change completes only after the new address confirms it.\n\nIf this was not you, cancel the change here:\n\n${cancelLink}\n\nThe link works once and expires in one hour. Then review your active sessions in Account settings.`,
-                  html: `<p>Someone signed in to your Mattrax account and asked to change its email address to <strong>${newEmail}</strong>.</p><p>If this was you, no action is needed: the change completes only after the new address confirms it.</p><p>If this was not you, <a href="${cancelLink}">cancel the change</a>. The link works once and expires in one hour. Then review your active sessions in Account settings.</p>`,
-                }),
-              // A failure here must not leave the new address holding a live
-              // confirmation link, so the request is cancelled below.
-              catch: () =>
-                new EnterpriseBadRequest({ message: "Could not notify your current address" }),
-            }).pipe(
-              Effect.catch(() =>
-                Effect.gen(function* () {
-                  yield* db
-                    .update(schema.accountEmailChange)
-                    .set({ cancelledAt: new Date(), updatedAt: new Date() })
-                    .where(
-                      and(
-                        eq(schema.accountEmailChange.userId, user.id),
-                        isNull(schema.accountEmailChange.consumedAt),
-                      ),
-                    );
+          const notice = yield* deliver(
+            {
+              template: "email_change_notice",
+              dedupeKey: `email_change_notice:${changeId}`,
+              message: {
+                to: user.email,
+                subject: "Your Mattrax email address is being changed",
+                text: `Someone signed in to your Mattrax account and asked to change its email address to ${newEmail}.\n\nIf this was you, no action is needed: the change completes only after the new address confirms it.\n\nIf this was not you, cancel the change here:\n\n${cancelLink}\n\nThe link works once and expires in one hour. Then review your active sessions in Account settings.`,
+                html: `<p>Someone signed in to your Mattrax account and asked to change its email address to <strong>${newEmail}</strong>.</p><p>If this was you, no action is needed: the change completes only after the new address confirms it.</p><p>If this was not you, <a href="${cancelLink}">cancel the change</a>. The link works once and expires in one hour. Then review your active sessions in Account settings.</p>`,
+              },
+            },
+            user.email,
+            user.id,
+          );
 
-                  return yield* Effect.fail(
-                    new EnterpriseBadRequest({ message: "Could not notify your current address" }),
-                  );
-                }),
-              ),
-            );
-          } else {
-            console.log("EMAIL CHANGE NOTICE", user.email, "->", newEmail, cancelLink);
-          }
+          // A failure to queue the notice must not leave the new address
+          // holding a live confirmation link.
+          if (notice === "failed") return yield* abort("Could not notify your current address");
 
           yield* recordAccountAudit(db, {
             subjectUserId: user.id,
@@ -1068,22 +1116,29 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           const link = `${origin}/verify-email?token=${encodeURIComponent(token)}`;
 
-          if (email) {
-            yield* Effect.tryPromise({
-              try: () =>
-                email.send({
-                  to: user.email,
-                  from: { name: "Mattrax", email: "hello@mattrax.cloud" },
-                  subject: "Your Mattrax verification code",
-                  text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
-                  html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes.</p><p>You can also verify by opening <a href="${link}">this link</a>. The link expires in 24 hours.</p>`,
-                }),
-              catch: () =>
-                new EnterpriseBadRequest({ message: "Could not send the verification email" }),
-            });
-          } else {
-            console.log("VERIFY EMAIL CODE", user.email, code, link);
-          }
+          // Verification gates API-token creation and invitation acceptance,
+          // so it must not claim success when no message can be delivered.
+          if (!email)
+            return yield* Effect.fail(
+              new EnterpriseNotConfigured({
+                message:
+                  "This deployment cannot send email. Ask an administrator to configure a mailer, then request a new code.",
+              }),
+            );
+
+          yield* deliver(
+            {
+              template: "email_verification",
+              message: {
+                to: user.email,
+                subject: "Your Mattrax verification code",
+                text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes.</p><p>You can also verify by opening <a href="${link}">this link</a>. The link expires in 24 hours.</p>`,
+              },
+            },
+            user.email,
+            user.id,
+          );
 
           return { status: "ok" as const, challenge };
         });

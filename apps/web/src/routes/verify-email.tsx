@@ -1,4 +1,5 @@
 import { Title } from "@solidjs/meta";
+import { BrandLogo } from "~/components/brand-logo";
 import { isServer } from "@solidjs/web";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { Match } from "effect";
@@ -52,18 +53,12 @@ export default function VerifyEmailPage() {
   });
 
   return (
-    <main class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
+    <main class="auth-page min-h-screen flex items-center justify-center bg-background text-foreground">
       <Title>Verify email · Mattrax</Title>
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="inline-flex items-center gap-2 mb-6">
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-4 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-4" />
           </a>
         </div>
 
@@ -86,7 +81,7 @@ export default function VerifyEmailPage() {
             <Show when={tokenStatus() === "ok"}>
               <a
                 href={returnTo() ?? "/dashboard"}
-                class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
                 Continue to dashboard
               </a>
@@ -98,7 +93,7 @@ export default function VerifyEmailPage() {
                     ? `/verify-email?returnTo=${encodeURIComponent(returnTo()!)}`
                     : "/verify-email"
                 }
-                class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
                 Send a new verification email
               </a>
@@ -131,7 +126,7 @@ export default function VerifyEmailPage() {
                   </p>
                   <a
                     href={`/login?returnTo=${encodeURIComponent(returnTo() ?? "/dashboard")}`}
-                    class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                    class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
                     Sign in
                   </a>
@@ -147,7 +142,7 @@ export default function VerifyEmailPage() {
                       <p class="text-sm text-stone-500">{user().email} is already verified.</p>
                       <a
                         href={returnTo() ?? "/dashboard"}
-                        class="inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+                        class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                       >
                         Continue to dashboard
                       </a>

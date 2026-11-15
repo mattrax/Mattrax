@@ -32,6 +32,8 @@ import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { rememberTenantAlias } from "~/lib/tenant";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are
@@ -100,6 +102,17 @@ export default function GeneralSettingsPage() {
   const [importing, setImporting] = createSignal(false);
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
   const [saved, setSaved] = createSignal(false);
+  const [seeded, setSeeded] = createSignal(false);
+
+  const [baseline, setBaseline] = createSignal<{
+    name: string;
+    slug: string;
+    displayName: string;
+    logo: string;
+    supportEmail: string;
+    brandColor: string;
+  } | null>(null);
+
   let importFileInput: HTMLInputElement | undefined;
 
   createEffect(
@@ -114,6 +127,7 @@ export default function GeneralSettingsPage() {
         setLogo(data.logo ?? "");
         setSupportEmail(data.supportEmail ?? "");
         setBrandColor(data.brandColor ?? "");
+        setSeeded(true);
       }
     },
   );
@@ -140,10 +154,19 @@ export default function GeneralSettingsPage() {
     }),
   );
 
-  const dirty = () => {
-    const current = tenant.data;
+  const profile = () => ({
+    name: name(),
+    slug: slug(),
+    displayName: displayName(),
+    logo: logo(),
+    supportEmail: supportEmail(),
+    brandColor: brandColor(),
+  });
 
-    if (!current) return false;
+  const dirty = () => {
+    const current = baseline() ?? tenant.data;
+
+    if (!current || !seeded()) return false;
 
     return (
       name() !== current.name ||
@@ -154,6 +177,11 @@ export default function GeneralSettingsPage() {
       brandColor() !== (current.brandColor ?? "")
     );
   };
+
+  const unsaved = useUnsavedChanges(dirty, {
+    title: "Discard tenant changes?",
+    description: "The tenant profile or branding has edits that have not been saved.",
+  });
 
   const save = useMutation(() => ({
     mutationFn: () =>
@@ -166,8 +194,20 @@ export default function GeneralSettingsPage() {
         brandColor: brandColor() || null,
       }),
     onSuccess: async () => {
+      setBaseline(profile());
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+
+      // A slug change changes the canonical address of every tenant page. A
+      // document load avoids racing the membership shell (which still has the
+      // old slug for a moment) and lands on server-resolved data.
+      if (slug() && slug() !== params.tenantId) {
+        if (tenant.data?.id) rememberTenantAlias(slug(), tenant.data.id);
+        window.location.replace(`/t/${encodeURIComponent(slug())}/settings`);
+
+        return;
+      }
+
       await qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
       await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
@@ -469,6 +509,7 @@ export default function GeneralSettingsPage() {
 
   return (
     <div class="grid gap-5 xl:grid-cols-2">
+      {unsaved.prompt}
       <QueryError
         class="xl:col-span-2"
         error={tenant.error}
@@ -485,7 +526,7 @@ export default function GeneralSettingsPage() {
             save.mutate();
           }}
         >
-          <div class="divide-y divide-white/[0.05]">
+          <div class="divide-y divide-border">
             <FieldRow label="Name" hint="Internal tenant name used by the dashboard.">
               <Input
                 disabled={!canWrite()}
@@ -494,7 +535,10 @@ export default function GeneralSettingsPage() {
                 required
               />
             </FieldRow>
-            <FieldRow label="Slug" hint="Used in URLs and when generating identifiers.">
+            <FieldRow
+              label="Slug"
+              hint="Used in dashboard URLs, for example /t/your-slug. Changing it rewrites every shared tenant link; old id links redirect to the new URL."
+            >
               <Input
                 disabled={!canWrite()}
                 value={slug()}
@@ -553,7 +597,7 @@ export default function GeneralSettingsPage() {
                   type="color"
                   aria-label="Brand colour picker"
                   disabled={!canWrite()}
-                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-white/[0.03] p-1"
+                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-surface p-1"
                   value={colorValue()}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
@@ -572,7 +616,7 @@ export default function GeneralSettingsPage() {
               </Show>
             </FieldRow>
           </div>
-          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <Show when={tenant.data}>
               <span class="text-xs text-muted-foreground">
                 Created {new Date(tenant.data!.createdAt).toLocaleDateString()}
@@ -607,7 +651,7 @@ export default function GeneralSettingsPage() {
           title="Branding preview"
           description="How the public enrollment page looks with the values above."
         >
-          <div class="overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.015]">
+          <div class="overflow-hidden rounded-lg border border-border bg-surface">
             <div class="h-1.5" style={{ "background-color": preview().brandColor }} />
             <div class="space-y-4 p-4">
               <div class="flex items-center gap-3">
@@ -615,7 +659,7 @@ export default function GeneralSettingsPage() {
                   <img
                     src={preview().logo!}
                     alt=""
-                    class="size-10 shrink-0 rounded-md bg-white/[0.04] object-contain p-1"
+                    class="size-10 shrink-0 rounded-md bg-surface object-contain p-1"
                   />
                 </Show>
                 <div class="min-w-0">
@@ -627,7 +671,10 @@ export default function GeneralSettingsPage() {
               </div>
               <div
                 class="rounded-lg px-3 py-2 text-center text-[13px] font-medium"
-                style={{ "background-color": preview().brandColor, color: "#fff" }}
+                style={{
+                  "background-color": preview().brandColor,
+                  color: "var(--brand-foreground)",
+                }}
               >
                 Continue
               </div>
@@ -649,10 +696,15 @@ export default function GeneralSettingsPage() {
         </Panel>
 
         <Panel title="Tenant details">
-          <div class="divide-y divide-white/[0.05] text-[13px]">
+          <div class="divide-y divide-border text-[13px]">
             <DetailRow label="Tenant ID">
               <span class="break-all font-mono text-xs text-muted-foreground">
-                {params.tenantId ?? ""}
+                {tenant.data?.id ?? ""}
+              </span>
+            </DetailRow>
+            <DetailRow label="Dashboard URL">
+              <span class="break-all font-mono text-xs text-muted-foreground">
+                /t/{tenant.data?.slug ?? ""}
               </span>
             </DetailRow>
             <DetailRow label="Your role">
@@ -676,7 +728,7 @@ export default function GeneralSettingsPage() {
         title="Data and backups"
         description="Versioned JSON bundles for moving a tenant between deployments."
       >
-        <div class="divide-y divide-white/[0.05]">
+        <div class="divide-y divide-border">
           <section class="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
             <div class="min-w-0 max-w-2xl">
               <h3 class="text-[13px] font-semibold text-foreground">Export tenant</h3>
@@ -769,7 +821,7 @@ export default function GeneralSettingsPage() {
 
               <Show when={latestBackup()}>
                 {(latest) => (
-                  <div class="mt-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-[13px]">
+                  <div class="mt-4 rounded-lg border border-border bg-surface p-3 text-[13px]">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <span class="text-muted-foreground">
                         Last backup:{" "}
@@ -812,9 +864,9 @@ export default function GeneralSettingsPage() {
               </Show>
 
               <Show when={(backups.data?.backups ?? []).length > 0}>
-                <div class="mt-4 overflow-x-auto rounded-lg border border-white/[0.07]">
+                <div class="mt-4 overflow-x-auto rounded-lg border border-border">
                   <table class="w-full min-w-[34rem] text-left text-xs">
-                    <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                       <tr>
                         <th class="px-3 py-2 font-medium">Started</th>
                         <th class="px-3 py-2 font-medium">Trigger</th>
@@ -823,7 +875,7 @@ export default function GeneralSettingsPage() {
                         <th class="px-3 py-2 font-medium" />
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-white/[0.05]">
+                    <tbody class="divide-y divide-border">
                       {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
                         <tr>
                           <td class="whitespace-nowrap px-3 py-2 text-muted-foreground">
@@ -859,14 +911,14 @@ export default function GeneralSettingsPage() {
                               <Show when={run.status === "succeeded"}>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
                                   onClick={() => void downloadBackup(run.id)}
                                 >
                                   Download
                                 </button>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
                                   onClick={() => {
                                     setBackupActionError(null);
                                     setRestoreResult(null);
@@ -880,7 +932,7 @@ export default function GeneralSettingsPage() {
                               <Show when={run.status !== "running"}>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
                                   disabled={!canRunBackup()}
                                   onClick={() => pinBackup.mutate(run)}
                                 >
@@ -914,7 +966,7 @@ export default function GeneralSettingsPage() {
                 applications and pre-registrations in place, keeps its members, devices and
                 certificates, and takes a pinned snapshot first.{" "}
                 <a
-                  class="text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                  class="text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
                   href="#restore"
                 >
                   Import a bundle
@@ -959,7 +1011,7 @@ export default function GeneralSettingsPage() {
             </div>
             <Show when={importSummary()}>
               {(summary) => (
-                <div class="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-sm">
+                <div class="space-y-2 rounded-lg border border-border bg-surface p-3 text-sm">
                   <p class="font-medium">
                     {summary().name}
                     <Show when={summary().slug}>
@@ -1201,7 +1253,7 @@ export default function GeneralSettingsPage() {
               }
             >
               {(result) => (
-                <div class="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-sm">
+                <div class="space-y-2 rounded-lg border border-border bg-surface p-3 text-sm">
                   <p class="font-medium text-success-foreground">Tenant deleted</p>
                   <p class="text-muted-foreground">
                     {result().reclaimed.contacted} of {result().reclaimed.devices} enrolled device
@@ -1291,7 +1343,7 @@ function DetailRow(props: { label: string; children: JSX.Element }) {
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

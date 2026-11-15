@@ -59,7 +59,7 @@ export default function CompleteRecoveryPage() {
   });
 
   return (
-    <main class="auth-page dark flex min-h-screen items-center justify-center bg-background text-foreground">
+    <main class="auth-page flex min-h-screen items-center justify-center bg-background text-foreground">
       <Title>Complete recovery · Mattrax</Title>
       <div class="w-full max-w-sm px-4 text-center">
         <h1 class="text-2xl font-semibold">Complete recovery</h1>

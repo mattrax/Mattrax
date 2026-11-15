@@ -1,11 +1,12 @@
-import { useParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import { isServer } from "@solidjs/web";
 import { useMutation, useQuery } from "@tanstack/solid-query";
-import { Show } from "solid-js";
+import { createEffect, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { CircleAlert } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { CircleAlert, CheckCircle2 } from "~/components/ui/icons";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import {
   PLAN_LIMIT_REACHED_BODY,
@@ -20,6 +21,31 @@ const formatDate = (value: string | null | undefined) => {
   const date = new Date(value);
 
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+};
+
+/** Stripe totals are minor units; an unknown currency renders as a number. */
+const formatAmount = (amount: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  } catch {
+    return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+};
+
+const invoiceTone = (status: string | null | undefined): keyof typeof chipTones => {
+  switch (status) {
+    case "paid":
+      return "success";
+    case "open":
+      return "warning";
+    case "uncollectible":
+      return "danger";
+    default:
+      return "neutral";
+  }
 };
 
 const statusTone = (status: string | null | undefined, configured: boolean) => {
@@ -42,6 +68,7 @@ const statusTone = (status: string | null | undefined, configured: boolean) => {
 
 export default function BillingSettingsPage() {
   const params = useParams();
+  const [searchParams] = useSearchParams();
   const { can } = useCan();
 
   const billing = useQuery(() => ({
@@ -56,8 +83,50 @@ export default function BillingSettingsPage() {
     },
   }));
 
+  const invoices = useQuery(() => ({
+    ...enterpriseQueries.billingInvoices(params.tenantId),
+    enabled: Boolean(params.tenantId) && billing.data?.configured === true,
+  }));
+
+  const checkout = useMutation(() => ({
+    mutationFn: () => enterprise.billingCheckout(params.tenantId),
+    onSuccess: ({ url }) => {
+      globalThis.location.href = url;
+    },
+  }));
+
   const configured = () => billing.data?.configured !== false;
   const overLimit = () => Boolean(billing.data?.overDeviceLimit || billing.data?.overTenantLimit);
+
+  /**
+   * A tenant with a live subscription changes plan in the portal instead of
+   * opening a second Checkout Session. A canceled subscription is dead, so
+   * buying the plan again is allowed.
+   */
+  const subscribed = () => {
+    const status = billing.data?.status;
+
+    return Boolean(billing.data?.subscriptionId) && status !== "canceled";
+  };
+
+  /** Set by the Checkout success/cancel URLs the API builds from `ORIGIN`. */
+  const checkoutOutcome = () => {
+    const value = searchParams.checkout;
+
+    return value === "success" || value === "cancelled" ? value : undefined;
+  };
+
+  // Stripe redirects back before its webhook is guaranteed to have landed. One
+  // delayed refetch picks up the subscription without polling for it.
+  let refreshedAfterCheckout = false;
+  createEffect(
+    () => ({ outcome: checkoutOutcome(), subscriptionId: billing.data?.subscriptionId }),
+    ({ outcome, subscriptionId }) => {
+      if (isServer || refreshedAfterCheckout || outcome !== "success" || subscriptionId) return;
+      refreshedAfterCheckout = true;
+      setTimeout(() => void billing.refetch(), 2_000);
+    },
+  );
 
   return (
     <div class="grid gap-5 xl:grid-cols-2">
@@ -73,6 +142,21 @@ export default function BillingSettingsPage() {
           environment variables before a plan can be purchased or managed.
         </Callout>
       </Show>
+      <Show when={checkoutOutcome() === "success"}>
+        <Callout tone="success" class="xl:col-span-2">
+          <p class="font-medium">Checkout complete</p>
+          <p class="mt-0.5">
+            Your subscription starts once Stripe confirms the payment. Seat counts and invoices
+            update automatically.
+          </p>
+        </Callout>
+      </Show>
+      <Show when={checkoutOutcome() === "cancelled"}>
+        <Callout tone="warning" class="xl:col-span-2">
+          <p class="font-medium">Checkout cancelled</p>
+          <p class="mt-0.5">No plan was purchased. You can start again whenever you are ready.</p>
+        </Callout>
+      </Show>
       <Show when={overLimit()}>
         <Callout tone="danger" class="xl:col-span-2">
           <p class="font-medium">{PLAN_LIMIT_REACHED_TITLE}</p>
@@ -81,7 +165,7 @@ export default function BillingSettingsPage() {
       </Show>
 
       <Panel title="Plan" description="Your subscription, seat usage and renewal dates.">
-        <div class="divide-y divide-white/[0.05] text-[13px]">
+        <div class="divide-y divide-border text-[13px]">
           <Row label="Plan">
             <span class="font-medium text-foreground">{billing.data?.plan ?? "Free"}</span>
           </Row>
@@ -115,35 +199,155 @@ export default function BillingSettingsPage() {
           </Row>
         </div>
 
-        <div class="mt-4 border-t border-white/[0.06] pt-4">
+        <div class="mt-4 border-t border-border pt-4">
           <Show when={can("billing.write")}>
-            <Button
-              variant="outline"
-              onClick={() => portal.mutate()}
-              disabled={portal.isPending || billing.isLoading || !configured()}
-            >
-              {portal.isPending ? "Opening…" : "Open billing portal"}
-            </Button>
+            <div class="flex flex-wrap gap-2">
+              <Show when={!subscribed()}>
+                <Button
+                  onClick={() => checkout.mutate()}
+                  disabled={checkout.isPending || billing.isLoading || !configured()}
+                >
+                  {checkout.isPending ? "Opening checkout…" : "Subscribe to the device plan"}
+                </Button>
+              </Show>
+              <Button
+                variant="outline"
+                onClick={() => portal.mutate()}
+                disabled={portal.isPending || billing.isLoading || !configured()}
+              >
+                {portal.isPending ? "Opening…" : "Open billing portal"}
+              </Button>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+              Checkout buys the per-device plan and starts with the devices enrolled today. Seat
+              counts follow your fleet automatically, and the billing portal changes or cancels the
+              subscription.
+            </p>
           </Show>
           <Show when={!configured()}>
             <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-              The billing portal is unavailable until Stripe is configured for this deployment.
+              Checkout and the billing portal are unavailable until Stripe is configured for this
+              deployment.
             </p>
           </Show>
+          <ErrorText error={checkout.error} />
           <ErrorText error={portal.error} />
         </div>
+      </Panel>
+
+      <Panel
+        title="Invoices"
+        description="Receipts and open invoices for this tenant, newest first."
+        class="xl:col-span-2"
+      >
+        <QueryError error={invoices.error} onRetry={() => void invoices.refetch()} />
+
+        <Show when={!configured()}>
+          <p class="rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
+            Invoices appear here once this deployment is connected to Stripe.
+          </p>
+        </Show>
+
+        <Show when={configured()}>
+          <Show
+            when={(invoices.data?.invoices.length ?? 0) > 0}
+            fallback={
+              <p class="rounded-lg border border-dashed border-input bg-surface px-6 py-8 text-center text-xs text-muted-foreground">
+                {invoices.isLoading
+                  ? "Loading invoices…"
+                  : "No invoices yet. The first invoice is issued when a subscription starts."}
+              </p>
+            }
+          >
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[36rem] text-left text-[13px]">
+                <thead>
+                  <tr class="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th scope="col" class="py-2 pr-3 font-medium">
+                      Invoice
+                    </th>
+                    <th scope="col" class="py-2 pr-3 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" class="py-2 pr-3 font-medium">
+                      Date
+                    </th>
+                    <th scope="col" class="py-2 pr-3 text-right font-medium">
+                      Total
+                    </th>
+                    <th scope="col" class="py-2 text-right font-medium">
+                      Links
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  <For each={invoices.data?.invoices ?? []}>
+                    {(invoice) => (
+                      <tr>
+                        <td class="py-2.5 pr-3 font-mono text-[12px]">
+                          {invoice.number ?? invoice.id}
+                        </td>
+                        <td class="py-2.5 pr-3">
+                          <Chip tone={invoiceTone(invoice.status)}>
+                            {invoice.status ?? "unknown"}
+                          </Chip>
+                        </td>
+                        <td class="py-2.5 pr-3 text-muted-foreground">
+                          {formatDate(invoice.createdAt)}
+                        </td>
+                        <td class="py-2.5 pr-3 text-right font-medium">
+                          {formatAmount(invoice.total, invoice.currency)}
+                        </td>
+                        <td class="py-2.5 text-right">
+                          <div class="flex justify-end gap-2">
+                            <Show when={invoice.hostedInvoiceUrl}>
+                              {(url) => (
+                                <a
+                                  class="text-brand underline-offset-2 hover:underline"
+                                  href={url()}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  View
+                                </a>
+                              )}
+                            </Show>
+                            <Show when={invoice.pdfUrl}>
+                              {(url) => (
+                                <a
+                                  class="text-brand underline-offset-2 hover:underline"
+                                  href={url()}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  PDF
+                                </a>
+                              )}
+                            </Show>
+                            <Show when={!invoice.hostedInvoiceUrl && !invoice.pdfUrl}>
+                              <span class="text-muted-foreground">—</span>
+                            </Show>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+        </Show>
       </Panel>
 
       <Panel title="Usage" description="How billing is calculated for this tenant.">
         <div class="space-y-3 text-xs leading-relaxed text-muted-foreground">
           <p>
             Billing is based on enrolled devices. Devices that check out stop counting toward the
-            next billing period. Usage reporting and invoices are managed in Stripe.
+            next billing period, and the seat quantity on the subscription follows the fleet. Card
+            details, plan changes and cancellations are managed in Stripe.
           </p>
           <Show when={billing.data && !billing.data.limitsConfigured}>
-            <p class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
-              {UNLIMITED_PLAN_NOTICE}
-            </p>
+            <p class="rounded-lg border border-border bg-surface p-3">{UNLIMITED_PLAN_NOTICE}</p>
           </Show>
         </div>
       </Panel>
@@ -160,37 +364,43 @@ function Row(props: { label: string; children: JSX.Element }) {
   );
 }
 
-function Callout(props: { tone: "warning" | "danger"; children: JSX.Element; class?: string }) {
+const calloutTones = {
+  warning: {
+    box: "border-warning/25 bg-warning/[0.07]",
+    text: "text-warning-foreground",
+  },
+  danger: {
+    box: "border-destructive/25 bg-destructive/[0.07]",
+    text: "text-destructive",
+  },
+  success: {
+    box: "border-success/25 bg-success/[0.07]",
+    text: "text-success-foreground",
+  },
+} as const;
+
+function Callout(props: {
+  tone: keyof typeof calloutTones;
+  children: JSX.Element;
+  class?: string;
+}) {
+  const tone = () => calloutTones[props.tone];
+
   return (
-    <div
-      class={cn(
-        "flex items-start gap-2.5 rounded-lg border p-4",
-        props.tone === "danger"
-          ? "border-destructive/25 bg-destructive/[0.07]"
-          : "border-warning/25 bg-warning/[0.07]",
-        props.class,
-      )}
-    >
-      <CircleAlert
-        class={cn(
-          "mt-0.5 size-4 shrink-0",
-          props.tone === "danger" ? "text-destructive" : "text-warning-foreground",
-        )}
-      />
-      <div
-        class={cn(
-          "min-w-0 text-[13px] leading-relaxed",
-          props.tone === "danger" ? "text-destructive" : "text-warning-foreground",
-        )}
+    <div class={cn("flex items-start gap-2.5 rounded-lg border p-4", tone().box, props.class)}>
+      <Show
+        when={props.tone === "success"}
+        fallback={<CircleAlert class={cn("mt-0.5 size-4 shrink-0", tone().text)} />}
       >
-        {props.children}
-      </div>
+        <CheckCircle2 class={cn("mt-0.5 size-4 shrink-0", tone().text)} />
+      </Show>
+      <div class={cn("min-w-0 text-[13px] leading-relaxed", tone().text)}>{props.children}</div>
     </div>
   );
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

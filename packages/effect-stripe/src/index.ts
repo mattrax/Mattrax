@@ -9,10 +9,17 @@ export {
   verifyStripeSignature,
   type StripeClientConfig,
   type StripeClientLike,
+  type StripeCheckoutSession,
+  type StripeCheckoutSessionParams,
   type StripeCustomer,
+  type StripeInvoice,
+  type StripeInvoiceListParams,
+  type StripeInvoiceStatus,
   type StripeList,
   type StripePortalSession,
   type StripeSubscription,
+  type StripeSubscriptionItem,
+  type StripeSubscriptionUpdateParams,
 } from "./http.ts";
 
 export interface StripeErrorDetails {
@@ -76,11 +83,19 @@ export type StripeError =
 
 type CustomerCreate = StripeClientLike["customers"]["create"];
 
+type CustomerUpdate = StripeClientLike["customers"]["update"];
+
+type CustomerRetrieve = StripeClientLike["customers"]["retrieve"];
+
 type CustomerSearch = StripeClientLike["customers"]["search"];
 
 type CustomerList = StripeClientLike["customers"]["list"];
 
 type BillingPortalSessionCreate = StripeClientLike["billingPortal"]["sessions"]["create"];
+
+type CheckoutSessionCreate = StripeClientLike["checkout"]["sessions"]["create"];
+
+type InvoiceList = StripeClientLike["invoices"]["list"];
 
 type SubscriptionRetrieve = StripeClientLike["subscriptions"]["retrieve"];
 
@@ -97,6 +112,12 @@ export interface EffectStripeClient {
     readonly create: (
       ...args: Parameters<CustomerCreate>
     ) => Effect.Effect<Awaited<ReturnType<CustomerCreate>>, StripeError>;
+    readonly update: (
+      ...args: Parameters<CustomerUpdate>
+    ) => Effect.Effect<Awaited<ReturnType<CustomerUpdate>>, StripeError>;
+    readonly retrieve: (
+      ...args: Parameters<CustomerRetrieve>
+    ) => Effect.Effect<Awaited<ReturnType<CustomerRetrieve>>, StripeError>;
     readonly search: (
       ...args: Parameters<CustomerSearch>
     ) => Effect.Effect<Awaited<ReturnType<CustomerSearch>>, StripeError>;
@@ -110,6 +131,18 @@ export interface EffectStripeClient {
         ...args: Parameters<BillingPortalSessionCreate>
       ) => Effect.Effect<Awaited<ReturnType<BillingPortalSessionCreate>>, StripeError>;
     };
+  };
+  readonly checkout: {
+    readonly sessions: {
+      readonly create: (
+        ...args: Parameters<CheckoutSessionCreate>
+      ) => Effect.Effect<Awaited<ReturnType<CheckoutSessionCreate>>, StripeError>;
+    };
+  };
+  readonly invoices: {
+    readonly list: (
+      ...args: Parameters<InvoiceList>
+    ) => Effect.Effect<Awaited<ReturnType<InvoiceList>>, StripeError>;
   };
   readonly subscriptions: {
     readonly retrieve: (
@@ -205,6 +238,8 @@ export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeCl
     effect,
     customers: {
       create: (...args) => effect((stripe) => stripe.customers.create(...args)),
+      update: (...args) => effect((stripe) => stripe.customers.update(...args)),
+      retrieve: (...args) => effect((stripe) => stripe.customers.retrieve(...args)),
       search: (...args) => effect((stripe) => stripe.customers.search(...args)),
       list: (...args) => effect((stripe) => stripe.customers.list(...args)),
     },
@@ -212,6 +247,14 @@ export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeCl
       sessions: {
         create: (...args) => effect((stripe) => stripe.billingPortal.sessions.create(...args)),
       },
+    },
+    checkout: {
+      sessions: {
+        create: (...args) => effect((stripe) => stripe.checkout.sessions.create(...args)),
+      },
+    },
+    invoices: {
+      list: (...args) => effect((stripe) => stripe.invoices.list(...args)),
     },
     subscriptions: {
       retrieve: (...args) => effect((stripe) => stripe.subscriptions.retrieve(...args)),

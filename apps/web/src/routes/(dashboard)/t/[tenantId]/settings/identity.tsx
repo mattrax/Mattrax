@@ -25,7 +25,7 @@ export default function IdentitySettingsLayout(props: ParentProps) {
   return (
     <div class="flex flex-col gap-5">
       <nav
-        class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-white/[0.07] sm:bg-white/[0.02] sm:p-1"
+        class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-border sm:bg-surface sm:p-1"
         aria-label="Identity sections"
       >
         <For each={visibleTabs()}>
@@ -39,8 +39,8 @@ export default function IdentitySettingsLayout(props: ParentProps) {
                 class={cn(
                   "relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
                   isActive()
-                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.05)]"
-                    : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                    ? "bg-hover text-foreground shadow-[var(--card-highlight)]"
+                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
                 )}
                 aria-current={isActive() ? "page" : undefined}
               >

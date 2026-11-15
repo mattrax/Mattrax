@@ -55,13 +55,65 @@ test.describe("device fleet management", () => {
     expect(response.headers()["content-type"]).toContain("text/csv");
     expect(response.headers()["content-disposition"]).toContain("attachment");
     expect(await response.text()).toBe(
-      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Model number,FileVault,Battery health,Capabilities,Inventory updated,Groups\r\n",
+      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Model number,FileVault,Battery health,Capabilities,Inventory updated,Notes,Groups\r\n",
     );
 
     // The toolbar action downloads a dated CSV file.
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: /export csv/i }).click();
     expect((await download).suggestedFilename()).toMatch(/^devices-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  test("drives the table from the keyboard and advertises the shortcuts", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Keyboard Tenant");
+
+    const alpha = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Keyboard Alpha" }),
+    });
+
+    const beta = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Keyboard Beta" }),
+    });
+
+    await gotoHydrated(page, `/t/${tenant.slug}/groups`);
+    const search = page.getByLabel("Search table");
+
+    await page.keyboard.press("/");
+    await expect(search).toBeFocused();
+    await search.fill("Keyboard");
+    await page.keyboard.press("Escape");
+    await expect(search).toHaveValue("");
+
+    const mod = process.platform === "darwin" ? "Meta" : "Control";
+    await page.keyboard.press(`${mod}+f`);
+    await expect(search).toBeFocused();
+
+    // Arrow keys move a roving tabindex between rows; Enter opens the row.
+    const activeText = () => page.evaluate(() => document.activeElement?.textContent ?? "");
+    await page.getByRole("link", { name: "Keyboard Alpha" }).focus();
+    const start = await activeText();
+    await page.keyboard.press("ArrowDown");
+    let moved = await activeText();
+
+    if (moved === start) {
+      await page.keyboard.press("ArrowUp");
+      moved = await activeText();
+    }
+
+    expect(moved).not.toBe(start);
+    expect(moved).toContain("Keyboard");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TR");
+
+    // Select every row on the page, then Escape clears the selection.
+    await page.keyboard.press(`${mod}+a`);
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toContainText("2 selected");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toHaveCount(0);
+
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/groups/(${alpha.id}|${beta.id})$`));
   });
 
   test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
@@ -170,7 +222,7 @@ test.describe("device fleet management", () => {
     expect(summary.reasons).toEqual([]);
     expect(summary.devices).toEqual([]);
 
-    await gotoHydrated(page, `/t/${tenant.id}`);
+    await gotoHydrated(page, `/t/${tenant.slug}`);
     await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
 
     for (const label of [

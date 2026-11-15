@@ -168,9 +168,7 @@ export const parseVppTokenUpload = async (input: {
   if (!decoded && (raw.startsWith("<?xml") || raw.startsWith("<plist"))) {
     const parsed = await Effect.runPromise(parsePlist(raw)).catch(() => undefined);
 
-    const value = record(
-      Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parsed)),
-    );
+    const value = record(Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parsed)));
 
     if (value) {
       decoded = value;
@@ -398,12 +396,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
   return {
     listAssets: async (contentToken) => {
-      const assets = await paged(
-        "/v2/assets",
-        contentToken,
-        "assets",
-        JsonObject,
-      );
+      const assets = await paged("/v2/assets", contentToken, "assets", JsonObject);
 
       return assets.map((asset) => {
         const result: Mutable<VppAsset> = {
@@ -438,12 +431,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     },
 
     listAssignments: async (contentToken) => {
-      const assignments = await paged(
-        "/v2/assignments",
-        contentToken,
-        "assignments",
-        JsonObject,
-      );
+      const assignments = await paged("/v2/assignments", contentToken, "assignments", JsonObject);
 
       return assignments.map((assignment) => {
         const result: Mutable<VppAssignment> = { adamId: text(assignment.adamId) ?? "" };
@@ -740,12 +728,65 @@ export const syncVppAssets = (input: {
     const localByAdamId = new Map(local.map((asset) => [asset.adamId, asset]));
     const remoteIds = new Set(remote.map((asset) => asset.adamId));
 
+    const catalogueByBundleId = new Map(
+      catalogue.flatMap((app) => (app.bundleId ? [[app.bundleId, app] as const] : [])),
+    );
+
     for (const asset of remote) {
       const existing = localByAdamId.get(asset.adamId);
-      const catalogueEntry = catalogueByStoreId.get(asset.adamId);
       const metadata = input.appMetadata?.get(asset.adamId);
+
+      const catalogueEntry =
+        catalogueByStoreId.get(asset.adamId) ??
+        (asset.bundleId ? catalogueByBundleId.get(asset.bundleId) : undefined);
+
       const name = metadata?.name ?? asset.name ?? catalogueEntry?.name ?? `App ${asset.adamId}`;
       const bundleId = metadata?.bundleId ?? asset.bundleId ?? catalogueEntry?.bundleId ?? null;
+
+      // A purchased app is only useful if it can be assigned and installed, so
+      // the sync maintains the catalogue entry alongside the licence counts.
+      // App Store ID is the stable identity Apple reports; an entry that already
+      // has a different source (for example an uploaded build) is not rewritten.
+      const timestamp = now();
+
+      if (!catalogueEntry) {
+        yield* input.db.insert(schema.application).values({
+          id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+          organizationId: input.organizationId,
+          name,
+          platform: "apple",
+          bundleId,
+          version: null,
+          source: "store",
+          manifestUrl: null,
+          storeId: asset.adamId,
+          fileName: null,
+          contentType: null,
+          size: null,
+          sha256: null,
+          r2Key: null,
+          notes: "Synced from Apple Apps and Books",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      } else {
+        const patch: Partial<typeof schema.application.$inferInsert> = {};
+
+        if (catalogueEntry.name !== name) patch.name = name;
+
+        if (bundleId && catalogueEntry.bundleId !== bundleId) patch.bundleId = bundleId;
+
+        if (Object.keys(patch).length > 0)
+          yield* input.db
+            .update(schema.application)
+            .set({ ...patch, updatedAt: timestamp })
+            .where(
+              and(
+                eq(schema.application.organizationId, input.organizationId),
+                eq(schema.application.id, catalogueEntry.id),
+              ),
+            );
+      }
 
       const patch = {
         name,
@@ -1162,3 +1203,67 @@ export const releaseVppLicence = (input: {
 
     return { released: true, eventId: result.eventId };
   }).pipe(mapVppError);
+
+/** How often a configured Apps and Books token is refreshed automatically. */
+export const VPP_SCHEDULED_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export type ScheduledVppSyncResult = {
+  readonly tenants: number;
+  readonly synced: number;
+  readonly failed: number;
+};
+
+/**
+ * Refresh every tenant's Apps and Books assets whose last sync is older than a
+ * day.
+ *
+ * The manual sync endpoint stays the way to force a refresh; this is the
+ * backstop that keeps licence counts, assignment names and catalogue rows
+ * current when nobody opens the page. Failures are recorded on the token row by
+ * `syncVppAssets` and never abort other tenants.
+ */
+export const syncScheduledVppAssets = (input: {
+  readonly db: EnterpriseDb;
+  readonly authSecret?: string;
+  readonly config?: VppApiConfig;
+  readonly now?: Date;
+  readonly intervalMs?: number;
+}): Effect.Effect<ScheduledVppSyncResult, unknown, never> =>
+  Effect.gen(function* () {
+    if (!input.authSecret) return { tenants: 0, synced: 0, failed: 0 };
+
+    const now = input.now ?? new Date();
+    const interval = input.intervalMs ?? VPP_SCHEDULED_SYNC_INTERVAL_MS;
+    const cutoff = now.getTime() - interval;
+
+    const tokens = yield* input.db.select().from(schema.vppToken);
+
+    const due = tokens.filter((token) => {
+      if (token.status === "unconfigured") return false;
+
+      if (!token.lastSyncedAt) return true;
+
+      const lastSyncedAt =
+        token.lastSyncedAt instanceof Date ? token.lastSyncedAt : new Date(token.lastSyncedAt);
+
+      return Number.isNaN(lastSyncedAt.getTime()) || lastSyncedAt.getTime() <= cutoff;
+    });
+
+    const outcomes = yield* Effect.forEach(
+      due,
+      (token) =>
+        syncVppAssets({
+          db: input.db,
+          organizationId: token.organizationId,
+          authSecret: input.authSecret,
+          config: input.config,
+        }).pipe(Effect.result),
+      { concurrency: 4 },
+    );
+
+    return {
+      tenants: due.length,
+      synced: outcomes.filter((outcome) => Predicate.isTagged(outcome, "Success")).length,
+      failed: outcomes.filter((outcome) => Predicate.isTagged(outcome, "Failure")).length,
+    };
+  });

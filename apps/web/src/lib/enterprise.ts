@@ -7,6 +7,7 @@ import type { Accessor } from "solid-js";
 import { errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
 import { readMeCache, writeMeCache } from "~/lib/me-cache";
 import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
+import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
 import {
   requestStepUp,
   stepUpGrant,
@@ -62,6 +63,7 @@ import {
   type VppReleaseResponse,
   type VppSyncResponse,
   type WebhookEndpointInfo,
+  type WebhookDeliveryQuery,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -108,6 +110,8 @@ export type {
   ListTenantInvitationsQuery,
   ResendTenantInvitationResponse,
   BillingSummary,
+  BillingInvoice,
+  BillingInvoicesResponse,
   CredentialHealthResponse,
   BackupRunInfo,
   BackupRestoreResponse,
@@ -195,6 +199,10 @@ export type {
   VppReleaseResponse,
   VppSyncResponse,
   WebhookEndpointInfo,
+  WebhookDeliveryInfo,
+  WebhookDeliveryDetail,
+  WebhookDeliveriesResponse,
+  WebhookDeliveryReplayResponse,
   WebhookTestResponse,
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain/client";
@@ -245,6 +253,8 @@ export const enterpriseKeys = {
   vppAssignments: (tenantId: RouteParam) =>
     ["enterprise", "vpp-assignments", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
+  billingInvoices: (tenantId: RouteParam) =>
+    ["enterprise", "billing-invoices", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", tenantId ?? ""] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
@@ -268,6 +278,19 @@ export const enterpriseKeys = {
     ["enterprise", "audit-search", tenantId ?? "", query] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
   webhooks: (tenantId: RouteParam) => ["enterprise", "webhooks", tenantId ?? ""] as const,
+  webhookDeliveries: (
+    tenantId: RouteParam,
+    webhookId: RouteParam,
+    filters: { event?: string; status?: "succeeded" | "failed" } = {},
+  ) =>
+    [
+      "enterprise",
+      "webhook-deliveries",
+      tenantId ?? "",
+      webhookId ?? "",
+      filters.event ?? "",
+      filters.status ?? "",
+    ] as const,
   sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
   applications: (tenantId: RouteParam) => ["enterprise", "applications", tenantId ?? ""] as const,
   applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
@@ -298,7 +321,8 @@ export const enterpriseKeys = {
 const required = (value: RouteParam, name: string) => {
   if (!value) throw new EnterpriseBadRequest({ message: `Missing ${name}` });
 
-  return value;
+  // Tenant routes carry the canonical slug; the API addresses tenants by id.
+  return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
 };
 
 const clientEffect = (headers: Readonly<Record<string, string>>) => {
@@ -1534,6 +1558,40 @@ export const enterprise = {
         },
       }),
     ),
+  listWebhookDeliveries: (
+    tenantId: RouteParam,
+    webhookId: RouteParam,
+    query: WebhookDeliveryQuery = {},
+  ) =>
+    endpoint((api) =>
+      api.listWebhookDeliveries({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+        },
+        query,
+      }),
+    ),
+  getWebhookDelivery: (tenantId: RouteParam, webhookId: RouteParam, deliveryId: RouteParam) =>
+    endpoint((api) =>
+      api.getWebhookDelivery({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+          deliveryId: required(deliveryId, "deliveryId"),
+        },
+      }),
+    ),
+  replayWebhookDelivery: (tenantId: RouteParam, webhookId: RouteParam, deliveryId: RouteParam) =>
+    endpoint((api) =>
+      api.replayWebhookDelivery({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          webhookId: required(webhookId, "webhookId"),
+          deliveryId: required(deliveryId, "deliveryId"),
+        },
+      }),
+    ),
   listAuditLog: (tenantId: RouteParam) =>
     endpoint((api) => api.listAuditLog({ params: { tenantId: required(tenantId, "tenantId") } })),
   searchAuditLog: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
@@ -1647,6 +1705,19 @@ export const enterprise = {
         }),
       { stepUp: "billing-portal" },
     ),
+  billingCheckout: (tenantId: RouteParam, trialDays?: number) =>
+    endpoint(
+      (api) =>
+        api.billingCheckout({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload: trialDays === undefined ? {} : { trialDays },
+        }),
+      { stepUp: "billing-portal" },
+    ),
+  billingInvoices: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.billingInvoices({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   stepUpMethods: () => endpoint((api) => api.stepUpMethods({})),
   stepUpTotp: (payload: { code: string; action: StepUpAction }) =>
     endpoint((api) => api.stepUpTotp({ payload })),
@@ -1668,6 +1739,10 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
   const initialData: MeResponse | undefined =
     preloaded && (!userId || preloaded.user.id === userId) ? preloaded : undefined;
 
+  // The router addresses tenants by slug while every API call needs the id;
+  // keep the membership list available to that translation after SSR.
+  rememberTenants(initialData?.tenants ?? cached?.data.tenants);
+
   // The SSR preload skips the queryFn, which is normally what refreshes the
   // local cache. Persist it here so the next cold load still paints instantly.
   if (!isServer && initialData) writeMeCache(initialData);
@@ -1676,6 +1751,7 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
     queryKey: enterpriseKeys.me(),
     queryFn: async () => {
       const data = await enterprise.me();
+      rememberTenants(data.tenants);
       writeMeCache(data);
 
       return data;
@@ -1824,6 +1900,16 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listWebhooks(tenantId),
       enabled: Boolean(tenantId) && !isServer,
     }),
+  webhookDeliveries: (
+    tenantId: RouteParam,
+    webhookId: RouteParam,
+    filters: Pick<WebhookDeliveryQuery, "event" | "status"> = {},
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.webhookDeliveries(tenantId, webhookId, filters),
+      queryFn: () => enterprise.listWebhookDeliveries(tenantId, webhookId, filters),
+      enabled: Boolean(tenantId && webhookId) && !isServer,
+    }),
   auditLog: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.auditLog(tenantId),
@@ -1912,6 +1998,12 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.billing(tenantId),
       enabled: Boolean(tenantId),
     }),
+  billingInvoices: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.billingInvoices(tenantId),
+      queryFn: () => enterprise.billingInvoices(tenantId),
+      enabled: Boolean(tenantId),
+    }),
   enrollment: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.enrollment(tenantId),
@@ -1930,17 +2022,17 @@ export const enabledTenant = (tenantId: Accessor<string | undefined>) => () => B
 
 /**
  * Pick the tenant the UI should show. Tenant-scoped APIs always take the
- * tenant id from the URL, so an explicit id only matches a real membership;
- * the first membership is a fallback for non-tenant routes (for example the
- * tenant picker or account page).
+ * tenant id, but a URL may carry either the id or the canonical slug; both
+ * resolve to the same membership. The first membership is a fallback for
+ * non-tenant routes (for example the tenant picker or account page).
  */
 export function resolveActiveTenant(
   me: { tenants: readonly TenantInfo[] } | undefined,
-  tenantId?: string,
+  tenantKey?: string,
 ) {
   if (!me) return undefined;
 
-  if (tenantId) return me.tenants.find((tenant) => tenant.id === tenantId);
+  rememberTenants(me.tenants);
 
-  return me.tenants[0];
+  return resolveTenant(me.tenants, tenantKey);
 }

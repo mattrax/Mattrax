@@ -99,17 +99,19 @@ The container serves plain HTTP because TLS is the proxy's job. Set
 
 ## Configuration
 
-| Variable                        | Required | Purpose                                                                     |
-| ------------------------------- | -------- | --------------------------------------------------------------------------- |
-| `ORIGIN`                        | yes      | Canonical public HTTPS URL. WebAuthn relying party and link generator.      |
-| `AUTH_SECRET`                   | yes      | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets. |
-| `DATABASE_URL`                  | yes      | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.       |
-| `TRUST_DEVICE_IDENTITY_HEADERS` | no       | Set to `1` when a TLS proxy forwards verified device certificates.          |
-| `PORT`                          | no       | HTTP port inside the container. Defaults to `8080`.                         |
-| `DATA_DIR`                      | no       | Object storage and runtime state. Defaults to `/data`.                      |
-| `R2_BUCKET`                     | no       | Local bucket name. Defaults to `mattrax`.                                   |
-| `SKIP_MIGRATIONS`               | no       | Set to `1` to manage the schema from a separate job.                        |
-| `LOG_LEVEL`                     | no       | Miniflare log level: `debug`, `info`, `warn`, `error`, `none`.              |
+| Variable                        | Required  | Purpose                                                                     |
+| ------------------------------- | --------- | --------------------------------------------------------------------------- |
+| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.      |
+| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets. |
+| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.       |
+| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.          |
+| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                         |
+| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                      |
+| `R2_BUCKET`                     | no        | Local bucket name. Defaults to `mattrax`.                                   |
+| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                        |
+| `LOG_LEVEL`                     | no        | Miniflare log level: `debug`, `info`, `warn`, `error`, `none`.              |
+| `MAIL_TRANSPORT`                | no        | `resend`, `postmark` or `smtp`; unset disables outbound email.              |
+| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                |
 
 Optional integrations use the same names as the hosted deployment. See
 [Configuration](/operations/configuration) for the full list. Anything unset is
@@ -118,14 +120,56 @@ no analytics, and no Stripe billing.
 
 ### Email
 
-Outbound email needs a provider binding that a plain container cannot supply. When
-it is not configured, email verification codes are written to the container log
-(`docker compose logs app`). The runner sets `MATTRAX_EMAIL_DISABLED=1` so readiness
-reports `mailer: skipped` instead of treating the missing binding as a failure.
+Self-hosted deployments can send real email. Set a transport and a verified
+sender:
 
-`DEV_MAILBOX` exposes the same messages over `GET /api/debug/emails`. It only
-switches on for a loopback `ORIGIN`. To use it on a public host, set
-`DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
+| Variable                | Purpose                                                             |
+| ----------------------- | ------------------------------------------------------------------- |
+| `MAIL_TRANSPORT`        | `resend`, `postmark` or `smtp` (the bundled relay).                 |
+| `MAIL_FROM`             | Sender address, e.g. `Mattrax <notifications@example.com>`.         |
+| `RESEND_API_KEY`        | Required for `resend`.                                              |
+| `POSTMARK_SERVER_TOKEN` | Required for `postmark`.                                            |
+| `MAIL_RELAY_URL`        | Required for `smtp`, e.g. `http://mail-relay:8790`.                 |
+| `MAIL_RELAY_SECRET`     | Required for `smtp`; shared with the relay, at least 16 characters. |
+
+```bash
+# Resend
+MAIL_TRANSPORT=resend
+MAIL_FROM="Mattrax <notifications@example.com>"
+RESEND_API_KEY=re_...
+```
+
+Any provider works, but the sender domain must be verified with it. Use a
+monitored mailbox, not `no-reply@`: invitation and verification replies should
+reach a person.
+
+For a provider that only speaks SMTP, start the bundled sidecar, which delivers
+through your existing mail account:
+
+```bash
+MAIL_TRANSPORT=smtp
+MAIL_FROM="Mattrax <notifications@example.com>"
+MAIL_RELAY_SECRET="$(openssl rand -base64 32)"
+MAIL_RELAY_URL=http://mail-relay:8790
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=notifications@example.com
+SMTP_PASSWORD=...
+docker compose -f docker-compose.selfhost.yml --profile smtp up -d
+```
+
+Set `SMTP_SECURE=true` for implicit TLS (usually port 465); otherwise the relay
+upgrades with STARTTLS when the server offers it. `SMTP_REJECT_UNAUTHORIZED=false`
+is only for a relay with a self-signed certificate on your own network.
+
+Without a transport the container declares `MATTRAX_EMAIL_DISABLED=1`: readiness
+reports `mailer: skipped` (degraded), verification requests fail with "This
+deployment cannot send email", and invitations return their one-time link for the
+administrator to copy. Nothing is written to the container log.
+
+`DEV_MAILBOX` exposes messages over `GET /api/debug/emails` instead of sending
+them. It only switches on for a loopback `ORIGIN`. To use it on a public host,
+set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 `DEV_MAILBOX_SECRET`, then send that value in `x-dev-mailbox-secret`.
 
 ## Operations
@@ -138,9 +182,9 @@ switches on for a loopback `ORIGIN`. To use it on a public host, set
   by the scheduled job.
 - **Health.** `GET /api/health` is a liveness check. `GET /api/ready` checks the database,
   writes/reads/deletes a probe object in the local bucket, and verifies the mailer is
-  configured. It returns 503 when the database or `/data` volume is unusable. Because the
-  container removes the email binding, `checks.mailer` is `skipped` and the overall status
-  is `degraded` (HTTP 200) rather than unhealthy.
+  configured. It returns 503 when the database, the `/data` volume or a configured mailer
+  is unusable. With no mail transport (or `MATTRAX_EMAIL_DISABLED=1`) `checks.mailer` is
+  `skipped` and the overall status is `degraded` (HTTP 200) rather than unhealthy.
 - **Backups and restore.** The daily job writes tenant bundles into the `mattrax-data`
   volume. Owners can pin, unpin, delete and restore them from Settings → General; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
@@ -152,7 +196,6 @@ switches on for a loopback `ORIGIN`. To use it on a public host, set
 
 ## Limitations
 
-- Outbound email and Cloudflare Email Routing are not available.
 - R2 is local to the `/data` volume; it is not replicated off the host.
 - Cloudflare-specific secrets (vendor APNs relay, managed Android Pub/Sub) still
   point at the hosted services if configured, and are otherwise disabled.

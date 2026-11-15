@@ -29,6 +29,7 @@ import {
   appleEnrollmentProfileResponse,
   createEnterpriseService,
 } from "../src/enterpriseHandlers.js";
+import type { EmailTransport, OutboundEmailMessage } from "../src/email.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
@@ -132,7 +133,7 @@ const makeContext = async (
     apns?: any;
     pushes?: Array<any>;
     authSecret?: string | null;
-    email?: { send: (message: any) => Promise<void> };
+    email?: EmailTransport;
     stripeClient?: any;
     apiToken?: any;
     db?: any;
@@ -800,16 +801,11 @@ describe("enterprise service tenant flow", () => {
   });
 
   it("uses tenant branding in invitation emails", async () => {
-    const sent: Array<{
-      to: string;
-      from: { name: string; email: string };
-      subject: string;
-      text?: string;
-      html?: string;
-    }> = [];
+    const sent: Array<OutboundEmailMessage> = [];
 
     const { service, headers } = await makeContext({
       email: {
+        local: true,
         send: async (message) => {
           sent.push(message);
         },
@@ -976,7 +972,9 @@ describe("enterprise service billing flow", () => {
     await expect(
       runEffect(
         service.billingPortal(request(headers), tenant.id, {
-          returnUrl: "https://app.test/settings",
+          // Only a same-origin return URL is forwarded; see billing.test.ts for
+          // the cross-origin fallback.
+          returnUrl: "https://enterprise.test/settings",
         }),
       ),
     ).resolves.toEqual({ url: "https://billing.test/session" });
@@ -985,7 +983,7 @@ describe("enterprise service billing flow", () => {
     ]);
     expect(db.store.organization[0].stripeCustomerId).toBe("cus_new");
     expect(portalSessions).toEqual([
-      { customer: "cus_new", return_url: "https://app.test/settings" },
+      { customer: "cus_new", return_url: "https://enterprise.test/settings" },
     ]);
 
     await expect(
@@ -1117,10 +1115,10 @@ describe("enterprise service billing flow", () => {
     await expect(
       runEffect(
         boundedService.billingPortal(request(headers), tenant.id, {
-          returnUrl: "https://app.test/settings",
+          returnUrl: "https://enterprise.test/settings",
         }),
       ),
-    ).resolves.toEqual({ url: "https://app.test/settings" });
+    ).resolves.toEqual({ url: "https://enterprise.test/settings" });
     expect(listCalls).toEqual([{ limit: 100 }]);
     expect(db.store.organization[0].stripeCustomerId).toBe("cus_bounded");
   });
@@ -2221,6 +2219,36 @@ describe("enterprise service APNs", () => {
 
     expect(healthy.total).toBe(summary.counts.healthy);
     expect(healthy.devices).toHaveLength(0);
+
+    // The list column carries the same rollup as the filter and the summary.
+    expect(attention.devices.every((row: any) => row.health.level === "attention")).toBe(true);
+    expect(attention.devices[0].health.reasons).toContainEqual(
+      expect.objectContaining({ code: "declaration_invalid" }),
+    );
+
+    // A healthy device sorts after the two attention devices ascending (worst
+    // first) and before them descending.
+    await seedDevice(db, tenant.id, "device-3");
+
+    const worstFirst = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { sort: "health" }),
+    );
+
+    expect(worstFirst.devices.map((row: any) => row.health.level)).toEqual([
+      "attention",
+      "attention",
+      "healthy",
+    ]);
+
+    const healthiestFirst = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { sort: "health", direction: "desc" }),
+    );
+
+    expect(healthiestFirst.devices.map((row: any) => row.health.level)).toEqual([
+      "healthy",
+      "attention",
+      "attention",
+    ]);
 
     await expect(
       runEffect(service.getDeviceHealth(request(headers), tenant.id, "missing")),

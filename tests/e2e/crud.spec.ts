@@ -11,7 +11,7 @@ test.describe("groups and policies", () => {
       .click();
     await page.locator("form input").first().fill("Field Ops");
     await page.getByRole("button", { name: /^create group$/i }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/groups/[^/]+$`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups/[^/]+$`));
     await expect(page.getByRole("heading", { name: "Field Ops" })).toBeVisible();
 
     // Edit mode renames through the shared save action.
@@ -31,7 +31,7 @@ test.describe("groups and policies", () => {
       .locator('[data-slot="dialog-content"]')
       .getByRole("button", { name: /delete group/i })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/groups$`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups$`));
   });
 
   test("creates a dynamic group and shows its rule-based membership", async ({ page }) => {

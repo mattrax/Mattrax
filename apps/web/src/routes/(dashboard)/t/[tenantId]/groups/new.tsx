@@ -111,12 +111,12 @@ export default function NewGroupPage() {
                 </select>
               </Field>
               <Show when={kind() === "dynamic"}>
-                <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+                <div class="rounded-lg border border-border bg-surface p-3">
                   <GroupRuleBuilder rules={rules()} onChange={setRules} />
                 </div>
               </Show>
               <ErrorText error={create.error} />
-              <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
+              <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
                 <Button type="submit" disabled={create.isPending}>
                   {create.isPending ? "Creating…" : "Create group"}
                 </Button>
@@ -175,13 +175,13 @@ export default function NewGroupPage() {
                     </Show>
                   }
                 >
-                  <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">
+                  <div class="max-h-64 divide-y divide-border overflow-auto">
                     <For each={deviceList.data?.rows ?? []}>
                       {(device) => (
-                        <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-white/[0.03] sm:px-5">
+                        <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-hover sm:px-5">
                           <input
                             type="checkbox"
-                            class="size-3.5 shrink-0 accent-[var(--brand)]"
+                            class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
                             checked={devices().has(device.id)}
                             onChange={() => toggle(devices, setDevices, device.id)}
                           />
@@ -226,13 +226,13 @@ export default function NewGroupPage() {
                   </Show>
                 }
               >
-                <div class="max-h-64 divide-y divide-white/[0.05] overflow-auto">
+                <div class="max-h-64 divide-y divide-border overflow-auto">
                   <For each={policyList.data?.rows ?? []}>
                     {(policy) => (
-                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-white/[0.03] sm:px-5">
+                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-hover sm:px-5">
                         <input
                           type="checkbox"
-                          class="size-3.5 shrink-0 accent-[var(--brand)]"
+                          class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
                           checked={policies().has(policy.id)}
                           onChange={() => toggle(policies, setPolicies, policy.id)}
                         />

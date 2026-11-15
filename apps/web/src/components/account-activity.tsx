@@ -43,7 +43,7 @@ const KNOWN_ACTIONS = [
 ];
 
 const inputClass =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 const formatAction = (action: string) =>
   action
@@ -226,7 +226,7 @@ export function AccountActivity(props: { userId: string | undefined }) {
           </p>
         }
       >
-        <ul class="mt-4 divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+        <ul class="mt-4 divide-y divide-border rounded-lg border border-border">
           <For each={entries()}>
             {(entry) => (
               <li class="px-3 py-2.5">

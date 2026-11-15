@@ -22,6 +22,7 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 
 const keys = {
   cert: "mttx.apple.certificate.default",
@@ -114,6 +115,8 @@ export function PolicyConfigurationEditor() {
   const dirty = createMemo(() => JSON.stringify(config()) !== initial());
   const configuredKinds = createMemo(() => Object.keys(config()).length);
 
+  const unsaved = useUnsavedChanges(() => canEdit() && dirty());
+
   const setKey = (key: string, value: Schema.Json) =>
     setConfig((current) => ({ ...current, [key]: value }));
 
@@ -148,11 +151,13 @@ export function PolicyConfigurationEditor() {
     },
   );
 
-  const cancel = () => {
+  const discard = () => {
     setConfig(JSON.parse(initial()));
     setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
     setCanEdit(false);
   };
+
+  const cancel = () => unsaved.confirm(discard);
 
   useCommands([
     {
@@ -196,6 +201,7 @@ export function PolicyConfigurationEditor() {
 
   return (
     <Page wide>
+      {unsaved.prompt}
       <a
         href={`/t/${params.tenantId}/policies/${params.policyId}`}
         class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -453,7 +459,7 @@ function DeviceSection(props: {
         </span>
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-[var(--brand)]"
+          class="size-4 shrink-0 accent-[var(--brand-solid)]"
           checked={device().camera !== false}
           onChange={(event) =>
             props.setKey(keys.device, { ...device(), camera: event.currentTarget.checked })

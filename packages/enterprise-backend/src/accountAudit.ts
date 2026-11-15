@@ -34,6 +34,8 @@ export const ACCOUNT_AUDIT = {
   recoveryApproved: "account.recovery_approved",
   recoveryCompleted: "account.recovery_completed",
   recoveryCancelled: "account.recovery_cancelled",
+  /** A queued account email exhausted its delivery attempts. */
+  emailDeliveryFailed: "account.email_delivery_failed",
 } as const;
 
 export type AccountAuditAction = (typeof ACCOUNT_AUDIT)[keyof typeof ACCOUNT_AUDIT];

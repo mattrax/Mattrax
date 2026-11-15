@@ -104,6 +104,7 @@ export async function register(page: Page, options: { name?: string; email?: str
     await verificationCodeInput.fill(code);
     await page.getByRole("button", { name: /verify email/i }).click();
   }
+
   // A cold dev server compiles the dashboard route on the first navigation,
   // which can take longer than the default test timeout.
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
@@ -221,15 +222,26 @@ export async function gotoHydrated(page: Page, path: string) {
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
   await register(page);
   const tenant = await createTenant(page, `${name} ${Math.random().toString(36).slice(2, 6)}`);
-  await gotoHydrated(page, `/t/${tenant.id}/devices`);
+  await gotoHydrated(page, `/t/${tenant.slug}/devices`);
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
 
   return tenant;
 }
 
-export async function api<T = unknown>(page: Page, path: string, init?: RequestInit): Promise<T> {
-  return page.evaluate(
-    async ({ path, init }: { path: string; init?: RequestInit }) => {
+/**
+ * The request fields these tests send. A narrower shape than the DOM
+ * `RequestInit` keeps the node and DOM stream types from colliding, and every
+ * call site only ever sets these.
+ */
+type ApiRequest = {
+  readonly method?: string;
+  readonly body?: string;
+  readonly headers?: Record<string, string>;
+};
+
+export async function api<T = unknown>(page: Page, path: string, init?: ApiRequest): Promise<T> {
+  return page.evaluate<T, { path: string; init?: ApiRequest }>(
+    async ({ path, init }) => {
       const headers = new Headers(init?.headers);
 
       if (!headers.has("content-type")) headers.set("content-type", "application/json");

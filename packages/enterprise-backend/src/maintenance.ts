@@ -10,11 +10,17 @@ import {
   syncDynamicGroupsForTenant,
 } from "@mattrax/management-backend-enterprise";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
+import { reconcileSubscriptionSweep } from "./billing.ts";
+import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import type { EffectStripeClient } from "@mattrax/effect-stripe";
 import { refreshAppleApplicationInventory } from "./appleInventory.ts";
+import { syncScheduledVppAssets } from "./volumePurchase.ts";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "./rbac.ts";
 import type { WebhookDeliveryOptions } from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
+import type { EmailTransport } from "./email.ts";
+import { drainEmailOutbox, purgeEmailOutbox } from "./emailOutbox.ts";
 
 /**
  * A tenant owner/admin recipient. Shared by credential-expiry notifications
@@ -53,7 +59,7 @@ export type CredentialExpiryNotification = {
  */
 export type CredentialExpiryNotifier = (
   notification: CredentialExpiryNotification,
-) => Effect.Effect<void, unknown>;
+) => Effect.Effect<void, unknown, Db>;
 
 export type MaintenanceOptions = {
   /** Injectable clock for tests. Defaults to `new Date()`. */
@@ -94,10 +100,28 @@ export type MaintenanceOptions = {
   readonly webhookRetry?: boolean;
   /** Application secret needed to sign retried deliveries. */
   readonly webhookAuthSecret?: string;
+  /**
+   * Application secret used to decrypt Apps and Books content tokens for the
+   * scheduled licence sync. Without it the sync is skipped (manual sync still
+   * works through the API).
+   */
+  readonly authSecret?: string;
+  /** Refresh due Apps and Books assets. Defaults to true. */
+  readonly vppSync?: boolean;
   /** Injected fetch for retry tests. */
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Maximum recorded attempts for a retried delivery. Defaults to 3. */
   readonly webhookMaxAttempts?: number;
+  /**
+   * Transport for the transactional-email outbox. Omit it (or pass `null`) to
+   * leave queued mail untouched, which is what a deployment without a mailer
+   * wants; the rows stay pending until a transport exists.
+   */
+  readonly email?: EmailTransport | null;
+  /** Maximum outbox deliveries in flight. Defaults to 4. */
+  readonly emailOutboxConcurrency?: number;
+  /** Attempts before an outbox row is permanently failed. Defaults to 5. */
+  readonly emailOutboxMaxAttempts?: number;
   /**
    * Queue the daily Apple `InstalledApplicationList` refresh. Defaults to true;
    * disable it in tests that assert on the command queue.
@@ -115,6 +139,15 @@ export type MaintenanceOptions = {
    * forever. Set to `0` to keep them indefinitely.
    */
   readonly tenantDeletionLogRetentionDays?: number;
+  /**
+   * Stripe client used to reconcile subscription seats and customer names.
+   * Omit it on deployments without billing, or to skip the billing sweep.
+   */
+  readonly billing?: {
+    readonly stripe: EffectStripeClient;
+    readonly deviceMonthlyPriceId?: string;
+    readonly planLimits?: PlanLimitsConfig;
+  };
 };
 
 export type MaintenanceResult = {
@@ -151,6 +184,28 @@ export type MaintenanceResult = {
   readonly purgedCommands: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
+  /** Tenants whose Stripe seat quantity was brought in line this run. */
+  readonly billingSeatsUpdated: number;
+  /** Tenants checked against Stripe where the quantity already matched. */
+  readonly billingSeatsUnchanged: number;
+  /** Tenants skipped (no subscription, another price, ended subscription). */
+  readonly billingSeatsSkipped: number;
+  /** Tenants whose Stripe reconciliation failed; retried next run. */
+  readonly billingSeatsFailed: number;
+  /** Stripe customer names updated to match a renamed tenant. */
+  readonly billingCustomerNamesUpdated: number;
+  /** Transactional emails delivered by the outbox drain this run. */
+  readonly emailOutboxSent: number;
+  /** Rows rescheduled after a provider failure. */
+  readonly emailOutboxRetried: number;
+  /** Rows that exhausted their attempts and are now permanently failed. */
+  readonly emailOutboxFailed: number;
+  /** Delivered/failed outbox rows deleted by retention. */
+  readonly purgedEmailOutbox: number;
+  /** Apps and Books licence pools refreshed by the scheduled sync. */
+  readonly vppSynced: number;
+  /** Tenants whose Apps and Books sync failed this run. */
+  readonly vppFailed: number;
 };
 
 const day = 24 * 60 * 60 * 1000;
@@ -340,6 +395,17 @@ export const runMaintenance = (
       expiredCommands: 0,
       purgedCommands: 0,
       purgedTenantDeletionLogs: 0,
+      billingSeatsUpdated: 0,
+      billingSeatsUnchanged: 0,
+      billingSeatsSkipped: 0,
+      billingSeatsFailed: 0,
+      billingCustomerNamesUpdated: 0,
+      emailOutboxSent: 0,
+      emailOutboxRetried: 0,
+      emailOutboxFailed: 0,
+      purgedEmailOutbox: 0,
+      vppSynced: 0,
+      vppFailed: 0,
     };
 
     // 1. Expire pending invitations whose acceptance window has closed.
@@ -611,6 +677,26 @@ export const runMaintenance = (
       }
     }
 
+    // 6b. Drain the transactional-email outbox. Queued invitations,
+    //     verification codes and alerts are retried here with exponential
+    //     backoff; a row that exhausts its attempts is marked failed and
+    //     written to the tenant (or account) audit stream. Without a transport
+    //     the rows stay pending, so enabling a mailer later delivers them.
+    if (options.email) {
+      const outbox = yield* drainEmailOutbox({
+        db,
+        email: options.email,
+        now,
+        concurrency: options.emailOutboxConcurrency,
+        maxAttempts: options.emailOutboxMaxAttempts,
+      });
+
+      result.emailOutboxSent = outbox.sent;
+      result.emailOutboxRetried = outbox.retried;
+      result.emailOutboxFailed = outbox.failed;
+      result.purgedEmailOutbox = yield* purgeEmailOutbox(db, { now });
+    }
+
     // 7. Webhook delivery retention and bounded retries. Retention runs even
     //    when no signing secret is configured; retries are skipped without one.
     if (webhookDeliveryRetentionDays > 0)
@@ -664,6 +750,21 @@ export const runMaintenance = (
       result.securityInfoRefreshes = securityInfo.requested;
     }
 
+    // 9c. Apps and Books licence pools. Apple's counts change when licences are
+    //     purchased, returned or revoked elsewhere, and the manual sync button
+    //     is easy to forget. Tenants are refreshed at most once a day; a failed
+    //     sync is recorded on the token row and retried by the next run.
+    if (options.vppSync !== false && options.authSecret) {
+      const vpp = yield* syncScheduledVppAssets({
+        db,
+        authSecret: options.authSecret,
+        now,
+      });
+
+      result.vppSynced = vpp.synced;
+      result.vppFailed = vpp.failed;
+    }
+
     // 10. Command queue housekeeping. Android commands are issued directly and
     //     rely on a Pub/Sub notification to become terminal; if that never
     //     arrives the row would stay `sent` forever. The sweep applies every
@@ -703,6 +804,26 @@ export const runMaintenance = (
         );
 
       result.purgedTenantDeletionLogs = staleJournals.length;
+    }
+
+    // 12. Billing seats. Devices enrol through the protocol layer, which has
+    //     no Stripe client, so this sweep is what keeps the paid quantity equal
+    //     to the fleet a tenant actually has. It also retries a customer rename
+    //     whose inline Stripe update failed. Runs after the stale-device sweep
+    //     above so retired devices are already out of the count.
+    if (options.billing) {
+      const billing = yield* reconcileSubscriptionSweep({
+        db,
+        stripe: options.billing.stripe,
+        deviceMonthlyPriceId: options.billing.deviceMonthlyPriceId,
+        planLimits: options.billing.planLimits,
+      });
+
+      result.billingSeatsUpdated = billing.updated;
+      result.billingSeatsUnchanged = billing.unchanged;
+      result.billingSeatsSkipped = billing.skipped;
+      result.billingSeatsFailed = billing.failed;
+      result.billingCustomerNamesUpdated = billing.customerNamesUpdated;
     }
 
     return result;

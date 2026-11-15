@@ -23,6 +23,7 @@ import {
   TabletSmartphone,
 } from "~/components/ui/icons";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { buildBreadcrumbs } from "~/lib/breadcrumbs";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
@@ -158,12 +159,12 @@ export function Panel(props: {
     <section
       aria-labelledby={titleId()}
       class={cn(
-        "relative overflow-hidden rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] transition-[border-color,translate] duration-200 ease-swift hover:border-white/[0.11] motion-safe:hover:-translate-y-px",
+        "relative overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-card)] transition-[border-color,translate] duration-200 ease-swift hover:border-input motion-safe:hover:-translate-y-px",
         props.class,
       )}
     >
       <Show when={props.header ?? props.title}>
-        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3 sm:px-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-4">
           <Show
             when={props.header}
             fallback={
@@ -231,9 +232,9 @@ export function StatCard(props: {
   );
 
   const classes = cn(
-    "group flex min-w-0 flex-col rounded-lg border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
+    "group flex min-w-0 flex-col rounded-lg border border-border bg-surface p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
     (props.href ?? props.onClick) &&
-      "hover:border-white/[0.12] hover:bg-white/[0.045] motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+      "hover:border-input hover:bg-hover motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
     props.class,
   );
 
@@ -262,8 +263,8 @@ export function EmptyState(props: {
   icon?: (props: { class?: string }) => JSX.Element;
 }) {
   return (
-    <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.012] px-6 py-10 text-center">
-      <div class="mb-3.5 flex size-10 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-muted-foreground">
+    <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-border bg-surface px-6 py-10 text-center">
+      <div class="mb-3.5 flex size-10 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
         <Show when={props.icon} fallback={<CircleAlert class="size-4.5" />}>
           {(icon) => icon()({ class: "size-4.5" })}
         </Show>
@@ -284,7 +285,7 @@ export function SkeletonRows(props: { rows?: number; class?: string }) {
   return (
     <div class={cn("space-y-1.5", props.class)} aria-hidden="true">
       <For each={Array.from({ length: props.rows ?? 4 }, (_, index) => index)}>
-        {() => <Skeleton class="h-11 rounded-lg bg-white/[0.035]" />}
+        {() => <Skeleton class="h-11 rounded-lg bg-surface" />}
       </For>
     </div>
   );
@@ -311,10 +312,10 @@ export function DataTable<T>(props: {
 
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <div class="page-enter overflow-hidden rounded-lg border border-white/[0.07] bg-card">
+      <div class="page-enter overflow-hidden rounded-lg border border-border bg-card">
         <table class="w-full text-[13px]">
           <caption class="sr-only">{caption()}</caption>
-          <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <tr>
               <For each={props.columns}>
                 {(col) => (
@@ -325,10 +326,10 @@ export function DataTable<T>(props: {
               </For>
             </tr>
           </thead>
-          <tbody class="divide-y divide-white/[0.05]">
+          <tbody class="divide-y divide-border">
             <For each={props.rows}>
               {(row) => (
-                <tr class="transition-colors hover:bg-white/[0.025]">
+                <tr class="transition-colors hover:bg-hover">
                   <For each={props.columns}>
                     {(col) => (
                       <td class={cn("px-4 py-3 align-middle", col.class)}>{col.cell(row)}</td>
@@ -426,7 +427,7 @@ const statusStyles = new Map<string, string>([
   ["enrolled", "border-success/25 bg-success/10 text-success-foreground"],
   ["enrolling", "border-brand/30 bg-brand/10 text-brand"],
   ["unenrolling", "border-warning/25 bg-warning/10 text-warning-foreground"],
-  ["unenrolled", "border-white/[0.08] bg-white/[0.03] text-muted-foreground"],
+  ["unenrolled", "border-border bg-surface text-muted-foreground"],
 ]);
 
 const statusStyle = (status: string) =>
@@ -459,20 +460,26 @@ const healthStyles = new Map<string, { class: string; label: string }>([
     "critical",
     { class: "border-destructive/25 bg-destructive/10 text-destructive", label: "Critical" },
   ],
-  [
-    "unknown",
-    { class: "border-white/[0.08] bg-white/[0.03] text-muted-foreground", label: "Unknown" },
-  ],
+  ["unknown", { class: "border-border bg-surface text-muted-foreground", label: "Unknown" }],
 ]);
 
 const healthStyle = (level: string) =>
   healthStyles.get(level) ?? healthStyles.get("unknown") ?? { class: "", label: level };
 
-/** Health/compliance rollup derived by the backend. */
-export function DeviceHealthBadge(props: { level: string }) {
-  const style = () => healthStyle(props.level);
+type HealthReason = { code: string; label: string; severity: string };
 
-  return (
+/**
+ * Health/compliance rollup derived by the backend.
+ *
+ * With `reasons`, the badge becomes a tooltip trigger that lists what dragged
+ * the device out of `healthy`; the list is also the trigger's accessible name,
+ * so the information is not hover-only.
+ */
+export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArray<HealthReason> }) {
+  const style = () => healthStyle(props.level);
+  const reasons = () => props.reasons ?? [];
+
+  const badge = () => (
     <span
       class={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
@@ -487,6 +494,29 @@ export function DeviceHealthBadge(props: { level: string }) {
       </Show>
       {style().label}
     </span>
+  );
+
+  return (
+    <Show when={reasons().length > 0} fallback={badge()}>
+      <Tooltip>
+        <TooltipTrigger
+          as="span"
+          tabindex={0}
+          class="inline-flex cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          aria-label={`Health ${style().label}. ${reasons()
+            .map((reason) => reason.label)
+            .join("; ")}`}
+        >
+          {badge()}
+        </TooltipTrigger>
+        <TooltipContent>
+          <p class="text-[11px] font-medium">Why {style().label.toLowerCase()}</p>
+          <ul class="mt-1 space-y-0.5 text-[11.5px]">
+            <For each={reasons()}>{(reason) => <li>{reason.label}</li>}</For>
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </Show>
   );
 }
 

@@ -4,7 +4,7 @@ import { bootstrapTenant, gotoHydrated } from "./helpers";
 test.describe("dashboards", () => {
   test("builds a shared dashboard and uses it for Overview", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Dashboard Tenant");
-    const base = `/t/${tenant.id}`;
+    const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, base);
     await expect(page.getByRole("heading", { name: "Fleet overview" })).toBeVisible();
@@ -12,7 +12,7 @@ test.describe("dashboards", () => {
     await expect(page.getByText("Managed devices")).toBeVisible();
 
     await page.getByRole("button", { name: "Customise overview" }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/dashboards/[^/?]+\\?edit=1`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/[^/?]+\\?edit=1`));
     await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
     await expect(page.getByText("Managed devices")).toBeVisible();
 

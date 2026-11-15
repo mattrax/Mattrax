@@ -9,7 +9,9 @@ what a policy change will do to a fleet.
   passkeys, and optionally an authenticator app as a second factor.
 - **Tenant** — an isolated environment with its own devices, groups, policies, enrollment
   settings, branding, audit log, webhooks and billing subscription. Tenant ids are opaque
-  and are never reused.
+  and are never reused. Dashboard URLs use the tenant's editable **slug**
+  (`/t/<slug>/devices`); links that still carry the id redirect to the slug, and renaming
+  the slug changes every shareable tenant link.
 - **Member** — the link between an account and a tenant, with a role.
 
 A single account can belong to many tenants. The dashboard switches between them without
@@ -46,6 +48,11 @@ when a pre-registration matches an enrollment.
 Each tenant has one enrollment link with optional password, per-platform toggles, an asset
 tag toggle and a device cap. Resetting the link invalidates the old link without touching
 already-enrolled devices.
+
+The link is server-rendered: the password form (or the platform instructions) is in the
+first HTML response, so a link preview or a device with JavaScript disabled still shows a
+usable form. The password field has a reveal toggle, and submitting it uses a plain form
+GET.
 
 ## Groups
 

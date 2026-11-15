@@ -29,6 +29,8 @@ export type EnterpriseServiceOptions = {
   readonly appleApi?: AppleApiConfig;
   /** Deployment plan catalogue; omit for unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
+  /** Stripe price for the per-device plan; enables Checkout and seat sync. */
+  readonly deviceMonthlyPriceId?: string;
   /** Optional static analytics sink, used when the request has no sink. */
   readonly analytics?: EnterpriseAnalytics;
   /**
@@ -90,6 +92,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           schema,
           origin: env.origin,
           stripeClient: Option.getOrUndefined(stripeClient),
+          deviceMonthlyPriceId: options.deviceMonthlyPriceId,
           storage,
           auth,
           authSecret: env.authSecret,

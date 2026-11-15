@@ -213,7 +213,7 @@ export default function IdentitySettingsPage() {
         title="SCIM provisioning"
         description="Connect an identity provider's SCIM client to create, update and deactivate tenant users and groups automatically."
       >
-        <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+        <div class="rounded-lg border border-border bg-surface p-3">
           <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             SCIM base URL
           </p>
@@ -294,7 +294,7 @@ export default function IdentitySettingsPage() {
               <p class="font-medium text-foreground">
                 Copy this token now. It will not be shown again.
               </p>
-              <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-xs text-muted-foreground">
+              <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-xs text-muted-foreground">
                 {value().token}
               </code>
               <p class="mt-2 text-xs text-muted-foreground">{expiryLabel(value().expiresAt)}</p>
@@ -343,7 +343,7 @@ export default function IdentitySettingsPage() {
             <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">No SCIM tokens yet.</p>
           }
         >
-          <ul class="divide-y divide-white/[0.05]">
+          <ul class="divide-y divide-border">
             <For each={tokens.data?.tokens ?? []}>
               {(token) => (
                 <li class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -430,7 +430,7 @@ export default function IdentitySettingsPage() {
         description="Require every member of this tenant — including read-only and auditor roles — to sign in with a passkey or an authenticator app. This is independent of single sign-on; a tenant that signs in with passkeys can enforce it without an identity provider."
       >
         <form
-          class="divide-y divide-white/[0.05]"
+          class="divide-y divide-border"
           onSubmit={(event) => {
             event.preventDefault();
             saveSecurity.mutate();
@@ -472,8 +472,8 @@ export default function IdentitySettingsPage() {
         title="Single sign-on"
         description="Let members sign in with your Microsoft Entra tenant."
       >
-        <div class="flex items-start gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+        <div class="flex items-start gap-3 rounded-lg border border-border bg-surface p-3">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <ShieldCheck class="size-4" />
           </span>
           <div class="min-w-0">
@@ -486,7 +486,7 @@ export default function IdentitySettingsPage() {
         </div>
 
         <form
-          class="mt-4 divide-y divide-white/[0.05]"
+          class="mt-4 divide-y divide-border"
           onSubmit={(event) => {
             event.preventDefault();
             saveSso.mutate();
@@ -602,11 +602,11 @@ function ToggleSetting(props: {
         />
         <span
           aria-hidden="true"
-          class="h-5 w-9 rounded-full border border-white/[0.12] bg-white/[0.08] transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
+          class="h-5 w-9 rounded-full border border-border bg-hover transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand-solid peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
         />
         <span
           aria-hidden="true"
-          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.4)] transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
+          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-card shadow-sm transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
         />
       </span>
     </label>

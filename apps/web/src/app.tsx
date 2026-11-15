@@ -4,8 +4,9 @@ import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
-import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { PageErrorFallback } from "~/components/error-boundary";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
+import { installTheme } from "~/lib/theme";
 import {
   SITE_DEFAULT_ORIGIN,
   SITE_DESCRIPTION,
@@ -30,44 +31,12 @@ function siteOrigin() {
 
 function BootSplash() {
   return (
-    <div class="dark flex min-h-screen items-center justify-center bg-background text-foreground">
+    <div class="flex min-h-screen items-center justify-center bg-background text-foreground">
       <div class="flex items-center gap-2.5">
-        <span class="flex size-7 animate-pulse items-center justify-center rounded-[7px] bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black">
+        <span class="flex size-7 animate-pulse items-center justify-center rounded-[7px] bg-primary text-[13px] font-bold text-primary-foreground">
           M
         </span>
         <span class="text-[13px] font-medium text-muted-foreground">Loading Mattrax…</span>
-      </div>
-    </div>
-  );
-}
-
-function ErrorFallback(props: { error: unknown; reset: () => void }) {
-  console.error("Mattrax page error", props.error);
-  const presentation = errorPresentation(raisedFailure(props.error));
-
-  return (
-    <div class="dark flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
-      <div class="w-full max-w-md rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/50">
-        <span class="mb-5 flex size-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/85 text-[13px] font-bold text-black">
-          M
-        </span>
-        <h1 class="text-lg font-semibold tracking-tight">{presentation.title}</h1>
-        <p class="mt-2 text-[13px] leading-relaxed text-muted-foreground">{presentation.message}</p>
-        <div class="mt-5 flex gap-2">
-          <button
-            type="button"
-            class="rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            onClick={props.reset}
-          >
-            Try again
-          </button>
-          <a
-            href="/dashboard"
-            class="rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05]"
-          >
-            Go to dashboard
-          </a>
-        </div>
       </div>
     </div>
   );
@@ -98,6 +67,10 @@ export default function App() {
       // slow-but-successful hydration must not leave the notice on screen.
       document.documentElement.classList.add("js");
       document.documentElement.dataset.hydrated = "true";
+      // Public routes never install a per-account theme; the device preference
+      // (or `system`) is the right scope for them. The dashboard re-installs
+      // with the signed-in user id once the session resolves.
+      installTheme();
     }
   });
 
@@ -114,7 +87,11 @@ export default function App() {
           <Meta name="twitter:card" content="summary_large_image" />
           <RouteUrl origin={origin} />
           <Link rel="apple-touch-icon" sizes="180x180" href={SITE_TOUCH_ICON} />
-          <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
+          <Errored
+            fallback={(error, reset) => (
+              <PageErrorFallback boundary="app" error={error()} reset={reset} />
+            )}
+          >
             <Loading fallback={<BootSplash />}>{props.children}</Loading>
           </Errored>
           <GlobalErrorBanner />

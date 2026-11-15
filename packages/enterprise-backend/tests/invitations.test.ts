@@ -7,6 +7,7 @@ import {
   EnterpriseNotFound,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { sendTransactionalEmail } from "../src/emailOutbox.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -72,9 +73,7 @@ const makeContext = (
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
-      return headers.cookie
-        ? Effect.succeed({ user })
-        : Effect.fail(new Error("Unauthenticated"));
+      return headers.cookie ? Effect.succeed({ user }) : Effect.fail(new Error("Unauthenticated"));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -182,8 +181,23 @@ describe("tenant invitations", () => {
       status: "pending",
       sendCount: 1,
     });
-    expect(owner.sent[0]?.to).toBe("newhire@example.com");
-    expect(owner.sent[0]?.subject).toContain("acme");
+    // The message is queued, not sent inline. One row per invitation
+    // generation carries the rendered branding and the dedupe key.
+    expect(owner.sent).toHaveLength(0);
+    expect(owner.db.store.email_outbox).toHaveLength(1);
+    expect(owner.db.store.email_outbox[0]).toMatchObject({
+      recipient: "newhire@example.com",
+      template: "invitation",
+      organizationId: tenant.id,
+      dedupeKey: `invitation:${created.id}:1`,
+      status: "pending",
+    });
+    expect(owner.db.store.email_outbox[0]!.payload).toMatchObject({
+      to: "newhire@example.com",
+      subject: "Join acme on Mattrax",
+    });
+    // The row stores the rendered template, so the drain never re-renders.
+    expect(owner.db.store.email_outbox[0]!.payload.html).toContain("Accept invitation");
   });
 
   it("rejects the legacy builtin:member role syntax", async () => {
@@ -253,10 +267,7 @@ describe("tenant invitations", () => {
     const owner = makeContext();
     const tenant = await createTenant(owner, "acme");
 
-    const custom = await createRole(owner, tenant.id, "Support", [
-      "tenant.read",
-      "devices.read",
-    ]);
+    const custom = await createRole(owner, tenant.id, "Support", ["tenant.read", "devices.read"]);
 
     for (const role of ["owner", "admin"]) {
       await expect(
@@ -575,6 +586,10 @@ describe("tenant invitations", () => {
       status: "pending",
       sendCount: 2,
     });
+    // A resend rotates the token, so it is a distinct queue entry.
+    expect(
+      owner.db.store.email_outbox.map((row: { dedupeKey: string }) => row.dedupeKey).sort(),
+    ).toEqual([`invitation:${created.id}:1`, `invitation:${created.id}:2`]);
     expect(invitationRow(owner.db, created.id)?.lastSentAt).toBeInstanceOf(Date);
 
     const invited = makeContext({
@@ -600,7 +615,7 @@ describe("tenant invitations", () => {
     ).rejects.toBeInstanceOf(EnterpriseConflict);
   });
 
-  it("returns emailSent:false without leaking the token when email delivery fails", async () => {
+  it("queues the invitation even while the provider is down", async () => {
     const logged: string[] = [];
 
     const spies = (["log", "warn", "error"] as const).map((method) =>
@@ -625,12 +640,66 @@ describe("tenant invitations", () => {
 
       const token = tokenFrom(created.inviteUrl);
 
-      expect(created.emailSent).toBe(false);
+      // Delivery is the cron's job; the request only has to queue the message.
+      expect(created.emailSent).toBe(true);
       expect(created.inviteUrl).toContain("token=");
+      expect(owner.db.store.email_outbox).toHaveLength(1);
       expect(logged.join("\n")).not.toContain(token);
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+
+  it("does not queue the same invitation generation twice", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+
+    const created = await invite(owner, tenant.id, {
+      email: "retry@example.com",
+      role: "member",
+    });
+
+    // Simulate the same request being replayed after a lost response: the
+    // invitation row (and therefore the key) is unchanged.
+    const outcome = await runEffect(
+      sendTransactionalEmail({
+        db: owner.db,
+        email: { send: async () => undefined },
+        recipient: "retry@example.com",
+        template: "invitation",
+        organizationId: tenant.id,
+        dedupeKey: `invitation:${created.id}:1`,
+        message: {
+          to: "retry@example.com",
+          from: { name: "Acme", email: "hello@mattrax.cloud" },
+          subject: "Join acme on Mattrax",
+          text: "link",
+        },
+      }),
+    );
+
+    expect(outcome).toBe("duplicate");
+    expect(owner.db.store.email_outbox).toHaveLength(1);
+  });
+
+  it("keeps the invitation flow when the outbox write fails", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+
+    // The fake store exposes the same row array the insert builder pushes to.
+    owner.db.store.email_outbox.push = () => {
+      throw new Error("database is down");
+    };
+
+    const created = await invite(owner, tenant.id, {
+      email: "queued@example.com",
+      role: "member",
+    });
+
+    // The administrator still gets a working one-time link.
+    expect(created.emailSent).toBe(false);
+    expect(tokenFrom(created.inviteUrl)).toBeTruthy();
+    expect(owner.db.store.invitation[0]).toMatchObject({ status: "pending" });
   });
 
   it("lists invitations with status filtering, ordering, inviter and expiry", async () => {
@@ -693,9 +762,7 @@ describe("tenant invitations", () => {
 
     const token = tokenFrom(created.inviteUrl);
 
-    const preview = await runEffect(
-      owner.service.previewInvitation(request(), { token }),
-    );
+    const preview = await runEffect(owner.service.previewInvitation(request(), { token }));
 
     expect(preview).toMatchObject({
       state: "valid",
@@ -718,9 +785,9 @@ describe("tenant invitations", () => {
     // Canceling clears the token, so simulate a cancellation observed while a
     // link was still in flight rather than reusing the cleared token.
     invitationRow(owner.db, created.id).status = "canceled";
-    await expect(
-      runEffect(owner.service.previewInvitation(request(), { token })),
-    ).resolves.toEqual({ state: "canceled" });
+    await expect(runEffect(owner.service.previewInvitation(request(), { token }))).resolves.toEqual(
+      { state: "canceled" },
+    );
   });
 
   it("exposes effective permissions from built-in and custom roles", async () => {
@@ -750,9 +817,7 @@ describe("tenant invitations", () => {
     });
     expect(list.tenants[0]?.permissions).toEqual(["tenant.read", "devices.read"]);
 
-    const detail = await runEffect(
-      reader.service.getTenant(request(reader.headers), tenant.id),
-    );
+    const detail = await runEffect(reader.service.getTenant(request(reader.headers), tenant.id));
 
     expect(detail).toMatchObject({
       roleId: custom.id,
@@ -818,9 +883,7 @@ describe("tenant invitations", () => {
     });
 
     await expect(
-      runEffect(
-        owner.service.deleteTenantRole(request(owner.headers), tenant.id, custom.id),
-      ),
+      runEffect(owner.service.deleteTenantRole(request(owner.headers), tenant.id, custom.id)),
     ).rejects.toBeInstanceOf(EnterpriseConflict);
     expect(owner.db.store.tenant_role.some((row: any) => row.id === custom.id)).toBe(true);
   });

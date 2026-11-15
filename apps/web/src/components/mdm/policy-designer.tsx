@@ -1,4 +1,4 @@
-import { useBeforeLeave, useNavigate } from "@solidjs/router";
+import { useNavigate } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import type { JSX } from "@solidjs/web";
 import {
@@ -37,6 +37,7 @@ import {
   X,
 } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   Sheet,
   SheetContent,
@@ -86,8 +87,20 @@ import {
   type PolicyDraft,
   type PolicyValue,
   type Selection,
+  type SelectionTemplate,
   type ValidationIssue,
 } from "~/lib/policy-designer/build";
+import {
+  isThirdPartyCollectionId,
+  loadThirdPartyApps,
+  thirdPartyAppCollection,
+  thirdPartyAppCollectionId,
+  thirdPartyAppsForPlatform,
+  thirdPartyCollectionPlatform,
+  thirdPartySelectionTemplate,
+  type ThirdPartyApp,
+  type ThirdPartyCatalog,
+} from "~/lib/policy-designer/thirdPartyApps";
 
 import { cn } from "~/lib/utils";
 
@@ -129,6 +142,18 @@ const collectionGroup = (collection: {
   // Windows mixes grouped ADMX content with ungrouped Policy CSP settings.
   // Surface the CSP settings first: they are the ones most policies configure.
   return "General settings";
+};
+
+/** How many managed settings one third-party app offers on a platform. */
+const thirdPartySettingCount = (app: ThirdPartyApp, platform: PlatformId): number => {
+  switch (platform) {
+    case "apple":
+      return app.apple?.settings.length ?? 0;
+    case "windows":
+      return app.windows?.settings.length ?? 0;
+    default:
+      return app.android?.settings.length ?? 0;
+  }
 };
 
 const isBoolean = Schema.is(Schema.Boolean);
@@ -245,6 +270,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [collections, setCollections] = createSignal<Record<string, Collection>>({});
   const [collectionErrors, setCollectionErrors] = createSignal<Record<string, string>>({});
   const [loadingCollections, setLoadingCollections] = createSignal<Record<string, boolean>>({});
+  const [thirdParty, setThirdParty] = createSignal<ThirdPartyCatalog | null>(null);
+  const [thirdPartyError, setThirdPartyError] = createSignal<string | null>(null);
 
   const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
     {},
@@ -309,6 +336,33 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   // A platform is loading until its index has arrived or failed.
   const loading = () => !data() && !catalogError();
 
+  const thirdPartyApps = createMemo(() =>
+    thirdParty() ? thirdPartyAppsForPlatform(thirdParty()!, platform()) : [],
+  );
+
+  // Rehydrate collections for selections saved by a previous session. The
+  // catalogue file is the only source for their properties and defaults.
+  createEffect(
+    () => thirdParty(),
+    (catalog) => {
+      if (!catalog) return;
+      untrack(() => {
+        for (const target of PLATFORM_ORDER) {
+          for (const selection of selectionMap()[target] ?? []) {
+            if (!isThirdPartyCollectionId(selection.collectionId)) continue;
+            const appId = selection.collectionId.split(":")[2] ?? "";
+            const app = catalog.applications.find((entry) => entry.id === appId);
+            const collection = app ? thirdPartyAppCollection(app, target) : null;
+            const cacheKey = collectionCacheKey(target, selection.collectionId);
+
+            if (collection && !collections()[cacheKey])
+              setCollections((current) => ({ ...current, [cacheKey]: collection }));
+          }
+        }
+      });
+    },
+  );
+
   const collectionCacheKey = (target: PlatformId, collectionId: string) =>
     `${target}:${collectionId}`;
 
@@ -323,6 +377,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       const cacheKey = collectionCacheKey(targetPlatform, collectionId);
 
       if (collections()[cacheKey] || loadingCollections()[cacheKey]) return;
+
+      // Third-party app collections are data, not catalogue entries: build them
+      // from the loaded app catalogue instead of fetching a platform file.
+      if (isThirdPartyCollectionId(collectionId)) {
+        const catalog = thirdParty();
+
+        if (!catalog) return;
+        const appId = collectionId.split(":")[2] ?? "";
+        const app = catalog.applications.find((entry) => entry.id === appId);
+        const sourcePlatform = thirdPartyCollectionPlatform(collectionId) ?? targetPlatform;
+        const collection = app ? thirdPartyAppCollection(app, sourcePlatform) : null;
+
+        if (collection) setCollections((current) => ({ ...current, [cacheKey]: collection }));
+
+        return;
+      }
+
       setLoadingCollections((current) => ({ ...current, [cacheKey]: true }));
       setCollectionErrors((current) => {
         if (!(cacheKey in current)) return current;
@@ -458,6 +529,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     void loadAppleOsSupport()
       .then(setOsSupport)
       .catch(() => undefined);
+
+    void loadThirdPartyApps()
+      .then(setThirdParty)
+      .catch((error) => setThirdPartyError(errorMessage(raisedFailure(error))));
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
@@ -686,13 +761,49 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const activeSummary = createMemo<CollectionSummary | undefined>(() => {
     const key = activeKey();
 
-    return key ? data()?.collections.find((collection) => keyOf(collection) === key) : undefined;
+    if (!key) return undefined;
+    const found = data()?.collections.find((collection) => keyOf(collection) === key);
+
+    if (found) return found;
+
+    // Third-party apps live outside the platform catalogue index.
+    const selection = selections().find((item) => item.collectionId === key);
+
+    if (!selection || !isThirdPartyCollectionId(key)) return undefined;
+
+    return {
+      id: key,
+      platform: platform(),
+      kind: selection.kind,
+      surface: selection.surface,
+      identifier: selection.identifier,
+      name: selection.name,
+      group: "Third-party apps",
+      propertyCount: selection.properties.length,
+    };
   });
 
   const activeCollection = createMemo<Collection | undefined>(() => {
     const key = activeKey();
 
-    return key ? collections()[collectionCacheKey(platform(), collectionIdOf(key))] : undefined;
+    if (!key) return undefined;
+    const cached = collections()[collectionCacheKey(platform(), collectionIdOf(key))];
+
+    if (cached) return cached;
+
+    if (!isThirdPartyCollectionId(key)) return undefined;
+
+    const selection = selections().find((item) => item.collectionId === key);
+
+    const catalog = thirdParty();
+
+    const app = catalog?.applications.find((entry) => entry.id === (key.split(":")[2] ?? ""));
+
+    if (!selection || !app) return undefined;
+
+    return (
+      thirdPartyAppCollection(app, thirdPartyCollectionPlatform(key) ?? platform()) ?? undefined
+    );
   });
 
   const activeCollectionLoading = () => {
@@ -738,11 +849,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     let configured = 0;
     let changed = 0;
 
-    const selectionPlatform: PlatformId = selection.collectionId.startsWith("windows")
-      ? "windows"
-      : selection.collectionId.startsWith("android")
-        ? "android"
-        : "apple";
+    const selectionPlatform: PlatformId =
+      thirdPartyCollectionPlatform(selection.collectionId) ??
+      (selection.collectionId.startsWith("windows")
+        ? "windows"
+        : selection.collectionId.startsWith("android")
+          ? "android"
+          : "apple");
 
     for (const property of selection.properties) {
       if (property.category === "Envelope") continue;
@@ -852,25 +965,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return dirtySinceLoad() ? "Unsaved draft" : "Draft saved";
   };
 
-  // In-app navigation goes through the router's guard; closing the tab or a
-  // hard reload falls back to the browser's own prompt.
-  useBeforeLeave((event) => {
-    if (props.mode !== "dashboard" || props.saving || justSaved() || !dirtySincePolicy()) return;
-    event.preventDefault();
-
-    if (window.confirm("You have unsaved policy changes. Leave without saving?")) event.retry(true);
-  });
-  onSettled(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (props.mode !== "dashboard" || !dirtySincePolicy()) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    if (props.mode === "dashboard") window.addEventListener("beforeunload", beforeUnload);
-
-    return () => window.removeEventListener("beforeunload", beforeUnload);
-  });
+  // In-app navigation and tab close both go through one discard prompt.
+  const unsaved = useUnsavedChanges(
+    () =>
+      props.mode === "dashboard" &&
+      props.persistedDraft !== undefined &&
+      !props.saving &&
+      !justSaved() &&
+      dirtySincePolicy(),
+    {
+      title: "Discard policy changes?",
+      description: "This policy has edits that have not been saved.",
+    },
+  );
 
   // The label must describe the range delivery enforces, so it comes from the
   // same Apple `supportedOS` metadata the backend filters with.
@@ -882,7 +989,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return current ? appleOsRangeLabel(current, osSupport()) : null;
   };
 
-  const addCollection = (collection: Collection) => {
+  const addCollection = (collection: Collection, template?: SelectionTemplate) => {
     const key = keyOf(collection);
 
     if (selected().has(key)) return false;
@@ -918,18 +1025,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       return false;
     }
 
-    setSelections((current) => [
-      ...current,
-      {
-        collectionId: key,
-        identifier: collection.identifier,
-        kind: collection.kind,
-        surface: collection.surface,
-        name: collection.name,
-        properties: collectionProperties(collection),
-        values: defaultValues(collection),
-      },
-    ]);
+    const baseSelection: Selection = {
+      collectionId: key,
+      identifier: collection.identifier,
+      kind: collection.kind,
+      surface: collection.surface,
+      name: collection.name,
+      properties: collectionProperties(collection),
+      values: defaultValues(collection),
+    };
+
+    const nextSelection: Selection = template ? { ...baseSelection, template } : baseSelection;
+
+    setSelections((current) => [...current, nextSelection]);
     setActiveKey(key);
     setFilterQuery("");
     setFilterMode("all");
@@ -937,6 +1045,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     focusEditor();
 
     return true;
+  };
+
+  /**
+   * Add one application from the third-party catalogue. The collection is
+   * cached like a catalogue entry so the editor can render its settings.
+   */
+  const addThirdPartyApp = (app: ThirdPartyApp) => {
+    const target = platform();
+    const collection = thirdPartyAppCollection(app, target);
+
+    if (!collection) return;
+    const key = keyOf(collection);
+
+    if (selected().has(key)) {
+      selectCollection(key);
+
+      return;
+    }
+
+    setCollections((current) => ({
+      ...current,
+      [collectionCacheKey(target, collection.id)]: collection,
+    }));
+    addCollection(collection, thirdPartySelectionTemplate(app, target));
   };
 
   const addByKey = async (key: string, target: PlatformId = platform()) => {
@@ -1325,7 +1457,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               {template.label}
             </strong>
             <span class="mt-0.5 block text-xs text-muted-foreground">{template.description}</span>
-            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
+            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand-solid px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
               Recommended
             </span>
           </button>
@@ -1588,6 +1720,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   return (
     <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      {unsaved.prompt}
       <a
         href="#designer-editor"
         class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:shadow"
@@ -1808,7 +1941,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <label class="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
                   <input
                     type="checkbox"
-                    class="size-3 accent-[var(--brand)]"
+                    class="size-3 accent-[var(--brand-solid)]"
                     checked={showDeprecated()}
                     onChange={(event) => setShowDeprecated(event.currentTarget.checked)}
                   />
@@ -1913,6 +2046,75 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 class="rounded p-1 text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none group-hover:opacity-100"
                               >
                                 <X class="size-3.5" />
+                              </button>
+                            </li>
+                          );
+                        }}
+                      </For>
+                    </ul>
+                  </Show>
+                </section>
+
+                <section>
+                  <div class="flex items-center justify-between px-3 pb-1 pt-2.5">
+                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Third-party apps
+                    </h3>
+                    <span class="text-[10px] tabular-nums text-muted-foreground">
+                      {thirdPartyApps().length}
+                    </span>
+                  </div>
+                  <Show when={thirdPartyError()}>
+                    {(message) => (
+                      <p class="px-3 pb-2 text-[11px] leading-relaxed text-destructive">
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+                  <Show
+                    when={thirdPartyApps().length > 0}
+                    fallback={
+                      <p class="px-3 pb-2.5 text-[11px] text-muted-foreground">
+                        {thirdPartyError()
+                          ? "The third-party app catalogue could not be loaded."
+                          : "No catalogued apps for this platform."}
+                      </p>
+                    }
+                  >
+                    <ul class="pb-1">
+                      <For each={thirdPartyApps()}>
+                        {(app) => {
+                          const key = () =>
+                            `${thirdPartyAppCollectionId(platform(), app.id)}#${app.name}`;
+
+                          const settings = thirdPartySettingCount(app, platform());
+
+                          return (
+                            <li
+                              class={cn(
+                                "border-l-2",
+                                activeKey() === key()
+                                  ? "border-brand bg-muted"
+                                  : "border-transparent hover:bg-muted/30",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => addThirdPartyApp(app)}
+                                class="flex w-full items-start gap-2 py-1.5 pl-2.5 pr-2 text-left focus-visible:ring-2 focus-visible:outline-none"
+                              >
+                                <span class="min-w-0 flex-1">
+                                  <span class="block truncate text-[13px] text-foreground">
+                                    {app.name}
+                                  </span>
+                                  <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                    {app.vendor} · {settings} managed setting
+                                    {settings === 1 ? "" : "s"}
+                                  </span>
+                                </span>
+                                <Show when={selected().has(key())}>
+                                  <Check class="mt-0.5 size-3.5 shrink-0 text-brand" />
+                                </Show>
                               </button>
                             </li>
                           );
@@ -2788,7 +2990,7 @@ function PropertyField(props: PropertyFieldProps) {
       )}
     >
       <Show when={props.changed}>
-        <span class="absolute inset-y-0 left-0 w-0.5 bg-brand" aria-hidden="true" />
+        <span class="absolute inset-y-0 left-0 w-0.5 bg-brand-solid" aria-hidden="true" />
       </Show>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2970,7 +3172,7 @@ function PropertyField(props: PropertyFieldProps) {
                     <label class="flex items-start gap-2 rounded px-1 py-0.5 text-[12px] leading-snug text-foreground/90 hover:bg-muted/30">
                       <input
                         type="checkbox"
-                        class="mt-0.5 size-3.5 accent-[var(--brand)]"
+                        class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
                         checked={arrayValue().includes(option.value)}
                         onChange={(event) =>
                           toggleArrayValue(option.value, event.currentTarget.checked)

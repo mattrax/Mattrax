@@ -250,29 +250,34 @@ Responses use `{ _tag: "Success", value }`, `{ _tag: "Failure", error }` or
 
 ## Audit, webhooks and billing
 
-| Method         | Path                                                   | Purpose                       |
-| -------------- | ------------------------------------------------------ | ----------------------------- |
-| `GET`          | `/tenants/:tenantId/audit-log`                         | Recent audit entries (legacy) |
-| `GET`          | `/tenants/:tenantId/audit/search`                      | Filtered search               |
-| `GET`          | `/tenants/:tenantId/audit/export`                      | CSV/JSON export               |
-| `GET/POST`     | `/tenants/:tenantId/webhooks`                          | List/create endpoints         |
-| `PATCH/DELETE` | `/tenants/:tenantId/webhooks/:webhookId`               | Update/delete                 |
-| `POST`         | `/tenants/:tenantId/webhooks/:webhookId/rotate-secret` | Rotate secret                 |
-| `POST`         | `/tenants/:tenantId/webhooks/:webhookId/test`          | Send a test event             |
-| `GET`          | `/tenants/:tenantId/billing`                           | Billing summary               |
-| `POST`         | `/tenants/:tenantId/billing/portal`                    | Stripe portal URL (step-up)   |
+| Method         | Path                                                                   | Purpose                       |
+| -------------- | ---------------------------------------------------------------------- | ----------------------------- |
+| `GET`          | `/tenants/:tenantId/audit-log`                                         | Recent audit entries (legacy) |
+| `GET`          | `/tenants/:tenantId/audit/search`                                      | Filtered search               |
+| `GET`          | `/tenants/:tenantId/audit/export`                                      | CSV/JSON export               |
+| `GET/POST`     | `/tenants/:tenantId/webhooks`                                          | List/create endpoints         |
+| `PATCH/DELETE` | `/tenants/:tenantId/webhooks/:webhookId`                               | Update/delete                 |
+| `POST`         | `/tenants/:tenantId/webhooks/:webhookId/rotate-secret`                 | Rotate secret                 |
+| `POST`         | `/tenants/:tenantId/webhooks/:webhookId/test`                          | Send a test event             |
+| `GET`          | `/tenants/:tenantId/webhooks/:webhookId/deliveries`                    | Delivery history (paged)      |
+| `GET`          | `/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId`        | Payload and response          |
+| `POST`         | `/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId/replay` | Redeliver                     |
+| `GET`          | `/tenants/:tenantId/billing`                                           | Billing summary               |
+| `POST`         | `/tenants/:tenantId/billing/portal`                                    | Stripe portal URL (step-up)   |
+| `POST`         | `/tenants/:tenantId/billing/checkout`                                  | Stripe Checkout URL (step-up) |
+| `GET`          | `/tenants/:tenantId/billing/invoices`                                  | Invoice list                  |
 
 ## Non-Enterprise routes
 
-| Method | Path                              | Auth             | Purpose                       |
-| ------ | --------------------------------- | ---------------- | ----------------------------- |
-| `POST` | `/api/v1/billing/webhook`         | Stripe signature | Subscription and invoice sync |
-| `GET`  | `/api/v1/sso/azure/start`         | Public           | Begin Entra OIDC              |
-| `GET`  | `/api/v1/sso/azure/callback`      | Signed state     | Complete Entra OIDC           |
-| `GET`  | `/api/v1/android/signup/callback` | Signed state     | Finish Android signup         |
-| `POST` | `/api/v1/android/pubsub`          | Google OIDC      | Android notifications         |
-| `*`    | `/scim/v2/:tenantId/...`          | SCIM bearer      | SCIM 2.0                      |
-| `GET`  | `/api/platform/status`            | Public           | Platform status               |
+| Method | Path                              | Auth             | Purpose                                 |
+| ------ | --------------------------------- | ---------------- | --------------------------------------- |
+| `POST` | `/api/v1/billing/webhook`         | Stripe signature | Subscription, invoice and Checkout sync |
+| `GET`  | `/api/v1/sso/azure/start`         | Public           | Begin Entra OIDC                        |
+| `GET`  | `/api/v1/sso/azure/callback`      | Signed state     | Complete Entra OIDC                     |
+| `GET`  | `/api/v1/android/signup/callback` | Signed state     | Finish Android signup                   |
+| `POST` | `/api/v1/android/pubsub`          | Google OIDC      | Android notifications                   |
+| `*`    | `/scim/v2/:tenantId/...`          | SCIM bearer      | SCIM 2.0                                |
+| `GET`  | `/api/platform/status`            | Public           | Platform status                         |
 
 ## Protocol routes
 

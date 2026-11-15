@@ -17,6 +17,38 @@ export {
 export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "./billingWebhook.js";
 
 export {
+  billableDeviceCount,
+  reconcileSubscriptionQuantity,
+  reconcileSubscriptionSweep,
+  syncStripeCustomerName,
+} from "./billing.js";
+
+export type {
+  ReconcileSeatsInput,
+  SeatReconcileResult,
+  SeatReconcileSkipReason,
+  SubscriptionSweepInput,
+  SubscriptionSweepResult,
+  SyncCustomerNameInput,
+} from "./billing.js";
+
+export {
+  WEBHOOK_DELIVERY_PAGE_DEFAULT,
+  WEBHOOK_DELIVERY_PAGE_MAX,
+  listWebhookDeliveries,
+  loadWebhookDelivery,
+  normalizeWebhookDeliveryQuery,
+  webhookDeliveryDetail,
+  webhookDeliveryInfo,
+} from "./webhookDeliveries.js";
+
+export type {
+  ListWebhookDeliveriesInput,
+  LoadWebhookDeliveryInput,
+  NormalizedWebhookDeliveryQuery,
+} from "./webhookDeliveries.js";
+
+export {
   AUDIT_EXPORT_MAX_ROWS,
   AUDIT_SEARCH_DEFAULT_LIMIT,
   AUDIT_SEARCH_MAX_LIMIT,
@@ -141,12 +173,14 @@ export {
   releaseVppLicence,
   saveVppToken,
   sealVppToken,
+  syncScheduledVppAssets,
   syncVppAssets,
   vppInfo,
 } from "./volumePurchase.js";
 
 export type {
   DeviceVppAssignmentRow,
+  ScheduledVppSyncResult,
   VppApiConfig,
   VppAsset,
   VppAssetRow,
@@ -246,6 +280,49 @@ export type {
 } from "./onboardingEmails.js";
 
 export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "./email.js";
+
+export {
+  DEFAULT_EMAIL_FROM,
+  formatEmailAddress,
+  mailRelayTransport,
+  parseEmailSender,
+  postmarkEmailTransport,
+  replyToAddress,
+  resendEmailTransport,
+} from "./email.js";
+
+export type {
+  EmailAddress,
+  HttpEmailTransportOptions,
+  MailRelayTransportOptions,
+} from "./email.js";
+
+export {
+  ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,
+  EMAIL_DELIVERY_FAILED_ACTION,
+  EMAIL_OUTBOX_BACKOFF_BASE_MS,
+  EMAIL_OUTBOX_CLAIM_STALE_MS,
+  EMAIL_OUTBOX_FAILED_RETENTION_MS,
+  EMAIL_OUTBOX_MAX_ATTEMPTS,
+  EMAIL_OUTBOX_MAX_BACKOFF_MS,
+  EMAIL_OUTBOX_SENT_RETENTION_MS,
+  EMAIL_OUTBOX_TEMPLATES,
+  drainEmailOutbox,
+  emailOutboxBackoffMs,
+  enqueueEmail,
+  purgeEmailOutbox,
+  sendTransactionalEmail,
+} from "./emailOutbox.js";
+
+export type {
+  DrainEmailOutboxOptions,
+  DrainEmailOutboxResult,
+  EmailOutboxTemplate,
+  EnqueueEmailInput,
+  EnqueueEmailOutcome,
+  SendTransactionalEmailInput,
+  TransactionalEmailOutcome,
+} from "./emailOutbox.js";
 
 export { settlePendingInvitations } from "./invitations.js";
 

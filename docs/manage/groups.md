@@ -30,6 +30,16 @@ curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/$GROUP_ID/members" 
   }'
 ```
 
+### Choosing members in the dashboard
+
+A manual group's **Devices** and **Policies** tabs use the shared table with a search
+field, server-side pagination (50 devices per page) and the usual keyboard bindings.
+Device search matches the management name, serial number and asset tag, so a specific
+machine can be found in a few-thousand-device fleet without loading every row. The
+header checkbox, **Add all shown** and **Include all shown** apply the displayed page
+in one step; the footer states which page and how many rows the group contains, and
+changes remain staged until **Save**.
+
 ## Dynamic groups
 
 A dynamic group stores a versioned rule set and materialises matching devices into

@@ -10,8 +10,32 @@ filters, sorting, pagination, CSV export and bulk delete.
 - Free text search across management name, device-reported name, serial, model and
   asset tag.
 - Filters: status, platform, group, health, push state, last seen.
-- Sort by name, serial, last seen or enrollment date.
-- Pagination up to 200 rows per page.
+- Sort by name, health, last seen, enrollment date or status.
+- API pagination up to 200 rows per page; the dashboard shows 50.
+
+### Keyboard
+
+The device table is fully operable without a mouse. The same bindings appear in the
+command palette (`Cmd/Ctrl+K`) and in the search and columns tooltips:
+
+| Key                 | Action                                                    |
+| ------------------- | --------------------------------------------------------- |
+| `/` or `Cmd/Ctrl+F` | Focus the table search                                    |
+| `Escape`            | Clear the search (and the selection outside a text field) |
+| `↑` / `↓`           | Move between rows                                         |
+| `Enter`             | Open the focused row                                      |
+| `Cmd/Ctrl+A`        | Select every row on the current page                      |
+| `R`                 | Refresh the list                                          |
+
+### Bulk actions across a filter
+
+Ticking every row on the current page offers **Select all N matching this filter** in
+the bulk bar. The action then applies to every device the active filter matches, not
+just the visible page; the bar shows the total and any filter, search or page change
+clears the selection. The ids are resolved through the same search endpoint the table
+uses, and a single action is capped at 10,000 rows (it reports an error instead of
+silently acting on part of the fleet). Every id is still authorised on the server when
+the action runs.
 
 API:
 
@@ -22,21 +46,41 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/search?q=macbook&status=enr
 
 Query parameters:
 
-| Parameter            | Values                                               |
-| -------------------- | ---------------------------------------------------- |
-| `q`                  | Free text                                            |
-| `status`             | `enrolling`, `enrolled`, `unenrolling`, `unenrolled` |
-| `proto`              | `apple`, `win`, `android`                            |
-| `groupId`            | Group id                                             |
-| `notSeenSince`       | ISO timestamp                                        |
-| `staleDays`          | Integer                                              |
-| `health`             | `healthy`, `attention`, `critical`, `unknown`        |
-| `push`               | `failing`, `invalid`                                 |
-| `limit` / `offset`   | Pagination                                           |
-| `sort` / `direction` | Sort field and `asc`/`desc`                          |
+| Parameter            | Values                                                                  |
+| -------------------- | ----------------------------------------------------------------------- |
+| `q`                  | Free text                                                               |
+| `status`             | `enrolling`, `enrolled`, `unenrolling`, `unenrolled`                    |
+| `proto`              | `apple`, `win`, `android`                                               |
+| `groupId`            | Group id                                                                |
+| `notSeenSince`       | ISO timestamp                                                           |
+| `staleDays`          | Integer                                                                 |
+| `health`             | `healthy`, `attention`, `critical`, `unknown`, `stale`                  |
+| `push`               | `failing`, `invalid`                                                    |
+| `limit` / `offset`   | Pagination                                                              |
+| `sort` / `direction` | `name`, `health`, `lastSeenAt`, `enrolledAt`, `status` and `asc`/`desc` |
 
 `GET /api/v1/tenants/:tenantId/devices` returns every device without pagination. Prefer
 `/devices/search` for large fleets.
+
+## Health in the list
+
+The **Health** column shows each device's derived rollup (healthy, attention, critical,
+unknown) using the same computation as the health filter, the fleet summary and the
+device page. Reasons are not a separate request: hovering or focusing the badge lists
+the rule labels that pulled the device out of `healthy` (for example "FileVault off" or
+"No check-in for 14 days"). Devices with no reasons show a quiet badge with no tooltip.
+
+Health is derived from declarations and inventory fields, not stored on the device row.
+The list therefore computes it once per response:
+
+- `/devices/search` reads the declarations for the page it is returning (one query) and
+  attaches `health` to every row.
+- Sorting by `health` is a server sort. Ascending lists the worst devices first —
+  `critical`, `attention`, `unknown`, `healthy` — so it matches the "needs attention"
+  filter and the dashboard's health counts. The two agree because both call the same
+  rollup.
+- `GET /devices` (the unpaginated listing) omits `health` to avoid reading declarations
+  for an entire fleet; use the search endpoint when the field is needed.
 
 ## Export
 

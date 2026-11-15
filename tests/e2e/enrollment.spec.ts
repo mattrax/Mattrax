@@ -31,9 +31,61 @@ test.describe("device enrollment", () => {
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await expect(page.getByText(/administrator has set an enrollment password/i)).toBeVisible();
-    await page.getByLabel("Enrollment password").fill("wrong");
+
+    // The reveal control is a real toggle rather than a password field with a
+    // decorative icon.
+    const password = page.getByLabel("Enrollment password");
+    const reveal = page.getByRole("button", { name: "Show password" });
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(reveal).toHaveAttribute("aria-pressed", "false");
+    await reveal.click();
+    await expect(page.getByRole("button", { name: "Hide password" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(password).toHaveAttribute("type", "text");
+
+    await password.fill("wrong");
     await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page.getByRole("alert")).toContainText(/invalid/i);
+  });
+
+  test("server-renders the password form so it works without JavaScript", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "No JS Tenant");
+    await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
+      method: "PATCH",
+      body: JSON.stringify({ code: "secret-code" }),
+    });
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    // The HTML must already contain the form, not "Verifying enrollment link".
+    const html = await page.request.get(`/enroll/${enrollment.id}`).then((r) => r.text());
+    expect(html).toContain("Enrollment password");
+    expect(html).toMatch(/method="get"/i);
+    expect(html).not.toContain("Verifying enrollment link");
+
+    const browser = page.context().browser();
+    expect(browser).not.toBeNull();
+    const context = await browser!.newContext({ javaScriptEnabled: false });
+    const noJs = await context.newPage();
+
+    try {
+      // Without JavaScript the browser still renders the form and submits it
+      // as a plain GET to this URL. Playwright's own click plumbing needs
+      // script, so exercise the same URL a native submission produces.
+      await noJs.goto(`/enroll/${enrollment.id}`);
+      await expect(noJs.getByLabel("Enrollment password")).toBeVisible();
+      await expect(noJs.locator("form")).toHaveAttribute("method", "get");
+      await expect(noJs.locator('input[name="code"]')).toHaveCount(1);
+
+      await noJs.goto(`/enroll/${enrollment.id}?code=secret-code`);
+      await expect(noJs.getByRole("tab", { name: /^Apple$/ })).toBeVisible();
+
+      await noJs.goto(`/enroll/${enrollment.id}?code=wrong`);
+      await expect(noJs.getByRole("alert")).toContainText(/invalid/i);
+    } finally {
+      await context.close();
+    }
   });
 
   test("shows a tenant-scoped Windows discovery URL and marks Android unavailable", async ({

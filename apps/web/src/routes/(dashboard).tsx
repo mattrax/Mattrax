@@ -1,13 +1,15 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, createSignal, type ParentProps, onSettled, Show } from "solid-js";
+import { createEffect, createSignal, Errored, type ParentProps, onSettled, Show } from "solid-js";
 import { AppShell } from "~/components/app-shell";
+import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
 import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
+import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { meQueryOptions } from "~/lib/enterprise";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
@@ -17,9 +19,9 @@ import { clearSessionPresence, readSessionPresence } from "~/lib/session-presenc
 
 function DashboardBootScreen() {
   return (
-    <div class="dark flex min-h-svh items-center justify-center bg-background text-foreground">
+    <div class="flex min-h-svh items-center justify-center bg-background text-foreground">
       <div class="flex flex-col items-center gap-3">
-        <span class="flex size-9 animate-pulse items-center justify-center rounded-xl bg-gradient-to-b from-white to-white/80 text-[14px] font-bold text-black">
+        <span class="flex size-9 animate-pulse items-center justify-center rounded-xl bg-primary text-[14px] font-bold text-primary-foreground">
           M
         </span>
         <p class="text-[12px] text-muted-foreground">Loading your tenant…</p>
@@ -62,7 +64,8 @@ function DashboardLayout(props: ParentProps) {
     meQueryOptions(session().data?.user?.id, !isServer && canLoadSession()),
   );
 
-  const unauthorized = () => me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
+  const unauthorized = () =>
+    me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
 
   const shellUser = () =>
     session().data?.user ?? (session().isPending && presenceActive() ? me.data?.user : undefined);
@@ -81,6 +84,10 @@ function DashboardLayout(props: ParentProps) {
         clearSessionPresence();
         clearMeCache();
         queryClient.clear();
+        // Every tab shares the session cookie, so a sign-out must drop the
+        // other tabs' caches too rather than leaving stale device data on screen.
+        broadcastCacheReset(null);
+        setCrossTabTenant(null);
         navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
       };
 
@@ -141,6 +148,8 @@ function DashboardLayout(props: ParentProps) {
     }
 
     queryClient.clear();
+    broadcastCacheReset(null);
+    setCrossTabTenant(null);
     navigate("/login", { replace: true });
   };
 
@@ -157,7 +166,7 @@ function DashboardLayout(props: ParentProps) {
         <Show
           when={!me.isError || me.data}
           fallback={
-            <div class="dark flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
+            <div class="flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
               <QueryError
                 class="w-full max-w-md"
                 error={me.error}
@@ -202,7 +211,13 @@ export default function DashboardRoute(props: ParentProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <PostHogIdentity />
-      <DashboardLayout {...props} />
+      <Errored
+        fallback={(error, reset) => (
+          <PageErrorFallback boundary="dashboard" error={error()} reset={reset} />
+        )}
+      >
+        <DashboardLayout {...props} />
+      </Errored>
     </QueryClientProvider>
   );
 }

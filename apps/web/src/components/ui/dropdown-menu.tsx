@@ -66,12 +66,25 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key !== "Escape") return;
 
+        // The content primitive stays mounted behind its portal; only claim
+        // Escape while focus is actually inside the open menu, otherwise every
+        // closed column picker would swallow the page's own Escape handling.
+        if (
+          !(event.target instanceof Element) ||
+          !event.target.closest('[data-slot="dropdown-menu-content"]')
+        )
+          return;
+
         event.preventDefault();
         event.stopPropagation();
         // Kobalte closes the menu on an outside pointerdown; Escape does not
         // reach its dismissable layer in this Solid RC.
         document.body.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }),
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "mouse",
+          }),
         );
       };
 
@@ -84,7 +97,7 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
     <DropdownMenuPrimitive.Content
       data-slot="dropdown-menu-content"
       class={cn(
-        "dark z-50 z-dropdown-menu-content text-popover-foreground z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-popper-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
+        "z-50 z-dropdown-menu-content text-popover-foreground z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-popper-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
         local.class,
       )}
       {...others}
@@ -226,7 +239,7 @@ const DropdownMenuSubContent = <T extends ValidComponent = "div">(
       <DropdownMenuPrimitive.SubContent
         data-slot="dropdown-menu-sub-content"
         class={cn(
-          "dark z-50 z-dropdown-menu-sub-content text-popover-foreground z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-popper-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
+          "z-50 z-dropdown-menu-sub-content text-popover-foreground z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-popper-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
           local.class,
         )}
         {...others}

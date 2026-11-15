@@ -151,7 +151,7 @@ export default function DashboardsPage() {
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <For each={dashboards.data!.dashboards}>
             {(dashboard) => (
-              <article class="group flex min-w-0 flex-col rounded-lg border border-white/[0.07] bg-card p-4 transition-colors hover:border-white/[0.12]">
+              <article class="group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 transition-colors hover:border-input">
                 <div class="flex items-start justify-between gap-2">
                   <a
                     href={`/t/${params.tenantId}/dashboards/${dashboard.id}`}

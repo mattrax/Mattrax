@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-quer
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { Option, Schema } from "effect";
 import {
+  DeviceHealthBadge,
   DeviceStatusBadge,
   EmptyState,
   ErrorText,
@@ -41,7 +42,9 @@ import {
   toDeviceImportPayload,
   type DeviceImportParseResult,
 } from "~/lib/device-import";
+import { healthRank } from "~/lib/device-health";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 
 const PAGE_SIZE = 50;
@@ -106,7 +109,7 @@ function FleetSummary(props: {
   }>;
 }) {
   return (
-    <div class="hidden grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.06] sm:grid sm:grid-cols-4">
+    <div class="hidden grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-hover sm:grid sm:grid-cols-4">
       <For each={props.items}>
         {(item) => (
           <div class="min-w-0 bg-card px-3.5 py-3 sm:px-4">
@@ -188,7 +191,10 @@ export default function DevicesPage() {
     const dir = param(searchParams.direction) === "desc" ? "desc" : "asc";
 
     return {
-      id: value === "lastSeenAt" || value === "enrolledAt" || value === "status" ? value : "name",
+      id:
+        value === "lastSeenAt" || value === "enrolledAt" || value === "status" || value === "health"
+          ? value
+          : "name",
       dir,
     };
   };
@@ -451,10 +457,12 @@ export default function DevicesPage() {
     { defer: true },
   );
 
-  const sortField = (): "name" | "lastSeenAt" | "enrolledAt" | "status" => {
+  const sortField = (): "name" | "lastSeenAt" | "enrolledAt" | "status" | "health" => {
     const id = sort()?.id;
 
-    return id === "lastSeenAt" || id === "enrolledAt" || id === "status" ? id : "name";
+    return id === "lastSeenAt" || id === "enrolledAt" || id === "status" || id === "health"
+      ? id
+      : "name";
   };
 
   const filters = () => ({
@@ -492,6 +500,26 @@ export default function DevicesPage() {
 
   const total = () => devices.data?.total ?? 0;
   const pageCount = () => Math.max(1, Math.ceil(total() / PAGE_SIZE));
+
+  /**
+   * Resolve every device the active filter matches. The table's "select all
+   * matching" option hands the bulk bar this list; each id is still authorised
+   * by the API when the action runs.
+   */
+  const resolveAllDevices = () =>
+    collectAllMatching(async (offset, limit) => {
+      const result = await enterprise.searchDevices(params.tenantId, {
+        ...filters(),
+        limit,
+        offset,
+      });
+
+      return {
+        rows: result.devices.map((device) => ({ id: device.id, name: device.name })),
+        total: result.total,
+      };
+    });
+
   // Deleting the last row of the final page should not leave the user stranded.
   createEffect(
     () => ({ total: total(), page: page() }),
@@ -615,7 +643,7 @@ export default function DevicesPage() {
         description="Inventory, sync, and retire enrolled Apple, Windows, and Android devices."
         actions={
           <>
-            <div class="flex items-center divide-x divide-white/[0.07] overflow-hidden rounded-lg border border-white/[0.09]">
+            <div class="flex items-center divide-x divide-border overflow-hidden rounded-lg border border-border">
               <Show when={can("devices.write")}>
                 <Button
                   variant="ghost"
@@ -681,6 +709,7 @@ export default function DevicesPage() {
         rows={devices.data?.devices}
         selectable={canAny(["devices.command", "devices.write", "groups.write"])}
         total={devices.data?.total}
+        selectionKey={JSON.stringify(filters())}
         loading={devices.isPending}
         isFetching={devices.isFetching}
         onRefresh={() => void devices.refetch()}
@@ -696,7 +725,7 @@ export default function DevicesPage() {
         }}
         searchPlaceholder="Search name, serial, model, asset tag…"
         toolbar={
-          <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2">
+          <div class="rounded-lg border border-border bg-surface p-2">
             <div class="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
               <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-1 lg:flex-wrap lg:items-center">
                 <select
@@ -826,7 +855,7 @@ export default function DevicesPage() {
                   <option value="90">Not seen in 90 days</option>
                 </select>
               </div>
-              <div class="flex items-center gap-1.5 border-t border-white/[0.06] pt-2 lg:border-l lg:border-t-0 lg:pl-2 lg:pt-0">
+              <div class="flex items-center gap-1.5 border-t border-border pt-2 lg:border-l lg:border-t-0 lg:pl-2 lg:pt-0">
                 <select
                   class={selectClass + " flex-1 lg:flex-none"}
                   aria-label="Sort devices"
@@ -837,6 +866,7 @@ export default function DevicesPage() {
                   }}
                 >
                   <option value="name">Sort: name</option>
+                  <option value="health">Sort: health</option>
                   <option value="lastSeenAt">Sort: last seen</option>
                   <option value="enrolledAt">Sort: enrolled</option>
                   <option value="status">Sort: status</option>
@@ -861,7 +891,7 @@ export default function DevicesPage() {
                   </Button>
                 </Show>
               </div>
-              <div class="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-white/[0.06] pt-2 lg:mt-0 lg:basis-full">
+              <div class="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-border pt-2 lg:mt-0 lg:basis-full">
                 <Button
                   variant="outline"
                   size="xs"
@@ -870,7 +900,7 @@ export default function DevicesPage() {
                 >
                   Advanced query
                   <Show when={deviceQuery()?.all?.length}>
-                    <span class="ml-1 rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums">
+                    <span class="ml-1 rounded-full bg-hover px-1.5 text-[10px] tabular-nums">
                       {deviceQuery()!.all!.length}
                     </span>
                   </Show>
@@ -892,7 +922,7 @@ export default function DevicesPage() {
                 </span>
               </div>
               <Show when={queryOpen()}>
-                <div class="mt-2 w-full rounded-lg border border-white/[0.07] bg-white/[0.015] p-2.5 lg:basis-full">
+                <div class="mt-2 w-full rounded-lg border border-border bg-surface p-2.5 lg:basis-full">
                   <DeviceQueryBuilder
                     compact
                     query={deviceQuery()}
@@ -908,7 +938,7 @@ export default function DevicesPage() {
         }
         footer={
           <div
-            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5"
             aria-busy={devices.isFetching ? "true" : undefined}
           >
             <span
@@ -944,8 +974,16 @@ export default function DevicesPage() {
             </div>
           </div>
         }
-        actions={(selected, clear, select) => (
-          <EntityActions entity="device" selected={selected} clear={clear} select={select} />
+        actions={(selected, clear, select, selection) => (
+          <EntityActions
+            entity="device"
+            selected={selected}
+            clear={clear}
+            select={select}
+            allMatching={selection.allMatching}
+            total={selection.total}
+            resolveAll={resolveAllDevices}
+          />
         )}
         empty={
           <EmptyState
@@ -996,6 +1034,21 @@ export default function DevicesPage() {
             cell: (row) => <DeviceStatusBadge status={row.status} />,
           },
           {
+            id: "health",
+            header: "Health",
+            // The API sorts this column (health is derived, not stored); the
+            // local comparator keeps the same worst-first order if a row set is
+            // ever sorted on the client.
+            sort: (row) => healthRank(row.health?.level),
+            sortId: "health",
+            cell: (row) => (
+              <DeviceHealthBadge
+                level={row.health?.level ?? "unknown"}
+                reasons={row.health?.reasons}
+              />
+            ),
+          },
+          {
             id: "platform",
             header: "Platform",
             cell: (row) => <PlatformBadge proto={row.proto} />,
@@ -1032,7 +1085,7 @@ export default function DevicesPage() {
                 <Tooltip>
                   <TooltipTrigger
                     type="button"
-                    class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-white/[0.18] decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
                   >
                     {groups.length} group{groups.length === 1 ? "" : "s"}
@@ -1140,9 +1193,9 @@ export default function DevicesPage() {
                     </Show>
 
                     <Show when={parsed().rows.length > 0}>
-                      <div class="max-h-64 overflow-auto rounded-lg border border-white/[0.07]">
+                      <div class="max-h-64 overflow-auto rounded-lg border border-border">
                         <table class="w-full text-left text-[12.5px]">
-                          <thead class="sticky top-0 z-10 border-b border-white/[0.07] bg-popover text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                          <thead class="sticky top-0 z-10 border-b border-border bg-popover text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                             <tr>
                               <th class="px-3 py-2 font-medium">Serial</th>
                               <th class="px-3 py-2 font-medium">Name</th>
@@ -1151,10 +1204,10 @@ export default function DevicesPage() {
                               <th class="px-3 py-2 font-medium">Notes</th>
                             </tr>
                           </thead>
-                          <tbody class="divide-y divide-white/[0.05]">
+                          <tbody class="divide-y divide-border">
                             <For each={parsed().rows.slice(0, 20)}>
                               {(row) => (
-                                <tr class="hover:bg-white/[0.025]">
+                                <tr class="hover:bg-hover">
                                   <td class="px-3 py-2 font-mono text-xs">{row.serial}</td>
                                   <td class="px-3 py-2">{row.name ?? "—"}</td>
                                   <td class="px-3 py-2">{row.assetTag ?? "—"}</td>
@@ -1213,7 +1266,7 @@ export default function DevicesPage() {
                     </div>
                     <div class="text-[11px] text-success-foreground">Created</div>
                   </div>
-                  <div class="rounded-lg border border-white/[0.07] bg-white/[0.03] p-3">
+                  <div class="rounded-lg border border-border bg-surface p-3">
                     <div class="text-2xl font-semibold text-foreground">{result().updated}</div>
                     <div class="text-[11px] text-muted-foreground">Updated</div>
                   </div>

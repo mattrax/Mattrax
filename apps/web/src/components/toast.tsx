@@ -109,7 +109,7 @@ const tones: Record<
   success: { class: "border-success/25 text-success-foreground", icon: CheckCircle2 },
   warning: { class: "border-warning/30 text-warning-foreground", icon: TriangleAlert },
   error: { class: "border-destructive/30 text-destructive", icon: CircleAlert },
-  info: { class: "border-white/[0.1] text-foreground", icon: Info },
+  info: { class: "border-border text-foreground", icon: Info },
 };
 
 function ToastCard(props: { toast: Toast }) {
@@ -120,7 +120,7 @@ function ToastCard(props: { toast: Toast }) {
   return (
     <li
       class={cn(
-        "page-enter pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-[0_12px_32px_rgba(0,0,0,.55),0_2px_8px_rgba(0,0,0,.35)] backdrop-blur-xl sm:w-[22rem]",
+        "page-enter pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-[var(--shadow-dialog)] backdrop-blur-xl sm:w-[22rem]",
         tone.class,
       )}
     >
@@ -166,7 +166,7 @@ export function Toaster() {
       <div
         role="region"
         aria-label="Notifications"
-        class="dark pointer-events-none fixed inset-x-0 top-3 z-[70] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end"
+        class="pointer-events-none fixed inset-x-0 top-3 z-[70] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end"
       >
         <ol class="flex w-full max-w-sm flex-col gap-2">
           <For each={toasts()}>{(item) => <ToastCard toast={item} />}</For>

@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import type { JSX } from "@solidjs/web";
 import { Button, buttonVariants } from "~/components/ui/button";
 import {
@@ -12,8 +13,10 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { ChevronsUpDown, RefreshCw, Search as SearchIcon } from "~/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { announce } from "~/components/toast";
-import { sequence, useCommands } from "~/lib/commands";
+import { chord, sequence, useCommands } from "~/lib/commands";
+import { shouldOfferAllMatching } from "~/lib/table-selection";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 
@@ -33,6 +36,13 @@ export type MdmColumn<T> = {
 type SortState = { id: string; dir: "asc" | "desc" } | null;
 
 export type MdmSortState = SortState;
+
+/** Extra state handed to the bulk bar when the whole filtered set is selected. */
+export type MdmBulkSelection = {
+  allMatching: boolean;
+  total: number;
+  setAllMatching: (value: boolean) => void;
+};
 
 function readVisibility(key: string | undefined): Record<string, boolean> {
   if (!key || typeof localStorage === "undefined") return {};
@@ -56,12 +66,20 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     selected: T[],
     clear: () => void,
     select: (ids: readonly string[]) => void,
+    selection: MdmBulkSelection,
   ) => JSX.Element;
   /**
    * Whether the table offers bulk selection. Read-only roles still see every
    * row but get no checkboxes or selection action bar.
    */
   selectable?: boolean;
+  /**
+   * Controlled selection for pickers whose checkboxes represent membership
+   * (group devices and policies) rather than a transient bulk selection. The
+   * parent owns the set, so ids that are not on the current page are kept.
+   */
+  selectedIds?: () => ReadonlySet<string>;
+  onSelectedChange?: (ids: ReadonlySet<string>) => void;
   /** Persist column visibility under this key. */
   storageKey?: string;
   /**
@@ -96,23 +114,51 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   footer?: JSX.Element;
   /** Total number of rows on the server; enables the "showing x of y" label. */
   total?: number;
+  /**
+   * Changes whenever the parent's filter changes. A different value clears the
+   * selection (and an all-matching choice) even if the page happens to contain
+   * the same ids. Controlled membership tables ignore it.
+   */
+  selectionKey?: string;
   /** Accessible name for the table. */
   caption?: string;
 }) {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
+  const [allMatching, setAllMatching] = createSignal(false);
   const [internalSearch, setInternalSearch] = createSignal("");
   const [internalSort, setInternalSort] = createSignal<SortState>(null);
+  const [activeRow, setActiveRow] = createSignal(-1);
+  const [tableFocused, setTableFocused] = createSignal(false);
+  // The server cannot see the platform; keep the SSR hint stable ("CtrlF")
+  // and switch to the Mac glyph after hydration so both trees match.
+  const [modKey, setModKey] = createSignal("Ctrl");
 
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
     readVisibility(props.storageKey),
   );
 
+  const navigate = useNavigate();
+  let searchRef: HTMLDivElement | undefined;
+  let tableRef: HTMLTableElement | undefined;
+  const rowRefs: Array<HTMLTableRowElement | undefined> = [];
+
   const serverMode = () => props.mode === "server";
   const selectable = () => props.selectable ?? true;
-  const search = () => (serverMode() ? (props.searchValue ?? "") : internalSearch());
+
+  /** Client tables can still hand search to the parent (to reuse its filter). */
+  const parentSearch = () =>
+    !serverMode() && props.searchValue !== undefined && props.onSearchChange !== undefined;
+
+  const controlled = () => props.selectedIds !== undefined && props.onSelectedChange !== undefined;
+
+  const isSelected = (id: string) =>
+    controlled() ? (props.selectedIds?.()?.has(id) ?? false) : Boolean(selected()[id]);
+
+  const search = () =>
+    serverMode() || parentSearch() ? (props.searchValue ?? "") : internalSearch();
 
   const setSearch = (value: string) => {
-    if (serverMode()) props.onSearchChange?.(value);
+    if (serverMode() || parentSearch()) props.onSearchChange?.(value);
     else setInternalSearch(value);
   };
 
@@ -164,7 +210,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   /**
    * Selection is scoped to the visible row set. When a filter, page or search
    * changes the visible ids, ids that are no longer on screen must not linger
-   * in the action bar. Re-ordering the same ids keeps the selection.
+   * in the action bar, and an "all matching" selection no longer describes the
+   * rows the operator is looking at. Re-ordering the same ids keeps both.
    */
   createEffect(
     () =>
@@ -173,29 +220,61 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         .sort()
         .join("\u0000"),
     () => {
-      setSelected({});
+      setAllMatching(false);
+
+      if (!controlled()) setSelected({});
     },
   );
 
-  const selectedRows = createMemo(() => rows().filter((row) => selected()[row.id]));
+  createEffect(
+    () => props.selectionKey,
+    (key, previous) => {
+      if (previous === undefined || key === previous || controlled()) return;
+      setSelected({});
+      setAllMatching(false);
+    },
+  );
+
+  const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
   const allSelected = () => rows().length > 0 && selectedRows().length === rows().length;
+
+  // Keep exactly one row in the tab order, and never leave it pointing past
+  // the end after a filter or page change.
+  createEffect(
+    () => rows().length,
+    (length) => {
+      if (length === 0) setActiveRow(-1);
+      else if (activeRow() < 0 || activeRow() >= length) setActiveRow(0);
+    },
+  );
 
   // Turning bulk actions off must also drop any selection made before the
   // permission changed (for example after switching roles in another tab).
   createEffect(
     () => selectable(),
     (enabled) => {
-      if (!enabled) setSelected({});
+      if (!enabled && !controlled()) {
+        setSelected({});
+        setAllMatching(false);
+      }
     },
   );
   let selectAllRef: HTMLInputElement | undefined;
   createEffect(
-    () => [selectedRows().length, allSelected()] as const,
+    () => [selectedRows().length, allSelected(), allMatching()] as const,
     ([count, all]) => {
       if (selectAllRef) selectAllRef.indeterminate = count > 0 && !all;
     },
   );
-  const clear = () => setSelected({});
+
+  const setControlled = (ids: ReadonlySet<string>) => props.onSelectedChange?.(ids);
+
+  const clear = () => {
+    setAllMatching(false);
+
+    if (controlled()) setControlled(new Set());
+    else setSelected({});
+  };
 
   /**
    * Replace the selection with rows that are still on screen. Ids that are no
@@ -204,17 +283,100 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
    */
   const select = (ids: readonly string[]) => {
     const available = new Set(rows().map((row) => row.id));
-    const next: Record<string, true> = {};
+    const next = new Set([...ids].filter((id) => available.has(id)));
 
-    for (const id of ids) if (available.has(id)) next[id] = true;
+    setAllMatching(false);
 
-    setSelected(next);
+    if (controlled()) setControlled(next);
+    else setSelected(Object.fromEntries([...next].map((id) => [id, true] as const)));
   };
 
+  onSettled(() => {
+    if (/(Mac|iPhone|iPad|iPod)/i.test(navigator.userAgent)) setModKey("⌘");
+  });
+
+  const focusSearch = () => {
+    const input = searchRef?.querySelector("input");
+
+    input?.focus({ preventScroll: true });
+    input?.select();
+  };
+
+  // Keyboard focus stays on a single row so the table is one tab stop, the
+  // roving-tabindex pattern.
+
+  const moveRow = (event: KeyboardEvent, index: number, row: T) => {
+    if (!props.rowHref || event.defaultPrevented || event.isComposing) return;
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+
+      const next = Math.max(
+        0,
+        Math.min(rows().length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+      );
+
+      setActiveRow(next);
+      rowRefs[next]?.focus();
+
+      return;
+    }
+
+    if (event.key === "Enter" && props.rowHref) {
+      event.preventDefault();
+      navigate(props.rowHref(row));
+    }
+  };
+
+  const onTableKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing) return;
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      if (!selectable()) return;
+      event.preventDefault();
+      toggleAll();
+
+      return;
+    }
+  };
+
+  /**
+   * Escape is captured at the window so a primitive's dismissable layer cannot
+   * swallow it first. Inside the search it clears the query; elsewhere in the
+   * table it also drops the selection. Focus outside the table is untouched.
+   */
+  onSettled(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+
+      const target = event.target;
+      const inSearch = target instanceof Node && Boolean(searchRef?.contains(target));
+
+      if (!inSearch && !(target instanceof Node && tableRef?.contains(target))) return;
+
+      if (!search() && selectedCount() === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (inSearch) setSearch("");
+      else {
+        setSearch("");
+        clear();
+      }
+    };
+
+    window.addEventListener("keydown", onEscape, true);
+
+    return () => window.removeEventListener("keydown", onEscape, true);
+  });
+
   // `R` refreshes the list, matching the legacy dashboard and the Refresh
-  // button rendered next to the column picker.
-  useCommands(() =>
-    props.onRefresh
+  // button rendered next to the column picker. The search and selection
+  // shortcuts are registered here so they appear in Cmd+K, not only in the
+  // field's tooltip.
+  useCommands(() => [
+    ...(props.onRefresh
       ? [
           {
             id: "table-refresh",
@@ -226,10 +388,64 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             run: () => props.onRefresh?.(),
           },
         ]
-      : [],
-  );
+      : []),
+    {
+      id: "table-focus-search",
+      title: "Search this list",
+      subtitle: "Focus the table search; Escape clears it",
+      group: "This page",
+      shortcut: sequence("/"),
+      run: focusSearch,
+    },
+    {
+      id: "table-focus-search-mod",
+      title: "Search this list",
+      subtitle: "Same as pressing / in the table",
+      group: "This page",
+      shortcut: chord("f", { mod: true }),
+      run: focusSearch,
+    },
+    {
+      id: "table-clear",
+      title: "Clear search and selection",
+      subtitle: "Reset the table's search and checked rows",
+      group: "This page",
+      shortcut: chord("Escape"),
+      enabled: () => Boolean(search()) || selectedCount() > 0,
+      run: () => {
+        setSearch("");
+        clear();
+      },
+    },
+    {
+      id: "table-select-all",
+      title: "Select all rows on this page",
+      subtitle: "Toggle the table's checkbox column",
+      group: "This page",
+      shortcut: chord("a", { mod: true }),
+      enabled: () => selectable() && rows().length > 0 && tableFocused(),
+      run: () => toggleAll(),
+    },
+  ]);
 
   const toggleAll = () => {
+    if (allMatching()) {
+      clear();
+
+      return;
+    }
+
+    if (controlled()) {
+      const next = new Set(props.selectedIds?.() ?? []);
+      const ids = rows().map((row) => row.id);
+
+      if (allSelected()) for (const id of ids) next.delete(id);
+      else for (const id of ids) next.add(id);
+      setControlled(next);
+
+      return;
+    }
+
     if (allSelected()) {
       setSelected({});
 
@@ -256,6 +472,31 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   };
 
   const toggleRow = (row: T, checked: boolean) => {
+    if (controlled()) {
+      const next = new Set(props.selectedIds?.() ?? []);
+
+      if (checked) next.add(row.id);
+      else next.delete(row.id);
+      setControlled(next);
+
+      return;
+    }
+
+    // Narrowing an all-matching selection starts a new, explicit selection
+    // from the rows on screen so the count always describes what is ticked.
+    if (allMatching()) {
+      const next: Record<string, true> = {};
+
+      for (const visible of rows()) if (isSelected(visible.id)) next[visible.id] = true;
+
+      if (checked) next[row.id] = true;
+      else delete next[row.id];
+      setAllMatching(false);
+      setSelected(next);
+
+      return;
+    }
+
     const next = { ...selected() };
 
     if (checked) next[row.id] = true;
@@ -298,7 +539,21 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     applyVisibility({ ...hidden(), [column.id]: !visible });
   };
 
-  const selectedCount = () => Object.keys(selected()).length;
+  const selectedCount = () =>
+    allMatching()
+      ? (props.total ?? selectedRows().length)
+      : controlled()
+        ? (props.selectedIds?.()?.size ?? 0)
+        : Object.keys(selected()).length;
+
+  const showSelectAllMatching = () =>
+    shouldOfferAllMatching({
+      controlled: controlled(),
+      allMatching: allMatching(),
+      allSelected: allSelected(),
+      visible: rows().length,
+      total: props.total,
+    });
 
   createEffect(
     () => selectedCount(),
@@ -350,15 +605,36 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     <div class="space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2.5">
         <div class="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md">
-          <div class="relative min-w-0 flex-1">
+          <div
+            ref={(element) => {
+              searchRef = element;
+            }}
+            class="relative min-w-0 flex-1"
+          >
             <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={props.searchPlaceholder ?? "Search…"}
               aria-label="Search table"
               value={search()}
               onInput={(e) => setSearch(e.currentTarget.value)}
-              class="h-8 w-full pl-8! text-[12.5px]"
+              class="h-8 w-full pl-8! pr-14 text-[12.5px]"
             />
+            <Tooltip>
+              <TooltipTrigger
+                as="span"
+                tabindex={0}
+                aria-label="Search shortcuts"
+                class="absolute right-2 top-1/2 hidden -translate-y-1/2 cursor-default rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:inline"
+              >
+                {modKey()}F
+              </TooltipTrigger>
+              <TooltipContent>
+                <p class="text-[11px] font-medium">Search this list</p>
+                <p class="mt-0.5 text-[11px]">
+                  / or {modKey()}F focuses the field. Escape clears it.
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </div>
           <Show when={search()}>
             <Button variant="ghost" size="xs" onClick={() => setSearch("")}>
@@ -368,7 +644,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
         <div class="flex items-center gap-2">
           <Show when={props.isFetching && !props.loading}>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
               <RefreshCw
                 class="size-3 animate-spin motion-reduce:animate-none"
                 aria-hidden="true"
@@ -402,51 +678,64 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               <span class="hidden sm:inline">Refresh</span>
             </Button>
           </Show>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
-              aria-label="Choose visible columns"
-            >
-              <ChevronsUpDown class="size-3.5" />
-              <span class="hidden sm:inline">Columns</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuContent class="w-52 rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
-                <For each={props.columns}>
-                  {(column) => {
-                    const lastVisible = () =>
-                      isColumnVisible(column) && visibleColumns().length === 1;
+          <Tooltip>
+            <TooltipTrigger as="span" class="inline-flex">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+                  aria-label="Choose visible columns"
+                >
+                  <ChevronsUpDown class="size-3.5" />
+                  <span class="hidden sm:inline">Columns</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuContent class="w-52 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
+                    <For each={props.columns}>
+                      {(column) => {
+                        const lastVisible = () =>
+                          isColumnVisible(column) && visibleColumns().length === 1;
 
-                    return (
-                      <DropdownMenuCheckboxItem
-                        class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-white/[0.06]"
-                        checked={isColumnVisible(column)}
-                        closeOnSelect={false}
-                        disabled={lastVisible()}
-                        title={lastVisible() ? "At least one column must stay visible" : undefined}
-                        onChange={(checked) => toggleColumn(column, checked)}
-                      >
-                        {column.header}
-                      </DropdownMenuCheckboxItem>
-                    );
-                  }}
-                </For>
-                <DropdownMenuSeparator class="mx-1 my-1 h-px bg-white/[0.07]" />
-                <DropdownMenuItem
-                  class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-white/[0.06]"
-                  onSelect={resetColumns}
-                >
-                  Reset columns
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-white/[0.06]"
-                  onSelect={showAllColumns}
-                >
-                  Show all
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenuPortal>
-          </DropdownMenu>
+                        return (
+                          <DropdownMenuCheckboxItem
+                            class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-hover"
+                            checked={isColumnVisible(column)}
+                            closeOnSelect={false}
+                            disabled={lastVisible()}
+                            title={
+                              lastVisible() ? "At least one column must stay visible" : undefined
+                            }
+                            onChange={(checked) => toggleColumn(column, checked)}
+                          >
+                            {column.header}
+                          </DropdownMenuCheckboxItem>
+                        );
+                      }}
+                    </For>
+                    <DropdownMenuSeparator class="mx-1 my-1 h-px bg-border" />
+                    <DropdownMenuItem
+                      class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                      onSelect={resetColumns}
+                    >
+                      Reset columns
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                      onSelect={showAllColumns}
+                    >
+                      Show all
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenuPortal>
+              </DropdownMenu>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p class="text-[11px] font-medium">Columns and keyboard</p>
+              <p class="mt-0.5 text-[11px]">
+                Choose visible columns. In the table, ↑/↓ move between rows, Enter opens one and{" "}
+                {modKey()}A selects the page.
+              </p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -460,10 +749,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <QueryError error={props.error} />
       </Show>
       <Show when={!props.error && props.loading}>
-        <div class="overflow-hidden rounded-lg border border-white/[0.08] bg-card">
+        <div class="overflow-hidden rounded-lg border border-border bg-card">
           <div class="space-y-1.5 p-3">
             <For each={[0, 1, 2, 3, 4]}>
-              {() => <div class="h-11 animate-pulse rounded-lg bg-white/[0.035]" />}
+              {() => <div class="h-11 animate-pulse rounded-lg bg-surface" />}
             </For>
           </div>
         </div>
@@ -473,7 +762,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         fallback={
           !props.error && !props.loading ? (
             search().trim() ? (
-              <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.012] px-6 py-10 text-center">
+              <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-border bg-surface px-6 py-10 text-center">
                 <p class="text-[13.5px] font-semibold text-foreground">
                   No matches for “{search().trim()}”
                 </p>
@@ -491,23 +780,45 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
-          <div class="page-enter overflow-x-auto rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-            <p class="border-b border-white/[0.06] px-3 py-2 text-[11px] text-muted-foreground sm:hidden">
+          <div class="page-enter overflow-x-auto rounded-lg border border-border bg-card shadow-[var(--card-highlight)]">
+            <p class="border-b border-border px-3 py-2 text-[11px] text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
             </p>
-            <table class="w-full text-[13px]">
+            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
+            <table
+              ref={(element) => {
+                tableRef = element;
+              }}
+              class="w-full text-[13px]"
+              onKeyDown={onTableKeyDown}
+              onFocusIn={() => {
+                setTableFocused(true);
+              }}
+              onFocusOut={(event) => {
+                if (
+                  !tableRef?.contains(
+                    event.relatedTarget instanceof Node ? event.relatedTarget : null,
+                  )
+                )
+                  setTableFocused(false);
+              }}
+            >
               <caption class="sr-only">{props.caption ?? "Data table"}</caption>
-              <thead class="border-b border-white/[0.07] bg-white/[0.015] text-left text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/90">
+              <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/90">
                 <tr>
                   <Show when={selectable()}>
                     <th scope="col" class="w-10 px-3 py-2.5 sm:px-4">
                       <input
                         ref={(el) => (selectAllRef = el)}
                         type="checkbox"
-                        class="size-4 accent-[var(--brand)]"
+                        class="size-4 accent-[var(--brand-solid)]"
                         checked={allSelected()}
                         onChange={toggleAll}
-                        aria-label="Select all rows"
+                        aria-label={
+                          allMatching()
+                            ? `Deselect all ${props.total ?? 0} matching rows`
+                            : `Select all ${rows().length} rows on this page`
+                        }
                       />
                     </th>
                   </Show>
@@ -541,17 +852,25 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               </thead>
               <tbody
                 class={cn(
-                  "divide-y divide-white/[0.055] transition-[opacity,filter] duration-150 ease-swift",
+                  "divide-y divide-border transition-[opacity,filter] duration-150 ease-swift",
                   props.isFetching && "opacity-60 saturate-0",
                 )}
               >
                 <For each={rows()}>
-                  {(row) => {
+                  {(row, index) => {
+                    const rowIndex = () => index();
+
                     return (
                       <tr
+                        ref={(element) => {
+                          rowRefs[rowIndex()] = element;
+                        }}
+                        tabindex={props.rowHref ? (activeRow() === rowIndex() ? 0 : -1) : undefined}
+                        onFocus={() => setActiveRow(rowIndex())}
+                        onKeyDown={(event) => moveRow(event, rowIndex(), row)}
                         class={cn(
-                          "relative transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-white/[0.028]",
-                          selected()[row.id] &&
+                          "relative outline-none transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                          isSelected(row.id) &&
                             "bg-brand/[0.06] shadow-[inset_2px_0_0_var(--brand)]",
                         )}
                       >
@@ -559,8 +878,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                           <td class="relative z-10 px-3 py-3 sm:px-4">
                             <input
                               type="checkbox"
-                              class="size-4 accent-[var(--brand)]"
-                              checked={!!selected()[row.id]}
+                              class="size-4 accent-[var(--brand-solid)]"
+                              checked={isSelected(row.id)}
                               onChange={(e) => toggleRow(row, e.currentTarget.checked)}
                               aria-label={`Select ${row.name ?? row.id}`}
                             />
@@ -593,10 +912,23 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <div
           role="group"
           aria-label="Bulk actions"
-          class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-lg border border-white/[0.1] bg-popover/95 px-4 py-2.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
+          class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-lg border border-border bg-popover/95 px-4 py-2.5 shadow-2xl backdrop-blur-xl"
         >
-          <span class="text-[12.5px] font-medium">{selectedCount()} selected</span>
-          {props.actions?.(selectedRows(), clear, select)}
+          <span class="text-[12.5px] font-medium">
+            {allMatching()
+              ? `${props.total ?? selectedCount()} matching rows`
+              : `${selectedCount()} selected`}
+          </span>
+          <Show when={showSelectAllMatching()}>
+            <Button variant="link" size="sm" onClick={() => setAllMatching(true)}>
+              Select all {props.total} matching this filter
+            </Button>
+          </Show>
+          {props.actions?.(selectedRows(), clear, select, {
+            allMatching: allMatching(),
+            total: props.total ?? selectedRows().length,
+            setAllMatching,
+          })}
           <Button variant="ghost" size="sm" onClick={clear}>
             Clear
           </Button>

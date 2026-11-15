@@ -80,6 +80,7 @@ import {
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 
@@ -104,7 +105,7 @@ const chipTones: Record<ChipTone, string> = {
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",
   brand: "border-brand/25 bg-brand/10 text-brand",
-  muted: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  muted: "border-border bg-surface text-muted-foreground",
 };
 
 const selectClass =
@@ -125,7 +126,7 @@ function Chip(props: { tone?: ChipTone; class?: string; children: JSX.Element })
 /** A stacked label/value row used across the detail panels. */
 function MetaRow(props: { label: string; children: JSX.Element }) {
   return (
-    <div class="flex items-start justify-between gap-4 border-b border-white/[0.05] py-2 last:border-0">
+    <div class="flex items-start justify-between gap-4 border-b border-border py-2 last:border-0">
       <dt class="shrink-0 text-[12px] text-muted-foreground">{props.label}</dt>
       <dd class="min-w-0 break-words text-right text-[12.5px] text-foreground">{props.children}</dd>
     </div>
@@ -299,7 +300,7 @@ function AbmPanel(props: {
               </div>
               <Show when={props.adeUrl()}>
                 {(url) => (
-                  <p class="break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 font-mono text-[11px] text-muted-foreground">
+                  <p class="break-all rounded-lg border border-border bg-surface p-2 font-mono text-[11px] text-muted-foreground">
                     {url()}
                   </p>
                 )}
@@ -495,6 +496,19 @@ export default function DeviceDetailPage() {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       }),
   }));
+
+  const detailsDirty = () =>
+    editOpen() &&
+    writable() &&
+    Boolean(row()) &&
+    (name() !== row()!.name ||
+      assetTag() !== (row()!.assetTag ?? "") ||
+      notes() !== (row()!.notes ?? ""));
+
+  const unsaved = useUnsavedChanges(() => detailsDirty() || usersDirty(), {
+    title: "Discard device changes?",
+    description: "Device details or linked users have edits that have not been saved.",
+  });
 
   const invalidateGroups = async () => {
     await queryClient.invalidateQueries({
@@ -1123,6 +1137,7 @@ export default function DeviceDetailPage() {
 
   return (
     <Page wide>
+      {unsaved.prompt}
       <Show
         when={row()}
         fallback={
@@ -1157,7 +1172,7 @@ export default function DeviceDetailPage() {
         }
       >
         <>
-          <section class="relative overflow-hidden rounded-lg border border-white/[0.08] bg-card">
+          <section class="relative overflow-hidden rounded-lg border border-border bg-card">
             <div class="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
               <div class="flex min-w-0 items-start gap-4 sm:gap-5">
                 <DeviceArtwork proto={row()!.proto} modelIdentifier={row()!.modelIdentifier} />
@@ -1239,7 +1254,7 @@ export default function DeviceDetailPage() {
           </section>
 
           <div
-            class="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-white/[0.07]"
+            class="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-border"
             role="tablist"
             aria-label="Device sections"
           >
@@ -1257,7 +1272,7 @@ export default function DeviceDetailPage() {
                   class={`relative -mb-px shrink-0 rounded-t-md px-3 pb-2.5 pt-2 text-[12.5px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                     tab() === section
                       ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
-                      : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
+                      : "text-muted-foreground hover:bg-hover hover:text-foreground"
                   }`}
                 >
                   {section}
@@ -1281,7 +1296,7 @@ export default function DeviceDetailPage() {
               >
                 <table class="w-full text-[12.5px]">
                   <caption class="sr-only">Device inventory</caption>
-                  <tbody class="divide-y divide-white/[0.05]">
+                  <tbody class="divide-y divide-border">
                     <For each={overviewRows()}>
                       {(entry) => (
                         <tr>
@@ -1389,7 +1404,7 @@ export default function DeviceDetailPage() {
                             >
                               <For each={declarationIssues()}>
                                 {(declaration) => (
-                                  <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 text-[11.5px]">
+                                  <div class="rounded-lg border border-border bg-surface p-2 text-[11.5px]">
                                     <div class="flex items-center justify-between gap-2">
                                       <strong class="min-w-0 truncate font-medium">
                                         {declaration.identifier}
@@ -1423,7 +1438,7 @@ export default function DeviceDetailPage() {
                           </div>
                         </div>
 
-                        <div class="space-y-2 border-t border-white/[0.06] pt-3">
+                        <div class="space-y-2 border-t border-border pt-3">
                           <div class="flex flex-wrap items-center justify-between gap-2">
                             <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                               SCEP identity certificates
@@ -1448,7 +1463,7 @@ export default function DeviceDetailPage() {
                               </p>
                             }
                           >
-                            <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                            <ul class="divide-y divide-border rounded-lg border border-border">
                               <For each={certificates()}>
                                 {(certificate) => (
                                   <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
@@ -1483,7 +1498,7 @@ export default function DeviceDetailPage() {
                         </div>
 
                         <Show when={row()!.proto === "apple" && health.data?.push}>
-                          <div class="space-y-2 border-t border-white/[0.06] pt-3">
+                          <div class="space-y-2 border-t border-border pt-3">
                             <div class="flex flex-wrap items-center justify-between gap-2">
                               <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                                 APNs push delivery
@@ -1608,7 +1623,7 @@ export default function DeviceDetailPage() {
                           <div class="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-auto">
                             <For each={capabilityLabels()}>
                               {(capability) => (
-                                <span class="rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted-foreground">
+                                <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">
                                   {capability}
                                 </span>
                               )}
@@ -1681,7 +1696,7 @@ export default function DeviceDetailPage() {
                           </p>
                         }
                       >
-                        <ul class="max-h-96 divide-y divide-white/[0.05] overflow-auto">
+                        <ul class="max-h-96 divide-y divide-border overflow-auto">
                           <For each={appNames()}>
                             {(application) => (
                               <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[12.5px] sm:px-5">
@@ -1858,7 +1873,7 @@ export default function DeviceDetailPage() {
                     description="User-assigned policies follow these directory users to this device."
                   >
                     <div class="space-y-3">
-                      <p class="rounded-lg border border-white/[0.08] bg-muted/15 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                      <p class="rounded-lg border border-border bg-muted/15 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
                         Policies assigned to a user are delivered on the device channel. They affect
                         every user on this device, not only the linked account. Windows applies
                         changes on its next check-in.
@@ -2069,7 +2084,7 @@ export default function DeviceDetailPage() {
                           </p>
                         }
                       >
-                        <ul class="max-h-[26rem] divide-y divide-white/[0.05] overflow-auto">
+                        <ul class="max-h-[26rem] divide-y divide-border overflow-auto">
                           <For each={activityEvents()}>
                             {(event) => (
                               <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
@@ -2102,7 +2117,7 @@ export default function DeviceDetailPage() {
                           </For>
                         </ul>
                       </Show>
-                      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
+                      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 sm:px-5">
                         <span class="text-[11px] tabular-nums text-muted-foreground">
                           {activityEvents().length}
                           {activity.hasNextPage ? "+" : ""} event
@@ -2153,7 +2168,7 @@ export default function DeviceDetailPage() {
                           </div>
                         }
                       >
-                        <ul class="max-h-72 divide-y divide-white/[0.05] overflow-auto">
+                        <ul class="max-h-72 divide-y divide-border overflow-auto">
                           <For each={visibleCommands()}>
                             {(historyItem) => (
                               <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
@@ -2192,7 +2207,7 @@ export default function DeviceDetailPage() {
                             )}
                           </For>
                         </ul>
-                        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 sm:px-5">
                           <span class="text-[11px] tabular-nums text-muted-foreground">
                             {visibleCommands().length} of {commandRows().length}
                             {commandHistoryTruncated() ? "+" : ""} command
@@ -2272,7 +2287,7 @@ export default function DeviceDetailPage() {
                             </p>
                           }
                         >
-                          <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                          <ul class="divide-y divide-border rounded-lg border border-border">
                             <For each={membershipRows()}>
                               {(group) => (
                                 <li class="flex items-start justify-between gap-3 p-2.5">
@@ -2332,12 +2347,12 @@ export default function DeviceDetailPage() {
                       <Show
                         when={joinableGroups().length > 0}
                         fallback={
-                          <p class="border-t border-white/[0.06] pt-3 text-[12px] text-muted-foreground">
+                          <p class="border-t border-border pt-3 text-[12px] text-muted-foreground">
                             Every manual group already includes this device.
                           </p>
                         }
                       >
-                        <div class="flex flex-col gap-2 border-t border-white/[0.06] pt-3 sm:flex-row">
+                        <div class="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row">
                           <label class="sr-only" for="device-group-select">
                             Add this device to a group
                           </label>
@@ -2402,7 +2417,7 @@ export default function DeviceDetailPage() {
                         <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                           Policies in effect
                         </p>
-                        <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                        <ul class="divide-y divide-border rounded-lg border border-border">
                           <For each={resolved()?.policies ?? []}>
                             {(policy) => (
                               <li class="space-y-1 p-3 text-[12.5px]">
@@ -2448,7 +2463,7 @@ export default function DeviceDetailPage() {
                         <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                           Resolved settings
                         </p>
-                        <ul class="divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+                        <ul class="divide-y divide-border rounded-lg border border-border">
                           <For each={resolved()?.configurations ?? []}>
                             {(configuration) => (
                               <li class="space-y-1 p-3 text-[12.5px]">
@@ -2512,7 +2527,7 @@ export default function DeviceDetailPage() {
                                 class={
                                   exclusion.effective
                                     ? "rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2 text-[11.5px] text-destructive"
-                                    : "rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11.5px] text-muted-foreground"
+                                    : "rounded-lg border border-border bg-surface p-2 text-[11.5px] text-muted-foreground"
                                 }
                               >
                                 <span class="font-medium">{exclusion.policyName}</span>{" "}
@@ -2607,7 +2622,7 @@ export default function DeviceDetailPage() {
             {(key) => (
               <>
                 <div class="flex items-start gap-2">
-                  <code class="min-w-0 flex-1 break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 font-mono text-sm">
+                  <code class="min-w-0 flex-1 break-all rounded-lg border border-border bg-surface p-3 font-mono text-sm">
                     {key()}
                   </code>
                   <Button variant="outline" size="sm" onClick={() => void copyRecoveryKey()}>
@@ -2632,7 +2647,12 @@ export default function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={editOpen()} onOpenChange={setEditOpen}>
+      <Sheet
+        open={editOpen()}
+        onOpenChange={(open) =>
+          open ? setEditOpen(true) : unsaved.confirm(() => setEditOpen(false))
+        }
+      >
         <SheetContent side="right" class="w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle>Edit device details</SheetTitle>
@@ -2672,9 +2692,13 @@ export default function DeviceDetailPage() {
               </Field>
               <ErrorText error={save.error} />
             </div>
-            <SheetFooter class="border-t border-white/[0.06]">
+            <SheetFooter class="border-t border-border">
               <div class="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => unsaved.confirm(() => setEditOpen(false))}
+                >
                   Cancel
                 </Button>
                 <Show when={writable()}>

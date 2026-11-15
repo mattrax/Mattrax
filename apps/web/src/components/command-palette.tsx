@@ -1055,7 +1055,7 @@ export function CommandPalette() {
         <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
           <DialogPortal>
             <DialogOverlay
-              class="palette-overlay bg-black/60 backdrop-blur-sm"
+              class="palette-overlay bg-scrim backdrop-blur-sm"
               onPointerDown={(event) => {
                 if (event.target === event.currentTarget) close();
               }}
@@ -1063,7 +1063,7 @@ export function CommandPalette() {
             <DialogPrimitive.Content
               data-slot="command-palette"
               aria-modal="true"
-              class="palette-card dark fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-white/[0.09] bg-popover text-foreground shadow-2xl shadow-black/70 outline-none"
+              class="palette-card fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
               onKeyDown={onContentKeyDown}
             >
               <DialogBackgroundIsolation />
@@ -1073,7 +1073,7 @@ export function CommandPalette() {
                 through results and Enter to run the highlighted one.
               </DialogPrimitive.Description>
 
-              <div class="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+              <div class="flex items-center gap-2 border-b border-border px-4 py-3">
                 <Search class="size-4 text-muted-foreground" />
                 <input
                   ref={(element) => {
@@ -1107,7 +1107,7 @@ export function CommandPalette() {
                   placeholder="Search or run a command…"
                   class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
                 />
-                <kbd class="hidden rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+                <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
                   esc
                 </kbd>
               </div>
@@ -1193,9 +1193,7 @@ export function CommandPalette() {
                                 }}
                                 class={cn(
                                   "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
-                                  active() === index()
-                                    ? "bg-white/[0.07]"
-                                    : "hover:bg-white/[0.04]",
+                                  active() === index() ? "bg-hover" : "hover:bg-hover",
                                 )}
                               >
                                 <Show when={item.icon}>
@@ -1217,7 +1215,7 @@ export function CommandPalette() {
                                 </span>
                                 <Show when={item.shortcut}>
                                   {(shortcut) => (
-                                    <kbd class="hidden shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
+                                    <kbd class="hidden shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
                                       {shortcutLabel(shortcut())}
                                     </kbd>
                                   )}
@@ -1245,7 +1243,7 @@ export function CommandPalette() {
                 {statusText()}
               </div>
 
-              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground sm:flex">
                 <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
                 <Show
                   when={truncated()}

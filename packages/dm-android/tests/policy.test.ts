@@ -8,6 +8,7 @@ import {
   compileAndroidPolicy,
   compileAndroidPolicyWithHash,
   mergeAndroidPolicies,
+  mergeAssignedAndroidApplications,
 } from "../src/index.js";
 
 describe("mergeAndroidPolicies", () => {
@@ -181,5 +182,76 @@ describe("compileAndroidPolicy", () => {
     expect(first.hash).toBe(second.hash);
     expect(androidPolicyIdForHash(first.hash)).toMatch(/^mattrax-[a-z0-9]+$/);
     expect(androidPolicyIdForHash(first.hash).length).toBeLessThanOrEqual(32);
+  });
+});
+
+describe("mergeAssignedAndroidApplications", () => {
+  it("adds assigned packages as required installs", () => {
+    expect(
+      mergeAssignedAndroidApplications({ cameraDisabled: true }, [
+        { packageName: "com.google.android.gm" },
+        { packageName: "com.microsoft.teams" },
+      ]),
+    ).toEqual({
+      cameraDisabled: true,
+      applications: [
+        {
+          packageName: "com.google.android.gm",
+          installType: "FORCE_INSTALLED",
+          autoUpdateMode: "AUTO_UPDATE_DEFAULT",
+        },
+        {
+          packageName: "com.microsoft.teams",
+          installType: "FORCE_INSTALLED",
+          autoUpdateMode: "AUTO_UPDATE_DEFAULT",
+        },
+      ],
+    });
+  });
+
+  it("keeps the install type a policy fragment configured", () => {
+    const policy = {
+      applications: [
+        {
+          packageName: "com.google.android.gm",
+          installType: "AVAILABLE",
+          managedConfiguration: { hostname: "mail.example.com" },
+        },
+      ],
+    };
+
+    expect(
+      mergeAssignedAndroidApplications(policy, [{ packageName: "com.google.android.gm" }]),
+    ).toBe(policy);
+  });
+
+  it("ignores package names Google would reject", () => {
+    expect(
+      mergeAssignedAndroidApplications({}, [
+        { packageName: "not a package" },
+        { packageName: "com.example.app" },
+      ]).applications,
+    ).toHaveLength(1);
+  });
+
+  it("is deterministic and removes packages that are no longer assigned", () => {
+    const first = mergeAssignedAndroidApplications({}, [
+      { packageName: "com.z.example" },
+      { packageName: "com.a.example" },
+    ]);
+
+    expect(first.applications).toMatchObject([
+      { packageName: "com.a.example" },
+      { packageName: "com.z.example" },
+    ]);
+    expect(mergeAssignedAndroidApplications(first, [])).toBe(first);
+    expect(
+      mergeAssignedAndroidApplications(
+        {
+          applications: [{ packageName: "com.a.example", installType: "FORCE_INSTALLED" }],
+        },
+        [],
+      ).applications,
+    ).toHaveLength(1);
   });
 });

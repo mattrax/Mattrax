@@ -283,15 +283,50 @@ export const WebhookTestResponse = Schema.Struct({
 export type WebhookTestResponse = typeof WebhookTestResponse.Type;
 
 /** A bounded, secret-free delivery record shown in support tooling/tests. */
-export const WebhookDeliveryInfo = Schema.Struct({
+const webhookDeliveryFields = {
   id: Schema.String,
   endpointId: Schema.String,
   event: Schema.String,
+  /** Event id sent as `X-Mattrax-Delivery`; shared by retries and replays. */
+  eventId: Schema.optional(NullableString),
   status: WebhookDeliveryStatus,
   attempt: Schema.Number,
   responseStatus: Schema.optional(Schema.NullOr(Schema.Number)),
   error: Schema.optional(NullableString),
   createdAt: Schema.String,
-});
+} as const;
+
+export const WebhookDeliveryInfo = Schema.Struct(webhookDeliveryFields);
 
 export type WebhookDeliveryInfo = typeof WebhookDeliveryInfo.Type;
+
+/**
+ * A delivery with the signed payload it carried, returned only by the
+ * single-delivery endpoint. The list omits it so a page stays small.
+ */
+export const WebhookDeliveryDetail = Schema.Struct({
+  ...webhookDeliveryFields,
+  payload: Schema.Json,
+});
+
+export type WebhookDeliveryDetail = typeof WebhookDeliveryDetail.Type;
+
+export const WebhookDeliveriesResponse = Schema.Struct({
+  deliveries: Schema.Array(WebhookDeliveryInfo),
+  /** Keyset cursor for the next (older) page; null on the last page. */
+  nextCursor: Schema.NullOr(Schema.String),
+});
+
+export type WebhookDeliveriesResponse = typeof WebhookDeliveriesResponse.Type;
+
+/**
+ * Delivery rows only exist for the retention window, so a replay can only
+ * target a row that is still stored. The new row keeps the original
+ * `X-Mattrax-Delivery` id because receivers dedupe on it.
+ */
+export const WebhookDeliveryReplayResponse = Schema.Struct({
+  delivery: WebhookDeliveryInfo,
+  replayedFrom: Schema.String,
+});
+
+export type WebhookDeliveryReplayResponse = typeof WebhookDeliveryReplayResponse.Type;

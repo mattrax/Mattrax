@@ -59,10 +59,17 @@ import {
   DeviceManagementApp,
   type StepUpAction,
   type TenantScepCaInfo,
+  type BillingCheckoutRequest,
+  type BillingInvoice,
+  type BillingInvoicesResponse,
+  type WebhookDeliveryQuery,
+  type WebhookDeliveryReplayResponse,
+  type WebhookDeliveriesResponse,
+  type WebhookDeliveryDetail,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
-import type { StripeClientLike, StripeCustomer } from "@mattrax/effect-stripe";
+import type { StripeClientLike, StripeCustomer, StripeInvoice } from "@mattrax/effect-stripe";
 import {
   authCredentials,
   authIdentifiers,
@@ -102,6 +109,7 @@ import {
   federatedRealm,
   generateWebhookSecret,
   previewDynamicGroup,
+  replayWebhookDelivery as redeliverWebhook,
   resolveEffectivePolicyForDevice,
   sendTestWebhook,
   syncDynamicGroup,
@@ -115,6 +123,8 @@ import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   RECONCILED_RESULT_STATUS,
+  CATALOGUE_APPLICATION_ASSET_KIND,
+  catalogueApplicationAssetIdentifier,
   commandDeadline,
   commandDedupeKey,
   commandIsExpired,
@@ -122,6 +132,7 @@ import {
   deviceCommandExpiresAt,
   extendedCommandDeadline,
   planCommandQueueing,
+  WebhookPayload,
   type CommandPayload,
 } from "@mattrax/management-backend-enterprise";
 import {
@@ -144,7 +155,9 @@ import {
 } from "./autopilot.ts";
 import {
   ScepRepositoryLive,
+  isApplicationKind,
   issueScepChallenge,
+  parseAppleApplicationConfiguration,
   validateConfiguration,
 } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
@@ -192,6 +205,7 @@ import {
   resolveTenantRole,
 } from "./rbac.ts";
 import { invitationEmail } from "./invitationEmail.ts";
+import { sendTransactionalEmail } from "./emailOutbox.ts";
 import {
   deviceBucket,
   normalizeWidgetConfig,
@@ -223,6 +237,13 @@ import {
   type AuditExportEntry,
   type AuditSearchFilters,
 } from "./auditLog.ts";
+import { billableDeviceCount, reconcileSubscriptionQuantity } from "./billing.ts";
+import {
+  listWebhookDeliveries as listStoredWebhookDeliveries,
+  loadWebhookDelivery as loadStoredWebhookDelivery,
+  webhookDeliveryDetail,
+  webhookDeliveryInfo,
+} from "./webhookDeliveries.ts";
 import {
   ACCOUNT_AUDIT,
   accountAuditEntry,
@@ -306,11 +327,23 @@ import {
   type UnreachableDevice,
 } from "./tenantTeardown.ts";
 import { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.ts";
+import {
+  isMsiInstaller,
+  isMsiProductCode,
+  normalizeMsiProductCode,
+  windowsMsiInstallPayload,
+} from "./windowsApplications.ts";
 import { AndroidManagement } from "@mattrax/dm-android";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
+  appleInstallAssetExpiresAt,
+  appleOsFamily,
+  buildAppleManifest,
+  buildInstallEnterpriseApplicationPayload,
   createAppleProfileSigner,
+  isApplePackageUpload,
+  signAppleAssetToken,
   signAppleProfilePlist,
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
@@ -382,6 +415,12 @@ export type EnterpriseHandlersConfig = {
    * failing at boot.
    */
   readonly stripeClient?: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
+  /**
+   * Stripe price for the per-device monthly plan. Checkout and seat
+   * reconciliation need it alongside `stripeClient`; both request a
+   * configuration error when it is absent.
+   */
+  readonly deviceMonthlyPriceId?: string;
   readonly storage: R2Bucket;
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
@@ -1156,6 +1195,7 @@ export const createEnterpriseService = ({
   schema,
   origin,
   stripeClient,
+  deviceMonthlyPriceId,
   storage,
   auth: authService,
   authSecret,
@@ -1259,6 +1299,71 @@ export const createEnterpriseService = ({
     new EnterpriseStripeError({
       message: "Billing is temporarily unavailable. Try again shortly.",
     });
+
+  /**
+   * The canonical billing page for a tenant. Every redirect handed to Stripe
+   * starts here, so a Checkout return (or portal close) can only land on this
+   * deployment.
+   */
+  const tenantBillingUrl = (tenantId: string) =>
+    `${origin.replace(/\/+$/, "")}/t/${encodeURIComponent(tenantId)}/settings/billing`;
+
+  /**
+   * Resolve a caller-supplied return URL against `ORIGIN`. A value that points
+   * at another site (or uses another scheme) is discarded in favour of the
+   * canonical billing page, so billing cannot be used as an open redirect.
+   */
+  const sameOriginReturnUrl = (tenantId: string, candidate: string | null | undefined) => {
+    const fallback = tenantBillingUrl(tenantId);
+
+    if (!candidate) return fallback;
+
+    try {
+      const base = new URL(origin);
+      const url = new URL(candidate, base);
+
+      return url.origin === base.origin ? url.toString() : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  /**
+   * Stripe returns a fully-qualified HTTPS URL for hosted Checkout and the
+   * billing portal. Anything else is a misconfigured proxy or a tampered
+   * response, so it is treated as an upstream failure instead of being
+   * redirected to.
+   */
+  const hostedBillingUrl = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+
+    try {
+      const url = new URL(value);
+
+      return url.protocol === "https:" ? url.toString() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** Only https links are rendered; Stripe may omit either invoice link. */
+  const httpsLinkOrNull = (value: string | null | undefined): string | null =>
+    hostedBillingUrl(value);
+
+  const billingInvoice = (invoice: StripeInvoice): BillingInvoice => ({
+    id: invoice.id,
+    number: invoice.number ?? null,
+    status: invoice.status ?? null,
+    total: invoice.total ?? 0,
+    amountDue: invoice.amount_due ?? 0,
+    amountPaid: invoice.amount_paid ?? 0,
+    currency: invoice.currency ?? "usd",
+    createdAt: new Date((invoice.created ?? 0) * 1000).toISOString(),
+    periodStart: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
+    periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
+    hostedInvoiceUrl: httpsLinkOrNull(invoice.hosted_invoice_url),
+    pdfUrl: httpsLinkOrNull(invoice.invoice_pdf),
+  });
 
   /**
    * Translate an Android delivery failure into the API's stable error tags.
@@ -1791,11 +1896,16 @@ export const createEnterpriseService = ({
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
 
   /**
-   * Compose and send the branded invitation. Returns whether a provider
-   * accepted the message; failures never expose the token or full address.
+   * Compose and queue the branded invitation. Returns whether the message was
+   * accepted for delivery (queued in the outbox, or delivered to the local
+   * mailbox); failures never expose the token or full address.
+   *
+   * The delivery itself belongs to the cron drain. An invitation link the admin
+   * copies from the response is always valid even when every send fails.
    */
   const sendInvitationEmail = (
     organization: {
+      readonly id: string;
       readonly name: string;
       readonly displayName?: string | null;
       readonly logo?: string | null;
@@ -1808,6 +1918,12 @@ export const createEnterpriseService = ({
       readonly roleName: string;
       readonly inviteUrl: string;
       readonly expiresAt: Date;
+      /**
+       * One message per invitation generation: a retried request cannot queue
+       * the same invitation twice, while a resend (which rotates the token)
+       * gets a new key.
+       */
+      readonly idempotencyKey: string;
     },
   ) =>
     Effect.gen(function* () {
@@ -1838,26 +1954,30 @@ export const createEnterpriseService = ({
           ? { name: branding.displayName, email: configuredSupport }
           : undefined;
 
-      return yield* Effect.tryPromise({
-        try: () =>
-          email.send({
-            to: input.email,
-            from: {
-              name: branding.displayName,
-              email: invitationFromEmail ?? DEFAULT_INVITATION_FROM,
-            },
-            replyTo,
-            subject: message.subject,
-            text: message.text,
-            html: message.html,
-          }),
-        catch: (cause) => cause,
-      }).pipe(
-        Effect.as(true),
-        Effect.catch(() =>
-          Effect.logWarning("Invitation email could not be sent").pipe(Effect.as(false)),
-        ),
-      );
+      const outcome = yield* sendTransactionalEmail({
+        db,
+        email,
+        template: "invitation",
+        recipient: input.email,
+        organizationId: organization.id,
+        dedupeKey: `invitation:${input.idempotencyKey}`,
+        message: {
+          to: input.email,
+          from: {
+            name: branding.displayName,
+            email: invitationFromEmail ?? DEFAULT_INVITATION_FROM,
+          },
+          replyTo,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        },
+      });
+
+      // `queued`, `duplicate` and the local mailbox all mean the admin can
+      // stop worrying: the message exists. `failed`/`skipped` keep the
+      // existing "copy this link" UI.
+      return outcome === "queued" || outcome === "duplicate" || outcome === "delivered";
     });
 
   const normalizeWebhookEvents = (events: ReadonlyArray<string>): string[] => [
@@ -2101,6 +2221,29 @@ export const createEnterpriseService = ({
 
       return stripeCustomer.id;
     });
+
+  /**
+   * Best-effort seat reconciliation for a device lifecycle change.
+   *
+   * The nightly sweep is the backstop, so a Stripe outage is logged rather
+   * than failing the device operation that triggered it.
+   */
+  const reconcileSeats = (organizationId: string) =>
+    stripe && deviceMonthlyPriceId
+      ? reconcileSubscriptionQuantity({
+          db,
+          stripe,
+          organizationId,
+          deviceMonthlyPriceId,
+          planLimits,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `Billing seat reconciliation failed for ${organizationId}: ${String(cause)}`,
+            ),
+          ),
+        )
+      : Effect.void;
 
   const listTenantInfo = (userId: string) =>
     Effect.gen(function* () {
@@ -3058,6 +3201,43 @@ export const createEnterpriseService = ({
       domainName: device.domainName,
       entraDeviceId: device.entraDeviceId,
       windowsSecurityReported: device.securityUpdatedAt != null,
+    });
+
+  /**
+   * Health for a set of devices, with a single declaration read.
+   *
+   * Health is derived, never stored, so a list that shows or orders by it pays
+   * one extra bounded query for the page (or the filtered set) and nothing per
+   * row. Callers holding `loadDeviceSnapshots` entries should reuse those.
+   */
+  const deviceHealthFor = (devices: ReadonlyArray<EnterpriseDevice>) =>
+    Effect.gen(function* () {
+      const health = new Map<string, ReturnType<typeof rowDeviceHealth>>();
+
+      if (devices.length === 0) return health;
+
+      const declarations = yield* db
+        .select()
+        .from(schema.deviceDeclaration)
+        .where(
+          inArray(
+            schema.deviceDeclaration.deviceId,
+            devices.map((device) => device.id),
+          ),
+        );
+
+      const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
+
+      for (const declaration of declarations) {
+        const list = byDevice.get(declaration.deviceId) ?? [];
+        list.push(declaration);
+        byDevice.set(declaration.deviceId, list);
+      }
+
+      for (const device of devices)
+        health.set(device.id, rowDeviceHealth(device, byDevice.get(device.id) ?? []));
+
+      return health;
     });
 
   const rowCertificate = (row: typeof schema.scepIssuedCertificate.$inferSelect) => ({
@@ -5458,6 +5638,21 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           })
           .where(eq(schema.organization.id, tenantId));
+
+        // Keep the Stripe customer label in step with the tenant. Billing is
+        // never allowed to fail a rename: the nightly sweep compares names and
+        // retries an update that Stripe rejected.
+        if (name && stripe && ctx.organization.stripeCustomerId)
+          yield* stripe.customers
+            .update(ctx.organization.stripeCustomerId, { name })
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning(
+                  `Stripe customer rename failed for ${tenantId}: ${String(cause)}`,
+                ),
+              ),
+            );
+
         yield* audit(ctx, "tenant.updated", "tenant", tenantId, { fields: Object.keys(body) });
 
         return ok;
@@ -6538,6 +6733,96 @@ export const createEnterpriseService = ({
 
         return response;
       }),
+    listWebhookDeliveries: (
+      request,
+      tenantId,
+      webhookId,
+      query: WebhookDeliveryQuery | undefined,
+    ) =>
+      Effect.gen(function* () {
+        // `webhooks.read` is enforced by the method→permission mapping; the
+        // endpoint lookup keeps one tenant from reading another's history.
+        const ctx = yield* requireTenant(request, tenantId);
+
+        yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+
+        const response: WebhookDeliveriesResponse = yield* listStoredWebhookDeliveries({
+          db,
+          organizationId: ctx.organization.id,
+          endpointId: webhookId,
+          query,
+        });
+
+        return response;
+      }),
+    getWebhookDelivery: (request, tenantId, webhookId, deliveryId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+
+        const row = yield* loadStoredWebhookDelivery({
+          db,
+          organizationId: ctx.organization.id,
+          endpointId: webhookId,
+          deliveryId,
+        });
+
+        const response: WebhookDeliveryDetail = webhookDeliveryDetail(row);
+
+        return response;
+      }),
+    replayWebhookDelivery: (request, tenantId, webhookId, deliveryId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const endpoint = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
+
+        const row = yield* loadStoredWebhookDelivery({
+          db,
+          organizationId: ctx.organization.id,
+          endpointId: endpoint.id,
+          deliveryId,
+        });
+
+        const payload = Option.getOrNull(Schema.decodeUnknownOption(WebhookPayload)(row.payload));
+
+        if (!payload)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "This delivery has no stored payload to replay.",
+            }),
+          );
+
+        // The stored payload keeps its event id, so the receiver sees the same
+        // `X-Mattrax-Delivery` header as the original delivery.
+        const replay = yield* redeliverWebhook(db, { endpoint, payload }, webhookOptions);
+
+        if (!replay.deliveryId)
+          return yield* Effect.fail(
+            new EnterpriseDbError({ message: "Could not record the replayed delivery" }),
+          );
+
+        const recorded = yield* loadStoredWebhookDelivery({
+          db,
+          organizationId: ctx.organization.id,
+          endpointId: endpoint.id,
+          deliveryId: replay.deliveryId,
+        });
+
+        yield* audit(ctx, "webhook.replayed", "webhook_delivery", row.id, {
+          endpointId: endpoint.id,
+          replayedAs: recorded.id,
+          status: replay.outcome.status,
+          responseStatus: replay.outcome.responseStatus,
+        });
+
+        const response: WebhookDeliveryReplayResponse = {
+          delivery: webhookDeliveryInfo(recorded),
+          replayedFrom: row.id,
+        };
+
+        return response;
+      }),
     listAuditLog: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -7032,6 +7317,7 @@ export const createEnterpriseService = ({
           roleName: roleLabel,
           inviteUrl,
           expiresAt,
+          idempotencyKey: `${invitationId}:1`,
         });
 
         const invitationAudit: InvitationAuditMetadata = { email, role, emailSent };
@@ -7504,6 +7790,7 @@ export const createEnterpriseService = ({
           roleName: roleLabel,
           inviteUrl,
           expiresAt,
+          idempotencyKey: `${invitation.id}:${sendCount}`,
         });
 
         yield* audit(ctx, "member.invitation_resent", "invitation", invitation.id, {
@@ -9170,6 +9457,8 @@ export const createEnterpriseService = ({
           ids: [...ids],
           revokedCertificates: revoked,
         });
+        // Deleting devices frees seats on the per-device plan.
+        yield* reconcileSeats(ctx.organization.id);
 
         return ok;
       }),
@@ -9991,6 +10280,9 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.unenrolled", "device", deviceId, {
           revokedCertificates: revoked,
         });
+        // A device on its way out no longer costs a seat; the nightly sweep
+        // catches devices that stop reporting without an explicit unenrol.
+        yield* reconcileSeats(ctx.organization.id);
 
         return ok;
       }),
@@ -10752,6 +11044,56 @@ export const createEnterpriseService = ({
           yield* validateConfiguration(kind, configuration, {
             escrowCertificateFingerprintSha256: escrowFingerprint,
           }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
+
+          if (!isApplicationKind(kind)) continue;
+          const application = parseAppleApplicationConfiguration(configuration);
+
+          if (!application)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${kind}" is not a valid Apple application configuration`,
+              }),
+            );
+
+          if (application.type === "catalogue") {
+            const catalogue = yield* db.query.application.findFirst({
+              where: {
+                id: application.applicationId,
+                organizationId: ctx.organization.id,
+              },
+            });
+
+            if (!catalogue)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `"${kind}" references an application that does not exist in this tenant`,
+                }),
+              );
+
+            if (catalogue.platform !== "apple")
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `"${kind}" references a ${catalogue.platform} application; only Apple applications can be added to an Apple policy`,
+                }),
+              );
+
+            continue;
+          }
+
+          if (application.source !== "upload") continue;
+
+          const r2 = yield* R2Storage;
+
+          const uploaded = yield* r2
+            .head(policyApplicationKey(ctx.organization.id, policyId, application.sha256!))
+            .pipe(Effect.option);
+
+          if (Option.isNone(uploaded))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${kind}" references an uploaded package that is not in this policy's storage. Upload the .pkg first, then save.`,
+              }),
+            );
         }
 
         yield* db
@@ -11532,7 +11874,11 @@ export const createEnterpriseService = ({
             );
         }
 
-        if (source === "store" && !Number.isSafeInteger(Number(body.storeId)))
+        if (
+          body.platform === "apple" &&
+          source === "store" &&
+          !Number.isSafeInteger(Number(body.storeId))
+        )
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
           );
@@ -11603,7 +11949,11 @@ export const createEnterpriseService = ({
             );
         }
 
-        if (source === "store" && !Number.isSafeInteger(Number(storeId)))
+        if (
+          existing.platform === "apple" &&
+          source === "store" &&
+          !Number.isSafeInteger(Number(storeId))
+        )
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
           );
@@ -11628,6 +11978,8 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "application.updated", "application", applicationId, {
           fields: Object.keys(body),
         });
+
+        if (existing.platform === "android") yield* syncAndroidDevices(ctx.organization.id);
 
         return ok;
       }),
@@ -11679,6 +12031,10 @@ export const createEnterpriseService = ({
         const failed = results
           .filter((row) => !row.deleted)
           .map((row) => ({ id: row.id, reason: row.reason }));
+
+        // Removing a catalogue entry removes it from every compiled Android
+        // policy, which is how Google is told to uninstall it.
+        if (deleted.length > 0) yield* syncAndroidDevices(ctx.organization.id);
 
         yield* audit(ctx, "application.deleted", "application", null, { ids: deleted });
 
@@ -11735,6 +12091,10 @@ export const createEnterpriseService = ({
             );
         const affected = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
         yield* applePush.pushAppleDevices(affected.map((device) => device.id));
+        yield* syncAndroidDevices(
+          ctx.organization.id,
+          affected.filter((device) => device.proto === "android").map((device) => device.id),
+        );
         yield* audit(ctx, "application.assignments_changed", "application", applicationId, {
           assignGroups: body.assign?.groups?.length ?? 0,
           assignDevices: body.assign?.devices?.length ?? 0,
@@ -11755,32 +12115,194 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        if (app.platform !== "apple")
-          return {
-            status: "ok" as const,
-            queued: 0,
-            skipped: 0,
-            message:
-              app.platform === "win"
-                ? "Windows app delivery is not implemented yet; the catalogue entry was saved."
-                : "Android app delivery is not implemented yet; the catalogue entry was saved.",
-          };
-
-        if (app.source === "upload")
-          return {
-            status: "ok" as const,
-            queued: 0,
-            skipped: 0,
-            message:
-              "Uploaded installers are stored but not deployable yet. Use a manifest URL or store ID for Apple apps.",
-          };
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
 
-        const appleDevices = devices.filter(
-          (device) => device.proto === "apple" && device.status === "enrolled",
+        const eligibleDevices = devices.filter(
+          (device) => device.proto === app.platform && device.status === "enrolled",
         );
 
-        const skipped = devices.length - appleDevices.length;
+        const skipped = devices.length - eligibleDevices.length;
+
+        if (app.platform === "win") {
+          if (eligibleDevices.length === 0)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "No assigned enrolled Windows devices.",
+            };
+
+          if (app.source === "store")
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Windows Store applications cannot be installed through OMA-DM. Deploy an MSI instead, or use Intune for Store apps.",
+            };
+
+          const productId = app.bundleId?.trim();
+
+          if (!productId || !isMsiProductCode(productId))
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Windows MSI applications need the MSI ProductCode (a GUID) in the package ID field before they can be installed.",
+            };
+
+          const installerUrl = app.manifestUrl?.trim();
+
+          if (!installerUrl)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "Windows applications need an installer URL.",
+            };
+
+          let url: URL;
+
+          try {
+            url = new URL(installerUrl);
+          } catch {
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "The Windows installer URL is not a valid absolute URL.",
+            };
+          }
+
+          if (url.protocol !== "https:")
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "The Windows installer URL must use HTTPS.",
+            };
+
+          if (
+            !isMsiInstaller({
+              fileName: app.fileName,
+              contentType: app.contentType,
+              installerUrl,
+            })
+          )
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Only .msi packages can be installed by the Windows MDM channel. Package this app as an MSI (an .exe or .intunewin needs the Intune Management Extension).",
+            };
+
+          const normalizedProductId = normalizeMsiProductCode(productId);
+
+          const payload = windowsMsiInstallPayload({
+            appId: app.id,
+            productId: normalizedProductId,
+            version: app.version ?? "1.0.0",
+            url: url.toString(),
+            sha256: app.sha256,
+          });
+
+          const at = now();
+
+          for (const device of eligibleDevices)
+            yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "InstallApplication",
+              payload,
+              at,
+            });
+
+          yield* audit(ctx, "application.install_queued", "application", applicationId, {
+            queued: eligibleDevices.length,
+            skipped,
+            platform: "win",
+            installer: "msi",
+            productId: normalizedProductId,
+          });
+
+          return { status: "ok" as const, queued: eligibleDevices.length, skipped };
+        }
+
+        if (app.platform === "android") {
+          if (eligibleDevices.length === 0)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "No assigned enrolled Android devices.",
+            };
+
+          const packageName = app.bundleId?.trim();
+
+          if (!packageName)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Android applications need the package name (for example com.google.android.gm) in the package ID field.",
+            };
+
+          if (!isAndroidConfigured(androidConfig))
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Android Management is not configured for this deployment, so no Android policy was pushed.",
+            };
+
+          const sync = yield* syncAndroidPoliciesForTenant({
+            db,
+            config: androidConfig,
+            organizationId: ctx.organization.id,
+            deviceIds: eligibleDevices.map((device) => device.id),
+          }).pipe(Effect.result);
+
+          if (Predicate.isTagged(sync, "Failure")) {
+            yield* audit(ctx, "application.install_failed", "application", applicationId, {
+              platform: "android",
+              skipped: devices.length,
+              message: sync.failure.message,
+            });
+
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped: devices.length,
+              message: `The Android policy could not be pushed: ${sync.failure.message}`,
+            };
+          }
+
+          yield* audit(ctx, "application.install_queued", "application", applicationId, {
+            queued: sync.success.updated,
+            skipped: skipped + sync.success.failed,
+            platform: "android",
+            packageName,
+            converged: sync.success.skipped,
+          });
+
+          return {
+            status: "ok" as const,
+            queued: sync.success.updated,
+            skipped: skipped + sync.success.failed,
+            message:
+              sync.success.failed > 0
+                ? `${sync.success.failed} device(s) could not be updated; the Android policy was pushed to ${sync.success.updated}.`
+                : sync.success.updated === 0 && sync.success.skipped > 0
+                  ? "The assigned devices already run a policy containing this app."
+                  : undefined,
+          };
+        }
+
+        const appleDevices = eligibleDevices;
 
         if (appleDevices.length === 0)
           return {
@@ -11789,6 +12311,99 @@ export const createEnterpriseService = ({
             skipped,
             message: "No assigned Apple devices.",
           };
+
+        if (app.source === "upload") {
+          if (!app.r2Key || !app.sha256)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message: "Upload the installer before installing this application.",
+            };
+
+          if (!app.bundleId?.trim())
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Uploaded Apple applications need a bundle identifier so installs can be tracked in inventory.",
+            };
+
+          if (!isApplePackageUpload({ fileName: app.fileName, contentType: app.contentType }))
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped,
+              message:
+                "Only signed .pkg installers can be installed from an upload. An .ipa needs an OTA manifest URL.",
+            };
+
+          // InstallEnterpriseApplication is a macOS command. iPhones and iPads
+          // need an OTA manifest (.ipa), so an uploaded package is not queued
+          // for them.
+          const packageDevices = appleDevices.filter(
+            (device) => appleOsFamily(device.osEdition) === "macOS",
+          );
+
+          const packageSkipped = skipped + (appleDevices.length - packageDevices.length);
+
+          if (packageDevices.length === 0)
+            return {
+              status: "ok" as const,
+              queued: 0,
+              skipped: packageSkipped,
+              message:
+                "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled.",
+            };
+
+          const at = now();
+          const sha256 = app.sha256;
+          const bundleId = app.bundleId.trim();
+          const version = app.version?.trim() || "0";
+          const title = app.name;
+
+          for (const device of packageDevices) {
+            const token = yield* Effect.tryPromise(() =>
+              signAppleAssetToken(authSecret ?? "", {
+                policyId: app.id,
+                kind: CATALOGUE_APPLICATION_ASSET_KIND,
+                deviceId: device.id,
+                expiresAt: appleInstallAssetExpiresAt(at.getTime()),
+              }),
+            );
+
+            const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
+              catalogueApplicationAssetIdentifier(app.id),
+            )}?token=${encodeURIComponent(token)}`;
+
+            yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "InstallEnterpriseApplication",
+              payload: buildInstallEnterpriseApplicationPayload({
+                manifest: buildAppleManifest({
+                  url,
+                  sha256,
+                  bundleId,
+                  version,
+                  title,
+                }),
+                managementFlags: 1,
+              }),
+              at,
+            });
+          }
+
+          yield* applePush.pushAppleDevices(packageDevices.map((device) => device.id));
+          yield* audit(ctx, "application.install_queued", "application", applicationId, {
+            queued: packageDevices.length,
+            skipped: packageSkipped,
+            source: "upload",
+          });
+
+          return { status: "ok" as const, queued: packageDevices.length, skipped: packageSkipped };
+        }
 
         // When Apps and Books is configured, a store app must consume a VPP
         // licence. Falling back to a user-account App Store install would
@@ -12229,6 +12844,7 @@ export const createEnterpriseService = ({
           return {
             devices: page.map((snapshot) => ({
               ...rowDevice(snapshot.row),
+              health: normalizeDeviceHealth(snapshot.health),
               groups: groups.get(snapshot.row.id) ?? [],
             })),
             total: matches.length,
@@ -12236,6 +12852,48 @@ export const createEnterpriseService = ({
         }
 
         const [total] = yield* db.select({ value: count() }).from(schema.device).where(where);
+
+        // Health is derived, so ordering by it needs the same bounded
+        // in-memory pass as the health filter: load the matching set once,
+        // sort by severity and slice the page. Ascending means worst first, so
+        // the table agrees with the "needs attention" filter and the summary.
+        if (filters.sort === "health") {
+          const matches = yield* db.select().from(schema.device).where(where);
+          const health = yield* deviceHealthFor(matches);
+          const rank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
+          const direction = filters.direction === "desc" ? -1 : 1;
+
+          matches.sort((left, right) => {
+            const a = rank[health.get(left.id)?.level ?? "unknown"];
+            const b = rank[health.get(right.id)?.level ?? "unknown"];
+
+            return (
+              (a - b) * direction ||
+              left.name.localeCompare(right.name, undefined, { numeric: true }) ||
+              left.id.localeCompare(right.id)
+            );
+          });
+
+          const page = matches.slice(filters.offset, filters.offset + filters.limit);
+
+          const groups = yield* deviceGroupsFor(
+            ctx.organization.id,
+            page.map((row) => row.id),
+          );
+
+          return {
+            devices: page.map((row) => {
+              const summary = health.get(row.id);
+
+              return {
+                ...rowDevice(row),
+                health: normalizeDeviceHealth(summary ?? rowDeviceHealth(row, [])),
+                groups: groups.get(row.id) ?? [],
+              };
+            }),
+            total: Number(total?.value ?? 0),
+          };
+        }
 
         const rows = yield* db
           .select()
@@ -12250,8 +12908,18 @@ export const createEnterpriseService = ({
           rows.map((row) => row.id),
         );
 
+        const health = yield* deviceHealthFor(rows);
+
         return {
-          devices: rows.map((row) => ({ ...rowDevice(row), groups: groups.get(row.id) ?? [] })),
+          devices: rows.map((row) => {
+            const summary = health.get(row.id);
+
+            return {
+              ...rowDevice(row),
+              health: normalizeDeviceHealth(summary ?? rowDeviceHealth(row, [])),
+              groups: groups.get(row.id) ?? [],
+            };
+          }),
           total: Number(total?.value ?? 0),
         };
       }),
@@ -13404,16 +14072,98 @@ export const createEnterpriseService = ({
 
         if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body: { returnUrl: string } = payload;
+        const returnUrl = sameOriginReturnUrl(tenantId, body.returnUrl);
         const customer = yield* ensureStripeCustomer(ctx.organization);
 
         const result = yield* stripe.billingPortal.sessions
           .create({
             customer,
-            return_url: body.returnUrl,
+            return_url: returnUrl,
           })
           .pipe(Effect.mapError(() => billingUnavailable()));
 
-        return { url: result.url ?? body.returnUrl };
+        const url = hostedBillingUrl(result.url);
+
+        if (!url) return yield* Effect.fail(billingUnavailable());
+
+        yield* audit(ctx, "billing.portal_opened", "organization", ctx.organization.id);
+
+        return { url };
+      }),
+    billingCheckout: (request, tenantId, payload: BillingCheckoutRequest) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        // Checkout changes the tenant's plan, so it needs the same step-up as
+        // opening the portal.
+        yield* requireStepUp(auth, request, "billing-portal");
+
+        if (!stripe || !deviceMonthlyPriceId) return yield* Effect.fail(billingNotConfigured());
+
+        const body: BillingCheckoutRequest = payload;
+        const customer = yield* ensureStripeCustomer(ctx.organization);
+        const billable = yield* billableDeviceCount(db, ctx.organization.id);
+        // Checkout requires a positive quantity. A tenant buying the plan with
+        // no enrolled devices starts with one seat and the next reconciliation
+        // moves it to the real fleet size.
+        const quantity = Math.max(1, billable);
+        const returnUrl = tenantBillingUrl(tenantId);
+
+        const metadata = {
+          organizationId: ctx.organization.id,
+          plan: "device",
+        };
+
+        // Stripe omits the field entirely when no trial was requested; an
+        // explicit `undefined` would be encoded as an empty form value.
+        const subscriptionData =
+          body.trialDays === undefined
+            ? { metadata }
+            : { metadata, trial_period_days: body.trialDays };
+
+        const session = yield* stripe.checkout.sessions
+          .create({
+            mode: "subscription",
+            customer,
+            client_reference_id: ctx.organization.id,
+            success_url: `${returnUrl}?checkout=success`,
+            cancel_url: `${returnUrl}?checkout=cancelled`,
+            line_items: [{ price: deviceMonthlyPriceId, quantity }],
+            metadata,
+            subscription_data: subscriptionData,
+            allow_promotion_codes: true,
+          })
+          .pipe(Effect.mapError(() => billingUnavailable()));
+
+        const url = hostedBillingUrl(session.url);
+
+        if (!url) return yield* Effect.fail(billingUnavailable());
+
+        yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {
+          quantity,
+          trialDays: body.trialDays ?? null,
+        });
+
+        return { url };
+      }),
+    billingInvoices: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        if (!stripe) return yield* Effect.fail(billingNotConfigured());
+
+        // No customer means nothing was ever purchased, so there are no
+        // invoices to ask Stripe about.
+        if (!ctx.organization.stripeCustomerId) return { invoices: [] };
+
+        const page = yield* stripe.invoices
+          .list({ customer: ctx.organization.stripeCustomerId, limit: 24 })
+          .pipe(Effect.mapError(() => billingUnavailable()));
+
+        const response: BillingInvoicesResponse = {
+          invoices: page.data.map(billingInvoice),
+        };
+
+        return response;
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),
@@ -13898,6 +14648,26 @@ export const enterpriseHandlers = (
     .handle("testWebhookEndpoint", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.testWebhookEndpoint(request, params.tenantId, params.webhookId),
+      ),
+    )
+    .handle("listWebhookDeliveries", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listWebhookDeliveries(request, params.tenantId, params.webhookId, query),
+      ),
+    )
+    .handle("getWebhookDelivery", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getWebhookDelivery(request, params.tenantId, params.webhookId, params.deliveryId),
+      ),
+    )
+    .handle("replayWebhookDelivery", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.replayWebhookDelivery(
+          request,
+          params.tenantId,
+          params.webhookId,
+          params.deliveryId,
+        ),
       ),
     )
     .handle("listAuditLog", ({ request, params }) =>
@@ -14573,5 +15343,15 @@ export const enterpriseHandlers = (
     .handle("billingPortal", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.billingPortal(request, params.tenantId, payload),
+      ),
+    )
+    .handle("billingCheckout", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.billingCheckout(request, params.tenantId, payload),
+      ),
+    )
+    .handle("billingInvoices", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.billingInvoices(request, params.tenantId),
       ),
     );

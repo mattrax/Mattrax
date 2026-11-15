@@ -9,6 +9,7 @@ import {
   configurationAssetIdentifier,
   configurationProfileUrl,
   configurationServerToken,
+  parseAppleApplicationConfiguration,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
   validateConfiguration,
@@ -274,10 +275,56 @@ describe("policy configuration validation", () => {
     );
   });
 
-  it("rejects unsupported application kinds with a clear message", async () => {
+  it("rejects an application kind that cannot be installed", async () => {
     await expect(
       validate("mttx.apple.application.office", { fileName: "Office.pkg" }),
-    ).resolves.toContain("not supported");
+    ).resolves.toContain("must reference an applicationId or describe an installable Apple app");
+  });
+
+  it("accepts a policy-uploaded .pkg application", async () => {
+    await expect(
+      validateConfiguration("mttx.apple.application.office", {
+        source: "upload",
+        sha256: "a".repeat(64),
+        fileName: "Office.pkg",
+        contentType: "application/vnd.apple.installer+xml",
+        bundleId: "com.microsoft.Office",
+        version: "16.0",
+        title: "Microsoft Office",
+        configuration: { AllowedDomain: "example.com" },
+      }).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects an uploaded .ipa, which needs an OTA manifest", async () => {
+    await expect(
+      validate("mttx.apple.application.ios", {
+        source: "upload",
+        sha256: "b".repeat(64),
+        fileName: "App.ipa",
+        bundleId: "com.example.app",
+        version: "1.0",
+      }),
+    ).resolves.toContain("must reference an applicationId");
+  });
+
+  it("parses the three inline Apple application sources", () => {
+    expect(
+      parseAppleApplicationConfiguration({
+        source: "manifest",
+        manifestUrl: "https://example.test/app.plist",
+        bundleId: "com.example.app",
+        version: "1.2",
+      }),
+    ).toMatchObject({ type: "inline", source: "manifest", bundleId: "com.example.app" });
+
+    expect(
+      parseAppleApplicationConfiguration({ storeId: "123456789", bundleId: "com.example.app" }),
+    ).toMatchObject({ type: "inline", source: "store", storeId: "123456789", version: "0" });
+
+    expect(
+      parseAppleApplicationConfiguration({ applicationId: "app-1", configuration: { a: 1 } }),
+    ).toMatchObject({ type: "catalogue", applicationId: "app-1" });
   });
 
   it("rejects custom profiles that contain an MDM payload", async () => {

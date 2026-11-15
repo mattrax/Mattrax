@@ -39,7 +39,18 @@ services:
       ANDROID_MANAGEMENT_PUBSUB_TOPIC: ${ANDROID_MANAGEMENT_PUBSUB_TOPIC:-}
       ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: ${ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION:-}
       ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: ${ANDROID_MANAGEMENT_PUBSUB_AUDIENCE:-}
-      # Onboarding email is logged rather than sent when no email binding exists.
+      # Outbound email. Without a transport the container declares email
+      # disabled (readiness reports mailer: skipped) and nothing is logged.
+      #   resend  -> MAIL_TRANSPORT=resend, MAIL_FROM, RESEND_API_KEY
+      #   postmark-> MAIL_TRANSPORT=postmark, MAIL_FROM, POSTMARK_SERVER_TOKEN
+      #   smtp    -> MAIL_TRANSPORT=smtp, MAIL_FROM, MAIL_RELAY_URL,
+      #              MAIL_RELAY_SECRET (start the mail-relay profile)
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
+      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
       MAINTENANCE_ONBOARDING_EMAILS: ${MAINTENANCE_ONBOARDING_EMAILS:-true}
       MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: ${MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS:-7}
       MAINTENANCE_ONBOARDING_WINDOW_DAYS: ${MAINTENANCE_ONBOARDING_WINDOW_DAYS:-7}
@@ -51,6 +62,40 @@ services:
       - "8080:8080"
     volumes:
       - mattrax-data:/data
+
+  # SMTP sidecar for operators whose mail provider only offers SMTP:
+  #   docker compose -f docker-compose.selfhost.yml --profile smtp up -d
+  # with SMTP_HOST and the MAIL_RELAY_* variables set. The app reaches it at
+  # MAIL_RELAY_URL=http://mail-relay:8790.
+  mail-relay:
+    profiles: ["smtp"]
+    image: mattrax-selfhost:local
+    restart: unless-stopped
+    command: ["/app/mail-relay/index.mjs"]
+    environment:
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_REJECT_UNAUTHORIZED: ${SMTP_REJECT_UNAUTHORIZED:-true}
+      MAIL_RELAY_PORT: ${MAIL_RELAY_PORT:-8790}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.MAIL_RELAY_PORT||8790)+'/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    expose:
+      - "8790"
 
   mysql:
     image: mysql:8.4
@@ -64,7 +109,16 @@ services:
     volumes:
       - mattrax-mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-umattrax", "-p${MYSQL_PASSWORD:-mattrax}"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "-umattrax",
+          "-p${MYSQL_PASSWORD:-mattrax}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20

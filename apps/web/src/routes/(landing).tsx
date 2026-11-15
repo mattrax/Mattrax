@@ -1,7 +1,9 @@
 import { useLocation } from "@solidjs/router";
 import { raisedFailure } from "~/lib/errors";
-import { type ParentProps, Show } from "solid-js";
+import { Errored, type ParentProps, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { BrandLogo } from "~/components/brand-logo";
+import { PageErrorFallback } from "~/components/error-boundary";
 import { UserDropdown } from "~/components/user-dropdown";
 import { authClient } from "~/lib/auth";
 import { reportGlobalError } from "~/lib/global-errors";
@@ -11,7 +13,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div
-      class={`dark flex min-h-screen flex-col bg-background font-sans text-foreground ${
+      class={`flex min-h-screen flex-col bg-background font-sans text-foreground ${
         location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
       }`}
     >
@@ -22,7 +24,13 @@ export default function Layout(props: ParentProps) {
         <SkipLink />
       </Show>
       <TopNavigation />
-      {props.children}
+      <Errored
+        fallback={(error, reset) => (
+          <PageErrorFallback boundary="landing" error={error()} reset={reset} />
+        )}
+      >
+        {props.children}
+      </Errored>
       {/* The designer is a full-height tenant; a footer would create a
           second page-level scrollbar around it. */}
       <Show when={location.pathname !== "/designer"}>
@@ -111,17 +119,10 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 border-b border-white/[0.07] bg-background">
+    <header class="sticky top-0 z-50 border-b border-border bg-background">
       <div class="mx-auto flex h-12 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <a href="/" class="flex shrink-0 items-center gap-2.5" aria-label="Mattrax home">
-          <img
-            src="/assets/brand/mattrax-white-208.png"
-            alt="Mattrax"
-            class="h-4 w-auto"
-            width="208"
-            height="32"
-            decoding="async"
-          />
+          <BrandLogo class="h-4" />
         </a>
 
         <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
@@ -142,7 +143,7 @@ function TopNavigation() {
               href="/dashboard"
               variant="outline"
               size="sm"
-              class="hidden h-8 rounded-md border-white/[0.12] text-muted-foreground hover:bg-white/[0.04] hover:text-foreground sm:inline-flex"
+              class="hidden h-8 rounded-md border-border text-muted-foreground hover:bg-hover hover:text-foreground sm:inline-flex"
             >
               Dashboard
             </Button>
@@ -161,7 +162,7 @@ function TopNavigation() {
             type="button"
             popovertarget="landing-site-menu"
             aria-label="Open navigation menu"
-            class="touch-target flex size-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.12] text-muted-foreground md:hidden"
+            class="touch-target flex size-8 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground md:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -180,20 +181,20 @@ function TopNavigation() {
           <div
             id="landing-site-menu"
             popover="auto"
-            class="fixed inset-auto top-14 right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-1 text-popover-foreground shadow-xl shadow-black/40 md:hidden"
+            class="fixed inset-auto top-14 right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl md:hidden"
           >
             <nav aria-label="Site">
               {navigation.map((item) => (
                 <a
                   href={item.href}
                   target={item.target}
-                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground hover:bg-hover hover:text-foreground"
                 >
                   {item.label}
                 </a>
               ))}
             </nav>
-            <div class="mt-1 border-t border-white/[0.07] p-1">
+            <div class="mt-1 border-t border-border p-1">
               <a
                 href={session().data?.user ? "/dashboard" : "/register"}
                 class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground"
@@ -210,19 +211,12 @@ function TopNavigation() {
 
 function Footer() {
   return (
-    <footer class="border-t border-white/[0.07] bg-background">
+    <footer class="border-t border-border bg-background">
       <div class="mx-auto max-w-[1600px] px-4 py-12 sm:px-6 lg:px-8">
         <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <a href="/" class="flex items-center gap-2.5" aria-label="Mattrax home">
-              <img
-                src="/assets/brand/mattrax-white-208.png"
-                alt="Mattrax"
-                class="h-4 w-auto"
-                width="208"
-                height="32"
-                decoding="async"
-              />
+              <BrandLogo class="h-4" />
             </a>
             <p class="mt-4 max-w-xs text-[12px] leading-5 text-muted-foreground">
               Device management infrastructure for Apple, Windows and Android fleets.

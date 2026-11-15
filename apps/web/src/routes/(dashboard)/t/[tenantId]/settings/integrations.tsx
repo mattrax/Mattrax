@@ -1,12 +1,16 @@
 import { useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_EVENT_TYPES,
+  WEBHOOK_TEST_EVENT,
   webhookUrlProblem,
+  type WebhookDeliveryDetail,
+  type WebhookDeliveryInfo,
+  type WebhookDeliveryReplayResponse,
   type WebhookEndpointInfo,
   type WebhookEventType,
   type WebhookTestResponse,
@@ -62,12 +66,124 @@ export default function IntegrationsSettingsPage() {
   const [testingId, setTestingId] = createSignal<string | null>(null);
   const [rotateError, setRotateError] = createSignal<unknown>();
 
+  const [tab, setTab] = createSignal<"endpoints" | "deliveries">("endpoints");
+  const [endpointId, setEndpointId] = createSignal("");
+  const [eventFilter, setEventFilter] = createSignal("");
+  const [statusFilter, setStatusFilter] = createSignal<"" | "succeeded" | "failed">("");
+  const [extraDeliveries, setExtraDeliveries] = createSignal<WebhookDeliveryInfo[]>([]);
+  const [nextCursor, setNextCursor] = createSignal<string | null | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [moreError, setMoreError] = createSignal<unknown>();
+  const [detailOpen, setDetailOpen] = createSignal(false);
+  const [detail, setDetail] = createSignal<WebhookDeliveryDetail | null>(null);
+  const [detailError, setDetailError] = createSignal<unknown>();
+  const [detailLoading, setDetailLoading] = createSignal(false);
+  const [replayResult, setReplayResult] = createSignal<WebhookDeliveryReplayResponse | null>(null);
+  const [replayError, setReplayError] = createSignal<unknown>();
+
   const canManage = () => can("webhooks.write");
+  const canReadDeliveries = () => can("webhooks.read");
 
   const urlProblem = createMemo(() => (url().trim() ? webhookUrlProblem(url()) : null));
 
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: enterpriseKeys.webhooks(params.tenantId) });
+
+  const invalidateDeliveries = () =>
+    qc.invalidateQueries({
+      queryKey: enterpriseKeys.webhookDeliveries(params.tenantId, endpointId()),
+    });
+
+  const deliveryFilters = createMemo(() => {
+    const status = statusFilter();
+
+    return {
+      event: eventFilter() || undefined,
+      status: status === "succeeded" || status === "failed" ? status : undefined,
+    };
+  });
+
+  const deliveriesQuery = useQuery(() => ({
+    ...enterpriseQueries.webhookDeliveries(params.tenantId, endpointId(), deliveryFilters()),
+    enabled:
+      tab() === "deliveries" && canReadDeliveries() && Boolean(params.tenantId && endpointId()),
+  }));
+
+  const deliveries = () => [...(deliveriesQuery.data?.deliveries ?? []), ...extraDeliveries()];
+
+  const moreCursor = () =>
+    nextCursor() === undefined ? (deliveriesQuery.data?.nextCursor ?? null) : nextCursor();
+
+  // The first endpoint is selected by default so the deliveries tab is useful
+  // without an extra click; a filter change starts the history over.
+  createEffect(
+    () => webhooks.data?.endpoints[0]?.id,
+    (first) => {
+      if (!endpointId() && first) setEndpointId(first);
+    },
+  );
+
+  createEffect(
+    () => ({ endpointId: endpointId(), event: eventFilter(), status: statusFilter() }),
+    () => {
+      setExtraDeliveries([]);
+      setNextCursor(undefined);
+      setMoreError(undefined);
+    },
+  );
+
+  const loadMore = async () => {
+    const cursor = moreCursor();
+
+    if (!cursor || loadingMore()) return;
+    setLoadingMore(true);
+    setMoreError(undefined);
+
+    try {
+      const page = await enterprise.listWebhookDeliveries(params.tenantId, endpointId(), {
+        ...deliveryFilters(),
+        cursor,
+      });
+
+      setExtraDeliveries((rows) => [...rows, ...page.deliveries]);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      setMoreError(error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const openDelivery = async (delivery: WebhookDeliveryInfo) => {
+    setDetailOpen(true);
+    setDetail(null);
+    setDetailError(undefined);
+    setReplayResult(null);
+    setReplayError(undefined);
+    setDetailLoading(true);
+
+    try {
+      setDetail(await enterprise.getWebhookDelivery(params.tenantId, endpointId(), delivery.id));
+    } catch (error) {
+      setDetailError(error);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const replay = useMutation(() => ({
+    mutationFn: (delivery: WebhookDeliveryInfo) =>
+      enterprise.replayWebhookDelivery(params.tenantId, endpointId(), delivery.id),
+    onSuccess: async (result) => {
+      setReplayResult(result);
+      setExtraDeliveries([]);
+      setNextCursor(undefined);
+      await invalidateDeliveries();
+    },
+    onError: (error) => setReplayError(error),
+  }));
+
+  const payloadText = () => JSON.stringify(detail()?.payload ?? null, null, 2);
 
   const toggleEvent = (event: WebhookEventType) =>
     setEvents((current) =>
@@ -179,162 +295,371 @@ export default function IntegrationsSettingsPage() {
       <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
-      <Panel
-        title="Outbound webhooks"
-        description="Send device lifecycle and enrollment events to your own HTTPS endpoint. Every delivery is signed with HMAC-SHA256."
-        actions={
-          <Show when={canManage()}>
-            <Button onClick={openCreate}>
-              <Plus class="size-4" />
-              Add endpoint
-            </Button>
-          </Show>
-        }
+      <div
+        class="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-border"
+        role="tablist"
+        aria-label="Webhook views"
       >
-        <Show when={!canManage() && tenant.data}>
-          <p class="mb-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs text-muted-foreground">
-            Only a tenant owner or admin can manage webhook endpoints.
-          </p>
-        </Show>
+        <For each={["endpoints", "deliveries"] as const}>
+          {(section) => (
+            <button
+              type="button"
+              role="tab"
+              id={`webhook-tab-${section}`}
+              aria-selected={tab() === section ? "true" : "false"}
+              aria-controls={`webhook-panel-${section}`}
+              onClick={() => setTab(section)}
+              class={cn(
+                "relative -mb-px shrink-0 rounded-t-md px-3 pb-2.5 pt-2 text-[12.5px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                tab() === section
+                  ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
+                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
+              )}
+            >
+              {section === "endpoints" ? "Endpoints" : "Deliveries"}
+            </button>
+          )}
+        </For>
+      </div>
 
-        <Show
-          when={(webhooks.data?.endpoints.length ?? 0) > 0}
-          fallback={
-            <div class="rounded-lg border border-dashed border-white/[0.09] bg-white/[0.012] px-6 py-10 text-center">
-              <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
-              <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                Add an endpoint to receive signed device and enrollment events.
+      <Show when={tab() === "endpoints"}>
+        <div id="webhook-panel-endpoints" role="tabpanel" aria-labelledby="webhook-tab-endpoints">
+          <Panel
+            title="Outbound webhooks"
+            description="Send device lifecycle and enrollment events to your own HTTPS endpoint. Every delivery is signed with HMAC-SHA256."
+            actions={
+              <Show when={canManage()}>
+                <Button onClick={openCreate}>
+                  <Plus class="size-4" />
+                  Add endpoint
+                </Button>
+              </Show>
+            }
+          >
+            <Show when={!canManage() && tenant.data}>
+              <p class="mb-4 rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground">
+                Only a tenant owner or admin can manage webhook endpoints.
               </p>
-            </div>
-          }
-        >
-          <div class="space-y-3">
-            <For each={webhooks.data?.endpoints ?? []}>
-              {(endpoint) => (
-                <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-4">
-                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div class="min-w-0 space-y-1.5">
-                      <p class="break-all font-mono text-[12.5px] text-foreground">
-                        {endpoint.url}
-                      </p>
-                      <Show when={endpoint.description}>
-                        <p class="text-[13px] text-muted-foreground">{endpoint.description}</p>
-                      </Show>
-                      <div class="flex flex-wrap items-center gap-2 pt-0.5">
-                        <Chip tone={endpoint.enabled ? "success" : "neutral"}>
-                          {endpoint.enabled ? "Enabled" : "Disabled"}
-                        </Chip>
-                        <Show when={endpoint.secretPrefix}>
-                          <span class="font-mono text-[11px] text-muted-foreground">
-                            Signing secret ····{endpoint.secretPrefix}
-                          </span>
-                        </Show>
-                        <Show when={endpoint.lastDeliveryAt}>
-                          <span class="text-[11px] text-muted-foreground">
-                            Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()} ·{" "}
-                            {endpoint.lastDeliveryStatus ?? "unknown"}
-                          </span>
-                        </Show>
-                      </div>
-                    </div>
-                    <Show when={canManage()}>
-                      <div class="flex shrink-0 flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={testingId() === endpoint.id}
-                          onClick={() => void test(endpoint)}
-                        >
-                          {testingId() === endpoint.id ? "Sending…" : "Send test"}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEdit(endpoint)}>
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setRotateError(undefined);
-                            setRotateTarget(endpoint);
-                          }}
-                        >
-                          <RotateCcw class="size-3.5" />
-                          Rotate secret
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteTarget(endpoint)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </Show>
-                  </div>
+            </Show>
 
-                  <div class="mt-3 flex flex-wrap gap-1.5">
-                    <For
-                      each={
-                        endpoint.events.length > 0
-                          ? endpoint.events
-                          : Array.from(WEBHOOK_EVENT_TYPES)
-                      }
+            <Show
+              when={(webhooks.data?.endpoints.length ?? 0) > 0}
+              fallback={
+                <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
+                  <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
+                  <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                    Add an endpoint to receive signed device and enrollment events.
+                  </p>
+                </div>
+              }
+            >
+              <div class="space-y-3">
+                <For each={webhooks.data?.endpoints ?? []}>
+                  {(endpoint) => (
+                    <div class="rounded-lg border border-border bg-surface p-4">
+                      <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0 space-y-1.5">
+                          <p class="break-all font-mono text-[12.5px] text-foreground">
+                            {endpoint.url}
+                          </p>
+                          <Show when={endpoint.description}>
+                            <p class="text-[13px] text-muted-foreground">{endpoint.description}</p>
+                          </Show>
+                          <div class="flex flex-wrap items-center gap-2 pt-0.5">
+                            <Chip tone={endpoint.enabled ? "success" : "neutral"}>
+                              {endpoint.enabled ? "Enabled" : "Disabled"}
+                            </Chip>
+                            <Show when={endpoint.secretPrefix}>
+                              <span class="font-mono text-[11px] text-muted-foreground">
+                                Signing secret ····{endpoint.secretPrefix}
+                              </span>
+                            </Show>
+                            <Show when={endpoint.lastDeliveryAt}>
+                              <span class="text-[11px] text-muted-foreground">
+                                Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()}{" "}
+                                · {endpoint.lastDeliveryStatus ?? "unknown"}
+                              </span>
+                            </Show>
+                          </div>
+                        </div>
+                        <Show when={canManage()}>
+                          <div class="flex shrink-0 flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={testingId() === endpoint.id}
+                              onClick={() => void test(endpoint)}
+                            >
+                              {testingId() === endpoint.id ? "Sending…" : "Send test"}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => openEdit(endpoint)}>
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setRotateError(undefined);
+                                setRotateTarget(endpoint);
+                              }}
+                            >
+                              <RotateCcw class="size-3.5" />
+                              Rotate secret
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setDeleteTarget(endpoint)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </Show>
+                      </div>
+
+                      <div class="mt-3 flex flex-wrap gap-1.5">
+                        <For
+                          each={
+                            endpoint.events.length > 0
+                              ? endpoint.events
+                              : Array.from(WEBHOOK_EVENT_TYPES)
+                          }
+                        >
+                          {(event) => (
+                            <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">
+                              {WEBHOOK_EVENT_LABELS[event]}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+
+                      <Show when={endpoint.consecutiveFailures > 0}>
+                        <p class="mt-3 flex items-start gap-2 text-xs leading-relaxed text-warning-foreground">
+                          <CircleAlert class="mt-px size-3.5 shrink-0" />
+                          <span>
+                            {endpoint.consecutiveFailures} consecutive failed delivery
+                            {endpoint.consecutiveFailures === 1 ? "" : "ies"}. We retry failed
+                            deliveries automatically.
+                          </span>
+                        </p>
+                      </Show>
+
+                      <Show when={testResults()[endpoint.id]}>
+                        {(result) => (
+                          <div
+                            class={cn(
+                              "mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs leading-relaxed",
+                              result().status === "succeeded"
+                                ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                                : "border-destructive/25 bg-destructive/[0.07] text-destructive",
+                            )}
+                          >
+                            <Show
+                              when={result().status === "succeeded"}
+                              fallback={<CircleAlert class="mt-px size-3.5 shrink-0" />}
+                            >
+                              <CheckCircle2 class="mt-px size-3.5 shrink-0" />
+                            </Show>
+                            <span>
+                              {result().status === "succeeded"
+                                ? `Test delivered (HTTP ${result().responseStatus ?? "2xx"}) in ${result().durationMs}ms`
+                                : `Test failed: ${result().error ?? "unknown error"}`}
+                            </span>
+                          </div>
+                        )}
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
+            <p class="mt-4 text-xs leading-relaxed text-muted-foreground">
+              Deliveries are retried automatically after a failure and delivery history is removed
+              after 30 days. Endpoints must be public HTTPS URLs; localhost and private addresses
+              are rejected.
+            </p>
+          </Panel>
+        </div>
+      </Show>
+
+      <Show when={tab() === "deliveries"}>
+        <div id="webhook-panel-deliveries" role="tabpanel" aria-labelledby="webhook-tab-deliveries">
+          <Panel
+            title="Delivery history"
+            description="Every attempt we made to an endpoint in the last 30 days, with the signed payload and the response."
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={deliveriesQuery.isFetching}
+                onClick={() => void deliveriesQuery.refetch()}
+              >
+                {deliveriesQuery.isFetching ? "Refreshing…" : "Refresh"}
+              </Button>
+            }
+          >
+            <Show
+              when={canReadDeliveries()}
+              fallback={
+                <p class="rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground">
+                  Your role does not include the webhooks.read permission.
+                </p>
+              }
+            >
+              <Show
+                when={(webhooks.data?.endpoints.length ?? 0) > 0}
+                fallback={
+                  <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
+                    <p class="text-[13px] font-medium text-foreground">
+                      No endpoint to show deliveries for
+                    </p>
+                    <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                      Add an endpoint and send a test event to see delivery history here.
+                    </p>
+                  </div>
+                }
+              >
+                <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                  <label class="flex min-w-0 flex-1 flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Endpoint
+                    <select
+                      class="h-9 min-w-0 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
+                      value={endpointId()}
+                      onChange={(event) => setEndpointId(event.currentTarget.value)}
                     >
-                      {(event) => (
-                        <span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {WEBHOOK_EVENT_LABELS[event]}
-                        </span>
+                      <For each={webhooks.data?.endpoints ?? []}>
+                        {(endpoint) => <option value={endpoint.id}>{endpoint.url}</option>}
+                      </For>
+                    </select>
+                  </label>
+                  <label class="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Event
+                    <select
+                      class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
+                      value={eventFilter()}
+                      onChange={(event) => setEventFilter(event.currentTarget.value)}
+                    >
+                      <option value="">All events</option>
+                      <For each={WEBHOOK_EVENT_TYPES}>
+                        {(event) => <option value={event}>{WEBHOOK_EVENT_LABELS[event]}</option>}
+                      </For>
+                      <option value={WEBHOOK_TEST_EVENT}>Test delivery</option>
+                    </select>
+                  </label>
+                  <label class="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Status
+                    <select
+                      class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
+                      value={statusFilter()}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+
+                        if (value === "" || value === "succeeded" || value === "failed")
+                          setStatusFilter(value);
+                      }}
+                    >
+                      <option value="">Any status</option>
+                      <option value="succeeded">Succeeded</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </label>
+                </div>
+
+                <ErrorText error={deliveriesQuery.error} />
+                <ErrorText error={moreError()} />
+
+                <Show
+                  when={deliveries().length > 0}
+                  fallback={
+                    <p class="mt-4 rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-xs text-muted-foreground">
+                      {deliveriesQuery.isLoading
+                        ? "Loading deliveries…"
+                        : "No deliveries match these filters in the last 30 days."}
+                    </p>
+                  }
+                >
+                  <div class="mt-4 divide-y divide-border rounded-lg border border-border">
+                    <For each={deliveries()}>
+                      {(delivery) => (
+                        <div class="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div class="min-w-0 space-y-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                              <Chip tone={delivery.status === "succeeded" ? "success" : "danger"}>
+                                {delivery.status}
+                              </Chip>
+                              <span class="font-mono text-[12px] text-foreground">
+                                {delivery.event}
+                              </span>
+                              <span class="text-[11px] text-muted-foreground">
+                                {new Date(delivery.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <p class="text-xs text-muted-foreground">
+                              Attempt {delivery.attempt} · Response{" "}
+                              {delivery.responseStatus ?? "none"}
+                              <Show when={delivery.error}>
+                                {" "}
+                                · <span class="text-destructive">{delivery.error}</span>
+                              </Show>
+                            </p>
+                            <Show when={delivery.eventId}>
+                              <p class="truncate font-mono text-[11px] text-muted-foreground">
+                                {delivery.eventId}
+                              </p>
+                            </Show>
+                          </div>
+                          <div class="flex shrink-0 flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void openDelivery(delivery)}
+                            >
+                              View payload
+                            </Button>
+                            <Show when={canManage()}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={replay.isPending}
+                                onClick={() => {
+                                  setReplayError(undefined);
+                                  replay.mutate(delivery);
+                                }}
+                              >
+                                Redeliver
+                              </Button>
+                            </Show>
+                          </div>
+                        </div>
                       )}
                     </For>
                   </div>
 
-                  <Show when={endpoint.consecutiveFailures > 0}>
-                    <p class="mt-3 flex items-start gap-2 text-xs leading-relaxed text-warning-foreground">
-                      <CircleAlert class="mt-px size-3.5 shrink-0" />
-                      <span>
-                        {endpoint.consecutiveFailures} consecutive failed delivery
-                        {endpoint.consecutiveFailures === 1 ? "" : "ies"}. We retry failed
-                        deliveries automatically.
-                      </span>
-                    </p>
-                  </Show>
-
-                  <Show when={testResults()[endpoint.id]}>
-                    {(result) => (
-                      <div
-                        class={cn(
-                          "mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs leading-relaxed",
-                          result().status === "succeeded"
-                            ? "border-success/25 bg-success/[0.07] text-success-foreground"
-                            : "border-destructive/25 bg-destructive/[0.07] text-destructive",
-                        )}
+                  <Show when={moreCursor()}>
+                    <div class="mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={loadingMore()}
+                        onClick={() => void loadMore()}
                       >
-                        <Show
-                          when={result().status === "succeeded"}
-                          fallback={<CircleAlert class="mt-px size-3.5 shrink-0" />}
-                        >
-                          <CheckCircle2 class="mt-px size-3.5 shrink-0" />
-                        </Show>
-                        <span>
-                          {result().status === "succeeded"
-                            ? `Test delivered (HTTP ${result().responseStatus ?? "2xx"}) in ${result().durationMs}ms`
-                            : `Test failed: ${result().error ?? "unknown error"}`}
-                        </span>
-                      </div>
-                    )}
+                        {loadingMore() ? "Loading…" : "Load older deliveries"}
+                      </Button>
+                    </div>
                   </Show>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
+                </Show>
 
-        <p class="mt-4 text-xs leading-relaxed text-muted-foreground">
-          Deliveries are retried automatically after a failure and delivery history is removed after
-          30 days. Endpoints must be public HTTPS URLs; localhost and private addresses are
-          rejected.
-        </p>
-      </Panel>
+                <p class="mt-4 text-xs leading-relaxed text-muted-foreground">
+                  Redelivering keeps the original <code class="font-mono">X-Mattrax-Delivery</code>{" "}
+                  id and re-signs the stored payload, so a receiver can dedupe a replay. History is
+                  capped to the 30-day retention window.
+                </p>
+              </Show>
+            </Show>
+          </Panel>
+        </div>
+      </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
         <DialogContent>
@@ -521,12 +846,108 @@ export default function IntegrationsSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={detailOpen()} onOpenChange={(open) => !open && setDetailOpen(false)}>
+        <DialogContent class="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Delivery payload</DialogTitle>
+            <DialogDescription>
+              The exact JSON we signed and sent, plus the response we recorded.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Show when={detailLoading()}>
+            <p class="text-xs text-muted-foreground">Loading delivery…</p>
+          </Show>
+          <ErrorText error={detailError()} />
+
+          <Show when={detail()}>
+            {(delivery) => (
+              <div class="space-y-3">
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <Chip tone={delivery().status === "succeeded" ? "success" : "danger"}>
+                    {delivery().status}
+                  </Chip>
+                  <span class="font-mono text-[12px] text-foreground">{delivery().event}</span>
+                  <span class="text-muted-foreground">
+                    Attempt {delivery().attempt} · Response {delivery().responseStatus ?? "none"}
+                  </span>
+                </div>
+                <Show when={delivery().error}>
+                  <p class="rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2.5 text-xs text-destructive">
+                    {delivery().error}
+                  </p>
+                </Show>
+                <div class="grid gap-1 text-[11px] text-muted-foreground">
+                  <span class="font-mono">Delivery id · {delivery().id}</span>
+                  <Show when={delivery().eventId}>
+                    <span class="break-all font-mono">
+                      X-Mattrax-Delivery · {delivery().eventId}
+                    </span>
+                  </Show>
+                </div>
+                <div class="relative">
+                  <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+                    {payloadText()}
+                  </pre>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    class="absolute right-2 top-2"
+                    onClick={() => void navigator.clipboard?.writeText(payloadText())}
+                  >
+                    Copy payload
+                  </Button>
+                </div>
+                <Show when={replayResult()}>
+                  {(result) => (
+                    <p
+                      class={cn(
+                        "rounded-lg border p-2.5 text-xs",
+                        result().delivery.status === "succeeded"
+                          ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                          : "border-destructive/25 bg-destructive/[0.07] text-destructive",
+                      )}
+                    >
+                      Redelivered with the same delivery id:{" "}
+                      {result().delivery.status === "succeeded"
+                        ? `HTTP ${result().delivery.responseStatus ?? "2xx"}`
+                        : (result().delivery.error ?? "delivery failed")}
+                    </p>
+                  )}
+                </Show>
+                <ErrorText error={replayError()} />
+              </div>
+            )}
+          </Show>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailOpen(false)}>
+              Close
+            </Button>
+            <Show when={canManage() && detail()}>
+              {(delivery) => (
+                <Button
+                  disabled={replay.isPending}
+                  onClick={() => {
+                    setReplayError(undefined);
+                    replay.mutate(delivery());
+                  }}
+                >
+                  {replay.isPending ? "Redelivering…" : "Redeliver"}
+                </Button>
+              )}
+            </Show>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

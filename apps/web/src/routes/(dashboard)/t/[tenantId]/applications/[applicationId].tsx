@@ -38,6 +38,45 @@ const sourceLabel = (source: ApplicationNode["source"]) =>
     Match.orElse(() => "Uploaded file"),
   );
 
+const installButtonLabel = (input: {
+  readonly pending: boolean;
+  readonly viaVpp: boolean;
+  readonly platform: "apple" | "win" | "android" | undefined;
+}): string => {
+  if (input.pending) return "Queueing…";
+
+  if (input.viaVpp && input.platform === "apple") return "Install via VPP on assigned devices";
+
+  switch (input.platform) {
+    case "android":
+      return "Push Android policy to assigned devices";
+    default:
+      return "Install on assigned devices";
+  }
+};
+
+const identityFieldLabel = (platform: "apple" | "win" | "android" | undefined): string => {
+  switch (platform) {
+    case "android":
+      return "Managed Google Play package";
+    case "win":
+      return "MSI ProductCode";
+    default:
+      return "Bundle / package ID";
+  }
+};
+
+const installMechanismLabel = (platform: "apple" | "win" | "android" | undefined): string => {
+  switch (platform) {
+    case "win":
+      return "EnterpriseDesktopAppManagement (MSI)";
+    case "android":
+      return "Managed Google Play policy";
+    default:
+      return "InstallApplication / InstallEnterpriseApplication";
+  }
+};
+
 const formatBytes = (value?: number | null) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
 
@@ -208,8 +247,29 @@ export default function ApplicationDetailPage() {
   };
 
   const platform = () => row()?.platform;
-  const canInstall = createMemo(() => platform() === "apple");
+  const canInstall = createMemo(() => platform() !== undefined);
   const assignedCount = () => groupIds().size + deviceIds().size;
+
+  /** Why the install button is disabled, or undefined when it can be pressed. */
+  const installDisabledReason = () => {
+    if (!canInstall()) return undefined;
+
+    if (assignedCount() === 0) return "Assign this application to a device or group first.";
+
+    if (platform() === "win" && !row()?.manifestUrl)
+      return "Add an MSI installer URL before installing on Windows devices.";
+
+    if (platform() === "win" && !row()?.bundleId)
+      return "Add the MSI ProductCode before installing on Windows devices.";
+
+    if (platform() === "android" && !row()?.bundleId)
+      return "Add the Managed Google Play package name before installing on Android devices.";
+
+    if (platform() === "apple" && row()?.source === "upload" && !row()?.sha256)
+      return "Upload a .pkg before installing on Apple devices.";
+
+    return undefined;
+  };
 
   const vppAsset = createMemo(() =>
     (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
@@ -245,21 +305,17 @@ export default function ApplicationDetailPage() {
             <Show when={writable()}>
               <Button
                 variant="outline"
-                disabled={!canInstall() || install.isPending || assignedCount() === 0}
-                title={
-                  !canInstall()
-                    ? "Install is only implemented for Apple applications today."
-                    : assignedCount() === 0
-                      ? "Assign this application to a device or group first."
-                      : undefined
+                disabled={
+                  !canInstall() || install.isPending || installDisabledReason() !== undefined
                 }
+                title={installDisabledReason()}
                 onClick={() => install.mutate()}
               >
-                {install.isPending
-                  ? "Queueing…"
-                  : vppAsset()
-                    ? "Install via VPP on assigned devices"
-                    : "Install on assigned devices"}
+                {installButtonLabel({
+                  pending: install.isPending,
+                  viaVpp: Boolean(vppAsset()),
+                  platform: platform(),
+                })}
               </Button>
             </Show>
           </>
@@ -321,7 +377,7 @@ export default function ApplicationDetailPage() {
 
                   <Show when={vppAsset()}>
                     {(asset) => (
-                      <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                      <div class="rounded-lg border border-border bg-surface p-3">
                         <div class="flex flex-wrap items-center gap-2">
                           <Badge class="text-[10px]">VPP</Badge>
                           <span class="text-[13px] font-medium text-foreground">
@@ -348,7 +404,14 @@ export default function ApplicationDetailPage() {
                     )}
                   </Show>
 
-                  <Show when={vpp.data?.configured && vppAssets.data && !vppAsset()}>
+                  <Show
+                    when={
+                      platform() === "apple" &&
+                      vpp.data?.configured &&
+                      vppAssets.data &&
+                      !vppAsset()
+                    }
+                  >
                     <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[11.5px] leading-relaxed text-warning-foreground">
                       <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                       <span>
@@ -366,7 +429,7 @@ export default function ApplicationDetailPage() {
                     />
                   </Field>
                   <div class="grid gap-4 sm:grid-cols-2">
-                    <Field label="Bundle / package ID">
+                    <Field label={identityFieldLabel(application().platform)}>
                       <Input
                         disabled={!writable()}
                         value={bundleId()}
@@ -380,7 +443,7 @@ export default function ApplicationDetailPage() {
                         onInput={(e) => setVersion(e.currentTarget.value)}
                       />
                     </Field>
-                    <Field label="Manifest URL">
+                    <Field label={application().platform === "win" ? "MSI URL" : "Manifest URL"}>
                       <Input
                         disabled={!writable()}
                         value={manifestUrl()}
@@ -418,7 +481,7 @@ export default function ApplicationDetailPage() {
                     </Show>
                   </div>
                   <Show when={writable()}>
-                    <div class="mt-3 border-t border-white/[0.06] pt-3">
+                    <div class="mt-3 border-t border-border pt-3">
                       <Button
                         variant="destructive"
                         disabled={remove.isPending}
@@ -455,8 +518,9 @@ export default function ApplicationDetailPage() {
                   </Show>
                   <Show when={application().source === "upload"}>
                     <p class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                      Uploaded files are stored and downloadable from the API, but Apple installs
-                      still need a manifest URL or store ID.
+                      {application().platform === "apple"
+                        ? "Upload a signed .pkg. Mattrax serves it to each assigned Mac through a signed, expiring URL and installs it with InstallEnterpriseApplication. An .ipa needs an OTA manifest URL."
+                        : "Uploaded files are kept for download; Windows installs from the MSI URL and Android installs from Managed Google Play."}
                     </p>
                   </Show>
                 </div>
@@ -489,7 +553,7 @@ export default function ApplicationDetailPage() {
                             <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
                               <input
                                 type="checkbox"
-                                class="size-3.5 shrink-0 accent-[var(--brand)]"
+                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
                                 checked={groupIds().has(group.id)}
                                 disabled={!writable()}
                                 onChange={() => toggle(groupIds, setGroupIds, group.id)}
@@ -518,7 +582,7 @@ export default function ApplicationDetailPage() {
                             <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
                               <input
                                 type="checkbox"
-                                class="size-3.5 shrink-0 accent-[var(--brand)]"
+                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
                                 checked={deviceIds().has(device.id)}
                                 disabled={!writable()}
                                 onChange={() => toggle(deviceIds, setDeviceIds, device.id)}
@@ -535,7 +599,8 @@ export default function ApplicationDetailPage() {
                   </div>
                   <p class="text-[11px] leading-relaxed text-muted-foreground">
                     Assignments are saved with the form. Apple installs are queued on the next
-                    check-in; Windows and Android delivery is not implemented yet.
+                    check-in; Windows runs the MSI on its next SyncML check-in; Android repushes the
+                    Managed Google Play policy.
                   </p>
                 </div>
               </Panel>
@@ -569,7 +634,7 @@ export default function ApplicationDetailPage() {
                   <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted-foreground">Install</dt>
                     <dd class="text-[11.5px] text-foreground">
-                      {canInstall() ? "Supported (Apple)" : "Not implemented"}
+                      {installMechanismLabel(application().platform)}
                     </dd>
                   </div>
                 </dl>

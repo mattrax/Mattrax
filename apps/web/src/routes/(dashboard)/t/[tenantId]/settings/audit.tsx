@@ -45,7 +45,7 @@ const responseFailure = async (response: Response, fallback: string) => {
 };
 
 const inputClass =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
 
 const selectClass = inputClass;
 
@@ -485,12 +485,12 @@ export default function AuditSettingsPage() {
             Swipe the table sideways to see action and target details.
           </p>
           <div
-            class="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-white/[0.07]"
+            class="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-border"
             aria-busy={log.isFetching ? "true" : undefined}
           >
             <table class="w-full min-w-[720px] text-left text-[13px]">
               <caption class="sr-only">Audit events, newest first</caption>
-              <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
                   <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
                     When
@@ -512,7 +512,7 @@ export default function AuditSettingsPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-white/[0.05]">
+              <tbody class="divide-y divide-border">
                 <For each={entries()}>
                   {(entry) => {
                     const summary = () =>
@@ -520,7 +520,7 @@ export default function AuditSettingsPage() {
 
                     return (
                       <>
-                        <tr class="transition-colors hover:bg-white/[0.02]">
+                        <tr class="transition-colors hover:bg-hover">
                           <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">
                             {formatDate(entry.createdAt)}
                           </td>
@@ -595,8 +595,8 @@ export default function AuditSettingsPage() {
                         </tr>
                         <Show when={expandedEntry() === entry.id}>
                           <tr id={`audit-metadata-${entry.id}`}>
-                            <td colspan="5" class="bg-white/[0.02] px-3 py-3">
-                              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-white/[0.07] bg-black/20 p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+                            <td colspan="5" class="bg-surface px-3 py-3">
+                              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
                                 {JSON.stringify(entry.metadata ?? {}, null, 2)}
                               </pre>
                             </td>

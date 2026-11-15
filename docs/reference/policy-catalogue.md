@@ -14,6 +14,7 @@ dataset.
 | `windows/index.json`            | ~150 KB | Windows tab opened                     |
 | `windows/<collection-key>.json` | ~20 KB  | A collection is selected or referenced |
 | `windows/search.json`           | ~6.9 MB | First non-empty Windows search         |
+| `third-party-apps.json`         | ~17 KB  | Third-party apps section               |
 
 `windows/index.json` holds one summary per collection: `id`, `key`, `name`, `identifier`,
 `group`, `kind`, `surface`, `deprecated`, `minOs`, `propertyCount`.
@@ -46,6 +47,24 @@ not.
 The adapters live in `scripts/catalog-sync/`. See
 [Catalogue sources](/reference/catalogue-sources) for why these sources were chosen and
 the licensing caveats around the generated data.
+
+## Third-party applications
+
+`third-party-apps.json` is a curated, hand-reviewed catalogue (not produced by
+`catalog:sync`) of common applications and their managed settings. The designer's
+**Third-party apps** section offers the entries that document the active platform:
+
+| Platform | Compiles to                                                                    |
+| -------- | ------------------------------------------------------------------------------ |
+| Apple    | `com.apple.ManagedClient.preferences` with the app's preference domain (macOS) |
+| Windows  | Policy CSP `Replace` nodes for the Chrome/Edge ADMX settings                   |
+| Android  | `applications[].managedConfiguration` in the Managed Google Play policy        |
+
+Each entry names its vendor sources in `sources`. Adding an application means editing that
+JSON file and extending `thirdPartyApps.test.ts`; no designer code is duplicated per app.
+
+iOS managed app configuration is not part of this catalogue: the templates target macOS
+managed preferences, Windows CSP and Android managed configuration.
 
 To rebuild only the split Windows files after replacing `data/catalog/windows.json`:
 

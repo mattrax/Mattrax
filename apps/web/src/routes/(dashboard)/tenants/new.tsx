@@ -91,7 +91,7 @@ export default function NewTenantPage() {
             />
           </Field>
           <ErrorText error={error() ?? createTenant.error} />
-          <div class="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
+          <div class="flex flex-wrap items-center gap-3 border-t border-border pt-4">
             <Button type="submit" disabled={createTenant.isPending}>
               {createTenant.isPending ? "Creating..." : "Create tenant"}
             </Button>

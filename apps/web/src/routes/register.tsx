@@ -1,7 +1,7 @@
 import { Title } from "@solidjs/meta";
+import { BrandLogo } from "~/components/brand-logo";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
-import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 
@@ -12,10 +12,6 @@ export default function RegisterPage() {
   const [email, setEmail] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
-  const [step, setStep] = createSignal<"details" | "verify">("details");
-  const [sentCode, setSentCode] = createSignal(false);
-  const [verificationError, setVerificationError] = createSignal<string | null>(null);
-  const [challenge, setChallenge] = createSignal<string | undefined>();
   const session = authClient.useSession();
   const signedInAs = () => session().data?.user;
   const [signingOut, setSigningOut] = createSignal(false);
@@ -89,40 +85,33 @@ export default function RegisterPage() {
 
     // The account exists and the passkey is already signed in. Prove ownership
     // of the address before the account can reach the dashboard.
-    const verification = await authClient.requestEmailVerification();
-    setSentCode(!verification.error);
-    setVerificationError(
-      verification.error
-        ? errorMessage(verification.error, "Could not send a verification code. Try again.")
-        : null,
+    await authClient.requestEmailVerification();
+
+    // Move to the dedicated verification page instead of switching local
+    // state: registering changes the session, and a remount of this route
+    // would otherwise reset the step and leave the user on a stale form.
+    // `/verify-email` sends a code automatically and also accepts the link.
+    navigate(
+      returnTo() ? `/verify-email?returnTo=${encodeURIComponent(returnTo()!)}` : "/verify-email",
+      { replace: true },
     );
-    setChallenge(verification.data?.challenge);
-    setStep("verify");
   };
 
   return (
-    <main class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
+    <main class="auth-page min-h-screen flex items-center justify-center bg-background text-foreground">
       <Title>Create account · Mattrax</Title>
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="inline-flex items-center gap-2 mb-6">
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-4 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-4" />
           </a>
-          <Show when={step() === "details"}>
-            <h1 class="text-2xl font-semibold text-stone-900">Create an account</h1>
-            <p class="text-stone-500 text-sm mt-1">
-              Use a passkey to sign in securely, without a password.
-            </p>
-          </Show>
+          <h1 class="text-2xl font-semibold text-stone-900">Create an account</h1>
+          <p class="text-stone-500 text-sm mt-1">
+            Use a passkey to sign in securely, without a password.
+          </p>
         </div>
 
-        <Show when={step() === "details" ? signedInAs() : undefined}>
+        <Show when={signedInAs()}>
           {(user) => (
             <div
               role="status"
@@ -145,81 +134,65 @@ export default function RegisterPage() {
           )}
         </Show>
 
-        <Show
-          when={step() === "details"}
-          fallback={
-            <EmailCodeForm
-              email={email()}
-              sentInitially={sentCode()}
-              initialChallenge={challenge()}
-              initialError={verificationError()}
-              onVerified={async () => {
-                await session().refetch();
-                navigate(returnTo() ?? "/dashboard", { replace: true });
-              }}
+        <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
+          <div class="space-y-1.5">
+            <label for="name" class="text-sm font-medium text-stone-700">
+              Name
+            </label>
+            <input
+              id="name"
+              name="name"
+              type="text"
+              required
+              autofocus
+              autocomplete="name"
+              placeholder="Ada Lovelace"
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
+              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
             />
-          }
-        >
-          <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
-            <div class="space-y-1.5">
-              <label for="name" class="text-sm font-medium text-stone-700">
-                Name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                required
-                autofocus
-                autocomplete="name"
-                placeholder="Ada Lovelace"
-                value={name()}
-                onInput={(event) => setName(event.currentTarget.value)}
-                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
-              />
-            </div>
+          </div>
 
-            <div class="space-y-1.5">
-              <label for="email" class="text-sm font-medium text-stone-700">
-                Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                autocomplete="username"
-                autocapitalize="none"
-                spellcheck={false}
-                placeholder="you@example.com"
-                value={email()}
-                onInput={(event) => setEmail(event.currentTarget.value)}
-                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
-              />
-            </div>
+          <div class="space-y-1.5">
+            <label for="email" class="text-sm font-medium text-stone-700">
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck={false}
+              placeholder="you@example.com"
+              value={email()}
+              onInput={(event) => setEmail(event.currentTarget.value)}
+              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+            />
+          </div>
 
-            <Show when={error()}>
-              {(message) => (
-                <p id="register-error" role="alert" class="text-sm text-destructive">
-                  {message()}
-                </p>
-              )}
-            </Show>
+          <Show when={error()}>
+            {(message) => (
+              <p id="register-error" role="alert" class="text-sm text-destructive">
+                {message()}
+              </p>
+            )}
+          </Show>
 
-            <button
-              type="submit"
-              disabled={pending()}
-              class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
-            >
-              {pending() ? "Waiting for your device…" : "Create account with a passkey"}
-            </button>
+          <button
+            type="submit"
+            disabled={pending()}
+            class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {pending() ? "Waiting for your device…" : "Create account with a passkey"}
+          </button>
 
-            <p class="text-center text-xs leading-relaxed text-stone-500">
-              We'll ask your device to create a passkey with Face ID, Touch ID, Windows Hello or a
-              security key. Mattrax never stores a password.
-            </p>
-          </form>
-        </Show>
+          <p class="text-center text-xs leading-relaxed text-stone-500">
+            We'll ask your device to create a passkey with Face ID, Touch ID, Windows Hello or a
+            security key. Mattrax never stores a password.
+          </p>
+        </form>
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Already have an account?{" "}

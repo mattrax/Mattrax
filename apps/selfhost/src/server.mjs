@@ -190,6 +190,11 @@ const SELF_HOST_BINDINGS = [
   "WINDOWS_ORGANIZATION_ID",
   "WINDOWS_FEDERATED_AUDIENCE",
   "TRUST_DEVICE_IDENTITY_HEADERS",
+  // Email provider credentials are declared secrets only when a Cloudflare
+  // deploy supplies them, so a container has to add them explicitly.
+  "RESEND_API_KEY",
+  "POSTMARK_SERVER_TOKEN",
+  "MAIL_RELAY_SECRET",
 ];
 
 const cronSecret = randomBytes(32).toString("base64url");
@@ -206,6 +211,43 @@ const extraBindings = () => {
   return bindings;
 };
 
+/**
+ * Outbound email. `MAIL_TRANSPORT` selects a real transport; without one the
+ * container declares `MATTRAX_EMAIL_DISABLED` so `/api/ready` reports
+ * `mailer: skipped` instead of a misconfiguration. Validation happens here
+ * rather than at the first send so a typo fails the boot, not onboarding.
+ */
+const mailTransport = (process.env.MAIL_TRANSPORT ?? "").trim().toLowerCase();
+const mailFrom = (process.env.MAIL_FROM ?? "").trim();
+
+const mailRequired = {
+  resend: ["RESEND_API_KEY"],
+  postmark: ["POSTMARK_SERVER_TOKEN"],
+  smtp: ["MAIL_RELAY_URL", "MAIL_RELAY_SECRET"],
+};
+
+const mailEnabled = Object.hasOwn(mailRequired, mailTransport);
+
+if (mailTransport === "cloudflare")
+  fail(
+    "MAIL_TRANSPORT=cloudflare needs the Cloudflare send_email binding, which a container does not have; use resend, postmark or smtp",
+  );
+
+if (mailTransport && mailTransport !== "disabled" && !mailEnabled)
+  fail(`MAIL_TRANSPORT=${mailTransport} is not supported; use resend, postmark, smtp or disabled`);
+
+if (mailEnabled) {
+  const missing = mailRequired[mailTransport].filter((name) => !(process.env[name] ?? "").trim());
+
+  if (missing.length > 0)
+    fail(`${missing.join(" and ")} required when MAIL_TRANSPORT=${mailTransport}`);
+
+  if (!mailFrom) fail("MAIL_FROM is required when MAIL_TRANSPORT is set");
+
+  if (mailTransport === "smtp" && (process.env.MAIL_RELAY_SECRET ?? "").trim().length < 16)
+    fail("MAIL_RELAY_SECRET must be at least 16 characters");
+}
+
 const apiOverrides = {
   ...extraBindings(),
   [hyperdriveBinding[0]]: {
@@ -219,13 +261,14 @@ const apiOverrides = {
   },
 };
 
-// Email delivery needs a provider binding that a container cannot synthesise.
-// Removing it makes the application log messages instead of failing requests.
-// The explicit flag makes readiness report `mailer: skipped` (degraded) rather
-// than treating the missing binding as a misconfiguration.
+// The `send_email` binding only exists on Cloudflare. Removing it leaves the
+// Worker with the transport selected by `MAIL_TRANSPORT`; with none, the
+// application has no mailer at all and says so instead of writing codes to the
+// log. The explicit disabled flag makes readiness `degraded`, not unhealthy.
 if (emailBinding) {
   apiOverrides[emailBinding[0]] = undefined;
-  apiOverrides.MATTRAX_EMAIL_DISABLED = { type: "text", value: "true" };
+
+  if (!mailEnabled) apiOverrides.MATTRAX_EMAIL_DISABLED = { type: "text", value: "true" };
 }
 
 const apiConfig = await loadWorker(api, apiOverrides, { cron: true });
@@ -261,9 +304,9 @@ if (process.env.SKIP_MIGRATIONS !== "1") {
   else console.warn(`mattrax self-host: no migrations found at ${migrationsDirectory}`);
 }
 
-if (emailBinding)
+if (emailBinding && !mailEnabled)
   console.warn(
-    "mattrax self-host: outbound email is disabled; sign-in codes and password-reset links are written to the log (/api/ready reports mailer: skipped)",
+    "mattrax self-host: outbound email is disabled; set MAIL_TRANSPORT (resend, postmark or smtp) and MAIL_FROM to send sign-in codes and invitations (/api/ready reports mailer: skipped)",
   );
 
 const miniflare = new Miniflare({

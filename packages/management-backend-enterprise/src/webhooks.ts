@@ -295,8 +295,10 @@ const recordDelivery = (
   },
 ) =>
   Effect.gen(function* () {
+    const id = `whd_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+
     yield* db.insert(s.webhookDelivery).values({
-      id: `whd_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`,
+      id,
       endpointId: input.endpoint.id,
       organizationId: input.endpoint.organizationId,
       event: input.payload.type,
@@ -320,11 +322,13 @@ const recordDelivery = (
         updatedAt: input.now,
       })
       .where(eq(s.webhookEndpoint.id, input.endpoint.id));
+
+    return id;
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning(
         `Failed to record webhook delivery for ${input.endpoint.id}: ${String(cause)}`,
-      ),
+      ).pipe(Effect.as(undefined)),
     ),
   );
 
@@ -463,6 +467,57 @@ export const sendTestWebhook = (
     yield* recordDelivery(db, { endpoint, payload, outcome, attempt: 1, now });
 
     return outcome;
+  });
+
+/**
+ * Re-send a stored delivery payload to its endpoint.
+ *
+ * The payload keeps its `id`, so the receiver sees the same
+ * `X-Mattrax-Delivery` header and can dedupe a replay against the original.
+ * A new delivery row records the replay separately; the original row is never
+ * mutated. Never fails: the outcome is returned and callers surface it.
+ */
+export type WebhookReplayResult = {
+  /** Row id of the replay attempt; null when the row could not be written. */
+  readonly deliveryId: string | null;
+  readonly outcome: WebhookDeliveryOutcome;
+};
+
+export const replayWebhookDelivery = (
+  db: Db["Service"],
+  input: { readonly endpoint: WebhookEndpointRow; readonly payload: WebhookPayload },
+  options: WebhookDeliveryOptions = {},
+): Effect.Effect<WebhookReplayResult> =>
+  Effect.gen(function* () {
+    const now = options.now ?? new Date();
+
+    const outcome: WebhookDeliveryOutcome = options.authSecret
+      ? yield* Effect.promise(() =>
+          attemptDelivery({
+            endpoint: input.endpoint,
+            payload: input.payload,
+            authSecret: options.authSecret!,
+            fetch: options.fetch,
+            timeoutMs: options.timeoutMs,
+            allowUnsafeUrl: options.allowUnsafeUrl,
+          }),
+        )
+      : {
+          status: "failed",
+          responseStatus: null,
+          error: "Webhook signing is not configured on this deployment",
+          durationMs: 0,
+        };
+
+    const deliveryId = yield* recordDelivery(db, {
+      endpoint: input.endpoint,
+      payload: input.payload,
+      outcome,
+      attempt: 1,
+      now,
+    });
+
+    return { deliveryId: deliveryId ?? null, outcome };
   });
 
 export type WebhookRetryOptions = WebhookDeliveryOptions & {

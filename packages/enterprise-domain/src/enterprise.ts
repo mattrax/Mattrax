@@ -34,6 +34,10 @@ import {
   CreateWebhookEndpointResponse,
   PatchWebhookEndpointRequest,
   RotateWebhookSecretResponse,
+  WebhookDeliveryDetail,
+  WebhookDeliveryReplayResponse,
+  WebhookDeliveriesResponse,
+  WebhookDeliveryStatus,
   WebhookEndpointInfo,
   WebhookEndpointsResponse,
   WebhookTestResponse,
@@ -46,6 +50,13 @@ const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.St
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
+
+const TenantWebhookDeliveryParam = {
+  tenantId: Schema.String,
+  webhookId: Schema.String,
+  deliveryId: Schema.String,
+};
+
 const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
 const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
 const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
@@ -251,6 +262,12 @@ const EnterprisePolicyApplicationDownloadErrors = [
 
 const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
+  EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+/** Billing reads call Stripe too, so an outage is a typed 502, not a 500. */
+const EnterpriseBillingReadErrors = [
+  ...EnterpriseTenantReadErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
 ] as const;
 
@@ -1243,6 +1260,12 @@ export const DeviceRow = Schema.Struct({
       }),
     ),
   ),
+  /**
+   * Derived health rollup. Present on search pages (one computation per page);
+   * the `listDevices` payload omits it to avoid reading every declaration on a
+   * whole-fleet listing.
+   */
+  health: Schema.optional(Schema.suspend(() => DeviceHealth)),
 });
 
 export type DeviceRow = typeof DeviceRow.Type;
@@ -2619,7 +2642,14 @@ export type GroupPreviewResponse = typeof GroupPreviewResponse.Type;
 
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
-export const DeviceSearchSort = Schema.Literals(["name", "lastSeenAt", "enrolledAt", "status"]);
+export const DeviceSearchSort = Schema.Literals([
+  "name",
+  "lastSeenAt",
+  "enrolledAt",
+  "status",
+  /** Worst health first when ascending (critical, attention, unknown, healthy). */
+  "health",
+]);
 
 export type DeviceSearchSort = typeof DeviceSearchSort.Type;
 
@@ -2670,6 +2700,8 @@ export type DeviceSearchQuery = typeof DeviceSearchQuery.Type;
 export const DeviceSearchRow = Schema.Struct({
   ...DeviceRow.fields,
   groups: Schema.Array(DeviceRelation),
+  /** Always present on search rows: the table renders it as a column. */
+  health: Schema.suspend(() => DeviceHealth),
 });
 
 export type DeviceSearchRow = typeof DeviceSearchRow.Type;
@@ -3173,6 +3205,69 @@ export type ApnsCsrResponse = typeof ApnsCsrResponse.Type;
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
+
+/** A Checkout Session redirect that buys the per-device plan. */
+export const BillingCheckoutRequest = Schema.Struct({
+  /**
+   * Free-trial length in days. Stripe caps trials at 730 days; omitting the
+   * field starts the subscription without a trial.
+   */
+  trialDays: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 730 }))),
+});
+
+export type BillingCheckoutRequest = typeof BillingCheckoutRequest.Type;
+
+export const BillingCheckoutResponse = Schema.Struct({
+  /** Stripe-hosted Checkout URL the browser is redirected to. */
+  url: Schema.String,
+});
+
+export const BillingInvoiceStatus = Schema.Literals([
+  "draft",
+  "open",
+  "paid",
+  "uncollectible",
+  "void",
+]);
+
+/** One Stripe invoice, restated without internal Stripe identifiers. */
+export const BillingInvoice = Schema.Struct({
+  id: Schema.String,
+  number: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(BillingInvoiceStatus),
+  /** Minor units in the invoice currency (for example cents). */
+  total: Schema.Number,
+  amountDue: Schema.Number,
+  amountPaid: Schema.Number,
+  currency: Schema.String,
+  createdAt: Schema.String,
+  periodStart: Schema.NullOr(Schema.String),
+  periodEnd: Schema.NullOr(Schema.String),
+  hostedInvoiceUrl: Schema.NullOr(Schema.String),
+  pdfUrl: Schema.NullOr(Schema.String),
+});
+
+export type BillingInvoice = typeof BillingInvoice.Type;
+
+export const BillingInvoicesResponse = Schema.Struct({
+  invoices: Schema.Array(BillingInvoice),
+});
+
+export type BillingInvoicesResponse = typeof BillingInvoicesResponse.Type;
+
+/**
+ * Delivery history filters. `event` is a webhook event name (or
+ * `webhook.test`); `status` narrows to succeeded/failed. The list is always
+ * scoped to the endpoint and the 30-day retention window.
+ */
+export const WebhookDeliveryQuery = Schema.Struct({
+  event: Schema.optional(Schema.String),
+  status: Schema.optional(WebhookDeliveryStatus),
+  limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+  cursor: Schema.optional(Schema.String),
+});
+
+export type WebhookDeliveryQuery = typeof WebhookDeliveryQuery.Type;
 
 export const AuthUser = UserInfo;
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
@@ -3892,6 +3987,42 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantWebhookParam,
       success: WebhookTestResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "listWebhookDeliveries",
+      "/v1/tenants/:tenantId/webhooks/:webhookId/deliveries",
+      {
+        // Delivery history is read-gated (`webhooks.read`); the handler relies
+        // on the method→permission mapping rather than tenant write.
+        error: EnterpriseTenantValidatedReadErrors,
+        params: TenantWebhookParam,
+        query: WebhookDeliveryQuery,
+        success: WebhookDeliveriesResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getWebhookDelivery",
+      "/v1/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId",
+      {
+        error: EnterpriseTenantValidatedReadErrors,
+        params: TenantWebhookDeliveryParam,
+        success: WebhookDeliveryDetail,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "replayWebhookDelivery",
+      "/v1/tenants/:tenantId/webhooks/:webhookId/deliveries/:deliveryId/replay",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantWebhookDeliveryParam,
+        success: WebhookDeliveryReplayResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", {
@@ -4950,6 +5081,21 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       payload: BillingPortalRequest,
       success: BillingPortalResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("billingCheckout", "/v1/tenants/:tenantId/billing/checkout", {
+      error: [...EnterpriseBillingPortalErrors, ...EnterpriseStepUpRequired],
+      params: TenantParam,
+      payload: BillingCheckoutRequest,
+      success: BillingCheckoutResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("billingInvoices", "/v1/tenants/:tenantId/billing/invoices", {
+      error: EnterpriseBillingReadErrors,
+      params: TenantParam,
+      success: BillingInvoicesResponse,
     }),
   )
   .prefix("/api")

@@ -6,17 +6,17 @@ legacy `.mobileconfig` profiles where DDM does not cover the setting.
 
 ## What is supported
 
-| Area       | Support                                                                  |
-| ---------- | ------------------------------------------------------------------------ |
-| Enrollment | Profile link, optional password, QR code, device cap, asset tag          |
-| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation              |
-| Push       | Tenant APNs certificate; direct, mTLS or relay transport                 |
-| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`  |
-| Zero-touch | ABM/ADE device assignment and signed ADE profile URL                     |
-| Apps       | VPP/Apps & Books device licences; manifest or App Store install commands |
-| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`           |
-| Inventory  | DDM status items and `InstalledApplicationList`                          |
-| Health     | Derived enrollment/declaration/disk/FileVault/battery health             |
+| Area       | Support                                                                                |
+| ---------- | -------------------------------------------------------------------------------------- |
+| Enrollment | Profile link, optional password, QR code, device cap, asset tag                        |
+| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation                            |
+| Push       | Tenant APNs certificate; direct, mTLS or relay transport                               |
+| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`                |
+| Zero-touch | ABM/ADE device assignment and signed ADE profile URL                                   |
+| Apps       | VPP/Apps & Books device licences; manifest, store and uploaded `.pkg` install commands |
+| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`                         |
+| Inventory  | DDM status items and `InstalledApplicationList`                                        |
+| Health     | Derived enrollment/declaration/disk/FileVault/battery health                           |
 
 ## Prerequisites
 
@@ -214,8 +214,8 @@ pending actions, and a reported inventory reconciles installs that already lande
   profile, so operators must install the signed profile URL. See [ABM](/platforms/apple/abm).
 - `mttx.apple.device` currently exposes only the camera restriction. Use a custom
   `.mobileconfig` or a DDM declaration for everything else.
-- `mttx.apple.application.<id>` is rejected. Use the application catalogue or a direct
-  install command.
+- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded `.pkg`
+  app on the policy's devices; uploaded packages install on macOS only.
 - There is no per-user enrollment (`UserAuthenticate` and `GetToken` are not supported).
 - FileVault and installed-app inventory are fixture-tested but not yet validated on real
   supervised hardware. CMS-wrapped personal recovery keys need an operator decryption step.

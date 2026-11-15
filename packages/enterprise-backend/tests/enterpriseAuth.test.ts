@@ -1,11 +1,12 @@
 import { Effect, Layer } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseNotConfigured,
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
@@ -272,25 +273,58 @@ describe("email verification", () => {
   };
 
   it("verifies a six-digit code and consumes it", async () => {
+    const sent: Array<{ text: string }> = [];
+
+    const { db, run } = makeContext(unverified(), {
+      email: { local: true, send: async (message: any) => void sent.push(message) },
+    });
+
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
+    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    expect(code).toMatch(/^\d{6}$/);
+    expect(requested.challenge).toEqual(expect.any(String));
+
+    const result = await run((auth) =>
+      auth.verifyEmail(session(), { code, challenge: requested.challenge }),
+    );
+
+    expect(result).toEqual({ status: "ok" });
+    expect(db.store.user[0]!.emailVerified).toBe(true);
+  });
+
+  it("queues the code in the outbox for a provider transport", async () => {
+    const sent: Array<unknown> = [];
+
+    const { db, run } = makeContext(unverified(), {
+      email: {
+        send: async (message: any) => {
+          sent.push(message);
+
+          throw new Error("provider down");
+        },
+      },
+    });
+
+    await run((auth) => auth.requestEmailVerification(session()));
+
+    // The provider is never called from the request; one row is queued.
+    expect(sent).toHaveLength(0);
+    expect(db.store.email_outbox).toHaveLength(1);
+    expect(db.store.email_outbox[0]).toMatchObject({
+      recipient: "owner@example.com",
+      template: "email_verification",
+      subjectUserId: "user-1",
+      status: "pending",
+    });
+  });
+
+  it("refuses to claim a verification code was sent without a mailer", async () => {
     const { db, run } = makeContext(unverified());
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    try {
-      const requested = await run((auth) => auth.requestEmailVerification(session()));
-      const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
-      const code = call?.[2];
-      expect(code).toMatch(/^\d{6}$/);
-      expect(requested.challenge).toEqual(expect.any(String));
-
-      const result = await run((auth) =>
-        auth.verifyEmail(session(), { code, challenge: requested.challenge }),
-      );
-
-      expect(result).toEqual({ status: "ok" });
-      expect(db.store.user[0]!.emailVerified).toBe(true);
-    } finally {
-      log.mockRestore();
-    }
+    await expect(run((auth) => auth.requestEmailVerification(session()))).rejects.toBeInstanceOf(
+      EnterpriseNotConfigured,
+    );
+    expect(db.store.user[0]!.emailVerified).toBe(false);
   });
 
   it("sends one welcome email after code verification", async () => {
@@ -303,7 +337,7 @@ describe("email verification", () => {
     }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { send: async (message: any) => void sent.push(message) },
+      email: { local: true, send: async (message: any) => void sent.push(message) },
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -332,7 +366,7 @@ describe("email verification", () => {
     const sent: Array<{ to: string; subject: string; text: string }> = [];
 
     const { run } = makeContext(unverified(), {
-      email: { send: async (message: any) => void sent.push(message) },
+      email: { local: true, send: async (message: any) => void sent.push(message) },
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
@@ -346,21 +380,19 @@ describe("email verification", () => {
   });
 
   it("rejects a wrong code and counts the attempt", async () => {
-    const { db, run } = makeContext(unverified());
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const sent: Array<{ text: string }> = [];
 
-    try {
-      const requested = await run((auth) => auth.requestEmailVerification(session()));
-      const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
-      const code = call?.[2];
-      const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
-      await expect(
-        run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
-      ).rejects.toBeInstanceOf(EnterpriseBadRequest);
-      expect(db.store.user[0]!.emailVerified).toBe(false);
-    } finally {
-      log.mockRestore();
-    }
+    const { db, run } = makeContext(unverified(), {
+      email: { local: true, send: async (message: any) => void sent.push(message) },
+    });
+
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
+    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
+    await expect(
+      run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+    expect(db.store.user[0]!.emailVerified).toBe(false);
   });
 
   it("requires the current email to be verified before changing it", async () => {
@@ -388,7 +420,7 @@ describe("email change ceremony", () => {
     sent.length = 0;
 
     return makeContext(initial, {
-      email: { send: async (message: any) => void sent.push(message) },
+      email: { local: true, send: async (message: any) => void sent.push(message) },
     });
   };
 
@@ -410,6 +442,16 @@ describe("email change ceremony", () => {
       run((auth) => auth.requestEmailChange(session(), { newEmail: "new@example.com" })),
     ).rejects.toBeInstanceOf(StepUpRequired);
     expect(sent).toHaveLength(0);
+  });
+
+  it("refuses an email change when the deployment cannot send email", async () => {
+    const { db, run } = makeContext(seedUserAndTenant());
+    const grant = await grantFor("email-change");
+
+    await expect(
+      run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" })),
+    ).rejects.toBeInstanceOf(EnterpriseNotConfigured);
+    expect(db.store.account_email_change).toHaveLength(0);
   });
 
   it("notifies the new address and the old address with a cancel link", async () => {

@@ -124,19 +124,66 @@ Without the service account, Android endpoints return `EnterpriseNotConfigured`.
 
 ## Maintenance
 
-| Variable                             | Default | Purpose                   |
-| ------------------------------------ | ------- | ------------------------- |
-| `MAINTENANCE_STALE_DEVICE_DAYS`      | `30`    | Mark devices stale        |
-| `MAINTENANCE_AUDIT_RETENTION_DAYS`   | `365`   | `0` keeps forever         |
-| `MAINTENANCE_BACKUP_RETENTION_DAYS`  | `30`    | `0` keeps forever         |
-| `MAINTENANCE_BACKUP_CONCURRENCY`     | `4`     | Tenants backed up at once |
-| `MAINTENANCE_ENTRA_SYNC_CONCURRENCY` | `2`     | Tenants synced at once    |
+| Variable                                | Default | Purpose                           |
+| --------------------------------------- | ------- | --------------------------------- |
+| `MAINTENANCE_STALE_DEVICE_DAYS`         | `30`    | Mark devices stale                |
+| `MAINTENANCE_AUDIT_RETENTION_DAYS`      | `365`   | `0` keeps forever                 |
+| `MAINTENANCE_BACKUP_RETENTION_DAYS`     | `30`    | `0` keeps forever                 |
+| `MAINTENANCE_BACKUP_CONCURRENCY`        | `4`     | Tenants backed up at once         |
+| `MAINTENANCE_ENTRA_SYNC_CONCURRENCY`    | `2`     | Tenants synced at once            |
+| `MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY`  | `4`     | Outbox deliveries in flight       |
+| `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` | `5`     | Attempts before permanent failure |
+
+## Transactional email
+
+Invitations, verification codes, email-change notices and credential-expiry
+alerts are queued in the `email_outbox` table and delivered by the cron, not
+sent inline. A request writes one row per recipient with the rendered message;
+an outage delays mail instead of failing the request or losing the message.
+
+- The hourly trigger drains the outbox; the daily maintenance run drains and
+  prunes it as well, so a deployment with only one cron still delivers.
+- Attempts back off exponentially from 5 minutes, capped at 6 hours, and a row
+  is permanently failed after `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` (default
+  5). The failure is written to the tenant audit log as
+  `email.delivery_failed` (or `account.email_delivery_failed` for account mail)
+  with the template and recipient.
+- Delivery is bounded to `MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY` rows at once
+  and 50 rows per run. A claim prevents two isolates delivering the same row.
+- Rows carry a dedupe key where one is possible (`invitation:<id>:<send>`), so a
+  retried request cannot queue the same invitation twice. Delivered rows are
+  pruned after 7 days and permanently failed rows after 30.
+- With no transport rows stay pending. Nothing is logged in place of a message:
+  verification fails with "This deployment cannot send email" and invitations
+  return their one-time link.
+
+Transport selection is explicit:
+
+| Variable                 | Purpose                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `MAIL_TRANSPORT`         | `resend`, `postmark`, `smtp` (self-hosted relay), `cloudflare` or `disabled`. |
+| `MAIL_FROM`              | Sender for every transactional email. Required for provider transports.       |
+| `RESEND_API_KEY`         | Resend API key.                                                               |
+| `POSTMARK_SERVER_TOKEN`  | Postmark server token.                                                        |
+| `MAIL_POSTMARK_STREAM`   | Postmark message stream, defaults to `outbound`.                              |
+| `MAIL_RELAY_URL`         | Base URL of `apps/mail-relay`, e.g. `http://mail-relay:8790`.                 |
+| `MAIL_RELAY_SECRET`      | Bearer secret shared with the relay (at least 16 characters).                 |
+| `MATTRAX_EMAIL_DISABLED` | `1` declares that this deployment has no outbound email.                      |
+
+Hosted Mattrax uses the Cloudflare `send_email` binding when `MAIL_TRANSPORT`
+is unset. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
+`MATTRAX_INVITATION_FROM` still overrides the invitation sender. The binding
+only accepts the addresses listed in `apps/api/cloudflare.config.ts`
+(`hello@mattrax.cloud`); set `MAIL_TRANSPORT=resend` or `postmark` to send from
+another verified domain.
+`/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
+(the transport is misconfigured or missing), so a typo cannot look healthy.
 
 ## Onboarding email
 
-Two one-time emails are sent from `hello@mattrax.cloud` with the display name
-**"Oscar from Mattrax"**. They never use a `no-reply` address; replies go to the
-configured mailbox.
+Two one-time emails are sent from `MAIL_FROM` when it is configured; the hosted
+default is `hello@mattrax.cloud` with the display name **"Oscar from Mattrax"**.
+They never use a `no-reply` address; replies go to the configured mailbox.
 
 - **Welcome** — sent once per manual account immediately after email
   verification. SCIM/Graph accounts are never emailed. A bounded daily backstop

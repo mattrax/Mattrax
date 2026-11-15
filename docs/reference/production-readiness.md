@@ -17,15 +17,27 @@ real-vendor validation. It is a status page, not a marketing page.
   and device health.
 - Apple Business Manager OAuth, device sync, MDM server assignment and signed ADE profile
   URLs.
-- Apps & Books location tokens, asset sync, device licence assignment and release.
+- Apps & Books location tokens, asset sync, device licence assignment and release,
+  automatic daily sync and catalogue entries created from purchased apps.
+- Apple application delivery: manifest/store installs, uploaded `.pkg` installs through
+  signed device-bound asset URLs, policy-attached applications and managed app
+  configuration.
+- Windows MSI delivery through `EnterpriseDesktopAppManagement`, with the command result
+  and the daily MSI inventory reporting status.
+- Android application delivery through the Managed Google Play policy, including install
+  type and managed configuration from policy fragments.
+- Third-party application templates (Chrome, Edge, Firefox, Slack, Zoom, Teams, VS Code,
+  1Password) in the policy designer, stored as data.
 - Windows WSTEP enrollment, SyncML OMA-URI `Replace`/`Delete` delivery with applied-state
   tracking and command history, wipe/restart/unenroll, security inventory (BitLocker, TPM,
   Secure Boot, domain/Entra join) and Entra federated token validation.
 - Autopilot hardware-hash import, Graph sync, deployment profiles and group assignment.
 - Android Enterprise signup, enrollment tokens, Pub/Sub, policy delivery, device
   inventory, installed-application inventory and commands.
-- Audit search/export, outbound webhooks with HMAC signatures and retries, Stripe billing
-  with a transactional event-id ledger, plan limits, tenant export/import, scheduled
+- Audit search/export, outbound webhooks with HMAC signatures, retries and a
+  30-day delivery history with payload inspection and replay, Stripe billing
+  with a transactional event-id ledger, Checkout, seat reconciliation and
+  invoices, plan limits, tenant export/import, scheduled
   backups with pin/unpin/delete and in-place restore, and complete tenant teardown
   (device unenroll, billing cancellation, object reclamation, retry journal).
 - SCIM bearer tokens with a 90-day default expiry (365-day cap), expired-token rejection
@@ -48,30 +60,34 @@ real-vendor validation. It is a status page, not a marketing page.
 
 These are implemented but not proven end to end in this repository.
 
-| Area                    | Gap                                                                                                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Apple ADE               | `Authenticate` does not return the ADE profile; zero-touch needs the signed URL                                                                                      |
-| Apple FileVault         | Escrow key generation, CMS unwrap and rotation are fixture-tested; not validated on real supervised hardware                                                         |
-| Apple app inventory     | Fixture-tested; refreshed daily by maintenance and on demand, not validated on real hardware                                                                         |
-| Apple activation lock   | Bypass-code collection and Recovery Lock are fixture-tested; not validated on real Apple silicon                                                                     |
-| Windows federated Entra | Handshake fixture-tested, not real hardware                                                                                                                          |
-| Windows Autopilot       | OOBE not validated; timezone not sent to Graph                                                                                                                       |
-| Windows inventory       | None                                                                                                                                                                 |
-| Windows security        | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition                                                                  |
-| Windows unenroll        | Server-initiated and `1226` device-initiated paths are unit-tested, not validated on real hardware                                                                   |
-| Android                 | Signup, Pub/Sub, QR/token enrollment, policy convergence and commands not validated against real Google Cloud/managed devices                                        |
-| Android apps            | Inventory ingested from `applicationReports`; no app distribution, not validated on real devices                                                                     |
-| Apple OS scoping        | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                        |
-| Compliance              | Derived health only; no policy engine or Conditional Access                                                                                                          |
-| Bulk work               | Synchronous; no Cloudflare Queues or job ids                                                                                                                         |
-| Backups                 | No off-site copy or restore drills; tenant bundles exclude members, devices, audit history and SCEP identities (direct device assignments are included)              |
-| Tenant teardown         | One attempt owns a pending deletion for a 10-minute lease; Apple unenroll depends on a check-in racing the delete, and Windows devices always need manual retirement |
-| Observability           | No metrics endpoint; readiness checks are bounded but the underlying query is not cancelled on timeout                                                               |
-| SSO                     | Entra OIDC only; no SAML, no IdP group-to-role mapping                                                                                                               |
-| Account recovery        | Ceremony, rate limits and approval rules are unit-tested; not yet rehearsed against a real mailer or a self-hosted operator run                                      |
-| MCP OAuth               | Route-level boundary tests cover redirect, PKCE, client binding, code/refresh single use; not driven by a real MCP client                                            |
-| Ledger retention        | `stripe_event` and expired SCIM token rows have no scheduled prune yet                                                                                               |
-| Migration               | No vendor connectors; CSV/export primitives only                                                                                                                     |
+| Area                      | Gap                                                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apple ADE                 | `Authenticate` does not return the ADE profile; zero-touch needs the signed URL                                                                                      |
+| Apple FileVault           | Escrow key generation, CMS unwrap and rotation are fixture-tested; not validated on real supervised hardware                                                         |
+| Apple app inventory       | Fixture-tested; refreshed daily by maintenance and on demand, not validated on real hardware                                                                         |
+| Apple activation lock     | Bypass-code collection and Recovery Lock are fixture-tested; not validated on real Apple silicon                                                                     |
+| Windows federated Entra   | Handshake fixture-tested, not real hardware                                                                                                                          |
+| Windows Autopilot         | OOBE not validated; timezone not sent to Graph                                                                                                                       |
+| Windows inventory         | None                                                                                                                                                                 |
+| Windows security          | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition                                                                  |
+| Windows unenroll          | Server-initiated and `1226` device-initiated paths are unit-tested, not validated on real hardware                                                                   |
+| Android                   | Signup, Pub/Sub, QR/token enrollment, policy convergence and commands not validated against real Google Cloud/managed devices                                        |
+| Android apps              | Assigned apps merge into the policy and are fixture-tested; no real-device validation                                                                                |
+| Apple app delivery        | Manifest, store and uploaded `.pkg` installs are fixture-tested; not validated on real supervised hardware                                                           |
+| Windows apps              | MSI install jobs and result reporting are unit-tested; not validated against real Windows hardware                                                                   |
+| Third-party app catalogue | Settings are sourced from vendor/ProfileManifests data and validated by tests; not reviewed by the vendors                                                           |
+| Apple OS scoping          | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                        |
+| Compliance                | Derived health only; no policy engine or Conditional Access                                                                                                          |
+| Bulk work                 | Synchronous; no Cloudflare Queues or job ids                                                                                                                         |
+| Transactional email       | Queued in `email_outbox`, retried hourly with exponential backoff and a 5-attempt cap; a permanent failure is audited but not re-driven automatically                |
+| Backups                   | No off-site copy or restore drills; tenant bundles exclude members, devices, audit history and SCEP identities (direct device assignments are included)              |
+| Tenant teardown           | One attempt owns a pending deletion for a 10-minute lease; Apple unenroll depends on a check-in racing the delete, and Windows devices always need manual retirement |
+| Observability             | No metrics endpoint; readiness checks are bounded but the underlying query is not cancelled on timeout                                                               |
+| SSO                       | Entra OIDC only; no SAML, no IdP group-to-role mapping                                                                                                               |
+| Account recovery          | Ceremony, rate limits and approval rules are unit-tested; not yet rehearsed against a real mailer or a self-hosted operator run                                      |
+| MCP OAuth                 | Route-level boundary tests cover redirect, PKCE, client binding, code/refresh single use; not driven by a real MCP client                                            |
+| Ledger retention          | `stripe_event` and expired SCIM token rows have no scheduled prune yet                                                                                               |
+| Migration                 | No vendor connectors; CSV/export primitives only                                                                                                                     |
 
 ## Production checklist
 
@@ -80,7 +96,9 @@ These are implemented but not proven end to end in this repository.
 - [ ] `ORIGIN` is the public HTTPS origin.
 - [ ] `AUTH_SECRET` is generated, backed up and not rotated without re-sealing.
 - [ ] Hyperdrive points at a managed MySQL with TLS and `caching.disabled` is `true`.
-- [ ] R2 bucket and Email Sending are configured.
+- [ ] R2 bucket and an email transport are configured (`EMAIL`, `MAIL_TRANSPORT` with
+      `MAIL_FROM`, or `MATTRAX_EMAIL_DISABLED=1` for an intentional opt-out), and
+      `/api/ready` reports `mailer: ok` or `skipped`.
 - [ ] Migrations are applied before deploying code.
 - [ ] `/api/health` and `/api/ready` return 200.
 - [ ] Security headers are present.
@@ -115,12 +133,17 @@ These are implemented but not proven end to end in this repository.
 - [ ] Recovery Lock set, verified and cleared on Apple silicon.
 - [ ] Pre-DDM fallback confirmed: a macOS 12/iOS 14 device receives profiles, not a DDM sync.
 - [ ] App inventory refresh confirmed.
+- [ ] Manifest, App Store/VPP and uploaded `.pkg` installs each confirmed on a Mac (and an
+      iOS manifest install on an iPhone).
+- [ ] Uploaded package URL expires and a re-check-in installs without re-adding the app.
 
 ### Windows
 
 - [ ] Tenant-scoped discovery URL tested.
 - [ ] WSTEP enrollment and certificate renewal tested.
 - [ ] OMA-URI policy applied and verified.
+- [ ] An MSI installs through `EnterpriseDesktopAppManagement` and appears as managed in the
+      MSI inventory.
 - [ ] Entra SSO tested.
 - [ ] Autopilot pilot completed.
 - [ ] Federated enrollment tested in a lab.
@@ -131,6 +154,8 @@ These are implemented but not proven end to end in this repository.
 - [ ] Signup completed.
 - [ ] QR/token enrollment tested.
 - [ ] Policy convergence verified.
+- [ ] An assigned Managed Google Play app is installed and a removed assignment uninstalls
+      it.
 - [ ] Commands verified.
 
 ### Operations
@@ -153,8 +178,7 @@ These are implemented but not proven end to end in this repository.
 - Metrics and indexed fleet aggregation.
 - SAML SSO and role mapping.
 - Vendor migration connectors.
-- Windows inventory and app deployment.
-- Android app management and Google device deletion.
+- Android Google device deletion.
 
 ## Next
 

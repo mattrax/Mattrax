@@ -48,18 +48,44 @@ const failureReason = (reason: string) =>
   reason === "notFound" ? "No longer exists" : capitalise(reason.replace(/[_-]+/g, " "));
 
 /**
- * Run one request per row and keep every outcome. A single rejection must never
- * discard the result of the rows that already succeeded.
+ * Run one request per row with bounded concurrency and keep every outcome. A
+ * single rejection must never discard the result of the rows that already
+ * succeeded, and an "all matching" selection can be thousands of rows, so the
+ * requests must not all be in flight at once.
  */
+const BULK_REQUEST_CONCURRENCY = 6;
+
 const settleRows = async <T,>(
   targets: readonly Named[],
   request: (id: string) => Promise<T>,
 ): Promise<BulkOutcome> => {
-  const results = await Promise.allSettled(targets.map((row) => request(row.id)));
+  const results: Array<PromiseSettledResult<T> | undefined> = Array.from({
+    length: targets.length,
+  });
+
+  let next = 0;
+
+  const worker = async () => {
+    while (next < targets.length) {
+      const index = next++;
+      const target = targets[index]!;
+
+      try {
+        results[index] = { status: "fulfilled", value: await request(target.id) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(BULK_REQUEST_CONCURRENCY, targets.length) }, () => worker()),
+  );
+
   const failed: BulkFailure[] = [];
 
   results.forEach((result, index) => {
-    if (result.status !== "rejected") return;
+    if (result?.status !== "rejected") return;
 
     const row = targets[index]!;
 
@@ -133,7 +159,7 @@ function ConfirmAction(props: {
         {props.title}
       </Button>
       <Dialog open={open()} onOpenChange={setOpen}>
-        <DialogContent class="max-w-md rounded-lg border border-white/[0.09] bg-popover p-6">
+        <DialogContent class="max-w-md rounded-lg border border-border bg-popover p-6">
           <DialogHeader>
             <DialogTitle>{props.title}</DialogTitle>
             <DialogDescription>{props.description}</DialogDescription>
@@ -167,7 +193,10 @@ function ConfirmAction(props: {
   );
 }
 
-function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "policies" }) {
+function ScopeGroupsAction(props: {
+  targets: () => Promise<Named[]>;
+  relation: "devices" | "policies";
+}) {
   const params = useParams();
   const qc = useQueryClient();
   const [open, setOpen] = createSignal(false);
@@ -184,7 +213,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
   const patch = useMutation(() => ({
     mutationFn: async () => {
       const entries = Object.entries(changes());
-      const selected = props.selected.map((row) => row.id);
+      const selected = (await props.targets()).map((row) => row.id);
 
       const results = await Promise.allSettled(
         entries.map(([groupId, state]) =>
@@ -246,7 +275,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
         Scope
       </Button>
       <Show when={open()}>
-        <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl shadow-black/50">
+        <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl">
           <For each={groupRows()}>
             {(group) => (
               <button
@@ -257,7 +286,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
                     [group.id]: value[group.id] === "all" ? "none" : "all",
                   }))
                 }
-                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
+                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-hover focus-visible:bg-hover"
               >
                 <span>{group.name}</span>
                 <span class="text-muted-foreground">
@@ -292,12 +321,32 @@ export function EntityActions(props: {
   clear: () => void;
   /** Replaces the table selection, used to keep failed rows selected. */
   select: (ids: readonly string[]) => void;
+  /** True when the operator chose every row matching the active filter. */
+  allMatching?: boolean;
+  /** Number of rows the active filter matches. */
+  total?: number;
+  /** Resolves the filtered rows to explicit ids, for "select all matching". */
+  resolveAll?: () => Promise<Named[]>;
 }) {
   const params = useParams();
   const qc = useQueryClient();
   const { can } = useCan();
   const rows = (): Named[] => props.selected.map((row) => ({ id: row.id, name: row.name }));
-  const ids = () => rows().map((row) => row.id);
+  const count = () => (props.allMatching ? (props.total ?? rows().length) : rows().length);
+
+  /**
+   * The rows the action should touch. An "all matching" selection asks the
+   * server for the rest of the filtered set; a partial selection keeps using
+   * the rows the operator can see.
+   */
+  const targets = async (): Promise<Named[]> => {
+    if (!props.allMatching) return rows();
+
+    if (!props.resolveAll)
+      throw new Error("Selecting every matching row is not available for this list.");
+
+    return props.resolveAll();
+  };
 
   const canSync = () => {
     if (props.entity === "device") return can("devices.command");
@@ -320,21 +369,33 @@ export function EntityActions(props: {
     if (props.entity === "device")
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
 
+    // An all-matching selection cannot be narrowed to the rows that failed:
+    // clear it and let the refreshed list show the current state.
+    if (props.allMatching) {
+      props.clear();
+
+      return;
+    }
+
     if (keep && keep.length > 0) props.select(keep);
     else props.clear();
   };
 
   const sync = useMutation(() => ({
     mutationFn: async (): Promise<BulkOutcome> => {
+      const selected = await targets();
+
       if (props.entity === "device")
-        return settleRows(rows(), (id) => enterprise.deviceAction(params.tenantId, id));
+        return settleRows(selected, (id) => enterprise.deviceAction(params.tenantId, id));
 
       // Group and policy sync are single endpoints; a rejection fails the whole
       // selection and is reported inline next to the button.
-      if (props.entity === "group") await enterprise.syncGroups(params.tenantId, ids());
-      else await enterprise.syncPolicies(params.tenantId, ids());
+      const selectedIds = selected.map((row) => row.id);
 
-      return { succeeded: ids().length, failed: [] };
+      if (props.entity === "group") await enterprise.syncGroups(params.tenantId, selectedIds);
+      else await enterprise.syncPolicies(params.tenantId, selectedIds);
+
+      return { succeeded: selected.length, failed: [] };
     },
     onSuccess: async (outcome) => {
       await invalidate(outcome.failed.map((row) => row.id));
@@ -350,7 +411,7 @@ export function EntityActions(props: {
     <>
       <Show when={props.entity !== "group" && can("groups.write")}>
         <ScopeGroupsAction
-          selected={rows()}
+          targets={targets}
           relation={props.entity === "device" ? "devices" : "policies"}
         />
       </Show>
@@ -366,16 +427,16 @@ export function EntityActions(props: {
         <ConfirmAction
           title="Unenroll"
           description="Unenroll selected devices."
-          target={rows()
-            .map((r) => r.name)
-            .join(", ")}
+          target={
+            props.allMatching ? entityNoun("device", count()) : confirmTarget(rows(), "device")
+          }
           destructive
           onConfirm={async () => {
-            const targets = rows();
+            const selected = await targets();
 
-            if (targets.length === 0) return;
+            if (selected.length === 0) return;
 
-            const outcome = await settleRows(targets, (id) =>
+            const outcome = await settleRows(selected, (id) =>
               enterprise.deviceUnenroll(params.tenantId, id),
             );
 
@@ -388,19 +449,25 @@ export function EntityActions(props: {
       </Show>
       <Show when={props.entity !== "device" && canDelete()}>
         <ConfirmAction
-          title={`Delete ${ids().length} ${props.entity === "policy" ? (ids().length === 1 ? "policy" : "policies") : `${props.entity}${ids().length === 1 ? "" : "s"}`}?`}
+          title={`Delete ${entityNoun(props.entity, count())}?`}
           description="This cannot be undone."
-          target={confirmTarget(rows(), props.entity)}
+          target={
+            props.allMatching
+              ? entityNoun(props.entity, count())
+              : confirmTarget(rows(), props.entity)
+          }
           destructive
           onConfirm={async () => {
-            const requested = rows();
+            const requested = await targets();
 
             if (requested.length === 0) return;
 
+            const requestedIds = requested.map((row) => row.id);
+
             const result =
               props.entity === "group"
-                ? await enterprise.deleteGroups(params.tenantId, ids())
-                : await enterprise.deletePolicies(params.tenantId, ids());
+                ? await enterprise.deleteGroups(params.tenantId, requestedIds)
+                : await enterprise.deletePolicies(params.tenantId, requestedIds);
 
             const names = new Map(requested.map((row) => [row.id, row.name]));
 

@@ -16,7 +16,7 @@ test("keeps the dashboard stable and animates the active nav indicator", async (
   const before = await indicator.getAttribute("style");
 
   await page.getByRole("link", { name: "Groups", exact: true }).click();
-  await page.waitForURL(`**/t/${tenant.id}/groups`);
+  await page.waitForURL(`**/t/${tenant.slug}/groups`);
 
   await expect.poll(() => indicator.getAttribute("style"), { timeout: 2_000 }).not.toBe(before);
 });

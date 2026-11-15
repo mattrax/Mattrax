@@ -18,7 +18,7 @@ const SYNC_INTERVALS = [
 ] as const;
 
 const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground sm:text-[13px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[15rem]";
+  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:text-[13px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[15rem]";
 
 const triggerLabel = (trigger: string | null | undefined) =>
   Match.value(trigger).pipe(
@@ -142,7 +142,7 @@ export default function DirectorySyncPage() {
                 )}
               </Show>
 
-              <div class="mt-5 divide-y divide-white/[0.05]">
+              <div class="mt-5 divide-y divide-border">
                 <div class="flex flex-col gap-2 pb-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                   <label for="entra-sync-interval" class="min-w-0">
                     <span class="block text-[13px] font-medium text-foreground">
@@ -195,7 +195,7 @@ export default function DirectorySyncPage() {
                 </div>
               </div>
 
-              <div class="mt-4 space-y-1 border-t border-white/[0.06] pt-3.5 text-xs text-muted-foreground">
+              <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
                 <Show when={!value().lastSyncedAt}>
                   <p>Never synced.</p>
                 </Show>
@@ -323,7 +323,7 @@ export default function DirectorySyncPage() {
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

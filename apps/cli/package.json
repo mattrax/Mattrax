@@ -1,0 +1,30 @@
+{
+  "name": "@mattrax/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Command-line interface for Mattrax Cloud and self-hosted deployments",
+  "bin": {
+    "mattrax": "./src/index.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "effect": "catalog:",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

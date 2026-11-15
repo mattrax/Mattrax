@@ -134,7 +134,7 @@ export function EmailCodeForm(props: {
             aria-describedby={error() ? "verification-code-error" : undefined}
             value={code()}
             onInput={(event) => setCode(event.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
-            class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-center text-2xl tracking-[0.4em] text-stone-900 placeholder:tracking-[0.4em] placeholder:text-stone-300 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+            class="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-center text-2xl tracking-[0.4em] text-foreground placeholder:tracking-[0.4em] placeholder:text-muted-foreground/60 outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
           />
         </div>
 
@@ -156,7 +156,7 @@ export function EmailCodeForm(props: {
         <button
           type="submit"
           disabled={pending()}
-          class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
+          class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {pending() ? "Verifying…" : "Verify email"}
         </button>

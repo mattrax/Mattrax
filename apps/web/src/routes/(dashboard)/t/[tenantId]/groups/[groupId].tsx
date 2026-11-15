@@ -2,8 +2,7 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { GroupNode } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   ErrorText,
   Field,
@@ -14,9 +13,10 @@ import {
   formatDate,
 } from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
+import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Info, ShieldCheck, UsersRound } from "~/components/ui/icons";
+import { Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import {
   Dialog,
@@ -30,12 +30,14 @@ import {
   enterprise,
   enterpriseKeys,
   type DeviceRow,
+  type DeviceSearchQuery,
   type DynamicGroupKind,
   type DynamicGroupRules,
   type PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { useCan } from "~/lib/permissions";
+import { useUnsavedChanges } from "~/lib/unsaved-changes";
 
 const decodeGroupNode = Schema.decodeUnknownOption(GroupNode);
 
@@ -43,33 +45,67 @@ const decodeGroupKind = Schema.decodeUnknownOption(Schema.Literals(["manual", "d
 
 const decodeAssignmentMode = Schema.decodeUnknownOption(Schema.Literals(["include", "exclude"]));
 
+const GROUP_DEVICE_PAGE_SIZE = 50;
+
 export default function GroupDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { can } = useCan();
   const editable = () => can("groups.write");
+  const [edit, setEdit] = createSignal(false);
 
   const group = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
     queryFn: () => enterprise.get(params.tenantId, "group", params.groupId),
   }));
 
-  // Viewing a group only needs its own devices. The full tenant list is loaded
-  // lazily when editing, because the picker must also offer unassigned devices.
+  // Membership is a server-paged device search in both modes: the view is
+  // scoped to this group, while edit mode searches the whole tenant so
+  // unassigned devices can be added.
+  const [deviceSearch, setDeviceSearch] = createSignal("");
+  const [deviceTerm, setDeviceTerm] = createSignal("");
+  const [devicePage, setDevicePage] = createSignal(0);
+  let deviceTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(deviceTimer));
+  createEffect(
+    () => deviceSearch(),
+    (value) => {
+      clearTimeout(deviceTimer);
+      deviceTimer = setTimeout(() => {
+        setDeviceTerm(value.trim());
+        setDevicePage(0);
+      }, 200);
+    },
+  );
+
+  const deviceQuery = (): DeviceSearchQuery => {
+    const base = {
+      limit: GROUP_DEVICE_PAGE_SIZE,
+      offset: devicePage() * GROUP_DEVICE_PAGE_SIZE,
+      sort: "name" as const,
+    };
+
+    if (edit()) return deviceTerm() ? { ...base, q: deviceTerm() } : base;
+
+    return deviceTerm()
+      ? { ...base, groupId: params.groupId, q: deviceTerm() }
+      : { ...base, groupId: params.groupId };
+  };
+
   const groupDevices = useQuery(() => ({
-    queryKey: enterpriseKeys.deviceSearch(params.tenantId, {
-      groupId: params.groupId,
-      limit: 200,
-      sort: "name",
-    }),
-    queryFn: () =>
-      enterprise.searchDevices(params.tenantId, {
-        groupId: params.groupId,
-        limit: 200,
-        sort: "name",
-      }),
+    queryKey: enterpriseKeys.deviceSearch(params.tenantId, deviceQuery()),
+    queryFn: () => enterprise.searchDevices(params.tenantId, deviceQuery()),
   }));
+
+  // Changing between view and edit switches the underlying set; start at the
+  // first page so the pager never points past the new result.
+  createEffect(
+    () => edit(),
+    () => {
+      setDevicePage(0);
+    },
+  );
 
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
@@ -82,7 +118,6 @@ export default function GroupDetailPage() {
   }));
 
   const row = () => Option.getOrUndefined(decodeGroupNode(group.data));
-  const [edit, setEdit] = createSignal(false);
 
   // A read-only role never enters the edit state, even if it was opened before
   // a role change landed.
@@ -95,17 +130,19 @@ export default function GroupDetailPage() {
 
   // The full tenant list is only needed while editing, because the picker must
   // offer unassigned devices too.
-  const allDevices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
-    enabled: edit(),
-  }));
+  const deviceRows = () => groupDevices.data?.devices ?? [];
+  const deviceTotal = () => groupDevices.data?.total ?? 0;
+  const devicePageCount = () => Math.max(1, Math.ceil(deviceTotal() / GROUP_DEVICE_PAGE_SIZE));
 
-  const deviceRows = () =>
-    edit() ? (allDevices.data?.rows ?? []) : (groupDevices.data?.devices ?? []);
+  // A deletion (or a concurrent enrollment) can leave the pager past the end.
+  createEffect(
+    () => ({ total: deviceTotal(), page: devicePage() }),
+    ({ total, page }) => {
+      const last = Math.max(0, Math.ceil(total / GROUP_DEVICE_PAGE_SIZE) - 1);
 
-  const deviceTotal = () =>
-    edit() ? (allDevices.data?.rows.length ?? 0) : (groupDevices.data?.total ?? 0);
+      if (page > last) setDevicePage(last);
+    },
+  );
 
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [deleteConfirm, setDeleteConfirm] = createSignal("");
@@ -116,6 +153,8 @@ export default function GroupDetailPage() {
   const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [policyModes, setPolicyModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
+  const [policySearch, setPolicySearch] = createSignal("");
+  const [seeded, setSeeded] = createSignal(false);
   createEffect(
     () => ({ row: row(), edit: edit() }),
     ({ row, edit }) => {
@@ -130,6 +169,7 @@ export default function GroupDetailPage() {
             (row.policies ?? []).map((policy) => [policy.id, policy.mode ?? ("include" as const)]),
           ),
         );
+        setSeeded(true);
       }
     },
   );
@@ -153,6 +193,7 @@ export default function GroupDetailPage() {
 
   const dirty = createMemo(
     () =>
+      seeded() &&
       row() &&
       (name() !== row()!.name ||
         notes() !== (row()!.notes ?? "") ||
@@ -166,6 +207,11 @@ export default function GroupDetailPage() {
               .join(",") ?? "")) ||
         currentPolicySignature() !== policySignature(row()!.policies ?? [])),
   );
+
+  const unsaved = useUnsavedChanges(() => edit() && Boolean(dirty()), {
+    title: "Discard group changes?",
+    description: "This group has membership or metadata edits that have not been saved.",
+  });
 
   const invalidate = async () => {
     await qc.invalidateQueries({
@@ -245,15 +291,6 @@ export default function GroupDetailPage() {
     },
   }));
 
-  const toggle = (set: () => Set<string>, update: (v: Set<string>) => void, id: string) => {
-    if (!edit()) return;
-    const next = new Set(set());
-
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    update(next);
-  };
-
   const setPolicyMode = (id: string, mode: "include" | "exclude" | "") => {
     if (!edit()) return;
     const next = new Map(policyModes());
@@ -263,11 +300,56 @@ export default function GroupDetailPage() {
     setPolicyModes(next);
   };
 
+  /** MdmTable's checkbox column mirrors the include set, not a bulk selection. */
+  const setDeviceSelection = (ids: ReadonlySet<string>) => {
+    if (!edit()) return;
+    setDeviceIds(new Set(ids));
+  };
+
+  const setPolicySelection = (ids: ReadonlySet<string>) => {
+    if (!edit()) return;
+    const next = new Map(policyModes());
+
+    for (const id of ids) if (!next.has(id)) next.set(id, "include");
+
+    for (const id of next.keys()) if (!ids.has(id)) next.delete(id);
+    setPolicyModes(next);
+  };
+
+  const addAllShownDevices = () => {
+    if (!edit()) return;
+    const next = new Set(deviceIds());
+
+    for (const device of deviceRows()) next.add(device.id);
+    setDeviceIds(next);
+  };
+
+  const shownPolicies = () => {
+    const term = policySearch().trim().toLowerCase();
+
+    if (!term) return policies.data?.rows ?? [];
+
+    return (policies.data?.rows ?? []).filter(
+      (policy) =>
+        policy.name.toLowerCase().includes(term) ||
+        (policy.notes ?? "").toLowerCase().includes(term),
+    );
+  };
+
+  const addAllShownPolicies = () => {
+    if (!edit()) return;
+    const next = new Map(policyModes());
+
+    for (const policy of shownPolicies()) next.set(policy.id, "include");
+    setPolicyModes(next);
+  };
+
   const memberCount = () =>
     row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : (row()?.devices?.length ?? 0);
 
   return (
     <Page wide>
+      {unsaved.prompt}
       <QueryError error={group.error} onRetry={() => void group.refetch()} />
 
       <PageHeader
@@ -308,7 +390,7 @@ export default function GroupDetailPage() {
 
       <ErrorText error={sync.error} />
 
-      <div class="flex flex-col gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <Show when={row()}>
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Show when={row()!.kind === "dynamic"}>
@@ -340,7 +422,7 @@ export default function GroupDetailPage() {
             </Show>
           </div>
         </Show>
-        <div class="inline-flex w-fit items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.015] p-0.5">
+        <div class="inline-flex w-fit items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5">
           <For each={["overview", "devices", "policies"] as const}>
             {(item) => (
               <Button
@@ -402,7 +484,7 @@ export default function GroupDetailPage() {
                 />
               </Field>
               <Show when={kind() === "dynamic"}>
-                <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+                <div class="rounded-lg border border-border bg-surface p-3">
                   <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
                 </div>
               </Show>
@@ -416,7 +498,7 @@ export default function GroupDetailPage() {
                 title="Assignments"
                 description="Where this group's membership and policy scope live."
               >
-                <div class="divide-y divide-white/[0.05] text-[13px]">
+                <div class="divide-y divide-border text-[13px]">
                   <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div class="min-w-0">
                       <p class="font-medium text-foreground">Devices</p>
@@ -460,7 +542,7 @@ export default function GroupDetailPage() {
                     <For each={preview.data?.devices.slice(0, 25) ?? []}>
                       {(device) => (
                         <a
-                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors hover:bg-white/[0.045]"
+                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors hover:bg-hover"
                           href={`/t/${params.tenantId}/devices/${device.id}`}
                         >
                           {device.name}
@@ -485,7 +567,7 @@ export default function GroupDetailPage() {
           when={kind() !== "dynamic"}
           fallback={
             <div class="space-y-5">
-              <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3.5 text-[12.5px] text-foreground">
+              <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-[12.5px] text-foreground">
                 <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
                 <div class="min-w-0">
                   <p class="font-medium text-foreground">Dynamic membership</p>
@@ -514,16 +596,16 @@ export default function GroupDetailPage() {
                 >
                   <div class="overflow-x-auto">
                     <table class="w-full text-[13px]">
-                      <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                      <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                         <tr>
                           <th class="px-4 py-2.5">Matched device</th>
                           <th class="px-4 py-2.5">Source</th>
                         </tr>
                       </thead>
-                      <tbody class="divide-y divide-white/[0.05]">
+                      <tbody class="divide-y divide-border">
                         <For each={preview.data?.devices ?? []}>
                           {(device) => (
-                            <tr class="transition-colors hover:bg-white/[0.025]">
+                            <tr class="transition-colors hover:bg-hover">
                               <td class="px-4 py-2.5">
                                 <a
                                   class="font-medium text-foreground hover:underline"
@@ -547,13 +629,6 @@ export default function GroupDetailPage() {
           }
         >
           <div class="space-y-5">
-            <QueryError
-              error={groupDevices.error ?? allDevices.error}
-              onRetry={() => {
-                void groupDevices.refetch();
-                void allDevices.refetch();
-              }}
-            />
             <Panel
               flush
               title="Devices in this group"
@@ -563,21 +638,125 @@ export default function GroupDetailPage() {
                   : "Manual membership for this group. Use Edit to change the assigned devices."
               }
             >
-              <AssignmentTable
-                rows={deviceRows()}
-                selected={deviceIds()}
-                toggle={(id) => toggle(deviceIds, setDeviceIds, id)}
-                href={(id) => `/t/${params.tenantId}/devices/${id}`}
-                editable={editable() && edit()}
-                emptyTitle="No devices assigned"
-                emptyDescription="Use Edit to choose from the tenant's enrolled devices and add them to this group."
-              />
-              <Show when={!edit() && deviceTotal() > deviceRows().length}>
-                <p class="border-t border-white/[0.06] px-4 py-2.5 text-[11px] text-muted-foreground">
-                  Showing the first {deviceRows().length} of {deviceTotal()} devices. Edit the group
-                  to assign devices outside this list.
-                </p>
-              </Show>
+              <div class="p-3">
+                <MdmTable<DeviceRow>
+                  mode="server"
+                  rows={deviceRows()}
+                  selectable={editable() && edit()}
+                  selectedIds={deviceIds}
+                  onSelectedChange={setDeviceSelection}
+                  loading={groupDevices.isPending}
+                  isFetching={groupDevices.isFetching}
+                  onRefresh={() => void groupDevices.refetch()}
+                  error={groupDevices.error}
+                  total={deviceTotal()}
+                  caption="Devices in this group"
+                  storageKey="group-devices"
+                  rowHref={(device) => `/t/${params.tenantId}/devices/${device.id}`}
+                  searchValue={deviceSearch()}
+                  onSearchChange={setDeviceSearch}
+                  searchPlaceholder="Search name, serial, asset tag…"
+                  toolbar={
+                    <Show when={edit()}>
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-[11.5px] text-muted-foreground">
+                          {deviceIds().size} device{deviceIds().size === 1 ? "" : "s"} selected in
+                          this group.
+                        </p>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={deviceRows().length === 0}
+                          onClick={addAllShownDevices}
+                        >
+                          Add all shown ({deviceRows().length})
+                        </Button>
+                      </div>
+                    </Show>
+                  }
+                  footer={
+                    <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5">
+                      <span class="text-[12px] tabular-nums text-muted-foreground">
+                        Page {devicePage() + 1} of {devicePageCount()}
+                        <Show when={deviceTotal() > 0}>
+                          {" "}
+                          · {deviceTotal().toLocaleString()} device
+                          {deviceTotal() === 1 ? "" : "s"}
+                        </Show>
+                        <Show when={deviceTerm()}> · filtered by “{deviceTerm()}”</Show>
+                      </span>
+                      <div class="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={devicePage() === 0}
+                          onClick={() => setDevicePage((value) => Math.max(0, value - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(devicePage() + 1) * GROUP_DEVICE_PAGE_SIZE >= deviceTotal()}
+                          onClick={() => setDevicePage((value) => value + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  }
+                  empty={
+                    <div class="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
+                      <p class="text-[13px] font-medium text-foreground">
+                        {deviceTerm()
+                          ? `No devices match “${deviceTerm()}”`
+                          : edit()
+                            ? "No devices enrolled yet"
+                            : "No devices assigned"}
+                      </p>
+                      <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+                        {deviceTerm()
+                          ? "Search matches the device name, serial number and asset tag."
+                          : edit()
+                            ? "Enroll a device, then return here to add it to this group."
+                            : "Use Edit to choose from the tenant's enrolled devices and add them to this group."}
+                      </p>
+                    </div>
+                  }
+                  columns={[
+                    {
+                      id: "name",
+                      header: "Name",
+                      search: (device) => device.name,
+                      cell: (device) => (
+                        <a
+                          class="font-medium text-foreground hover:underline"
+                          href={`/t/${params.tenantId}/devices/${device.id}`}
+                        >
+                          {device.name}
+                        </a>
+                      ),
+                    },
+                    {
+                      id: "serial",
+                      header: "Serial",
+                      search: (device) => device.serial,
+                      cell: (device) => device.serial ?? "Unknown",
+                    },
+                    {
+                      id: "assetTag",
+                      header: "Asset tag",
+                      search: (device) => device.assetTag,
+                      cell: (device) => device.assetTag ?? "—",
+                    },
+                    {
+                      id: "lastSeen",
+                      header: "Last seen",
+                      cell: (device) => formatDate(device.lastSeenAt),
+                    },
+                  ]}
+                />
+              </div>
             </Panel>
           </div>
         </Show>
@@ -585,8 +764,7 @@ export default function GroupDetailPage() {
 
       <Show when={tab() === "policies"}>
         <div class="space-y-5">
-          <QueryError error={policies.error} onRetry={() => void policies.refetch()} />
-          <div class="flex items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3.5 text-[12.5px] text-foreground">
+          <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-[12.5px] text-foreground">
             <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
             <div class="min-w-0">
               <p class="font-medium text-foreground">Policy precedence</p>
@@ -602,20 +780,119 @@ export default function GroupDetailPage() {
             title="Policy assignments"
             description="Include delivers the policy to members; exclude removes it for this group."
           >
-            <Show when={!policies.isError}>
-              <AssignmentTable
+            <div class="p-3">
+              <MdmTable<PolicyRow>
                 rows={policies.data?.rows ?? []}
-                selected={new Set(policyModes().keys())}
-                toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
-                mode={(id) => policyModes().get(id)}
-                setMode={setPolicyMode}
-                editable={editable() && edit()}
-                href={(id) => `/t/${params.tenantId}/policies/${id}`}
-                emptyTitle="No policies yet"
-                emptyDescription="Create a policy first, then return here to include or exclude it for this group's members."
-                emptyIcon={ShieldCheck}
+                selectable={editable() && edit()}
+                selectedIds={() => new Set(policyModes().keys())}
+                onSelectedChange={setPolicySelection}
+                loading={policies.isPending}
+                isFetching={policies.isFetching}
+                onRefresh={() => void policies.refetch()}
+                error={policies.error}
+                caption="Policy assignments"
+                storageKey="group-policies"
+                rowHref={(policy) => `/t/${params.tenantId}/policies/${policy.id}`}
+                searchValue={policySearch()}
+                onSearchChange={setPolicySearch}
+                searchPlaceholder="Search policies by name or notes…"
+                toolbar={
+                  <Show when={edit()}>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <p class="text-[11.5px] text-muted-foreground">
+                        {policyModes().size} polic{policyModes().size === 1 ? "y" : "ies"} assigned.
+                      </p>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={shownPolicies().length === 0}
+                        onClick={addAllShownPolicies}
+                      >
+                        Include all shown ({shownPolicies().length})
+                      </Button>
+                    </div>
+                  </Show>
+                }
+                empty={
+                  <div class="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
+                    <p class="text-[13px] font-medium text-foreground">No policies yet</p>
+                    <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+                      Create a policy first, then return here to include or exclude it for this
+                      group's members.
+                    </p>
+                  </div>
+                }
+                columns={[
+                  {
+                    id: "name",
+                    header: "Name",
+                    search: (policy) => policy.name,
+                    cell: (policy) => (
+                      <a
+                        class="font-medium text-foreground hover:underline"
+                        href={`/t/${params.tenantId}/policies/${policy.id}`}
+                      >
+                        {policy.name}
+                      </a>
+                    ),
+                  },
+                  {
+                    id: "mode",
+                    header: "Mode",
+                    cell: (policy) => (
+                      <select
+                        class="h-7 rounded-md px-2 pr-7 text-[11.5px] disabled:opacity-50"
+                        aria-label={`Assignment mode for ${policy.name}`}
+                        disabled={!edit() || !editable()}
+                        value={policyModes().get(policy.id) ?? ""}
+                        onChange={(event) =>
+                          setPolicyMode(
+                            policy.id,
+                            Option.getOrUndefined(
+                              decodeAssignmentMode(event.currentTarget.value),
+                            ) ?? "",
+                          )
+                        }
+                      >
+                        <option value="" selected={!policyModes().get(policy.id)}>
+                          Not assigned
+                        </option>
+                        <option
+                          value="include"
+                          selected={policyModes().get(policy.id) === "include"}
+                        >
+                          Include
+                        </option>
+                        <option
+                          value="exclude"
+                          selected={policyModes().get(policy.id) === "exclude"}
+                        >
+                          Exclude
+                        </option>
+                      </select>
+                    ),
+                  },
+                  {
+                    id: "priority",
+                    header: "Priority",
+                    cell: (policy) => (
+                      <span class="text-[12px] tabular-nums text-muted-foreground">
+                        {policy.priority ?? 0}
+                      </span>
+                    ),
+                  },
+                  {
+                    id: "updated",
+                    header: "Updated",
+                    cell: (policy) => (
+                      <span class="whitespace-nowrap text-[12px] text-muted-foreground">
+                        {new Date(policy.updatedAt).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                ]}
               />
-            </Show>
+            </div>
           </Panel>
         </div>
       </Show>
@@ -646,119 +923,5 @@ export default function GroupDetailPage() {
         </DialogContent>
       </Dialog>
     </Page>
-  );
-}
-
-function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
-  rows: readonly T[];
-  selected: Set<string>;
-  toggle: (id: string) => void;
-  href: (id: string) => string;
-  mode?: (id: string) => "include" | "exclude" | undefined;
-  setMode?: (id: string, mode: "include" | "exclude" | "") => void;
-  editable?: boolean;
-  emptyTitle: string;
-  emptyDescription: string;
-  emptyIcon?: (props: { class?: string }) => JSX.Element;
-}) {
-  return (
-    <Show
-      when={props.rows.length > 0}
-      fallback={
-        <div class="px-4 py-10 text-center sm:px-5">
-          <div class="mx-auto mb-3 flex size-9 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-muted-foreground">
-            <Show when={props.emptyIcon} fallback={<UsersRound class="size-4" />}>
-              {(icon) => icon()({ class: "size-4" })}
-            </Show>
-          </div>
-          <p class="text-[13px] font-medium text-foreground">{props.emptyTitle}</p>
-          <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
-            {props.emptyDescription}
-          </p>
-        </div>
-      }
-    >
-      <div class="overflow-x-auto">
-        <table class="w-full text-[13px]">
-          <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-            <tr>
-              <Show when={!props.mode}>
-                <th class="w-10 px-4 py-2.5">In</th>
-              </Show>
-              <th class="px-4 py-2.5">Name</th>
-              <Show when={props.mode}>
-                <th class="w-40 px-4 py-2.5">Mode</th>
-              </Show>
-              <th class="px-4 py-2.5">Priority</th>
-              <th class="px-4 py-2.5">Updated</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-white/[0.05]">
-            <For each={props.rows}>
-              {(row) => (
-                <tr class="transition-colors hover:bg-white/[0.025]">
-                  <Show when={!props.mode}>
-                    <td class="px-4 py-2.5">
-                      <input
-                        type="checkbox"
-                        class="size-3.5 accent-[var(--brand)]"
-                        aria-label={`Assign ${row.name}`}
-                        checked={props.selected.has(row.id)}
-                        disabled={props.editable === false}
-                        onChange={() => props.toggle(row.id)}
-                      />
-                    </td>
-                  </Show>
-                  <td class="px-4 py-2.5">
-                    <a
-                      class="font-medium text-foreground hover:underline"
-                      href={props.href(row.id)}
-                    >
-                      {row.name}
-                    </a>
-                  </td>
-                  <Show when={props.mode}>
-                    <td class="px-4 py-2.5">
-                      <select
-                        class="h-7 rounded-md px-2 pr-7 text-[11.5px] disabled:opacity-50"
-                        aria-label={`Assignment mode for ${row.name}`}
-                        disabled={props.editable === false}
-                        value={props.mode?.(row.id) ?? ""}
-                        onChange={(event) =>
-                          props.setMode?.(
-                            row.id,
-                            Option.getOrUndefined(
-                              decodeAssignmentMode(event.currentTarget.value),
-                            ) ?? "",
-                          )
-                        }
-                      >
-                        <option value="" selected={!props.mode?.(row.id)}>
-                          Not assigned
-                        </option>
-                        <option value="include" selected={props.mode?.(row.id) === "include"}>
-                          Include
-                        </option>
-                        <option value="exclude" selected={props.mode?.(row.id) === "exclude"}>
-                          Exclude
-                        </option>
-                      </select>
-                    </td>
-                  </Show>
-                  <td class="px-4 py-2.5 text-[12px] tabular-nums text-muted-foreground">
-                    {"priority" in row ? (row.priority ?? 0) : "—"}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-2.5 text-[12px] text-muted-foreground">
-                    {"updatedAt" in row
-                      ? new Date(row.updatedAt).toLocaleString()
-                      : new Date(row.lastSeenAt).toLocaleString()}
-                  </td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-      </div>
-    </Show>
   );
 }

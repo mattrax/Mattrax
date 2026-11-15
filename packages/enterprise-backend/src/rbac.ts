@@ -171,7 +171,11 @@ const MANAGEMENT_WRITE = new Set([
   "deleteApns",
 ]);
 
-const WEBHOOK_READ = new Set(["listWebhookEndpoints"]);
+const WEBHOOK_READ = new Set([
+  "listWebhookEndpoints",
+  "listWebhookDeliveries",
+  "getWebhookDelivery",
+]);
 
 const WEBHOOK_WRITE = new Set([
   "createWebhookEndpoint",
@@ -179,6 +183,7 @@ const WEBHOOK_WRITE = new Set([
   "deleteWebhookEndpoint",
   "rotateWebhookSecret",
   "testWebhookEndpoint",
+  "replayWebhookDelivery",
 ]);
 
 const MEMBER_READ = new Set([
@@ -221,6 +226,8 @@ const EXPLICIT = {
   recordMcpActivity: "audit.read",
   billing: "billing.read",
   billingPortal: "billing.write",
+  billingCheckout: "billing.write",
+  billingInvoices: "billing.read",
   deviceAction: "devices.command",
   getDeviceRecoveryKey: "devices.recovery_key",
   extractMobileconfig: "policies.read",

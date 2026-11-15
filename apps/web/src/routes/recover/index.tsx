@@ -1,4 +1,5 @@
 import { Title } from "@solidjs/meta";
+import { BrandLogo } from "~/components/brand-logo";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { createSignal, onSettled, Show } from "solid-js";
@@ -7,7 +8,7 @@ import { authClient } from "~/lib/auth";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 const inputClass =
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-[13px]";
+  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-[13px]";
 
 /**
  * Self-service break-glass entry point.
@@ -96,18 +97,12 @@ export default function RecoverPage() {
   };
 
   return (
-    <main class="auth-page dark flex min-h-screen items-center justify-center bg-background text-foreground">
+    <main class="auth-page flex min-h-screen items-center justify-center bg-background text-foreground">
       <Title>Recover access · Mattrax</Title>
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="mb-6 inline-flex items-center gap-2">
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-4 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-4" />
           </a>
         </div>
 
@@ -120,7 +115,7 @@ export default function RecoverPage() {
               </p>
             </Show>
             <Show when={status() === "pending_approval"}>
-              <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-3 text-left text-[13px] leading-relaxed text-muted-foreground">
+              <div class="rounded-lg border border-border bg-surface px-3 py-3 text-left text-[13px] leading-relaxed text-muted-foreground">
                 <p class="font-medium text-foreground">Another owner must approve this.</p>
                 <p class="mt-1">
                   Your account belongs to a tenant with more than one owner. The other owners have
@@ -180,7 +175,7 @@ export default function RecoverPage() {
                 <button
                   type="submit"
                   disabled={pending() || !email().trim()}
-                  class="inline-flex h-9 w-full items-center justify-center rounded-lg bg-brand px-3 text-[13px] font-medium text-brand-foreground transition-opacity disabled:opacity-60"
+                  class="inline-flex h-9 w-full items-center justify-center rounded-lg bg-brand-solid px-3 text-[13px] font-medium text-brand-foreground transition-opacity disabled:opacity-60"
                 >
                   {pending() ? "Sending…" : "Send recovery link"}
                 </button>

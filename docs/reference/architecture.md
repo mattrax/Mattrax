@@ -13,7 +13,7 @@ boundary keeps protocol handling independent from product state.
 | Product contracts   | `enterprise-domain`                                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`                                       | Dashboard, API, push relay                     |
+| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`, `apps/mail-relay`                    | Dashboard, API, push and SMTP relays           |
 
 ## Cloud topology
 
@@ -24,7 +24,9 @@ Browser ──► Mattrax web Worker (public)
            API Worker (service binding)
               ├── MySQL via Hyperdrive
               ├── R2 (application files, backups)
-              ├── Email Sending
+              ├── Email: Cloudflare Email Sending, Resend/Postmark, or the
+              │   self-hosted mail-relay sidecar (SMTP)
+              ├── email_outbox (queued transactional mail, drained by cron)
               └── APNs relay / vendor cert
 ```
 
@@ -93,7 +95,9 @@ Core tables:
   private key used to unwrap CMS recovery keys).
 - `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device` (AMAPI
   resource name, policy hash and the Android-only inventory columns).
-- `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`.
+- `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
+  and `email_outbox` (one row per transactional message, claimed and retried by the
+  cron with exponential backoff and a permanent-failure audit entry).
 - `account_audit_log` (account-scoped audit, nullable `subject_user_id` so the deletion
   record survives), `account_session_context` (client descriptor per session id),
   `account_email_change` (single-use confirm/cancel token digests) and `account_recovery`

@@ -217,7 +217,7 @@ export function EntityQueryBar<T>(props: {
         </div>
       }
     >
-      <div class="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.015] p-2.5">
+      <div class="space-y-2 rounded-lg border border-border bg-surface p-2.5">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-[11.5px] font-medium text-muted-foreground">Match every condition</p>
           <div class="flex items-center gap-1.5">

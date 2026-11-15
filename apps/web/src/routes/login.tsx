@@ -1,4 +1,5 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
+import { BrandLogo } from "~/components/brand-logo";
 import { Option, Schema } from "effect";
 import { createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
@@ -123,17 +124,11 @@ export default function LoginPage() {
   };
 
   return (
-    <main class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
+    <main class="auth-page min-h-screen flex items-center justify-center bg-background text-foreground">
       <div class="w-full max-w-sm px-4">
         <div class="mb-8 text-center">
           <a href="/" class="inline-flex items-center gap-2 mb-6">
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-4 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-4" />
           </a>
           <h1 class="text-2xl font-semibold text-stone-900">Sign in to Mattrax</h1>
           <p class="text-stone-500 text-sm mt-1">
@@ -159,7 +154,7 @@ export default function LoginPage() {
             <button
               type="button"
               disabled={passkeyPending() || ssoPending()}
-              class="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:opacity-50"
+              class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               onClick={() => void signInWithPasskey()}
             >
               <KeyRound class="size-4" />
@@ -229,13 +224,13 @@ export default function LoginPage() {
                       setEmail(event.currentTarget.value);
                       setEmailOverride(event.currentTarget.value);
                     }}
-                    class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+                    class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={ssoPending()}
-                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:opacity-50"
+                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Building2 class="size-4" />
                   {ssoPending() ? "Contacting your organisation…" : "Continue with SSO"}

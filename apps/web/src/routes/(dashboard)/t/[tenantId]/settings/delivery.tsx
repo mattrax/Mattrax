@@ -110,7 +110,7 @@ export default function DeliverySettingsPage() {
             {(card) => (
               <div
                 title={card.hint}
-                class="flex min-w-0 flex-col gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+                class="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-surface px-3 py-2.5"
               >
                 <span class="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
                   <span class={cn("size-1.5 rounded-full", card.dot)} aria-hidden="true" />
@@ -145,18 +145,18 @@ export default function DeliverySettingsPage() {
         <Show
           when={(pushHealth.data?.recentFailures.length ?? 0) > 0}
           fallback={
-            <p class="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.012] px-4 py-5 text-[12.5px] text-muted-foreground">
+            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
               No recent push failures.
             </p>
           }
         >
-          <ul class="divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.07]">
+          <ul class="divide-y divide-border overflow-hidden rounded-lg border border-border">
             <For each={pushHealth.data?.recentFailures ?? []}>
               {(failure) => (
                 <li>
                   <a
                     href={`/t/${tenantId()}/devices/${failure.deviceId}`}
-                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-white/[0.03]"
+                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-hover"
                   >
                     <span class="min-w-0">
                       <span class="block truncate font-medium text-foreground">

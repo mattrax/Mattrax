@@ -80,7 +80,9 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           type="button"
           aria-pressed={mode() === "totp" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-            mode() === "totp" ? "bg-stone-900 text-white" : "border border-stone-300 text-stone-700"
+            mode() === "totp"
+              ? "bg-primary text-primary-foreground"
+              : "border border-stone-300 text-stone-700"
           }`}
           onClick={() => {
             setMode("totp");
@@ -95,7 +97,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           aria-pressed={mode() === "recovery" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
             mode() === "recovery"
-              ? "bg-stone-900 text-white"
+              ? "bg-primary text-primary-foreground"
               : "border border-stone-300 text-stone-700"
           }`}
           onClick={() => {
@@ -111,7 +113,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           aria-pressed={mode() === "passkey" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
             mode() === "passkey"
-              ? "bg-stone-900 text-white"
+              ? "bg-primary text-primary-foreground"
               : "border border-stone-300 text-stone-700"
           }`}
           onClick={() => {
@@ -144,7 +146,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
               placeholder={mode() === "totp" ? "000000" : "xxxx-xxxx"}
               value={code()}
               onInput={(event) => setCode(event.currentTarget.value)}
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-center text-lg tracking-[0.3em] text-stone-900 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-center text-lg tracking-[0.3em] text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
             />
           </div>
         </Show>
@@ -163,7 +165,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         <button
           type="submit"
           disabled={pending()}
-          class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
+          class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {pending() ? "Verifying…" : mode() === "passkey" ? "Use passkey" : "Continue"}
         </button>

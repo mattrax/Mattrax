@@ -8,7 +8,17 @@ export const schema = createEnterpriseSchema();
  * A value the fake store holds for one column: the scalars, dates and nested
  * rows the production schema writes.
  */
-type RowValue = string | number | boolean | bigint | Date | null | undefined | RowValue[] | Row;
+type RowValue =
+  | string
+  | number
+  | boolean
+  | bigint
+  | Date
+  | null
+  | undefined
+  | RowValue[]
+  | ReadonlyArray<RowValue>
+  | Row;
 
 type Row = { [column: string]: RowValue };
 
@@ -612,7 +622,7 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     // The production Db wraps this work in one transaction. The fake runs it
     // eagerly but restores the previous rows if it fails, so rollback paths are
     // observable without a database.
-    transaction: <Result>(work: (tx: any) => Result): Result => {
+    transaction: <A, E, R>(work: (tx: any) => Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
       const snapshot = Object.fromEntries(
         Object.entries(store).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]),
       );
@@ -621,9 +631,7 @@ export const makeDb = (initial: Partial<Store> = {}) => {
         for (const [name, rows] of Object.entries(snapshot)) store[name] = rows;
       });
 
-      // SAFETY: the production transaction returns the same `Result` the work
-      // effect produces; wrapping it only adds rollback on failure.
-      return Effect.suspend(() => work(db)).pipe(Effect.onError(() => rollback)) as Result;
+      return Effect.suspend(() => work(db)).pipe(Effect.onError(() => rollback));
     },
   };
 
@@ -655,26 +663,59 @@ const defaultStripeClient = () => ({
     search: async () => ({ data: [] }),
     list: async function* () {},
     create: async () => ({ id: "cus_created" }),
+    update: async (id: string, params: { name?: string }) => ({ id, name: params.name ?? null }),
+    retrieve: async (id: string) => ({ id, name: null }),
   },
   billingPortal: {
     sessions: {
       create: async ({ return_url }: { return_url: string }) => ({ url: return_url }),
     },
   },
+  checkout: {
+    sessions: {
+      create: async ({ success_url }: { success_url: string }) => ({
+        id: "cs_test_created",
+        url: `https://checkout.stripe.test/${success_url}`,
+      }),
+    },
+  },
+  invoices: {
+    list: async () => ({ data: [] }),
+  },
+  subscriptions: {
+    retrieve: async (id: string) => ({ id, status: "active", items: { data: [] } }),
+    update: async (id: string) => ({ id }),
+    cancel: async (id: string) => ({ id }),
+  },
 });
+
+/** Any Stripe method double for the members these billing paths call. */
+type StripeClientDouble = (...args: Array<any>) => Promise<any>;
 
 /** Per-test replacements merged one level into each Stripe namespace. */
 type StripeClientOverrides = {
-  readonly customers?: Partial<ReturnType<typeof defaultStripeClient>["customers"]>;
+  readonly customers?: Partial<{
+    search: StripeClientDouble;
+    create: StripeClientDouble;
+    update: StripeClientDouble;
+    retrieve: StripeClientDouble;
+  }>;
   readonly billingPortal?: {
-    readonly sessions?: Partial<
-      ReturnType<typeof defaultStripeClient>["billingPortal"]["sessions"]
-    >;
+    readonly sessions?: Partial<{ create: StripeClientDouble }>;
   };
+  readonly checkout?: {
+    readonly sessions?: Partial<{ create: StripeClientDouble }>;
+  };
+  readonly invoices?: Partial<{ list: StripeClientDouble }>;
+  readonly subscriptions?: Partial<{
+    retrieve: StripeClientDouble;
+    update: StripeClientDouble;
+    cancel: StripeClientDouble;
+  }>;
 };
 
 /**
- * A partial Stripe SDK double covering the three members the billing paths use.
+ * A partial Stripe SDK double covering the members the billing paths use.
  * The enterprise service accepts the real `Stripe` surface, so the double is
  * intentionally typed loosely rather than faking the whole SDK.
  */
@@ -686,5 +727,10 @@ export const makeStripeClient = (overrides: StripeClientOverrides = {}): any => 
     billingPortal: {
       sessions: { ...client.billingPortal.sessions, ...overrides.billingPortal?.sessions },
     },
+    checkout: {
+      sessions: { ...client.checkout.sessions, ...overrides.checkout?.sessions },
+    },
+    invoices: { ...client.invoices, ...overrides.invoices },
+    subscriptions: { ...client.subscriptions, ...overrides.subscriptions },
   };
 };

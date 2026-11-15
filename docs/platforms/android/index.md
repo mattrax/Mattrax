@@ -14,7 +14,7 @@ devices. Treat it as preview.
 | Commands      | Wipe, restart, lock and policy sync                                      |
 | Notifications | Google Pub/Sub with OIDC verification and idempotency                    |
 | Inventory     | Hardware, software, memory, network, management state and installed apps |
-| Apps          | Installed-application inventory; no distribution yet                     |
+| Apps          | Assigned Managed Google Play apps in the policy (`applications`)         |
 | Compliance    | Derived device health only                                               |
 
 ## Prerequisites
@@ -150,11 +150,25 @@ whose AMAPI state is `REMOVED` or `PENDING_UNINSTALL` are not listed as installe
 
 The device page marks the application list stale after seven days without a report.
 
+## Application delivery
+
+Assigned application catalogue entries (`platform: android`) are merged into the compiled
+policy as `applications` entries. A package the policy fragments already configure keeps
+its `installType`, `autoUpdateMode` and `managedConfiguration`; only assigned packages the
+policy does not mention are added, as `FORCE_INSTALLED` with `AUTO_UPDATE_DEFAULT`.
+
+Removing an assignment removes the package from the next compiled policy, which makes
+Google uninstall an app it force-installed. The policy hash changes, so the device receives
+the new policy on the next sync. See
+[Applications](/manage/applications#android) for the catalogue fields.
+
 ## Limitations
 
-- No managed Google Play approval, app distribution or app install/uninstall.
+- No managed Google Play approval flow; apps must already be approved for the enterprise.
 - App inventory depends on `statusReportingSettings.applicationReportsEnabled`; a tenant
   policy that turns it off leaves the list empty.
+- Assigning an app only changes the policy; there is no per-device install command because
+  AMAPI delivers apps through the policy.
 - No password reset, lost mode, clear app data or eSIM commands exposed.
 - No Android compliance state ingestion.
 - Deleting a device removes local rows only; the Google device and enterprise mapping

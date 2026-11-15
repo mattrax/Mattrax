@@ -17,8 +17,9 @@ follow at the end.
 2. Enter the six-digit code sent to your email. The dashboard stays locked until the
    address is verified.
 3. Create a tenant. The account that creates it becomes the `owner`.
-4. Open **Settings → General** and set the tenant name, display name, support email and
-   brand colour. These values appear on the enrollment page and in profiles.
+4. Open **Settings → General** and set the tenant name, slug, display name, support email
+   and brand colour. The slug becomes the `/t/<slug>` part of every dashboard link; the
+   other values appear on the enrollment page and in profiles.
 
 ## 2. Configure APNs
 

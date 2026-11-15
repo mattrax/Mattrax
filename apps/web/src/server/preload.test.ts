@@ -144,6 +144,27 @@ describe("SSR preload", () => {
     expect(outcome.session?.me?.tenants[0]?.permissions).toContain("devices.write");
   });
 
+  it("keeps a warm token for a canonical slug URL", async () => {
+    let bootstrapCalls = 0;
+
+    const outcome = await preloadSession(
+      htmlRequest([sessionCookie, ssrCookie, revisionCookie], "/t/acme/devices"),
+      {
+        secret,
+        verifyToken: async () => tokenPayload(),
+        verifyRevision,
+        fetchBootstrap: async () => {
+          bootstrapCalls++;
+
+          return bootstrapResponse();
+        },
+      },
+    );
+
+    expect(bootstrapCalls).toBe(0);
+    expect(outcome.session?.me?.tenants[0]?.slug).toBe("acme");
+  });
+
   it("bootstraps when the token predates the tenant in the URL", async () => {
     let bootstrapCalls = 0;
 

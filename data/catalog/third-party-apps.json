@@ -1,0 +1,484 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-16",
+  "sources": [
+    {
+      "name": "ProfileManifests (iMazing Profile Editor / ProfileCreator manifests)",
+      "url": "https://github.com/ProfileManifests/ProfileManifests",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "ProfileManifestsMirror (Jamf JSON schemas)",
+      "url": "https://github.com/Jamf-Custom-Profile-Schemas/ProfileManifestsMirror",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "Google Chrome Enterprise policy list",
+      "url": "https://chromeenterprise.google/policies/"
+    },
+    {
+      "name": "Microsoft Edge policy documentation",
+      "url": "https://learn.microsoft.com/deployedge/microsoft-edge-policies"
+    },
+    {
+      "name": "Microsoft Policy CSP (Chrome and Edge ADMX)",
+      "url": "https://learn.microsoft.com/windows/client-management/mdm/policy-csp-browser"
+    },
+    {
+      "name": "Android Management API managed configurations",
+      "url": "https://developers.google.com/android/management/reference/rest/v1/enterprises.policies"
+    }
+  ],
+  "applications": [
+    {
+      "id": "google-chrome",
+      "name": "Google Chrome",
+      "vendor": "Google",
+      "description": "Managed preferences, ADMX policy and Managed Google Play configuration for Chrome.",
+      "apple": {
+        "bundleId": "com.google.Chrome",
+        "domain": "com.google.Chrome",
+        "settings": [
+          {
+            "key": "DefaultBrowserSettingEnabled",
+            "name": "Set Chrome as the default browser",
+            "type": "boolean",
+            "default": true,
+            "description": "Ask the user to make Chrome the default browser where macOS permits it, and stop other browsers taking the default silently."
+          },
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Chrome to send anonymous usage and crash data to Google. Disable for fleets that must not report telemetry."
+          },
+          {
+            "key": "PasswordManagerEnabled",
+            "name": "Allow the password manager",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Chrome to save passwords. Disable when a corporate password manager is mandatory."
+          },
+          {
+            "key": "IncognitoModeAvailability",
+            "name": "Incognito mode",
+            "type": "enum",
+            "default": 1,
+            "description": "Whether users may open Incognito windows.",
+            "enum": [
+              { "value": "0", "label": "Enabled" },
+              { "value": "1", "label": "Disabled" },
+              { "value": "2", "label": "Forced (all windows are Incognito)" }
+            ]
+          },
+          {
+            "key": "BookmarkBarEnabled",
+            "name": "Show the bookmarks bar",
+            "type": "boolean",
+            "default": true,
+            "description": "Show the bookmarks bar in Chrome windows."
+          }
+        ]
+      },
+      "windows": {
+        "settings": [
+          {
+            "key": "DefaultBrowserSettingEnabled",
+            "name": "Set Chrome as the default browser",
+            "type": "boolean",
+            "default": true,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Chrome~Policy~googlechrome/DefaultBrowserSettingEnabled",
+            "description": "Prevent the default-browser prompt from being suppressed and keep Chrome as the managed default."
+          },
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Chrome~Policy~googlechrome/MetricsReportingEnabled",
+            "description": "Allow Chrome to send anonymous usage and crash data to Google."
+          },
+          {
+            "key": "PasswordManagerEnabled",
+            "name": "Allow the password manager",
+            "type": "boolean",
+            "default": false,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Chrome~Policy~googlechrome/PasswordManagerEnabled",
+            "description": "Allow Chrome to save passwords for users."
+          }
+        ]
+      },
+      "android": {
+        "packageName": "com.android.chrome",
+        "settings": [
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Chrome on Android to send anonymous usage and crash data."
+          },
+          {
+            "key": "PasswordManagerEnabled",
+            "name": "Allow the password manager",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Chrome to save passwords on the device."
+          },
+          {
+            "key": "IncognitoModeAvailability",
+            "name": "Incognito mode",
+            "type": "enum",
+            "default": 1,
+            "description": "Whether users may open Incognito tabs in Chrome on Android.",
+            "enum": [
+              { "value": "0", "label": "Enabled" },
+              { "value": "1", "label": "Disabled" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "microsoft-edge",
+      "name": "Microsoft Edge",
+      "vendor": "Microsoft",
+      "description": "Managed preferences, ADMX policy and Managed Google Play configuration for Edge.",
+      "apple": {
+        "bundleId": "com.microsoft.Edge",
+        "domain": "com.microsoft.Edge",
+        "settings": [
+          {
+            "key": "DefaultBrowserSettingEnabled",
+            "name": "Set Edge as the default browser",
+            "type": "boolean",
+            "default": true,
+            "description": "Ask the user to make Edge the default browser where macOS permits it."
+          },
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Edge to send anonymous usage and crash data to Microsoft."
+          },
+          {
+            "key": "SmartScreenEnabled",
+            "name": "Microsoft Defender SmartScreen",
+            "type": "boolean",
+            "default": true,
+            "description": "Enable SmartScreen URL and download reputation checks."
+          },
+          {
+            "key": "PasswordManagerEnabled",
+            "name": "Allow the password manager",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Edge to save passwords."
+          }
+        ]
+      },
+      "windows": {
+        "settings": [
+          {
+            "key": "DefaultBrowserSettingEnabled",
+            "name": "Set Edge as the default browser",
+            "type": "boolean",
+            "default": true,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Edge~Policy~microsoft_edge/DefaultBrowserSettingEnabled",
+            "description": "Prevent users changing the default browser away from the managed value."
+          },
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Edge~Policy~microsoft_edge/MetricsReportingEnabled",
+            "description": "Allow Edge to send anonymous usage and crash data to Microsoft."
+          },
+          {
+            "key": "SmartScreenEnabled",
+            "name": "Microsoft Defender SmartScreen",
+            "type": "boolean",
+            "default": true,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Edge~Policy~microsoft_edge/SmartScreenEnabled",
+            "description": "Enable SmartScreen URL and download reputation checks."
+          },
+          {
+            "key": "PasswordManagerEnabled",
+            "name": "Allow the password manager",
+            "type": "boolean",
+            "default": false,
+            "omaUri": "./Device/Vendor/MSFT/Policy/Config/Edge~Policy~microsoft_edge/PasswordManagerEnabled",
+            "description": "Allow Edge to save passwords for users."
+          }
+        ]
+      },
+      "android": {
+        "packageName": "com.microsoft.emmx",
+        "settings": [
+          {
+            "key": "MetricsReportingEnabled",
+            "name": "Send usage and crash reports",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow Edge on Android to send anonymous usage and crash data."
+          },
+          {
+            "key": "SmartScreenEnabled",
+            "name": "Microsoft Defender SmartScreen",
+            "type": "boolean",
+            "default": true,
+            "description": "Enable SmartScreen checks for Edge on Android."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mozilla-firefox",
+      "name": "Mozilla Firefox",
+      "vendor": "Mozilla",
+      "description": "Firefox enterprise policies delivered as managed preferences.",
+      "apple": {
+        "bundleId": "org.mozilla.firefox",
+        "domain": "org.mozilla.firefox",
+        "settings": [
+          {
+            "key": "EnterprisePoliciesEnabled",
+            "name": "Enable enterprise policies",
+            "type": "boolean",
+            "default": true,
+            "description": "Required for the other Firefox preferences in this payload to take effect on macOS."
+          },
+          {
+            "key": "AppAutoUpdate",
+            "name": "Automatic updates",
+            "type": "boolean",
+            "default": true,
+            "description": "Let Firefox install updates automatically."
+          },
+          {
+            "key": "BackgroundAppUpdate",
+            "name": "Background updates",
+            "type": "boolean",
+            "default": false,
+            "description": "Keep updating Firefox while it is in the background."
+          },
+          {
+            "key": "DisableTelemetry",
+            "name": "Disable telemetry",
+            "type": "boolean",
+            "default": true,
+            "description": "Prevent Firefox from uploading telemetry."
+          }
+        ]
+      }
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "vendor": "Salesforce",
+      "description": "Slack desktop client preferences.",
+      "apple": {
+        "bundleId": "com.tinyspeck.slackmacgap",
+        "domain": "com.tinyspeck.slackmacgap",
+        "settings": [
+          {
+            "key": "AutoUpdate",
+            "name": "Automatic updates",
+            "type": "boolean",
+            "default": true,
+            "description": "Allow the Slack desktop client to update itself."
+          },
+          {
+            "key": "SlackNoAutoUpdates",
+            "name": "Disable automatic updates",
+            "type": "boolean",
+            "default": false,
+            "description": "Disable Slack's built-in updater, for fleets that manage Slack versions themselves."
+          },
+          {
+            "key": "DefaultSignInTeam",
+            "name": "Default workspace",
+            "type": "string",
+            "description": "Workspace Slack signs in to by default (for example acme.slack.com)."
+          },
+          {
+            "key": "ReleaseChannel",
+            "name": "Release channel",
+            "type": "enum",
+            "description": "Update channel for the desktop client.",
+            "enum": [
+              { "value": "prod", "label": "Production" },
+              { "value": "beta", "label": "Beta" }
+            ]
+          },
+          {
+            "key": "HardwareAcceleration",
+            "name": "Hardware acceleration",
+            "type": "boolean",
+            "default": true,
+            "description": "Use the GPU to render Slack. Disable if it causes rendering problems on older Macs."
+          }
+        ]
+      }
+    },
+    {
+      "id": "zoom",
+      "name": "Zoom",
+      "vendor": "Zoom",
+      "description": "Zoom desktop client single sign-on and login restrictions.",
+      "apple": {
+        "bundleId": "us.zoom.xos",
+        "domain": "us.zoom.config",
+        "settings": [
+          {
+            "key": "ZAutoSSOLogin",
+            "name": "Sign in with SSO automatically",
+            "type": "boolean",
+            "default": true,
+            "description": "Open the SSO flow by default when Zoom starts."
+          },
+          {
+            "key": "ZSSOHost",
+            "name": "SSO sign-in URL",
+            "type": "string",
+            "description": "Company Zoom sign-in URL, for example acme.zoom.us."
+          },
+          {
+            "key": "ForceSSOURL",
+            "name": "Lock the SSO URL",
+            "type": "boolean",
+            "default": true,
+            "description": "Stop users changing the SSO URL configured above."
+          },
+          {
+            "key": "NoGoogle",
+            "name": "Disable Google sign-in",
+            "type": "boolean",
+            "default": true,
+            "description": "Remove the Google login option from the Zoom client."
+          },
+          {
+            "key": "NoFacebook",
+            "name": "Disable Facebook sign-in",
+            "type": "boolean",
+            "default": true,
+            "description": "Remove the Facebook login option from the Zoom client."
+          }
+        ]
+      }
+    },
+    {
+      "id": "microsoft-teams",
+      "name": "Microsoft Teams",
+      "vendor": "Microsoft",
+      "description": "Microsoft Teams desktop app preferences.",
+      "apple": {
+        "bundleId": "com.microsoft.teams2",
+        "domain": "com.microsoft.teams2",
+        "settings": [
+          {
+            "key": "OpenAtLogin",
+            "name": "Open at login",
+            "type": "boolean",
+            "default": false,
+            "description": "Start Teams when the user signs in."
+          },
+          {
+            "key": "DisableGpu",
+            "name": "Disable GPU acceleration",
+            "type": "boolean",
+            "default": false,
+            "description": "Render Teams without hardware acceleration. Useful on Macs with unstable GPU drivers."
+          }
+        ]
+      }
+    },
+    {
+      "id": "visual-studio-code",
+      "name": "Visual Studio Code",
+      "vendor": "Microsoft",
+      "description": "VS Code update, telemetry and extension policies.",
+      "apple": {
+        "bundleId": "com.microsoft.VSCode",
+        "domain": "com.microsoft.VSCode",
+        "settings": [
+          {
+            "key": "UpdateMode",
+            "name": "Update mode",
+            "type": "enum",
+            "default": "default",
+            "description": "Controls whether VS Code checks for and installs updates.",
+            "enum": [
+              { "value": "none", "label": "Disable updates" },
+              { "value": "manual", "label": "Check manually" },
+              { "value": "start", "label": "Check at startup" },
+              { "value": "default", "label": "Automatic" }
+            ]
+          },
+          {
+            "key": "TelemetryLevel",
+            "name": "Telemetry level",
+            "type": "enum",
+            "default": "off",
+            "description": "How much telemetry VS Code sends.",
+            "enum": [
+              { "value": "all", "label": "All" },
+              { "value": "error", "label": "Errors only" },
+              { "value": "crash", "label": "Crashes only" },
+              { "value": "off", "label": "Off" }
+            ]
+          },
+          {
+            "key": "EnableFeedback",
+            "name": "Enable feedback mechanisms",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow the issue reporter and surveys."
+          }
+        ]
+      }
+    },
+    {
+      "id": "1password",
+      "name": "1Password",
+      "vendor": "AgileBits",
+      "description": "1Password 8 sign-in and security defaults.",
+      "apple": {
+        "bundleId": "com.1password.1password",
+        "domain": "com.1password.1password",
+        "settings": [
+          {
+            "key": "authentication.defaultDomain",
+            "name": "Default sign-in address",
+            "type": "string",
+            "description": "Sign-in address users are prompted for, for example acme.1password.com."
+          },
+          {
+            "key": "authentication.enforceDomain",
+            "name": "Enforce the sign-in address",
+            "type": "boolean",
+            "default": true,
+            "description": "Stop users changing the sign-in address from the value above."
+          },
+          {
+            "key": "app.startAtLogin",
+            "name": "Start at login",
+            "type": "boolean",
+            "default": true,
+            "description": "Start 1Password when the user signs in."
+          },
+          {
+            "key": "security.blockSleepEnabled",
+            "name": "Allow 1Password to prevent sleep",
+            "type": "boolean",
+            "default": false,
+            "description": "Allow 1Password to keep the device awake while it is active."
+          }
+        ]
+      }
+    }
+  ]
+}

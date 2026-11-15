@@ -4,6 +4,7 @@ import { requiresJavaScript } from "~/lib/public-routes";
 import { getPreloadedSession } from "~/lib/session-store";
 import { getPostHogConfig } from "~/lib/posthog-config-store";
 import { SITE_DEFAULT_ORIGIN, organizationStructuredData } from "~/lib/site";
+import { THEME_COLOURS, themeBootstrapScript } from "~/lib/theme";
 
 /** The HTML shell for the app, rendered once on the server. */
 export default function Document(props: { children?: JSX.Element }) {
@@ -30,13 +31,14 @@ export default function Document(props: { children?: JSX.Element }) {
   const serializedPostHog = posthog === undefined ? undefined : JSON.stringify(posthog);
 
   return (
-    <html lang="en" class="dark">
+    <html lang="en">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
         <link rel="ard" href="/.well-known/ard.json" />
-        <meta name="theme-color" content="#08080a" />
+        {/* Replaced by the theme bootstrap below before the first paint. */}
+        <meta name="theme-color" content={THEME_COLOURS.light} />
         {/* The landing page is the only page that represents the whole
             organisation; docs pages carry their own BreadcrumbList. */}
         {pathname === "/" && (
@@ -56,6 +58,11 @@ export default function Document(props: { children?: JSX.Element }) {
           {`document.documentElement.classList.add("js");setTimeout(function(){if(!document.documentElement.dataset.hydrated)document.documentElement.classList.remove("js")},10000);`}
         </script>
         <style>{`.js .no-js-notice{display:none!important}`}</style>
+        {/* Resolve system/light/dark before the browser paints: the preference
+            lives in localStorage, so this is the only flash-free point. It runs
+            ahead of the hydration bundle and of the stylesheet-independent
+            no-JavaScript notice below. */}
+        <script>{themeBootstrapScript(preloaded?.subjectId)}</script>
         {/* Must run before the async client entry injected into this head. */}
         <HydrationScript />
         {serializedPostHog !== undefined && (
@@ -68,7 +75,9 @@ export default function Document(props: { children?: JSX.Element }) {
             browser, so without JavaScript it has nothing to show. The notice is
             only emitted for those routes: the landing page, legal pages, 404
             page and docs are server-rendered and deliberately readable without
-            it. Inline styles keep it presentable even if a stylesheet fails. */}
+            it. Inline styles keep it presentable even if a stylesheet fails;
+            `light-dark()` tracks the OS while the script above tracks the
+            stored preference. */}
         {needsJavaScript && (
           <div
             id="no-js-notice"
@@ -82,22 +91,31 @@ export default function Document(props: { children?: JSX.Element }) {
               "justify-content": "center",
               overflow: "auto",
               padding: "2rem 1.5rem",
-              "background-color": "#08080a",
-              color: "#fafafa",
+              "background-color": "light-dark(#ffffff,#08080a)",
+              color: "light-dark(#202020,#fafafa)",
+              "color-scheme": "light dark",
               "font-family":
                 "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
               "line-height": "1.6",
             }}
           >
             <div style={{ width: "100%", "max-width": "26rem" }}>
-              <img
-                src="/assets/brand/mattrax-white-208.png"
-                alt="Mattrax"
-                width="208"
-                height="32"
-                decoding="async"
-                style={{ height: "1rem", width: "auto" }}
-              />
+              <picture>
+                <source
+                  srcset="/assets/brand/mattrax.png"
+                  media="(prefers-color-scheme: light)"
+                  width="208"
+                  height="32"
+                />
+                <img
+                  src="/assets/brand/mattrax-white-208.png"
+                  alt="Mattrax"
+                  width="208"
+                  height="32"
+                  decoding="async"
+                  style={{ height: "1rem", width: "auto" }}
+                />
+              </picture>
               <h1
                 style={{
                   margin: "2.5rem 0 0",
@@ -108,7 +126,13 @@ export default function Document(props: { children?: JSX.Element }) {
               >
                 Mattrax needs JavaScript
               </h1>
-              <p style={{ margin: "0.75rem 0 0", color: "#a1a1aa", "font-size": "0.875rem" }}>
+              <p
+                style={{
+                  margin: "0.75rem 0 0",
+                  color: "light-dark(#646464,#b4b4b4)",
+                  "font-size": "0.875rem",
+                }}
+              >
                 The dashboard loads your devices, policies and enrollment data in the browser.
                 Enable JavaScript for this site, then reload the page.
               </p>
@@ -116,7 +140,7 @@ export default function Document(props: { children?: JSX.Element }) {
                 style={{
                   margin: "1.5rem 0 0",
                   padding: "0 0 0 1rem",
-                  color: "#a1a1aa",
+                  color: "light-dark(#646464,#b4b4b4)",
                   "font-size": "0.8125rem",
                 }}
               >
@@ -131,22 +155,22 @@ export default function Document(props: { children?: JSX.Element }) {
               <p
                 style={{
                   margin: "2rem 0 0",
-                  "border-top": "1px solid #27272a",
+                  "border-top": "1px solid light-dark(#e8e8e8,#2a2a2a)",
                   padding: "1.25rem 0 0",
-                  color: "#a1a1aa",
+                  color: "light-dark(#646464,#b4b4b4)",
                   "font-size": "0.8125rem",
                 }}
               >
                 You can still read the{" "}
-                <a href="/docs/" style={{ color: "#fafafa" }}>
+                <a href="/docs/" style={{ color: "light-dark(#202020,#fafafa)" }}>
                   documentation
                 </a>{" "}
                 or visit the{" "}
-                <a href="/" style={{ color: "#fafafa" }}>
+                <a href="/" style={{ color: "light-dark(#202020,#fafafa)" }}>
                   product site
                 </a>
                 . Support is{" "}
-                <a href="mailto:hello@mattrax.app" style={{ color: "#fafafa" }}>
+                <a href="mailto:hello@mattrax.app" style={{ color: "light-dark(#202020,#fafafa)" }}>
                   hello@mattrax.app
                 </a>
                 .

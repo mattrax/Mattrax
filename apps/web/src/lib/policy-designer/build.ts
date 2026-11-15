@@ -13,6 +13,14 @@ export type PolicyValue = Schema.Json;
 
 export type PolicyValueMap = Record<string, PolicyValue | undefined>;
 
+export type SelectionTemplate = {
+  readonly provider: "thirdparty-app";
+  readonly appId: string;
+  readonly bundleId?: string;
+  readonly packageName?: string;
+  readonly installType?: string;
+};
+
 export type Selection = {
   collectionId: string;
   identifier: string;
@@ -21,6 +29,8 @@ export type Selection = {
   name: string;
   properties: ReadonlyArray<Property>;
   values: Readonly<Record<string, PolicyValue | undefined>>;
+  /** Set when the selection comes from the third-party application catalogue. */
+  template?: SelectionTemplate;
 };
 
 export type Draft = {
@@ -403,6 +413,21 @@ export const buildAppleProfile = (draft: Draft) => {
     .filter((selection) => selection.kind === "profile")
     .map((selection) => {
       const values = applePayloadValues(selection);
+      const template = selection.template;
+
+      if (template?.provider === "thirdparty-app" && template.bundleId) {
+        return {
+          PayloadType: "com.apple.ManagedClient.preferences",
+          PayloadIdentifier: `app.mattrax.apps.${identifierSafe(template.appId)}`,
+          PayloadUUID: uuid(),
+          PayloadVersion: 1,
+          PayloadContent: {
+            [template.bundleId]: {
+              Forced: [{ mcx_preference_settings: values }],
+            },
+          },
+        };
+      }
 
       return {
         ...values,
@@ -573,10 +598,74 @@ ${commands}
 export const buildAndroidPolicy = (draft: Draft) => {
   const policy: PolicyValueMap = {};
 
+  type AndroidApplicationEntry = {
+    readonly packageName: string;
+    readonly installType: string;
+    readonly autoUpdateMode: string;
+    readonly managedConfiguration?: Record<string, Schema.Json>;
+  };
+
+  type MutableAndroidApplicationEntry = {
+    -readonly [K in keyof AndroidApplicationEntry]: AndroidApplicationEntry[K];
+  };
+
+  const applications: AndroidApplicationEntry[] = [];
+
   for (const selection of draft.selections) {
+    const template = selection.template;
+
+    if (
+      template?.provider === "thirdparty-app" &&
+      template.packageName &&
+      selection.kind === "policy"
+    ) {
+      const managedConfiguration: Record<string, Schema.Json> = {};
+
+      for (const [key, value] of Object.entries(payloadValues(selection)))
+        if (value !== undefined) managedConfiguration[key] = value;
+
+      const application: MutableAndroidApplicationEntry = {
+        packageName: template.packageName,
+        // The policy editor's default for an assigned app: install it and keep
+        // it updated, while every catalogue field stays optional.
+        installType: template.installType ?? "FORCE_INSTALLED",
+        autoUpdateMode: "AUTO_UPDATE_DEFAULT",
+      };
+
+      if (Object.keys(managedConfiguration).length > 0)
+        application.managedConfiguration = managedConfiguration;
+
+      applications.push(application);
+      continue;
+    }
+
     for (const [key, value] of Object.entries(payloadValues(selection))) {
       if (value !== undefined) policy[key] = value;
     }
+  }
+
+  if (applications.length > 0) {
+    const existing = Array.isArray(policy.applications)
+      ? policy.applications.filter((entry) => Schema.is(Schema.JsonObject)(entry))
+      : [];
+
+    const packages = new Set(
+      existing.flatMap((entry) => {
+        const packageName = entry.packageName;
+
+        return Schema.is(Schema.String)(packageName) ? [packageName] : [];
+      }),
+    );
+
+    policy.applications = [
+      ...existing,
+      ...applications.filter((application) => {
+        if (packages.has(application.packageName)) return false;
+        packages.add(application.packageName);
+
+        return true;
+      }),
+    ];
   }
 
   // These are read-only Google resource fields, not policy settings.
@@ -775,6 +864,15 @@ const SelectionSchema = Schema.Struct({
   name: Schema.String,
   properties: Schema.Array(PropertySchema),
   values: Schema.Record(Schema.String, Schema.Json),
+  template: Schema.optional(
+    Schema.Struct({
+      provider: Schema.Literal("thirdparty-app"),
+      appId: Schema.String,
+      bundleId: Schema.optional(Schema.String),
+      packageName: Schema.optional(Schema.String),
+      installType: Schema.optional(Schema.String),
+    }),
+  ),
 });
 
 const decodeJson = Schema.decodeUnknownOption(Schema.Json);

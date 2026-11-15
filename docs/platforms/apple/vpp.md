@@ -35,6 +35,25 @@ Sync pages `GET /v2/assets`, enriches names and bundle ids from the tenant appli
 catalogue or ABM app metadata, and stores total, available, assigned and retired licences.
 Assets that disappear from Apple are zeroed but kept for history.
 
+Each purchased app also gets an application catalogue entry (`platform: apple`,
+`source: store`, `storeId` = adamId, name and bundle id from Apple), so it can be assigned
+and installed without retyping the store id. An existing entry for the same store id is
+updated rather than duplicated; an entry with a different source (an uploaded build, for
+example) is never rewritten.
+
+### Automatic sync
+
+A tenant whose token is active is synced once a day by the scheduled maintenance job, and
+a token that has never synced is included on the next run. The manual endpoint above still
+forces an immediate refresh. A failed automatic sync is recorded on the token row
+(`status` and `lastError`) exactly like a failed manual sync, and is retried the next day.
+
+Microsoft/Intune purchased apps are not synced. Microsoft has no public per-tenant
+"purchased apps" licence API equivalent to Apple's VPP `/v2/assets`: Intune manages its own
+Apple VPP tokens and reports app assignments, not a reusable licence pool. Mattrax would
+have to become an Intune partner just to duplicate a pool it cannot assign from, so this is
+deliberately out of scope rather than silently reported as zero licences.
+
 ## Assign and install
 
 ```bash
@@ -84,8 +103,7 @@ falling back to a user-account App Store install.
 ## Limitations
 
 - Only **device-based** licensing is implemented. User-based VPP (`clientUserId`) is not.
-- There is no automatic VPP sync or event-status polling. Run sync after purchasing
-  licences.
+- Microsoft/Intune purchased apps are not synced; see above.
 - Release does not uninstall the app.
 - Apps without a serial (for example Android devices) cannot receive a VPP licence.
 - VPP sync and install require a valid APNs certificate for push delivery.

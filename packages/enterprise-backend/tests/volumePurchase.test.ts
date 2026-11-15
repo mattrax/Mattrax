@@ -7,6 +7,7 @@ import {
   releaseVppLicence,
   saveVppToken,
   sealVppToken,
+  syncScheduledVppAssets,
   syncVppAssets,
   vppInfo,
 } from "../src/volumePurchase.js";
@@ -218,9 +219,11 @@ describe("Apps and Books asset sync and licences", () => {
       bundleId: "com.apple.Pages",
     });
     expect(db.store.vpp_asset).toHaveLength(1);
-    expect(db.store.vpp_asset.some((row) => row.organizationId === otherOrganizationId)).toBe(
-      false,
-    );
+    expect(
+      db.store.vpp_asset.some(
+        (row: { organizationId: string }) => row.organizationId === otherOrganizationId,
+      ),
+    ).toBe(false);
   });
 
   it("consumes a licence, records the assignment and is idempotent", async () => {
@@ -337,5 +340,119 @@ describe("Apps and Books asset sync and licences", () => {
         }),
       ),
     ).rejects.toMatchObject({ kind: "not_found" });
+  });
+
+  it("creates and updates application catalogue rows from synced purchases", async () => {
+    const db = makeDbWithTenant();
+
+    const assets = [
+      {
+        adamId: "361309726",
+        name: "Pages",
+        bundleId: "com.apple.Pages",
+        totalCount: 5,
+        availableCount: 4,
+        assignedCount: 1,
+        retiredCount: 0,
+        deviceAssignable: true,
+        revocable: true,
+      },
+    ];
+
+    const { fetchImpl } = makeFetch({ assets });
+    await saveToken(db, fetchImpl);
+
+    await runEffect(
+      syncVppAssets({
+        db,
+        organizationId,
+        authSecret,
+        config: { fetch: fetchImpl },
+      }),
+    );
+
+    const [application] = db.store.application;
+    expect(application).toMatchObject({
+      organizationId,
+      platform: "apple",
+      source: "store",
+      storeId: "361309726",
+      bundleId: "com.apple.Pages",
+      name: "Pages",
+    });
+
+    // A later sync updates the catalogue metadata without creating a duplicate.
+    const renamed = makeFetch({
+      assets: [{ ...assets[0], name: "Pages (Updated)" }],
+    });
+
+    await runEffect(
+      syncVppAssets({
+        db,
+        organizationId,
+        authSecret,
+        config: { fetch: renamed.fetchImpl },
+      }),
+    );
+
+    expect(db.store.application).toHaveLength(1);
+    expect(db.store.application[0]).toMatchObject({ name: "Pages (Updated)" });
+  });
+
+  it("syncs due Apps and Books tokens on a schedule", async () => {
+    const db = makeDbWithTenant();
+
+    const assets = [
+      {
+        adamId: "361309726",
+        name: "Pages",
+        bundleId: "com.apple.Pages",
+        totalCount: 5,
+        availableCount: 5,
+        assignedCount: 0,
+        retiredCount: 0,
+        deviceAssignable: true,
+        revocable: true,
+      },
+    ];
+
+    const { fetchImpl } = makeFetch({ assets });
+    await saveToken(db, fetchImpl);
+
+    const first = await runEffect(
+      syncScheduledVppAssets({ db, authSecret, config: { fetch: fetchImpl } }),
+    );
+
+    expect(first).toEqual({ tenants: 1, synced: 1, failed: 0 });
+    expect(db.store.application).toHaveLength(1);
+
+    // A token synced moments ago is not due again.
+    const second = await runEffect(
+      syncScheduledVppAssets({ db, authSecret, config: { fetch: fetchImpl } }),
+    );
+
+    expect(second).toEqual({ tenants: 0, synced: 0, failed: 0 });
+
+    // With the interval elapsed it runs again.
+    const third = await runEffect(
+      syncScheduledVppAssets({
+        db,
+        authSecret,
+        config: { fetch: fetchImpl },
+        intervalMs: -1,
+      }),
+    );
+
+    expect(third.synced).toBe(1);
+  });
+
+  it("skips the scheduled sync when the deployment has no secret", async () => {
+    const db = makeDbWithTenant();
+
+    await expect(runEffect(syncScheduledVppAssets({ db }))).resolves.toEqual({
+      tenants: 0,
+      synced: 0,
+      failed: 0,
+    });
   });
 });

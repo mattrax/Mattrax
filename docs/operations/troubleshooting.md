@@ -170,6 +170,24 @@ nearest edge. If `/api/ready` (a single `SELECT 1`) is slow from the deployment 
 the API isolate is not landing in its pinned region: check the deployment's placement
 metadata and the database origin's location before changing anything else.
 
+## Dashboard error screens
+
+A render failure is caught by the dashboard, landing, docs or policy-editor error
+boundary instead of blanking the page. The screen shows a short explanation, **Try
+again** (re-renders the failed subtree), **Reload page**, and an **Error ID** such as
+`ERR-9F3C21AB`.
+
+- Quote the error id in a support report. The same id is attached to the
+  `$exception` event in PostHog (property `error_id`), together with
+  `error_boundary` (`dashboard`, `landing`, `policy-editor`, `docs` or `app`) and the
+  path. PostHog autocapture does not see Solid's boundary errors, so this explicit
+  report is the only browser-side trace.
+- **Try again** only helps when the failure was transient (a render that read stale
+  state). If it recurs, reload; if the reload lands on the same screen, the boundary
+  is reporting a genuine defect rather than a lost query.
+- Signing out, or the session expiring, clears the query cache and every open tab
+  through the cross-tab channel; the error screen is not a substitute for that.
+
 ## Database and migrations
 
 - `/api/ready` returns 503: check MySQL reachability, Hyperdrive configuration and

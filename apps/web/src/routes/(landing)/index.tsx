@@ -98,11 +98,11 @@ export default function Page() {
 function Hero() {
   return (
     <section class="relative isolate overflow-hidden">
-      <div class="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)]" />
+      <div class="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,var(--grid-line)_1px,transparent_1px),linear-gradient(to_bottom,var(--grid-line)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,var(--mask-opaque),transparent)]" />
 
       <div class="mx-auto grid max-w-7xl items-center gap-16 px-6 pb-20 pt-16 sm:px-8 xl:grid-cols-[1.02fr_0.98fr] xl:gap-12 lg:pb-28 lg:pt-24">
         <div class="max-w-2xl">
-          <div class="inline-flex items-center gap-2 rounded-md border border-white/[0.07] bg-card px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
+          <div class="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
             <span class="relative flex size-1.5">
               <span class="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
               <span class="relative inline-flex size-1.5 rounded-full bg-success" />
@@ -135,7 +135,7 @@ function Hero() {
               <Button
                 variant="outline"
                 size="lg"
-                class="h-10 rounded-md border-white/[0.12] bg-transparent px-6 text-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
+                class="h-10 rounded-md border-border bg-transparent px-6 text-foreground/80 hover:bg-hover hover:text-foreground"
               >
                 Read the docs
               </Button>
@@ -178,13 +178,13 @@ function FleetPreview() {
   return (
     <div class="relative mx-auto w-full max-w-[560px] lg:max-w-none">
       <div />
-      <div class="rounded-lg border border-white/[0.07] bg-card p-2 shadow-[0_30px_80px_-30px_rgba(28,25,23,0.35)] backdrop-blur">
-        <div class="overflow-hidden rounded-md border border-white/[0.07] bg-card">
-          <div class="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
+      <div class="rounded-lg border border-border bg-card p-2 shadow-[var(--shadow-dialog)] backdrop-blur">
+        <div class="overflow-hidden rounded-md border border-border bg-card">
+          <div class="flex items-center justify-between border-b border-border px-5 py-4">
             <div class="flex items-center gap-2">
-              <span class="size-2 rounded-full bg-white/[0.07]" />
-              <span class="size-2 rounded-full bg-white/[0.07]" />
-              <span class="size-2 rounded-full bg-white/[0.07]" />
+              <span class="size-2 rounded-full bg-hover" />
+              <span class="size-2 rounded-full bg-hover" />
+              <span class="size-2 rounded-full bg-hover" />
             </div>
             <div class="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
               <span class="size-1.5 rounded-full bg-success" />
@@ -202,7 +202,7 @@ function FleetPreview() {
                   1,284 devices
                 </p>
               </div>
-              <span class="rounded-md border border-white/[0.07] bg-white/[0.02] px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+              <span class="rounded-md border border-border bg-surface px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
                 Live
               </span>
             </div>
@@ -216,8 +216,8 @@ function FleetPreview() {
             <div class="mt-5 space-y-2">
               <For each={devices}>
                 {(device) => (
-                  <div class="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
-                    <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-muted-foreground">
+                  <div class="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5">
+                    <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
                       <DeviceGlyph detail={device.detail} />
                     </span>
                     <div class="min-w-0 flex-1">
@@ -238,7 +238,7 @@ function FleetPreview() {
               </For>
             </div>
 
-            <div class="mt-4 flex items-center justify-between rounded-lg border border-white/[0.07] px-3 py-2.5">
+            <div class="mt-4 flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
               <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <SyncIcon />
                 Policy sync
@@ -259,7 +259,7 @@ function FleetPreview() {
 
 function PreviewStat(props: { value: string; label: string }) {
   return (
-    <div class="rounded-lg border border-white/[0.07] bg-card p-3">
+    <div class="rounded-lg border border-border bg-card p-3">
       <p class="text-lg font-medium tracking-tight text-foreground">{props.value}</p>
       <p class="mt-0.5 text-[10px] text-muted-foreground">{props.label}</p>
     </div>
@@ -276,7 +276,7 @@ function DeviceGlyph(props: { detail: string }) {
 
 function Platforms() {
   return (
-    <section id="platforms" class="border-y border-white/[0.07] bg-card">
+    <section id="platforms" class="border-y border-border bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-24">
         <div class="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div class="max-w-2xl">
@@ -298,10 +298,10 @@ function Platforms() {
             {(platform) => (
               <a
                 href={platform.href}
-                class="group relative overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.015] p-7 transition hover:border-white/[0.12] hover:bg-white/[0.03]"
+                class="group relative overflow-hidden rounded-lg border border-border bg-surface p-7 transition hover:border-input hover:bg-hover"
               >
                 <div class="flex items-start justify-between">
-                  <span class="flex size-11 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-foreground/80">
+                  <span class="flex size-11 items-center justify-center rounded-lg border border-border bg-card text-foreground/80">
                     <platform.icon class="size-5" />
                   </span>
                   <ArrowIcon class="size-4 -translate-x-1 text-muted-foreground opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
@@ -313,7 +313,7 @@ function Platforms() {
                   {platform.tag}
                 </p>
                 <p class="mt-4 text-sm leading-6 text-muted-foreground">{platform.body}</p>
-                <ul class="mt-6 space-y-2 border-t border-white/[0.07] pt-5">
+                <ul class="mt-6 space-y-2 border-t border-border pt-5">
                   <For each={platform.points}>
                     {(point) => (
                       <li class="flex items-center gap-2 text-xs text-muted-foreground">
@@ -346,11 +346,11 @@ function FeatureGrid() {
         </p>
       </div>
 
-      <div class="mt-12 grid gap-px overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.07] sm:grid-cols-2 lg:grid-cols-3">
+      <div class="mt-12 grid gap-px overflow-hidden rounded-lg border border-border bg-hover sm:grid-cols-2 lg:grid-cols-3">
         <For each={features}>
           {(feature) => (
-            <div class="group bg-white/[0.02] p-7 transition hover:bg-card">
-              <span class="flex size-9 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-muted-foreground">
+            <div class="group bg-surface p-7 transition hover:bg-card">
+              <span class="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
                 <feature.icon class="size-4" />
               </span>
               <h3 class="mt-5 text-base font-medium tracking-tight text-foreground">
@@ -367,7 +367,7 @@ function FeatureGrid() {
 
 function Developer() {
   return (
-    <section id="developers" class="relative overflow-hidden bg-white/[0.02]">
+    <section id="developers" class="relative overflow-hidden bg-surface">
       <div class="mx-auto grid min-w-0 max-w-7xl gap-14 px-6 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-28">
         <div class="min-w-0">
           <p class="text-[11px] font-medium tracking-normal text-muted-foreground">For builders</p>
@@ -406,13 +406,13 @@ function Developer() {
         </div>
 
         <div class="relative min-w-0">
-          <div class="absolute -inset-4 rounded-lg bg-white/[0.03] blur-2xl" />
-          <div class="relative overflow-hidden rounded-lg border border-white/[0.08] bg-card shadow-2xl">
-            <div class="flex items-center justify-between border-b border-white/[0.08] px-5 py-3">
+          <div class="absolute -inset-4 rounded-lg bg-surface blur-2xl" />
+          <div class="relative overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+            <div class="flex items-center justify-between border-b border-border px-5 py-3">
               <div class="flex items-center gap-2">
-                <span class="size-2 rounded-full bg-white/[0.08]" />
-                <span class="size-2 rounded-full bg-white/[0.08]" />
-                <span class="size-2 rounded-full bg-white/[0.08]" />
+                <span class="size-2 rounded-full bg-hover" />
+                <span class="size-2 rounded-full bg-hover" />
+                <span class="size-2 rounded-full bg-hover" />
               </div>
               <span class="text-[10px] font-medium tracking-normal text-muted-foreground">
                 TypeScript
@@ -443,7 +443,7 @@ function Developer() {
                 <span class="text-muted-foreground">{"// are handled by the gateway."}</span>
               </code>
             </pre>
-            <div class="border-t border-white/[0.08] px-5 py-3 text-[11px] text-muted-foreground">
+            <div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
               <span class="text-success">●</span> POST /webhook/apple/checkin · 200 · 12ms
             </div>
           </div>
@@ -456,7 +456,7 @@ function Developer() {
 function DeveloperPoint(props: { title: string; body: string }) {
   return (
     <div class="flex gap-3">
-      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.1] text-muted-foreground">
+      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground">
         <CheckIcon class="size-3" />
       </span>
       <div>
@@ -469,7 +469,7 @@ function DeveloperPoint(props: { title: string; body: string }) {
 
 function Migration() {
   return (
-    <section id="migration" class="border-b border-white/[0.07] bg-card">
+    <section id="migration" class="border-b border-border bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-28">
         <div class="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
           <div>
@@ -488,7 +488,7 @@ function Migration() {
             <div class="mt-7 flex flex-wrap gap-2">
               <For each={migrations}>
                 {(vendor) => (
-                  <span class="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                  <span class="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground">
                     {vendor}
                   </span>
                 )}
@@ -530,7 +530,7 @@ function Migration() {
 
 function MigrationStep(props: { number: string; title: string; body: string }) {
   return (
-    <div class="rounded-lg border border-white/[0.07] bg-white/[0.015] p-5">
+    <div class="rounded-lg border border-border bg-surface p-5">
       <p class="text-[10px] font-medium tracking-[0.18em] text-muted-foreground">{props.number}</p>
       <p class="mt-6 text-sm font-medium text-foreground">{props.title}</p>
       <p class="mt-2 text-xs leading-5 text-muted-foreground">{props.body}</p>
@@ -571,7 +571,7 @@ function Enterprise() {
             <a href="mailto:hello@mattrax.app">
               <Button
                 variant="outline"
-                class="rounded-md border-white/[0.12] bg-transparent px-6 text-foreground/80 hover:bg-white/[0.04] hover:text-foreground"
+                class="rounded-md border-border bg-transparent px-6 text-foreground/80 hover:bg-hover hover:text-foreground"
               >
                 Talk to us
               </Button>
@@ -579,16 +579,16 @@ function Enterprise() {
           </div>
         </div>
 
-        <div class="overflow-hidden rounded-lg border border-white/[0.07] bg-card">
+        <div class="overflow-hidden rounded-lg border border-border bg-card">
           <For each={rows}>
             {(row, index) => (
               <div
                 class={`flex items-center justify-between gap-6 px-6 py-4 ${
-                  index() > 0 ? "border-t border-white/[0.07]" : ""
+                  index() > 0 ? "border-t border-border" : ""
                 }`}
               >
                 <span class="text-sm text-muted-foreground">{row}</span>
-                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-muted-foreground">
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-hover text-muted-foreground">
                   <CheckIcon class="size-3" />
                 </span>
               </div>
@@ -602,7 +602,7 @@ function Enterprise() {
 
 function Pricing() {
   return (
-    <section id="pricing" class="border-y border-white/[0.07] bg-card">
+    <section id="pricing" class="border-y border-border bg-card">
       <div class="mx-auto max-w-7xl px-6 py-20 sm:px-8 lg:py-28">
         <div class="max-w-2xl">
           <SectionLabel>Pricing</SectionLabel>
@@ -657,9 +657,7 @@ function PriceCard(props: {
   return (
     <div
       class={`flex flex-col rounded-lg border p-7 ${
-        props.highlighted
-          ? "border-white/[0.16] bg-white/[0.045] text-foreground"
-          : "border-white/[0.07] bg-white/[0.015]"
+        props.highlighted ? "border-border bg-hover text-foreground" : "border-border bg-surface"
       }`}
     >
       <div class="flex items-center justify-between">
@@ -669,7 +667,7 @@ function PriceCard(props: {
           {props.name}
         </p>
         {props.highlighted && (
-          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <span class="rounded-md bg-hover px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             Recommended
           </span>
         )}
@@ -719,7 +717,7 @@ function Faq() {
             If something is preview or not implemented, the docs say so. The same applies here.
           </p>
         </div>
-        <div class="divide-y divide-white/[0.07] border-y border-white/[0.07]">
+        <div class="divide-y divide-border border-y border-border">
           <For each={faqs}>
             {(faq) => (
               <details class="group py-5">
@@ -742,7 +740,7 @@ function Faq() {
 function FinalCta() {
   return (
     <section class="px-6 pb-20 sm:px-8">
-      <div class="relative mx-auto max-w-7xl overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.02] px-8 py-16 text-center sm:px-16 sm:py-20">
+      <div class="relative mx-auto max-w-7xl overflow-hidden rounded-lg border border-border bg-surface px-8 py-16 text-center sm:px-16 sm:py-20">
         <div class="relative">
           <p class="text-[11px] font-medium tracking-normal text-muted-foreground">Get started</p>
           <h2 class="mx-auto mt-4 max-w-2xl text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
@@ -762,7 +760,7 @@ function FinalCta() {
             <a href="/docs/getting-started/quick-start" target="_self">
               <Button
                 variant="outline"
-                class="h-10 rounded-md border-white/[0.1] bg-transparent px-6 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                class="h-10 rounded-md border-border bg-transparent px-6 text-muted-foreground hover:bg-hover hover:text-foreground"
               >
                 Quick start
               </Button>
@@ -884,8 +882,8 @@ function AndroidIcon(props: { class?: string }) {
     >
       <path d="M7.2 9.4c0-.5.4-.9.9-.9h7.8c.5 0 .9.4.9.9v5.2c0 .5-.4.9-.9.9H8.1a.9.9 0 0 1-.9-.9V9.4Z" />
       <path d="M8.2 8.1 7 6.1a.5.5 0 0 1 .2-.7.5.5 0 0 1 .7.2l1.2 2h5.8l1.2-2a.5.5 0 0 1 .7-.2.5.5 0 0 1 .2.7L15.8 8H8.2Z" />
-      <circle cx="9.5" cy="10.2" r=".6" fill="#fff" />
-      <circle cx="14.5" cy="10.2" r=".6" fill="#fff" />
+      <circle cx="9.5" cy="10.2" r=".6" class="text-card" fill="currentColor" />
+      <circle cx="14.5" cy="10.2" r=".6" class="text-card" fill="currentColor" />
       <path d="M8 17.1v2.4a1 1 0 0 1-2 0v-2.4h2Zm10 0v2.4a1 1 0 0 1-2 0v-2.4h2Z" />
     </svg>
   );

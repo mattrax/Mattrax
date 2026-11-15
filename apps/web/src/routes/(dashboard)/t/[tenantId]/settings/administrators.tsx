@@ -52,7 +52,7 @@ const roleValue = (user: { role: string; roleId?: string | null }) =>
   user.roleId ? `role:${user.roleId}` : `builtin:${user.role}`;
 
 const selectClass =
-  "h-11 w-full rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground sm:h-8 sm:text-[12.5px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 sm:w-auto";
+  "h-11 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:h-8 sm:text-[12.5px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 sm:w-auto";
 
 const statusLabels: Record<TenantInvitation["status"], string> = {
   pending: "Pending",
@@ -627,7 +627,7 @@ export default function AdministratorsSettingsPage() {
                   <span class="font-medium text-foreground">{result().roleName}</span>. Expires{" "}
                   <time datetime={result().expiresAt}>{formatDate(result().expiresAt)}</time>.
                 </p>
-                <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-xs text-muted-foreground">
+                <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-xs text-muted-foreground">
                   {result().inviteUrl}
                 </code>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -676,7 +676,7 @@ export default function AdministratorsSettingsPage() {
           </Show>
           <Show when={roleFormOpen() && can("roles.write")}>
             <form
-              class="mb-4 space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3"
+              class="mb-4 space-y-3 rounded-lg border border-border bg-surface p-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 saveRole.mutate();
@@ -728,7 +728,7 @@ export default function AdministratorsSettingsPage() {
                               >
                                 <input
                                   type="checkbox"
-                                  class="mt-0.5 size-4 accent-[var(--brand)]"
+                                  class="mt-0.5 size-4 accent-[var(--brand-solid)]"
                                   checked={rolePermissions().has(permission.id)}
                                   disabled={disabled()}
                                   onChange={() => togglePermission(permission.id)}
@@ -785,12 +785,12 @@ export default function AdministratorsSettingsPage() {
           <div class="space-y-2">
             <For each={roles.data?.roles ?? []}>
               {(item) => (
-                <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div class="min-w-0">
                     <p class="text-[12.5px] font-medium text-foreground">
                       {item.name}
                       <Show when={item.builtIn}>
-                        <span class="ml-2 rounded-full border border-white/[0.08] px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                        <span class="ml-2 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
                           Built-in
                         </span>
                       </Show>
@@ -853,7 +853,7 @@ export default function AdministratorsSettingsPage() {
             <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">No members yet.</p>
           }
         >
-          <ul class="divide-y divide-white/[0.05]">
+          <ul class="divide-y divide-border">
             <For each={users.data?.users ?? []}>
               {(user) => {
                 const isSelf = () => user.userId === session().data?.user?.id;
@@ -871,7 +871,7 @@ export default function AdministratorsSettingsPage() {
                   <li class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <div class="flex min-w-0 items-center gap-3">
                       <span
-                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.06]"
+                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border"
                         aria-hidden="true"
                       >
                         {initials(user.name)}
@@ -976,7 +976,7 @@ export default function AdministratorsSettingsPage() {
                 <span class="font-medium text-foreground">{notice().email}</span>. Expires{" "}
                 <time datetime={notice().expiresAt}>{formatDate(notice().expiresAt)}</time>.
               </p>
-              <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-[11px] text-muted-foreground">
+              <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-[11px] text-muted-foreground">
                 {notice().inviteUrl}
               </code>
               <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -997,7 +997,7 @@ export default function AdministratorsSettingsPage() {
           )}
         </Show>
 
-        <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5 sm:px-5">
+        <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 sm:px-5">
           <label
             class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
             for="invitation-filter"
@@ -1037,7 +1037,7 @@ export default function AdministratorsSettingsPage() {
             </p>
           }
         >
-          <ul class="divide-y divide-white/[0.05]">
+          <ul class="divide-y divide-border">
             <For each={filteredInvitations()}>
               {(item) => {
                 const status = () => effectiveStatus(item);
@@ -1255,7 +1255,7 @@ export default function AdministratorsSettingsPage() {
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

@@ -81,7 +81,7 @@ export default function NewPolicyPage() {
           </Panel>
 
           <Panel class="hidden lg:block">
-            <div class="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-muted-foreground">
+            <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
               <ShieldCheck class="size-4" />
             </div>
             <h2 class="mt-3 text-[13px] font-semibold text-foreground">What happens next</h2>

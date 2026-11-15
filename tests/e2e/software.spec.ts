@@ -8,7 +8,7 @@ test.describe("software inventory and device security", () => {
     // The old Software destination now points at the application catalogue;
     // per-device software is a projection on the device page and dashboards.
     await gotoHydrated(page, `/t/${tenant.id}/software`);
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/applications$`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/applications$`));
     await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
 
     const inventory = await api<{ applications: unknown[]; total: number }>(

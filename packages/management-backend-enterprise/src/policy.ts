@@ -4,6 +4,7 @@ import { certificateDer, extractCmsSignedContent } from "@mattrax/scep";
 import {
   appleAssetTokenEpoch,
   appleAssetTokenExpiresAt,
+  isApplePackageUpload,
   signAppleAssetToken,
   signAppleProfileToken,
   verifyAppleAssetToken,
@@ -104,6 +105,195 @@ export const isLegacyKind = (kind: string): boolean => {
 
 export const isCertificateKind = (kind: string): boolean =>
   parseConfigurationKind(kind).type === "certificate";
+
+export const isApplicationKind = (kind: string): boolean =>
+  parseConfigurationKind(kind).type === "application";
+
+/** The synthetic request/kind pair a catalogue app's signed asset URL is bound to. */
+export const CATALOGUE_APPLICATION_ASSET_KIND = "catalogue-application";
+
+/**
+ * Signed asset identifier for an uploaded file in the application catalogue.
+ *
+ * Policy-scoped artefacts reuse the configuration aid (`<policyId>.<kind>.asset`);
+ * catalogue files are not owned by a policy, so they get a separate prefix that
+ * cannot collide with a policy id.
+ */
+export const catalogueApplicationAssetIdentifier = (applicationId: string): string =>
+  `app.${applicationId}`;
+
+export const parseCatalogueApplicationAssetIdentifier = (identifier: string): string | null =>
+  identifier.startsWith("app.") && identifier.length > 4 ? identifier.slice(4) : null;
+
+export type AppleApplicationSource = "upload" | "manifest" | "store";
+
+/**
+ * An app a policy installs, either by referencing a catalogue entry or by
+ * carrying the metadata for a `.pkg` uploaded against the policy itself.
+ */
+export type AppleApplicationConfiguration = {
+  readonly type: "catalogue" | "inline";
+  /** Present for `catalogue`: the tenant's application row id. */
+  readonly applicationId?: string;
+  readonly source: AppleApplicationSource;
+  readonly bundleId: string;
+  readonly version?: string;
+  readonly title?: string;
+  /** Policy-scoped upload (`uploadPolicyApplication`) digest. */
+  readonly sha256?: string;
+  readonly fileName?: string;
+  readonly contentType?: string;
+  readonly manifestUrl?: string;
+  readonly storeId?: string;
+  /** Managed app configuration handed to the install command. */
+  readonly configuration?: Schema.JsonObject;
+  readonly managementFlags?: number;
+};
+
+type MutableAppleApplicationConfiguration = {
+  -readonly [K in keyof AppleApplicationConfiguration]: AppleApplicationConfiguration[K];
+};
+
+const applicationSourceOf = (record: Schema.JsonObject): AppleApplicationSource | undefined => {
+  const explicit = record.source;
+
+  if (explicit === "upload" || explicit === "manifest" || explicit === "store") return explicit;
+
+  if (explicit !== undefined) return undefined;
+
+  if (Schema.is(Schema.String)(record.storeId) && record.storeId.trim()) return "store";
+
+  if (Schema.is(Schema.String)(record.manifestUrl) && record.manifestUrl.trim()) return "manifest";
+
+  if (Schema.is(Schema.String)(record.sha256) && record.sha256.trim()) return "upload";
+
+  return undefined;
+};
+
+const isHttpsUrl = (value: string): boolean => {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Parse and structurally validate a `mttx.apple.application.<id>` payload.
+ *
+ * DB-backed checks (does the referenced catalogue row belong to the tenant?)
+ * live in the handler that has the tenant context. This function only accepts
+ * shapes a device can actually install, so a stored configuration cannot fail
+ * silently at delivery time.
+ */
+export const parseAppleApplicationConfiguration = (
+  data: Schema.Json | undefined,
+): AppleApplicationConfiguration | null => {
+  const record = asRecord(data);
+
+  if (!record) return null;
+
+  const applicationId = record.applicationId;
+
+  if (applicationId !== undefined) {
+    if (!Schema.is(Schema.String)(applicationId) || !applicationId.trim()) return null;
+
+    const configuration = record.configuration;
+
+    if (configuration !== undefined && !isJsonObject(configuration)) return null;
+
+    return {
+      type: "catalogue",
+      applicationId: applicationId.trim(),
+      source: "manifest",
+      bundleId: "",
+      configuration: isJsonObject(configuration) ? configuration : undefined,
+    };
+  }
+
+  const source = applicationSourceOf(record);
+
+  if (!source) return null;
+  const bundleId = record.bundleId;
+
+  if (!Schema.is(Schema.String)(bundleId) || !bundleId.trim()) return null;
+  const version = record.version;
+  const title = record.title;
+  const configuration = record.configuration;
+
+  if (configuration !== undefined && !isJsonObject(configuration)) return null;
+  const managementFlags = record.managementFlags;
+
+  if (
+    managementFlags !== undefined &&
+    (!Schema.is(Schema.Number)(managementFlags) || managementFlags !== 1)
+  )
+    return null;
+
+  const result: MutableAppleApplicationConfiguration = {
+    type: "inline",
+    source,
+    bundleId: bundleId.trim(),
+  };
+
+  if (Schema.is(Schema.String)(title) && title.trim()) result.title = title.trim();
+
+  if (isJsonObject(configuration)) result.configuration = configuration;
+
+  if (managementFlags === 1) result.managementFlags = 1;
+
+  if (Schema.is(Schema.String)(version) && version.trim()) result.version = version.trim();
+
+  if (source === "upload") {
+    const sha256 = record.sha256;
+    const fileName = record.fileName;
+    const contentType = record.contentType;
+
+    if (!Schema.is(Schema.String)(sha256) || !/^[a-f0-9]{64}$/i.test(sha256)) return null;
+
+    if (!Schema.is(Schema.String)(fileName) || !fileName.trim()) return null;
+
+    if (!result.version) return null;
+
+    if (
+      !isApplePackageUpload({
+        fileName,
+        contentType: Schema.is(Schema.String)(contentType) ? contentType : undefined,
+      })
+    )
+      return null;
+
+    result.sha256 = sha256.toLowerCase();
+    result.fileName = fileName.trim();
+
+    if (Schema.is(Schema.String)(contentType) && contentType.trim())
+      result.contentType = contentType.trim();
+
+    return result;
+  }
+
+  if (source === "manifest") {
+    const manifestUrl = record.manifestUrl;
+
+    if (!Schema.is(Schema.String)(manifestUrl) || !isHttpsUrl(manifestUrl.trim())) return null;
+
+    if (!result.version) return null;
+
+    result.manifestUrl = manifestUrl.trim();
+
+    return result;
+  }
+
+  const storeId = record.storeId;
+
+  if (!Schema.is(Schema.String)(storeId) || !/^\d+$/.test(storeId.trim())) return null;
+
+  result.storeId = storeId.trim();
+
+  if (!result.version) result.version = "0";
+
+  return result;
+};
 
 export const configurationDeclarationIdentifier = (policyId: string, kind: string): string =>
   `${policyId}:${kind}`;
@@ -408,10 +598,17 @@ export const validateConfiguration = (
         return yield* Effect.fail(
           `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id> and mttx.android.policy.<id>.`,
         );
-      case "application":
-        return yield* Effect.fail(
-          `"${kind}" is not supported: application deployment is not implemented yet. Remove it from the policy or upload the app as a custom mobileconfig.`,
-        );
+      case "application": {
+        const configuration = parseAppleApplicationConfiguration(data);
+
+        if (!configuration)
+          return yield* Effect.fail(
+            `"${kind}" must reference an applicationId or describe an installable Apple app: either a policy-uploaded .pkg (source "upload" with sha256, fileName, bundleId and version), an HTTPS manifest (source "manifest" with manifestUrl, bundleId and version) or a numeric App Store id (source "store" with storeId).`,
+          );
+
+        return;
+      }
+
       case "device": {
         const record = asRecord(data);
 

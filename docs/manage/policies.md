@@ -31,11 +31,14 @@ before any write.
 | `mttx.apple.custom.<id>`      | Apple    | Base64 `.mobileconfig`                               |
 | `mttx.apple.certificate.<id>` | Apple    | PEM certificate for DDM                              |
 | `mttx.apple.declaration.<id>` | Apple    | Raw DDM declaration                                  |
+| `mttx.apple.application.<id>` | Apple    | App install: catalogue reference or inline app       |
 | `mttx.windows.custom.<id>`    | Windows  | OMA-URI node or `{ nodes: [...] }`                   |
 | `mttx.android.policy.<id>`    | Android  | AMAPI policy fragment                                |
 
-`mttx.apple.application.<id>` is rejected. See [Apple DDM](/platforms/apple/ddm),
-[Windows policies](/platforms/windows/policies) and
+An Apple application configuration installs on every device in the policy's scope. It
+references a catalogue row (`{ "applicationId": "…" }`) or carries its own manifest, store
+id or uploaded `.pkg` metadata. See [Applications](/manage/applications#applications-in-a-policy),
+[Apple DDM](/platforms/apple/ddm), [Windows policies](/platforms/windows/policies) and
 [Android policies](/platforms/android/policies).
 
 ## The designer
@@ -144,6 +147,14 @@ curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/policies" \
   -d '{ "ids": ["policy_id"] }'
 ```
 
+## Editing safely
+
+The policy metadata form, the configuration editor and the designer all guard unsaved
+changes. Navigating away, closing the tab or leaving the editor asks **Discard** or
+**Keep editing** instead of dropping the work silently. Password fields (for example a
+Wi-Fi payload's password) have a reveal button so a long value can be checked before
+saving.
+
 ## Application payloads
 
 Policies can store application files in R2:
@@ -153,14 +164,16 @@ POST /api/v1/tenants/:tenantId/policies/:id/applications
 GET  /api/v1/tenants/:tenantId/policies/:id/applications/:sha256
 ```
 
-The download returns JSON with base64 `content`, not binary bytes. Uploaded policy
-applications are not automatically deployed as Apple apps; see
-[Applications](/manage/applications).
+The download returns JSON with base64 `content`, not binary bytes. Reference the upload from
+a `mttx.apple.application.<id>` configuration (with `sha256`, `fileName`, `bundleId` and
+`version`) to serve it to Macs through a signed, expiring URL. See
+[Applications](/manage/applications#applications-in-a-policy).
 
 ## Limitations
 
 - The built-in Apple device configuration is limited to the camera restriction.
-- `mttx.apple.application.<id>` is rejected.
+- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded `.pkg`
+  app; uploaded packages install on macOS only.
 - Policy resolution is application-side; very large fleets may see slower syncs.
 - Windows only supports OMA-URI `Replace`.
 - Android merge rules concatenate arrays; plan fragments accordingly.

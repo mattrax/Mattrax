@@ -43,7 +43,7 @@ test.describe("command palette", () => {
 
     await input.fill("settings");
     await page.getByRole("option", { name: /^Settings/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/settings`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings`));
 
     // The palette must stay inside the document: the marker survives only when
     // the router navigated instead of reloading the page.
@@ -110,7 +110,7 @@ test.describe("command palette", () => {
 
     await page.keyboard.press("g");
     await page.keyboard.press("p");
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/policies$`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/policies$`));
   });
 
   test("registers policy designer actions and removes them on unmount", async ({ page }) => {

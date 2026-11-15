@@ -276,7 +276,7 @@ export function DeviceQueryBuilder(props: {
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <p class="text-[12.5px] font-medium text-foreground">Match devices</p>
-          <span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10.5px] text-muted-foreground">
+          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] text-muted-foreground">
             all conditions
           </span>
         </div>
@@ -294,7 +294,7 @@ export function DeviceQueryBuilder(props: {
       <Show
         when={drafts().length > 0}
         fallback={
-          <p class="rounded-lg border border-dashed border-white/[0.09] p-3 text-[12px] text-muted-foreground">
+          <p class="rounded-lg border border-dashed border-border p-3 text-[12px] text-muted-foreground">
             {props.dataset === "software"
               ? "No device filter. Every installed application reported by the fleet is included."
               : "No conditions yet. This matches every device."}
@@ -307,7 +307,7 @@ export function DeviceQueryBuilder(props: {
               const field = () => fieldById(draft.field);
 
               return (
-                <div class="flex flex-wrap items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-1.5">
+                <div class="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface p-1.5">
                   <select
                     aria-label="Condition field"
                     class="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"

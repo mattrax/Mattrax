@@ -1,24 +1,25 @@
 import { Meta, Title } from "@solidjs/meta";
-import { useParams, useSearchParams } from "@solidjs/router";
-import { QueryClientProvider, useQuery } from "@tanstack/solid-query";
+import { query, type RouteProps } from "@solidjs/router";
+import { defineFileRoute } from "@solidjs/router/fs";
 import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain/client";
 import { Match as EffectMatch, Schema } from "effect";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { JSX } from "@solidjs/web";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { PasswordInput } from "~/components/ui/password-input";
 import { Label } from "~/components/ui/label";
 import {
-  enterprise,
   type AndroidEnrollment,
   type EnrollmentResponse,
   type PlatformEnrollment,
   type WindowsEnrollment,
 } from "~/lib/enterprise";
+import { lookupPublicEnrollment } from "~/lib/enrollment.server";
 import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
-import { queryClient } from "~/lib/query-client";
 
 const isAuthenticatedEnrollment = (
   value: EnrollmentResponse | undefined,
@@ -37,31 +38,52 @@ const AndroidReady = Schema.Struct({
 
 const ErrorEnrollment = Schema.Struct({ error: Schema.String });
 
-function EnrollPage() {
-  const params = useParams();
-  const [search, setSearch] = useSearchParams();
-  const searchCode = () => (Array.isArray(search.code) ? search.code[0] : search.code);
-  const [code, setCode] = createSignal(searchCode() ?? "");
+const codeFromQuery = (query: Record<string, string | string[] | undefined>) => {
+  const value = query.code;
 
-  const enrollment = useQuery(() => ({
-    queryKey: ["enterprise", "public-enrollment", params.id, searchCode()],
-    queryFn: () => enterprise.getEnrollment(params.id, searchCode()),
-    retry: false,
-  }));
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+};
 
-  const submitCode = (event: SubmitEvent) => {
-    event.preventDefault();
-    setSearch({ code: code() });
+const getEnrollment = query(lookupPublicEnrollment, "public-enrollment");
+
+/**
+ * Warm the enrollment lookup before render. The component reads the same
+ * query with `deferStream`, so the first HTML response already contains the
+ * password form or the platform instructions; JavaScript only enhances it.
+ */
+export const route = defineFileRoute("/enroll/:id", {
+  preload: ({ params, location }) => getEnrollment(params.id, codeFromQuery(location.query)),
+});
+
+function EnrollPage(props: { id: string; code: string }) {
+  const enrollment = createMemo(() => getEnrollment(props.id, props.code), {
+    deferStream: true,
+  });
+
+  const data = () => enrollment();
+
+  const found = () => {
+    const value = data();
+
+    return value.status === "found" ? value.enrollment : undefined;
   };
 
-  const enrollmentUrl = createMemo(
-    () => `${globalThis.location?.origin ?? ""}/enroll/${params.id}`,
-  );
+  const enrollmentUrl = createMemo(() => {
+    const path = `/enroll/${encodeURIComponent(props.id)}`;
 
-  const branding = () => enrollment.data?.branding;
+    if (isServer) {
+      const request = getRequestEvent()?.request;
+
+      return request ? new URL(path, request.url).toString() : path;
+    }
+
+    return `${window.location.origin}${path}`;
+  });
+
+  const branding = () => found()?.branding;
 
   const authenticated = () => {
-    const value = enrollment.data;
+    const value = found();
 
     return isAuthenticatedEnrollment(value) ? value : undefined;
   };
@@ -71,9 +93,9 @@ function EnrollPage() {
   const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
 
   const deviceLimit = () => {
-    const data = enrollment.data;
+    const value = found();
 
-    return data?.authenticated === true ? data.deviceLimit : undefined;
+    return value?.authenticated === true ? value.deviceLimit : undefined;
   };
 
   return (
@@ -84,7 +106,7 @@ function EnrollPage() {
       <Title>Enroll in {brandName()}</Title>
       <Meta name="robots" content="noindex" />
       <div class="mx-auto flex min-h-[calc(100svh-5rem)] max-w-md items-center">
-        <Card class="theme-light w-full overflow-hidden bg-white">
+        <Card class="theme-light w-full overflow-hidden bg-background">
           <div class="h-1.5" style={{ "background-color": brandColor() }} />
           <CardHeader class="text-center">
             <Show when={branding()?.logo}>
@@ -101,14 +123,10 @@ function EnrollPage() {
             <CardTitle>
               <h1>Enroll in {brandName()}</h1>
             </CardTitle>
-            <CardDescription>
-              <Show when={enrollment.data} fallback="Verifying enrollment link...">
-                Choose how to enroll this device.
-              </Show>
-            </CardDescription>
+            <CardDescription>Choose how to enroll this device.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Show when={enrollment.isError}>
+            <Show when={data().status === "invalid"}>
               <div
                 role="alert"
                 class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
@@ -117,8 +135,21 @@ function EnrollPage() {
               </div>
             </Show>
 
-            <Show when={enrollment.data?.authenticated === false}>
-              <form class="space-y-3" onSubmit={submitCode}>
+            <Show when={data().status === "unavailable"}>
+              <div
+                role="alert"
+                class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                Enrollment is temporarily unavailable. Check your connection and try again.
+              </div>
+            </Show>
+
+            <Show when={found()?.authenticated === false}>
+              <form
+                class="space-y-3"
+                method="get"
+                action={`/enroll/${encodeURIComponent(props.id)}`}
+              >
                 <p class="text-sm text-muted-foreground">
                   Your administrator has set an enrollment password.
                 </p>
@@ -126,15 +157,13 @@ function EnrollPage() {
                   <Label for="enrollment-password" class="text-sm text-stone-700">
                     Enrollment password
                   </Label>
-                  <Input
+                  <PasswordInput
                     id="enrollment-password"
-                    type="password"
+                    name="code"
                     autocomplete="off"
-                    value={code()}
-                    onInput={(event) => setCode(event.currentTarget.value)}
-                    aria-invalid={searchCode() ? "true" : undefined}
+                    aria-invalid={props.code ? "true" : undefined}
                     aria-describedby={
-                      searchCode()
+                      props.code
                         ? "enrollment-password-hint enrollment-password-error"
                         : "enrollment-password-hint"
                     }
@@ -147,7 +176,7 @@ function EnrollPage() {
                 <Button type="submit" class="w-full">
                   Continue
                 </Button>
-                <Show when={searchCode()}>
+                <Show when={props.code}>
                   <p
                     id="enrollment-password-error"
                     role="alert"
@@ -177,8 +206,8 @@ function EnrollPage() {
                   </Show>
                   <EnrollmentOptions
                     enrollment={authenticatedEnrollment()}
-                    id={params.id}
-                    code={searchCode() ?? ""}
+                    id={props.id}
+                    code={props.code}
                     brandColor={brandColor()}
                   />
                   <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
@@ -186,7 +215,7 @@ function EnrollPage() {
                     <QrCode value={enrollmentUrl()} label="QR code for this enrollment link" />
                     <p class="max-w-xs text-center text-xs text-muted-foreground">
                       This QR code contains the enrollment link only.
-                      <Show when={searchCode()}> It does not include the enrollment password.</Show>
+                      <Show when={props.code}> It does not include the enrollment password.</Show>
                     </p>
                   </div>
                 </>
@@ -386,7 +415,7 @@ function ApplePane(props: {
       <Button
         as="a"
         href={downloadUrl()}
-        class="w-full text-white"
+        class="w-full text-brand-foreground"
         style={{ "background-color": props.brandColor }}
       >
         Install Apple profile
@@ -437,7 +466,7 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
         Add this discovery URL to your Windows provisioning package or Autopilot profile.
       </p>
       <div class="flex items-start gap-2">
-        <div class="min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2">
+        <div class="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2">
           <Label for="windows-discovery-url" class="sr-only">
             Windows discovery URL
           </Label>
@@ -561,10 +590,6 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
   );
 }
 
-export default function EnrollRoute() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <EnrollPage />
-    </QueryClientProvider>
-  );
+export default function EnrollRoute(props: RouteProps<typeof route>) {
+  return <EnrollPage id={props.params.id ?? ""} code={codeFromQuery(props.location.query)} />;
 }

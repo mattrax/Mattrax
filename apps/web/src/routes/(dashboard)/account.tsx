@@ -6,6 +6,7 @@ import { Option, Schema } from "effect";
 import { AccountActivity } from "~/components/account-activity";
 import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
+import { ThemeSwitcher } from "~/components/theme-switcher";
 import {
   Dialog,
   DialogContent,
@@ -495,6 +496,13 @@ export default function AccountPage() {
       </Panel>
 
       <Panel
+        title="Appearance"
+        description="Mattrax follows your system theme unless you pick one. The choice is remembered for this account on this browser."
+      >
+        <ThemeSwitcher userId={user()?.id} class="max-w-sm" />
+      </Panel>
+
+      <Panel
         title="Email address"
         description="A verification link will be sent to your new address. The change takes effect after you confirm it."
       >
@@ -586,7 +594,7 @@ export default function AccountPage() {
         <div class="space-y-2">
           <For each={sessions()?.sessions ?? []}>
             {(item) => (
-              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
                   <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
                     <span>{sessionLabel(item)}</span>
@@ -645,7 +653,7 @@ export default function AccountPage() {
         }
       >
         <Dialog open={tokenOpen()} onOpenChange={setTokenOpen}>
-          <DialogContent class="dark max-w-md text-foreground">
+          <DialogContent class="max-w-md text-foreground">
             <DialogHeader>
               <DialogTitle>Create API token</DialogTitle>
               <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -717,7 +725,7 @@ export default function AccountPage() {
                   </p>
                 )}
               </Show>
-              <DialogFooter class="border-t border-white/[0.06] pt-3">
+              <DialogFooter class="border-t border-border pt-3">
                 <Button type="button" variant="outline" onClick={() => setTokenOpen(false)}>
                   Cancel
                 </Button>
@@ -733,7 +741,7 @@ export default function AccountPage() {
               <p class="text-[12.5px] font-medium text-warning-foreground">
                 Copy this token now. It will not be shown again.
               </p>
-              <code class="mt-2 block break-all rounded border border-white/[0.07] bg-black/30 p-2 font-mono text-[11.5px] text-foreground">
+              <code class="mt-2 block break-all rounded border border-border bg-muted p-2 font-mono text-[11.5px] text-foreground">
                 {token()}
               </code>
             </div>
@@ -750,7 +758,7 @@ export default function AccountPage() {
         <div class="space-y-2">
           <For each={tokens()?.tokens ?? []}>
             {(token) => (
-              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
                   <p class="text-[12.5px] font-medium text-foreground">{token.name}</p>
                   <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -796,7 +804,7 @@ export default function AccountPage() {
         title="Agent access (MCP)"
         description="OAuth clients you have authorised to manage Mattrax through the Model Context Protocol. API tokens above work with MCP too. Revoking a client ends its access and refresh tokens immediately."
       >
-        <div class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2">
+        <div class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
           <span class="text-[11.5px] text-muted-foreground">MCP endpoint</span>
           <code class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">/mcp</code>
           <Button
@@ -829,7 +837,7 @@ export default function AccountPage() {
         <div class="space-y-2">
           <For each={connections.data?.connections ?? []}>
             {(connection) => (
-              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
                     <p class="text-[12.5px] font-medium text-foreground">{connection.clientName}</p>

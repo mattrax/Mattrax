@@ -251,6 +251,32 @@ function androidDeviceRow() {
     dmCertHash: null,
     dmIdentityFingerprint: null,
     ddmDeclarationsToken: null,
+    // Columns shared by the other platforms; the Android merge never reads
+    // them, but a complete `device` row must carry them.
+    bitLockerEnabled: null,
+    bitLockerStatus: null,
+    domainName: null,
+    entraDeviceId: null,
+    managedCertificateCount: null,
+    managementApps: null,
+    osUpdateFailedAt: null,
+    osUpdateFailureCount: null,
+    osUpdateFailureReason: null,
+    osUpdateInstallState: null,
+    osUpdatePendingBuild: null,
+    osUpdatePendingVersion: null,
+    passcodeCompliant: null,
+    passcodePresent: null,
+    secureBootState: null,
+    securityLockdownMode: null,
+    securityUpdatedAt: null,
+    tpmVersion: null,
+    windowsPolicyApplied: null,
+    windowsPolicyDelivered: null,
+    windowsPolicyFailures: null,
+    windowsPolicyRevertedAt: null,
+    windowsPolicyReverting: null,
+    windowsPolicyUpdatedAt: null,
   };
 }
 
@@ -653,6 +679,93 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies).toHaveLength(1);
   });
 
+  it("adds assigned Managed Google Play apps and removes unassigned ones", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      policy: [
+        {
+          id: "policy-1",
+          organizationId,
+          name: "Android baseline",
+          notes: null,
+          priority: 10,
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          updatedAt: new Date("2026-01-02T00:00:00Z"),
+        },
+      ],
+      configuration: [
+        {
+          policyId: "policy-1",
+          kind: "mttx.android.policy.designer",
+          data: {
+            policy: {
+              applications: [{ packageName: "com.microsoft.teams", installType: "AVAILABLE" }],
+            },
+          },
+          hash: "hash-1",
+        },
+      ],
+      device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
+      application: [
+        {
+          id: "app-1",
+          organizationId,
+          name: "Gmail",
+          platform: "android",
+          bundleId: "com.google.android.gm",
+        },
+        {
+          id: "app-2",
+          organizationId,
+          name: "Teams",
+          platform: "android",
+          bundleId: "com.microsoft.teams",
+        },
+        {
+          id: "app-3",
+          organizationId,
+          name: "Apple only",
+          platform: "apple",
+          bundleId: "com.example.ios",
+        },
+      ],
+      application_device: [
+        { deviceId: "device-1", applicationId: "app-1" },
+        { deviceId: "device-1", applicationId: "app-3" },
+      ],
+      application_group: [{ groupId: "group-1", applicationId: "app-2" }],
+      group_device: [{ groupId: "group-1", deviceId: "device-1" }],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0]!.policy.applications).toEqual([
+      // The explicit policy fragment keeps its install type.
+      { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
+      // The direct assignment is added as a required install. The Apple entry
+      // in the same catalogue never reaches a Google policy.
+      {
+        packageName: "com.google.android.gm",
+        installType: "FORCE_INSTALLED",
+        autoUpdateMode: "AUTO_UPDATE_DEFAULT",
+      },
+    ]);
+
+    // Unassigning the app removes it from the compiled policy, which is how
+    // Google is told to uninstall it.
+    db.store.application_device = [];
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[1]!.policy.applications).toEqual([
+      { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
+    ]);
+  });
+
   it("issues an enrollment token only while the enterprise is active", async () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],
@@ -914,9 +1027,10 @@ describe("Android device inventory", () => {
       inventoryUpdatedAt: at,
     });
 
-    // SAFETY: the fixture is the `device` row shape this merge is written for;
-    // the patch only fills columns the fixture leaves undefined.
-    const existing: AndroidDeviceRow = { ...androidDeviceRow(), ...first };
+    // The fixture is the complete `device` row shape this merge is written for;
+    // `Object.assign` keeps its required columns while the patch overrides the
+    // ones the merge produced.
+    const existing: AndroidDeviceRow = Object.assign(androidDeviceRow(), first);
 
     const partial = parseAndroidDeviceResource(
       { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },

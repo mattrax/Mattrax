@@ -19,7 +19,7 @@ const acceptInvitation = async (page: Page, inviteUrl: string) => {
 test.describe("RBAC UI gating", () => {
   test("an owner keeps every mutation control", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "RBAC Owner");
-    const base = `/t/${tenant.id}`;
+    const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, `${base}/devices`);
     await expect(page.getByRole("button", { name: "Import CSV", exact: true })).toBeVisible();
@@ -54,7 +54,7 @@ test.describe("RBAC UI gating", () => {
     const member = await context.newPage();
     await register(member, { email, name: "Read Only Member" });
     await acceptInvitation(member, invitation.inviteUrl);
-    await expect(member).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+    await expect(member).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
     // Every read surface remains in the primary navigation.
     for (const label of [
@@ -131,7 +131,7 @@ test.describe("RBAC UI gating", () => {
     const reviewer = await context.newPage();
     await register(reviewer, { email, name: "Custom Reviewer" });
     await acceptInvitation(reviewer, invitation.inviteUrl);
-    await expect(reviewer).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
+    await expect(reviewer).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
     // Only readable sections survive in navigation. Overview requires
     // tenant.read and Settings requires a settings read permission.

@@ -14,14 +14,14 @@ import { cn } from "~/lib/utils";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 
 const CHART_COLORS = [
-  "var(--brand)",
-  "var(--success)",
-  "var(--warning)",
-  "var(--destructive)",
-  "oklch(0.68 0.14 250)",
-  "oklch(0.7 0.12 330)",
-  "oklch(0.72 0.12 160)",
-  "oklch(0.75 0.12 80)",
+  "var(--chart-1)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-2)",
+  "var(--violet-9)",
+  "var(--blue-11)",
+  "var(--green-11)",
 ];
 
 const QueryConfig = Schema.Struct({
@@ -181,7 +181,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
           <div
             role="status"
             aria-label="Loading widget data"
-            class="h-16 animate-pulse rounded-lg bg-white/[0.04]"
+            class="h-16 animate-pulse rounded-lg bg-surface"
           />
         }
       >
@@ -197,7 +197,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
               </p>
               <button
                 type="button"
-                class="mt-2 rounded border border-white/[0.1] px-2 py-1 text-[10.5px] text-foreground hover:bg-white/[0.05]"
+                class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground hover:bg-hover"
                 onClick={() => void result.refetch()}
               >
                 Try again
@@ -257,10 +257,10 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                             </For>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-white/[0.05]">
+                        <tbody class="divide-y divide-border">
                           <For each={data().rows}>
                             {(row) => (
-                              <tr class="hover:bg-white/[0.025]">
+                              <tr class="hover:bg-hover">
                                 <For each={columns()}>
                                   {(column) => (
                                     <td class="max-w-[24ch] px-1.5 py-1.5 text-muted-foreground">

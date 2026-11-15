@@ -18,7 +18,7 @@ const primaryButton =
   "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50";
 
 const secondaryButton =
-  "rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05] disabled:opacity-50";
+  "rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-hover disabled:opacity-50";
 
 const labels: Record<StepUpMethod, string> = {
   totp: "Authenticator code",
@@ -111,7 +111,7 @@ export function StepUpDialog() {
                       aria-pressed={activeMethod() === item ? "true" : "false"}
                       class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
                         activeMethod() === item
-                          ? "bg-brand text-brand-foreground"
+                          ? "bg-brand-solid text-brand-foreground"
                           : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
                       }`}
                       onClick={() => choose(item)}
@@ -163,7 +163,11 @@ export function StepUpDialog() {
 
                 <div class="flex gap-2">
                   <button type="submit" class={primaryButton} disabled={pending()}>
-                    {pending() ? "Confirming…" : activeMethod() === "passkey" ? "Use passkey" : "Confirm"}
+                    {pending()
+                      ? "Confirming…"
+                      : activeMethod() === "passkey"
+                        ? "Use passkey"
+                        : "Confirm"}
                   </button>
                   <button
                     type="button"

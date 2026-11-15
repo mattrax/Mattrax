@@ -2,7 +2,8 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, onSettled, Show } from "solid-js";
+import { createSignal, Errored, onSettled, Show } from "solid-js";
+import { ErrorPanel } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { Button } from "~/components/ui/button";
@@ -146,73 +147,88 @@ export default function PolicyDesignerPage() {
   );
 
   return (
-    <div
-      data-policy-designer
-      class="flex h-[calc(100svh-92px)] max-h-[calc(100svh-92px)] min-h-0 shrink-0 flex-col overflow-hidden bg-background"
+    <Errored
+      fallback={(error, reset) => (
+        <div class="p-4">
+          <ErrorPanel
+            boundary="policy-editor"
+            error={error()}
+            reset={reset}
+            label="Policy editor"
+          />
+        </div>
+      )}
     >
-      <Show
-        when={ready() && policy.data}
-        fallback={
-          <Show
-            when={policy.isError}
-            fallback={
-              <div class="m-6 rounded-lg border border-border bg-card p-6 text-[13px] text-muted-foreground">
-                Loading the policy…
+      <div
+        data-policy-designer
+        class="flex h-[calc(100svh-92px)] max-h-[calc(100svh-92px)] min-h-0 shrink-0 flex-col overflow-hidden bg-background"
+      >
+        <Show
+          when={ready() && policy.data}
+          fallback={
+            <Show
+              when={policy.isError}
+              fallback={
+                <div class="m-6 rounded-lg border border-border bg-card p-6 text-[13px] text-muted-foreground">
+                  Loading the policy…
+                </div>
+              }
+            >
+              <div class="m-6">
+                <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
               </div>
-            }
-          >
-            <div class="m-6">
-              <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+            </Show>
+          }
+        >
+          <Show when={foreignConfigurations().length > 0}>
+            <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-3 py-2 text-[12px] text-foreground sm:px-4">
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold">This policy also has settings from the policy editor</p>
+                <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Saving here updates the designer configurations and keeps them.
+                </p>
+              </div>
+              <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 size-3.5 shrink-0 accent-[var(--warning)] sm:mt-0"
+                  checked={replaceExisting()}
+                  onChange={(event) => setReplaceExisting(event.currentTarget.checked)}
+                />
+                Also replace the policy editor configurations
+              </label>
             </div>
           </Show>
-        }
-      >
-        <Show when={foreignConfigurations().length > 0}>
-          <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[12px] text-foreground sm:px-4">
-            <div class="min-w-0 flex-1">
-              <p class="font-semibold">This policy also has settings from the policy editor</p>
-              <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                Saving here updates the designer configurations and keeps them.
-              </p>
+
+          <Show when={!writable()}>
+            <div class="shrink-0 border-b border-border px-3 py-2 sm:px-4">
+              <ReadOnlyNotice>
+                Your role can view this policy designer but not save changes.
+              </ReadOnlyNotice>
             </div>
-            <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
-              <input
-                type="checkbox"
-                class="mt-0.5 size-3.5 shrink-0 accent-[var(--warning)] sm:mt-0"
-                checked={replaceExisting()}
-                onChange={(event) => setReplaceExisting(event.currentTarget.checked)}
-              />
-              Also replace the policy editor configurations
-            </label>
-          </div>
-        </Show>
+          </Show>
 
-        <Show when={!writable()}>
-          <div class="shrink-0 border-b border-white/[0.08] px-3 py-2 sm:px-4">
-            <ReadOnlyNotice>
-              Your role can view this policy designer but not save changes.
-            </ReadOnlyNotice>
-          </div>
+          <PolicyDesigner
+            mode="dashboard"
+            pageActions={pageActions()}
+            initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
+            persistedDraft={
+              configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+            }
+            storageKey={storageKey()}
+            saving={save.isPending}
+            saveDisabled={!writable()}
+            error={save.error}
+            onSave={
+              writable()
+                ? (draft) => {
+                    void save.mutate(draft);
+                  }
+                : undefined
+            }
+          />
         </Show>
-
-        <PolicyDesigner
-          mode="dashboard"
-          pageActions={pageActions()}
-          initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
-          persistedDraft={configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
-          storageKey={storageKey()}
-          saving={save.isPending}
-          saveDisabled={!writable()}
-          error={save.error}
-          onSave={
-            writable()
-              ? (draft) => {
-                  void save.mutate(draft);
-                }
-              : undefined
-          }
-        />
-      </Show>
-    </div>
+      </div>
+    </Errored>
   );
 }

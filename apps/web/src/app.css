@@ -2,18 +2,23 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "./styles/radix-colors.css";
 @import "./styles/base.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
   --color-brand: var(--brand);
+  --color-brand-solid: var(--brand-solid);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-muted: var(--brand-muted);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-scrim: var(--scrim);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -66,57 +71,152 @@
   --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/*
+ * Semantic token contract.
+ *
+ * Components never name a palette step: they use `bg-card`, `text-muted-foreground`,
+ * `border-border`, `bg-brand-solid`, … and the two blocks below decide what those mean.
+ * Every value points at a Radix Colors scale (see `styles/radix-colors.css`), so the
+ * light and dark palettes carry the same perceptual ramp.
+ *
+ * Contrast rule: step 9 is a solid fill (pair it with `--*-foreground`), step 11 is
+ * the text-safe sibling. `--brand` is the text/link colour; `--brand-solid` is the
+ * fill. Mixing them is the usual way a Radix port fails WCAG AA.
+ *
+ * The `.theme-light` block repeats the light values: custom properties inherit their
+ * resolved value, so an island inside a dark document cannot re-derive `--background`
+ * from `var(--gray-1)` and must restate the contract.
+ */
 :root,
-/* Public enrollment paints light cards inside a dark document. Declaring the
-   light tokens on a wrapper (rather than relying on :root) lets that subtree
-   keep light surfaces, borders and text without fighting the dark remaps. */
 .theme-light {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  --background: var(--gray-1);
+  --foreground: var(--gray-12);
+  /* Cards and popovers sit one step lighter than the page so elevation reads
+     without a heavy border; dark mode goes the other way (see below). */
+  --card: #ffffffff;
+  --card-foreground: var(--gray-12);
+  --popover: #ffffffff;
+  --popover-foreground: var(--gray-12);
+  --primary: var(--gray-12);
+  --primary-foreground: var(--gray-1);
+  --secondary: var(--gray-3);
+  --secondary-foreground: var(--gray-12);
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
+  --accent: var(--gray-3);
+  --accent-foreground: var(--gray-12);
+  --destructive: var(--red-11);
+  --border: var(--gray-a6);
+  --input: var(--gray-a7);
+  --ring: var(--violet-8);
+  --chart-1: var(--violet-9);
+  --chart-2: var(--blue-9);
+  --chart-3: var(--green-9);
+  --chart-4: var(--amber-9);
+  --chart-5: var(--red-9);
   --radius: 0.375rem;
-  --brand: oklch(0.58 0.2 275);
-  --brand-foreground: oklch(1 0 0);
-  --brand-muted: oklch(0.58 0.2 275 / 14%);
-  --surface: oklch(1 0 0);
-  --surface-raised: oklch(0.985 0 0);
-  --success: oklch(0.7 0.15 155);
-  --success-foreground: oklch(0.3 0.08 155);
-  --warning: oklch(0.8 0.14 80);
-  --warning-foreground: oklch(0.35 0.1 80);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --brand: var(--violet-11);
+  --brand-solid: var(--violet-9);
+  --brand-foreground: #ffffffff;
+  --brand-muted: var(--violet-a3);
+  --surface: var(--gray-2);
+  --surface-raised: var(--gray-1);
+  --hover: var(--gray-a3);
+  --active: var(--gray-a4);
+  --scrim: var(--black-a8);
+  --success: var(--green-9);
+  --success-foreground: var(--green-11);
+  --warning: var(--amber-9);
+  --warning-foreground: var(--amber-11);
+  --sidebar: var(--gray-2);
+  --sidebar-foreground: var(--gray-12);
+  --sidebar-primary: var(--violet-9);
+  --sidebar-primary-foreground: var(--gray-1);
+  --sidebar-accent: var(--gray-4);
+  --sidebar-accent-foreground: var(--gray-12);
+  --sidebar-border: var(--gray-a6);
+  --sidebar-ring: var(--violet-8);
+  /* Elevation. Light separates surfaces with a border plus a soft shadow; dark
+     keeps a heavier shadow and relies on surface steps. */
+  --shadow-popover: 0 1px 2px rgb(16 16 16 / 0.06), 0 8px 24px rgb(16 16 16 / 0.1);
+  --shadow-dialog: 0 2px 6px rgb(16 16 16 / 0.08), 0 24px 48px rgb(16 16 16 / 0.14);
+  --shadow-card: 0 1px 2px rgb(16 16 16 / 0.04), 0 12px 32px -24px rgb(16 16 16 / 0.25);
+  /* A hairline of light along the top edge reads as a raised surface in dark
+     mode; in light mode it is a faint neutral line rather than a white one. */
+  --card-highlight: inset 0 1px 0 var(--gray-a3);
+  --brand-highlight: inset 0 1px 0 rgb(255 255 255 / 0.2);
+  --grid-line: var(--gray-a4);
+  --mask-opaque: #000000ff;
+  --brand-glow: color-mix(in oklab, var(--brand-solid) 16%, transparent);
+  --qr-background: #ffffffff;
+  --qr-foreground: #101010ff;
 }
 
-/* Every route renders inside a dark shell, so native controls and scrollbars
-   are dark from the first paint. A `.theme-light` island opts back out. */
+.dark {
+  --background: #08080aff;
+  --foreground: var(--gray-12);
+  --card: var(--gray-2);
+  --card-foreground: var(--gray-12);
+  --popover: var(--gray-3);
+  --popover-foreground: var(--gray-12);
+  --primary: var(--gray-12);
+  --primary-foreground: var(--gray-1);
+  --secondary: var(--gray-3);
+  --secondary-foreground: var(--gray-12);
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
+  --accent: var(--gray-4);
+  --accent-foreground: var(--gray-12);
+  --destructive: var(--red-11);
+  --border: var(--gray-a6);
+  --input: var(--gray-a7);
+  --ring: var(--violet-8);
+  --chart-1: var(--violet-9);
+  --chart-2: var(--blue-9);
+  --chart-3: var(--green-9);
+  --chart-4: var(--amber-9);
+  --chart-5: var(--red-9);
+  --brand: var(--violet-11);
+  --brand-solid: var(--violet-9);
+  --brand-foreground: #ffffffff;
+  --brand-muted: var(--violet-a3);
+  --surface: var(--gray-2);
+  --surface-raised: var(--gray-3);
+  --hover: var(--gray-a3);
+  --active: var(--gray-a4);
+  --scrim: rgb(0 0 0 / 0.6);
+  --success: var(--green-9);
+  --success-foreground: var(--green-11);
+  --warning: var(--amber-9);
+  --warning-foreground: var(--amber-11);
+  --sidebar: var(--gray-1);
+  --sidebar-foreground: var(--gray-12);
+  --sidebar-primary: var(--violet-9);
+  --sidebar-primary-foreground: var(--gray-1);
+  --sidebar-accent: var(--gray-3);
+  --sidebar-accent-foreground: var(--gray-12);
+  --sidebar-border: var(--gray-a6);
+  --sidebar-ring: var(--violet-8);
+  --shadow-popover: 0 2px 6px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.45);
+  --shadow-dialog: 0 2px 6px rgb(0 0 0 / 0.35), 0 24px 48px rgb(0 0 0 / 0.55);
+  --shadow-card: 0 12px 32px -24px rgb(0 0 0 / 0.9);
+  --card-highlight: inset 0 1px 0 var(--gray-a3);
+  --brand-highlight: inset 0 1px 0 rgb(255 255 255 / 0.2);
+  --grid-line: var(--gray-a3);
+  --mask-opaque: #000000ff;
+  --brand-glow: color-mix(in oklab, var(--brand-solid) 16%, transparent);
+  --qr-background: #ffffffff;
+  --qr-foreground: #101010ff;
+}
+
+/* Native controls, scrollbars and form widgets follow the active theme. The
+   resolved preference puts `.dark` on `<html>`; `.theme-light` is an explicit
+   island (public enrollment) and always opts back into light. */
 :root {
+  color-scheme: light;
+}
+
+.dark {
   color-scheme: dark;
 }
 
@@ -124,59 +224,23 @@
   color-scheme: light;
 }
 
-
-.dark {
-  --background: #08080a;
-  --foreground: #f4f4f5;
-  --card: #1f1f23;
-  --card-foreground: #f4f4f5;
-  --popover: #232326;
-  --popover-foreground: #f4f4f5;
-  --primary: #fafafa;
-  --primary-foreground: #131315;
-  --secondary: #2d2d32;
-  --secondary-foreground: #ededee;
-  --muted: #232327;
-  --muted-foreground: #9d9da5;
-  --accent: #2e2e33;
-  --accent-foreground: #f4f4f5;
-  --destructive: oklch(0.7 0.19 22);
-  --border: #303036;
-  --input: #3c3c42;
-  --ring: oklch(0.65 0.19 276);
-  --chart-1: oklch(0.7 0.17 276);
-  --chart-2: oklch(0.72 0.16 190);
-  --chart-3: oklch(0.78 0.16 145);
-  --chart-4: oklch(0.82 0.15 85);
-  --chart-5: oklch(0.72 0.2 25);
-  --sidebar: oklch(0.17 0.004 285);
-  --sidebar-foreground: oklch(0.97 0 0);
-  --sidebar-primary: oklch(0.65 0.19 276);
-  --sidebar-primary-foreground: oklch(0.97 0 0);
-  --sidebar-accent: oklch(0.24 0.004 285);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(0.3 0.004 285 / 65%);
-  --sidebar-ring: oklch(0.65 0.19 276);
-  --brand: oklch(0.68 0.19 276);
-  --brand-foreground: oklch(1 0 0);
-  --brand-muted: oklch(0.68 0.19 276 / 16%);
-  --surface: oklch(0.175 0.004 285);
-  --surface-raised: oklch(0.205 0.004 285);
-  --success: oklch(0.72 0.16 155);
-  --success-foreground: oklch(0.82 0.1 155);
-  --warning: oklch(0.8 0.15 80);
-  --warning-foreground: oklch(0.85 0.1 80);
-  color-scheme: dark;
-}
-
 /* Users who ask for more contrast get stronger separation between surfaces and
-   hints; the palette, not individual components, carries the change. */
+   hints; the palette, not individual components, carries the change. Steps 8/9
+   are Radix's strong-border steps and 12 is the maximum-contrast text step. */
 @media (prefers-contrast: more) {
+  :root,
+  .theme-light {
+    --border: var(--gray-a8);
+    --input: var(--gray-a9);
+    --muted-foreground: var(--gray-12);
+    --sidebar-border: var(--gray-a9);
+  }
+
   .dark {
-    --border: #3f3f46;
-    --input: #52525b;
-    --muted-foreground: #b4b4bc;
-    --sidebar-border: #4a4a52;
+    --border: var(--gray-a8);
+    --input: var(--gray-a9);
+    --muted-foreground: var(--gray-12);
+    --sidebar-border: var(--gray-a9);
   }
 }
 
@@ -188,7 +252,7 @@
     @apply bg-background text-foreground;
     /* `svh` matches the smallest visible viewport; the extra height below it
        must still be painted by the document so iOS Safari's overscroll and
-       home-indicator area never reveal a white canvas. */
+       home-indicator area never reveal the opposite theme's canvas. */
     min-height: 100svh;
   }
   html {
@@ -245,10 +309,10 @@
 /* ---------------------------------------------------------------------------
  * Console theme
  *
- * The dashboard renders inside a `.dark` shell while the marketing site and
- * auth pages keep the light palette. These compatibility rules let the older
- * content pages (which used the light stone palette) inherit the console
- * surfaces without rewriting every table, callout and status chip at once.
+ * The dashboard, marketing site and auth pages share one semantic token
+ * contract; these compatibility rules let the older content pages (which were
+ * written against Tailwind's stone/green/amber/red utilities) inherit it
+ * without rewriting every table, callout and status chip at once.
  * ------------------------------------------------------------------------- */
 
 @layer components {
@@ -436,48 +500,38 @@
   }
 }
 
-.dark ::selection {
-  background: color-mix(in oklch, var(--brand) 35%, transparent);
+::selection {
+  background: color-mix(in oklab, var(--brand-solid) 35%, transparent);
 }
 
 html {
   scrollbar-gutter: stable;
   /* The `html` element is the canvas Safari paints behind the layout viewport,
      including rubber-band overscroll and the home-indicator safe area. Keep it
-     on the same dark value as the app shell so no white strip can appear. */
+     on the same value as the app shell so no strip of the opposite theme can
+     appear. */
   min-height: 100%;
   background-color: var(--background);
-  color-scheme: dark;
 }
 
-.dark {
-  scrollbar-color: oklch(0.34 0.005 285) transparent;
-}
-
-/* Brand fills carry white text at 10–13px, so use a darker fill than the
-   text/link brand token to clear AA contrast. */
-.dark .bg-brand {
-  background-color: oklch(0.58 0.19 276);
-}
-
-.dark *::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.dark *::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.dark *::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 9999px;
   background-clip: content-box;
-  background-color: oklch(0.34 0.005 285 / 70%);
+  background-color: var(--gray-a7);
 }
 
-.dark *::-webkit-scrollbar-thumb:hover {
-  background-color: oklch(0.44 0.005 285 / 80%);
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gray-a8);
 }
 
 /* Light-palette helpers used by the pre-console pages. */
@@ -487,153 +541,152 @@ html {
   background-color: var(--card);
 }
 
-.dark .bg-stone-50,
-.dark .bg-stone-50\/60,
-.dark .bg-stone-50\/80 {
+/* The auth pages were written against the light stone palette. These remaps
+   point those utilities at the semantic tokens so they follow the active theme
+   instead of assuming a dark shell. */
+.bg-stone-50,
+.bg-stone-50\/60,
+.bg-stone-50\/80 {
   background-color: var(--muted);
 }
 
-.dark .bg-stone-100 {
+.bg-stone-100 {
   background-color: var(--secondary);
 }
 
-.dark .bg-stone-200 {
+.bg-stone-200 {
   background-color: var(--muted);
 }
 
-.dark .hover\:bg-stone-50:hover,
-.dark .hover\:bg-stone-100:hover {
+.hover\:bg-stone-50:hover,
+.hover\:bg-stone-100:hover {
   background-color: var(--accent);
 }
 
-.dark .text-stone-950,
-.dark .text-stone-900,
-.dark .text-stone-800 {
+.text-stone-950,
+.text-stone-900,
+.text-stone-800 {
   color: var(--foreground);
 }
 
-.dark .text-stone-700,
-.dark .text-stone-600 {
-  color: color-mix(in oklch, var(--foreground) 82%, transparent);
+.text-stone-700,
+.text-stone-600 {
+  color: color-mix(in oklab, var(--foreground) 82%, transparent);
 }
 
-.dark .text-stone-500,
-.dark .text-stone-400 {
+.text-stone-500,
+.text-stone-400 {
   color: var(--muted-foreground);
 }
 
-.dark .border-stone-100,
-.dark .border-stone-200 {
+.border-stone-100,
+.border-stone-200 {
   border-color: var(--border);
 }
 
-.dark .border-stone-300 {
+.border-stone-300 {
   border-color: var(--input);
 }
 
-/* Stone utilities are remapped for the dark shell; undo that inside a light
-   island so the enrollment page keeps its own palette. */
+/* Undo the stone remap inside a light island so the enrollment page keeps its
+   own palette regardless of the surrounding document theme. */
 .theme-light .text-stone-950,
 .theme-light .text-stone-900,
 .theme-light .text-stone-800 {
-  color: oklch(0.147 0.004 49.25);
+  color: var(--gray-12);
 }
 
 .theme-light .text-stone-700,
 .theme-light .text-stone-600 {
-  color: oklch(0.374 0.01 67.558);
+  color: var(--gray-11);
 }
 
 .theme-light .text-stone-500,
 .theme-light .text-stone-400 {
-  color: oklch(0.553 0.013 58.071);
+  color: var(--gray-11);
 }
 
 .theme-light .bg-white {
-  background-color: oklch(1 0 0);
+  background-color: #ffffffff;
 }
 
 .theme-light .border-stone-100,
 .theme-light .border-stone-200,
 .theme-light .border-stone-300 {
-  border-color: oklch(0.923 0.003 48.717);
-}
-
-.dark .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
-.dark .divide-stone-200 > :not([hidden]) ~ :not([hidden]) {
   border-color: var(--border);
 }
 
-.dark .bg-green-50,
-.dark .bg-green-50\/60 {
-  background-color: color-mix(in oklch, var(--success) 12%, transparent);
+.divide-stone-100 > :not([hidden]) ~ :not([hidden]),
+.divide-stone-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border);
 }
 
-.dark .border-green-200 {
-  border-color: color-mix(in oklch, var(--success) 30%, transparent);
+.bg-green-50,
+.bg-green-50\/60 {
+  background-color: color-mix(in oklab, var(--success) 12%, transparent);
 }
 
-.dark .text-green-700,
-.dark .text-green-800,
-.dark .text-green-900 {
+.border-green-200 {
+  border-color: color-mix(in oklab, var(--success) 30%, transparent);
+}
+
+.text-green-700,
+.text-green-800,
+.text-green-900 {
   color: var(--success-foreground);
 }
 
-.dark .bg-amber-50,
-.dark .bg-amber-50\/60 {
-  background-color: color-mix(in oklch, var(--warning) 12%, transparent);
+.bg-amber-50,
+.bg-amber-50\/60 {
+  background-color: color-mix(in oklab, var(--warning) 12%, transparent);
 }
 
-.dark .border-amber-200 {
-  border-color: color-mix(in oklch, var(--warning) 30%, transparent);
+.border-amber-200 {
+  border-color: color-mix(in oklab, var(--warning) 30%, transparent);
 }
 
-.dark .text-amber-700,
-.dark .text-amber-800,
-.dark .text-amber-900 {
+.text-amber-700,
+.text-amber-800,
+.text-amber-900 {
   color: var(--warning-foreground);
 }
 
-.dark .bg-red-50,
-.dark .bg-red-50\/60 {
-  background-color: color-mix(in oklch, var(--destructive) 12%, transparent);
+.bg-red-50,
+.bg-red-50\/60 {
+  background-color: color-mix(in oklab, var(--destructive) 12%, transparent);
 }
 
-.dark .border-red-200 {
-  border-color: color-mix(in oklch, var(--destructive) 30%, transparent);
+.border-red-200 {
+  border-color: color-mix(in oklab, var(--destructive) 30%, transparent);
 }
 
-.dark .text-red-600,
-.dark .text-red-700,
-.dark .text-red-800 {
+.text-red-600,
+.text-red-700,
+.text-red-800 {
   color: var(--destructive);
 }
 
-.dark .bg-blue-50 {
-  background-color: color-mix(in oklch, var(--brand) 12%, transparent);
+.bg-blue-50 {
+  background-color: color-mix(in oklab, var(--brand) 12%, transparent);
 }
 
-.dark .border-blue-200 {
-  border-color: color-mix(in oklch, var(--brand) 30%, transparent);
+.border-blue-200 {
+  border-color: color-mix(in oklab, var(--brand) 30%, transparent);
 }
 
-.dark .text-blue-700 {
+.text-blue-700 {
   color: var(--brand);
 }
 
-.dark input[type="checkbox"] {
+input[type="checkbox"] {
   border-radius: 4px;
 }
 
-.dark select {
-  color-scheme: dark;
-}
-
-.dark select:not([multiple]) {
+select:not([multiple]) {
   appearance: none;
   border: 1px solid var(--border);
   background-color: var(--card);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a8a93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238d8d8d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
   padding-right: 2rem;
@@ -643,14 +696,14 @@ html {
     background-color 120ms ease;
 }
 
-.dark select:not([multiple]):hover {
-  border-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+select:not([multiple]):hover {
+  border-color: color-mix(in oklab, var(--foreground) 22%, transparent);
 }
 
-.dark select:not([multiple]):focus-visible {
+select:not([multiple]):focus-visible {
   outline: none;
   border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 22%, transparent);
 }
 
 /* Forced-colors mode strips background images, so the custom chevron above
@@ -658,7 +711,7 @@ html {
    control back to the platform, which draws an arrow that follows the user's
    palette. */
 @media (forced-colors: active) {
-  .dark select:not([multiple]) {
+  select:not([multiple]) {
     appearance: auto;
     background-image: none;
     padding-right: 0.5rem;
@@ -736,27 +789,26 @@ html {
   }
 }
 
-.dark .z-button-variant-outline {
-  color: var(--foreground);
-}
-
-.dark .z-button-variant-ghost {
-  color: var(--muted-foreground);
-}
-
-.dark .z-button-variant-ghost:hover {
-  color: var(--foreground);
-}
-
-.dark .z-badge-variant-default {
+/* Badge default carries the brand tint rather than the neutral primary fill;
+   step 11 text on a step-3 alpha is legible in both themes. */
+.z-badge-variant-default {
   background-color: var(--brand-muted);
-  color: color-mix(in oklch, var(--brand) 60%, white);
-  border-color: color-mix(in oklch, var(--brand) 30%, transparent);
+  color: var(--brand);
+  border-color: color-mix(in oklab, var(--brand) 30%, transparent);
 }
 
-.dark .z-badge-variant-secondary {
+.z-badge-variant-secondary {
   background-color: var(--secondary);
   color: var(--secondary-foreground);
+}
+
+/* The primitives' stock scrim is a 10% black wash, which is nearly invisible
+   on a light page. Depth comes from the theme's scrim token instead. */
+[data-slot="dialog-overlay"],
+[data-slot="sheet-overlay"],
+[data-slot="drawer-overlay"],
+[data-slot="alert-dialog-overlay"] {
+  background-color: var(--scrim);
 }
 
 @media (prefers-reduced-motion: reduce) {

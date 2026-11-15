@@ -51,14 +51,14 @@ export default function DomainsPage() {
             </p>
             <a
               href={`/t/${params.tenantId}/settings/identity`}
-              class="mt-3 inline-flex min-h-9 items-center rounded-lg border border-white/[0.1] px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-white/[0.05]"
+              class="mt-3 inline-flex min-h-9 items-center rounded-lg border border-border px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-hover"
             >
               Open SSO settings
             </a>
           </div>
         }
       >
-        <ul class="divide-y divide-white/[0.05]">
+        <ul class="divide-y divide-border">
           <For each={domains.data?.domains ?? []}>
             {(domain) => (
               <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
@@ -84,7 +84,7 @@ export default function DomainsPage() {
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

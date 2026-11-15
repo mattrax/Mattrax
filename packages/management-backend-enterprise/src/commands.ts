@@ -31,6 +31,7 @@ const BUDGETS = new Map<string, number>([
   ["VerifyRecoveryLock", HOUR],
   // Installs: an app download is allowed a day to complete.
   ["InstallApplication", 24 * HOUR],
+  ["InstallEnterpriseApplication", 24 * HOUR],
   ["InstalledApplicationList", 7 * DAY],
   // Destructive actions: a week is long enough for a travelling laptop.
   ["EraseDevice", 7 * DAY],
@@ -321,6 +322,7 @@ export const supersededRequestTypes = (requestType: string): ReadonlyArray<strin
       "InstalledApplicationList",
       "DeviceInformation",
       "InstallApplication",
+      "InstallEnterpriseApplication",
       "InstallProfile",
       "RemoveProfile",
       "RotateFileVaultKey",
@@ -447,7 +449,11 @@ export const reconcileDeviceCommands = (
       continue;
     }
 
-    if (row.requestType !== "InstallApplication") continue;
+    if (
+      row.requestType !== "InstallApplication" &&
+      row.requestType !== "InstallEnterpriseApplication"
+    )
+      continue;
 
     // Only a command the device has seen can be judged against its inventory.
     if (normalizeDeviceCommandStatus(row.status) === "queued") continue;
@@ -511,6 +517,10 @@ export const shouldRetryInstall = (
 export type InstallApplicationTarget = {
   readonly manifestUrl: string | undefined;
   readonly storeId: string | undefined;
+  /** Bundle identifier an inline enterprise manifest installs. */
+  readonly bundleId: string | undefined;
+  /** The signed package URL an inline enterprise manifest fetches. */
+  readonly assetUrl: string | undefined;
 };
 
 const textOf = (value: Schema.Json | undefined) => {
@@ -521,17 +531,82 @@ const textOf = (value: Schema.Json | undefined) => {
   return undefined;
 };
 
+type InlineManifestTarget = {
+  readonly bundleId?: string;
+  readonly assetUrl?: string;
+};
+
+const inlineManifestTarget = (payload: JsonObject): InlineManifestTarget => {
+  const manifest = payload["Manifest"];
+
+  if (!isJsonObject(manifest) || !Array.isArray(manifest["items"])) return {};
+
+  const first = manifest["items"][0];
+
+  if (!isJsonObject(first)) return {};
+
+  const metadata = first["metadata"];
+  const assets = first["assets"];
+  const bundleId = isJsonObject(metadata) ? textOf(metadata["bundle-identifier"]) : undefined;
+
+  const assetUrl = Array.isArray(assets)
+    ? assets.flatMap((asset) => {
+        if (!isJsonObject(asset)) return [];
+
+        const kind = textOf(asset["kind"]);
+        const url = textOf(asset["url"]);
+
+        return kind === "software-package" && url ? [url] : [];
+      })[0]
+    : undefined;
+
+  return { bundleId, assetUrl };
+};
+
 /**
- * Payload keys that identify the application an `InstallApplication` targets.
+ * Payload keys that identify the application an install command targets.
  * The payload is free-form JSON, so anything unexpected is treated as unknown.
+ * Inline enterprise manifests carry the identity in the manifest rather than in
+ * a top-level Apple key.
  */
 export const installApplicationTarget = (
   payload: CommandPayload | undefined,
 ): InstallApplicationTarget => {
-  if (!isJsonObject(payload)) return { manifestUrl: undefined, storeId: undefined };
+  if (!isJsonObject(payload))
+    return { manifestUrl: undefined, storeId: undefined, bundleId: undefined, assetUrl: undefined };
+  const manifest = inlineManifestTarget(payload);
 
   return {
     manifestUrl: textOf(payload["ManifestURL"]),
     storeId: textOf(payload["iTunesStoreID"]),
+    bundleId: manifest.bundleId,
+    assetUrl: manifest.assetUrl,
   };
+};
+
+/** Whether a command asks the device to install an application. */
+export const isApplicationInstallRequest = (requestType: string): boolean =>
+  requestType === "InstallApplication" || requestType === "InstallEnterpriseApplication";
+
+/**
+ * Whether another automatic attempt at installing `bundleId` is inside the
+ * budget. Inline enterprise manifests carry a device-bound URL that changes
+ * with the signing window, so matching on the de-duplication source would treat
+ * every retry as a fresh application and loop forever; the bundle identity is
+ * stable across those retries.
+ */
+export const shouldRetryInstallBundle = (
+  history: ReadonlyArray<InstallAttemptRow>,
+  input: { readonly bundleId: string; readonly now: Date },
+): boolean => {
+  const windowStart = input.now.getTime() - DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS;
+
+  const attempts = history.filter(
+    (row) =>
+      isApplicationInstallRequest(row.requestType) &&
+      row.createdAt.getTime() >= windowStart &&
+      installApplicationTarget(row.payload).bundleId === input.bundleId,
+  ).length;
+
+  return attempts < DEVICE_COMMAND_INSTALL_MAX_ATTEMPTS;
 };

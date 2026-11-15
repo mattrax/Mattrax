@@ -44,7 +44,10 @@ import {
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { isServer } from "@solidjs/web";
-import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { installTheme } from "~/lib/theme";
+import { setCrossTabTenant } from "~/lib/cross-tab-sync";
+import { BrandLogo } from "~/components/brand-logo";
+import { ErrorPanel } from "~/components/error-boundary";
 
 type NavItem = {
   id: string;
@@ -111,7 +114,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-7 min-w-0 max-w-[14rem] items-center gap-2 rounded-md px-1.5 pr-2 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.08] motion-safe:active:scale-[0.985]"
+        class="group flex h-7 min-w-0 max-w-[14rem] items-center gap-2 rounded-md px-1.5 pr-2 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-hover motion-safe:active:scale-[0.985]"
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         {/* The name is composed from the visible content so assistive tech and
@@ -120,7 +123,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
         <Show when={!active()}>
           <span
             aria-hidden="true"
-            class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-white/10 bg-white/[0.04] text-muted-foreground"
+            class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-border bg-surface text-muted-foreground"
           >
             <Building2 class="size-2.5" />
           </span>
@@ -128,7 +131,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
         <span class="min-w-0 truncate text-[13px] font-[450] text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
           <Show
             when={!loading()}
-            fallback={<span class="block h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06]" />}
+            fallback={<span class="block h-2.5 w-20 animate-pulse rounded-full bg-hover" />}
           >
             <Show when={active()} fallback="Select tenant">
               {(tenant) => tenant().name}
@@ -138,7 +141,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
         <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="w-[288px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
+      <DropdownMenuContent class="w-[288px] rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
         <DropdownMenuGroup>
           <DropdownMenuLabel class="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             Tenants
@@ -155,7 +158,8 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
               value={props.activeId}
               onChange={(id) => {
                 rememberTenant(id);
-                navigate(`/t/${id}`);
+                const tenant = tenants().find((item) => item.id === id);
+                navigate(`/t/${tenant?.slug || id}`);
               }}
             >
               <For each={tenants()}>
@@ -166,12 +170,12 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
                     // current value (unscoped pages), so navigate on select too.
                     onSelect={() => {
                       rememberTenant(tenant.id);
-                      navigate(`/t/${tenant.id}`);
+                      navigate(`/t/${tenant.slug || tenant.id}`);
                     }}
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
-                    class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-white/[0.07]"
+                    class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-hover"
                   >
-                    <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.08] text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.06]">
+                    <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-hover text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
                       {tenantInitials(tenant.name)}
                     </span>
                     <span class="min-w-0 flex-1 leading-none">
@@ -190,10 +194,10 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             </DropdownMenuRadioGroup>
           </Show>
         </DropdownMenuGroup>
-        <div class="mx-1 my-1 h-px bg-white/[0.07]" />
+        <div class="mx-1 my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => navigate("/tenants/new")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none data-highlighted:bg-white/[0.07] data-highlighted:text-foreground"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none data-highlighted:bg-hover data-highlighted:text-foreground"
         >
           <span class="flex size-5 items-center justify-center text-muted-foreground">
             <Plus class="size-3.5" />
@@ -214,7 +218,7 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-keyshortcuts="Meta+K Control+K"
       class={cn(
-        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
+        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
         props.compact ? "w-7 justify-center px-0 sm:w-auto sm:justify-start sm:px-2" : "px-2",
       )}
     >
@@ -222,7 +226,7 @@ function SearchButton(props: { compact?: boolean }) {
       <span class="sr-only">Search</span>
       <kbd
         aria-hidden="true"
-        class="hidden rounded border border-white/[0.08] bg-white/[0.03] px-1 py-px font-sans text-[9.5px] text-muted-foreground sm:inline"
+        class="hidden rounded border border-border bg-surface px-1 py-px font-sans text-[9.5px] text-muted-foreground sm:inline"
       >
         ⌘K
       </kbd>
@@ -245,7 +249,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
   return (
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
-        class="flex size-6 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[9.5px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.1] transition-[box-shadow,scale] duration-150 ease-swift hover:ring-white/20 focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
+        class="flex size-6 items-center justify-center overflow-hidden rounded-full bg-hover text-[9.5px] font-semibold text-foreground outline-none ring-1 ring-inset ring-border transition-[box-shadow,scale] duration-150 ease-swift hover:ring-input focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
         title={user()?.name ?? "Account"}
         aria-label={user()?.image ? "Account menu" : `${initials(user()?.name)}, account menu`}
       >
@@ -256,10 +260,10 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           {(image) => <img src={image()} alt="" class="size-full object-cover" />}
         </Show>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-[248px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
+      <DropdownMenuContent class="w-[248px] rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
         <DropdownMenuGroup>
           <div class="flex items-center gap-2.5 px-2 py-2">
-            <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9.5px] font-semibold ring-1 ring-inset ring-white/[0.08]">
+            <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-hover text-[9.5px] font-semibold ring-1 ring-inset ring-border">
               <span aria-hidden="true">{initials(user()?.name)}</span>
             </span>
             <span class="min-w-0">
@@ -273,7 +277,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => navigate("/account")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <User class="size-3.5 text-muted-foreground" />
           Account settings
@@ -283,7 +287,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           role="menuitem"
           href="/docs/"
           target="_self"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
@@ -292,7 +296,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           as="a"
           role="menuitem"
           href="mailto:hello@mattrax.app?subject=Mattrax%20support"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <HelpCircle class="size-3.5 text-muted-foreground" />
           Support
@@ -303,7 +307,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           href="https://status.otbeaumont.me"
           target="_blank"
           rel="noopener"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-white/[0.07]"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <Activity class="size-3.5 text-muted-foreground" />
           System status
@@ -311,7 +315,7 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => props.onSignOut()}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-white/[0.07] focus:text-foreground"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-hover focus:text-foreground"
         >
           <LogOut class="size-3.5" />
           Sign out
@@ -381,6 +385,13 @@ export function AppShell(props: {
     setLastTenant(readLastTenant());
   });
 
+  // Swap the device-wide preference for this account's own choice. The effect
+  // re-runs if the session user changes (sign-in as someone else in this tab).
+  createEffect(
+    () => props.user?.id,
+    (userId) => installTheme(userId),
+  );
+
   createEffect(
     () => routeTenantId(),
     (id) => {
@@ -413,6 +424,12 @@ export function AppShell(props: {
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const { can, canAny } = useCan();
+
+  // Mutations broadcast to other tabs under the tenant currently on screen.
+  createEffect(
+    () => scopedTenant() ?? null,
+    (tenantId) => setCrossTabTenant(tenantId),
+  );
 
   const navItems = createMemo(() =>
     navFor(scopedTenant()).filter((item) => {
@@ -580,30 +597,24 @@ export function AppShell(props: {
   );
 
   return (
-    <div class="dark flex min-h-svh flex-col bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
+    <div class="flex min-h-svh flex-col bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
       <a
         href="#main"
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
       >
         Skip to content
       </a>
-      <header class="sticky top-0 z-40 border-b border-white/[0.07] bg-background">
+      <header class="sticky top-0 z-40 border-b border-border bg-background">
         <div class="mx-auto flex h-12 max-w-[1600px] items-center gap-2 px-3 sm:px-5 lg:px-6">
           <a
             href="/dashboard"
             class="flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             aria-label="Mattrax home"
           >
-            <img
-              src="/assets/brand/mattrax-white.png"
-              alt="Mattrax"
-              class="h-3.5 w-auto"
-              width="922"
-              height="142"
-            />
+            <BrandLogo class="h-3.5" />
           </a>
 
-          <span class="mx-1 hidden h-3.5 w-px bg-white/[0.09] sm:block" aria-hidden="true" />
+          <span class="mx-1 hidden h-3.5 w-px bg-border sm:block" aria-hidden="true" />
           <TenantSwitcher activeId={activeId()} userId={props.user?.id} />
 
           <div class="ml-auto flex items-center gap-1">
@@ -687,40 +698,9 @@ export function AppShell(props: {
         )}
       >
         <Errored
-          fallback={(error, reset) => {
-            const value = error instanceof Function ? error() : error;
-
-            console.error("Mattrax page render error", value);
-
-            const presentation = errorPresentation(raisedFailure(value));
-
-            return (
-              <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
-                <div class="rounded-xl border border-destructive/25 bg-destructive/[0.06] p-5">
-                  <h2 class="text-[14px] font-semibold text-foreground">{presentation.title}</h2>
-                  <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-                    {presentation.message}
-                  </p>
-                  <div class="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
-                      onClick={() => reset()}
-                    >
-                      Try again
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-lg border border-white/[0.09] px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/[0.05]"
-                      onClick={() => window.location.reload()}
-                    >
-                      Reload
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          }}
+          fallback={(error, reset) => (
+            <ErrorPanel boundary="dashboard" error={error()} reset={reset} label="Dashboard" />
+          )}
         >
           {/* Page content mounts after the shell is hydrated. Server-rendered
               page markup is data-independent, but the client resolves queries

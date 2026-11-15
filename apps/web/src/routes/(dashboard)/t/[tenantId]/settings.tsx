@@ -70,7 +70,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
         ref={(element) => {
           tabNav = element;
         }}
-        class="no-scrollbar -mb-px mt-5 flex gap-0.5 overflow-x-auto border-b border-white/[0.07]"
+        class="no-scrollbar -mb-px mt-5 flex gap-0.5 overflow-x-auto border-b border-border"
         aria-label="Tenant settings sections"
       >
         <For each={visibleTabs()}>
@@ -85,7 +85,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                   "relative -mb-px shrink-0 whitespace-nowrap rounded-t-md px-2.5 pb-2.5 pt-2 text-[12.5px] font-medium transition-colors",
                   isActive()
                     ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
-                    : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
+                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
                 )}
                 aria-current={isActive() ? "page" : undefined}
               >

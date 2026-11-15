@@ -8,6 +8,7 @@ import * as Workerd from "@yielded/auth-platform-workerd";
 import { AuthApi, enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
+  DEFAULT_EMAIL_FROM,
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
   EnterpriseService,
@@ -32,9 +33,9 @@ import {
   makeEnterpriseAuthLive,
   EnterpriseAnalyticsService,
   sessionCookie,
+  drainEmailOutbox,
+  sendTransactionalEmail,
   type CredentialExpiryNotification,
-  type EmailReplyTo,
-  type EmailTransport,
 } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
@@ -59,12 +60,7 @@ import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
-import {
-  isDevMailboxEnabled,
-  listDevEmails,
-  recordDevEmail,
-  timingSafeStringEqual,
-} from "./devMailbox.js";
+import { isDevMailboxEnabled, listDevEmails, timingSafeStringEqual } from "./devMailbox.js";
 import {
   errorResponse,
   logRequest,
@@ -84,10 +80,11 @@ import {
   type AnalyticsProperties,
 } from "./analytics.js";
 import { checkReadiness } from "./readiness.js";
+import { mailerReadiness, selectMailer } from "./mailer.js";
 import { createProbeCache } from "./probeCache.js";
 import { clearsSsrShell, withClearedSsrShell } from "./sessionShell.js";
 import { withSessionPresence } from "./sessionPresence.js";
-import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
+import { credentialExpiryEmail } from "./credentialEmail.js";
 
 const rateLimiter = createRateLimiter();
 
@@ -347,6 +344,28 @@ if (apiEnv.MATTRAX_ONBOARDING_SINCE && !onboardingSince)
     "MATTRAX_ONBOARDING_SINCE is not a valid ISO date; the follow-up window floor still applies",
   );
 
+/**
+ * The mailer settings live in two places: the Cloudflare binding on `Env` and
+ * the parsed deployment variables on `apiEnv` (some are only declared when a
+ * deploy supplies them). This keeps the selection call sites to one expression.
+ */
+const resolveMailer = (env: Env) =>
+  selectMailer({
+    ORIGIN: env.ORIGIN,
+    EMAIL: env.EMAIL,
+    MATTRAX_EMAIL_DISABLED: apiEnv.MATTRAX_EMAIL_DISABLED,
+    MAIL_TRANSPORT: apiEnv.MAIL_TRANSPORT,
+    MAIL_FROM: apiEnv.MAIL_FROM,
+    MAIL_RELAY_URL: apiEnv.MAIL_RELAY_URL,
+    MAIL_RELAY_SECRET: apiEnv.MAIL_RELAY_SECRET,
+    RESEND_API_KEY: apiEnv.RESEND_API_KEY,
+    POSTMARK_SERVER_TOKEN: apiEnv.POSTMARK_SERVER_TOKEN,
+    MAIL_POSTMARK_STREAM: apiEnv.MAIL_POSTMARK_STREAM,
+    DEV_MAILBOX: apiEnv.DEV_MAILBOX,
+    DEV_MAILBOX_ALLOW_REMOTE: apiEnv.DEV_MAILBOX_ALLOW_REMOTE,
+    DEV_MAILBOX_SECRET: apiEnv.DEV_MAILBOX_SECRET,
+  });
+
 const onboardingEmailsEnabled = () => {
   const value = apiEnv.MAINTENANCE_ONBOARDING_EMAILS?.trim().toLowerCase();
 
@@ -354,32 +373,22 @@ const onboardingEmailsEnabled = () => {
 };
 
 /**
- * Cloudflare's structured address requires `name`; a bare Reply-To string is
- * also accepted, so normalise our optional-name form at the binding boundary.
+ * Drain queued transactional mail outside the daily maintenance window. The
+ * hourly trigger owns retries, so a provider outage costs minutes rather than a
+ * day; `runMaintenance` also drains so a deployment with only the daily cron
+ * still delivers.
  */
-const replyToForBinding = (replyTo: EmailReplyTo | undefined) =>
-  replyTo === undefined
-    ? undefined
-    : Schema.is(Schema.String)(replyTo)
-      ? replyTo
-      : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
+const emailOutboxJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
 
-/** Adapter for the Cloudflare `send_email` binding used outside a request. */
-const cloudEmailTransport = (binding: SendEmail | undefined): EmailTransport | undefined =>
-  binding
-    ? {
-        send: async (message) => {
-          await binding.send({
-            to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
-            from: message.from,
-            replyTo: replyToForBinding(message.replyTo),
-            subject: message.subject,
-            text: message.text,
-            html: message.html,
-          });
-        },
-      }
-    : undefined;
+    return yield* drainEmailOutbox({
+      db,
+      email: resolveMailer(env).transport,
+      concurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
+      maxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
+    });
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
 /** Standalone scheduled Entra sweep used by the hourly trigger. */
 const entraSyncJob = (env: Env) =>
@@ -469,57 +478,12 @@ const makeAppLayer = (env: Env) => {
 
   const devMailboxSecret = env.DEV_MAILBOX_SECRET;
 
-  /** Dev mailbox records one entry per recipient so tests can find their own. */
-  const replyToAddress = (replyTo: EmailReplyTo | undefined) =>
-    replyTo === undefined ? undefined : Schema.is(Schema.String)(replyTo) ? replyTo : replyTo.email;
-
-  const devEmail = devMailbox
-    ? {
-        send: async (message: {
-          to: string | ReadonlyArray<string>;
-          replyTo?: EmailReplyTo;
-          subject: string;
-          text?: string;
-          html?: string;
-        }) => {
-          const recipients = Schema.is(Schema.String)(message.to) ? [message.to] : message.to;
-
-          for (const to of recipients) {
-            recordDevEmail({
-              to,
-              replyTo: replyToAddress(message.replyTo),
-              subject: message.subject,
-              text: message.text ?? "",
-              html: message.html,
-            });
-            console.log("DEV EMAIL", to, message.subject, message.text);
-          }
-        },
-      }
-    : undefined;
-
-  // `SendEmail.send` is overloaded for raw MIME and structured messages. The
-  // structured overload is the one the auth layers need, and adapting it here
-  // keeps the auth contract free of Cloudflare's binding types.
-  const cloudEmail: SendEmail | undefined = env.EMAIL;
-
-  const email: EmailTransport | undefined =
-    devEmail ??
-    (cloudEmail
-      ? {
-          send: (message) =>
-            cloudEmail
-              .send({
-                to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
-                from: message.from,
-                replyTo: replyToForBinding(message.replyTo),
-                subject: message.subject,
-                text: message.text,
-                html: message.html,
-              })
-              .then(() => undefined),
-        }
-      : undefined);
+  // One selection serves the request path and cron: the Cloudflare binding,
+  // an HTTP provider, the self-hosted SMTP relay, the local mailbox or an
+  // explicit "disabled" state. A misconfiguration stays `undefined` here and
+  // fails readiness instead of silently logging messages.
+  const mailer = resolveMailer(env);
+  const email = mailer.transport;
 
   const authLive = makeAuthLive({
     appAuth,
@@ -541,6 +505,7 @@ const makeAppLayer = (env: Env) => {
     // Use the same development mailbox as sign-in proofs so verification
     // codes are visible at /api/debug/emails locally.
     email,
+    emailFrom: mailer.sender,
     onboardingReplyTo: onboardingReplyTo(),
     onboardingSupportEmail: onboardingSupportEmail(),
   });
@@ -607,6 +572,15 @@ const makeAppLayer = (env: Env) => {
     requireAppleDeviceIdentity: true,
     planLimits,
     windowsFederated,
+    // Uploaded `.pkg` artefacts are served to devices through a signed,
+    // expiring URL on the MDM origin; the protocol layer never exposes R2 keys.
+    readApplicationObject: async (key) => {
+      const object = await env.STORAGE.get(key);
+
+      if (!object) return null;
+
+      return new Uint8Array(await object.arrayBuffer());
+    },
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
@@ -625,7 +599,10 @@ const makeAppLayer = (env: Env) => {
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
       email,
-      invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM,
+      // `MAIL_FROM` decides the envelope sender for every provider; the
+      // invitation-specific override still wins when an operator wants the
+      // branded address only for invites.
+      invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM ?? mailer.sender.email,
       enrollmentProfileTtlSeconds,
       azureClientId: env.AZURE_CLIENT_ID,
       windowsFederated: windowsFederatedAudience
@@ -633,6 +610,9 @@ const makeAppLayer = (env: Env) => {
         : undefined,
       android: androidConfig,
       planLimits,
+      // Checkout and seat reconciliation need the per-device price; both
+      // report a configuration error when it is absent.
+      deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
     }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
@@ -832,19 +812,15 @@ const checkStorageReady = async (env: Env): Promise<"ok"> => {
 /**
  * Outbound email is either configured, captured by the local dev mailbox, or
  * explicitly declared disabled. Silence is not accepted: a deployment that
- * forgot the binding must not report ready while every sign-in email fails.
+ * forgot the transport must not report ready while every sign-in email fails.
+ * The reason is deliberately generic, and secrets never reach the probe.
  */
 const checkMailerReady = async (env: Env): Promise<"ok" | "skipped"> => {
-  const disabled = apiEnv.MATTRAX_EMAIL_DISABLED?.trim().toLowerCase();
+  const selection = resolveMailer(env);
 
-  if (disabled === "true" || disabled === "1" || disabled === "yes" || disabled === "on")
-    return "skipped";
+  await selection.probe?.();
 
-  if (env.EMAIL) return "ok";
-
-  if (isDevMailboxEnabled(env, env.ORIGIN, env.ORIGIN)) return "ok";
-
-  throw new Error("no outbound email binding is configured");
+  return mailerReadiness(selection);
 };
 
 /**
@@ -1071,10 +1047,12 @@ export default {
   },
 
   /**
-   * Cron entrypoint. The daily trigger runs maintenance, tenant backups and a
-   * directory sweep; the hourly trigger only sweeps due Entra directory syncs.
-   * The same functions are exported from `@mattrax/enterprise-backend` so a
-   * self-hosted Enterprise deployment can run them from its own scheduler.
+   * Cron entrypoint. The daily trigger runs maintenance (which also drains the
+   * transactional-email outbox and prunes it), tenant backups and a directory
+   * sweep. The hourly trigger drains the outbox and sweeps due Entra directory
+   * syncs, so mail retries do not wait for the daily window. The same functions
+   * are exported from `@mattrax/enterprise-backend` so a self-hosted Enterprise
+   * deployment can run them from its own scheduler.
    */
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const parseDays = (value: string | undefined) => {
@@ -1091,61 +1069,81 @@ export default {
       else console.log("Scheduled Entra directory sync complete", exit.value);
     };
 
-    // The hourly trigger is dedicated to directory sync. The daily trigger
-    // below also runs it so deployments with only one cron still sync.
+    const logOutboxResult = (exit: Exit.Exit<unknown, unknown>) => {
+      if (Exit.isFailure(exit)) console.error("Scheduled email outbox drain failed", exit.cause);
+      else console.log("Scheduled email outbox drain complete", exit.value);
+    };
+
+    // The hourly trigger drains queued transactional mail and, when Graph is
+    // configured, sweeps due directory syncs. The outbox runs even without
+    // Graph so a retry does not wait for the daily job.
     if (controller.cron === ENTRA_SYNC_CRON) {
-      if (!graphConfigured) {
+      if (!graphConfigured)
         console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
 
-        return;
-      }
-
       ctx.waitUntil(
-        Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
-          console.error("Scheduled Entra directory sync job failed", cause),
+        Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(logOutboxResult, (cause) =>
+          console.error("Scheduled email outbox job failed", cause),
         ),
       );
+
+      if (graphConfigured)
+        ctx.waitUntil(
+          Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
+            console.error("Scheduled Entra directory sync job failed", cause),
+          ),
+        );
 
       return;
     }
 
-    // Delivery is best-effort: a missing binding or a provider rejection is
-    // logged by maintenance and never fails the scheduled run.
+    const mailer = resolveMailer(env);
+
+    // The onboarding emails keep their founder persona on the hosted default;
+    // a deployment that verified its own sender must use it instead.
+    const onboardingFrom =
+      mailer.sender.email === DEFAULT_EMAIL_FROM.email ? undefined : mailer.sender;
+
+    // Queued delivery failures are retried by the outbox. The notifier only
+    // has to enqueue one message per recipient; a maintenance retry of the
+    // same threshold/day dedupes through the outbox key.
     const notifyCredentialExpiry = (notification: CredentialExpiryNotification) =>
-      Effect.tryPromise({
-        try: async () => {
-          const email = env.EMAIL;
-
-          if (!email) {
-            console.warn(
-              "Credential expiry email skipped: EMAIL binding is not configured",
-              notification.organizationId,
-              notification.threshold,
-            );
-
-            return;
-          }
-
-          if (notification.recipients.length === 0) {
-            console.warn(
-              "Credential expiry email skipped: no owner/admin recipients",
-              notification.organizationId,
-              notification.threshold,
-            );
-
-            return;
-          }
-
-          const message = credentialExpiryEmail(notification, { origin: apiEnv.ORIGIN });
-          await email.send({
-            to: notification.recipients.map((recipient) => recipient.email),
-            from: { name: "Mattrax", email: CREDENTIAL_EMAIL_FROM },
-            subject: message.subject,
-            text: message.text,
-            html: message.html,
+      Effect.gen(function* () {
+        if (notification.recipients.length === 0) {
+          yield* Effect.logWarning("Credential expiry email skipped: no owner/admin recipients", {
+            organizationId: notification.organizationId,
+            threshold: notification.threshold,
           });
-        },
-        catch: (cause) => cause,
+
+          return;
+        }
+
+        const db = yield* Db;
+        const message = credentialExpiryEmail(notification, { origin: apiEnv.ORIGIN });
+
+        yield* Effect.forEach(
+          notification.recipients,
+          (recipient) =>
+            sendTransactionalEmail({
+              db,
+              email: mailer.transport,
+              template: "credential_expiry",
+              recipient: recipient.email,
+              organizationId: notification.organizationId,
+              dedupeKey: `credential_expiry:${notification.organizationId}:${
+                notification.threshold
+              }:${notification.day}:${recipient.email.toLowerCase()}`,
+              message: {
+                // One message per recipient so admins never see each other.
+                to: recipient.email,
+                from: mailer.sender,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+              },
+            }),
+          { concurrency: 2, discard: true },
+        );
       });
 
     const storage = storageBucketFor(env);
@@ -1162,7 +1160,22 @@ export default {
           // Outbound webhook retries need the same secret used to seal endpoint
           // secrets; retention/pruning runs regardless.
           webhookAuthSecret: apiEnv.AUTH_SECRET,
+          authSecret: apiEnv.AUTH_SECRET,
           notifyCredentialExpiry,
+          // Queued transactional mail is drained here as well as by the
+          // hourly trigger; without a transport the rows stay pending.
+          email: mailer.transport,
+          emailOutboxConcurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
+          emailOutboxMaxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
+          // Nightly seat reconciliation and customer-name repair. The plan
+          // catalogue is passed so the paid quantity can be capped by the plan.
+          billing: env.STRIPE_SECRET_KEY
+            ? {
+                stripe: StripeService.make(env.STRIPE_SECRET_KEY),
+                deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
+                planLimits,
+              }
+            : undefined,
         }),
       );
 
@@ -1178,19 +1191,21 @@ export default {
         Effect.gen(function* () {
           const welcome = yield* runWelcomeEmailSweep({
             db,
-            email: cloudEmailTransport(env.EMAIL),
+            email: mailer.transport,
             origin: apiEnv.ORIGIN,
             replyTo: onboardingReplyTo(),
             supportEmail: onboardingSupportEmail(),
+            from: onboardingFrom,
           });
 
           const followUp = onboardingEmailsEnabled()
             ? yield* runOnboardingEmails({
                 db,
-                email: cloudEmailTransport(env.EMAIL),
+                email: mailer.transport,
                 origin: apiEnv.ORIGIN,
                 replyTo: onboardingReplyTo(),
                 supportEmail: onboardingSupportEmail(),
+                from: onboardingFrom,
                 followUpDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS, 7),
                 windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
                 cooldownDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS, 7),

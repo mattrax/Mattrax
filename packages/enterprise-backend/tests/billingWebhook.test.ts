@@ -382,6 +382,99 @@ describe("Stripe subscription lifecycle", () => {
   });
 });
 
+describe("Stripe Checkout completion", () => {
+  const checkoutSession = (overrides: Schema.JsonObject = {}) => ({
+    id: "cs_test_1",
+    object: "checkout.session",
+    mode: "subscription",
+    status: "complete",
+    payment_status: "paid",
+    customer: "cus_1",
+    subscription: "sub_1",
+    client_reference_id: "org-1",
+    metadata: { organizationId: "org-1", plan: "device" },
+    ...overrides,
+  });
+
+  it("records the purchased subscription and applies the tenant metadata", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", null);
+
+    await expect(
+      deliverEvent(db, "checkout.session.completed", checkoutSession()),
+    ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
+
+    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.subscription[0]).toMatchObject({
+      plan: "device",
+      referenceId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_1",
+      status: "active",
+    });
+    // The completed session links the customer so later invoice events (which
+    // may only carry a customer id) resolve without metadata.
+    expect(db.store.organization[0]).toMatchObject({ stripeCustomerId: "cus_1" });
+  });
+
+  it("keeps a trial active until the subscription event refines it", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(
+      db,
+      "checkout.session.completed",
+      checkoutSession({ payment_status: "no_payment_required" }),
+    );
+
+    expect(db.store.subscription[0]).toMatchObject({ status: "active" });
+  });
+
+  it("ignores a payment-mode session", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await expect(
+      deliverEvent(
+        db,
+        "checkout.session.completed",
+        checkoutSession({ mode: "payment", subscription: null }),
+      ),
+    ).resolves.toEqual({ ignored: true });
+    expect(db.store.subscription).toHaveLength(0);
+  });
+
+  it("refuses a session whose metadata and customer disagree", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "checkout.session.completed",
+        checkoutSession({ metadata: { organizationId: "org-2", plan: "device" } }),
+      ),
+      400,
+    );
+    expect(db.store.subscription).toHaveLength(0);
+  });
+
+  it("dedupes a redelivered completion through the event ledger", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    const payload = JSON.stringify(event("checkout.session.completed", checkoutSession()));
+
+    await expect(deliver(db, payload)).resolves.toMatchObject({
+      organizationId: "org-1",
+      stripeSubscriptionId: "sub_1",
+    });
+    await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
+    expect(db.store.stripe_event).toHaveLength(1);
+    expect(db.store.subscription).toHaveLength(1);
+  });
+});
+
 describe("Stripe webhook tenant resolution", () => {
   it("rejects an unknown organization metadata id", async () => {
     const db = makeDb();

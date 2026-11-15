@@ -8,7 +8,7 @@ import {
   type WelcomeEmailInput,
 } from "./onboardingEmail.ts";
 import { loadTenantAdminRecipients } from "./maintenance.ts";
-import type { EmailReplyTo, EmailTransport } from "./email.ts";
+import type { EmailAddress, EmailReplyTo, EmailTransport } from "./email.ts";
 
 /** Keep the onboarding-specific name while sharing one transport contract. */
 export type OnboardingEmailTransport = EmailTransport;
@@ -145,6 +145,8 @@ export type SendWelcomeEmailOptions = {
   readonly origin: string;
   readonly replyTo?: EmailReplyTo | null;
   readonly supportEmail?: string | null;
+  /** Envelope sender; defaults to the hosted onboarding identity. */
+  readonly from?: EmailAddress;
   /** Injectable clock for tests. */
   readonly now?: Date;
 };
@@ -242,7 +244,7 @@ export const sendWelcomeEmailOnce = (
       try: () =>
         email.send({
           to: user.email,
-          from: ONBOARDING_EMAIL_FROM,
+          from: options.from ?? ONBOARDING_EMAIL_FROM,
           replyTo,
           subject: message.subject,
           text: message.text,
@@ -274,6 +276,7 @@ export type WelcomeEmailSweepOptions = {
   readonly origin: string;
   readonly replyTo?: EmailReplyTo | null;
   readonly supportEmail?: string | null;
+  readonly from?: EmailAddress;
   /** Only accounts created this recently are retried. Defaults to 2 days. */
   readonly lookbackDays?: number;
   /** Maximum accounts examined per run. Defaults to 100. */
@@ -351,6 +354,7 @@ export const runWelcomeEmailSweep = (
           origin: options.origin,
           replyTo: options.replyTo,
           supportEmail: options.supportEmail,
+          from: options.from,
           now,
         }),
       { concurrency: options.concurrency ?? 4 },
@@ -377,6 +381,7 @@ export type RunOnboardingEmailsOptions = {
   readonly origin: string;
   readonly replyTo?: EmailReplyTo | null;
   readonly supportEmail?: string | null;
+  readonly from?: EmailAddress;
   /** Days after tenant creation before the follow-up is eligible. Defaults to 7. */
   readonly followUpDays?: number;
   /** Extra days after `followUpDays` that stay eligible. Defaults to 7. */
@@ -681,7 +686,7 @@ export const runOnboardingEmails = (
                 email.send({
                   // One message per recipient: no admin sees another's address.
                   to: recipient.email,
-                  from: ONBOARDING_EMAIL_FROM,
+                  from: options.from ?? ONBOARDING_EMAIL_FROM,
                   replyTo,
                   subject: message.subject,
                   text: message.text,

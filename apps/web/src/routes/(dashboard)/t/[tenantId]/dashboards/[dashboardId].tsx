@@ -429,9 +429,7 @@ export default function DashboardPage() {
     setDraft((value) => ({
       type,
       // Only replace a title we generated; a typed title is the person's own.
-      title: Object.values(defaultTitles).includes(value.title)
-        ? defaultTitles[type]
-        : value.title,
+      title: Object.values(defaultTitles).includes(value.title) ? defaultTitles[type] : value.title,
       config: defaultConfig(type),
     }));
   };
@@ -583,7 +581,7 @@ export default function DashboardPage() {
       </Show>
 
       <Show when={editing()}>
-        <div class="rounded-lg border border-white/[0.07] bg-card p-3.5">
+        <div class="rounded-lg border border-border bg-card p-3.5">
           <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
             <label>
               <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
@@ -658,7 +656,7 @@ export default function DashboardPage() {
       <Show
         when={widgets().length > 0}
         fallback={
-          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-6 text-center">
+          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface px-6 text-center">
             <p class="text-[13px] font-medium">This dashboard is empty</p>
             <p class="mt-1 text-[12px] text-muted-foreground">
               Add a table, pie chart, count or markdown note.
@@ -682,9 +680,9 @@ export default function DashboardPage() {
               return (
                 <article
                   class={cn(
-                    "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]",
+                    "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)]",
                     `dashboard-widget-${widget.type}`,
-                    editing() && "border-white/[0.11]",
+                    editing() && "border-border",
                   )}
                   style={{
                     "grid-column": `${position().x + 1} / span ${position().w}`,
@@ -696,7 +694,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         aria-label={`Move ${widget.title}`}
-                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground active:cursor-grabbing"
+                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground active:cursor-grabbing"
                         onPointerDown={(event) => startDrag(event, widget, "move")}
                       >
                         <GripVertical class="size-3.5" />
@@ -754,7 +752,7 @@ export default function DashboardPage() {
       </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
-        <DialogContent class="max-w-2xl rounded-xl border border-white/[0.09] bg-card p-5">
+        <DialogContent class="max-w-2xl rounded-xl border border-border bg-card p-5">
           <DialogHeader>
             <DialogTitle>{editingWidget() ? "Edit widget" : "Add widget"}</DialogTitle>
             <DialogDescription>
@@ -892,7 +890,7 @@ export default function DashboardPage() {
                 </Show>
               </div>
 
-              <div class="rounded-lg border border-white/[0.07] bg-white/[0.015] p-2.5">
+              <div class="rounded-lg border border-border bg-surface p-2.5">
                 <DeviceQueryBuilder
                   compact
                   dataset={dataset()}
@@ -925,8 +923,8 @@ export default function DashboardPage() {
                             class={cn(
                               "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
                               checked()
-                                ? "border-white/[0.14] bg-white/[0.08] text-foreground"
-                                : "border-white/[0.07] text-muted-foreground hover:text-foreground",
+                                ? "border-border bg-hover text-foreground"
+                                : "border-border text-muted-foreground hover:text-foreground",
                             )}
                           >
                             {label}

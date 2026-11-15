@@ -20,10 +20,12 @@ export function QrCode(props: { value: string; label?: string; class?: string; s
           role="img"
           aria-label={props.label ?? "Enrollment QR code"}
           {...{ "shape-rendering": "crispEdges" }}
-          class={props.class ?? "rounded-lg bg-white p-2"}
+          class={props.class ?? "rounded-lg bg-[var(--qr-background)] p-2"}
         >
-          <rect width={code().size} height={code().size} fill="#ffffff" />
-          <path d={code().path} fill="#1c1917" />
+          {/* QR codes need absolute contrast to scan, so these two tokens are
+              fixed white/black in every theme rather than theme surfaces. */}
+          <rect width={code().size} height={code().size} class="fill-[var(--qr-background)]" />
+          <path d={code().path} class="fill-[var(--qr-foreground)]" />
         </svg>
       )}
     </Show>

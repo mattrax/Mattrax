@@ -42,7 +42,7 @@ const inline = (text: string): JSX.Element[] => {
             width={640}
             height={360}
             loading="lazy"
-            class="my-2 h-auto max-h-56 w-auto max-w-full rounded-lg border border-white/[0.08] object-contain"
+            class="my-2 h-auto max-h-56 w-auto max-w-full rounded-lg border border-border object-contain"
           />
         ) : (
           token
@@ -69,7 +69,7 @@ const inline = (text: string): JSX.Element[] => {
       nodes.push(<strong class="font-semibold text-foreground">{token.slice(2, -2)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(
-        <code class="rounded bg-white/[0.07] px-1 py-0.5 font-mono text-[0.92em]">
+        <code class="rounded bg-hover px-1 py-0.5 font-mono text-[0.92em]">
           {token.slice(1, -1)}
         </code>,
       );
@@ -114,7 +114,7 @@ export function Markdown(props: { content: string }) {
 
         index++;
         output.push(() => (
-          <pre class="my-2 overflow-x-auto rounded-lg border border-white/[0.07] bg-black/30 p-3 text-[11.5px] leading-relaxed">
+          <pre class="my-2 overflow-x-auto rounded-lg border border-border bg-muted p-3 text-[11.5px] leading-relaxed">
             <code class="font-mono">{body.join("\n")}</code>
           </pre>
         ));
@@ -150,7 +150,7 @@ export function Markdown(props: { content: string }) {
       }
 
       if (/^([-*_])\1{2,}$/.test(line.trim())) {
-        output.push(() => <hr class="my-3 border-white/[0.08]" />);
+        output.push(() => <hr class="my-3 border-border" />);
         index++;
         continue;
       }
@@ -196,7 +196,7 @@ export function Markdown(props: { content: string }) {
         }
 
         output.push(() => (
-          <blockquote class="my-2 border-l-2 border-white/[0.12] pl-3 text-[12.5px] italic text-muted-foreground">
+          <blockquote class="my-2 border-l-2 border-border pl-3 text-[12.5px] italic text-muted-foreground">
             {inline(quoted.join(" "))}
           </blockquote>
         ));

@@ -8,7 +8,7 @@ import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 const inputClass =
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none sm:text-[13px] transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none sm:text-[13px] transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 type PasskeySummary = {
   credentialId: string;
@@ -207,9 +207,9 @@ export function AccountSecurity(props: {
   };
 
   return (
-    <section class="rounded-xl border border-white/[0.07] bg-card p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] sm:p-5">
+    <section class="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)] sm:p-5">
       <div class="flex items-start gap-3">
-        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
           <ShieldCheck class="size-4" />
         </span>
         <div class="min-w-0">
@@ -262,7 +262,7 @@ export function AccountSecurity(props: {
             <div class="mt-3 grid grid-cols-2 gap-1 font-mono text-xs">
               <For each={codes()}>
                 {(code) => (
-                  <span class="rounded-md border border-white/[0.07] bg-black/25 px-2 py-1 text-foreground">
+                  <span class="rounded-md border border-border bg-muted px-2 py-1 text-foreground">
                     {code}
                   </span>
                 )}
@@ -273,7 +273,7 @@ export function AccountSecurity(props: {
       </Show>
 
       {/* ---- Passkeys ------------------------------------------------------ */}
-      <div class="mt-5 border-t border-white/[0.06] pt-4">
+      <div class="mt-5 border-t border-border pt-4">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="min-w-0">
             <p class="text-[13px] font-medium text-foreground">Passkeys</p>
@@ -293,7 +293,7 @@ export function AccountSecurity(props: {
             <p class="mt-3 text-xs text-muted-foreground">No passkeys yet. Add one to sign in.</p>
           }
         >
-          <ul class="mt-3 divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">
+          <ul class="mt-3 divide-y divide-border rounded-lg border border-border">
             <For each={passkeys()}>
               {(item) => (
                 <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
@@ -345,7 +345,7 @@ export function AccountSecurity(props: {
       </div>
 
       {/* ---- Authenticator app --------------------------------------------- */}
-      <div class="mt-5 border-t border-white/[0.06] pt-4">
+      <div class="mt-5 border-t border-border pt-4">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="min-w-0">
             <p class="text-[13px] font-medium text-foreground">Authenticator app</p>
@@ -388,14 +388,14 @@ export function AccountSecurity(props: {
           >
             {(current) => (
               <div class="mt-3 space-y-4">
-                <div class="flex flex-col gap-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-start">
+                <div class="flex flex-col gap-4 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-start">
                   <QrCode value={current().uri} label="Authenticator setup QR code" size={144} />
                   <div class="min-w-0 flex-1 space-y-2">
                     <p class="text-[13px] font-medium text-foreground">Scan this QR code</p>
                     <p class="text-xs leading-relaxed text-muted-foreground">
                       Use your authenticator app, or enter this setup key manually:
                     </p>
-                    <code class="block break-all rounded-md border border-white/[0.07] bg-black/25 px-3 py-2 font-mono text-xs text-foreground">
+                    <code class="block break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
                       {current().manualKey}
                     </code>
                   </div>
@@ -492,7 +492,7 @@ export function AccountSecurity(props: {
               </Show>
             </form>
 
-            <form onSubmit={disable} class="space-y-2 border-t border-white/[0.06] pt-4">
+            <form onSubmit={disable} class="space-y-2 border-t border-border pt-4">
               <p class="text-[13px] font-medium text-destructive">Disable authenticator app</p>
               <p class="text-xs leading-relaxed text-muted-foreground">
                 This removes the second factor and invalidates your sessions. Confirm with your
@@ -539,7 +539,7 @@ export function AccountSecurity(props: {
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

@@ -5,6 +5,8 @@ import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
 /** Minimal Stripe object shapes used by billing. */
 export type StripeCustomer = {
   readonly id: string;
+  readonly name?: string | null;
+  readonly email?: string | null;
   readonly metadata?: Readonly<Record<string, string>> | null;
 };
 
@@ -17,10 +19,80 @@ export type StripePortalSession = {
   readonly url?: string | null;
 };
 
+export type StripeSubscriptionItem = {
+  readonly id: string;
+  readonly quantity?: number | null;
+  readonly price?: { readonly id?: string } | null;
+};
+
 export type StripeSubscription = {
   readonly id: string;
   readonly status?: string;
   readonly cancel_at_period_end?: boolean;
+  readonly metadata?: Readonly<Record<string, string>> | null;
+  readonly customer?: string | { readonly id?: string } | null;
+  readonly items?: { readonly data: ReadonlyArray<StripeSubscriptionItem> } | null;
+};
+
+/** A hosted Checkout Session. Only the fields the redirect needs are typed. */
+export type StripeCheckoutSession = {
+  readonly id: string;
+  readonly url?: string | null;
+  readonly mode?: string | null;
+  readonly status?: string | null;
+  readonly payment_status?: string | null;
+  readonly customer?: string | { readonly id?: string } | null;
+  readonly subscription?: string | { readonly id?: string } | null;
+  readonly client_reference_id?: string | null;
+  readonly metadata?: Readonly<Record<string, string>> | null;
+};
+
+export type StripeInvoiceStatus = "draft" | "open" | "paid" | "uncollectible" | "void";
+
+/** The invoice fields rendered in the dashboard. */
+export type StripeInvoice = {
+  readonly id: string;
+  readonly number?: string | null;
+  readonly status?: StripeInvoiceStatus | null;
+  readonly total?: number | null;
+  readonly amount_due?: number | null;
+  readonly amount_paid?: number | null;
+  readonly currency?: string | null;
+  readonly created?: number | null;
+  readonly period_start?: number | null;
+  readonly period_end?: number | null;
+  readonly hosted_invoice_url?: string | null;
+  readonly invoice_pdf?: string | null;
+};
+
+export type StripeCheckoutSessionParams = {
+  readonly mode: "subscription";
+  readonly success_url: string;
+  readonly cancel_url: string;
+  readonly customer?: string;
+  readonly client_reference_id?: string;
+  readonly line_items: ReadonlyArray<{ readonly price: string; readonly quantity: number }>;
+  readonly metadata?: Readonly<Record<string, string>>;
+  readonly subscription_data?: {
+    readonly trial_period_days?: number;
+    readonly metadata?: Readonly<Record<string, string>>;
+  };
+  readonly allow_promotion_codes?: boolean;
+};
+
+export type StripeSubscriptionUpdateParams = {
+  readonly cancel_at_period_end?: boolean;
+  /** Existing items only; a price change is never performed by this client. */
+  readonly items?: ReadonlyArray<{ readonly id: string; readonly quantity: number }>;
+  readonly proration_behavior?: "create_prorations" | "none" | "always_invoice";
+  readonly metadata?: Readonly<Record<string, string>>;
+};
+
+export type StripeInvoiceListParams = {
+  readonly customer: string;
+  readonly limit?: number;
+  readonly status?: StripeInvoiceStatus;
+  readonly starting_after?: string;
 };
 
 export type StripeClientConfig = {
@@ -44,6 +116,15 @@ export interface StripeClientLike {
       readonly email?: string;
       readonly metadata?: Readonly<Record<string, string>>;
     }) => Promise<StripeCustomer>;
+    readonly update: (
+      id: string,
+      params: {
+        readonly name?: string;
+        readonly email?: string;
+        readonly metadata?: Readonly<Record<string, string>>;
+      },
+    ) => Promise<StripeCustomer>;
+    readonly retrieve: (id: string) => Promise<StripeCustomer>;
     readonly search: (params: {
       readonly query: string;
       readonly limit?: number;
@@ -61,16 +142,24 @@ export interface StripeClientLike {
       }) => Promise<StripePortalSession>;
     };
   };
+  readonly checkout: {
+    readonly sessions: {
+      readonly create: (params: StripeCheckoutSessionParams) => Promise<StripeCheckoutSession>;
+    };
+  };
+  readonly invoices: {
+    readonly list: (params: StripeInvoiceListParams) => Promise<StripeList<StripeInvoice>>;
+  };
   /**
-   * Subscription lifecycle used by tenant teardown. Kept minimal: cancel is
-   * idempotent at the Stripe API level and never bills again.
+   * Subscription lifecycle used by tenant teardown and seat reconciliation.
+   * Cancel is idempotent at the Stripe API level and never bills again.
    */
   readonly subscriptions: {
     readonly retrieve: (id: string) => Promise<StripeSubscription>;
     readonly cancel: (id: string) => Promise<StripeSubscription>;
     readonly update: (
       id: string,
-      params: { readonly cancel_at_period_end?: boolean },
+      params: StripeSubscriptionUpdateParams,
     ) => Promise<StripeSubscription>;
   };
 }
@@ -154,9 +243,10 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /**
  * A very small Stripe REST client.
  *
- * The app calls customer create/search/list, a billing portal session, and the
- * subscription cancel used by tenant teardown, and verifies webhooks. The
- * official SDK brings its HTTP
+ * The app calls customer create/update/search/list, a billing portal session,
+ * Checkout Session creation, invoices, and the subscription cancel/quantity
+ * update used by tenant teardown and seat reconciliation, and verifies
+ * webhooks. The official SDK brings its HTTP
  * stack, form encoder, event types and retry machinery into the Worker bundle
  * (~530KB), which is most of the remaining removable code. This client keeps
  * the observable behaviour: bearer auth, form encoding, bounded retries for
@@ -266,6 +356,14 @@ export class HttpStripeClient implements StripeClientLike {
         "/v1/customers",
         withMetadata(paramPairs(["name", params.name], ["email", params.email]), params.metadata),
       ),
+    update: (id: string, params: Parameters<StripeClientLike["customers"]["update"]>[1]) =>
+      this.#request<StripeCustomer>(
+        "POST",
+        `/v1/customers/${encodeURIComponent(id)}`,
+        withMetadata(paramPairs(["name", params.name], ["email", params.email]), params.metadata),
+      ),
+    retrieve: (id: string) =>
+      this.#request<StripeCustomer>("GET", `/v1/customers/${encodeURIComponent(id)}`),
     search: (params: Parameters<StripeClientLike["customers"]["search"]>[0]) =>
       this.#request<StripeList<StripeCustomer>>(
         "GET",
@@ -291,6 +389,63 @@ export class HttpStripeClient implements StripeClientLike {
     },
   };
 
+  readonly checkout = {
+    sessions: {
+      create: (params: StripeCheckoutSessionParams) => {
+        const search = withMetadata(
+          paramPairs(
+            ["mode", params.mode],
+            ["success_url", params.success_url],
+            ["cancel_url", params.cancel_url],
+            ["customer", params.customer],
+            ["client_reference_id", params.client_reference_id],
+            [
+              "allow_promotion_codes",
+              params.allow_promotion_codes === undefined
+                ? undefined
+                : params.allow_promotion_codes
+                  ? "true"
+                  : "false",
+            ],
+          ),
+          params.metadata,
+        );
+
+        params.line_items.forEach((item, index) => {
+          search.set(`line_items[${index}][price]`, item.price);
+          search.set(`line_items[${index}][quantity]`, String(item.quantity));
+        });
+
+        const subscription = params.subscription_data;
+
+        if (subscription?.trial_period_days !== undefined)
+          search.set(
+            "subscription_data[trial_period_days]",
+            String(subscription.trial_period_days),
+          );
+
+        for (const [key, value] of Object.entries(subscription?.metadata ?? {}))
+          search.set(`subscription_data[metadata][${key}]`, value);
+
+        return this.#request<StripeCheckoutSession>("POST", "/v1/checkout/sessions", search);
+      },
+    },
+  };
+
+  readonly invoices = {
+    list: (params: StripeInvoiceListParams) =>
+      this.#request<StripeList<StripeInvoice>>(
+        "GET",
+        "/v1/invoices",
+        paramPairs(
+          ["customer", params.customer],
+          ["limit", params.limit],
+          ["status", params.status],
+          ["starting_after", params.starting_after],
+        ),
+      ),
+  };
+
   readonly subscriptions = {
     retrieve: (id: string) =>
       this.#request<StripeSubscription>("GET", `/v1/subscriptions/${encodeURIComponent(id)}`),
@@ -298,19 +453,33 @@ export class HttpStripeClient implements StripeClientLike {
     // object readable with status `canceled`, so a retried teardown converges.
     cancel: (id: string) =>
       this.#request<StripeSubscription>("DELETE", `/v1/subscriptions/${encodeURIComponent(id)}`),
-    update: (id: string, params: Parameters<StripeClientLike["subscriptions"]["update"]>[1]) =>
-      this.#request<StripeSubscription>(
+    update: (id: string, params: StripeSubscriptionUpdateParams) => {
+      const search = withMetadata(
+        paramPairs(
+          [
+            "cancel_at_period_end",
+            params.cancel_at_period_end === undefined
+              ? undefined
+              : params.cancel_at_period_end
+                ? "true"
+                : "false",
+          ],
+          ["proration_behavior", params.proration_behavior],
+        ),
+        params.metadata,
+      );
+
+      params.items?.forEach((item, index) => {
+        search.set(`items[${index}][id]`, item.id);
+        search.set(`items[${index}][quantity]`, String(item.quantity));
+      });
+
+      return this.#request<StripeSubscription>(
         "POST",
         `/v1/subscriptions/${encodeURIComponent(id)}`,
-        paramPairs([
-          "cancel_at_period_end",
-          params.cancel_at_period_end === undefined
-            ? undefined
-            : params.cancel_at_period_end
-              ? "true"
-              : "false",
-        ]),
-      ),
+        search,
+      );
+    },
   };
 }
 

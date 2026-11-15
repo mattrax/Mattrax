@@ -114,6 +114,31 @@ DELETE /api/v1/account/api-tokens/:tokenId
 
 Scopes are `read` and `write`. Tokens are shown once and stored as a SHA-256 hash.
 
+## Appearance
+
+**Account → Appearance** picks the colour theme: **System** (the default, follows
+`prefers-color-scheme` and updates live when the OS changes), **Light** or **Dark**.
+The choice applies immediately to the dashboard, the landing page, the auth pages and
+the public enrollment page (which keeps its own light card by design).
+
+The preference is stored per account in this browser and mirrored to a device-wide
+key so pre-auth pages and the very first paint use the same theme. It is resolved by
+an inline script in `<head>` before the stylesheet paints, so there is no flash of the
+wrong theme, and `color-scheme` plus the mobile `theme-color` follow it. Changing the
+theme in one tab updates the others through the same `storage` event.
+
+Cross-device sync is not implemented yet: the preference lives in this browser's
+storage, keyed by user id, so signing in on a second device starts from `system`.
+Persisting it on the account needs a `user` column and a `PATCH /v1/me` field; that is
+deliberately deferred so this change needs no migration.
+
+The palette is a semantic token layer over [Radix Colors](https://www.radix-ui.com/colors):
+components use `bg-card`, `text-muted-foreground` and `bg-brand-solid`, and never a raw
+colour. Text contrast is checked at WCAG AA in both themes, `prefers-contrast: more`
+re-points borders and secondary text at Radix's stronger steps, and `apps/web/src/styles/theme-literals.test.ts`
+fails the build if a component reintroduces a `white/[0.06]`, `#rrggbb` or `rgb()`
+literal.
+
 ## Tenant export and import
 
 Export a versioned JSON bundle:

@@ -159,6 +159,23 @@ complete report for that source and does remove its previous rows.
 
 The device page marks the list stale after seven days without a report.
 
+## Application delivery
+
+A Windows application catalogue entry installs an MSI through the native MDM channel.
+`bundleId` must be the MSI ProductCode (GUID) and `manifestUrl` the HTTPS URL of the signed
+`.msi`. The install endpoint queues a SyncML `Exec` on:
+
+```text
+./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/{ProductCode}/DownloadInstall
+```
+
+The `Data` is an `MsiInstallJob` document with the download URL, SHA-256 digest and
+`/quiet /norestart` enforcement. The command result carries the msiexec HRESULT; the daily
+`EnterpriseDesktopAppManagement/MSI` inventory reports the product, its status and managed
+state. An `.exe`/`.intunewin` (Intune Management Extension) or a Store/MSIX package is
+reported as unsupported rather than queued. See
+[Applications](/manage/applications#windows).
+
 Autopilot metadata is separate and still available from the Autopilot pages.
 
 ## Policy delivery
@@ -232,7 +249,8 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 - Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
   documented as mobile-only), so storage health may be unavailable for some laptops.
 - Inventory depends on the device answering `Get`; no push channel wakes it early.
-- No remote lock, shutdown, app install or per-device policy push.
+- No remote lock, shutdown or per-device policy push.
+- Only MSI application installs are supported; `.exe`/`.intunewin` and Store apps are not.
 - Device-initiated unenroll is recognised from the OMA-DM `1226` Generic Alert. A device
   that is wiped or removed from management without sending it stays `enrolled` until an
   operator deletes or unenrolls it.

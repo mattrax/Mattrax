@@ -62,7 +62,7 @@ export default function DashboardRedirectPage() {
 
       if (current && (tenants?.length ?? 0) > 0) return;
       const tenant = tenants?.find((item) => item.id === tenantId()) ?? tenants?.[0];
-      navigate(tenant ? `/t/${tenant.id}` : "/tenants/new", { replace: true });
+      navigate(tenant ? `/t/${tenant.slug || tenant.id}` : "/tenants/new", { replace: true });
     },
   );
 
@@ -105,7 +105,7 @@ export default function DashboardRedirectPage() {
       {(current) => (
         <Page class="max-w-[640px]">
           <Panel class="overflow-hidden">
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(70%_100%_at_30%_0%,rgba(91,100,255,0.16),transparent_75%)]" />
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(70%_100%_at_30%_0%,var(--brand-glow),transparent_75%)]" />
             <div class="relative p-5 sm:p-6">
               <span class="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand">
                 <Sparkles class="size-3" />

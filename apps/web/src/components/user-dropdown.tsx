@@ -41,9 +41,7 @@ export function UserDropdown(props: UserDropdownProps) {
       when={!props.pending}
       fallback={
         <div
-          class={
-            props.placeholderClass ?? "size-7 rounded-full bg-white/[0.08] opacity-50 animate-pulse"
-          }
+          class={props.placeholderClass ?? "size-7 rounded-full bg-hover opacity-50 animate-pulse"}
         />
       }
     >
@@ -55,7 +53,7 @@ export function UserDropdown(props: UserDropdownProps) {
               as="a"
               href={props.signInHref}
               size="sm"
-              class="h-8 rounded-md bg-foreground px-3 text-[12.5px] !text-[#08080a] hover:bg-foreground/90"
+              class="h-8 rounded-md bg-foreground px-3 text-[12.5px] text-primary-foreground hover:bg-foreground/90"
             >
               Sign in
             </Button>
@@ -67,13 +65,16 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuTrigger
               class={
                 props.triggerClass ??
-                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.1] transition-shadow hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border transition-shadow hover:ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               }
               aria-label={
                 user().image ? "Account menu" : `${getInitials(user().name ?? "?")}, account menu`
               }
             >
-              <Show when={user().image} fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}>
+              <Show
+                when={user().image}
+                fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}
+              >
                 <img src={user().image!} alt="" class="h-full w-full object-cover" />
               </Show>
             </DropdownMenuTrigger>
@@ -81,7 +82,7 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuContent
               class={
                 props.contentClass ??
-                "w-[248px] overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]"
+                "w-[248px] overflow-hidden rounded-lg border border-border bg-popover p-0.5 shadow-[var(--shadow-popover)]"
               }
             >
               <DropdownMenuGroup>
@@ -98,14 +99,14 @@ export function UserDropdown(props: UserDropdownProps) {
                   <DropdownMenuItem
                     as="a"
                     href="/dashboard"
-                    class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-white/[0.07]"
+                    class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-hover"
                   >
                     Dashboard
                   </DropdownMenuItem>
                 </Show>
                 <DropdownMenuItem
                   onSelect={() => props.onSignOut()}
-                  class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-white/[0.07]"
+                  class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-hover"
                 >
                   <LogOut class="mr-2 size-4" />
                   Sign out

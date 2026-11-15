@@ -37,7 +37,7 @@ function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: 
       <For each={props.widgets}>
         {(widget) => (
           <article
-            class={`dashboard-widget dashboard-widget-${widget.type} flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]`}
+            class={`dashboard-widget dashboard-widget-${widget.type} flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)]`}
             style={{
               "grid-column": `${widget.x + 1} / span ${widget.w}`,
               "grid-row": `${widget.y + 1} / span ${widget.h}`,
@@ -176,7 +176,7 @@ function LoadedOverview(props: {
       <Show
         when={(dashboard.data?.widgets.length ?? 0) > 0}
         fallback={
-          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-6 text-center">
+          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface px-6 text-center">
             <p class="text-[13px] font-medium">This dashboard is empty</p>
             <p class="mt-1 text-[12px] text-muted-foreground">
               Add widgets from the dashboard editor to share tables, charts and notes.
@@ -220,7 +220,7 @@ function PreviewOverview(props: {
         error={props.error}
       />
       <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
-      <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-white/[0.09] bg-white/[0.01] px-3.5 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-surface px-3.5 py-3">
         <p class="text-[12px] text-muted-foreground">
           This is the built-in overview. Create a dashboard to add widgets, write team notes and
           share a layout with everyone.

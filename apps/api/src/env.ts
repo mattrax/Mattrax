@@ -105,6 +105,26 @@ const ApiEnvSchema = Schema.Struct({
    * never sent the follow-up, so enabling it does not mail existing customers.
    */
   MATTRAX_ONBOARDING_SINCE: Schema.optional(nonEmptyString),
+  /**
+   * Outbound-email transport for deployments without the Cloudflare
+   * `send_email` binding: `resend`, `postmark`, `smtp` (mail relay),
+   * `cloudflare` or `disabled`.
+   */
+  MAIL_TRANSPORT: Schema.optional(nonEmptyString),
+  /** Verified sender, e.g. `Mattrax <notifications@example.com>`. */
+  MAIL_FROM: Schema.optional(nonEmptyString),
+  /** Base URL of the self-hosted `apps/mail-relay` SMTP sidecar. */
+  MAIL_RELAY_URL: Schema.optional(nonEmptyString),
+  /** Shared bearer secret for the relay; at least 16 characters. */
+  MAIL_RELAY_SECRET: Schema.optional(nonEmptyString),
+  RESEND_API_KEY: Schema.optional(nonEmptyString),
+  POSTMARK_SERVER_TOKEN: Schema.optional(nonEmptyString),
+  /** Postmark message stream; defaults to `outbound`. */
+  MAIL_POSTMARK_STREAM: Schema.optional(nonEmptyString),
+  /** Outbox deliveries in flight per maintenance run. Defaults to 4. */
+  MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: Schema.optional(Schema.String),
+  /** Attempts before queued mail is permanently failed. Defaults to 5. */
+  MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: Schema.optional(Schema.String),
   /** Disable the scheduled one-week follow-up with `false`, `0` or `off`. */
   MAINTENANCE_ONBOARDING_EMAILS: Schema.optional(nonEmptyString),
   /**
@@ -201,6 +221,15 @@ const RawApiEnvSchema = Schema.Struct({
   MATTRAX_ONBOARDING_REPLY_TO: optionalString,
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
   MATTRAX_ONBOARDING_SINCE: optionalString,
+  MAIL_TRANSPORT: optionalString,
+  MAIL_FROM: optionalString,
+  MAIL_RELAY_URL: optionalString,
+  MAIL_RELAY_SECRET: optionalString,
+  RESEND_API_KEY: optionalString,
+  POSTMARK_SERVER_TOKEN: optionalString,
+  MAIL_POSTMARK_STREAM: optionalString,
+  MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: optionalString,
+  MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: optionalString,
   MAINTENANCE_ONBOARDING_EMAILS: optionalString,
   MATTRAX_EMAIL_DISABLED: optionalString,
   MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: optionalString,
@@ -270,6 +299,19 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MATTRAX_ONBOARDING_REPLY_TO: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_REPLY_TO),
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL),
   MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
+  MAIL_TRANSPORT: emptyStringAsUndefined(rawEnv.MAIL_TRANSPORT),
+  MAIL_FROM: emptyStringAsUndefined(rawEnv.MAIL_FROM),
+  MAIL_RELAY_URL: emptyStringAsUndefined(rawEnv.MAIL_RELAY_URL),
+  MAIL_RELAY_SECRET: emptyStringAsUndefined(rawEnv.MAIL_RELAY_SECRET),
+  RESEND_API_KEY: emptyStringAsUndefined(rawEnv.RESEND_API_KEY),
+  POSTMARK_SERVER_TOKEN: emptyStringAsUndefined(rawEnv.POSTMARK_SERVER_TOKEN),
+  MAIL_POSTMARK_STREAM: emptyStringAsUndefined(rawEnv.MAIL_POSTMARK_STREAM),
+  MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY,
+  ),
+  MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS,
+  ),
   MAINTENANCE_ONBOARDING_EMAILS: emptyStringAsUndefined(rawEnv.MAINTENANCE_ONBOARDING_EMAILS),
   MATTRAX_EMAIL_DISABLED: emptyStringAsUndefined(rawEnv.MATTRAX_EMAIL_DISABLED),
   MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: emptyStringAsUndefined(

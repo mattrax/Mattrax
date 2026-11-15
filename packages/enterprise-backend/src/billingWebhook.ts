@@ -315,6 +315,65 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
     return { organizationId: organization.id, stripeSubscriptionId };
   });
 
+type ApplyCheckoutSessionInput = {
+  readonly db: BillingDb;
+  readonly session: any;
+  readonly now: Date;
+};
+
+/**
+ * A completed Checkout Session links the Stripe customer to the tenant and
+ * records a provisional subscription row.
+ *
+ * `checkout.session.completed` and `customer.subscription.created` describe
+ * the same purchase. The session event often arrives first and carries the
+ * metadata the tenant was created with, so it establishes the link; the
+ * subscription event then fills in period dates and the real status. Both
+ * writes are upserts keyed by the Stripe subscription id, so the order does not
+ * matter and the event ledger still dedupes a redelivery.
+ */
+const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
+  Effect.gen(function* () {
+    const session = input.session;
+
+    if (session.mode !== "subscription") return { ignored: true as const };
+
+    const stripeSubscriptionId = idOf(session.subscription);
+
+    if (!stripeSubscriptionId)
+      return yield* Effect.fail(fail("Completed Checkout Session has no subscription"));
+
+    const organizationId = organizationIdFromMetadata(session.metadata);
+
+    const clientReference = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.String)(session.client_reference_id),
+    )?.trim();
+
+    const referenceId = organizationId ?? clientReference ?? undefined;
+
+    const plan = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.String)(session.metadata?.plan),
+    )?.trim();
+
+    const metadata: Record<string, string> = {};
+
+    if (referenceId) metadata.organizationId = referenceId;
+
+    if (plan) metadata.plan = plan;
+
+    return yield* applySubscription({
+      db: input.db,
+      subscription: {
+        id: stripeSubscriptionId,
+        customer: session.customer,
+        status: session.payment_status === "unpaid" ? "incomplete" : "active",
+        metadata,
+        cancel_at_period_end: false,
+      },
+      now: input.now,
+    });
+  });
+
 export type ProcessStripeWebhookInput = BillingWebhookConfig & {
   readonly payload: string;
   readonly signature: string | null;
@@ -360,6 +419,8 @@ const applyVerifiedEvent = (
   now: Date,
 ) => {
   switch (event.type) {
+    case "checkout.session.completed":
+      return applyCheckoutSession({ db: input.db, session: event.data.object, now });
     case "customer.subscription.created":
     case "customer.subscription.updated":
       return applySubscription({

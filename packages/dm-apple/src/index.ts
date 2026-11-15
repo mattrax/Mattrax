@@ -10,6 +10,8 @@ export * from "./enrollment.js";
 
 export * from "./tokens.js";
 
+export * from "./applications.js";
+
 export * from "./service.js";
 
 export * from "./handlers.js";

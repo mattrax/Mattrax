@@ -15,11 +15,13 @@ import {
   deviceCommandExpiresAt,
   extendedCommandDeadline,
   installApplicationTarget,
+  isApplicationInstallRequest,
   planCommandDelivery,
   planCommandDeliveryBatch,
   planCommandQueueing,
   reconcileDeviceCommands,
   shouldRetryInstall,
+  shouldRetryInstallBundle,
   supersededRequestTypes,
   type CommandRow,
 } from "../commands.js";
@@ -442,12 +444,87 @@ describe("install retry budget", () => {
     expect(installApplicationTarget({ ManifestURL: "https://example.test/app.plist" })).toEqual({
       manifestUrl: "https://example.test/app.plist",
       storeId: undefined,
+      bundleId: undefined,
+      assetUrl: undefined,
     });
     expect(installApplicationTarget({ iTunesStoreID: 42 })).toEqual({
       manifestUrl: undefined,
       storeId: "42",
+      bundleId: undefined,
+      assetUrl: undefined,
     });
-    expect(installApplicationTarget(null)).toEqual({});
+    expect(
+      installApplicationTarget({
+        Manifest: {
+          items: [
+            {
+              assets: [{ kind: "software-package", url: "https://mdm.test/asset" }],
+              metadata: { "bundle-identifier": "com.example.app", "bundle-version": "1.0" },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      manifestUrl: undefined,
+      storeId: undefined,
+      bundleId: "com.example.app",
+      assetUrl: "https://mdm.test/asset",
+    });
+    expect(installApplicationTarget(null)).toEqual({
+      manifestUrl: undefined,
+      storeId: undefined,
+      bundleId: undefined,
+      assetUrl: undefined,
+    });
+  });
+
+  it("treats both Apple install commands as application installs", () => {
+    expect(isApplicationInstallRequest("InstallApplication")).toBe(true);
+    expect(isApplicationInstallRequest("InstallEnterpriseApplication")).toBe(true);
+    expect(isApplicationInstallRequest("InstallProfile")).toBe(false);
+    expect(deviceCommandBudget("InstallEnterpriseApplication")).toBe(24 * 60 * 60 * 1000);
+    expect(supersededRequestTypes("EraseDevice")).toContain("InstallEnterpriseApplication");
+  });
+
+  it("bounds enterprise-manifest retries by bundle id", () => {
+    const now = at("2026-01-01T12:00:00.000Z");
+
+    const payload = {
+      Manifest: {
+        items: [
+          {
+            assets: [{ kind: "software-package", url: "https://mdm.test/asset" }],
+            metadata: { "bundle-identifier": "com.example.app", "bundle-version": "1.0" },
+          },
+        ],
+      },
+    };
+
+    const attempt = (daysAgo: number) => ({
+      requestType: "InstallEnterpriseApplication",
+      payload,
+      createdAt: new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000),
+    });
+
+    expect(shouldRetryInstallBundle([], { bundleId: "com.example.app", now })).toBe(true);
+    expect(
+      shouldRetryInstallBundle([attempt(0), attempt(0)], {
+        bundleId: "com.example.app",
+        now,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetryInstallBundle([attempt(0), attempt(0), attempt(0)], {
+        bundleId: "com.example.app",
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRetryInstallBundle([attempt(2), attempt(2), attempt(2)], {
+        bundleId: "com.example.app",
+        now,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -18,7 +18,7 @@ export function GlobalErrorBanner() {
             <div
               role="alert"
               aria-live="assertive"
-              class="pointer-events-auto flex w-full max-w-lg items-start gap-2.5 rounded-xl border border-destructive/30 bg-[#201416] p-3.5 text-foreground shadow-2xl shadow-black/60"
+              class="pointer-events-auto flex w-full max-w-lg items-start gap-2.5 rounded-xl border border-destructive/30 bg-card p-3.5 text-foreground shadow-[var(--shadow-popover)]"
             >
               <CircleAlert class="mt-0.5 size-4 shrink-0 text-destructive" />
               <div class="min-w-0 flex-1">
@@ -30,7 +30,7 @@ export function GlobalErrorBanner() {
               <button
                 type="button"
                 aria-label="Dismiss error"
-                class="rounded p-1 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                class="rounded p-1 text-muted-foreground hover:bg-hover hover:text-foreground"
                 onClick={dismissGlobalError}
               >
                 <X class="size-3.5" />

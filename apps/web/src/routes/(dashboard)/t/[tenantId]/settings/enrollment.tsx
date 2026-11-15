@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { PasswordInput } from "~/components/ui/password-input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
@@ -185,13 +186,13 @@ export default function EnrollmentSettingsPage() {
           </div>
         </div>
 
-        <div class="mt-4 flex flex-col items-start gap-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center">
+        <div class="mt-4 flex flex-col items-start gap-4 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center">
           <Show when={enrollment.data}>
             <QrCode
               value={url()}
               label="QR code for the enrollment link"
               size={132}
-              class="shrink-0 rounded-lg bg-white p-2"
+              class="shrink-0 rounded-lg bg-card p-2"
             />
           </Show>
           <p class="max-w-sm text-xs leading-relaxed text-muted-foreground">
@@ -251,7 +252,7 @@ export default function EnrollmentSettingsPage() {
       </Show>
 
       <Panel title="Enrollment settings">
-        <fieldset disabled={!edit()} class="divide-y divide-white/[0.05] disabled:opacity-70">
+        <fieldset disabled={!edit()} class="divide-y divide-border disabled:opacity-70">
           <ToggleRow
             checked={enabled()}
             onChange={(value) => {
@@ -295,7 +296,7 @@ export default function EnrollmentSettingsPage() {
           </p>
         </Show>
 
-        <p class="mt-4 flex items-start gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs leading-relaxed text-muted-foreground">
+        <p class="mt-4 flex items-start gap-2 rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
           <Info class="mt-px size-3.5 shrink-0" />
           <span>
             Asset tags are set from a device's detail page, or supplied ahead of time with a CSV
@@ -305,8 +306,7 @@ export default function EnrollmentSettingsPage() {
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="Enrollment password" hint="Leave blank to allow open enrollment.">
-            <Input
-              type="password"
+            <PasswordInput
               value={code()}
               onInput={(e) => setCode(e.currentTarget.value)}
               placeholder="Optional password"
@@ -324,7 +324,7 @@ export default function EnrollmentSettingsPage() {
 
         <ErrorText error={save.error || reset.error} />
 
-        <div class="mt-4 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
           <Show
             when={writable()}
             fallback={
@@ -354,7 +354,7 @@ export default function EnrollmentSettingsPage() {
         title="SCEP identity"
         description="Each tenant has its own CA. Devices receive their management identity from it, and the enrollment profile is signed with it."
       >
-        <div class="divide-y divide-white/[0.05]">
+        <div class="divide-y divide-border">
           <ReadinessRow
             label="Tenant CA"
             value={scepCa.data?.configured ? "Created" : "Generated on first use"}
@@ -368,7 +368,7 @@ export default function EnrollmentSettingsPage() {
         </div>
 
         <Show when={scepCa.data?.configured}>
-          <dl class="mt-4 grid gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs sm:grid-cols-2">
+          <dl class="mt-4 grid gap-3 rounded-lg border border-border bg-surface p-3 text-xs sm:grid-cols-2">
             <div class="min-w-0">
               <dt class="text-muted-foreground">CA certificate</dt>
               <dd class="mt-0.5 truncate font-medium text-foreground">
@@ -425,13 +425,13 @@ export default function EnrollmentSettingsPage() {
         </div>
 
         <Show when={showCaImport()}>
-          <div class="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+          <div class="mt-4 space-y-3 border-t border-border pt-4">
             <Field
               label="CA certificate"
               hint="PEM encoded. The CA must permit certificate signing."
             >
               <textarea
-                class="min-h-24 w-full rounded-lg border border-input bg-white/[0.02] p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
                 aria-label="SCEP CA certificate PEM"
                 placeholder="-----BEGIN CERTIFICATE-----"
                 value={caCertificatePem()}
@@ -443,7 +443,7 @@ export default function EnrollmentSettingsPage() {
               hint="Unencrypted PKCS#8 PEM. It is sealed with the deployment secret before storage."
             >
               <textarea
-                class="min-h-24 w-full rounded-lg border border-input bg-white/[0.02] p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
                 aria-label="SCEP CA private key PEM"
                 placeholder="-----BEGIN PRIVATE KEY-----"
                 value={caPrivateKeyPem()}
@@ -459,7 +459,7 @@ export default function EnrollmentSettingsPage() {
 
         <ErrorText error={rotateCa.error || importCa.error} />
 
-        <div class="mt-4 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
           <Show
             when={writable()}
             fallback={
@@ -502,7 +502,7 @@ export default function EnrollmentSettingsPage() {
         title="Platform readiness"
         description="What is ready for each family of devices before they can enrol."
       >
-        <div class="divide-y divide-white/[0.05]">
+        <div class="divide-y divide-border">
           <ReadinessRow
             label="Apple push notifications"
             value={apns.data?.configured ? "Configured" : "Setup required"}
@@ -563,7 +563,7 @@ export default function EnrollmentSettingsPage() {
             </p>
           }
         >
-          <ul class="divide-y divide-white/[0.05]">
+          <ul class="divide-y divide-border">
             <For each={preRegistrations.data?.rows.slice(0, 5) ?? []}>
               {(row) => (
                 <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:px-5">
@@ -586,7 +586,7 @@ export default function EnrollmentSettingsPage() {
             </For>
           </ul>
           <Show when={(preRegistrations.data?.rows.length ?? 0) > 5}>
-            <p class="border-t border-white/[0.05] px-4 py-2.5 text-xs text-muted-foreground sm:px-5">
+            <p class="border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-5">
               Showing 5 of {preRegistrations.data?.rows.length} pre-registrations. Import more or
               manage devices from the Devices page.
             </p>
@@ -620,7 +620,7 @@ export default function EnrollmentSettingsPage() {
             </p>
           }
         >
-          <ul class="divide-y divide-white/[0.05]">
+          <ul class="divide-y divide-border">
             <For each={attempts.data?.attempts ?? []}>
               {(attempt) => (
                 <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:px-5">
@@ -707,7 +707,7 @@ const formatAttemptTime = (value: string) => {
 };
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",
@@ -785,11 +785,11 @@ function ToggleRow(props: {
         />
         <span
           aria-hidden="true"
-          class="h-5 w-9 rounded-full border border-white/[0.12] bg-white/[0.08] transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
+          class="h-5 w-9 rounded-full border border-border bg-hover transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand-solid peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
         />
         <span
           aria-hidden="true"
-          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.4)] transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
+          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-card shadow-sm transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
         />
       </span>
     </label>

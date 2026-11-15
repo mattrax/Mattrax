@@ -289,6 +289,31 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
+  apps/cli:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.1.2(effect@4.1.2)(redis@6.3.1(@opentelemetry/api@1.10.0))
+      '@mattrax/enterprise-domain':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-domain
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.2
+      yaml:
+        specifier: ^2.8.3
+        version: 2.8.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
   apps/mdm-compliance:
     dependencies:
       '@effect/platform-node':

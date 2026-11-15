@@ -215,7 +215,7 @@ export default function PolicyAssignmentsPage() {
 
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
 
-      <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
+      <div class="rounded-lg border border-border bg-surface p-4">
         <p class="text-[13px] font-semibold text-foreground">Precedence</p>
         <ol class="mt-1.5 list-decimal space-y-0.5 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
           <For each={precedence}>{(item) => <li>{item}</li>}</For>
@@ -267,7 +267,7 @@ export default function PolicyAssignmentsPage() {
                   <For each={value().groups}>
                     {(group) => (
                       <a
-                        class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/15 px-2.5 py-2 text-[13px] transition-colors hover:border-white/[0.12] hover:bg-muted/40"
+                        class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/15 px-2.5 py-2 text-[13px] transition-colors hover:border-input hover:bg-muted/40"
                         href={`/t/${params.tenantId}/groups/${group.id}`}
                       >
                         <span class="min-w-0 truncate">{group.name}</span>

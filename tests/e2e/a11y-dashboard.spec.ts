@@ -107,7 +107,7 @@ test.describe("dashboard accessibility", () => {
 
   test("authenticated pages have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Tenant");
-    const base = `/t/${tenant.id}`;
+    const base = `/t/${tenant.slug}`;
 
     // Seed every list surface so the scans exercise real rows, row links and
     // the bulk action bar instead of only empty states.
@@ -153,7 +153,7 @@ test.describe("dashboard accessibility", () => {
 
   test("overlay open states have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Overlays");
-    const base = `/t/${tenant.id}`;
+    const base = `/t/${tenant.slug}`;
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
@@ -265,7 +265,7 @@ test.describe("dashboard accessibility", () => {
       .getByRole("navigation", { name: "Primary" })
       .getByRole("link", { name: "Policies", exact: true })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/policies$`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/policies$`));
     await expect(page.locator("#main")).toBeFocused();
 
     // Selection changes are announced from the bulk action bar.

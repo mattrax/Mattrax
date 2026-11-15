@@ -9,7 +9,11 @@ const json = (body: Schema.Json, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-const signingHeader = (payload: string, secret: string, timestamp = Math.floor(Date.now() / 1000)) => {
+const signingHeader = (
+  payload: string,
+  secret: string,
+  timestamp = Math.floor(Date.now() / 1000),
+) => {
   const digest = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
 
   return `t=${timestamp},v1=${digest}`;
@@ -39,9 +43,7 @@ describe("HttpStripeClient", () => {
     const init = requests[0]!;
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer sk_test");
-    expect(new Headers(init.headers).get("content-type")).toBe(
-      "application/x-www-form-urlencoded",
-    );
+    expect(new Headers(init.headers).get("content-type")).toBe("application/x-www-form-urlencoded");
 
     const body = new URLSearchParams(String(init.body));
     expect(body.get("name")).toBe("Acme");
@@ -62,7 +64,10 @@ describe("HttpStripeClient", () => {
       },
     });
 
-    const result = await client.customers.search({ query: 'metadata["organizationId"]:"org_1"', limit: 1 });
+    const result = await client.customers.search({
+      query: 'metadata["organizationId"]:"org_1"',
+      limit: 1,
+    });
 
     expect(result.data).toHaveLength(1);
     expect(url).toContain("/v1/customers/search?");
@@ -104,6 +109,134 @@ describe("HttpStripeClient", () => {
       param: "name",
       statusCode: 400,
     });
+  });
+});
+
+describe("HttpStripeClient billing operations", () => {
+  const recordingClient = () => {
+    const calls: Array<{ url: string; method: string; body: string }> = [];
+
+    const client = new HttpStripeClient("sk_test", {
+      host: "https://stripe.test",
+      fetch: async (input, init) => {
+        calls.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: String(init?.body ?? ""),
+        });
+
+        return json({ id: "obj_1" });
+      },
+    });
+
+    return { client, calls };
+  };
+
+  it("renames and retrieves a customer", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.customers.update("cus_1", { name: "Acme Holdings" });
+    await client.customers.retrieve("cus_1");
+
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: "https://stripe.test/v1/customers/cus_1",
+    });
+    expect(new URLSearchParams(calls[0]!.body).get("name")).toBe("Acme Holdings");
+    expect(calls[1]).toMatchObject({
+      method: "GET",
+      url: "https://stripe.test/v1/customers/cus_1",
+    });
+  });
+
+  it("creates a subscription Checkout Session with metadata and a trial", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.checkout.sessions.create({
+      mode: "subscription",
+      customer: "cus_1",
+      client_reference_id: "org-1",
+      success_url: "https://app.test/success",
+      cancel_url: "https://app.test/cancel",
+      line_items: [{ price: "price_device", quantity: 3 }],
+      metadata: { organizationId: "org-1", plan: "device" },
+      subscription_data: {
+        trial_period_days: 14,
+        metadata: { organizationId: "org-1" },
+      },
+      allow_promotion_codes: true,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: "https://stripe.test/v1/checkout/sessions",
+    });
+
+    const body = new URLSearchParams(calls[0]!.body);
+
+    expect(body.get("mode")).toBe("subscription");
+    expect(body.get("customer")).toBe("cus_1");
+    expect(body.get("client_reference_id")).toBe("org-1");
+    expect(body.get("success_url")).toBe("https://app.test/success");
+    expect(body.get("cancel_url")).toBe("https://app.test/cancel");
+    expect(body.get("line_items[0][price]")).toBe("price_device");
+    expect(body.get("line_items[0][quantity]")).toBe("3");
+    expect(body.get("metadata[organizationId]")).toBe("org-1");
+    expect(body.get("metadata[plan]")).toBe("device");
+    expect(body.get("subscription_data[trial_period_days]")).toBe("14");
+    expect(body.get("subscription_data[metadata][organizationId]")).toBe("org-1");
+    expect(body.get("allow_promotion_codes")).toBe("true");
+  });
+
+  it("updates an existing subscription item's quantity without proration", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.subscriptions.update("sub_1", {
+      items: [{ id: "si_1", quantity: 7 }],
+      proration_behavior: "none",
+    });
+
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: "https://stripe.test/v1/subscriptions/sub_1",
+    });
+
+    const body = new URLSearchParams(calls[0]!.body);
+
+    expect(body.get("items[0][id]")).toBe("si_1");
+    expect(body.get("items[0][quantity]")).toBe("7");
+    expect(body.get("proration_behavior")).toBe("none");
+    expect(body.has("cancel_at_period_end")).toBe(false);
+  });
+
+  it("lists a customer's invoices with filters", async () => {
+    let url = "";
+
+    const client = new HttpStripeClient("sk_test", {
+      host: "https://stripe.test",
+      fetch: async (input) => {
+        url = String(input);
+
+        return json({ data: [{ id: "in_1", status: "paid", total: 100 }], has_more: false });
+      },
+    });
+
+    const page = await client.invoices.list({
+      customer: "cus_1",
+      limit: 24,
+      status: "paid",
+      starting_after: "in_0",
+    });
+
+    expect(page.data[0]).toMatchObject({ id: "in_1", status: "paid" });
+
+    const params = new URL(url).searchParams;
+
+    expect(params.get("customer")).toBe("cus_1");
+    expect(params.get("limit")).toBe("24");
+    expect(params.get("status")).toBe("paid");
+    expect(params.get("starting_after")).toBe("in_0");
   });
 });
 
@@ -203,12 +336,7 @@ describe("verifyStripeSignature", () => {
     ];
 
     it.each(cases)("$name", async ({ header, secret: signingSecret, expected }) => {
-      const verification = verifyStripeSignature(
-        payload,
-        header,
-        signingSecret ?? secret,
-        nowMs,
-      );
+      const verification = verifyStripeSignature(payload, header, signingSecret ?? secret, nowMs);
 
       if (expected === "accept") {
         await expect(verification).resolves.toMatchObject({ id: "evt_1" });

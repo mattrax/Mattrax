@@ -13,7 +13,7 @@ const primaryNav = (page: import("@playwright/test").Page) =>
 test.describe("top navigation", () => {
   test("navigates between every tenant section", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Nav Tenant");
-    const base = `/t/${tenant.id}`;
+    const base = `/t/${tenant.slug}`;
 
     for (const [label, path, heading] of [
       ["Overview", base, "Fleet overview"],
@@ -54,7 +54,7 @@ test.describe("top navigation", () => {
     // would race that second redirect, so assert the outcome the user sees:
     // the unknown id is gone and a real tenant (or the dashboard) is shown.
     await expect(page).not.toHaveURL(/not-a-tenant/, { timeout: 20_000 });
-    await expect(page).toHaveURL(new RegExp(`/dashboard|/t/${tenant.id}`));
+    await expect(page).toHaveURL(new RegExp(`/dashboard|/t/${tenant.slug}`));
 
     // A missing tenant is a redirect, not an error state.
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -104,11 +104,11 @@ test.describe("top navigation", () => {
     const item = page.getByRole("menuitemradio", { name: /Second Tenant/i });
     await expect(item).toBeVisible();
     await item.click();
-    await expect(page).toHaveURL(new RegExp(`/t/${second.id}`));
+    await expect(page).toHaveURL(new RegExp(`/t/${second.slug}`));
 
     // The URL is the source of truth after a reload.
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/t/${second.id}`));
+    await expect(page).toHaveURL(new RegExp(`/t/${second.slug}`));
     const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.some((entry: { id: string }) => entry.id === tenant.id)).toBe(true);
     expect(me.tenants.some((entry: { id: string }) => entry.id === second.id)).toBe(true);
@@ -123,7 +123,7 @@ test.describe("top navigation", () => {
     await page.getByRole("button", { name: "Switch tenant" }).click();
     await expect(page.getByRole("menuitemradio", { name: /Remember One/i })).toBeVisible();
     await page.getByRole("menuitemradio", { name: /Remember One/i }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${first.id}`));
+    await expect(page).toHaveURL(new RegExp(`/t/${first.slug}`));
   });
 });
 
@@ -133,7 +133,7 @@ test.describe("mobile navigation", () => {
     const tenant = await bootstrapTenant(page, "Mobile Tenant");
     await expect(page.getByRole("button", { name: "Switch tenant" })).toBeVisible();
     await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/groups`));
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups`));
     await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();
   });
 });

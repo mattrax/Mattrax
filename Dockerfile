@@ -105,6 +105,9 @@ WORKDIR /app
 COPY --from=build --chown=1000:1000 /out/selfhost/ ./
 COPY --from=build --chown=1000:1000 /out/workers/ ./workers/
 COPY --from=build --chown=1000:1000 /out/migrations/ ./migrations/
+# The optional SMTP sidecar. It has no dependencies beyond Node, so the same
+# image runs it with `command: ["/app/mail-relay/index.mjs"]`.
+COPY --from=build --chown=1000:1000 /repo/apps/mail-relay/src/ ./mail-relay/
 
 # The `/data` volume and the home directory the `node` user expects. An empty
 # directory in the build stage is the only way to create one without a shell.

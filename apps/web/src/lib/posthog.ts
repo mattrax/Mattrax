@@ -1,6 +1,7 @@
 import { isServer } from "@solidjs/web";
 import { Schema } from "effect";
 import type posthogSdk from "posthog-js";
+import type { RaisedFailure } from "~/lib/errors";
 
 type PostHog = typeof posthogSdk;
 
@@ -227,6 +228,22 @@ export const syncPostHogTenant = (tenantId?: string | null): void => {
 export const capturePostHog = (event: string, properties?: Record<string, Schema.Json>): void => {
   void initPostHog().then((ready) => {
     if (ready) posthog?.capture(event, properties);
+  });
+};
+
+/**
+ * Report a caught render error.
+ *
+ * `capture_exceptions` only sees uncaught window errors; Solid error boundaries
+ * handle their error and never rethrow, so boundaries call this explicitly. The
+ * additional properties carry the boundary's support reference id.
+ */
+export const capturePostHogException = (
+  error: RaisedFailure,
+  properties?: Record<string, Schema.Json>,
+): void => {
+  void initPostHog().then((ready) => {
+    if (ready && posthog) posthog.captureException(error, properties);
   });
 };
 

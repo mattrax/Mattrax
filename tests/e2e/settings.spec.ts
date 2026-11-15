@@ -33,6 +33,34 @@ test.describe("tenant settings", () => {
     expect(invalidRange.status()).toBe(400);
   });
 
+  test("asks before discarding unsaved tenant profile edits", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Unsaved Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+
+    await page.getByLabel(/^Name/).fill("Unsaved Tenant Renamed");
+
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Devices" })
+      .click();
+    const dialog = page.getByRole("dialog", { name: /discard tenant changes/i });
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings$`));
+
+    await dialog.getByRole("button", { name: "Keep editing" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings$`));
+
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Devices" })
+      .click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Discard" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/devices$`));
+    await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+  });
+
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Settings Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);

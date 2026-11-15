@@ -15,6 +15,59 @@ const selectClass =
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
+const manifestSourceLabel = (platform: "apple" | "win" | "android"): string => {
+  switch (platform) {
+    case "apple":
+      return "Manifest URL";
+    case "win":
+      return "MSI URL";
+    default:
+      return "Managed Google Play";
+  }
+};
+
+const identityLabel = (platform: "apple" | "win" | "android"): string => {
+  switch (platform) {
+    case "android":
+      return "Managed Google Play package";
+    case "win":
+      return "MSI ProductCode";
+    default:
+      return "Bundle / package ID";
+  }
+};
+
+const identityHint = (platform: "apple" | "win" | "android"): string | undefined => {
+  switch (platform) {
+    case "win":
+      return "The MSI ProductCode (GUID) for Windows installs.";
+    case "android":
+      return "Managed Google Play package, for example com.google.android.gm.";
+    default:
+      return undefined;
+  }
+};
+
+const identityPlaceholder = (platform: "apple" | "win" | "android"): string =>
+  platform === "android" ? "com.google.android.gm" : "com.example.app";
+
+const installerLabel = (platform: "apple" | "win" | "android"): string =>
+  platform === "win" ? "MSI URL" : "Manifest URL";
+
+const installerHint = (platform: "apple" | "win" | "android"): string => {
+  switch (platform) {
+    case "apple":
+      return "An HTTPS itms-services manifest plist. Devices must be able to fetch it.";
+    case "win":
+      return "An HTTPS link to a signed .msi. Windows installs it through the MDM channel.";
+    default:
+      return "Managed Google Play installs by package name; this URL is metadata only.";
+  }
+};
+
+const installerPlaceholder = (platform: "apple" | "win" | "android"): string =>
+  platform === "win" ? "https://example.com/app.msi" : "https://example.com/app/manifest.plist";
+
 export default function NewApplicationPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -110,20 +163,18 @@ export default function NewApplicationPage() {
                       if (value !== undefined) setSource(value);
                     }}
                   >
-                    <option value="manifest">
-                      {platform() === "apple" ? "Manifest URL" : "Installer URL"}
-                    </option>
+                    <option value="manifest">{manifestSourceLabel(platform())}</option>
                     <Show when={platform() === "apple"}>
                       <option value="store">App Store ID</option>
                     </Show>
-                    <option value="upload">Uploaded file (metadata only)</option>
+                    <option value="upload">Uploaded file</option>
                   </select>
                 </Field>
-                <Field label="Bundle / package ID">
+                <Field label={identityLabel(platform())} hint={identityHint(platform())}>
                   <Input
                     value={bundleId()}
                     onInput={(e) => setBundleId(e.currentTarget.value)}
-                    placeholder="com.example.app"
+                    placeholder={identityPlaceholder(platform())}
                   />
                 </Field>
                 <Field label="Version">
@@ -135,34 +186,27 @@ export default function NewApplicationPage() {
                 </Field>
               </div>
               <Show when={source() === "manifest"}>
-                <Field
-                  label={platform() === "apple" ? "Manifest URL" : "Installer URL"}
-                  hint={
-                    platform() === "apple"
-                      ? "An HTTPS itms-services manifest plist. Devices must be able to fetch it."
-                      : "An HTTPS link to the installer. Devices must be able to fetch it."
-                  }
-                >
+                <Field label={installerLabel(platform())} hint={installerHint(platform())}>
                   <Input
                     value={manifestUrl()}
                     onInput={(e) => setManifestUrl(e.currentTarget.value)}
-                    placeholder="https://example.com/app/manifest.plist"
+                    placeholder={installerPlaceholder(platform())}
                   />
                 </Field>
               </Show>
               <Show when={source() === "store"}>
                 <Field
                   label="App Store ID"
-                  hint="Numeric iTunes Store ID. VPP licensing is not configured."
+                  hint="Numeric iTunes Store ID. Apps and Books licensing is used when a token exists."
                 >
                   <Input value={storeId()} onInput={(e) => setStoreId(e.currentTarget.value)} />
                 </Field>
               </Show>
               <Show when={source() === "upload"}>
-                <p class="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
-                  Save the application first, then upload the installer from its detail page.
-                  Uploads store the file for download; Apple installs still need a manifest or App
-                  Store ID.
+                <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                  Save the application first, then upload the installer from its detail page. Apple
+                  installs a signed .pkg from the upload; Windows and Android use the installer URL
+                  or the Managed Google Play package instead.
                 </p>
               </Show>
               <Field label="Notes" hint="Optional. Context for other admins.">
@@ -191,22 +235,22 @@ export default function NewApplicationPage() {
 
           <div class="space-y-5">
             <Panel>
-              <div class="flex size-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-muted-foreground">
+              <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
                 <Package class="size-4" />
               </div>
-              <h2 class="mt-3 text-[13px] font-semibold text-foreground">Delivery today</h2>
+              <h2 class="mt-3 text-[13px] font-semibold text-foreground">Delivery</h2>
               <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                Apple apps install on assigned devices from a manifest URL or App Store ID. Windows
-                and Android packages are catalogued and visible in the software inventory, but
-                automatic install is not implemented yet.
+                Apple installs a manifest, App Store or uploaded .pkg app on assigned Macs and
+                iPhones. Windows queues an MSI install through the MDM channel, and Android adds
+                assigned apps to the Managed Google Play policy.
               </p>
             </Panel>
             <Panel title="Sources">
               <dl class="space-y-2.5 text-[12px]">
                 <div>
-                  <dt class="font-medium text-foreground">Manifest URL</dt>
+                  <dt class="font-medium text-foreground">Manifest / MSI URL</dt>
                   <dd class="text-muted-foreground">
-                    Best for internal builds on Apple platforms.
+                    Internal Apple builds (OTA manifest) or a signed Windows .msi.
                   </dd>
                 </div>
                 <div>
@@ -218,7 +262,7 @@ export default function NewApplicationPage() {
                 <div>
                   <dt class="font-medium text-foreground">Uploaded file</dt>
                   <dd class="text-muted-foreground">
-                    Stores metadata only; add a manifest or store ID before installing.
+                    A signed .pkg installs on macOS; an .ipa needs an OTA manifest URL.
                   </dd>
                 </div>
               </dl>

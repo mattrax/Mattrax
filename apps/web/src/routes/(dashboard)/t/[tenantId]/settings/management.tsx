@@ -23,10 +23,10 @@ import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
 
 const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-white/[0.02] px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border border-input bg-white/[0.02] p-3 font-mono text-base text-foreground outline-none sm:text-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "min-h-28 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none sm:text-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export default function ManagementSettingsPage() {
   const params = useParams();
@@ -450,7 +450,7 @@ export default function ManagementSettingsPage() {
 
         <Show when={step() >= 3 || apns.data?.configured}>
           <form
-            class="mt-5 space-y-4 border-t border-white/[0.06] pt-5"
+            class="mt-5 space-y-4 border-t border-border pt-5"
             onSubmit={(event) => {
               event.preventDefault();
               upload.mutate();
@@ -476,7 +476,7 @@ export default function ManagementSettingsPage() {
               </div>
             </Field>
             <Show when={cert()}>
-              <pre class="max-h-32 overflow-auto rounded-lg border border-white/[0.07] bg-black/25 p-3 font-mono text-[11px] text-muted-foreground">
+              <pre class="max-h-32 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] text-muted-foreground">
                 {cert().slice(0, 600)}
                 {cert().length > 600 ? "\n…" : ""}
               </pre>
@@ -491,7 +491,7 @@ export default function ManagementSettingsPage() {
 
       <Panel title="Windows">
         <div class="flex items-start gap-3 text-[13px]">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <MonitorSmartphone class="size-4" />
           </span>
           <div class="min-w-0">
@@ -509,7 +509,7 @@ export default function ManagementSettingsPage() {
 
       <Panel title="Android">
         <div class="flex items-start gap-3 text-[13px]">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <Smartphone class="size-4" />
           </span>
           <div class="min-w-0 flex-1 space-y-3">
@@ -624,7 +624,7 @@ export default function ManagementSettingsPage() {
 
       <Panel title="Apple Business Manager">
         <div class="flex items-start gap-3 text-[13px]">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <ShieldCheck class="size-4" />
           </span>
           <div class="min-w-0 flex-1 space-y-3">
@@ -720,7 +720,7 @@ export default function ManagementSettingsPage() {
                     </Show>
                   </Show>
                   <form
-                    class="space-y-3 border-t border-white/[0.06] pt-4"
+                    class="space-y-3 border-t border-border pt-4"
                     onSubmit={(event) => {
                       event.preventDefault();
                       uploadAbm.mutate();
@@ -785,7 +785,7 @@ export default function ManagementSettingsPage() {
 
       <Panel title="Apps and Books (VPP)">
         <div class="flex items-start gap-3 text-[13px]">
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-muted-foreground">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <Boxes class="size-4" />
           </span>
           <div class="min-w-0 flex-1 space-y-3">
@@ -866,7 +866,7 @@ export default function ManagementSettingsPage() {
                     </Show>
                   </Show>
                   <form
-                    class="space-y-3 border-t border-white/[0.06] pt-4"
+                    class="space-y-3 border-t border-border pt-4"
                     onSubmit={(event) => {
                       event.preventDefault();
                       uploadVpp.mutate();
@@ -955,7 +955,7 @@ export default function ManagementSettingsPage() {
                 </p>
               </Show>
 
-              <div class="mt-4 grid gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs text-muted-foreground sm:grid-cols-3">
+              <div class="mt-4 grid gap-2 rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground sm:grid-cols-3">
                 <p>
                   <span class="font-medium text-foreground">{data().deviceCount}</span> Autopilot
                   device{data().deviceCount === 1 ? "" : "s"} · {data().linkedDeviceCount} linked
@@ -972,7 +972,7 @@ export default function ManagementSettingsPage() {
               </div>
 
               <Show when={data().federatedEnrollment.enabled}>
-                <p class="mt-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs leading-relaxed text-muted-foreground">
+                <p class="mt-3 rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
                   Windows discovery advertises <span class="font-mono">Federated</span> for this
                   tenant. Entra realm{" "}
                   <span class="break-all font-mono">{data().federatedEnrollment.realm}</span>;
@@ -992,7 +992,7 @@ export default function ManagementSettingsPage() {
               </Show>
 
               <div class="mt-5 grid gap-6 lg:grid-cols-2">
-                <div class="space-y-3 border-t border-white/[0.06] pt-4">
+                <div class="space-y-3 border-t border-border pt-4">
                   <div>
                     <p class="text-[13px] font-medium text-foreground">Import hardware hashes</p>
                     <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -1068,7 +1068,7 @@ export default function ManagementSettingsPage() {
                   />
                 </div>
 
-                <div class="space-y-3 border-t border-white/[0.06] pt-4">
+                <div class="space-y-3 border-t border-border pt-4">
                   <div class="flex items-center justify-between gap-2">
                     <p class="text-[13px] font-medium text-foreground">
                       {editingProfileId() ? "Edit deployment profile" : "Create deployment profile"}
@@ -1205,7 +1205,7 @@ export default function ManagementSettingsPage() {
                 </div>
               </div>
 
-              <div class="mt-5 border-t border-white/[0.06] pt-4">
+              <div class="mt-5 border-t border-border pt-4">
                 <p class="text-[13px] font-medium text-foreground">Autopilot devices</p>
                 <QueryError
                   class="mt-3"
@@ -1222,9 +1222,9 @@ export default function ManagementSettingsPage() {
                     </Show>
                   }
                 >
-                  <div class="mt-3 overflow-x-auto rounded-lg border border-white/[0.07]">
+                  <div class="mt-3 overflow-x-auto rounded-lg border border-border">
                     <table class="w-full min-w-[42rem] text-left text-xs">
-                      <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                      <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                         <tr>
                           <th class="px-3 py-2 font-medium">Serial</th>
                           <th class="px-3 py-2 font-medium">Group tag</th>
@@ -1234,10 +1234,10 @@ export default function ManagementSettingsPage() {
                           <th class="px-3 py-2 font-medium" />
                         </tr>
                       </thead>
-                      <tbody class="divide-y divide-white/[0.05]">
+                      <tbody class="divide-y divide-border">
                         <For each={autopilotDevices.data?.devices ?? []}>
                           {(device) => (
-                            <tr class="transition-colors hover:bg-white/[0.02]">
+                            <tr class="transition-colors hover:bg-hover">
                               <td class="px-3 py-2 font-mono text-[11px]">{device.serial}</td>
                               <td class="px-3 py-2 text-muted-foreground">
                                 {device.groupTag ?? "—"}
@@ -1279,7 +1279,7 @@ export default function ManagementSettingsPage() {
                 </Show>
               </div>
 
-              <div class="mt-5 border-t border-white/[0.06] pt-4">
+              <div class="mt-5 border-t border-border pt-4">
                 <p class="text-[13px] font-medium text-foreground">Deployment profiles</p>
                 <QueryError
                   class="mt-3"
@@ -1342,7 +1342,7 @@ function AutopilotProfileRow(props: {
   const [groupId, setGroupId] = createSignal(props.profile.assignedGroupId ?? "");
 
   return (
-    <div class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+    <div class="rounded-lg border border-border bg-surface p-3">
       <div class="flex flex-wrap items-center gap-2">
         <p class="text-[13px] font-medium text-foreground">{props.profile.name}</p>
         <Chip tone={props.profile.status === "active" ? "success" : "neutral"}>
@@ -1391,13 +1391,13 @@ function AutopilotProfileRow(props: {
 
 function Step(props: { index: number; active: boolean; title: string; body: string }) {
   return (
-    <li class="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3.5">
+    <li class="rounded-lg border border-border bg-surface p-3.5">
       <span
         class={cn(
           "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
           props.active
-            ? "bg-brand text-brand-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.2)]"
-            : "bg-white/[0.05] text-muted-foreground",
+            ? "bg-brand-solid text-brand-foreground shadow-[var(--brand-highlight)]"
+            : "bg-hover text-muted-foreground",
         )}
       >
         {props.index}
@@ -1409,7 +1409,7 @@ function Step(props: { index: number; active: boolean; title: string; body: stri
 }
 
 const chipTones = {
-  neutral: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
+  neutral: "border-border bg-surface text-muted-foreground",
   success: "border-success/25 bg-success/10 text-success-foreground",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",

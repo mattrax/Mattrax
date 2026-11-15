@@ -8,6 +8,8 @@ import {
   androidPolicyIdForHash,
   bearerToken,
   commandStatus,
+  isAndroidPackageName,
+  mergeAssignedAndroidApplications,
   verifyPubSubOidcToken,
   type AndroidPolicyConfiguration,
 } from "@mattrax/dm-android";
@@ -1192,6 +1194,73 @@ const upsertAndroidDevice = (input: {
     };
   });
 
+/**
+ * Android applications assigned to one device, directly or through a group.
+ *
+ * `packageName` is the catalogue entry's bundle id. Only Android entries in the
+ * same tenant are considered; a mis-typed Apple bundle id therefore cannot end
+ * up in a Google policy.
+ */
+const assignedAndroidApplications = (
+  db: EnterpriseDb,
+  input: { readonly organizationId: string; readonly deviceId: string },
+): Effect.Effect<
+  ReadonlyArray<{ readonly applicationId: string; readonly packageName: string }>,
+  unknown
+> =>
+  Effect.gen(function* () {
+    const direct = yield* db
+      .select({ applicationId: schema.applicationDevice.applicationId })
+      .from(schema.applicationDevice)
+      .where(eq(schema.applicationDevice.deviceId, input.deviceId));
+
+    const groups = yield* db
+      .select({ groupId: schema.groupDevice.groupId })
+      .from(schema.groupDevice)
+      .where(eq(schema.groupDevice.deviceId, input.deviceId));
+
+    const groupApplications = groups.length
+      ? yield* db
+          .select({ applicationId: schema.applicationGroup.applicationId })
+          .from(schema.applicationGroup)
+          .where(
+            inArray(
+              schema.applicationGroup.groupId,
+              groups.map((group) => group.groupId),
+            ),
+          )
+      : [];
+
+    const ids = [
+      ...new Set([
+        ...direct.map((row) => row.applicationId),
+        ...groupApplications.map((row) => row.applicationId),
+      ]),
+    ];
+
+    if (ids.length === 0) return [];
+
+    const applications = yield* db
+      .select({
+        id: schema.application.id,
+        bundleId: schema.application.bundleId,
+      })
+      .from(schema.application)
+      .where(
+        and(
+          eq(schema.application.organizationId, input.organizationId),
+          eq(schema.application.platform, "android"),
+          inArray(schema.application.id, ids),
+        ),
+      );
+
+    return applications.flatMap((application) =>
+      application.bundleId
+        ? [{ applicationId: application.id, packageName: application.bundleId }]
+        : [],
+    );
+  });
+
 const syncAndroidPolicyForDevice = (input: {
   readonly db: EnterpriseDb;
   readonly config: AndroidDeliveryConfig;
@@ -1234,13 +1303,31 @@ const syncAndroidPolicyForDevice = (input: {
       (configuration) => ({ kind: configuration.kind, data: configuration.data }),
     );
 
+    // Managed Google Play delivery is the policy's `applications` array. Assigned
+    // catalogue apps are merged underneath the tenant's own policy fragments, so
+    // an explicit `installType` or managed configuration always wins.
+    const assignedApplications = yield* assignedAndroidApplications(input.db, {
+      organizationId: input.organizationId,
+      deviceId: input.device.id,
+    });
+
+    for (const application of assignedApplications) {
+      if (!isAndroidPackageName(application.packageName))
+        yield* Effect.logWarning(
+          `Android application ${application.applicationId} has an invalid package name and was not added to the policy for ${input.device.id}`,
+        );
+    }
+
     const compiled = yield* Effect.tryPromise({
       try: async () => {
         // Mattrax needs software and application status to inventory a
         // device, and Google disables both by default. The baseline sits
         // underneath the tenant's own reporting settings, so an operator can
         // still turn either off (at the cost of that inventory).
-        const policy = withStatusReporting(compileAndroidPolicy(configurations));
+        const policy = mergeAssignedAndroidApplications(
+          withStatusReporting(compileAndroidPolicy(configurations)),
+          assignedApplications,
+        );
 
         return { policy, hash: await androidPolicyHash(policy) };
       },
