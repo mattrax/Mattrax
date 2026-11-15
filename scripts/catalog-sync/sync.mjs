@@ -36,6 +36,7 @@ const summarize = (collections) =>
     group: collection.group,
     deprecated: collection.deprecated,
     minOs: collection.minOs,
+    osVersions: collection.osVersions,
     propertyCount: countProperties(collection.properties),
   }));
 

@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
@@ -17,20 +17,81 @@ export default function IdentitySettingsPage() {
   const { can } = useCan();
   const writable = () => can("identity.write");
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const tokens = useQuery(() => ({
     queryKey: enterpriseKeys.scim(params.tenantId),
     queryFn: () => enterprise.listScimTokens(params.tenantId),
   }));
 
+  /* ---- Tenant MFA requirement (independent of SSO) --------------------- */
+
+  const security = useQuery(() => ({
+    queryKey: enterpriseKeys.tenantSecurity(params.tenantId),
+    queryFn: () => enterprise.getTenantSecurity(params.tenantId),
+  }));
+
+  const [requireTenantMfa, setRequireTenantMfa] = createSignal(false);
+  const [securitySeeded, setSecuritySeeded] = createSignal(false);
+  createEffect(
+    () => security.data,
+    (value) => {
+      if (!value || securitySeeded()) return;
+      setSecuritySeeded(true);
+      setRequireTenantMfa(value.requireMfa);
+    },
+  );
+
+  const saveSecurity = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchTenantSecurity(params.tenantId, { requireMfa: requireTenantMfa() }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.tenantSecurity(params.tenantId) });
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
+    },
+  }));
+
+  /* ---- Break-glass recovery approval ----------------------------------- */
+
+  const recoveryToken = () => {
+    const value = Array.isArray(searchParams.recoveryToken)
+      ? searchParams.recoveryToken[0]
+      : searchParams.recoveryToken;
+
+    return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.NonEmptyString)(value));
+  };
+
+  const approveRecovery = useMutation(() => ({
+    mutationFn: (token: string) => enterprise.approveAccountRecovery(params.tenantId, token),
+    onSuccess: () => {
+      setSearchParams({ recoveryToken: undefined }, { replace: true });
+    },
+  }));
+
   const [name, setName] = createSignal("");
+  const [expiresOn, setExpiresOn] = createSignal("");
   const [copiedUrl, setCopiedUrl] = createSignal(false);
   const [revokeTarget, setRevokeTarget] = createSignal<{ id: string; name: string } | null>(null);
-  const [created, setCreated] = createSignal<{ token: string; baseUrl: string } | null>(null);
+
+  const [created, setCreated] = createSignal<{
+    token: string;
+    baseUrl: string;
+    expiresAt?: string | null;
+  } | null>(null);
 
   const create = useMutation(() => ({
-    mutationFn: () => enterprise.createScimToken(params.tenantId, { name: name() }),
+    mutationFn: () =>
+      enterprise.createScimToken(params.tenantId, {
+        name: name(),
+        expiresAt: expiresOn() ? new Date(`${expiresOn()}T23:59:59.999Z`).toISOString() : undefined,
+      }),
     onSuccess: async (result) => {
-      setCreated({ token: result.token, baseUrl: result.baseUrl });
+      setCreated({
+        token: result.token,
+        baseUrl: result.baseUrl,
+        expiresAt: result.expiresAt ?? null,
+      });
+      setExpiresOn("");
       await qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) });
     },
   }));
@@ -45,6 +106,21 @@ export default function IdentitySettingsPage() {
 
   const baseUrl = () => `${globalThis.location?.origin ?? ""}/scim/v2/${params.tenantId}`;
 
+  const rotationDue = () => (tokens.data?.tokens ?? []).filter((token) => token.rotationDue);
+
+  const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+
+  const expiryLabel = (expiresAt: string | null | undefined) => {
+    if (!expiresAt) return "No expiry set — rotate to add one";
+
+    const date = new Date(expiresAt);
+    const days = Math.ceil((date.getTime() - Date.now()) / 86_400_000);
+
+    if (days <= 0) return `Expired ${date.toLocaleDateString()}`;
+
+    return `Expires ${date.toLocaleDateString()} · ${days} day${days === 1 ? "" : "s"} left`;
+  };
+
   const sso = useQuery(() => ({
     queryKey: enterpriseKeys.sso(params.tenantId),
     queryFn: () => enterprise.getSsoConfig(params.tenantId),
@@ -53,7 +129,6 @@ export default function IdentitySettingsPage() {
   const [azureTenantId, setAzureTenantId] = createSignal("");
   const [ssoEnabled, setSsoEnabled] = createSignal(false);
   const [autoProvision, setAutoProvision] = createSignal(true);
-  const [requireMfa, setRequireMfa] = createSignal(false);
   let ssoSeeded = false;
   createEffect(
     () => sso.data,
@@ -63,7 +138,6 @@ export default function IdentitySettingsPage() {
       setAzureTenantId(config.azureTenantId ?? "");
       setSsoEnabled(config.enabled);
       setAutoProvision(config.autoProvision);
-      setRequireMfa(config.requireMfa);
     },
   );
 
@@ -77,8 +151,7 @@ export default function IdentitySettingsPage() {
     return (
       ssoEnabled() !== current.enabled ||
       azureTenantId().trim() !== (current.azureTenantId ?? "") ||
-      autoProvision() !== current.autoProvision ||
-      requireMfa() !== current.requireMfa
+      autoProvision() !== current.autoProvision
     );
   };
 
@@ -88,7 +161,6 @@ export default function IdentitySettingsPage() {
         enabled: ssoEnabled(),
         azureTenantId: azureTenantId().trim() || null,
         autoProvision: autoProvision(),
-        requireMfa: requireMfa(),
       }),
     onSuccess: async () => {
       setSsoSaved(true);
@@ -189,10 +261,30 @@ export default function IdentitySettingsPage() {
               onInput={(event) => setName(event.currentTarget.value)}
               class="min-w-0 flex-1"
             />
-            <Button type="submit" class="shrink-0" disabled={create.isPending || !name().trim()}>
+            <label class="flex min-w-0 flex-col gap-1 sm:w-44">
+              <span class="text-[11px] font-medium text-muted-foreground">
+                Expires (default 90 days)
+              </span>
+              <Input
+                type="date"
+                aria-label="SCIM token expiry"
+                min={tomorrow()}
+                value={expiresOn()}
+                onInput={(event) => setExpiresOn(event.currentTarget.value)}
+              />
+            </label>
+            <Button
+              type="submit"
+              class="shrink-0 self-end"
+              disabled={create.isPending || !name().trim()}
+            >
               Create token
             </Button>
           </form>
+          <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Give the IdP connector the shortest lifetime your rotation process supports. Mattrax
+            reminds you to rotate in the final 14 days and rejects the token once it expires.
+          </p>
         </Show>
         <ErrorText error={create.error} />
 
@@ -205,6 +297,7 @@ export default function IdentitySettingsPage() {
               <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-xs text-muted-foreground">
                 {value().token}
               </code>
+              <p class="mt-2 text-xs text-muted-foreground">{expiryLabel(value().expiresAt)}</p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -227,6 +320,23 @@ export default function IdentitySettingsPage() {
         description="Tokens used by your identity provider to call the SCIM API."
         flush
       >
+        <Show when={rotationDue().length > 0}>
+          <div
+            role="status"
+            class="mx-4 mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-[13px] text-foreground sm:mx-5"
+          >
+            <p class="font-medium">
+              Rotate {rotationDue().length === 1 ? "a token" : "tokens"} soon
+            </p>
+            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {rotationDue()
+                .map((token) => token.name)
+                .join(", ")}{" "}
+              {rotationDue().length === 1 ? "expires" : "expire"} within 14 days or has already
+              expired. Create a replacement, update the IdP connector, then revoke the old token.
+            </p>
+          </div>
+        </Show>
         <Show
           when={(tokens.data?.tokens.length ?? 0) > 0}
           fallback={
@@ -245,7 +355,14 @@ export default function IdentitySettingsPage() {
                       Created {new Date(token.createdAt).toLocaleDateString()}
                       {token.lastUsedAt
                         ? ` · Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`
-                        : ""}
+                        : " · Never used"}
+                    </span>
+                    <span
+                      class={`mt-0.5 block text-xs ${
+                        token.rotationDue ? "text-warning-foreground" : "text-muted-foreground"
+                      }`}
+                    >
+                      {expiryLabel(token.expiresAt)}
                     </span>
                   </span>
                   <Show when={writable()}>
@@ -267,6 +384,87 @@ export default function IdentitySettingsPage() {
         <div class="px-4 pb-4 sm:px-5">
           <ErrorText error={tokens.error || revoke.error} />
         </div>
+      </Panel>
+
+      <Show when={recoveryToken()}>
+        {(token) => (
+          <Panel
+            class="xl:col-span-2 border-warning/25 bg-warning/[0.03]"
+            title="Approve an account recovery"
+            description="A member of this tenant proved control of their verified email address after losing access to their passkeys. Because this tenant has more than one owner, a second owner must approve signing them back in."
+          >
+            <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+              Approving lets them sign in once and add a new passkey. It does not remove or change
+              any existing passkey, and the ceremony is recorded in their account activity.
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <Show when={writable()}>
+                <Button
+                  disabled={approveRecovery.isPending}
+                  onClick={() => approveRecovery.mutate(token())}
+                >
+                  {approveRecovery.isPending ? "Approving…" : "Approve recovery"}
+                </Button>
+              </Show>
+              <Button
+                variant="outline"
+                onClick={() => setSearchParams({ recoveryToken: undefined }, { replace: true })}
+              >
+                Dismiss
+              </Button>
+            </div>
+            <Show when={!writable()}>
+              <p class="mt-2 text-[12.5px] text-muted-foreground">
+                Your role can view identity settings but cannot approve a recovery. Ask an owner to
+                open this link.
+              </p>
+            </Show>
+            <ErrorText error={approveRecovery.error} />
+          </Panel>
+        )}
+      </Show>
+
+      <Panel
+        class="xl:col-span-2"
+        title="Multi-factor authentication"
+        description="Require every member of this tenant — including read-only and auditor roles — to sign in with a passkey or an authenticator app. This is independent of single sign-on; a tenant that signs in with passkeys can enforce it without an identity provider."
+      >
+        <form
+          class="divide-y divide-white/[0.05]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveSecurity.mutate();
+          }}
+        >
+          <ToggleSetting
+            title="Require multi-factor authentication for every member"
+            description="Members without a factor keep access to their own account settings so they can enrol one, but cannot open this tenant's data."
+            checked={requireTenantMfa()}
+            onChange={setRequireTenantMfa}
+          />
+          <div class="flex flex-wrap items-center gap-2 pt-4">
+            <Show when={writable()}>
+              <Button
+                type="submit"
+                disabled={
+                  saveSecurity.isPending ||
+                  !security.data ||
+                  requireTenantMfa() === security.data.requireMfa
+                }
+              >
+                {saveSecurity.isPending ? "Saving…" : "Save requirement"}
+              </Button>
+            </Show>
+            <Show when={security.data?.requireMfa}>
+              <span class="text-[12.5px] text-muted-foreground">
+                Currently enforced for every member of this tenant.
+              </span>
+            </Show>
+          </div>
+          <div class="pt-3">
+            <ErrorText error={saveSecurity.error || security.error} />
+          </div>
+        </form>
       </Panel>
 
       <Panel
@@ -323,13 +521,6 @@ export default function IdentitySettingsPage() {
             checked={autoProvision()}
             onChange={setAutoProvision}
           />
-          <ToggleSetting
-            title="Require MFA for owners and admins"
-            description="Owners and admins must enroll a passkey or authenticator app before they can access this tenant. Members can still view it."
-            checked={requireMfa()}
-            onChange={setRequireMfa}
-          />
-
           <div class="flex flex-wrap gap-2 pt-4">
             <Show when={writable()}>
               <Button type="submit" disabled={saveSso.isPending || !ssoDirty()}>

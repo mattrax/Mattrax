@@ -13,8 +13,12 @@ const request = (path: string, init: RequestInit = {}) =>
 
 describe("rate limit rule selection", () => {
   it("covers auth, enrollment, billing, SCIM and MDM/SCEP", () => {
-    expect(rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "POST" }))?.bucket).toBe("auth");
-    expect(rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "GET" }))).toBeUndefined();
+    expect(
+      rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "GET" })),
+    ).toBeUndefined();
     expect(rateLimitRuleFor(request("/api/v1/enrollment/abc"))?.bucket).toBe("enrollment");
     expect(rateLimitRuleFor(request("/api/v1/billing/webhook", { method: "POST" }))?.bucket).toBe(
       "billing",
@@ -36,10 +40,16 @@ describe("rate limit rule selection", () => {
       rateLimitRuleFor(request("/api/v1/tenants/acme/invitations", { method: "POST" }))?.bucket,
     ).toBe("auth");
     expect(
-      rateLimitRuleFor(
-        request("/api/v1/tenants/acme/invitations/inv-1/resend", { method: "POST" }),
-      )?.bucket,
+      rateLimitRuleFor(request("/api/v1/tenants/acme/invitations/inv-1/resend", { method: "POST" }))
+        ?.bucket,
     ).toBe("auth");
+    // Public-client token endpoints are credential exchanges, not plain reads.
+    expect(rateLimitRuleFor(request("/api/oauth/token", { method: "POST" }))?.bucket).toBe("auth");
+    expect(rateLimitRuleFor(request("/api/oauth/revoke", { method: "POST" }))?.bucket).toBe("auth");
+    expect(rateLimitRuleFor(request("/api/oauth/register", { method: "POST" }))?.bucket).toBe(
+      "auth",
+    );
+    expect(rateLimitRuleFor(request("/api/oauth/token", { method: "GET" }))).toBeUndefined();
   });
 
   it("prefers the connecting IP for the limiter key", () => {
@@ -52,7 +62,9 @@ describe("rate limit rule selection", () => {
     ).toBe("203.0.113.4");
     expect(
       clientKey(
-        request("/api/v1/completePasskeySignIn", { headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" } }),
+        request("/api/v1/completePasskeySignIn", {
+          headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" },
+        }),
       ),
     ).toBe("198.51.100.9");
     expect(clientKey(request("/api/v1/completePasskeySignIn"))).toBe("local");
@@ -150,6 +162,99 @@ describe("shared limiter bindings", () => {
     expect(outcome.limited).toBe(false);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("local fallback");
+  });
+
+  it("fails closed when the auth edge limiter is configured but unavailable", async () => {
+    const warnings: string[] = [];
+
+    const bindings: RateLimitBindings = {
+      auth: {
+        limit: async () => {
+          throw new Error("binding unavailable");
+        },
+      },
+    };
+
+    const limiter = createRateLimiter({
+      now: () => 1_000,
+      warn: (message) => warnings.push(message),
+    });
+
+    const outcome = await limiter.check(
+      request("/api/v1/completePasskeySignIn", {
+        method: "POST",
+        headers: { "cf-connecting-ip": "203.0.113.4" },
+      }),
+      bindings,
+    );
+
+    expect(outcome).toMatchObject({
+      limited: true,
+      bucket: "auth",
+      limit: 120,
+      retryAfterSeconds: 60,
+    });
+    expect(outcome.retryAfterSeconds).toBeGreaterThan(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("failing closed");
+
+    // The failed closed request must not have charged the local counter: a
+    // recovered binding (or another credential route) is not penalised by the
+    // outage itself.
+    expect(limiter.store.size).toBe(0);
+  });
+
+  it("treats a malformed binding result as unavailable", async () => {
+    const warnings: string[] = [];
+
+    const limiter = createRateLimiter({
+      now: () => 1_000,
+      warn: (message) => warnings.push(message),
+    });
+
+    const outcome = await limiter.check(
+      request("/api/v1/completePasskeySignIn", { method: "POST" }),
+      // SAFETY: the test proves the limiter refuses an unexpected result shape.
+      { auth: { limit: async () => ({}) } } as any,
+    );
+
+    expect(outcome.limited).toBe(true);
+    expect(warnings[0]).toContain("failing closed");
+  });
+
+  it("keeps the local auth fallback when no edge binding is configured", async () => {
+    let now = 1_000;
+    const limiter = createRateLimiter({ now: () => now });
+
+    const signIn = () =>
+      request("/api/v1/completePasskeySignIn", {
+        method: "POST",
+        headers: { "cf-connecting-ip": "203.0.113.4" },
+      });
+
+    // Local development has no namespace at all; it must keep working up to
+    // the documented per-isolate ceiling.
+    for (let index = 0; index < 120; index++) {
+      expect((await limiter.check(signIn())).limited).toBe(false);
+      now += 10;
+    }
+
+    expect((await limiter.check(signIn())).limited).toBe(true);
+  });
+
+  it("fails closed for MCP token exchange when the edge limiter is unavailable", async () => {
+    const limiter = createRateLimiter({ warn: () => {} });
+
+    const outcome = await limiter.check(request("/api/oauth/token", { method: "POST" }), {
+      auth: {
+        limit: async () => {
+          throw new Error("binding unavailable");
+        },
+      },
+    });
+
+    expect(outcome.limited).toBe(true);
+    expect(outcome.bucket).toBe("auth");
   });
 });
 

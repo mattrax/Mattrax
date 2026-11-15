@@ -1172,6 +1172,19 @@ export function CommandPalette() {
                                     // router's transition.
                                     pendingRecent = item;
 
+                                    // Selecting the page already on screen does
+                                    // not change the location, so the close
+                                    // effect never runs; close here instead.
+                                    const target = new URL(item.href, window.location.href);
+
+                                    if (
+                                      target.pathname === location.pathname &&
+                                      target.search === location.search
+                                    ) {
+                                      event.preventDefault();
+                                      close();
+                                    }
+
                                     return;
                                   }
 

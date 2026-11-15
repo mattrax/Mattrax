@@ -51,6 +51,9 @@ for cookies, CSP and WebAuthn.
 - Session cookie `__Host-mattrax_session`.
 - Bearer tokens `mtx_...`, hashed at rest, scoped and optionally tenant-bound.
 - Step-up grants are bound to account, session and action.
+- Session client descriptors are captured on first authenticated use (the auth library
+  owns session creation) and store a browser/platform family plus a salted address digest,
+  never the raw `User-Agent` or address.
 - Tenant-scoped queries always include the organization id.
 
 ## Secrets
@@ -72,8 +75,11 @@ requires re-sealing; there is no online re-wrap.
 Core tables:
 
 - `organization` (tenant), `user`, `member`, `invitation`.
-- `device` (identity, management name, physical name and the cross-platform inventory
-  columns), `device_apple`, `device_secret`, `device_command`, `device_declaration`,
+- `device` (identity, management name, physical name, the cross-platform inventory
+  columns, Windows security/join state and the applied OMA-URI delivery set),
+  `device_apple` (policy delivery mode and the security-report clocks),
+  `device_secret` (sealed recovery key, bootstrap token, activation-lock bypass code and
+  Recovery Lock password), `device_command`, `device_declaration`,
   `device_application` (Apple bundle ids, Android package names and Windows product/registry
   keys share one table).
 - `enterprise_group`, `group_device`, `group_policy`, `device_policy`.
@@ -83,9 +89,17 @@ Core tables:
   `vpp_token`, `vpp_asset`, `device_vpp_assignment`.
 - `scep_ca` (one active CA per tenant, unique `organization_id`), `scep_challenge`,
   `scep_issued_certificate`.
+- `apple_fde_escrow_key` (one per tenant: escrow certificate plus the AES-GCM-sealed
+  private key used to unwrap CMS recovery keys).
 - `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device` (AMAPI
   resource name, policy hash and the Android-only inventory columns).
 - `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`.
+- `account_audit_log` (account-scoped audit, nullable `subject_user_id` so the deletion
+  record survives), `account_session_context` (client descriptor per session id),
+  `account_email_change` (single-use confirm/cancel token digests) and `account_recovery`
+  (proof/approval/completion token digests for break-glass recovery).
+- `organization.require_mfa` is the tenant-wide MFA requirement; `sso_config.require_mfa`
+  is legacy and only read by the backfill migration.
 - `tenant_deletion`: the teardown journal (no foreign key to `organization`, so it
   survives the row) and the retry record for device unenroll, Stripe cancellation, object
   reclamation and the final delete.

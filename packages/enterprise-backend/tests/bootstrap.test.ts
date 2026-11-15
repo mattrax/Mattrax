@@ -3,7 +3,7 @@ import { ssrSessionFingerprint, ssrTenantPermissions } from "@mattrax/enterprise
 import { describe, expect, it } from "vitest";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { isAccountMethod, permissionForMethod } from "../src/rbac.js";
-import { verifySsrToken } from "../src/ssrToken.js";
+import { verifySsrRevision, verifySsrToken } from "../src/ssrToken.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -53,7 +53,10 @@ const makeContext = () => {
 
   db.store.user.push(user);
   db.store.organization.push(organization("tenant-a", "Acme"), organization("tenant-b", "Beta"));
-  db.store.member.push(member("member-a", "tenant-a", "owner"), member("member-b", "tenant-b", "member"));
+  db.store.member.push(
+    member("member-a", "tenant-a", "owner"),
+    member("member-b", "tenant-b", "member"),
+  );
 
   const session = {
     sessionId: "session-1",
@@ -129,6 +132,8 @@ describe("GET /api/v1/bootstrap", () => {
 
     expect(result.ssrToken).toEqual(expect.any(String));
     expect(result.ssrTokenExpiresAt).toBeGreaterThan(Date.now());
+    expect(result.ssrRevision).toEqual(expect.any(String));
+    expect(result.ssrRevisionExpiresAt).toBeGreaterThan(Date.now());
 
     const payload = await runEffect(verifySsrToken(authSecret, result.ssrToken!));
 
@@ -137,6 +142,12 @@ describe("GET /api/v1/bootstrap", () => {
     expect(payload.ver).toBe("revision-1");
     expect(payload.ch).toBe(await ssrSessionFingerprint(authSecret, "test"));
     expect(payload.tenants?.map((tenant) => tenant.id)).toEqual(["tenant-a", "tenant-b"]);
+
+    // The revision cookie names the same session and auth revision the token
+    // carries; the edge compares these two values before using a warm token.
+    const revision = await runEffect(verifySsrRevision(authSecret, result.ssrRevision!));
+
+    expect(revision).toMatchObject({ sid: payload.sid, ver: payload.ver });
   });
 
   it("keeps each tenant's permissions scoped to that membership", async () => {
@@ -209,6 +220,8 @@ describe("GET /api/v1/bootstrap", () => {
     expect(result.session).toBeNull();
     expect(result.ssrToken).toBeNull();
     expect(result.ssrTokenExpiresAt).toBeNull();
+    expect(result.ssrRevision).toBeNull();
+    expect(result.ssrRevisionExpiresAt).toBeNull();
     expect(result.me.user.id).toBe("user-1");
   });
 });

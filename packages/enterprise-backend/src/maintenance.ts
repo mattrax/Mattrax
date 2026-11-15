@@ -5,11 +5,13 @@ import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
+  refreshAppleSecurityInfo,
   sweepDeviceCommands,
   syncDynamicGroupsForTenant,
 } from "@mattrax/management-backend-enterprise";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
 import { refreshAppleApplicationInventory } from "./appleInventory.ts";
+import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "./rbac.ts";
 import type { WebhookDeliveryOptions } from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
@@ -107,6 +109,12 @@ export type MaintenanceOptions = {
    * Set to `0` to keep command history indefinitely.
    */
   readonly commandRetentionDays?: number;
+  /**
+   * Completed/failed tenant-teardown journal rows older than this many days are
+   * deleted. Defaults to 365 so the operator email in the journal is not kept
+   * forever. Set to `0` to keep them indefinitely.
+   */
+  readonly tenantDeletionLogRetentionDays?: number;
 };
 
 export type MaintenanceResult = {
@@ -114,6 +122,8 @@ export type MaintenanceResult = {
   readonly staleDevices: number;
   readonly expiredAuthSessions: number;
   readonly purgedAuditEntries: number;
+  /** Account-scoped audit rows deleted by the same retention window. */
+  readonly purgedAccountAuditEntries: number;
   /** Enrollment-attempt diagnostics deleted this run. */
   readonly purgedEnrollmentAttempts: number;
   /** Android Pub/Sub idempotency records deleted this run. */
@@ -130,10 +140,17 @@ export type MaintenanceResult = {
   readonly webhookRetryFailed: number;
   /** Apple devices whose installed-application inventory was requested. */
   readonly applicationInventoryRefreshes: number;
+  /**
+   * Macs asked for a fresh `SecurityInfo` report (FileVault key escrow and
+   * Activation Lock state). Additive to the maintenance result.
+   */
+  readonly securityInfoRefreshes: number;
   /** Active commands whose delivery deadline elapsed during this run. */
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Completed/failed tenant-teardown journal rows deleted by retention. */
+  readonly purgedTenantDeletionLogs: number;
 };
 
 const day = 24 * 60 * 60 * 1000;
@@ -301,11 +318,15 @@ export const runMaintenance = (
     const webhookDeliveryRetentionDays = options.webhookDeliveryRetentionDays ?? 30;
     const commandRetentionDays = options.commandRetentionDays ?? 90;
 
+    const tenantDeletionLogRetentionDays =
+      options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
+
     const result = {
       expiredInvitations: 0,
       staleDevices: 0,
       expiredAuthSessions: 0,
       purgedAuditEntries: 0,
+      purgedAccountAuditEntries: 0,
       purgedEnrollmentAttempts: 0,
       purgedAndroidPubSubMessages: 0,
       credentialAlerts: 0,
@@ -315,8 +336,10 @@ export const runMaintenance = (
       webhookRetrySucceeded: 0,
       webhookRetryFailed: 0,
       applicationInventoryRefreshes: 0,
+      securityInfoRefreshes: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      purgedTenantDeletionLogs: 0,
     };
 
     // 1. Expire pending invitations whose acceptance window has closed.
@@ -406,6 +429,20 @@ export const runMaintenance = (
     if (expiredSessions.length > 0) {
       yield* db.delete(s.authSessions).where(lt(s.authSessions.expiresAt, nowMillis));
       result.expiredAuthSessions = expiredSessions.length;
+
+      // Session descriptors live in an application table with no foreign key
+      // to the library-owned session row, so they are removed with the
+      // sessions they describe. Explicit revocation removes its own row; this
+      // covers natural expiry. Chunked so one sweep cannot exceed the query
+      // parameter budget.
+      const expiredIds = expiredSessions.map((row) => row.sessionId);
+
+      for (let offset = 0; offset < expiredIds.length; offset += 500)
+        yield* db
+          .delete(s.accountSessionContext)
+          .where(
+            inArray(s.accountSessionContext.sessionId, expiredIds.slice(offset, offset + 500)),
+          );
     }
 
     // 4. Audit retention. Opt out with `auditRetentionDays: 0`.
@@ -420,6 +457,18 @@ export const runMaintenance = (
       if (staleAudit.length > 0) {
         yield* db.delete(s.auditLog).where(lt(s.auditLog.createdAt, auditCutoff));
         result.purgedAuditEntries = staleAudit.length;
+      }
+
+      // The account stream uses the same retention setting: one privacy policy
+      // covers every audit record the deployment keeps.
+      const staleAccountAudit = yield* db
+        .select({ id: s.accountAuditLog.id })
+        .from(s.accountAuditLog)
+        .where(lt(s.accountAuditLog.createdAt, auditCutoff));
+
+      if (staleAccountAudit.length > 0) {
+        yield* db.delete(s.accountAuditLog).where(lt(s.accountAuditLog.createdAt, auditCutoff));
+        result.purgedAccountAuditEntries = staleAccountAudit.length;
       }
     }
 
@@ -605,6 +654,16 @@ export const runMaintenance = (
       result.applicationInventoryRefreshes = yield* refreshAppleApplicationInventory(db, { now });
     }
 
+    // 9b. FileVault escrow freshness. A Mac's personal recovery key is only
+    //    written when FileVault is enabled, which is normally after enrolment.
+    //    Ask any Mac whose key is missing or whose security report is stale for
+    //    a new `SecurityInfo`, rate-limited per device.
+    if (options.applicationInventory !== false) {
+      const securityInfo = yield* refreshAppleSecurityInfo(db, { now });
+
+      result.securityInfoRefreshes = securityInfo.requested;
+    }
+
     // 10. Command queue housekeeping. Android commands are issued directly and
     //     rely on a Pub/Sub notification to become terminal; if that never
     //     arrives the row would stay `sent` forever. The sweep applies every
@@ -617,6 +676,34 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+
+    // 11. Tenant-teardown journal retention. The journal carries the operator
+    //     email that requested the deletion and survives the tenant row, so it
+    //     must not be kept forever.
+    if (tenantDeletionLogRetentionDays > 0) {
+      const cutoff = new Date(now.getTime() - tenantDeletionLogRetentionDays * day);
+
+      const staleJournals = yield* db
+        .select({ id: s.tenantDeletion.id })
+        .from(s.tenantDeletion)
+        .where(
+          and(
+            inArray(s.tenantDeletion.status, ["completed", "failed"]),
+            lt(s.tenantDeletion.updatedAt, cutoff),
+          ),
+        )
+        .limit(5_000);
+
+      if (staleJournals.length > 0)
+        yield* db.delete(s.tenantDeletion).where(
+          inArray(
+            s.tenantDeletion.id,
+            staleJournals.map((row) => row.id),
+          ),
+        );
+
+      result.purgedTenantDeletionLogs = staleJournals.length;
+    }
 
     return result;
   });

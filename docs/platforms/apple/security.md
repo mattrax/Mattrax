@@ -1,13 +1,48 @@
-# FileVault, inventory and health
+# FileVault, activation lock, inventory and health
 
-Mattrax collects Apple security state through DDM status items and two MDM commands:
-`SecurityInfo` and `InstalledApplicationList`.
+Mattrax collects Apple security state through DDM status subscriptions, the
+`SecurityInfo` query command, and the `ActivationLockBypassCode` command.
 
 ## FileVault recovery-key escrow
 
+### Tenant escrow key
+
+FileVault personal recovery keys are only escrowed when the Mac wraps them for a
+certificate Mattrax holds the private key for. Each tenant has one escrow
+identity:
+
+```text
+GET  /api/v1/tenants/:tenantId/apple/filevault-escrow-key
+POST /api/v1/tenants/:tenantId/apple/filevault-escrow-key        # generate
+PUT  /api/v1/tenants/:tenantId/apple/filevault-escrow-key        # upload a pair
+```
+
+`POST` generates a self-signed RSA keypair (the same model as Jamf's "encrypt and
+decrypt automatically"). `PUT` accepts `{ certificatePem, privateKeyPem }` — an
+unencrypted PKCS#8 RSA key — and proves the pair matches by wrapping and
+unwrapping a probe before storing it. The private key is sealed with
+`AUTH_SECRET`; the API only ever returns the certificate, its SHA-256
+fingerprint, subject and validity.
+
+Any `com.apple.security.FDERecoveryKeyEscrow` payload in a policy is served with
+this certificate in its `com.apple.security.pkcs1` payload, and
+`EncryptCertPayloadUUID` is pointed at it. A policy that pins a different
+certificate — or any escrow policy on a tenant without an escrow key — is
+rejected when it is saved, because Mattrax could not decrypt what the device
+would return. Signed profiles cannot be rewritten, so a signed profile that
+escrows keys is rejected too.
+
 ### Collect
 
-Queue a security-info command:
+`SecurityInfo` is queued automatically:
+
+- at Apple enrolment,
+- when `diskmanagement.filevault.enabled` flips to enabled in a DDM status report,
+- after a bootstrap-token rotation,
+- by daily maintenance for any Mac whose key is missing or whose last security
+  report is older than 90 days (at most one request per device per day).
+
+An administrator can still trigger one manually:
 
 ```bash
 curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" \
@@ -16,12 +51,15 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
   -d '{ "action": "collect-security-info" }'
 ```
 
-Mattrax parses `PersonalRecoveryKey`, `FDE_RecoveryKey` or `FDE_PersonalRecoveryKeyCMS`,
-plus `FDE_Enabled`/`FileVaultStatus` and `BootstrapTokenEscrowed`. The recovery key and
-bootstrap token are sealed with `AUTH_SECRET` in `device_secret`.
+Mattrax parses `PersonalRecoveryKey`, `FDE_RecoveryKey` or
+`FDE_PersonalRecoveryKeyCMS`, plus `FDE_Enabled`/`FileVaultStatus`,
+`FDE_HasPersonalRecoveryKey`, `BootstrapTokenEscrowed`,
+`ManagementStatus.IsActivationLockManageable` and `IsRecoveryLockEnabled`. The
+recovery key and bootstrap token are sealed with `AUTH_SECRET` in
+`device_secret`; a CMS payload is stored with `format = 'cms'`.
 
-The device detail page shows **presence only**: whether a key is escrowed, when it was
-updated and when it was rotated.
+The device detail page shows **presence only**: whether a key is escrowed, its
+format, when it was updated and when it was rotated.
 
 ### Reveal
 
@@ -31,33 +69,124 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/recovery-key" \
   -H "x-mattrax-step-up: $STEP_UP_GRANT"
 ```
 
-Reveal requires the `write` role (owner or admin) and the `recovery-key-reveal` step-up
-action. The response is audited as `device.recovery_key_viewed`.
+The CMS payload is unwrapped with the tenant escrow private key, so the response
+is a recovery key an operator can type into Recovery Assistant. If the key was
+wrapped for a certificate Mattrax no longer holds, reveal fails with an
+explanation instead of returning ciphertext. Reveal requires the `write` role
+(owner or admin) and the `recovery-key-reveal` step-up action; the response is
+audited as `device.recovery_key_viewed` without the key itself.
 
-:::warning CMS-wrapped keys
-A personal recovery key wrapped with the FileVault escrow certificate is returned as the
-raw escrowed payload. Decrypting it is an operator step with the escrow certificate.
-:::
+### Rotate
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "rotate-filevault-key" }'
+```
+
+Mattrax sends `RotateFileVaultKey` with `KeyType = personal`, the currently
+escrowed key as the FileVault password, and the tenant escrow certificate as
+`ReplyEncryptionCertificate`. The replacement key comes back CMS-wrapped and
+replaces the escrowed secret (rotation timestamp moves). Rotating requires an
+escrowed key: without one the action is rejected with an explanation.
 
 ### Bootstrap token
 
-The bootstrap token is escrowed the same way. `device_apple.bootstrap_token` is retained
-only for legacy plaintext rows and is cleared on new writes. Device detail exposes
-`bootstrapTokenEscrowed` and `bootstrapTokenUpdatedAt`.
+The bootstrap token is escrowed the same way. `device_apple.bootstrap_token` is
+retained only for legacy plaintext rows and is cleared on new writes. Device
+detail exposes `bootstrapTokenEscrowed` and `bootstrapTokenUpdatedAt`. A
+bootstrap-token rotation queues a fresh `SecurityInfo`.
+
+## Activation Lock
+
+Apple returns the device-generated bypass code from the
+`ActivationLockBypassCode` command, **not** from `SecurityInfo`. `SecurityInfo`
+only reports `ManagementStatus.IsActivationLockManageable`.
+
+```bash
+# Collect (also queued alongside the FileVault key when you collect security info)
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "collect-activation-lock-code" }'
+
+# Reveal
+curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/activation-lock-bypass-code" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "x-mattrax-step-up: $STEP_UP_GRANT"
+```
+
+The code is sealed in `device_secret` (`activation_lock_bypass_code`), revealed
+behind the same role, step-up and audit trail as the recovery key, and audited as
+`device.activation_lock_bypass_code_viewed`.
+
+Apple only returns a code for a supervised device, and only while Activation
+Lock is not yet enabled. A device can therefore have no code even though it is
+managed. Mattrax never claims Activation Lock is clear: `wipe` returns an
+`activationLockWarning` unless the last report said Activation Lock is
+manageable, and the bypass code (or the user's Apple Account) is still required
+to remove it.
+
+### Recovery Lock
+
+Apple silicon Macs can require a password to enter recoveryOS. Mattrax supports
+it explicitly:
+
+| Action                 | Command              | Notes                                                      |
+| ---------------------- | -------------------- | ---------------------------------------------------------- |
+| `set-recovery-lock`    | `SetRecoveryLock`    | Generates a password unless `recoveryLockPassword` is sent |
+| `verify-recovery-lock` | `VerifyRecoveryLock` | Uses the stored password; the result is recorded           |
+
+The password is sealed as `recovery_lock_password`. A Mac erase clears it first
+(using the stored password as `CurrentPassword`) so the next owner is not locked
+out of recoveryOS. Intel Macs do not support either command, so they report a
+command failure rather than pretending it worked.
+
+## Erase
+
+`EraseDevice` is queued with explicit flags rather than relying on defaults:
+
+- `ObliterationBehavior: "Default"` — on T2/Apple silicon, Erase All Content and
+  Settings is attempted, and obliteration is the fallback.
+- `DisallowProximitySetup: true`, `PreserveDataPlan: false` — iOS/iPadOS only;
+  macOS rejects the proximity key, so it is omitted there.
+
+Before the erase, Mattrax also queues a `Settings` command with
+`MDMOptions.ActivationLockAllowedWhileSupervised = false`, so a supervised device
+cannot re-enable Activation Lock after the wipe. This is an MDM setting rather
+than an erase key; Apple ignores it on unsupervised devices.
+
+A successful erase discards the escrowed recovery key, bypass code and Recovery
+Lock password for the device: the disk they protected no longer exists and the
+next setup generates a new bypass code.
 
 ## Inventory
 
-### DDM status items
+### DDM status subscriptions
 
-These update automatically on each declaration status report:
+The subscription is built per device because Apple does not silently ignore an
+item an OS does not know — the whole declaration is reported invalid. The base
+items are joined by the platform-specific ones the device's OS supports:
 
-- Serial number, model, model identifier, model number
-- OS marketing name, version and build
-- FileVault enabled
-- Battery health
-- Disk total and used
-- Client capabilities
-- Declaration state
+| Item                             | macOS | iOS/iPadOS | Notes                        |
+| -------------------------------- | ----- | ---------- | ---------------------------- |
+| `passcode.is-present`            | —     | 16+        | macOS has no device passcode |
+| `passcode.is-compliant`          | —     | 16+        |                              |
+| `mdm.app`                        | —     | 16+        | MDM-installed apps only      |
+| `softwareupdate.install-state`   | 14+   | 17+        | tvOS 18.4+, visionOS 26+     |
+| `softwareupdate.pending-version` | 14+   | 17+        |                              |
+| `softwareupdate.failure-reason`  | 14+   | 17+        |                              |
+| `security.certificate.list`      | 14+   | 17+        | count only is stored         |
+| `security.lockdown-mode`         | 27+   | 27+        | not reported before then     |
+
+The declaration's server token hashes the item list, so adding an item makes
+every affected device re-sync. A device that has not reported its OS version yet
+receives the base list only; the version arrives with the first status report.
+
+`mdm.app` does not identify a specific "management app": it lists apps Mattrax
+installed through MDM and excludes apps managed by declarations. Mattrax stores
+the identifiers and states, and health flags entries Apple reports as `failed`.
 
 ### Installed applications
 
@@ -70,16 +199,9 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
   -d '{ "action": "refresh-applications" }'
 ```
 
-The result replaces the device's `device_application` rows. An empty list clears them.
-Fields: bundle id, name, version, short version, bundle size, dynamic size, update
-availability, managed flag and last-reported time.
-
-Tenant-wide inventory:
-
-```bash
-curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/inventory?q=chrome&managed=managed&updates=available" \
-  -H "Authorization: Bearer $MATTRAX_TOKEN"
-```
+The result replaces the device's `device_application` rows. An empty list clears
+them. Fields: bundle id, name, version, short version, bundle size, dynamic size,
+update availability, managed flag and last-reported time.
 
 ### Inventory fields on a device
 
@@ -91,9 +213,15 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/inventory?q=chrome&man
 | `fileVaultEnabled`                                  | DDM status / `SecurityInfo` |
 | `batteryHealth`                                     | DDM status                  |
 | `capabilities`                                      | DDM status                  |
+| `passcodePresent`, `passcodeCompliant`              | DDM status (iOS family)     |
+| `osUpdateInstallState`, `osUpdatePendingVersion`    | DDM status                  |
+| `osUpdateFailureCount`, `osUpdateFailureReason`     | DDM status                  |
+| `securityLockdownMode`, `managedCertificateCount`   | DDM status                  |
+| `managementApps`                                    | DDM status                  |
 | `lastSeenAt`                                        | Check-in                    |
 | `inventoryUpdatedAt`                                | Last inventory write        |
 | `applicationsUpdatedAt`                             | Last app inventory write    |
+| `securityInfoUpdatedAt`                             | Last `SecurityInfo` answer  |
 
 ## Device health
 
@@ -101,7 +229,7 @@ Health is a derived rollup, not a compliance engine. It evaluates:
 
 | Reason                               | Level    |
 | ------------------------------------ | -------- |
-| `unenrolled`                         | Critical |
+| `unanrolled`                         | Critical |
 | `unenrolling` / `enrolling`          | Warning  |
 | Never seen                           | Warning  |
 | Stale (default 7 days)               | Warning  |
@@ -109,10 +237,16 @@ Health is a derived rollup, not a compliance engine. It evaluates:
 | Disk ≥ 90%                           | Warning  |
 | Disk ≥ 97%                           | Critical |
 | FileVault disabled on macOS          | Warning  |
+| FileVault on with no escrowed key    | Info     |
+| Security report older than 90 days   | Info     |
+| No passcode / passcode non-compliant | Warning  |
+| Software update failed               | Warning  |
+| Software update pending              | Info     |
+| Management app failed to install     | Warning  |
 | Battery service/replace/poor         | Warning  |
 
-Levels are `healthy`, `attention`, `critical` and `unknown`. A level change writes an
-audit event and emits `device.compliance_changed`.
+Levels are `healthy`, `attention`, `critical` and `unknown`. A level change writes
+an audit event and emits `device.compliance_changed`.
 
 Endpoints:
 
@@ -128,31 +262,39 @@ GET /api/v1/tenants/:tenantId/credential-health
 GET /api/v1/tenants/:tenantId/push-health
 ```
 
-Credential health summarizes APNs and SCEP CA expiry. Push health summarizes delivery
-failures and invalid tokens.
+Credential health summarizes APNs and SCEP CA expiry. Push health summarizes
+delivery failures and invalid tokens.
 
 ## Command matrix
 
-| Action                  | Requires step-up | Notes                           |
-| ----------------------- | ---------------- | ------------------------------- |
-| `sync`                  | No               | APNs wake-up                    |
-| `collect-security-info` | No               | FileVault/bootstrap token       |
-| `refresh-applications`  | No               | Installed app inventory         |
-| `lock`                  | Yes              | Returns a PIN                   |
-| `wipe`                  | Yes              | Erase with PIN                  |
-| `restart`               | Yes              | —                               |
-| `shutdown`              | Yes              | —                               |
-| `clear-passcode`        | Yes              | Needs an unlock token           |
-| `install-app`           | Yes              | Manifest URL or iTunes Store id |
+| Action                         | Requires step-up | Notes                                |
+| ------------------------------ | ---------------- | ------------------------------------ |
+| `sync`                         | No               | APNs wake-up                         |
+| `collect-security-info`        | No               | FileVault/bootstrap key and AL state |
+| `refresh-applications`         | No               | Installed app inventory              |
+| `collect-activation-lock-code` | Yes              | Device bypass code                   |
+| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key   |
+| `set-recovery-lock`            | Yes              | Apple silicon only                   |
+| `verify-recovery-lock`         | Yes              | Checks the stored password           |
+| `lock`                         | Yes              | Returns a PIN                        |
+| `wipe`                         | Yes              | Erase with explicit flags            |
+| `restart`                      | Yes              | —                                    |
+| `shutdown`                     | Yes              | —                                    |
+| `clear-passcode`               | Yes              | Needs an unlock token                |
+| `install-app`                  | Yes              | Manifest URL or iTunes Store id      |
 
 ## Limitations
 
-- FileVault and installed-app inventory are fixture-tested, not validated on real
-  supervised hardware in this repository.
-- There is no bulk recovery-key export and no key-rotation workflow beyond re-reporting.
-- There is no automatic app inventory refresh schedule.
-- There is no Windows or Android installed-app inventory.
-- Compliance is derived health only. There is no policy engine, baseline or remediation.
+- Apple returns `IsActivationLockEnabled`, but Apple documents it as unreliable;
+  Mattrax therefore reports bypass-code presence and manageability, never a
+  definitive "Activation Lock is off".
+- `security.certificate.list` is stored as a count; certificate details are not
+  persisted.
+- FileVault, activation-lock and Recovery Lock flows are fixture-tested. Validate
+  them on real supervised Apple silicon hardware before relying on them.
+- There is no bulk recovery-key export.
+- Compliance is derived health only. There is no policy engine, baseline or
+  remediation.
 
 ## Next
 

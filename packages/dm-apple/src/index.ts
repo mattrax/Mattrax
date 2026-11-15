@@ -19,3 +19,5 @@ export * from "./trust.js";
 export * from "./signature.js";
 
 export * from "./profile-signing.js";
+
+export * from "./supportedOs.js";

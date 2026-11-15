@@ -1,10 +1,4 @@
-import {
-  Auth,
-  Hooks,
-  Passkey,
-  Sessions,
-  Totp,
-} from "@yielded/auth";
+import { Auth, Hooks, Passkey, Sessions, Totp } from "@yielded/auth";
 import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
 import {
   appSessionConfiguration,
@@ -30,6 +24,7 @@ import {
 import { DateTime } from "effect";
 import { Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { and, eq } from "drizzle-orm";
+import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
 import { readStepUpGrant, stepUpServiceLayer, verifyStepUpGrant } from "./stepUp.ts";
 
 export const sessionCookie = "__Host-mattrax_session";
@@ -176,18 +171,71 @@ export const makeAuthLive = ({
             .pipe(Effect.catch(() => Effect.void));
         });
 
+      /**
+       * Credential lifecycle events are committed by the auth library, so this
+       * hook is the only place that sees an authenticator enrolment, removal,
+       * disable or recovery-code regeneration. The audit write is best effort:
+       * a bookkeeping failure must never fail the ceremony that produced it.
+       */
+      const recordCredentialAudit = (
+        subjectId: string,
+        action: (typeof ACCOUNT_AUDIT)[keyof typeof ACCOUNT_AUDIT],
+        targetType: string,
+        metadata?: Schema.Json,
+      ) =>
+        Effect.gen(function* () {
+          const user = yield* db.query.user.findFirst({ where: { id: subjectId } });
+
+          if (!user) return;
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: subjectId,
+            subjectEmail: user.email,
+            action,
+            targetType,
+            metadata: metadata ?? null,
+          });
+        }).pipe(Effect.catchCause(() => Effect.void));
+
       return Hooks.LifecycleHooks.of({
         before: () => Effect.void,
         after: (event) =>
           Effect.gen(function* () {
             if (event.snapshot.action === "credential-change" && event.snapshot.subjectId) {
               const operation = event.snapshot.operation;
+              const subjectId = event.snapshot.subjectId;
 
               if (
                 operation === `${PASSKEY_MODULE_ID}/passkey/enrollment` ||
                 operation === `${PASSKEY_MODULE_ID}/passkey/remove`
-              )
-                yield* syncPasskeyFactor(event.snapshot.subjectId);
+              ) {
+                yield* syncPasskeyFactor(subjectId);
+                yield* recordCredentialAudit(
+                  subjectId,
+                  operation.endsWith("/remove")
+                    ? ACCOUNT_AUDIT.passkeyRemoved
+                    : ACCOUNT_AUDIT.passkeyAdded,
+                  "passkey",
+                  { method: event.snapshot.method ?? null },
+                );
+              }
+
+              if (operation.startsWith(`${TOTP_MODULE_ID}/totp/`)) {
+                const factorAction = operation.slice(`${TOTP_MODULE_ID}/totp/`.length);
+
+                if (factorAction === "disable")
+                  yield* recordCredentialAudit(subjectId, ACCOUNT_AUDIT.mfaDisabled, "totp");
+                else if (factorAction === "regenerate")
+                  yield* recordCredentialAudit(
+                    subjectId,
+                    ACCOUNT_AUDIT.mfaRecoveryRegenerated,
+                    "totp",
+                  );
+                else
+                  yield* recordCredentialAudit(subjectId, ACCOUNT_AUDIT.mfaEnrolled, "totp", {
+                    step: factorAction,
+                  });
+              }
             }
 
             return [];
@@ -226,7 +274,12 @@ export const makeAuthLive = ({
   ).pipe(
     // SAFETY: `Db` is the same Effect MySQL Drizzle database the persistence
     // adapter exposes under its own `Database` service tag.
-    Layer.provide(Layer.effect(Database, Effect.map(Db, (db) => db as any))),
+    Layer.provide(
+      Layer.effect(
+        Database,
+        Effect.map(Db, (db) => db as any),
+      ),
+    ),
     Layer.provide(cryptoLayer),
     Layer.provide(LifecycleHooksLive),
   );
@@ -395,9 +448,7 @@ export const makeAuthLive = ({
       const parseProof = (raw: string): TotpActionProof => {
         try {
           const parsed = Option.getOrUndefined(
-            Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
-              JSON.parse(raw),
-            ),
+            Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(JSON.parse(raw)),
           );
 
           if (parsed) {

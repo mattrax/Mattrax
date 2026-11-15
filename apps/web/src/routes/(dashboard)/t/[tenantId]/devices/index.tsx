@@ -17,6 +17,7 @@ import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -1024,8 +1025,41 @@ export default function DevicesPage() {
             cell: (row) => {
               const groups = rowGroups(row);
 
-              return groups.length > 0 ? groups.map((group) => group.name).join(", ") : "—";
+              if (groups.length === 0) return "—";
+              const names = groups.map((group) => group.name).join(", ");
+
+              return (
+                <Tooltip>
+                  <TooltipTrigger
+                    type="button"
+                    class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-white/[0.18] decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
+                  >
+                    {groups.length} group{groups.length === 1 ? "" : "s"}
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p class="text-[11px] font-medium">Groups</p>
+                    <ul class="mt-1 space-y-0.5 text-[11.5px]">
+                      <For each={groups}>{(group) => <li>{group.name}</li>}</For>
+                    </ul>
+                  </TooltipContent>
+                </Tooltip>
+              );
             },
+            defaultHidden: true,
+          },
+          {
+            id: "notes",
+            header: "Notes",
+            search: (row) => row.notes,
+            cell: (row) =>
+              row.notes ? (
+                <span class="line-clamp-2 whitespace-pre-line text-muted-foreground">
+                  {row.notes}
+                </span>
+              ) : (
+                "—"
+              ),
             defaultHidden: true,
           },
           {

@@ -49,12 +49,16 @@ import { chord, useCommands, type Command } from "~/lib/commands";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import {
   collectionProperties,
+  loadAppleOsSupport,
   loadCollection,
   loadManifest,
   loadPlatformIndex,
   loadSearchIndex,
   resetPlatformCache,
   searchIndexProperties,
+  appleCollectionManaged,
+  appleOsRangeLabel,
+  type AppleOsSupportManifest,
   type CatalogManifest,
   type Collection,
   type CollectionSummary,
@@ -448,6 +452,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     void loadManifest()
       .then(setManifest)
       .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
+
+    // Optional: without it the designer falls back to the catalogue's earliest
+    // minimum OS instead of a per-family range.
+    void loadAppleOsSupport()
+      .then(setOsSupport)
+      .catch(() => undefined);
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
@@ -862,6 +872,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   });
 
+  // The label must describe the range delivery enforces, so it comes from the
+  // same Apple `supportedOS` metadata the backend filters with.
+  const [osSupport, setOsSupport] = createSignal<AppleOsSupportManifest>();
+
+  const osRange = () => {
+    const current = activeCollection();
+
+    return current ? appleOsRangeLabel(current, osSupport()) : null;
+  };
+
   const addCollection = (collection: Collection) => {
     const key = keyOf(collection);
 
@@ -882,6 +902,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     ) {
       setNotice(
         "Apple profiles and declarations are separate policies. Remove the other kind first, or start a new policy.",
+      );
+
+      return false;
+    }
+
+    // A payload Apple only supports on watchOS/tvOS/visionOS would never reach a
+    // managed Mac or iPhone; adding it would show a setting that is never
+    // delivered.
+    if (platform() === "apple" && !appleCollectionManaged(collection.osVersions)) {
+      setNotice(
+        `${collection.name} is only available on ${(collection.osVersions ?? []).join(", ")}, which Mattrax does not manage.`,
       );
 
       return false;
@@ -2106,7 +2137,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       </div>
                       <p class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                         {collection().identifier}
-                        <Show when={collection().minOs}> · {collection().minOs}+</Show>
+                        <Show when={osRange()}>{(range) => <> · {range()}</>}</Show>
                         <Show when={activeCollectionLoading()}>
                           <span class="text-muted-foreground"> · Loading settings…</span>
                         </Show>

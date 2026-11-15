@@ -21,7 +21,14 @@ import {
   WINDOWS_APPLICATION_INVENTORY_URI,
   WINDOWS_INVENTORY_REQUESTS,
   WINDOWS_INVENTORY_URI,
+  WINDOWS_MDM_PROVIDER_ID,
+  windowsUnenrollUri,
 } from "../windowsInventory.js";
+import {
+  WINDOWS_POLICY_DELETE_REQUEST_TYPE,
+  WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+  WINDOWS_UNENROLL_REQUEST_TYPE,
+} from "../windowsCommands.js";
 import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import type { Row } from "./fake-db.js";
 
@@ -166,6 +173,9 @@ const enrollmentRequest = (authToken: string, csr: string, deviceId = "device-1"
  * policy/operator commands are not coupled to the inventory `Get` requests that
  * a genuinely new device receives on its first check-in.
  */
+const commandPayload = (row: Row): Schema.JsonObject | undefined =>
+  Schema.is(Schema.JsonObject)(row.payload) ? row.payload : undefined;
+
 const suppressInventory = (db: ReturnType<typeof makeDb>) => {
   const now = new Date();
 
@@ -1350,5 +1360,405 @@ describe("SCEP CSR signing helper", () => {
         }).toBER(false),
       ),
     );
+  });
+});
+
+describe("Windows command history and desired-state policy", () => {
+  const table = (value: any) => tableName(value);
+
+  const checkin = (
+    backend: Awaited<ReturnType<typeof setup>>["backend"],
+    input: {
+      statuses?: Array<unknown>;
+      alerts?: Array<unknown>;
+      results?: Array<unknown>;
+    } = {},
+  ) =>
+    run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: input.statuses ?? [],
+          alerts: input.alerts ?? [],
+          results: input.results,
+        },
+      ),
+    );
+
+  const seedPolicy = (
+    db: ReturnType<typeof makeDb>,
+    deviceId: string,
+    nodes: ReadonlyArray<{ omaUri: string; value: Schema.Json; format?: string }>,
+  ) => {
+    const createdAt = new Date("2024-01-01T00:00:00Z");
+
+    db.store[table(schema.policy)] = [
+      {
+        id: "policy-1",
+        organizationId: "org-early",
+        name: "Windows security",
+        notes: null,
+        priority: 0,
+        createdAt,
+        updatedAt: createdAt,
+        __table: table(schema.policy),
+      },
+    ];
+    db.store[table(schema.devicePolicy)] = [
+      {
+        deviceId,
+        policyId: "policy-1",
+        mode: "include",
+        __table: table(schema.devicePolicy),
+      },
+    ];
+    db.store[table(schema.configuration)] = [
+      {
+        kind: "mttx.windows.custom.security",
+        policyId: "policy-1",
+        data: { nodes },
+        hash: "hash-1",
+        __table: table(schema.configuration),
+      },
+    ];
+  };
+
+  const enroll = async () => {
+    const result = await setup();
+
+    const policy = await run(result.backend.getWindowsEnrollmentPolicy(""));
+
+    await run(result.backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const device = dbRows(result.db, table(schema.device))[0]!;
+
+    return { ...result, device };
+  };
+
+  it("creates a row for each policy Replace and reconciles its result", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    seedPolicy(db, String(device.id), [
+      {
+        omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/EnforceLockScreenAndLogonImage",
+        value: 1,
+        format: "int",
+      },
+    ]);
+
+    const first = await checkin(backend);
+    const replace = first.commands.find((command) => command.kind === "Replace")!;
+
+    expect(replace.locURI).toBe(
+      "./Vendor/MSFT/Policy/Config/DeviceLock/EnforceLockScreenAndLogonImage",
+    );
+    expect(replace.cmdID.startsWith("winp-r-")).toBe(true);
+
+    const delivered = dbRows(db, table(schema.deviceCommand)).find(
+      (row) => row.id === replace.cmdID,
+    );
+
+    expect(delivered).toMatchObject({
+      requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+      status: "sent",
+    });
+    expect(commandPayload(delivered!)?.locURI).toBe(replace.locURI);
+
+    const second = await checkin(backend, {
+      statuses: [{ cmdRef: replace.cmdID, data: "200" }],
+    });
+
+    expect(second.commands).toEqual([]);
+    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyApplied).toContain(replace.locURI);
+    expect(
+      dbRows(db, table(schema.deviceCommand)).find((row) => row.id === replace.cmdID),
+    ).toMatchObject({ status: "succeeded", resultStatus: "200" });
+  });
+
+  it("records the rejected OMA-URI and status on the device", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    seedPolicy(db, String(device.id), [
+      { omaUri: "./Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring", value: 1 },
+    ]);
+
+    const first = await checkin(backend);
+    const replace = first.commands.find((command) => command.kind === "Replace")!;
+
+    await checkin(backend, {
+      statuses: [{ cmdRef: replace.cmdID, data: "400" }],
+    });
+
+    expect(
+      dbRows(db, table(schema.deviceCommand)).find((row) => row.id === replace.cmdID),
+    ).toMatchObject({
+      status: "failed",
+      resultStatus: "400",
+    });
+    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyFailures).toEqual([
+      expect.objectContaining({
+        uri: replace.locURI,
+        resultStatus: "400",
+        detail: expect.stringContaining(replace.locURI!),
+      }),
+    ]);
+
+    // The rejection stays visible instead of being overwritten immediately.
+    expect((await checkin(backend)).commands).toEqual([]);
+  });
+
+  it("emits Delete when a policy stops providing an applied setting", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    seedPolicy(db, String(device.id), [
+      { omaUri: "./Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring", value: 1 },
+    ]);
+
+    const first = await checkin(backend);
+    const replace = first.commands.find((command) => command.kind === "Replace")!;
+
+    await checkin(backend, { statuses: [{ cmdRef: replace.cmdID, data: "200" }] });
+
+    // Disabling the policy removes its configuration from the device's
+    // effective set.
+    db.store[table(schema.devicePolicy)] = [];
+
+    const removed = await checkin(backend);
+    const remove = removed.commands.find((command) => command.kind === "Delete")!;
+
+    expect(remove.locURI).toBe(replace.locURI);
+    expect(remove.cmdID.startsWith("winp-d-")).toBe(true);
+    expect(
+      dbRows(db, table(schema.deviceCommand)).find((row) => row.id === remove.cmdID),
+    ).toMatchObject({ requestType: WINDOWS_POLICY_DELETE_REQUEST_TYPE, status: "sent" });
+    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyReverting).toEqual([replace.locURI]);
+
+    await checkin(backend, { statuses: [{ cmdRef: remove.cmdID, data: "200" }] });
+
+    const reverted = dbRows(db, table(schema.device))[0]!;
+
+    expect(reverted.windowsPolicyApplied).toEqual([]);
+    expect(reverted.windowsPolicyDelivered).toEqual([]);
+    expect(reverted.windowsPolicyReverting).toEqual([]);
+    expect(dateValue(reverted.windowsPolicyRevertedAt)).toBeInstanceOf(Date);
+  });
+
+  it("creates a row for each inventory Get and marks answered nodes", async () => {
+    const { backend, db } = await enroll();
+
+    const first = await checkin(backend);
+    const gets = first.commands.filter((command) => command.kind === "Get");
+
+    expect(gets.length).toBe(
+      WINDOWS_INVENTORY_REQUESTS.length + WINDOWS_APPLICATION_INVENTORY_REQUESTS.length,
+    );
+
+    const rows = dbRows(db, table(schema.deviceCommand));
+
+    for (const request of WINDOWS_INVENTORY_REQUESTS) {
+      const row = rows.find(
+        (candidate) =>
+          commandPayload(candidate)?.cmdID === request.cmdID &&
+          candidate.requestType === "WindowsInventoryGet",
+      );
+
+      expect(row, `missing command row for ${request.cmdID}`).toBeDefined();
+      expect(row!.status).toBe("sent");
+    }
+
+    await checkin(backend, {
+      results: [
+        {
+          cmdID: "3",
+          cmdRef: "windows-inventory-serial",
+          items: [{ source: { locURI: WINDOWS_INVENTORY_URI.serial }, data: "SERIAL-999" }],
+        },
+      ],
+    });
+
+    expect(
+      dbRows(db, table(schema.deviceCommand)).find(
+        (row) => commandPayload(row)?.cmdID === "windows-inventory-serial",
+      ),
+    ).toMatchObject({ status: "succeeded", resultStatus: "200" });
+    expect(dbRows(db, table(schema.device))[0]!.serial).toBe("SERIAL-999");
+  });
+
+  it("delivers a queued unenroll Exec and completes when the device acknowledges it", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+
+    const createdAt = new Date();
+
+    db.store[table(schema.deviceCommand)] = [
+      {
+        id: "unenroll-1",
+        organizationId: "org-early",
+        deviceId: device.id,
+        requestType: WINDOWS_UNENROLL_REQUEST_TYPE,
+        payload: {
+          kind: "Exec",
+          locURI: windowsUnenrollUri(WINDOWS_MDM_PROVIDER_ID),
+          data: WINDOWS_MDM_PROVIDER_ID,
+          format: "chr",
+        },
+        status: "queued",
+        dedupeKey: null,
+        expiresAt: null,
+        resultStatus: null,
+        resultDetail: null,
+        createdAt,
+        updatedAt: createdAt,
+        __table: table(schema.deviceCommand),
+      },
+    ];
+
+    const delivered = await checkin(backend);
+    const command = delivered.commands.find((entry) => entry.kind === "Exec")!;
+
+    expect(command.locURI).toBe(windowsUnenrollUri(WINDOWS_MDM_PROVIDER_ID));
+    expect(command.data).toBe(WINDOWS_MDM_PROVIDER_ID);
+
+    await checkin(backend, { statuses: [{ cmdRef: "unenroll-1", data: "200" }] });
+
+    expect(dbRows(db, table(schema.device))[0]!.status).toBe("unenrolled");
+    expect(
+      dbRows(db, table(schema.deviceCommand)).find((row) => row.id === "unenroll-1"),
+    ).toMatchObject({ status: "succeeded" });
+  });
+
+  it("handles a device-initiated unenroll Generic Alert", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+
+    const [certificate] = dbRows(db, table(schema.scepIssuedCertificate));
+
+    expect(certificate).toBeDefined();
+
+    await checkin(backend, { alerts: [{ cmdID: "9", data: "1226" }] });
+
+    expect(dbRows(db, table(schema.device))[0]!.status).toBe("unenrolled");
+    expect(
+      dbRows(db, table(schema.scepIssuedCertificate)).find((row) => row.deviceId === device.id)
+        ?.revokedAt,
+    ).toBeInstanceOf(Date);
+  });
+});
+
+describe("Windows partial application inventory", () => {
+  it("keeps Win32 rows when only the MSI block arrives", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const device = dbRows(db, tableName(schema.device))[0]!;
+    const reportedAt = new Date("2024-01-01T00:00:00Z");
+
+    const application = (bundleId: string, isManaged: boolean) => ({
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      bundleId,
+      name: bundleId,
+      version: null,
+      shortVersion: null,
+      publisher: null,
+      bundleSize: null,
+      dynamicSize: null,
+      hasUpdateAvailable: false,
+      isManaged,
+      lastReportedAt: reportedAt,
+      __table: tableName(schema.deviceApplication),
+    });
+
+    db.store[tableName(schema.deviceApplication)] = [
+      application("WIN32-APP", false),
+      application("STALE-MANAGED", true),
+    ];
+
+    const msi = (field: string, value: string) => ({
+      source: {
+        locURI: `./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/MANAGED-APP/${field}`,
+      },
+      data: value,
+    });
+
+    await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+          results: [
+            {
+              cmdID: "3",
+              cmdRef: "windows-app-inventory-msi",
+              items: [msi("Name", "Managed Client"), msi("Version", "2.0.0"), msi("Status", "70")],
+            },
+          ],
+        },
+      ),
+    );
+
+    const rows = dbRows(db, tableName(schema.deviceApplication));
+
+    expect(rows.map((row) => row.bundleId).sort()).toEqual(["MANAGED-APP", "WIN32-APP"]);
+    expect(rows.find((row) => row.bundleId === "MANAGED-APP")).toMatchObject({
+      isManaged: true,
+    });
+    expect(rows.find((row) => row.bundleId === "WIN32-APP")).toMatchObject({
+      isManaged: false,
+    });
+  });
+
+  it("records a failed application Get so the report is classified as partial", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const checkin = (
+      input: {
+        statuses?: Array<unknown>;
+        results?: Array<unknown>;
+      } = {},
+    ) =>
+      run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-1", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: input.statuses ?? [],
+            alerts: [],
+            results: input.results,
+          },
+        ),
+      );
+
+    await checkin();
+
+    await checkin({
+      statuses: [{ cmdRef: "windows-app-inventory-win32", data: "404" }],
+    });
+
+    const row = dbRows(db, tableName(schema.deviceCommand)).find(
+      (candidate) => commandPayload(candidate)?.cmdID === "windows-app-inventory-win32",
+    );
+
+    expect(row).toMatchObject({ status: "failed", resultStatus: "404" });
   });
 });

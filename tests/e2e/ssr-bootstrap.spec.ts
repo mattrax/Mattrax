@@ -19,11 +19,20 @@ test.describe("SSR bootstrap token", () => {
 
     const ssr = (await context.cookies()).find((cookie) => cookie.name === "__Host-mattrax_ssr");
 
+    const revision = (await context.cookies()).find(
+      (cookie) => cookie.name === "__Host-mattrax_ssr_rev",
+    );
+
     expect(ssr, "the bootstrap miss should set the SSR token").toBeDefined();
     expect(ssr?.httpOnly).toBe(true);
     expect(ssr?.secure).toBe(true);
     expect(ssr?.sameSite).toBe("Lax");
     expect(ssr?.path).toBe("/");
+
+    // `ver` is only enforceable when this signed comparison value is present.
+    expect(revision, "the bootstrap miss should set the SSR revision").toBeDefined();
+    expect(revision?.httpOnly).toBe(true);
+    expect(revision?.secure).toBe(true);
 
     // Max-Age=300: allow a few seconds of clock skew between signing and the
     // cookie snapshot but never accept a longer-lived token.
@@ -82,6 +91,8 @@ test.describe("SSR bootstrap token", () => {
 
       expect(body.ssrToken, variant).toBeNull();
       expect(body.ssrTokenExpiresAt, variant).toBeNull();
+      expect(body.ssrRevision, variant).toBeNull();
+      expect(body.ssrRevisionExpiresAt, variant).toBeNull();
     }
   });
 });

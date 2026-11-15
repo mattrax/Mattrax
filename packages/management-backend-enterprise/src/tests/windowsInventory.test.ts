@@ -6,14 +6,21 @@ import {
   WINDOWS_INVENTORY_REFRESH_MS,
   WINDOWS_INVENTORY_REQUESTS,
   WINDOWS_INVENTORY_URI,
+  WINDOWS_MDM_PROVIDER_ID,
   hasWindowsInventory,
+  hasWindowsSecurityInventory,
+  mergeWindowsApplicationReport,
   parseWindowsApplications,
+  parseWindowsApplicationsReport,
   parseWindowsInventory,
   parseWindowsOsVersion,
   windowsApplicationInventoryDue,
+  windowsEntraDeviceIdUri,
   windowsInventoryDue,
+  windowsInventoryRequests,
   windowsInventoryUpdate,
   windowsInventoryValues,
+  windowsUnenrollUri,
 } from "../windowsInventory.js";
 
 const MEBIBYTE = 1024 * 1024;
@@ -45,6 +52,27 @@ describe("Windows inventory requests", () => {
 
     for (const request of WINDOWS_INVENTORY_REQUESTS)
       expect(request.cmdID.startsWith(WINDOWS_INVENTORY_COMMAND_ID_PREFIX)).toBe(true);
+  });
+
+  it("collects BitLocker, TPM, Secure Boot and join state", () => {
+    const uris = WINDOWS_INVENTORY_REQUESTS.map((request) => request.locURI);
+
+    expect(uris).toContain(WINDOWS_INVENTORY_URI.bitLockerCompliance);
+    expect(uris).toContain(WINDOWS_INVENTORY_URI.bitLockerStatus);
+    expect(uris).toContain(WINDOWS_INVENTORY_URI.tpmVersion);
+    expect(uris).toContain(WINDOWS_INVENTORY_URI.secureBootState);
+    expect(uris).toContain(WINDOWS_INVENTORY_URI.domainName);
+    expect(uris).toContain(windowsEntraDeviceIdUri());
+  });
+
+  it("addresses the provider the enrollment wrote into the device", () => {
+    const requests = windowsInventoryRequests("Contoso MDM");
+    const entra = requests.find((request) => request.locURI.includes("AADDeviceID"));
+
+    expect(entra?.locURI).toBe("./Vendor/MSFT/DMClient/Provider/Contoso%20MDM/AADDeviceID");
+    expect(windowsUnenrollUri(WINDOWS_MDM_PROVIDER_ID)).toBe(
+      "./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll",
+    );
   });
 });
 
@@ -95,9 +123,11 @@ describe("windowsInventoryValues", () => {
       },
     ]);
 
-    expect(parsed.get(WINDOWS_INVENTORY_URI.model)).toBeUndefined();
+    expect(parsed.get(WINDOWS_INVENTORY_URI.model)).toBe("");
     expect(parsed.get(WINDOWS_INVENTORY_URI.serial)).toBe("12345");
-    expect(parsed.size).toBe(1);
+    // An answered empty node is retained so security/join state can be
+    // cleared; an item without a URI is still ignored.
+    expect(parsed.size).toBe(2);
   });
 
   it("tolerates a missing results array", () => {
@@ -139,6 +169,71 @@ describe("parseWindowsInventory", () => {
       osBuild: "19045.3803",
       diskTotal: String(512000 * MEBIBYTE),
       diskUsed: String((512000 - 128000) * MEBIBYTE),
+    });
+  });
+
+  it("parses security and join state", () => {
+    expect(
+      parseWindowsInventory(
+        values({
+          [WINDOWS_INVENTORY_URI.bitLockerCompliance]: "1",
+          [WINDOWS_INVENTORY_URI.bitLockerStatus]: "0",
+          [WINDOWS_INVENTORY_URI.tpmVersion]: "2.0",
+          [WINDOWS_INVENTORY_URI.secureBootState]: "1",
+          [WINDOWS_INVENTORY_URI.domainName]: "corp.contoso.com",
+          [windowsEntraDeviceIdUri()]: "11111111-2222-3333-4444-555555555555",
+        }),
+      ),
+    ).toEqual({
+      bitLockerEnabled: true,
+      bitLockerStatus: 0,
+      tpmVersion: "2.0",
+      secureBootState: 1,
+      domainName: "corp.contoso.com",
+      entraDeviceId: "11111111-2222-3333-4444-555555555555",
+    });
+  });
+
+  it("keeps a reported off state distinct from an unreported node", () => {
+    expect(
+      parseWindowsInventory(
+        values({
+          [WINDOWS_INVENTORY_URI.bitLockerCompliance]: "0",
+          [WINDOWS_INVENTORY_URI.secureBootState]: "2",
+        }),
+      ),
+    ).toMatchObject({ bitLockerEnabled: false, secureBootState: 2 });
+    expect(parseWindowsInventory(values({})).bitLockerEnabled).toBeUndefined();
+  });
+
+  it("ignores malformed security values instead of dropping the report", () => {
+    expect(
+      parseWindowsInventory(
+        values({
+          [WINDOWS_INVENTORY_URI.bitLockerCompliance]: "enabled",
+          [WINDOWS_INVENTORY_URI.bitLockerStatus]: "-1",
+          [WINDOWS_INVENTORY_URI.secureBootState]: "unknown",
+          [WINDOWS_INVENTORY_URI.model]: "Surface Laptop 5",
+        }),
+      ),
+    ).toEqual({ model: "Surface Laptop 5" });
+  });
+
+  it("clears an answered security node while leaving unanswered nodes alone", () => {
+    expect(
+      parseWindowsInventory(
+        values({
+          [WINDOWS_INVENTORY_URI.domainName]: "",
+          [WINDOWS_INVENTORY_URI.tpmVersion]: "",
+          [windowsEntraDeviceIdUri()]: "",
+        }),
+      ),
+    ).toEqual({ domainName: null, tpmVersion: null, entraDeviceId: null });
+
+    // The node missing from the report keeps its previous value (undefined
+    // here means "do not write").
+    expect(parseWindowsInventory(values({ [WINDOWS_INVENTORY_URI.domainName]: "" }))).toEqual({
+      domainName: null,
     });
   });
 
@@ -333,6 +428,73 @@ describe("Windows application inventory", () => {
       parseWindowsApplications(values({ [WINDOWS_INVENTORY_URI.deviceName]: "DESKTOP-ABC" })),
     ).toBeUndefined();
   });
+
+  it("classifies which application sources answered", () => {
+    const prefix = "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI";
+
+    const report = parseWindowsApplicationsReport(
+      values({
+        [`${prefix}/COMPANY-APP/Name`]: "Contoso Client",
+        [`${prefix}/COMPANY-APP/Status`]: "70",
+      }),
+    );
+
+    expect(report?.sources).toEqual({ win32: false, msi: true });
+  });
+
+  it("treats an answered empty Get as a complete source", () => {
+    expect(
+      parseWindowsApplicationsReport(values({}), {
+        reportedCommandIds: new Set(["windows-app-inventory-win32"]),
+      }),
+    ).toEqual({ applications: [], sources: { win32: true, msi: false } });
+  });
+
+  it("keeps Win32 rows when only the MSI source answered", () => {
+    const prefix = "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI";
+
+    const report = parseWindowsApplicationsReport(
+      values({
+        [`${prefix}/MANAGED-APP/Name`]: "Managed Client",
+        [`${prefix}/MANAGED-APP/Version`]: "2.0.0",
+        [`${prefix}/MANAGED-APP/Status`]: "70",
+      }),
+    )!;
+
+    const merged = mergeWindowsApplicationReport(
+      [
+        { bundleId: "WIN32-APP", name: "Win32 App", publisher: "Contoso" },
+        { bundleId: "STALE-MANAGED", name: "Gone", isManaged: true },
+      ],
+      report,
+    );
+
+    expect(merged.map((application) => application.bundleId).sort()).toEqual([
+      "MANAGED-APP",
+      "WIN32-APP",
+    ]);
+    expect(merged.find((application) => application.bundleId === "MANAGED-APP")).toMatchObject({
+      isManaged: true,
+    });
+  });
+
+  it("keeps managed rows when only Win32 answered, including the managed flag", () => {
+    const report = parseWindowsApplicationsReport(
+      values({
+        "./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram/InstalledProgram/MANAGED-APP/Name":
+          "Managed Client",
+      }),
+    )!;
+
+    const merged = mergeWindowsApplicationReport(
+      [{ bundleId: "MANAGED-APP", name: "Old name", isManaged: true }],
+      report,
+    );
+
+    expect(merged).toEqual([
+      expect.objectContaining({ bundleId: "MANAGED-APP", name: "Managed Client", isManaged: true }),
+    ]);
+  });
 });
 
 describe("windowsApplicationInventoryDue", () => {
@@ -352,5 +514,39 @@ describe("hasWindowsInventory", () => {
   it("detects usable reports", () => {
     expect(hasWindowsInventory(parseWindowsInventory(fullReport()))).toBe(true);
     expect(hasWindowsInventory(parseWindowsInventory(values({})))).toBe(false);
+    expect(
+      hasWindowsInventory(
+        parseWindowsInventory(values({ [WINDOWS_INVENTORY_URI.secureBootState]: "1" })),
+      ),
+    ).toBe(true);
+  });
+
+  it("distinguishes a security snapshot", () => {
+    expect(
+      hasWindowsSecurityInventory(
+        parseWindowsInventory(values({ [WINDOWS_INVENTORY_URI.tpmVersion]: "2.0" })),
+      ),
+    ).toBe(true);
+    expect(hasWindowsSecurityInventory(parseWindowsInventory(fullReport()))).toBe(false);
+  });
+});
+
+describe("windowsInventoryUpdate security columns", () => {
+  it("maps parsed security values onto the device patch", () => {
+    const inventory = parseWindowsInventory(
+      values({
+        [WINDOWS_INVENTORY_URI.bitLockerCompliance]: "1",
+        [WINDOWS_INVENTORY_URI.tpmVersion]: "2.0",
+        [WINDOWS_INVENTORY_URI.secureBootState]: "1",
+        [WINDOWS_INVENTORY_URI.domainName]: "corp.contoso.com",
+      }),
+    );
+
+    expect(windowsInventoryUpdate(inventory, {})).toMatchObject({
+      bitLockerEnabled: true,
+      tpmVersion: "2.0",
+      secureBootState: 1,
+      domainName: "corp.contoso.com",
+    });
   });
 });

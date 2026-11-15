@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { sealSecret } from "@mattrax/crypto";
+import { createEscrowCertificate, encryptCmsEnvelopedData, pemEncode } from "@mattrax/scep";
 import {
   EnterpriseNotFound,
   EnterprisePermissionDenied,
@@ -392,5 +393,386 @@ describe("installed application inventory", () => {
         )
       ).applications.map((row: any) => row.bundleId),
     ).toEqual(["com.example.Note", "com.apple.Safari"]);
+  });
+});
+
+const escrowKeyPair = async (commonName: string) => {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+
+  const certificate = await createEscrowCertificate(keyPair, commonName);
+  const certificatePem = pemEncode("CERTIFICATE", certificate.toSchema().toBER(false));
+  const pkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+
+  return { keyPair, certificatePem, privateKeyPem: pemEncode("PRIVATE KEY", pkcs8) };
+};
+
+const cmsWrappedKey = async (certificatePem: string, plaintext: string) => {
+  const wrapped = await encryptCmsEnvelopedData(
+    new TextEncoder().encode(plaintext),
+    certificatePem,
+  );
+  let binary = "";
+
+  for (const byte of wrapped) binary += String.fromCharCode(byte);
+
+  return btoa(binary);
+};
+
+const seedCmsSecret = async (
+  db: ReturnType<typeof makeDb>,
+  deviceId: string,
+  organizationId: string,
+  wrapped: string,
+) => {
+  const now = new Date();
+  db.store.device_secret.push({
+    deviceId,
+    organizationId,
+    kind: "filevault_recovery_key",
+    sealedValue: await sealSecret(authSecret, wrapped),
+    format: "cms",
+    createdAt: now,
+    updatedAt: now,
+    rotatedAt: now,
+  });
+};
+
+describe("FileVault escrow key lifecycle", () => {
+  it("generates a tenant escrow key and reports only the certificate", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const info = await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
+
+    expect(info.configured).toBe(true);
+    expect(info.certificatePem).toContain("BEGIN CERTIFICATE");
+    expect(info.fingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(info.source).toBe("generated");
+    expect(JSON.stringify(info)).not.toContain("PRIVATE KEY");
+    // The private key is sealed at rest.
+    expect(db.store.apple_fde_escrow_key[0]).toMatchObject({ organizationId: tenant.id });
+    expect(db.store.apple_fde_escrow_key[0]!.sealedPrivateKey).not.toContain("PRIVATE KEY");
+  });
+
+  it("unwraps a CMS-wrapped recovery key on reveal", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const info = await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    await seedCmsSecret(db, "device-1", tenant.id, await cmsWrappedKey(info.certificatePem!, key));
+
+    const revealed = await runEffect(
+      service.getDeviceRecoveryKey(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(revealed.recoveryKey).toBe(key);
+    expect(
+      db.store.audit_log.some((entry: any) => entry.action === "device.recovery_key_viewed"),
+    ).toBe(true);
+  });
+
+  it("refuses a key wrapped for a certificate it holds no private key for", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
+
+    const foreign = await escrowKeyPair("Foreign escrow");
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    await seedCmsSecret(
+      db,
+      "device-1",
+      tenant.id,
+      await cmsWrappedKey(foreign.certificatePem, key),
+    );
+
+    await expect(
+      runEffect(service.getDeviceRecoveryKey(request(headers), tenant.id, "device-1")),
+    ).rejects.toMatchObject({ message: expect.stringContaining("could not be decrypted") });
+  });
+
+  it("accepts only a matching certificate/key pair on upload", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const pair = await escrowKeyPair("Uploaded escrow");
+    const other = await escrowKeyPair("Other escrow");
+
+    const uploaded = await runEffect(
+      service.uploadAppleFdeEscrowKey(request(headers), tenant.id, {
+        certificatePem: pair.certificatePem,
+        privateKeyPem: pair.privateKeyPem,
+      }),
+    );
+
+    expect(uploaded.source).toBe("uploaded");
+    expect(uploaded.subject).toBe("Uploaded escrow");
+    expect(db.store.apple_fde_escrow_key).toHaveLength(1);
+
+    await expect(
+      runEffect(
+        service.uploadAppleFdeEscrowKey(request(headers), tenant.id, {
+          certificatePem: pair.certificatePem,
+          privateKeyPem: other.privateKeyPem,
+        }),
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("do not match") });
+  });
+});
+
+describe("Activation Lock bypass code", () => {
+  it("reveals a sealed bypass code behind step-up and audits it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    const now = new Date();
+    db.store.device_secret.push({
+      deviceId: "device-1",
+      organizationId: tenant.id,
+      kind: "activation_lock_bypass_code",
+      sealedValue: await sealSecret(authSecret, "BYPASS-1234"),
+      format: "plaintext",
+      createdAt: now,
+      updatedAt: now,
+      rotatedAt: now,
+    });
+
+    const revealed = await runEffect(
+      service.getDeviceActivationLockBypassCode(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(revealed.bypassCode).toBe("BYPASS-1234");
+    expect(
+      db.store.audit_log.some(
+        (entry: any) => entry.action === "device.activation_lock_bypass_code_viewed",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(db.store.audit_log)).not.toContain("BYPASS-1234");
+  });
+
+  it("explains that no code was collected instead of claiming Activation Lock is clear", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+
+    await expect(
+      runEffect(service.getDeviceActivationLockBypassCode(request(headers), tenant.id, "device-1")),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("requests the bypass code with its own command", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "collect-activation-lock-code",
+      }),
+    );
+
+    expect(db.store.device_command[0]).toMatchObject({
+      requestType: "ActivationLockBypassCode",
+      payload: {},
+    });
+  });
+});
+
+describe("erase flags and Recovery Lock", () => {
+  it("sets erase flags explicitly and does not claim Activation Lock is clear", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    // An iPhone: proximity setup is an iOS erase key.
+    db.store.device.push(
+      deviceRow("device-1", tenant.id, { osEdition: "iOS", model: "iPhone15,2" }),
+    );
+
+    const response = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+
+    const erase = db.store.device_command.find(
+      (command: any) => command.requestType === "EraseDevice",
+    );
+
+    expect(erase?.payload).toMatchObject({
+      ObliterationBehavior: "Default",
+      DisallowProximitySetup: true,
+      PreserveDataPlan: false,
+    });
+
+    // Supervised devices must not be able to re-enable Activation Lock after
+    // the wipe, so the MDM option is queued before the erase.
+    const settings = db.store.device_command.find(
+      (command: any) => command.requestType === "Settings",
+    );
+
+    expect(settings?.payload).toEqual({
+      Settings: [
+        {
+          MDMOptions: {
+            Item: "MDMOptions",
+            MDMOptions: { ActivationLockAllowedWhileSupervised: false },
+          },
+        },
+      ],
+    });
+
+    const warning =
+      "activationLockWarning" in response ? response.activationLockWarning : undefined;
+
+    expect(warning).toContain("Activation Lock cannot be confirmed");
+  });
+
+  it("omits the iOS-only key on a Mac erase", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id, { osEdition: "macOS" }));
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+
+    const erase = db.store.device_command.find(
+      (command: any) => command.requestType === "EraseDevice",
+    );
+
+    expect(erase?.payload).not.toHaveProperty("DisallowProximitySetup");
+  });
+
+  it("stores a generated Recovery Lock password and verifies it with the same value", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id, { osEdition: "macOS" }));
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-recovery-lock",
+      }),
+    );
+
+    const set = db.store.device_command[0]!;
+    expect(set.requestType).toBe("SetRecoveryLock");
+    const setPayload = Schema.Struct({ NewPassword: Schema.String });
+    const newPassword = Schema.is(setPayload)(set.payload) ? set.payload.NewPassword : undefined;
+    expect(newPassword).toMatch(/^[0-9a-f]{24}$/);
+    expect(db.store.device_secret[0]).toMatchObject({
+      kind: "recovery_lock_password",
+      format: "plaintext",
+    });
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "verify-recovery-lock",
+      }),
+    );
+
+    expect(db.store.device_command[1]).toMatchObject({
+      requestType: "VerifyRecoveryLock",
+      payload: { Password: newPassword },
+    });
+  });
+
+  it("rotates the FileVault key with the escrowed key and tenant certificate", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const info = await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    await seedSecret(db, "device-1", tenant.id);
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-filevault-key",
+      }),
+    );
+
+    const command = db.store.device_command.find(
+      (row: any) => row.requestType === "RotateFileVaultKey",
+    );
+
+    expect(command?.payload).toMatchObject({
+      KeyType: "personal",
+      FileVaultUnlock: { Password: key },
+    });
+    const rotatePayload = Schema.Struct({ ReplyEncryptionCertificate: Schema.String });
+    const payload = command?.payload;
+
+    const replyCertificate = Schema.is(rotatePayload)(payload)
+      ? payload.ReplyEncryptionCertificate
+      : undefined;
+
+    expect(replyCertificate).toEqual(expect.any(String));
+    expect(info.certificatePem).toContain("BEGIN CERTIFICATE");
+  });
+
+  it("explains why a rotation cannot run without an escrow key", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    await seedSecret(db, "device-1", tenant.id);
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "rotate-filevault-key",
+        }),
+      ),
+    ).rejects.toMatchObject({ message: expect.stringContaining("escrow key") });
   });
 });

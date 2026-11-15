@@ -296,7 +296,7 @@ describe("command reconciliation", () => {
           id: "install",
           requestType: "InstallApplication",
           status: "sent",
-          updatedAt: at("2026-01-01T01:00:00.000Z"),
+          updatedAt: at("2026-01-01T00:00:00.000Z"),
           targetBundleIds: ["com.example.missing"],
         }),
       ],

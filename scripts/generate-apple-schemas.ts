@@ -5,10 +5,28 @@ import { parse } from "../node_modules/.pnpm/yaml@2.8.3/node_modules/yaml/dist/i
 const APPLE_REPO = "/tmp/apple-device-management";
 const OUT_DIR = path.resolve(process.cwd(), "packages/policy-apple/src/generated");
 
-// Ensure output directory exists
+/**
+ * `supportedOS` metadata is emitted separately from the policy schemas because
+ * policy delivery (management-backend-enterprise) must import it inside the
+ * Worker, where the unbundled `policy-apple` sources do not resolve.
+ */
+const SUPPORT_OUT_DIR = path.resolve(process.cwd(), "packages/dm-apple/src/generated");
+
+// Ensure output directories exist
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
+fs.mkdirSync(SUPPORT_OUT_DIR, { recursive: true });
+
 // Type definitions for Apple schema YAML
+interface AppleSupportedOsEntry {
+  introduced?: string;
+  deprecated?: string;
+  removed?: string;
+}
+
+/** Apple's `supportedOS` block, keyed by OS family. */
+type AppleSupportedOs = Record<string, AppleSupportedOsEntry | undefined>;
+
 interface AppleSchemaFile {
   title?: string;
   description?: string;
@@ -16,9 +34,10 @@ interface AppleSchemaFile {
     payloadtype?: string;
     declarationtype?: string;
     requesttype?: string;
-    supportedOS?: unknown;
+    supportedOS?: AppleSupportedOs;
   };
   payloadkeys?: ApplePayloadKey[];
+  responsekeys?: ApplePayloadKey[];
 }
 
 interface ApplePayloadKey {
@@ -34,6 +53,7 @@ interface ApplePayloadKey {
   subkeys?: ApplePayloadKey[];
   anyof?: ApplePayloadKey[];
   subkeytype?: string;
+  supportedOS?: AppleSupportedOs;
 }
 
 // Helpers for generating valid TypeScript identifiers
@@ -99,6 +119,10 @@ class CircularRefTracker {
 
   hasRefs(): boolean {
     return this.refs.size > 0;
+  }
+
+  entries(): IterableIterator<[ApplePayloadKey[], string]> {
+    return this.refs.entries();
   }
 }
 
@@ -332,7 +356,7 @@ function generateSchemaFromFile(
   const helperDecls: string[] = [];
 
   if (tracker.hasRefs()) {
-    for (const [subkeys, id] of tracker.refs) {
+    for (const [subkeys, id] of tracker.entries()) {
       const subCtx: GenContext = {
         tracker,
         visited: new Set(),
@@ -410,7 +434,7 @@ const checkinNames = new Set(collectNames("checkin", path.join(APPLE_REPO, "mdm/
 // Build rename map for cross-category conflicts.
 // Priority: declarations > profiles > commands > checkin
 // Lower priority categories get renamed when they conflict with higher priority ones.
-const crossCategoryRenames = new Map<string, { name: string; category: string }>();
+const crossCategoryRenames = new Map<string, string>();
 
 function addRenames(
   lowerNames: Set<string>,
@@ -511,22 +535,167 @@ generateCategoryFileWithRenames(
   "declarations.ts",
 );
 
-generateCategoryFileWithRenames(
-  "profile",
-  path.join(APPLE_REPO, "mdm/profiles"),
-  "profiles.ts",
+generateCategoryFileWithRenames("profile", path.join(APPLE_REPO, "mdm/profiles"), "profiles.ts");
+
+generateCategoryFileWithRenames("command", path.join(APPLE_REPO, "mdm/commands"), "commands.ts");
+
+generateCategoryFileWithRenames("checkin", path.join(APPLE_REPO, "mdm/checkin"), "checkin.ts");
+
+// ─── Supported OS metadata ───────────────────────────────────────
+//
+// `payload.supportedOS` is the only machine-readable statement Apple makes
+// about which OS versions accept a payload or declaration. Policy delivery
+// needs it to filter a configuration out of a device's declarations, so it is
+// emitted as data alongside the schemas rather than dropped.
+
+const OS_FAMILIES = ["iOS", "iPadOS", "macOS", "tvOS", "visionOS", "watchOS"] as const;
+
+type OsFamily = (typeof OS_FAMILIES)[number];
+
+interface OsEntry {
+  introduced?: string;
+  deprecated?: string;
+  removed?: string;
+}
+
+type SupportedOs = Partial<Record<OsFamily, OsEntry>>;
+
+const normaliseSupportedOs = (value: AppleSupportedOs | undefined): SupportedOs | undefined => {
+  if (!value) return undefined;
+
+  const result: SupportedOs = {};
+
+  for (const family of OS_FAMILIES) {
+    const info = value[family];
+
+    // `n/a` means the OS does not support the payload at all; recording it as a
+    // version would make the delivery filter believe it is supported.
+    if (!info?.introduced || info.introduced === "n/a") continue;
+
+    const entry: OsEntry = { introduced: info.introduced };
+
+    if (info.deprecated && info.deprecated !== "n/a") entry.deprecated = info.deprecated;
+
+    if (info.removed && info.removed !== "n/a") entry.removed = info.removed;
+
+    result[family] = entry;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+};
+
+const supportedOsEntries = new Map<string, SupportedOs>();
+
+const collectSupportedOs = (identifier: string, filePath: string) => {
+  const data: AppleSchemaFile = parse(fs.readFileSync(filePath, "utf-8"));
+  const supported = normaliseSupportedOs(data.payload?.supportedOS);
+
+  if (supported) supportedOsEntries.set(identifier, supported);
+};
+
+const collectSupportedOsDir = (dir: string, prefix: "payloadtype" | "declarationtype") => {
+  for (const file of fs.readdirSync(dir).filter((name) => name.endsWith(".yaml"))) {
+    const filePath = path.join(dir, file);
+    const data: AppleSchemaFile = parse(fs.readFileSync(filePath, "utf-8"));
+
+    const identifier =
+      prefix === "payloadtype" ? data.payload?.payloadtype : data.payload?.declarationtype;
+
+    if (identifier) collectSupportedOs(identifier, filePath);
+  }
+};
+
+collectSupportedOsDir(path.join(APPLE_REPO, "mdm/profiles"), "payloadtype");
+
+collectSupportedOsDir(
+  path.join(APPLE_REPO, "declarative/declarations/configurations"),
+  "declarationtype",
 );
 
-generateCategoryFileWithRenames(
-  "command",
-  path.join(APPLE_REPO, "mdm/commands"),
-  "commands.ts",
+const declarativeProtocol = (() => {
+  const data: AppleSchemaFile = parse(
+    fs.readFileSync(path.join(APPLE_REPO, "mdm/commands/declarativemanagement.yaml"), "utf-8"),
+  );
+
+  return normaliseSupportedOs(data.payload?.supportedOS);
+})();
+
+const literalOs = (entry: OsEntry) => {
+  const fields = [`introduced: ${JSON.stringify(entry.introduced)}`];
+
+  if (entry.deprecated) fields.push(`deprecated: ${JSON.stringify(entry.deprecated)}`);
+
+  if (entry.removed) fields.push(`removed: ${JSON.stringify(entry.removed)}`);
+
+  return `{ ${fields.join(", ")} }`;
+};
+
+const supportedOsSource = `// Auto-generated from https://github.com/apple/device-management
+// Do not edit manually. Regenerate with \`pnpm exec tsx scripts/generate-apple-schemas.ts\`.
+
+/**
+ * Per-OS version support for an Apple payload or declaration type, taken from
+ * the schema's \`supportedOS\` block. An OS the payload does not support is
+ * absent rather than mapped to a version.
+ */
+export type AppleSupportedOs = Partial<
+  Record<
+    "iOS" | "iPadOS" | "macOS" | "tvOS" | "visionOS" | "watchOS",
+    { readonly introduced: string; readonly deprecated?: string; readonly removed?: string }
+  >
+>;
+
+/** Keyed by \`payloadtype\` for profiles and \`declarationtype\` for declarations. */
+export const APPLE_SUPPORTED_OS: Readonly<Record<string, AppleSupportedOs>> = {
+${[...supportedOsEntries]
+  .sort(([left], [right]) => left.localeCompare(right))
+  .map(
+    ([identifier, supported]) =>
+      `  ${JSON.stringify(identifier)}: {\n${OS_FAMILIES.flatMap((family) =>
+        supported[family] ? [`    ${family}: ${literalOs(supported[family])},`] : [],
+      ).join("\n")}\n  },`,
+  )
+  .join("\n")}
+};
+
+/**
+ * OS versions that first support the Declarative Management engine
+ * (\`DeclarativeManagement\` command). A device below these versions cannot apply
+ * a declaration, so policy delivery must use legacy profiles instead.
+ */
+export const APPLE_DECLARATIVE_PROTOCOL_SUPPORT: AppleSupportedOs = {
+${(declarativeProtocol ? OS_FAMILIES.filter((family) => declarativeProtocol[family]) : [])
+  .map((family) => `  ${family}: ${literalOs(declarativeProtocol![family]!)},`)
+  .join("\n")}
+};
+`;
+
+fs.writeFileSync(path.join(SUPPORT_OUT_DIR, "supportedOs.ts"), supportedOsSource, "utf-8");
+
+console.log(`Generated supportedOs.ts with ${supportedOsEntries.size} entries`);
+
+/**
+ * The policy designer shows the same range the delivery path enforces, so the
+ * published metadata is also emitted as a static asset the dashboard loads.
+ */
+const WEB_CATALOG_DIR = path.resolve(process.cwd(), "apps/web/public/catalog");
+
+fs.mkdirSync(WEB_CATALOG_DIR, { recursive: true });
+
+fs.writeFileSync(
+  path.join(WEB_CATALOG_DIR, "apple-supported-os.json"),
+  `${JSON.stringify(
+    {
+      supportedOs: Object.fromEntries(
+        [...supportedOsEntries].sort(([left], [right]) => left.localeCompare(right)),
+      ),
+    },
+    null,
+    2,
+  )}\n`,
+  "utf-8",
 );
 
-generateCategoryFileWithRenames(
-  "checkin",
-  path.join(APPLE_REPO, "mdm/checkin"),
-  "checkin.ts",
-);
+console.log("Generated apple-supported-os.json");
 
 console.log("Done!");

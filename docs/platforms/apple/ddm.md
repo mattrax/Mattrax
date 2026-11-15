@@ -20,15 +20,58 @@ after the device fetches the items, so a failed sync retries from the previous s
 
 Every tenant gets three declarations:
 
-| Type          | Identifier                             | Purpose                                                                        |
-| ------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
-| Activation    | `DAAF574F-36D4-4089-B2E3-D2008B65D5BE` | Activates the status subscription configuration                                |
-| Configuration | `13DE3EE0-D5A8-46E9-B967-27E56A4D918F` | `com.apple.configuration.management.status-subscriptions` with 18 status items |
-| Management    | `F8C4C3A1-…`                           | `com.apple.management.organization-info` from tenant branding                  |
+| Type          | Identifier                             | Purpose                                                                         |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
+| Activation    | `DAAF574F-36D4-4089-B2E3-D2008B65D5BE` | Activates the status subscription configuration                                 |
+| Configuration | `13DE3EE0-D5A8-46E9-B967-27E56A4D918F` | `com.apple.configuration.management.status-subscriptions`, item list per device |
+| Management    | `F8C4C3A1-…`                           | `com.apple.management.organization-info` from tenant branding                   |
 
 Status items include serial number, model, OS version/build, FileVault state, battery
 health, disk capacity, client capabilities and declaration state. They populate device
 inventory without a separate command.
+
+The subscription is built per device. Apple invalidates the whole declaration when it
+contains an item the OS does not know, so passcode, `mdm.app`, software-update and
+`security.*` items are only added once the device's reported OS version supports them.
+See [Apple security and inventory](/platforms/apple/security) for the matrix.
+
+## Declarative or legacy delivery
+
+A device only gets `DdmSync` when it can apply declarations:
+
+- its reported OS is at least macOS 13 / iOS 15 / tvOS 16 / watchOS 10 / visionOS 1.1, and
+- `management.client-capabilities` does not explicitly report that it lacks
+  `com.apple.configuration.*` support.
+
+Otherwise Mattrax records the decision — `declarationMode = legacy` plus a reason and
+timestamp on `device_apple`, exposed on the device detail — and delivers the policy's
+legacy kinds as `.mobileconfig` profiles through `InstallProfile` commands. A profile the
+policy no longer contains is removed with `RemoveProfile`. Certificates are compiled into
+a `com.apple.security.pkcs1` profile on this path, because the certificate declaration
+itself needs macOS 14 / iOS 17.
+
+When a device later reports a supported OS and capability, it moves back to DDM, the
+leftover profiles are removed and the declaration token is cleared so a full sync runs.
+Kinds with no legacy equivalent (raw declarations) are not delivered and are reported in
+the recorded reason.
+
+## OS scoping
+
+Apple publishes `supportedOS` for every payload and declaration type. Mattrax carries that
+metadata through schema generation and filters delivery with it:
+
+- a declaration is only listed for a device whose OS version meets the type's minimum, and
+- a custom `.mobileconfig` is only delivered when every payload type inside it is supported
+  by the device's OS.
+
+Configurations that are filtered out are omitted from the device's declarations (and are
+listed as undeliverable in the recorded reason when the device is on the legacy path).
+The policy designer shows the same per-family range
+(`macOS 14+ · iOS 17+`) the delivery path enforces, and refuses to add a collection that
+only supports an OS family Mattrax does not manage.
+
+Windows policies use the same mechanism where metadata exists: a designer node carries the
+setting's minimum supported build and delivery skips nodes above the device's build.
 
 Each policy scope gets one activation: the group id, or `direct:<policyId>` for a direct
 device assignment.
@@ -140,7 +183,9 @@ debugging a device.
 
 - `mttx.apple.device` is not a general restrictions editor. Use custom profiles or DDM.
 - `mttx.apple.application.<id>` is rejected.
-- There is no automatic profile install command; profiles are pulled through DDM.
+- Profiles are pulled through DDM on capable devices; pre-DDM devices receive
+  `InstallProfile` commands instead. `mttx.apple.device` and custom profiles have a legacy
+  equivalent, raw declarations do not.
 - There is no CRL/OCSP endpoint for certificates.
 - DDM status reports persist declaration state and inventory but do not implement a
   compliance engine.

@@ -4,7 +4,9 @@ import { Db } from "@mattrax/enterprise-core";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
+  EnterpriseConflict,
   EnterpriseForbidden,
+  StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
 import { signStepUpGrant } from "../src/stepUp.js";
@@ -45,7 +47,7 @@ const makeContext = (
     email: options.email,
   }).pipe(Layer.provide(Layer.succeed(Db, db)));
 
-  const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>) =>
+  const run = <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
     runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
@@ -106,13 +108,14 @@ const session = (grant?: string) => {
 };
 
 /** Mint a grant for a browser session, as the step-up endpoints would. */
-const grantFor = (action: "api-token-create" | "api-token-revoke") =>
+const grantFor = (action: "api-token-create" | "api-token-revoke" | "email-change") =>
   Effect.runPromise(
     signStepUpGrant(authSecret, {
       subjectId: "user-1",
       email: "owner@example.com",
       sessionId: "session-1",
       action,
+      method: "totp",
       expiresAtMillis: Date.now() + 60_000,
     }),
   );
@@ -336,12 +339,8 @@ describe("email verification", () => {
     const token = sent[0]!.text.match(/verify-email\?token=([^\s]+)/)?.[1];
     expect(token).toBeTruthy();
 
-    await run((auth) =>
-      auth.verifyEmail(session(), { token: decodeURIComponent(token!) }),
-    );
-    await run((auth) =>
-      auth.verifyEmail(session(), { token: decodeURIComponent(token!) }),
-    );
+    await run((auth) => auth.verifyEmail(session(), { token: decodeURIComponent(token!) }));
+    await run((auth) => auth.verifyEmail(session(), { token: decodeURIComponent(token!) }));
 
     expect(sent.filter((message) => message.subject === "Welcome to Mattrax")).toHaveLength(1);
   });
@@ -366,8 +365,10 @@ describe("email verification", () => {
 
   it("requires the current email to be verified before changing it", async () => {
     const { run } = makeContext(unverified());
+    const grant = await grantFor("email-change");
+
     await expect(
-      run((auth) => auth.requestEmailChange(session(), { newEmail: "new@example.com" })),
+      run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" })),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
@@ -377,5 +378,235 @@ describe("email verification", () => {
     await expect(
       run((auth) => auth.createApiToken(session(grant), { name: "CLI" })),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
+  });
+});
+
+describe("email change ceremony", () => {
+  const sent: Array<{ to: string; subject: string; text: string }> = [];
+
+  const makeEmailContext = (initial = seedUserAndTenant()) => {
+    sent.length = 0;
+
+    return makeContext(initial, {
+      email: { send: async (message: any) => void sent.push(message) },
+    });
+  };
+
+  /** The confirmation and cancellation links the two emails carried. */
+  const linksFrom = () => {
+    const confirm = sent.find((message) => message.to.startsWith("new@"))?.text;
+    const cancel = sent.find((message) => message.text.includes("emailCancelToken"))?.text;
+
+    return {
+      confirm: decodeURIComponent(confirm?.match(/emailToken=([^\s]+)/)?.[1] ?? ""),
+      cancel: decodeURIComponent(cancel?.match(/emailCancelToken=([^\s]+)/)?.[1] ?? ""),
+    };
+  };
+
+  it("requires a step-up grant before it will start a change", async () => {
+    const { run } = makeEmailContext();
+
+    await expect(
+      run((auth) => auth.requestEmailChange(session(), { newEmail: "new@example.com" })),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("notifies the new address and the old address with a cancel link", async () => {
+    const { db, run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+
+    expect(sent).toHaveLength(2);
+    expect(sent.map((message) => message.to).sort()).toEqual([
+      "new@example.com",
+      "owner@example.com",
+    ]);
+    expect(sent.find((message) => message.to === "owner@example.com")?.subject).toBe(
+      "Your Mattrax email address is being changed",
+    );
+    expect(linksFrom().confirm).toEqual(expect.any(String));
+    expect(linksFrom().cancel).toEqual(expect.any(String));
+    expect(db.store.account_email_change).toHaveLength(1);
+    expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
+      "account.email_change_requested",
+    );
+  });
+
+  it("bumps the security revision and consumes the token once", async () => {
+    const { db, run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+
+    const { confirm } = linksFrom();
+    const revisionBefore = db.store.user[0]!.authRevision;
+    expect(revisionBefore).toBeUndefined();
+
+    await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).resolves.toEqual({
+      status: "ok",
+    });
+
+    expect(db.store.user[0]).toMatchObject({
+      email: "new@example.com",
+      emailVerified: true,
+    });
+    expect(db.store.user[0]!.authRevision).toMatch(/^[a-f0-9]{24}$/);
+    expect(db.store.account_email_change[0]!.consumedAt).toBeInstanceOf(Date);
+    expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
+      "account.email_change_completed",
+    );
+
+    await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
+      EnterpriseBadRequest,
+    );
+    expect(db.store.user[0]!.email).toBe("new@example.com");
+  });
+
+  it("returns a conflict when the address is registered during the hour", async () => {
+    const { db, run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+
+    // Someone else registers the target address after the request was made.
+    const now = new Date();
+
+    db.store.user.push({
+      id: "user-2",
+      name: "Other",
+      email: "new@example.com",
+      emailVerified: true,
+      disabled: false,
+      source: "manual",
+      totpEnabled: false,
+      passkeyEnabled: true,
+      authRevision: "revision-other",
+      welcomeEmailSentAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const { confirm } = linksFrom();
+
+    await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
+      EnterpriseConflict,
+    );
+    expect(db.store.user[0]!.email).toBe("owner@example.com");
+  });
+
+  it("cancels from the old address's link and records it", async () => {
+    const { db, run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+
+    const { confirm, cancel } = linksFrom();
+
+    await expect(run((auth) => auth.cancelEmailChange({ token: cancel }))).resolves.toEqual({
+      status: "ok",
+    });
+    expect(db.store.account_email_change[0]!.cancelledAt).toBeInstanceOf(Date);
+    expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
+      "account.email_change_cancelled",
+    );
+
+    // The confirmation link no longer applies.
+    await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
+      EnterpriseBadRequest,
+    );
+    expect(db.store.user[0]!.email).toBe("owner@example.com");
+  });
+
+  it("supersedes an unanswered request when a new one starts", async () => {
+    const { db, run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "first@example.com" }));
+    const first = linksFrom().confirm;
+
+    await run((auth) =>
+      auth.requestEmailChange(session(grant), { newEmail: "second@example.com" }),
+    );
+
+    expect(db.store.account_email_change).toHaveLength(2);
+    await expect(run((auth) => auth.verifyEmailChange({ token: first }))).rejects.toBeInstanceOf(
+      EnterpriseBadRequest,
+    );
+  });
+});
+
+describe("account audit stream", () => {
+  it("records the first authenticated use of a session with its client descriptor", async () => {
+    const { db, run } = makeContext(seedUserAndTenant());
+
+    const request = new Request(`${origin}/api/v1/me`, {
+      headers: {
+        cookie: "__Host-mattrax_session=test",
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "cf-connecting-ip": "203.0.113.9",
+      },
+    });
+
+    await run((auth) => auth.requireUser(request));
+
+    expect(db.store.account_session_context).toHaveLength(1);
+    expect(db.store.account_session_context[0]).toMatchObject({
+      sessionId: "session-1",
+      userId: "user-1",
+      browser: "Chrome",
+      platform: "macOS",
+      deviceType: "desktop",
+    });
+    // The raw address is never stored; the digest is a bounded prefix.
+    expect(db.store.account_session_context[0]!.ipHash).toMatch(/^[a-f0-9]{32}$/);
+    expect(JSON.stringify(db.store.account_session_context)).not.toContain("203.0.113.9");
+
+    expect(db.store.account_audit_log).toMatchObject([
+      { action: "account.sign_in", targetType: "session", targetId: "session-1" },
+    ]);
+
+    // A second request refreshes nothing and does not duplicate the sign-in.
+    await run((auth) => auth.requireUser(request));
+    expect(db.store.account_audit_log).toHaveLength(1);
+  });
+
+  it("records a failed step-up without revealing the factor to the client", async () => {
+    const { db, run } = makeContext(seedUserAndTenant());
+
+    await expect(
+      run((auth) => auth.stepUpTotp(session(), { code: "000000", action: "api-token-create" })),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+
+    expect(
+      db.store.account_audit_log.filter((row: any) => row.action === "account.step_up_failed"),
+    ).toMatchObject([
+      {
+        action: "account.step_up_failed",
+        targetType: "step_up",
+        targetId: "api-token-create",
+      },
+    ]);
+  });
+
+  it("records API token creation and revocation", async () => {
+    const { db, run } = makeContext(seedUserAndTenant());
+    const createGrant = await grantFor("api-token-create");
+
+    const created = await run((auth) =>
+      auth.createApiToken(session(createGrant), { name: "CLI", scopes: ["read"] }),
+    );
+
+    const revokeGrant = await grantFor("api-token-revoke");
+
+    await run((auth) => auth.revokeApiToken(session(revokeGrant), created.item.id));
+
+    expect(
+      db.store.account_audit_log
+        .map((row: any) => row.action)
+        .filter((action: string) => action.startsWith("account.api_token")),
+    ).toEqual(["account.api_token_created", "account.api_token_revoked"]);
   });
 });

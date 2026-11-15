@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 // The edge verifier is deliberately kept out of this package's production
 // graph. Importing it here proves the real signer and the real verifier agree
 // on the wire format instead of testing two hand-written fixtures.
-import { verifySsrToken as verifyAtEdge } from "../../../apps/web/src/server/ssr-token.ts";
-import { signSsrToken } from "../src/ssrToken.js";
+import {
+  verifySsrRevision as verifyRevisionAtEdge,
+  verifySsrToken as verifyAtEdge,
+} from "../../../apps/web/src/server/ssr-token.ts";
+import { signSsrRevision, signSsrToken } from "../src/ssrToken.js";
 
 const secret = "interop-secret-that-is-long-enough-for-hmac";
 const sessionCookie = "opaque-session-cookie";
@@ -76,5 +79,36 @@ describe("SSR signer/edge interop", () => {
     const token = await signed();
 
     expect(await verifyAtEdge(secret, token!.token, "rotated-cookie")).toBeUndefined();
+  });
+
+  it("signs a revision the edge verifier accepts for the same session and version", async () => {
+    const token = await signed();
+
+    const revision = await run(
+      signSsrRevision(secret, { sessionId: "session-1", authRevision: "revision-1" }),
+    );
+
+    const payload = await verifyAtEdge(secret, token!.token, sessionCookie);
+    const revisionPayload = await verifyRevisionAtEdge(secret, revision.token);
+
+    expect(revisionPayload).toMatchObject({ sid: "session-1", ver: "revision-1" });
+    expect(revisionPayload!.sid).toBe(payload!.sid);
+    expect(revisionPayload!.ver).toBe(payload!.ver);
+  });
+
+  it("rejects an expired or foreign-secret revision at the edge", async () => {
+    const expired = await run(
+      signSsrRevision(secret, { sessionId: "session-1", authRevision: "revision-1", now: 0 }),
+    );
+
+    const foreign = await run(
+      signSsrRevision("a-different-secret", {
+        sessionId: "session-1",
+        authRevision: "revision-1",
+      }),
+    );
+
+    expect(await verifyRevisionAtEdge(secret, expired.token, Date.now())).toBeUndefined();
+    expect(await verifyRevisionAtEdge(secret, foreign.token)).toBeUndefined();
   });
 });

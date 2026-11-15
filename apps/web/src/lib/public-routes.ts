@@ -75,6 +75,12 @@ export const JAVASCRIPT_REQUIRED_PREFIXES = [
 const matchesPrefix = (pathname: string, prefix: string): boolean =>
   pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 
+/**
+ * Paths robots.txt must not crawl. It includes every sitemap exclusion plus
+ * bearer-token surfaces (an enrollment link is a credential in the URL).
+ */
+export const ROBOTS_DISALLOW_PREFIXES = [...SITEMAP_EXCLUDED_PREFIXES, "/enroll/"] as const;
+
 /** True when a path belongs to the authenticated app or a machine endpoint. */
 export function isSitemapExcluded(path: string): boolean {
   return SITEMAP_EXCLUDED_PREFIXES.some((prefix) => matchesPrefix(path, prefix));

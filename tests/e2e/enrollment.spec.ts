@@ -102,12 +102,18 @@ test.describe("device enrollment", () => {
     await expect(page.locator('[data-slot="card-title"]').first()).toContainText(/enroll in/i);
 
     const grant = await stepUpGrant(page, "tenant-delete");
-    await expect(
-      api<{ status: string }>(page, `/api/v1/tenants/${tenant.id}`, {
+
+    const deletion = await api<{ status: string; reclaimed?: object }>(
+      page,
+      `/api/v1/tenants/${tenant.id}`,
+      {
         method: "DELETE",
         headers: { "x-mattrax-step-up": grant },
-      }),
-    ).resolves.toEqual({ status: "ok" });
+      },
+    );
+
+    expect(deletion.status).toBe("ok");
+    expect(deletion.reclaimed).toBeDefined();
     const removed = await page.request.get(`/api/v1/tenants/${tenant.id}/devices/search`);
     expect(removed.status()).toBe(404);
   });

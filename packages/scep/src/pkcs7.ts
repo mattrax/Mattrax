@@ -1008,3 +1008,165 @@ export async function createDeviceCertificate(
 
   return cert;
 }
+
+// ─── CMS payload helpers ─────────────────────────────────────────
+//
+// Apple wraps a FileVault personal recovery key for the certificate in the
+// `com.apple.security.FDERecoveryKeyEscrow` profile as CMS EnvelopedData, and
+// wraps a signed `.mobileconfig` as CMS SignedData. Both need the same ASN.1
+// handling as SCEP, so the helpers live here rather than in a second parser.
+
+const trimPem = (pem: string) => pem.trim();
+
+/**
+ * Parse a `ContentInfo` and decrypt its EnvelopedData content with the
+ * recipient's RSA private key (PKCS#1 v1.5 key transport, AES/DES3 content
+ * encryption — the combinations Apple emits).
+ */
+export async function decryptCmsEnvelopedData(
+  der: Uint8Array | ArrayBuffer,
+  privateKeyJwk: JsonWebKey,
+): Promise<Uint8Array> {
+  const bytes = der instanceof Uint8Array ? der.slice() : new Uint8Array(der);
+  const contentInfo = pkijs.ContentInfo.fromBER(new Uint8Array(bytes).buffer);
+
+  if (contentInfo.contentType !== pkijs.ContentInfo.ENVELOPED_DATA)
+    throw new Error(`CMS payload is not EnvelopedData (${contentInfo.contentType})`);
+
+  const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
+  const plaintext = await decryptEnvelopedData(envelopedData, privateKeyJwk);
+
+  return new Uint8Array(plaintext);
+}
+
+/**
+ * Encrypt bytes for a certificate as CMS EnvelopedData. Used to build the
+ * escrow fixtures the unwrap path and its tests depend on, and to re-wrap an
+ * existing key when a tenant rotates its escrow certificate.
+ */
+export async function encryptCmsEnvelopedData(
+  plaintext: Uint8Array,
+  certificatePem: string,
+): Promise<Uint8Array> {
+  const certificate = pemToCert(trimPem(certificatePem));
+
+  const encrypted = await encryptForDevice(new Uint8Array(plaintext).buffer, certificate);
+
+  return new Uint8Array(encrypted);
+}
+
+/**
+ * Return the encapsulated content of a CMS SignedData envelope. Apple serves
+ * signed profiles and signed `SecurityInfo` blobs this way; the caller needs
+ * the original plist/JSON bytes, not the signature.
+ */
+export async function extractCmsSignedContent(der: Uint8Array | ArrayBuffer): Promise<Uint8Array> {
+  const bytes = der instanceof Uint8Array ? der.slice() : new Uint8Array(der);
+  const contentInfo = pkijs.ContentInfo.fromBER(new Uint8Array(bytes).buffer);
+
+  if (contentInfo.contentType !== pkijs.ContentInfo.SIGNED_DATA)
+    throw new Error(`CMS payload is not SignedData (${contentInfo.contentType})`);
+
+  const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+
+  return new Uint8Array(extractEContent(signedData.encapContentInfo.eContent));
+}
+
+/**
+ * Build a self-signed certificate for a tenant FileVault escrow key.
+ *
+ * Apple requires the payload referenced by `EncryptCertPayloadUUID` to be a
+ * `com.apple.security.pkcs1` certificate. A self-signed certificate is exactly
+ * what Jamf and Profile Manager generate: only the corresponding private key
+ * matters, and it never leaves Mattrax.
+ */
+export async function createEscrowCertificate(
+  keyPair: CryptoKeyPair,
+  commonName: string,
+  options: {
+    readonly organization?: string;
+    readonly validityYears?: number;
+    readonly serial?: ArrayBuffer;
+  } = {},
+): Promise<pkijs.Certificate> {
+  const certificate = new pkijs.Certificate();
+  certificate.version = 2;
+  certificate.serialNumber = options.serial
+    ? new asn1js.Integer({ valueHex: options.serial })
+    : new asn1js.Integer({ valueHex: crypto.getRandomValues(new Uint8Array(16)).buffer });
+
+  const attributes = [
+    new pkijs.AttributeTypeAndValue({
+      type: "2.5.4.3",
+      value: new asn1js.Utf8String({ value: commonName }),
+    }),
+  ];
+
+  if (options.organization)
+    attributes.push(
+      new pkijs.AttributeTypeAndValue({
+        type: "2.5.4.10",
+        value: new asn1js.Utf8String({ value: options.organization }),
+      }),
+    );
+
+  const name = new pkijs.RelativeDistinguishedNames({ typesAndValues: attributes });
+  certificate.subject = name;
+  certificate.issuer = name;
+
+  certificate.notBefore.value = new Date();
+  const notAfter = new Date();
+
+  notAfter.setUTCFullYear(notAfter.getUTCFullYear() + (options.validityYears ?? 10));
+  certificate.notAfter.value = notAfter;
+
+  // KeyUsage: digitalSignature | keyEncipherment (CMS key transport).
+  const keyUsage = new asn1js.BitString({
+    unusedBits: 5,
+    valueHex: new Uint8Array([0xa0]).buffer,
+  });
+
+  certificate.extensions = [
+    new pkijs.Extension({
+      extnID: "2.5.29.15",
+      critical: true,
+      extnValue: keyUsage.toBER(false),
+      parsedValue: keyUsage,
+    }),
+    new pkijs.Extension({
+      extnID: "2.5.29.19",
+      critical: true,
+      extnValue: new pkijs.BasicConstraints({ cA: false }).toSchema().toBER(false),
+      parsedValue: new pkijs.BasicConstraints({ cA: false }),
+    }),
+  ];
+
+  await certificate.subjectPublicKeyInfo.importKey(keyPair.publicKey);
+  await certificate.sign(keyPair.privateKey, "SHA-256");
+
+  return certificate;
+}
+
+/** DER bytes of a PEM certificate, for hashing or embedding in a plist. */
+export function certificateDer(certificatePem: string): Uint8Array {
+  return new Uint8Array(pemToCert(trimPem(certificatePem)).toSchema().toBER(false));
+}
+
+/** Common name of a PEM certificate, or null when it has none. */
+export function certificateCommonName(certificatePem: string): string | null {
+  const certificate = pemToCert(trimPem(certificatePem));
+  const attribute = certificate.subject.typesAndValues.find((item) => item.type === "2.5.4.3");
+  const value = attribute?.value;
+
+  if (!value) return null;
+
+  const block = value.valueBlock;
+  const text = "value" in block ? block.value : undefined;
+
+  return Schema.is(Schema.String)(text) && text.trim() ? text.trim() : null;
+}
+
+/** Validity end of a PEM certificate. */
+export function certificateNotAfter(certificatePem: string): Date {
+  return pemToCert(trimPem(certificatePem)).notAfter.value;
+}

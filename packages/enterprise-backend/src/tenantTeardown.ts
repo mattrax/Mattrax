@@ -87,6 +87,12 @@ export type SubscriptionReclamation = "cancelled" | "at_period_end" | "none";
  * one place and tests only fake the network.
  */
 export type TenantTeardownDependencies = {
+  /**
+   * Read-only check for the irreversible steps that need external
+   * configuration (billing, storage). Runs before any device is contacted, so
+   * a misconfigured deployment cannot unenroll a fleet and then fail.
+   */
+  readonly preflight?: () => Effect.Effect<void, unknown>;
   readonly unenrollDevices: (
     organizationId: string,
   ) => Effect.Effect<DeviceUnenrollSummary, unknown>;
@@ -268,6 +274,21 @@ export const teardownTenant = (
 
         return yield* Effect.fail(new TenantTeardownStepFailed({ step, message: detail }));
       });
+
+    // Fail before contacting a single device if a later, irreversible step
+    // cannot possibly succeed (for example a Stripe subscription on a
+    // deployment without billing configured).
+    if (deps.preflight)
+      yield* deps.preflight().pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            return yield* fail(
+              "subscription",
+              `Teardown preflight failed: ${describeTeardownError(cause)}`,
+            );
+          }),
+        ),
+      );
 
     const devices = yield* deps.unenrollDevices(organizationId).pipe(
       Effect.catch((cause) =>

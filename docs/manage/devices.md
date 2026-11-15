@@ -53,6 +53,23 @@ updated and groups. Export is capped at 10,000 rows; a truncated response sets
 
 ## Device detail
 
+The detail page opens with the Apple artwork for the model identifier (Windows and
+Android fall back to their platform glyph) and a two-line identity: management name
+and reported model. An **Overview** table carries the inventory facts in plain
+English — management name, device name, vendor, model, asset tag, serial, OS,
+version, build, disk size/used, full-disk encryption, activation lock (when the
+device reports it), last seen and enrolled. A row is omitted when the device has
+not reported that fact, rather than printing "Unknown". Apple serials link to
+Apple's warranty coverage checker.
+
+The **Scope** tab shows the manual groups that include the device, the dynamic
+groups whose current rules match it, and every policy in effect with its resolved
+setting kinds and delivery state. Delivery comes from the DDM declaration status
+the device reports for each policy/kind. Windows and Android show "Not tracked"
+because the dashboard does not yet map their platform delivery records to a
+policy; their command history still shows each delivered configuration. Groups can
+be added or removed from the device page for users with write permission.
+
 The detail page and API expose:
 
 - Identity and inventory (serial, model, OS, disk, FileVault, battery, capabilities).
@@ -65,7 +82,17 @@ The detail page and API expose:
 - Installed applications, with the last report time and a stale marker.
 - APNs push health.
 - Identity certificate counts.
-- FileVault recovery-key presence.
+- FileVault recovery-key presence, format (`plaintext` or unwrapped-on-reveal CMS),
+  escrow age and whether the last security report is stale.
+- Activation Lock bypass-code presence and `IsActivationLockManageable`.
+- Passcode and software-update state, lockdown mode, managed-certificate count and
+  `mdm.app` entries.
+- Policy delivery mode (`ddm` or `legacy`) with the recorded reason.
+
+Notes are shown read-only in the sidebar, rendered as Markdown. They are editable
+from the **Edit details** sheet, which also carries the management name and asset
+tag. The device list has a Notes column (available from the column picker) and the
+Groups column shows the membership count with the group names in a tooltip.
 
 ### Device names
 
@@ -152,17 +179,28 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
   -d '{ "action": "sync" }'
 ```
 
-| Action                  | Apple                | Windows       | Android     | Step-up |
-| ----------------------- | -------------------- | ------------- | ----------- | ------- |
-| `sync`                  | APNs wake-up         | Not supported | Push policy | No      |
-| `lock`                  | Yes (PIN)            | No            | Yes         | Yes     |
-| `wipe`                  | Yes (PIN)            | Yes           | Yes         | Yes     |
-| `restart`               | Yes                  | Yes           | Yes         | Yes     |
-| `shutdown`              | Yes                  | No            | No          | Yes     |
-| `clear-passcode`        | Yes                  | No            | No          | Yes     |
-| `install-app`           | Manifest or Store id | No            | No          | Yes     |
-| `collect-security-info` | Yes                  | No            | No          | No      |
-| `refresh-applications`  | Yes (manual refresh) | No            | No          | No      |
+| Action                         | Apple                | Windows       | Android     | Step-up |
+| ------------------------------ | -------------------- | ------------- | ----------- | ------- |
+| `sync`                         | APNs wake-up         | Not supported | Push policy | No      |
+| `lock`                         | Yes (PIN)            | No            | Yes         | Yes     |
+| `wipe`                         | Yes (PIN)            | Yes           | Yes         | Yes     |
+| `restart`                      | Yes                  | Yes           | Yes         | Yes     |
+| `shutdown`                     | Yes                  | No            | No          | Yes     |
+| `clear-passcode`               | Yes                  | No            | No          | Yes     |
+| `install-app`                  | Manifest or Store id | No            | No          | Yes     |
+| `collect-security-info`        | Yes                  | No            | No          | No      |
+| `refresh-applications`         | Yes (manual refresh) | No            | No          | No      |
+| `collect-activation-lock-code` | Yes (supervised)     | No            | No          | Yes     |
+| `rotate-filevault-key`         | Yes                  | No            | No          | Yes     |
+| `set-recovery-lock`            | Yes (Apple silicon)  | No            | No          | Yes     |
+| `verify-recovery-lock`         | Yes (Apple silicon)  | No            | No          | Yes     |
+| `unenroll` (endpoint)          | Yes                  | Yes           | No          | No      |
+
+The action menu is capability-driven: `GET /api/v1/tenants/:tenantId/devices/:id` returns an
+`actions` array for the device. The API rejects an action that is not in that list, so a
+Windows device never accepts `sync` (it has no push channel; changes are applied at the next
+SyncML poll) and an unenrolled device accepts nothing. The list is derived from the platform,
+the enrollment status and any action capabilities the device reports.
 
 Commands are recorded with a lifecycle and a delivery deadline:
 
@@ -189,7 +227,12 @@ Commands are recorded with a lifecycle and a delivery deadline:
 An expired command is never delivered and never retried, so a lock queued three weeks ago
 on an offline laptop does nothing when the device finally appears. The deadline is returned
 as `expiresAt` by `GET /api/v1/tenants/:tenantId/devices/:id/commands`, alongside a
-`statusLabel` for the lifecycle.
+`statusLabel` for the lifecycle and the command's target `locURI` when it has one
+(Windows policy and inventory commands always do).
+
+Windows policy `Replace`/`Delete` commands and inventory `Get` requests are stored in the
+same command history as imperative actions, with a stable row id per OMA-URI, so a device
+status can always be matched to the command that caused it.
 
 Queueing is idempotent: a request identical to one already queued or in flight on the same
 device returns that command with `deduplicated: true` instead of inserting a second one.
@@ -214,17 +257,21 @@ gone.
 
 These are different operations.
 
-**Unenroll** asks the device to remove management. Apple only:
+**Unenroll** asks the device to remove management. Apple and Windows support it:
 
 ```bash
 curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/unenroll" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
-The status becomes `unenrolling`, certificates are revoked and the device completes removal
-at its next check-in. A device that checks in after its tenant or device row is gone receives
-Apple's `410 Gone`, which tells it to remove the management profile instead of polling a
-server that no longer knows it. Windows and Android do not expose remote unenroll yet.
+The status becomes `unenrolling` and certificates are revoked. Apple completes removal at
+its next check-in (and a device that checks in after its tenant or device row is gone
+receives `410 Gone`). Windows receives an OMA-DM `Exec` on
+`./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll`; while the device is `unenrolling`, the
+next session also deletes the OMA-URIs that were applied, then removes the management
+account. A Windows device that removes management locally reports the `1226` Generic Alert
+on its next check-in, which moves it straight to `unenrolled`. Android does not expose
+remote unenroll yet.
 
 **Delete** removes the local device row and revokes certificates. It does not wipe or
 unenroll the physical device.

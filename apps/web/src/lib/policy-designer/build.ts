@@ -89,8 +89,7 @@ const plistValue = (value: PlistValue): string => {
   if (isNumber(value))
     return Number.isInteger(value) ? `<integer>${value}</integer>` : `<real>${value}</real>`;
 
-  if (value instanceof Date)
-    return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
+  if (value instanceof Date) return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
 
   if (isString(value)) return `<string>${escapeXml(value)}</string>`;
 
@@ -225,7 +224,10 @@ export const defaultValues = (collection: Collection) => {
  * Compare drafts and catalogue defaults without depending on object key order.
  * Dates are normalized because date properties round-trip through JSON strings.
  */
-export const sameValue = (left: PolicyValue | undefined, right: PolicyValue | undefined): boolean => {
+export const sameValue = (
+  left: PolicyValue | undefined,
+  right: PolicyValue | undefined,
+): boolean => {
   const normalize = (value: PolicyValue | undefined): string => {
     if (Array.isArray(value)) return `[${value.map(normalize).join(",")}]`;
 
@@ -385,8 +387,7 @@ const applePayloadValues = (selection: Selection) => {
 
     if (value === undefined) continue;
 
-    if (isPlistDataProperty(property) && isString(value))
-      values[property.key] = plistData(value);
+    if (isPlistDataProperty(property) && isString(value)) values[property.key] = plistData(value);
 
     if (isPlistDateProperty(property) && isString(value)) {
       const date = new Date(value);
@@ -493,7 +494,15 @@ export type WindowNode = {
   readonly omaUri: string;
   readonly value: PolicyValue;
   readonly format: string;
+  /**
+   * Minimum Windows build the setting supports (from the catalogue). Delivery
+   * skips a node the device's build predates, so the designer label is honoured.
+   */
+  readonly minOs?: string;
 };
+
+/** `WindowNode` while it is being assembled. */
+type MutableWindowNode = { -readonly [K in keyof WindowNode]: WindowNode[K] };
 
 export const buildWindowsNodes = (draft: Draft): WindowNode[] => {
   const nodes = new Map<string, WindowNode>();
@@ -510,7 +519,18 @@ export const buildWindowsNodes = (draft: Draft): WindowNode[] => {
         `./Device/Vendor/MSFT/Policy/Config/${selection.identifier}/${property.key}`;
 
       if (/[{}]/.test(omaUri)) continue;
-      nodes.set(omaUri, { omaUri, value, format: windowsFormat(property, value) });
+
+      const minimum = property.minOs?.replace(/\+$/, "");
+
+      const node: MutableWindowNode = {
+        omaUri,
+        value,
+        format: windowsFormat(property, value),
+      };
+
+      if (minimum) node.minOs = minimum;
+
+      nodes.set(omaUri, node);
     }
   }
 

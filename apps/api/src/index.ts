@@ -27,6 +27,7 @@ import {
   androidRoutes,
   makeAppAuth,
   makeAuthLive,
+  makeRecoveryStrategy,
   makeSsoStrategy,
   makeEnterpriseAuthLive,
   EnterpriseAnalyticsService,
@@ -83,6 +84,8 @@ import {
   type AnalyticsProperties,
 } from "./analytics.js";
 import { checkReadiness } from "./readiness.js";
+import { createProbeCache } from "./probeCache.js";
+import { clearsSsrShell, withClearedSsrShell } from "./sessionShell.js";
 import { withSessionPresence } from "./sessionPresence.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
@@ -105,6 +108,9 @@ const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, {
   sso: makeSsoStrategy(),
+  // Break-glass recovery completes through the same session machinery as SSO,
+  // so the issued session is subject to the normal revision and policy checks.
+  recovery: makeRecoveryStrategy(),
 });
 
 const authHttp = AuthContract.httpGroup(AuthApi);
@@ -821,11 +827,23 @@ const checkMailerReady = async (env: Env): Promise<"ok" | "skipped"> => {
   throw new Error("no outbound email binding is configured");
 };
 
+/**
+ * Readiness probes are memoised per isolate for 30 seconds. The storage probe
+ * writes, reads and deletes an object, so running it on every load-balancer
+ * poll is billable work with no extra signal. A new isolate always probes
+ * fresh; the cache is not shared between Workers. Failures are cached for the
+ * same window so a wedged dependency is not retried on every poll, and the
+ * existing per-check timeout still turns a slow probe into a 503.
+ */
+const READINESS_PROBE_TTL_MS = 30_000;
+const storageProbeCache = createProbeCache<"ok">(READINESS_PROBE_TTL_MS);
+const mailerProbeCache = createProbeCache<"ok" | "skipped">(READINESS_PROBE_TTL_MS);
+
 const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {
   const result = await checkReadiness({
     checkDatabase: () => checkDatabaseReady(env),
-    checkStorage: () => checkStorageReady(env),
-    checkMailer: () => checkMailerReady(env),
+    checkStorage: () => storageProbeCache.get(() => checkStorageReady(env)),
+    checkMailer: () => mailerProbeCache.get(() => checkMailerReady(env)),
     version,
     deploymentId: deploymentId(env),
   });
@@ -1023,6 +1041,11 @@ export default {
       sessionCookieName: sessionCookie,
       secure: new URL(request.url).protocol === "https:",
     });
+
+    // A successful revoke/credential/email change must not leave a warm shell
+    // that can paint for another five minutes. Clearing the pair forces the
+    // next navigation through bootstrap, which is authoritative.
+    if (clearsSsrShell(request)) response = withClearedSsrShell(response);
 
     return withRequestId(response, requestId);
   },

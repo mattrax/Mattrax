@@ -100,6 +100,14 @@ export function fromManagementResponse(
             },
           ],
         })),
+      // OMA-DM `Delete` removes the node (and its subtree) from the device's
+      // management tree. It carries a target only: there is no value to send.
+      delete: response.commands
+        .filter((c) => c.kind === "Delete")
+        .map((c) => ({
+          cmdID: c.cmdID,
+          items: [{ target: { locURI: c.locURI ?? "" } }],
+        })),
       final: {},
     },
   };

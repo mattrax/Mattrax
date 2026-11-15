@@ -10,14 +10,40 @@ import { builtInRolePermissions, Permission } from "./rbac.ts";
  * affordances without a service-binding round trip; every data endpoint still
  * re-authorises the session. Nothing here grants authority on its own.
  *
- * The payload is display-only. `ver` is signed so the issuer can correlate a
- * token with an `authRevision`, but the edge does not enforce it; only the API
- * can decide whether a session has been revoked.
+ * The payload is display-only. `ver` is signed and compared with the
+ * {@link SsrRevisionPayload} cookie the API mints alongside it, so a rotated
+ * revision is visible at the edge; the API remains the authority on whether a
+ * session is current, and every data endpoint still re-authorises.
  */
 export const SSR_TOKEN_COOKIE = "__Host-mattrax_ssr";
 
+/**
+ * Signed session-revision cookie, minted with the SSR token.
+ *
+ * The SSR token carries `ver` (the account's `authRevision`) but the edge has
+ * nothing to compare it against on its own. This cookie is that comparison
+ * value: when the API rotates the revision (a passkey is removed, a session is
+ * revoked, the email changes) it also clears/refreshes the revision cookie, so
+ * a warm SSR token whose `ver` no longer matches stops painting the shell
+ * before its five-minute TTL. It is display-only, exactly like the SSR token,
+ * and bootstrap remains authoritative for every data endpoint.
+ */
+export const SSR_REVISION_COOKIE = "__Host-mattrax_ssr_rev";
+
 /** Five minutes: long enough for a page and its navigations, short enough to ignore revocation lag. */
 export const SSR_TOKEN_TTL_MILLIS = 5 * 60 * 1000;
+
+export const SsrRevisionPayload = Schema.Struct({
+  purpose: Schema.Literal("ssr-rev"),
+  /** Session the revision belongs to; must match the SSR token's `sid`. */
+  sid: Schema.String,
+  /** Current `user.authRevision` when the cookie was minted. */
+  ver: Schema.String,
+  iat: Schema.Number,
+  exp: Schema.Number,
+});
+
+export type SsrRevisionPayload = typeof SsrRevisionPayload.Type;
 
 /**
  * The cookie is ~4/3 the size of its JSON body plus a signature. Staying under
@@ -88,8 +114,10 @@ export const SsrTokenPayload = Schema.Struct({
   iat: Schema.Number,
   exp: Schema.Number,
   /**
-   * `user.authRevision` at issue time. Signed but not enforced by the edge
-   * verifier; treat it as advisory metadata and never as revocation.
+   * `user.authRevision` at issue time. The edge compares it with the signed
+   * session-revision cookie; a mismatch is a miss, so a rotated revision stops
+   * painting the shell before the TTL. Without that cookie the token cannot be
+   * proven current, so the edge bootstraps instead of trusting it.
    */
   ver: Schema.String,
   user: SsrTokenUser,

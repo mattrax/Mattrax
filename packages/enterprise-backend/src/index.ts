@@ -39,6 +39,47 @@ export type {
   DecodedAuditCursor,
 } from "./auditLog.js";
 
+export {
+  ACCOUNT_AUDIT,
+  accountAuditEntry,
+  accountAuditOrder,
+  accountAuditWhere,
+  clientAddress,
+  clientDescriptor,
+  hashClientAddress,
+  parseUserAgent,
+  recordAccountAudit,
+} from "./accountAudit.js";
+
+export type { AccountAuditAction, AccountAuditInput, ClientDescriptor } from "./accountAudit.js";
+
+export {
+  RECOVERY_COMPLETION_TTL_MILLIS,
+  RECOVERY_PROOF_TTL_MILLIS,
+  RECOVERY_REQUEST_LIMIT,
+  RECOVERY_WINDOW_MILLIS,
+  approveAccountRecovery,
+  cancelAccountRecovery,
+  createRecoveryLimiter,
+  makeRecoveryStrategy,
+  recoveryApprovalTenant,
+  redeemRecoveryToken,
+  requestAccountRecovery,
+  verifyAccountRecoveryProof,
+} from "./recovery.js";
+
+export type { RecoveryLimiter } from "./recovery.js";
+
+export {
+  listUserSessions,
+  captureSessionContext,
+  revokeAllUserSessions,
+  revokeUserSession,
+  SESSION_CONTEXT_REFRESH_MILLIS,
+} from "./sessions.js";
+
+export type { AccountSession } from "./sessions.js";
+
 export { makeApplePush } from "./push.js";
 
 export type { ApplePush, ApplePushOptions } from "./push.js";

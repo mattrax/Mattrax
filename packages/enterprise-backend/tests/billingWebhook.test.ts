@@ -8,7 +8,7 @@ import {
   billingWebhookRoutes,
   processStripeWebhook,
 } from "../src/billingWebhook.js";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, runEffect, schema } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
 const devicePrice = "price_device";
@@ -72,6 +72,40 @@ const signed = (payload: string, secret = webhookSecret) => ({
   payload,
   signature: signatureFor(payload, secret),
 });
+
+/**
+ * The fake database does not enforce primary keys, so this wrapper adds the one
+ * constraint the Stripe ledger relies on: a second insert with the same event id
+ * fails with MySQL's `ER_DUP_ENTRY`, exactly as production does.
+ */
+const makeLedgerDb = () => {
+  const db = makeDb();
+  const insert = db.insert.bind(db);
+
+  db.insert = (table: any) => {
+    const builder = insert(table);
+
+    if (table !== schema.stripeEvent) return builder;
+
+    const values = builder.values.bind(builder);
+
+    builder.values = (rows: any) => {
+      const row = Array.isArray(rows) ? rows[0] : rows;
+
+      if (db.store.stripe_event.some((existing: any) => existing.id === row.id))
+        throw Object.assign(
+          new Error(`Duplicate entry '${row.id}' for key 'stripe_event.PRIMARY'`),
+          { code: "ER_DUP_ENTRY", errno: 1062 },
+        );
+
+      return values(rows);
+    };
+
+    return builder;
+  };
+
+  return db;
+};
 
 const deliver = (
   db: ReturnType<typeof makeDb>,
@@ -498,6 +532,76 @@ describe("Stripe webhook tenant resolution", () => {
       stripeSubscriptionId: "sub_2",
       status: "active",
     });
+  });
+});
+
+describe("Stripe event ledger", () => {
+  it("records a verified event once and skips a redelivery", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+
+    await expect(deliver(db, payload)).resolves.toMatchObject({
+      organizationId: "org-1",
+      stripeSubscriptionId: "sub_1",
+    });
+    await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
+
+    expect(db.store.stripe_event).toMatchObject([
+      {
+        id: "evt_customer_subscription_created",
+        type: "customer.subscription.created",
+        organizationId: "org-1",
+        receivedAt: now,
+      },
+    ]);
+    expect(db.store.subscription).toHaveLength(1);
+  });
+
+  it("rejects a concurrent duplicate delivery atomically", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    const payload = JSON.stringify(
+      event("customer.subscription.created", subscription({ status: "active" })),
+    );
+
+    // Two isolates can receive the same Stripe event at once. Both verify the
+    // signature; only one commits the ledger row and applies the write.
+    const results = await Promise.all([deliver(db, payload), deliver(db, payload)]);
+
+    const duplicates = results.filter(
+      (result: any) => result && "duplicate" in result && result.duplicate,
+    );
+
+    expect(duplicates).toHaveLength(1);
+    expect(db.store.stripe_event).toHaveLength(1);
+    expect(db.store.subscription).toHaveLength(1);
+  });
+
+  it("records ignored event types so their redelivery is also deduped", async () => {
+    const db = makeLedgerDb();
+    const payload = JSON.stringify(event("customer.created", { id: "cus_1", object: "customer" }));
+
+    await expect(deliver(db, payload)).resolves.toEqual({ ignored: true });
+    await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
+    expect(db.store.stripe_event).toHaveLength(1);
+  });
+
+  it("keeps different event ids independent", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription());
+    await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
+
+    expect(db.store.stripe_event.map((row: any) => row.id).sort()).toEqual([
+      "evt_customer_subscription_created",
+      "evt_customer_subscription_updated",
+    ]);
+    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.subscription[0]).toMatchObject({ status: "past_due" });
   });
 });
 

@@ -33,6 +33,10 @@ owned by that ID. The native `node` and `workerd` binaries are stripped of debug
 symbols at build time; JavaScript stack traces are unaffected, but native crash
 traces will not contain symbol names.
 
+The image also contains the built documentation, served at `/docs/` on the same
+origin, and `/sitemap.xml`/`/robots.txt` advertise that origin rather than a
+hosted one.
+
 ## Requirements
 
 - Docker 24 or newer.

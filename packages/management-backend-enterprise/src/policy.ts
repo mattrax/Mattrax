@@ -1,5 +1,6 @@
 import { Effect, Exit, Schema } from "effect";
 import { parsePlist, serializePlist } from "@mattrax/plist";
+import { certificateDer, extractCmsSignedContent } from "@mattrax/scep";
 import {
   appleAssetTokenEpoch,
   appleAssetTokenExpiresAt,
@@ -187,6 +188,202 @@ const payloadsFromMobileconfig = (root: PlistObject): Array<PlistObject> => {
   return [];
 };
 
+/** One payload inside a `.mobileconfig`, after CMS unwrapping when signed. */
+export type MobileconfigPayload = {
+  readonly type: string;
+  readonly uuid: string | null;
+  readonly identifier: string | null;
+  /** DER of the certificate carried by a `com.apple.security.pkcs1` payload. */
+  readonly certificateDer: Uint8Array | null;
+};
+
+export type MobileconfigInspection = {
+  readonly form: "plist" | "signed-cms";
+  /** Root `PayloadIdentifier`, when present. */
+  readonly identifier: string | null;
+  /** The decoded plist. Signed profiles are inspected but never rewritten. */
+  readonly plist: PlistObject;
+  readonly payloads: ReadonlyArray<MobileconfigPayload>;
+};
+
+const certificateDerFromPayload = (payload: PlistObject): Uint8Array | null => {
+  const content = payload.PayloadContent;
+
+  if (content instanceof Uint8Array) return content;
+
+  if (content instanceof ArrayBuffer) return new Uint8Array(content);
+
+  if (Schema.is(Schema.String)(content)) {
+    try {
+      return decodeBase64(content);
+    } catch {
+      return null;
+    }
+  }
+
+  // fast-plist decodes some `<data>` values into a number array.
+  if (Array.isArray(content)) {
+    const bytes = content.filter((entry): entry is number => Schema.is(Schema.Number)(entry));
+
+    return bytes.length === content.length ? Uint8Array.from(bytes) : null;
+  }
+
+  return null;
+};
+
+/**
+ * Decode a `.mobileconfig`, including the CMS SignedData wrapper Apple accepts
+ * (and the designer produces for signed profiles). The payload list is what OS
+ * scoping and FileVault escrow validation need.
+ */
+export const inspectMobileconfig = async (
+  bytes: Uint8Array,
+): Promise<MobileconfigInspection | null> => {
+  const text = new TextDecoder().decode(bytes);
+  let form: MobileconfigInspection["form"] = "plist";
+  let plistTextValue = text;
+
+  if (!text.includes("<plist") && !text.includes("<?xml")) {
+    if (bytes.length < 4 || bytes[0] !== 0x30) return null;
+
+    try {
+      const inner = await extractCmsSignedContent(bytes);
+
+      plistTextValue = new TextDecoder().decode(inner);
+      form = "signed-cms";
+    } catch {
+      return null;
+    }
+  }
+
+  const parsed = await Effect.runPromise(Effect.exit(parsePlist(plistTextValue)));
+
+  if (Exit.isFailure(parsed) || !isPlistObject(parsed.value)) return null;
+  const plist = parsed.value;
+
+  const payloads = payloadsFromMobileconfig(plist).flatMap((payload) => {
+    const type = plistText(payload.PayloadType);
+
+    if (!type) return [];
+
+    const certificateDer =
+      type === "com.apple.security.pkcs1" ? certificateDerFromPayload(payload) : null;
+
+    return [
+      {
+        type,
+        uuid: plistText(payload.PayloadUUID) ?? null,
+        identifier: plistText(payload.PayloadIdentifier) ?? null,
+        certificateDer,
+      },
+    ];
+  });
+
+  return {
+    form,
+    identifier: plistText(plist.PayloadIdentifier) ?? null,
+    plist,
+    payloads,
+  };
+};
+
+/** Payload/declaration types a configuration delivers, when they are known. */
+export const configurationPayloadTypes = async (
+  kind: string,
+  data: Schema.Json,
+): Promise<ReadonlyArray<string>> => {
+  const parsed = parseConfigurationKind(kind);
+  const record = asRecord(data);
+
+  switch (parsed.type) {
+    case "device":
+      return ["com.apple.applicationaccess"];
+    case "custom": {
+      const content = record?.content;
+
+      if (!Schema.is(Schema.String)(content)) return [];
+
+      let bytes: Uint8Array;
+
+      try {
+        bytes = decodeBase64(content);
+      } catch {
+        return [];
+      }
+
+      const inspection = await inspectMobileconfig(bytes);
+
+      return inspection?.payloads.map((payload) => payload.type) ?? [];
+    }
+
+    case "certificate":
+      return ["com.apple.configuration.security.certificate"];
+    case "declaration": {
+      const declarationKind = record?.kind;
+
+      return Schema.is(Schema.String)(declarationKind) ? [declarationKind] : [];
+    }
+
+    default:
+      return [];
+  }
+};
+
+const ESCROW_PAYLOAD_TYPE = "com.apple.security.FDERecoveryKeyEscrow";
+const ESCROW_CERTIFICATE_PAYLOAD_TYPE = "com.apple.security.pkcs1";
+
+/**
+ * Check a policy configuration that escrows FileVault recovery keys.
+ *
+ * Mattrax can only unwrap a key it holds the private key for, so a profile that
+ * pins another certificate is rejected instead of storing ciphertext that the
+ * product presents as a usable recovery key. A profile without a resolvable
+ * `EncryptCertPayloadUUID` certificate is accepted: delivery injects the
+ * tenant's escrow certificate under that UUID.
+ */
+export const validateEscrowConfiguration = async (
+  inspection: MobileconfigInspection,
+  escrow: {
+    readonly certificateFingerprintSha256?: string | null;
+  },
+): Promise<string | null> => {
+  const escrowPayload = inspection.plist;
+
+  if (!inspection.payloads.some((payload) => payload.type === ESCROW_PAYLOAD_TYPE)) return null;
+
+  if (!escrow.certificateFingerprintSha256)
+    return "This profile escrows FileVault recovery keys, but this tenant has no FileVault escrow key. Generate one in tenant settings first, otherwise Mattrax would store a key it cannot decrypt.";
+
+  if (inspection.form !== "plist")
+    return "This is a signed configuration profile that escrows FileVault recovery keys. Mattrax cannot replace the encryption certificate inside a signed profile; remove the signature or use an unsigned profile so the tenant escrow certificate can be installed.";
+
+  const payloads = payloadsFromMobileconfig(escrowPayload);
+
+  for (const payload of payloads) {
+    if (plistText(payload.PayloadType) !== ESCROW_PAYLOAD_TYPE) continue;
+    const encryptCertificateUuid = plistText(payload.EncryptCertPayloadUUID);
+
+    if (!encryptCertificateUuid) continue;
+
+    const certificatePayload = payloads.find(
+      (candidate) =>
+        plistText(candidate.PayloadType) === ESCROW_CERTIFICATE_PAYLOAD_TYPE &&
+        plistText(candidate.PayloadUUID) === encryptCertificateUuid,
+    );
+
+    if (!certificatePayload) continue;
+    const der = certificateDerFromPayload(certificatePayload);
+
+    if (!der) continue;
+    const fingerprint = await sha256Hex(der);
+
+    if (fingerprint !== escrow.certificateFingerprintSha256.toLowerCase())
+      return "This profile encrypts the FileVault recovery key with a certificate Mattrax does not hold the private key for. Remove the certificate payload so the tenant escrow certificate can be used, or upload the matching key pair in tenant settings.";
+  }
+
+  return null;
+};
+
 /**
  * Validate a configuration before it is persisted. Anything that cannot be
  * deployed by an Apple device is rejected at patch time (rather than being
@@ -195,6 +392,13 @@ const payloadsFromMobileconfig = (root: PlistObject): Array<PlistObject> => {
 export const validateConfiguration = (
   kind: string,
   data: Schema.Json,
+  context: {
+    /**
+     * Tenant FileVault escrow certificate fingerprint, when the tenant has one.
+     * Required to accept an `FDERecoveryKeyEscrow` profile Mattrax can unwrap.
+     */
+    readonly escrowCertificateFingerprintSha256?: string | null;
+  } = {},
 ): Effect.Effect<void, string> =>
   Effect.gen(function* () {
     const parsed = parseConfigurationKind(kind);
@@ -234,6 +438,17 @@ export const validateConfiguration = (
 
         const text = new TextDecoder().decode(bytes);
         const parsed = yield* Effect.exit(parsePlist(text));
+        const inspection = yield* Effect.promise(() => inspectMobileconfig(bytes));
+
+        if (inspection) {
+          const escrowProblem = yield* Effect.promise(() =>
+            validateEscrowConfiguration(inspection, {
+              certificateFingerprintSha256: context.escrowCertificateFingerprintSha256,
+            }),
+          );
+
+          if (escrowProblem) return yield* Effect.fail(`"${kind}": ${escrowProblem}`);
+        }
 
         if (Exit.isFailure(parsed)) {
           // A CMS/PKCS#7-wrapped profile keeps its code signature and is
@@ -606,7 +821,116 @@ export const buildLegacyProfile = async (
     };
   }
 
+  // Certificates are an asset in DDM. The legacy equivalent Apple installs from
+  // a profile is a `com.apple.security.pkcs1` payload, which is what a pre-DDM
+  // device (or one below the certificate declaration's minimum OS) receives.
+  if (parsed.type === "certificate") {
+    const pem = asRecord(row.data)?.pem;
+
+    if (!Schema.is(Schema.String)(pem)) return null;
+
+    let der: Uint8Array;
+
+    try {
+      der = certificateDer(pem);
+    } catch {
+      return null;
+    }
+
+    const plist = await Effect.runPromise(
+      serializePlist({
+        PayloadContent: [
+          {
+            PayloadCertificateFileName: `${row.policyId}-${row.kind}.cer`,
+            PayloadContent: der,
+            PayloadDisplayName: `Mattrax certificate ${row.kind}`,
+            PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.certificate`,
+            PayloadType: "com.apple.security.pkcs1",
+            PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:certificate`),
+            PayloadVersion: 1,
+          },
+        ],
+        PayloadDisplayName: `Mattrax policy ${row.policyId}`,
+        PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.legacy`,
+        PayloadOrganization: "Mattrax",
+        PayloadType: "Configuration",
+        PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:legacy`),
+        PayloadVersion: 1,
+      }),
+    );
+
+    return {
+      content: encoder.encode(plist),
+      contentType: "application/x-apple-aspen-config",
+    };
+  }
+
   return null;
+};
+
+/**
+ * Replace the FileVault escrow certificate in a configuration profile with the
+ * tenant's certificate, so the CMS payload a Mac returns can be unwrapped.
+ *
+ * A profile the device already pinned to a foreign certificate is rejected by
+ * `validateEscrowConfiguration` at save time; this is the delivery-time guard
+ * for profiles saved before the tenant key existed and for signed profiles.
+ */
+export const applyEscrowCertificate = async (
+  bytes: Uint8Array,
+  certificatePem: string,
+): Promise<{ content: Uint8Array } | { error: string }> => {
+  const inspection = await inspectMobileconfig(bytes);
+
+  if (!inspection) return { error: "The stored configuration profile could not be decoded." };
+
+  if (!inspection.payloads.some((payload) => payload.type === ESCROW_PAYLOAD_TYPE))
+    return { content: bytes };
+
+  if (inspection.form !== "plist")
+    return {
+      error:
+        "This signed configuration profile escrows FileVault keys and cannot be rewritten to use the tenant escrow certificate.",
+    };
+
+  const payloads = payloadsFromMobileconfig(inspection.plist).map((payload) => ({ ...payload }));
+  const der = certificateDer(certificatePem);
+
+  const escrowPayload = payloads.find(
+    (payload) => plistText(payload.PayloadType) === ESCROW_PAYLOAD_TYPE,
+  );
+
+  if (!escrowPayload) return { content: bytes };
+
+  const requestedUuid = plistText(escrowPayload.EncryptCertPayloadUUID);
+
+  let certificatePayload = payloads.find(
+    (payload) => plistText(payload.PayloadType) === ESCROW_CERTIFICATE_PAYLOAD_TYPE,
+  );
+
+  if (certificatePayload) {
+    certificatePayload.PayloadContent = der;
+  } else {
+    certificatePayload = {
+      PayloadCertificateFileName: "mattrax-filevault-escrow.cer",
+      PayloadContent: der,
+      PayloadDisplayName: "Mattrax FileVault escrow certificate",
+      PayloadIdentifier: `${inspection.identifier ?? "app.mattrax"}.filevault-escrow`,
+      PayloadType: ESCROW_CERTIFICATE_PAYLOAD_TYPE,
+      PayloadUUID: requestedUuid ?? crypto.randomUUID().toUpperCase(),
+      PayloadVersion: 1,
+    };
+    payloads.push(certificatePayload);
+  }
+
+  escrowPayload.EncryptCertPayloadUUID =
+    plistText(certificatePayload.PayloadUUID) ?? requestedUuid ?? crypto.randomUUID().toUpperCase();
+
+  const plist = await Effect.runPromise(
+    serializePlist({ ...inspection.plist, PayloadContent: payloads }),
+  );
+
+  return { content: encoder.encode(plist) };
 };
 
 export const buildAssetContent = (

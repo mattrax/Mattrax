@@ -1,16 +1,29 @@
+import { useLocation } from "@solidjs/router";
 import { Match } from "effect";
-import { createUniqueId, For, Show } from "solid-js";
+import { createMemo, createUniqueId, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbEllipsis,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/components/ui/breadcrumb";
 import { Button } from "~/components/ui/button";
 import {
   CheckCircle2,
+  ChevronRight,
   CircleAlert,
   Laptop,
   MonitorSmartphone,
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
+import { Skeleton } from "~/components/ui/skeleton";
+import { buildBreadcrumbs } from "~/lib/breadcrumbs";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
@@ -30,6 +43,70 @@ export function Page(props: { children: JSX.Element; class?: string; wide?: bool
   );
 }
 
+/**
+ * The single breadcrumb row shared by every page header.
+ *
+ * The trail comes from the route (`buildBreadcrumbs`) and is hidden on section
+ * landing pages. On narrow screens the middle crumbs collapse to an ellipsis
+ * so the trail never wraps to a second row.
+ */
+export function PageBreadcrumbs(props: { title?: string; class?: string }) {
+  const location = useLocation();
+
+  const trail = createMemo(() =>
+    buildBreadcrumbs({ pathname: location.pathname, title: props.title }),
+  );
+
+  return (
+    <Show when={trail().length > 0}>
+      <Breadcrumb class={cn("mb-2", props.class)}>
+        <BreadcrumbList class="flex-nowrap! overflow-hidden">
+          <For each={trail()} keyed={(crumb) => crumb.href}>
+            {(crumb, index) => {
+              const total = () => trail().length;
+              const isLast = () => index() === total() - 1;
+              const isMiddle = () => total() > 2 && index() > 0 && !isLast();
+              // The visible mobile row is first + ellipsis + last, so the
+              // separator before the middle group is owned by the ellipsis.
+              const separatorHidden = () => total() > 2 && index() === 1;
+
+              return (
+                <>
+                  <Show when={index() > 0}>
+                    <BreadcrumbSeparator
+                      class={cn((separatorHidden() || isMiddle()) && "hidden sm:inline-flex")}
+                    >
+                      <ChevronRight />
+                    </BreadcrumbSeparator>
+                  </Show>
+                  <BreadcrumbItem class={cn(isMiddle() && "hidden sm:inline-flex")}>
+                    <Show
+                      when={isLast()}
+                      fallback={
+                        <BreadcrumbLink href={crumb().href}>{crumb().label}</BreadcrumbLink>
+                      }
+                    >
+                      <BreadcrumbPage class="truncate">{crumb().label}</BreadcrumbPage>
+                    </Show>
+                  </BreadcrumbItem>
+                  <Show when={total() > 2 && index() === 0}>
+                    <BreadcrumbSeparator class="sm:hidden">
+                      <ChevronRight />
+                    </BreadcrumbSeparator>
+                    <BreadcrumbItem class="sm:hidden">
+                      <BreadcrumbEllipsis />
+                    </BreadcrumbItem>
+                  </Show>
+                </>
+              );
+            }}
+          </For>
+        </BreadcrumbList>
+      </Breadcrumb>
+    </Show>
+  );
+}
+
 export function PageHeader(props: {
   title: string;
   description?: string;
@@ -40,6 +117,7 @@ export function PageHeader(props: {
   return (
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div class="min-w-0">
+        <PageBreadcrumbs title={props.title} />
         <h1 class="truncate text-[21px] font-[540] leading-[1.15] tracking-[-0.025em] text-foreground sm:text-[22px]">
           {props.title}
         </h1>
@@ -198,6 +276,26 @@ export function EmptyState(props: {
         <div class="mt-4">{props.action}</div>
       </Show>
     </div>
+  );
+}
+
+/** Row-shaped placeholders for panels whose table is still loading. */
+export function SkeletonRows(props: { rows?: number; class?: string }) {
+  return (
+    <div class={cn("space-y-1.5", props.class)} aria-hidden="true">
+      <For each={Array.from({ length: props.rows ?? 4 }, (_, index) => index)}>
+        {() => <Skeleton class="h-11 rounded-lg bg-white/[0.035]" />}
+      </For>
+    </div>
+  );
+}
+
+/** The shared cold-load fallback: one panel of rows, never a literal "Loading". */
+export function PageSkeleton(props: { rows?: number }) {
+  return (
+    <Panel>
+      <SkeletonRows rows={props.rows ?? 6} />
+    </Panel>
   );
 }
 

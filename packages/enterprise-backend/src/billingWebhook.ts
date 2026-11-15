@@ -1,4 +1,4 @@
-import { Data, Effect, Option, Schema } from "effect";
+import { Cause, Data, Effect, Option, Schema } from "effect";
 import { eq } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
@@ -19,8 +19,7 @@ export class BillingWebhookError extends Data.TaggedError("BillingWebhookError")
 const fail = (message: string, statusCode = 400) =>
   new BillingWebhookError({ message, statusCode });
 
-const json = (body: Schema.Json, status = 200) =>
-  HttpServerResponse.jsonUnsafe(body, { status });
+const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
 type StripeIdRef = string | { readonly id?: string | undefined } | null | undefined;
 
@@ -73,7 +72,7 @@ const planFor = (subscription: any, deviceMonthlyPriceId?: string) => {
 };
 
 type ResolveOrganizationInput = {
-  readonly db: EnterpriseDb;
+  readonly db: BillingDb;
   readonly metadataOrganizationId?: string;
   readonly customerId?: string;
   readonly now: Date;
@@ -140,7 +139,7 @@ const resolveOrganization = (input: ResolveOrganizationInput) =>
   });
 
 type ApplySubscriptionInput = {
-  readonly db: EnterpriseDb;
+  readonly db: BillingDb;
   readonly subscription: any;
   readonly statusOverride?: string;
   readonly deviceMonthlyPriceId?: string;
@@ -217,7 +216,7 @@ const applySubscription = (input: ApplySubscriptionInput) =>
   });
 
 type ApplyInvoiceInput = {
-  readonly db: EnterpriseDb;
+  readonly db: BillingDb;
   readonly invoice: any;
   readonly paymentFailed: boolean;
   readonly deviceMonthlyPriceId?: string;
@@ -249,8 +248,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
       // Expanded invoice subscriptions do not always repeat metadata.
       const subscriptionMetadata = { ...embeddedSubscription.metadata };
 
-      if (metadataOrganizationId)
-        subscriptionMetadata.organizationId = metadataOrganizationId;
+      if (metadataOrganizationId) subscriptionMetadata.organizationId = metadataOrganizationId;
 
       return yield* applySubscription({
         db: input.db,
@@ -326,9 +324,89 @@ export type ProcessStripeWebhookInput = BillingWebhookConfig & {
 };
 
 /**
- * Verify and apply one Stripe event. Idempotent: replays update the same row by
- * subscription id (or organization reference), and deletions are recorded as
- * `canceled` rather than removing history.
+ * MySQL reports a duplicate unique/primary key as `ER_DUP_ENTRY`/1062. The
+ * ledger's primary key is `stripe_event.id`, so a duplicate here means this
+ * exact event was already committed by a previous (or concurrent) delivery.
+ */
+const ErrorDetails = Schema.Struct({
+  code: Schema.optional(Schema.String),
+  errno: Schema.optional(Schema.Number),
+  message: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Unknown),
+});
+
+const isDuplicateEventError = (cause: unknown): boolean => {
+  const top = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(cause));
+  const nested = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(top?.cause));
+  const code = top?.code ?? nested?.code;
+  const errno = top?.errno ?? nested?.errno;
+  const message = top?.message ?? nested?.message ?? "";
+
+  // The ledger's primary key is the only unique constraint this transaction
+  // touches (`subscription` has no unique index), so a duplicate-key driver
+  // code identifies this event. Fall back to the message when a driver does
+  // not expose the code.
+  if (code === "ER_DUP_ENTRY" || errno === 1062) return true;
+
+  return /stripe_event/i.test(message);
+};
+
+/** The database surface the apply helpers use; transaction handles included. */
+type BillingDb = Pick<EnterpriseDb, "select" | "insert" | "update" | "query">;
+
+const applyVerifiedEvent = (
+  input: Omit<ProcessStripeWebhookInput, "db"> & { readonly db: BillingDb },
+  event: { readonly type: string; readonly data: { readonly object: any } },
+  now: Date,
+) => {
+  switch (event.type) {
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+      return applySubscription({
+        db: input.db,
+        subscription: event.data.object,
+        deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+        now,
+      });
+    case "customer.subscription.deleted":
+      return applySubscription({
+        db: input.db,
+        subscription: event.data.object,
+        statusOverride: "canceled",
+        deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+        now,
+      });
+    case "invoice.paid":
+    case "invoice.payment_succeeded":
+      return applyInvoice({
+        db: input.db,
+        invoice: event.data.object,
+        paymentFailed: false,
+        deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+        now,
+      });
+    case "invoice.payment_failed":
+      return applyInvoice({
+        db: input.db,
+        invoice: event.data.object,
+        paymentFailed: true,
+        deviceMonthlyPriceId: input.deviceMonthlyPriceId,
+        now,
+      });
+    default:
+      return Effect.succeed({ ignored: true as const });
+  }
+};
+
+/**
+ * Verify and apply one Stripe event.
+ *
+ * The event id is written to `stripe_event` in the same transaction as the
+ * subscription/invoice writes. A redelivery (including two isolates handling
+ * the same event concurrently) loses the primary-key race and is skipped
+ * instead of re-applying. A failed apply rolls the marker back, so Stripe's
+ * retry can still succeed; a committed marker means the event was fully
+ * applied.
  */
 export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
   Effect.gen(function* () {
@@ -344,44 +422,44 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
     ).pipe(Effect.mapError(() => fail("Invalid Stripe signature")));
 
     const now = input.now ?? new Date();
+    const eventId = event.id.trim().slice(0, 255);
 
-    switch (event.type) {
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-        return yield* applySubscription({
-          db: input.db,
-          subscription: event.data.object,
-          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
-          now,
-        });
-      case "customer.subscription.deleted":
-        return yield* applySubscription({
-          db: input.db,
-          subscription: event.data.object,
-          statusOverride: "canceled",
-          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
-          now,
-        });
-      case "invoice.paid":
-      case "invoice.payment_succeeded":
-        return yield* applyInvoice({
-          db: input.db,
-          invoice: event.data.object,
-          paymentFailed: false,
-          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
-          now,
-        });
-      case "invoice.payment_failed":
-        return yield* applyInvoice({
-          db: input.db,
-          invoice: event.data.object,
-          paymentFailed: true,
-          deviceMonthlyPriceId: input.deviceMonthlyPriceId,
-          now,
-        });
-      default:
-        return { ignored: true as const };
-    }
+    if (!eventId) return yield* Effect.fail(fail("Stripe event is missing an id"));
+
+    const outcome = yield* input.db
+      .transaction((tx) =>
+        Effect.gen(function* () {
+          yield* tx.insert(schema.stripeEvent).values({
+            id: eventId,
+            type: event.type,
+            organizationId: null,
+            receivedAt: now,
+          });
+
+          const applied = yield* applyVerifiedEvent(
+            { ...input, db: tx },
+            { type: event.type, data: { object: event.data.object } },
+            now,
+          );
+
+          if ("organizationId" in applied)
+            yield* tx
+              .update(schema.stripeEvent)
+              .set({ organizationId: applied.organizationId })
+              .where(eq(schema.stripeEvent.id, eventId));
+
+          return applied;
+        }),
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          isDuplicateEventError(Cause.squash(cause))
+            ? Effect.succeed({ duplicate: true as const })
+            : Effect.failCause(cause),
+        ),
+      );
+
+    return outcome;
   });
 
 /**

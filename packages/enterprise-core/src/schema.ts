@@ -476,6 +476,14 @@ export const organization = mysqlTable(
     supportEmail: varchar("support_email", { length: 320 }),
     brandColor: varchar("brand_color", { length: 7 }),
     metadata: text("metadata"),
+    /**
+     * Tenant-wide multi-factor requirement. It applies to every member,
+     * including read-only roles and auditors, and is independent of SSO: a
+     * passkey or authenticator app satisfies it either way. Accounts can always
+     * reach their own account settings, so a member blocked by this flag can
+     * still enrol a factor.
+     */
+    requireMfa: boolean("require_mfa").notNull().default(false),
     stripeCustomerId: shortText("stripe_customer_id"),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
@@ -532,6 +540,148 @@ export const member = mysqlTable(
   ],
 );
 
+/**
+ * Account-scoped audit stream: authentication and credential lifecycle events
+ * that exist before, or independently of, a tenant. `audit_log` requires an
+ * organisation, so pre-tenant events get their own table.
+ *
+ * `subject_user_id` is nullable so the account-deletion record survives the
+ * person row (the email snapshot stays for investigation until retention
+ * prunes it). Every read is scoped by `subject_user_id`, so one account can
+ * never page another's stream.
+ */
+export const accountAuditLog = mysqlTable(
+  "account_audit_log",
+  {
+    id: id().primaryKey(),
+    subjectUserId: id("subject_user_id").references(() => user.id, { onDelete: "set null" }),
+    /** Snapshot of the subject's address; kept after deletion. */
+    subjectEmail: varchar("subject_email", { length: 320 }),
+    actorUserId: id("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    actorEmail: varchar("actor_email", { length: 320 }),
+    action: shortText("action").notNull(),
+    targetType: shortText("target_type").notNull(),
+    targetId: shortText("target_id"),
+    metadata: json("metadata"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("account_audit_log_subject_created_idx").on(table.subjectUserId, table.createdAt),
+    index("account_audit_log_subject_action_idx").on(table.subjectUserId, table.action),
+    // Break-glass rate limiting counts recent attempts per action window.
+    index("account_audit_log_action_created_idx").on(table.action, table.createdAt),
+  ],
+);
+
+/**
+ * Privacy-preserving client descriptor for a browser session. Written on the
+ * first authenticated request for the session, because the auth library owns
+ * session creation and its row carries no request context.
+ *
+ * The address is never stored in the clear: `ip_hash` is a salted SHA-256
+ * prefix and the header is only retained to the extent described in
+ * `docs/admin/operations.md`. The row is deleted with its session.
+ */
+export const accountSessionContext = mysqlTable(
+  "account_session_context",
+  {
+    sessionId: id("session_id").primaryKey(),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** First eight bytes of SHA-256("<AUTH_SECRET>:ip:<address>"), hex. */
+    ipHash: varchar("ip_hash", { length: 32 }),
+    /** Parsed `User-Agent`: browser, platform and device class only. */
+    browser: shortText("browser"),
+    platform: shortText("platform"),
+    deviceType: varchar("device_type", { length: 16 }),
+    createdAt: timestamp("created_at").notNull(),
+    lastUsedAt: timestamp("last_used_at").notNull(),
+  },
+  (table) => [
+    index("account_session_context_user_idx").on(table.userId, table.lastUsedAt),
+    index("account_session_context_last_used_idx").on(table.lastUsedAt),
+  ],
+);
+
+/**
+ * A pending email-address change. Both tokens are stored as SHA-256 digests and
+ * are single use: the confirmation token proves control of the new address, and
+ * the cancellation token lets the current owner stop a change they did not
+ * request. A row is terminal once either token is spent.
+ */
+export const accountEmailChange = mysqlTable(
+  "account_email_change",
+  {
+    id: id().primaryKey(),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    oldEmail: varchar("old_email", { length: 320 }).notNull(),
+    newEmail: varchar("new_email", { length: 320 }).notNull(),
+    confirmTokenHash: varchar("confirm_token_hash", { length: 255 }).notNull(),
+    cancelTokenHash: varchar("cancel_token_hash", { length: 255 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("account_email_change_confirm_unique").on(table.confirmTokenHash),
+    uniqueIndex("account_email_change_cancel_unique").on(table.cancelTokenHash),
+    index("account_email_change_user_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+/**
+ * Break-glass account recovery. A locked-out account proves control of its
+ * verified address with `proof_token_hash`, and — when it belongs to a shared
+ * tenant — another owner approves with `approval_token_hash`. Only then is a
+ * single-use `completion_token_hash` minted, which signs the account in so it
+ * can enrol a new passkey. Every token is a digest and single use; rows expire
+ * on their own and are terminal once completed or cancelled.
+ */
+export const accountRecovery = mysqlTable(
+  "account_recovery",
+  {
+    id: id().primaryKey(),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    /** `pending_proof`, `pending_approval`, `ready`, `completed`, `cancelled`. */
+    status: varchar("status", { length: 32 }).notNull(),
+    /** True when another owner must approve before the completion link exists. */
+    approvalRequired: boolean("approval_required").notNull().default(false),
+    /**
+     * Tenant whose owner is asked to approve; null when none is needed. Tenant
+     * deletion cascades: the ceremony only exists because that tenant had a
+     * second owner, and the account falls back to the solo ceremony.
+     */
+    approvalOrganizationId: id("approval_organization_id").references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    proofTokenHash: varchar("proof_token_hash", { length: 255 }).notNull(),
+    approvalTokenHash: varchar("approval_token_hash", { length: 255 }),
+    completionTokenHash: varchar("completion_token_hash", { length: 255 }),
+    approvedByUserId: id("approved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at"),
+    completedAt: timestamp("completed_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("account_recovery_proof_unique").on(table.proofTokenHash),
+    uniqueIndex("account_recovery_approval_unique").on(table.approvalTokenHash),
+    uniqueIndex("account_recovery_completion_unique").on(table.completionTokenHash),
+    index("account_recovery_user_idx").on(table.userId, table.createdAt),
+    index("account_recovery_status_idx").on(table.status, table.createdAt),
+  ],
+);
+
 export const invitation = mysqlTable(
   "invitation",
   {
@@ -581,6 +731,32 @@ export const subscription = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [index("subscription_reference_id_idx").on(table.referenceId)],
+);
+
+/**
+ * Stripe event ids already applied. The primary key is the dedupe key, so the
+ * insert of a duplicate delivery fails atomically in MySQL even when two
+ * isolates process the same event concurrently.
+ *
+ * It is written and removed inside the same transaction as the subscription
+ * writes: a failed apply rolls the marker back so Stripe's retry can succeed,
+ * and a committed marker means the event was fully applied. There is
+ * deliberately no foreign key to `organization` so the ledger survives a
+ * tenant teardown; it contains no tenant data beyond the id.
+ */
+export const stripeEvent = mysqlTable(
+  "stripe_event",
+  {
+    /** Stripe's `event.id` (`evt_…`). */
+    id: id().primaryKey(),
+    type: shortText("type").notNull(),
+    organizationId: id("organization_id"),
+    receivedAt: timestamp("received_at").notNull(),
+  },
+  (table) => [
+    index("stripe_event_organization_received_idx").on(table.organizationId, table.receivedAt),
+    index("stripe_event_received_idx").on(table.receivedAt),
+  ],
 );
 
 export const accountApiToken = mysqlTable(
@@ -805,6 +981,12 @@ export const ssoConfig = mysqlTable(
     enabled: boolean("enabled").notNull().default(false),
     azureTenantId: shortText("azure_tenant_id"),
     autoProvision: boolean("auto_provision").notNull().default(true),
+    /**
+     * Legacy location of the MFA requirement. The authoritative flag is
+     * `organization.require_mfa`; this column is only read by the backfill
+     * migration so tenants that configured it here keep the setting. New writes
+     * go to the organization row.
+     */
     requireMfa: boolean("require_mfa").notNull().default(false),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
@@ -868,6 +1050,12 @@ export const scimToken = mysqlTable(
     name: shortText("name").notNull(),
     tokenHash: varchar("token_hash", { length: 255 }).notNull(),
     lastUsedAt: timestamp("last_used_at"),
+    /**
+     * When the token stops authenticating. New tokens always receive one (90
+     * days by default, at most 365). Null only on rows created before expiry
+     * existed; those keep working until an operator rotates them.
+     */
+    expiresAt: timestamp("expires_at"),
     revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
@@ -875,6 +1063,8 @@ export const scimToken = mysqlTable(
   (table) => [
     uniqueIndex("scim_token_hash_unique").on(table.tokenHash),
     index("scim_token_organization_idx").on(table.organizationId),
+    // Listing and the rotation reminder read active tokens ordered by expiry.
+    index("scim_token_organization_expires_idx").on(table.organizationId, table.expiresAt),
   ],
 );
 
@@ -1189,6 +1379,38 @@ export const device = mysqlTable(
     batteryHealth: shortText("battery_health"),
     /** Client capability list reported by `management.client-capabilities`. */
     capabilities: json("capabilities"),
+    /**
+     * `passcode.is-present`. Only iOS/iPadOS/visionOS/watchOS report this; macOS
+     * has no passcode concept, so the column stays null there.
+     */
+    passcodePresent: boolean("passcode_present"),
+    /** `passcode.is-compliant` (same platform support as `passcodePresent`). */
+    passcodeCompliant: boolean("passcode_compliant"),
+    /**
+     * `softwareupdate.install-state`: `none`, `downloading`, `prepared`,
+     * `installing` or `failed`. Null until the device reports, or on an OS
+     * older than macOS 14/iOS 17 where the item does not exist.
+     */
+    osUpdateInstallState: shortText("os_update_install_state"),
+    /** `softwareupdate.pending-version.os-version`; empty when nothing is pending. */
+    osUpdatePendingVersion: shortText("os_update_pending_version"),
+    /** `softwareupdate.pending-version.build-version`. */
+    osUpdatePendingBuild: shortText("os_update_pending_build"),
+    /** `softwareupdate.failure-reason.reason` for the last failed update. */
+    osUpdateFailureReason: text("os_update_failure_reason"),
+    /** `softwareupdate.failure-reason.count`; zero when there is no failure. */
+    osUpdateFailureCount: int("os_update_failure_count"),
+    /** `softwareupdate.failure-reason.timestamp`. */
+    osUpdateFailedAt: timestamp("os_update_failed_at"),
+    /** `security.lockdown-mode`. */
+    securityLockdownMode: boolean("security_lockdown_mode"),
+    /** Number of certificates in the last `security.certificate.list` report. */
+    managedCertificateCount: int("managed_certificate_count"),
+    /**
+     * Apps from the last `mdm.app` report (MDM-installed apps only; DDM-managed
+     * apps are excluded by Apple). Bounded by the ingester.
+     */
+    managementApps: json("management_apps"),
     /** Hardware model number (for example `MLH12LL/A`) from `device.model.number`. */
     modelNumber: shortText("model_number"),
     /** When the DDM inventory status items were last ingested. */
@@ -1217,6 +1439,41 @@ export const device = mysqlTable(
     dmIdentityFingerprint: shortText("dm_identity_fingerprint"),
     /** Last declarations token sent to the device, to avoid DDM sync loops. */
     ddmDeclarationsToken: text("ddm_declarations_token"),
+    /** Windows `DeviceStatus/Compliance/EncryptionCompliance` (1 = encrypted). */
+    bitLockerEnabled: boolean("bitlocker_enabled"),
+    /** Raw Windows `BitLocker/Status/DeviceEncryptionStatus` bitmask. */
+    bitLockerStatus: int("bitlocker_status"),
+    /** Windows `DeviceStatus/TPM/SpecificationVersion`, when a TPM is present. */
+    tpmVersion: shortText("tpm_version"),
+    /** Windows `DeviceStatus/SecureBootState`: 0 unsupported, 1 enabled, 2 disabled. */
+    secureBootState: int("secure_boot_state"),
+    /** Windows `DeviceStatus/DomainName`; empty when the device is not domain joined. */
+    domainName: shortText("domain_name"),
+    /** Windows `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
+    entraDeviceId: shortText("entra_device_id"),
+    /** When the last Windows security inventory snapshot was written. */
+    securityUpdatedAt: timestamp("security_updated_at"),
+    /** OMA-URIs whose `Replace` the Windows device acknowledged. */
+    windowsPolicyApplied: json("windows_policy_applied").$type<string[]>(),
+    /**
+     * OMA-URIs delivered to the Windows device with the hash of the value that
+     * was sent. A URI in this list but not in the resolved policy set is
+     * reverted with a SyncML `Delete`.
+     */
+    windowsPolicyDelivered: json("windows_policy_delivered").$type<
+      Array<{ uri: string; hash: string }>
+    >(),
+    /** OMA-URIs whose `Delete` was delivered but not acknowledged yet. */
+    windowsPolicyReverting: json("windows_policy_reverting").$type<string[]>(),
+    /** Last rejection for each Windows OMA-URI, so a retry does not hide it. */
+    windowsPolicyFailures:
+      json("windows_policy_failures").$type<
+        Array<{ uri: string; resultStatus: string; detail: string; at: string }>
+      >(),
+    /** When Windows policy commands were last generated for this device. */
+    windowsPolicyUpdatedAt: timestamp("windows_policy_updated_at"),
+    /** When the last desired-state removal was acknowledged by the device. */
+    windowsPolicyRevertedAt: timestamp("windows_policy_reverted_at"),
   },
   (table) => [
     index("device_organization_id_idx").on(table.organizationId),
@@ -1324,6 +1581,10 @@ export const deviceCommand = mysqlTable(
     index("device_command_device_status_idx").on(table.deviceId, table.status, table.expiresAt),
     uniqueIndex("device_command_device_dedupe_unique").on(table.deviceId, table.dedupeKey),
     index("device_command_organization_idx").on(table.organizationId, table.createdAt),
+    // Deployment-wide maintenance: expiry scans by deadline and retention
+    // scans by terminal age. Without these the daily sweep is a full scan.
+    index("device_command_status_expires_idx").on(table.status, table.expiresAt),
+    index("device_command_status_updated_idx").on(table.status, table.updatedAt),
   ],
 );
 
@@ -1362,6 +1623,33 @@ export const deviceApple = mysqlTable("device_apple", {
   }),
   /** Failures since the last successful delivery; reset to zero on success. */
   consecutivePushFailures: int("consecutive_push_failures").notNull().default(0),
+  /**
+   * How the device receives policy: `ddm` when the client reports declarative
+   * configuration support and its OS is new enough, `legacy` when Mattrax falls
+   * back to `.mobileconfig` install commands. Null before the first decision.
+   */
+  declarationMode: varchar("declaration_mode", { length: 16, enum: ["ddm", "legacy"] }),
+  /**
+   * Why that mode was chosen (capability missing, OS too old, or the positive
+   * evidence that DDM is supported). Support reads this to explain a device on
+   * the legacy path.
+   */
+  declarationModeReason: text("declaration_mode_reason"),
+  declarationModeUpdatedAt: timestamp("declaration_mode_updated_at"),
+  /**
+   * `SecurityInfo.ManagementStatus.IsActivationLockManageable`: whether this
+   * enrolment type lets Mattrax manage Activation Lock. Activation Lock is never
+   * reported as cleared unless the bypass code was actually collected.
+   */
+  isActivationLockManageable: boolean("is_activation_lock_manageable"),
+  /** When a `SecurityInfo` response was last persisted for this device. */
+  securityInfoUpdatedAt: timestamp("security_info_updated_at"),
+  /**
+   * When Mattrax last queued a `SecurityInfo` command. Separate from the answer
+   * clock so a device that never replies cannot make every maintenance run
+   * re-queue the same command.
+   */
+  securityInfoRequestedAt: timestamp("security_info_requested_at"),
 });
 
 /**
@@ -1380,10 +1668,23 @@ export const deviceSecret = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     kind: varchar("kind", {
       length: 32,
-      enum: ["filevault_recovery_key", "bootstrap_token"],
+      enum: [
+        "filevault_recovery_key",
+        "bootstrap_token",
+        "activation_lock_bypass_code",
+        "recovery_lock_password",
+      ],
     }).notNull(),
     /** AES-256-GCM sealed value produced by `sealSecret`. */
     sealedValue: text("sealed_value").notNull(),
+    /**
+     * Shape of the plaintext. `cms` marks a FileVault key wrapped with the
+     * tenant escrow certificate (CMS/PKCS#7 EnvelopedData), which must be
+     * unwrapped before it can be shown to an operator.
+     */
+    format: varchar("format", { length: 16, enum: ["plaintext", "cms"] })
+      .notNull()
+      .default("plaintext"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
     /** When the escrowed value last changed (not merely re-reported). */
@@ -1394,6 +1695,32 @@ export const deviceSecret = mysqlTable(
     index("device_secret_organization_idx").on(table.organizationId),
   ],
 );
+
+/**
+ * Per-tenant FileVault personal recovery key (PRK) escrow identity.
+ *
+ * The certificate is embedded in every `com.apple.security.FDERecoveryKeyEscrow`
+ * profile Mattrax serves, so macOS wraps the PRK for this key. The private key
+ * is sealed with `AUTH_SECRET` and only used to unwrap an escrowed CMS payload
+ * during an audited reveal.
+ */
+export const appleFdeEscrowKey = mysqlTable("apple_fde_escrow_key", {
+  organizationId: id("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  /** PEM certificate placed in the escrow profile's `com.apple.security.pkcs1` payload. */
+  certificatePem: text("certificate_pem").notNull(),
+  /** `sealSecret(AUTH_SECRET, pkcs8Pem)`. Never returned by the API. */
+  sealedPrivateKey: text("sealed_private_key").notNull(),
+  /** SHA-256 of the DER certificate, used to reject foreign escrow profiles. */
+  certificateFingerprintSha256: shortText("certificate_fingerprint_sha256").notNull(),
+  /** Certificate subject common name, for display. */
+  subject: shortText("subject"),
+  certificateNotAfter: timestamp("certificate_not_after"),
+  source: varchar("source", { length: 16, enum: ["generated", "uploaded"] }).notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
 
 /**
  * Last reported installed-application inventory for a managed device. Each
@@ -2224,8 +2551,13 @@ export const relations = defineRelations(
     organization,
     tenantRole,
     member,
+    accountAuditLog,
+    accountSessionContext,
+    accountEmailChange,
+    accountRecovery,
     invitation,
     subscription,
+    stripeEvent,
     accountApiToken,
     mcpOAuthClient,
     mcpOAuthConnection,
@@ -2257,6 +2589,7 @@ export const relations = defineRelations(
     deviceApple,
     deviceAppleUser,
     deviceSecret,
+    appleFdeEscrowKey,
     deviceApplication,
     applePushCertificate,
     applePushKey,
@@ -2459,6 +2792,12 @@ export const relations = defineRelations(
       device: r.one.device({ from: r.deviceSecret.deviceId, to: r.device.id }),
       organization: r.one.organization({
         from: r.deviceSecret.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    appleFdeEscrowKey: {
+      organization: r.one.organization({
+        from: r.appleFdeEscrowKey.organizationId,
         to: r.organization.id,
       }),
     },

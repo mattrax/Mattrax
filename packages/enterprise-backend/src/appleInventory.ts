@@ -9,9 +9,14 @@
  */
 
 import { Effect } from "effect";
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
-import { APPLE_APPLICATION_INVENTORY_PAYLOAD } from "@mattrax/management-backend-enterprise";
+import {
+  APPLE_APPLICATION_INVENTORY_PAYLOAD,
+  commandDedupeKey,
+  commandIsExpired,
+  deviceCommandExpiresAt,
+} from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -101,7 +106,15 @@ export const refreshAppleApplicationInventory = (
     const deviceIds = devices.map((device) => device.id);
 
     const pending = yield* db
-      .select({ deviceId: schema.deviceCommand.deviceId })
+      .select({
+        id: schema.deviceCommand.id,
+        deviceId: schema.deviceCommand.deviceId,
+        requestType: schema.deviceCommand.requestType,
+        status: schema.deviceCommand.status,
+        createdAt: schema.deviceCommand.createdAt,
+        updatedAt: schema.deviceCommand.updatedAt,
+        expiresAt: schema.deviceCommand.expiresAt,
+      })
       .from(schema.deviceCommand)
       .where(
         and(
@@ -111,24 +124,43 @@ export const refreshAppleApplicationInventory = (
         ),
       );
 
-    const alreadyQueued = new Set(pending.map((row) => row.deviceId));
+    // A row still marked queued after its budget elapsed is not in flight; the
+    // sweep has not reached it yet, and treating it as pending would suppress
+    // the refresh forever.
+    const alreadyQueued = new Set(
+      pending.filter((row) => !commandIsExpired(row, options.now)).map((row) => row.deviceId),
+    );
 
     const due = devices.filter((device) => !alreadyQueued.has(device.id));
 
     if (due.length === 0) return 0;
 
-    yield* db.insert(schema.deviceCommand).values(
-      due.map((device) => ({
-        id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
-        organizationId: device.organizationId,
-        deviceId: device.id,
-        requestType: APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
-        payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
-        status: "queued",
-        createdAt: options.now,
-        updatedAt: options.now,
-      })),
+    const rows = yield* Effect.promise(() =>
+      Promise.all(
+        due.map(async (device) => ({
+          id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+          organizationId: device.organizationId,
+          deviceId: device.id,
+          requestType: APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
+          payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
+          status: "queued" as const,
+          dedupeKey: await commandDedupeKey(
+            APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
+            APPLE_APPLICATION_INVENTORY_PAYLOAD,
+          ),
+          expiresAt: deviceCommandExpiresAt(APPLE_APPLICATION_INVENTORY_REQUEST_TYPE, options.now),
+          createdAt: options.now,
+          updatedAt: options.now,
+        })),
+      ),
     );
 
-    return due.length;
+    // The unique (device_id, dedupe_key) index makes a concurrent sweep safe:
+    // the loser's insert is a no-op and the winner's command is delivered.
+    yield* db
+      .insert(schema.deviceCommand)
+      .values(rows)
+      .onDuplicateKeyUpdate({ set: { id: sql`id` } });
+
+    return rows.length;
   });

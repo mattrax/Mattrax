@@ -12,6 +12,9 @@ export const STEP_UP_ACTIONS = [
   "mfa-enroll",
   "mfa-disable",
   "mfa-regenerate",
+  "email-change",
+  "sessions-revoke-all",
+  "recovery-approve",
   "recovery-key-reveal",
   "backup-download",
   "backup-pin",
@@ -20,6 +23,7 @@ export const STEP_UP_ACTIONS = [
   "device-command",
   "billing-portal",
   "sso-policy",
+  "tenant-mfa-policy",
   "passkey-enroll",
   "passkey-remove",
 ] as const;

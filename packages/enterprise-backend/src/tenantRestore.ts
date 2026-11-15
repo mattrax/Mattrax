@@ -742,6 +742,22 @@ export const restoreTenantFromBackup = (
     const loaded = yield* readTenantBackup(db, storage, organization.id, options.backupId);
 
     const bundle = yield* parseTenantRestoreBundle(loaded.text);
+
+    // A bundle can only reference objects this tenant owns. Accepting an
+    // arbitrary key would make the download endpoint read another tenant's
+    // bytes (or an object the restore never created).
+    const foreignObject = bundle.applications.find(
+      (application) =>
+        application.r2Key != null &&
+        application.r2Key !== "" &&
+        !application.r2Key.startsWith(`a/${organization.id}/`),
+    );
+
+    if (foreignObject)
+      return yield* Effect.fail(
+        invalid(`Application "${foreignObject.name}" references an object outside this tenant`),
+      );
+
     const timestamp = options.now ?? new Date();
 
     const snapshot = yield* runTenantBackup(db, storage, organization.id, "manual", {

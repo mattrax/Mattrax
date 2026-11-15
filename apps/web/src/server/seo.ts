@@ -1,4 +1,4 @@
-import { sitemapEntries } from "../lib/public-routes";
+import { ROBOTS_DISALLOW_PREFIXES, sitemapEntries } from "../lib/public-routes";
 
 /**
  * `robots.txt` and `sitemap.xml`, generated per request.
@@ -53,9 +53,9 @@ export function renderSitemap(origin: string, docsRoutes: readonly string[]): st
 }
 
 /**
- * The crawler policy. The disallow list names the authenticated application
- * and the machine endpoints; the sitemap line points at the same origin the
- * visitor used.
+ * The crawler policy. The disallow list is derived from the sitemap exclusion
+ * set (plus bearer-token enrollment links), so the two cannot drift; the
+ * sitemap line points at the same origin the visitor used.
  */
 export function renderRobots(origin: string): string {
   return [
@@ -63,18 +63,8 @@ export function renderRobots(origin: string): string {
     "User-agent: *",
     "Allow: /",
     "",
-    "# Authenticated application and machine endpoints are not public content.",
-    "Disallow: /dashboard",
-    "Disallow: /account",
-    "Disallow: /t/",
-    "Disallow: /api/",
-    "Disallow: /mcp",
-    "Disallow: /mdm/",
-    "Disallow: /scim/",
-    "Disallow: /sso/",
-    "Disallow: /accept-invitation",
-    "Disallow: /reset-password",
-    "Disallow: /verify-email",
+    "# Authenticated application, machine endpoints and bearer links are not public content.",
+    ...ROBOTS_DISALLOW_PREFIXES.map((prefix) => `Disallow: ${prefix}`),
     "",
     "# Generated from the request origin so self-hosted deployments stay correct.",
     `Sitemap: ${absoluteUrl(SITEMAP_PATH, origin)}`,

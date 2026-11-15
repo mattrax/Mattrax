@@ -7,6 +7,7 @@ import {
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
 import {
+  DeviceHealthManagementApp,
   deriveDeviceHealth,
   resolveTenantBranding,
   shouldApplyReportedName,
@@ -30,7 +31,12 @@ import { certificateDeviceIdsFor, createWindowsBackend } from "./windows.ts";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import { isPlistObject, type PlistInput, type PlistObject } from "./internal/plistValue.js";
 import { parseDeviceInventory } from "./inventory.ts";
-import { parseSecurityInfo } from "./securityInfo.ts";
+import {
+  parseActivationLockBypassCode,
+  parseRecoveryLockVerification,
+  parseRotatedRecoveryKey,
+  parseSecurityInfo,
+} from "./securityInfo.ts";
 import {
   APPLE_APPLICATION_INVENTORY_PAYLOAD,
   APPLE_DEVICE_INFORMATION_PAYLOAD,
@@ -44,6 +50,19 @@ import {
   declarationFailedTransition,
   writeSystemAudit,
 } from "./audit.ts";
+import { DEVICE_INFORMATION_BASE_STATUS_ITEMS, appleStatusItemsForDevice } from "./statusItems.ts";
+import { appleDeliveryModeChanged, decideAppleDelivery } from "./deliveryMode.ts";
+import {
+  describeSkippedConfigurations,
+  scopeConfigurationsToDevice,
+  type SkippedConfiguration,
+} from "./policySupport.ts";
+import {
+  buildLegacyProfiles,
+  installProfilePayload,
+  installedProfiles,
+  planLegacyProfileChanges,
+} from "./legacyDelivery.ts";
 import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
@@ -60,6 +79,7 @@ import {
   type CommandPayload,
 } from "./commands.ts";
 import {
+  applyEscrowCertificate,
   buildAssetContent,
   buildAssetDeclaration,
   buildConfigurationDeclaration,
@@ -84,26 +104,11 @@ const DEVICE_INFORMATION_CONFIGURATION_ID = "13DE3EE0-D5A8-46E9-B967-27E56A4D918
 const MANAGEMENT_DECLARATION_ID = "F8C4C3A1-2B6E-4D7F-A9E5-3C8B7D9E2F4A";
 const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A67";
 
-export const DEVICE_INFORMATION_STATUS_ITEMS = [
-  "device.identifier.serial-number",
-  "device.identifier.udid",
-  "device.model.family",
-  "device.model.identifier",
-  "device.model.marketing-name",
-  "device.model.number",
-  "device.operating-system.build-version",
-  "device.operating-system.family",
-  "device.operating-system.marketing-name",
-  "device.operating-system.supplemental.build-version",
-  "device.operating-system.supplemental.extra-version",
-  "device.operating-system.version",
-  "device.power.battery-health",
-  "diskmanagement.filevault.enabled",
-  "diskmanagement.storage.available",
-  "diskmanagement.storage.total",
-  "management.client-capabilities",
-  "management.declarations",
-];
+/**
+ * Base DDM status subscription. Devices also subscribe the platform-specific
+ * items from `statusItems.ts`; this export is the always-present subset.
+ */
+export const DEVICE_INFORMATION_STATUS_ITEMS = DEVICE_INFORMATION_BASE_STATUS_ITEMS;
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
@@ -269,25 +274,32 @@ const bindAppleIdentityCertificate = (
 
 type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
 
+type ScopedConfigurations = {
+  readonly configurations: ReadonlyArray<ScopedConfiguration>;
+  /** Configurations filtered out because the device's OS cannot apply them. */
+  readonly skipped: ReadonlyArray<SkippedConfiguration>;
+};
+
+/**
+ * The policy configurations the device can actually apply, after precedence
+ * resolution and OS scoping.
+ *
+ * `mode` selects the certificate representation: a DDM certificate declaration
+ * needs macOS 14/iOS 17, while the legacy path installs a `pkcs1` profile on
+ * much older releases.
+ */
 const scopedConfigurations = (
-  deviceId: string,
-): Effect.Effect<ReadonlyArray<ScopedConfiguration>, unknown, Db> =>
+  device: DeviceRow,
+  mode: "ddm" | "legacy",
+): Effect.Effect<ScopedConfigurations, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
-
-    const [device] = yield* db
-      .select({ id: s.device.id, organizationId: s.device.organizationId })
-      .from(s.device)
-      .where(eq(s.device.id, deviceId))
-      .limit(1);
-
-    if (!device) return [];
 
     // Precedence and exclusions live in the shared resolver so Apple, Windows
     // and the effective-policy API all agree.
     const effective = yield* resolveEffectivePolicyForDevice(db, device);
 
-    return effective.configurations.map((configuration) => ({
+    const rows: Array<ScopedConfiguration> = effective.configurations.map((configuration) => ({
       policyId: configuration.policyId,
       kind: configuration.kind,
       data: configuration.data,
@@ -298,7 +310,17 @@ const scopedConfigurations = (
           ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
           : `direct:${configuration.policyId}`,
     }));
+
+    const scoped = yield* Effect.promise(() =>
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode),
+    );
+
+    return { configurations: scoped.delivered, skipped: scoped.skipped };
   });
+
+/** The delivery mode last recorded for a device. */
+const recordedDeliveryMode = (mode: string | null | undefined): "ddm" | "legacy" =>
+  mode === "legacy" ? "legacy" : "ddm";
 
 const deviceTokenFor = (deviceId: string) =>
   Effect.gen(function* () {
@@ -314,12 +336,13 @@ const deviceTokenFor = (deviceId: string) =>
   }).pipe(Effect.mapError(internal));
 
 const declarationItemsForDevice = (
-  deviceId: string,
+  device: DeviceRow,
   deviceToken: string,
   context: Pick<DeclarationContext, "origin" | "authSecret">,
+  mode: "ddm" | "legacy",
 ): Effect.Effect<DdmDeclarationItems, unknown, Db> =>
   Effect.gen(function* () {
-    const rows = yield* scopedConfigurations(deviceId);
+    const { configurations: rows } = yield* scopedConfigurations(device, mode);
     const groups = new Map<string, Array<{ kind: string; policyId: string }>>();
 
     for (const row of rows) {
@@ -352,7 +375,7 @@ const declarationItemsForDevice = (
       uniqueConfigurations.set(configurationDeclarationIdentifier(row.policyId, row.kind), row);
 
     const deviceInformationServerToken = yield* Effect.promise(() =>
-      deviceInformationConfigurationToken(),
+      deviceInformationConfigurationToken(appleStatusItemsForDevice(device)),
     );
 
     const configurations = [
@@ -442,6 +465,15 @@ const updateInventoryFromStatus = (
       osEdition: device.osEdition,
       fileVaultEnabled: device.fileVaultEnabled,
       batteryHealth: device.batteryHealth,
+      passcodePresent: device.passcodePresent,
+      passcodeCompliant: device.passcodeCompliant,
+      osUpdateInstallState: device.osUpdateInstallState,
+      osUpdatePendingVersion: device.osUpdatePendingVersion,
+      osUpdateFailureCount: device.osUpdateFailureCount,
+      managedCertificateCount: device.managedCertificateCount,
+      managementApps: Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Array(DeviceHealthManagementApp))(device.managementApps),
+      ),
     });
 
     const previousHealth = deviceBefore
@@ -497,6 +529,37 @@ const updateInventoryFromStatus = (
 
     if (inventory.diskUsed) update.diskUsed = inventory.diskUsed;
 
+    if (inventory.passcodePresent !== undefined) update.passcodePresent = inventory.passcodePresent;
+
+    if (inventory.passcodeCompliant !== undefined)
+      update.passcodeCompliant = inventory.passcodeCompliant;
+
+    if (inventory.osUpdateInstallState !== undefined)
+      update.osUpdateInstallState = inventory.osUpdateInstallState;
+
+    if (inventory.osUpdatePendingVersion !== undefined)
+      update.osUpdatePendingVersion = inventory.osUpdatePendingVersion;
+
+    if (inventory.osUpdatePendingBuild !== undefined)
+      update.osUpdatePendingBuild = inventory.osUpdatePendingBuild;
+
+    if (inventory.osUpdateFailureReason !== undefined)
+      update.osUpdateFailureReason = inventory.osUpdateFailureReason;
+
+    if (inventory.osUpdateFailureCount !== undefined)
+      update.osUpdateFailureCount = inventory.osUpdateFailureCount;
+
+    if (inventory.osUpdateFailedAt !== undefined)
+      update.osUpdateFailedAt = inventory.osUpdateFailedAt;
+
+    if (inventory.securityLockdownMode !== undefined)
+      update.securityLockdownMode = inventory.securityLockdownMode;
+
+    if (inventory.managedCertificateCount !== undefined)
+      update.managedCertificateCount = inventory.managedCertificateCount;
+
+    if (inventory.managementApps !== undefined) update.managementApps = inventory.managementApps;
+
     // Only stamp the inventory clock when at least one subscribed item was
     // actually understood, so a malformed/empty report cannot make a stale
     // device look freshly inventoried.
@@ -511,10 +574,24 @@ const updateInventoryFromStatus = (
       inventory.fileVaultEnabled !== undefined ||
       inventory.batteryHealth !== undefined ||
       inventory.capabilities !== undefined ||
-      inventory.diskTotal !== undefined;
+      inventory.diskTotal !== undefined ||
+      inventory.passcodePresent !== undefined ||
+      inventory.passcodeCompliant !== undefined ||
+      inventory.osUpdateInstallState !== undefined ||
+      inventory.osUpdatePendingVersion !== undefined ||
+      inventory.osUpdateFailureCount !== undefined ||
+      inventory.securityLockdownMode !== undefined ||
+      inventory.managedCertificateCount !== undefined ||
+      inventory.managementApps !== undefined;
 
     if (hasInventory) update.inventoryUpdatedAt = now();
     yield* db.update(s.device).set(update).where(eq(s.device.id, deviceId));
+
+    // FileVault is usually enabled days after enrolment, which is also when the
+    // escrowed recovery key is first written. Fetch it as soon as the status
+    // report shows the disk encrypted rather than waiting for an administrator.
+    if (deviceBefore?.fileVaultEnabled !== true && inventory.fileVaultEnabled === true)
+      yield* enqueueSecurityInfo({ id: deviceId, organizationId }, now());
 
     // Apple sends status items as a nested path tree; some clients flatten the
     // keys. Accept both shapes.
@@ -630,11 +707,18 @@ const updateInventoryFromStatus = (
  */
 const writeDeviceSecret = (
   device: Pick<DeviceRow, "id" | "organizationId">,
-  kind: "filevault_recovery_key" | "bootstrap_token",
+  kind:
+    | "filevault_recovery_key"
+    | "bootstrap_token"
+    | "activation_lock_bypass_code"
+    | "recovery_lock_password",
   plaintext: string,
   authSecret: string | undefined,
+  options: { readonly format?: "plaintext" | "cms" } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
+    const format = options.format ?? "plaintext";
+
     if (!authSecret) {
       // Never write a plaintext secret as a fallback.
       yield* Effect.logWarning(
@@ -665,6 +749,7 @@ const writeDeviceSecret = (
         organizationId: device.organizationId,
         kind,
         sealedValue: sealed,
+        format,
         createdAt: timestamp,
         updatedAt: timestamp,
         rotatedAt: timestamp,
@@ -683,6 +768,7 @@ const writeDeviceSecret = (
 
     const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
       sealedValue: sealed,
+      format,
       updatedAt: timestamp,
     };
 
@@ -692,6 +778,45 @@ const writeDeviceSecret = (
       .update(s.deviceSecret)
       .set(secretUpdate)
       .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)));
+  });
+
+/**
+ * Queue a `SecurityInfo` refresh. Used at enrolment, when FileVault flips on,
+ * after bootstrap-token rotation and by maintenance. The de-duplication index
+ * makes repeated triggers collapse into the request already in flight.
+ */
+const enqueueSecurityInfo = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  at: Date,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const commandId = crypto.randomUUID();
+    const payload = {};
+    const dedupeKey = yield* Effect.promise(() => commandDedupeKey("SecurityInfo", payload));
+
+    yield* db
+      .insert(s.deviceCommand)
+      .values({
+        id: commandId,
+        organizationId: device.organizationId,
+        deviceId: device.id,
+        requestType: "SecurityInfo",
+        payload,
+        status: "queued",
+        dedupeKey,
+        expiresAt: deviceCommandExpiresAt("SecurityInfo", at),
+        resultStatus: null,
+        resultDetail: null,
+        createdAt: at,
+        updatedAt: at,
+      })
+      .onDuplicateKeyUpdate({ set: { requestType: "SecurityInfo" } });
+
+    yield* db
+      .update(s.deviceApple)
+      .set({ securityInfoRequestedAt: at })
+      .where(eq(s.deviceApple.deviceId, device.id));
   });
 
 /**
@@ -710,6 +835,12 @@ const applySecurityInfo = (
     const db = yield* Db;
     const timestamp = now();
 
+    const [before] = yield* db
+      .select({ fileVaultEnabled: s.device.fileVaultEnabled })
+      .from(s.device)
+      .where(eq(s.device.id, device.id))
+      .limit(1);
+
     if (report.fileVaultStatus !== undefined) {
       yield* db
         .update(s.device)
@@ -725,15 +856,33 @@ const applySecurityInfo = (
       yield* writeDeviceSecret(
         device,
         "filevault_recovery_key",
-        report.recoveryKey,
+        report.recoveryKey.value,
         options.authSecret,
+        { format: report.recoveryKey.format },
       );
 
+    const appleUpdate: Partial<typeof s.deviceApple.$inferInsert> = {
+      securityInfoUpdatedAt: timestamp,
+    };
+
     if (report.bootstrapTokenEscrowed !== undefined)
-      yield* db
-        .update(s.deviceApple)
-        .set({ bootstrapTokenEscrowed: report.bootstrapTokenEscrowed })
-        .where(eq(s.deviceApple.deviceId, device.id));
+      appleUpdate.bootstrapTokenEscrowed = report.bootstrapTokenEscrowed;
+
+    if (report.isActivationLockManageable !== undefined)
+      appleUpdate.isActivationLockManageable = report.isActivationLockManageable;
+
+    yield* db.update(s.deviceApple).set(appleUpdate).where(eq(s.deviceApple.deviceId, device.id));
+
+    // FileVault turned on between the status report and this answer, and the
+    // device did not have a wrapped key yet: ask for one more report so the key
+    // written to /var/db/FileVaultPRK.dat is collected.
+    if (
+      report.fileVaultStatus === "enabled" &&
+      before?.fileVaultEnabled !== true &&
+      report.recoveryKey === undefined &&
+      report.fileVaultHasPersonalRecoveryKey !== false
+    )
+      yield* enqueueSecurityInfo(device, timestamp);
   });
 
 /**
@@ -814,6 +963,103 @@ const applyInstalledApplications = (
       .update(s.device)
       .set({ applicationsUpdatedAt: timestamp, lastSeenAt: timestamp })
       .where(eq(s.device.id, device.id));
+  });
+
+/**
+ * The tenant's FileVault escrow certificate, when one has been configured.
+ * Profiles that escrow recovery keys are rewritten with it so the CMS payload a
+ * Mac returns can be unwrapped during a reveal.
+ */
+const tenantEscrowCertificate = (
+  organizationId: string,
+): Effect.Effect<string | null, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const [escrow] = yield* db
+      .select({ certificatePem: s.appleFdeEscrowKey.certificatePem })
+      .from(s.appleFdeEscrowKey)
+      .where(eq(s.appleFdeEscrowKey.organizationId, organizationId))
+      .limit(1);
+
+    return escrow?.certificatePem ?? null;
+  });
+
+/** Delivery mode recorded for a device, defaulting to declarative management. */
+const deliveryModeForDevice = (deviceId: string): Effect.Effect<"ddm" | "legacy", unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ declarationMode: s.deviceApple.declarationMode })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, deviceId))
+      .limit(1);
+
+    return recordedDeliveryMode(apple?.declarationMode);
+  });
+
+/** Queue one imperative command, de-duplicated against identical active work. */
+const queueAppleCommand = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  requestType: string,
+  payload: CommandPayload,
+  at: Date,
+): Effect.Effect<{ readonly id: string }, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const id = crypto.randomUUID();
+    const dedupeKey = yield* Effect.promise(() => commandDedupeKey(requestType, payload));
+
+    yield* db
+      .insert(s.deviceCommand)
+      .values({
+        id,
+        organizationId: device.organizationId,
+        deviceId: device.id,
+        requestType,
+        payload,
+        status: "queued",
+        dedupeKey,
+        expiresAt: deviceCommandExpiresAt(requestType, at),
+        resultStatus: null,
+        resultDetail: null,
+        createdAt: at,
+        updatedAt: at,
+      })
+      // A concurrent check-in may have queued the same work first. The no-op
+      // update keeps the existing row (and its delivery timer) in place.
+      .onDuplicateKeyUpdate({ set: { requestType } });
+
+    return { id };
+  });
+
+/** Legacy profiles the device has installed, from its own command history. */
+const installedLegacyProfiles = (
+  deviceId: string,
+): Effect.Effect<ReadonlyMap<string, string>, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const history = yield* db
+      .select({ requestType: s.deviceCommand.requestType, payload: s.deviceCommand.payload })
+      .from(s.deviceCommand)
+      .where(
+        and(
+          eq(s.deviceCommand.deviceId, deviceId),
+          inArray(s.deviceCommand.requestType, ["InstallProfile", "RemoveProfile"]),
+          eq(s.deviceCommand.status, "succeeded"),
+        ),
+      )
+      .orderBy(desc(s.deviceCommand.createdAt))
+      .limit(200);
+
+    return yield* Effect.promise(() =>
+      installedProfiles(
+        history.filter((row) => row.requestType === "InstallProfile"),
+        history.filter((row) => row.requestType === "RemoveProfile"),
+      ),
+    );
   });
 
 export class ManagementBackendEnterpriseLive extends ManagementBackend {
@@ -898,6 +1144,81 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
         ),
       );
+
+    /**
+     * Queue `SecurityInfo` so a Mac's FileVault key and Activation Lock state
+     * are refreshed without an administrator pressing a button. Deduplicated
+     * against an active request, so repeated triggers cannot flood the queue.
+     */
+    /**
+     * Deliver the policy's legacy equivalents to a device that cannot apply
+     * declarations: one `InstallProfile` per compiled `.mobileconfig`, and a
+     * `RemoveProfile` for a profile the policy no longer contains.
+     *
+     * The diff is computed from the command history, so a profile whose content
+     * changed is re-installed and a removed one is uninstalled without a second
+     * state table.
+     */
+    const syncLegacyPolicy = (
+      device: DeviceRow,
+      configurations: ReadonlyArray<ScopedConfiguration>,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        const [active] = yield* db
+          .select({ id: s.deviceCommand.id })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, ["InstallProfile", "RemoveProfile"]),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .limit(1);
+
+        // Let the in-flight profile finish before recomputing the diff.
+        if (active) return;
+
+        const escrowCertificatePem = yield* tenantEscrowCertificate(device.organizationId);
+
+        const built = yield* Effect.promise(() =>
+          buildLegacyProfiles(configurations, { escrowCertificatePem }),
+        );
+
+        for (const skipped of built.unsupported)
+          yield* Effect.logWarning(
+            `Legacy policy ${skipped.policyId}/${skipped.kind} not delivered to ${device.id}: ${skipped.reason}`,
+          );
+
+        const installed = yield* installedLegacyProfiles(device.id);
+
+        const changes = yield* Effect.promise(() =>
+          planLegacyProfileChanges(built.profiles, installed),
+        );
+
+        for (const profile of changes.install)
+          yield* queueAppleCommand(device, "InstallProfile", installProfilePayload(profile), at);
+
+        for (const identifier of changes.remove)
+          yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+      });
+
+    /**
+     * Remove profiles installed by the legacy path once a device can apply
+     * declarations. Without this, an upgraded device would carry both the old
+     * profiles and the new declarations, applying the same settings twice.
+     */
+    const removeLegacyPolicyProfiles = (
+      device: DeviceRow,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        const installed = yield* installedLegacyProfiles(device.id);
+
+        for (const identifier of installed.keys())
+          yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+      });
 
     const requireDevice = (scope: CheckinScope) =>
       findDeviceByScope(scope, options.requireAppleDeviceIdentity).pipe(
@@ -1400,6 +1721,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       requestType: "InstalledApplicationList",
                       payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
                     },
+                    // Escrow the FileVault key and Activation Lock state at
+                    // enrolment. On iOS this also reports passcode/Activation
+                    // Lock manageability; on a Mac the key appears once the disk
+                    // is encrypted and is re-requested then.
+                    { requestType: "SecurityInfo", payload: {} },
                   ],
                   ({ requestType, payload }) =>
                     Effect.gen(function* () {
@@ -1532,6 +1858,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .set({ lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
                 yield* syncDeviceGroups(device.organizationId, device.id);
+
+                // A rotated bootstrap token changes FileVault unlock state; ask
+                // for a fresh security report so escrow metadata stays current.
+                yield* enqueueSecurityInfo(device, now());
 
                 return;
               }
@@ -1687,6 +2017,72 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 yield* applySecurityInfo(device, queryResponses, { authSecret });
                 yield* applyInstalledApplications(device, queryResponses);
 
+                // Activation Lock bypass codes come from their own command, not
+                // `SecurityInfo`. Apple only returns a code before the device is
+                // locked, so it is sealed and kept for the next reveal.
+                const bypassCode = parseActivationLockBypassCode(queryResponses);
+
+                if (bypassCode !== undefined)
+                  yield* writeDeviceSecret(
+                    device,
+                    "activation_lock_bypass_code",
+                    bypassCode,
+                    authSecret,
+                  );
+
+                // `RotateFileVaultKey` returns the replacement personal recovery
+                // key wrapped for the tenant escrow certificate.
+                const rotatedKey = parseRotatedRecoveryKey(queryResponses);
+
+                if (rotatedKey !== undefined) {
+                  yield* writeDeviceSecret(
+                    device,
+                    "filevault_recovery_key",
+                    rotatedKey.value,
+                    authSecret,
+                    { format: rotatedKey.format },
+                  );
+                  yield* db
+                    .update(s.deviceApple)
+                    .set({ securityInfoUpdatedAt: now() })
+                    .where(eq(s.deviceApple.deviceId, device.id));
+                }
+
+                // A successful erase destroys the disk the recovery key protects
+                // and the device generates a new Activation Lock bypass code on
+                // its next setup, so the old escrow values are history.
+                if (command?.requestType === "EraseDevice" && nextStatus === "succeeded")
+                  yield* db
+                    .delete(s.deviceSecret)
+                    .where(
+                      and(
+                        eq(s.deviceSecret.deviceId, device.id),
+                        inArray(s.deviceSecret.kind, [
+                          "filevault_recovery_key",
+                          "activation_lock_bypass_code",
+                          "recovery_lock_password",
+                        ]),
+                      ),
+                    );
+
+                // `PasswordVerified` is the answer to a `VerifyRecoveryLock`
+                // command; record it so the device page can report the check.
+                const recoveryLockVerified = parseRecoveryLockVerification(queryResponses);
+
+                if (
+                  command?.requestType === "VerifyRecoveryLock" &&
+                  recoveryLockVerified !== undefined
+                )
+                  yield* db
+                    .update(s.deviceCommand)
+                    .set({
+                      resultDetail: recoveryLockVerified
+                        ? "The device verified the Recovery Lock password."
+                        : "The device rejected the Recovery Lock password.",
+                      updatedAt: now(),
+                    })
+                    .where(eq(s.deviceCommand.id, command.id));
+
                 // `DeviceInformation` answers carry the name Apple reports for
                 // itself. An administrator's rename always wins; otherwise the
                 // name follows the device while it is still an auto-derived
@@ -1789,6 +2185,102 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             // command UUID is idempotent for the device.
             const at = now();
 
+            const [appleState] = yield* db
+              .select({
+                declarationMode: s.deviceApple.declarationMode,
+                declarationModeReason: s.deviceApple.declarationModeReason,
+              })
+              .from(s.deviceApple)
+              .where(eq(s.deviceApple.deviceId, device.id))
+              .limit(1);
+
+            // Declarations need both a supported OS and an advertised capability.
+            // A device that fails either is moved to legacy profiles rather than
+            // being told to sync declarations it will reject.
+            const decision = decideAppleDelivery({
+              osEdition: device.osEdition,
+              osVersion: device.osVersion,
+              capabilities: Option.getOrUndefined(
+                Schema.decodeUnknownOption(Schema.Json)(device.capabilities),
+              ),
+            });
+
+            const modeChangedToLegacy =
+              decision.mode === "legacy" && appleState?.declarationMode !== "legacy";
+
+            if (decision.mode === "legacy") {
+              const scoped = yield* scopedConfigurations(device, "legacy").pipe(
+                Effect.mapError(internal),
+              );
+
+              const skippedNote = describeSkippedConfigurations(scoped.skipped);
+
+              const reason = skippedNote ? `${decision.reason} ${skippedNote}` : decision.reason;
+
+              if (
+                appleDeliveryModeChanged(
+                  {
+                    mode: appleState?.declarationMode,
+                    reason: appleState?.declarationModeReason,
+                  },
+                  { mode: "legacy", reason },
+                )
+              )
+                yield* db
+                  .update(s.deviceApple)
+                  .set({
+                    declarationMode: "legacy",
+                    declarationModeReason: reason,
+                    declarationModeUpdatedAt: at,
+                  })
+                  .where(eq(s.deviceApple.deviceId, device.id));
+
+              // The device cannot fetch declarations; clear the remembered sync
+              // token so a future upgrade performs a full sync.
+              if (appleState?.declarationMode === "ddm")
+                yield* db
+                  .update(s.device)
+                  .set({ ddmDeclarationsToken: null })
+                  .where(eq(s.device.id, device.id));
+
+              yield* syncLegacyPolicy(device, scoped.configurations, at).pipe(
+                Effect.mapError(internal),
+              );
+            } else if (appleState?.declarationMode === "legacy") {
+              // Back on declarative management: retire the legacy profiles so a
+              // setting is not applied by both channels, and force a sync.
+              yield* removeLegacyPolicyProfiles(device, at).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning(
+                    `Failed to remove legacy profiles for ${device.id}: ${String(error)}`,
+                  ),
+                ),
+              );
+              yield* db
+                .update(s.device)
+                .set({ ddmDeclarationsToken: null })
+                .where(eq(s.device.id, device.id));
+            }
+
+            // The legacy branch above has already persisted its reason (with
+            // the skipped-configuration summary); only the declarative path is
+            // recorded here.
+            if (
+              decision.mode === "ddm" &&
+              appleDeliveryModeChanged(
+                { mode: appleState?.declarationMode, reason: appleState?.declarationModeReason },
+                decision,
+              )
+            )
+              yield* db
+                .update(s.deviceApple)
+                .set({
+                  declarationMode: decision.mode,
+                  declarationModeReason: decision.reason,
+                  declarationModeUpdatedAt: at,
+                })
+                .where(eq(s.deviceApple.deviceId, device.id));
+
             const activeCommands = yield* db
               .select()
               .from(s.deviceCommand)
@@ -1849,12 +2341,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               };
             }
 
+            // Older clients cannot apply a declaration; they receive their
+            // policy through the profile commands queued above instead.
+            if (decision.mode === "legacy") {
+              if (modeChangedToLegacy) yield* pushEnrolledDevice(device.id, device.organizationId);
+
+              return { _tag: "Idle" as const };
+            }
+
             const deviceToken = yield* deviceTokenFor(device.id);
 
-            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
-              origin,
-              authSecret: authSecret ?? "",
-            }).pipe(Effect.mapError(internal));
+            const items = yield* declarationItemsForDevice(
+              device,
+              deviceToken,
+              { origin, authSecret: authSecret ?? "" },
+              "ddm",
+            ).pipe(Effect.mapError(internal));
 
             const token = yield* Effect.tryPromise({
               try: () =>
@@ -1930,10 +2432,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             const device = yield* requireDevice(scope);
             const deviceToken = yield* deviceTokenFor(device.id);
 
-            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
-              origin,
-              authSecret: authSecret ?? "",
-            }).pipe(Effect.mapError(internal));
+            const mode = yield* deliveryModeForDevice(device.id).pipe(Effect.mapError(internal));
+
+            const items = yield* declarationItemsForDevice(
+              device,
+              deviceToken,
+              { origin, authSecret: authSecret ?? "" },
+              mode,
+            ).pipe(Effect.mapError(internal));
 
             const categoryToken = (category: keyof DdmDeclarationItems) =>
               hashToken(
@@ -1978,10 +2484,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             const device = yield* requireDevice(scope);
             const deviceToken = yield* deviceTokenFor(device.id);
 
-            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
-              origin,
-              authSecret: authSecret ?? "",
-            }).pipe(Effect.mapError(internal));
+            const items = yield* declarationItemsForDevice(
+              device,
+              deviceToken,
+              { origin, authSecret: authSecret ?? "" },
+              "ddm",
+            ).pipe(Effect.mapError(internal));
 
             const token = yield* Effect.tryPromise({
               try: () =>
@@ -2019,6 +2527,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               deviceId: device.id,
             };
 
+            const mode = yield* deliveryModeForDevice(device.id).pipe(Effect.mapError(internal));
+
             if (type === "activation" && identifier === DEVICE_INFORMATION_ACTIVATION_ID) {
               return {
                 Type: "com.apple.activation.simple",
@@ -2029,7 +2539,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             }
 
             if (type === "activation") {
-              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
+              const { configurations: rows } = yield* scopedConfigurations(device, mode).pipe(
+                Effect.mapError(internal),
+              );
 
               const configurations = rows
                 .filter((row) => row.groupId === identifier)
@@ -2049,18 +2561,24 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             }
 
             if (type === "configuration" && identifier === DEVICE_INFORMATION_CONFIGURATION_ID) {
+              const statusItems = appleStatusItemsForDevice(device);
+
               return {
                 Type: "com.apple.configuration.management.status-subscriptions",
                 Identifier: DEVICE_INFORMATION_CONFIGURATION_ID,
-                ServerToken: yield* Effect.promise(() => deviceInformationConfigurationToken()),
-                Payload: { StatusItems: DEVICE_INFORMATION_STATUS_ITEMS.map((Name) => ({ Name })) },
+                ServerToken: yield* Effect.promise(() =>
+                  deviceInformationConfigurationToken(statusItems),
+                ),
+                Payload: { StatusItems: statusItems.map((Name) => ({ Name })) },
               };
             }
 
             if (type === "configuration") {
               const { policyId, kind } = splitConfigurationDeclarationIdentifier(identifier);
 
-              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
+              const { configurations: rows } = yield* scopedConfigurations(device, mode).pipe(
+                Effect.mapError(internal),
+              );
 
               const row = rows.find((item) => item.policyId === policyId && item.kind === kind);
 
@@ -2077,7 +2595,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               if (!parsed) return null;
 
-              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
+              const { configurations: rows } = yield* scopedConfigurations(device, mode).pipe(
+                Effect.mapError(internal),
+              );
 
               const row = rows.find(
                 (item) => item.policyId === parsed.policyId && item.kind === parsed.kind,
@@ -2192,31 +2712,57 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const [row] = yield* db
-              .select()
+              .select({ configuration: s.configuration, organizationId: s.policy.organizationId })
               .from(s.configuration)
+              .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
               .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
               .limit(1)
               .pipe(Effect.mapError(internal));
 
             if (!row) return null;
-            const parsed = parseConfigurationKind(row.kind);
+            const parsed = parseConfigurationKind(row.configuration.kind);
 
             if (parsed.type !== "device" && parsed.type !== "custom") return null;
 
-            const data = Schema.decodeUnknownOption(Schema.Json)(row.data);
+            const data = Schema.decodeUnknownOption(Schema.Json)(row.configuration.data);
 
             if (Option.isNone(data)) return null;
 
-            return yield* Effect.tryPromise({
+            const profile = yield* Effect.tryPromise({
               try: () =>
                 buildLegacyProfile({
-                  policyId: row.policyId,
-                  kind: row.kind,
+                  policyId: row.configuration.policyId,
+                  kind: row.configuration.kind,
                   data: data.value,
-                  hash: row.hash,
+                  hash: row.configuration.hash,
                 }),
               catch: internal,
             });
+
+            if (!profile) return null;
+
+            // A profile that escrows FileVault keys must carry the tenant's
+            // certificate, otherwise the returned CMS payload is ciphertext the
+            // product cannot decrypt.
+            const escrowCertificatePem = yield* tenantEscrowCertificate(row.organizationId).pipe(
+              Effect.mapError(internal),
+            );
+
+            if (!escrowCertificatePem) return profile;
+
+            const rewritten = yield* Effect.promise(() =>
+              applyEscrowCertificate(profile.content, escrowCertificatePem),
+            );
+
+            if ("error" in rewritten) {
+              yield* Effect.logWarning(
+                `Refusing to serve policy profile ${policyId}/${kind}: ${rewritten.error}`,
+              );
+
+              return null;
+            }
+
+            return { content: rewritten.content, contentType: profile.contentType };
           }),
         ),
 
@@ -2323,28 +2869,74 @@ export * from "./commands.ts";
 
 export * from "./commandMaintenance.ts";
 
+export * from "./securityInfoRefresh.ts";
+
 export * from "./policyResolution.ts";
 
 export { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 
 export * from "./windows.ts";
 
+export * from "./windowsCommands.ts";
+
+export * from "./windowsInventory.ts";
+
 export * from "./federated.ts";
 
 export {
+  OS_UPDATE_INSTALL_STATES,
   parseDeviceInventory,
   normalizeBatteryHealth,
   normalizeBoolean,
   normalizeCapabilities,
   statusItemValue,
   type DeviceInventory,
+  type ManagementAppStatus,
 } from "./inventory.ts";
 
 export {
+  parseActivationLockBypassCode,
+  parseRecoveryLockVerification,
+  parseRotatedRecoveryKey,
   parseSecurityInfo,
   type FileVaultStatus,
+  type RecoveryKeyFormat,
   type SecurityInfoReport,
 } from "./securityInfo.ts";
+
+export {
+  ADDITIONAL_STATUS_ITEMS,
+  DEVICE_INFORMATION_BASE_STATUS_ITEMS,
+  appleStatusItemsForDevice,
+} from "./statusItems.ts";
+
+export {
+  appleDeclarativeCapability,
+  appleDeliveryModeChanged,
+  decideAppleDelivery,
+  type AppleCapabilitySupport,
+  type AppleDeliveryDecision,
+  type AppleDeliveryMode,
+} from "./deliveryMode.ts";
+
+export {
+  describeSkippedConfigurations,
+  scopeConfigurationsToDevice,
+  type OsScopedConfigurations,
+  type PolicyDeliveryDevice,
+  type SkippedConfiguration,
+} from "./policySupport.ts";
+
+export {
+  buildLegacyProfiles,
+  installProfilePayload,
+  installedProfiles,
+  planLegacyProfileChanges,
+  profileDigest,
+  type LegacyProfile,
+  type LegacyProfileBuild,
+  type LegacyProfileChanges,
+} from "./legacyDelivery.ts";
 
 export {
   APPLE_APPLICATION_INVENTORY_PAYLOAD,

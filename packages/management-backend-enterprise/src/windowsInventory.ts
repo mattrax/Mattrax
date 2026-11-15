@@ -28,6 +28,21 @@ export const WINDOWS_INVENTORY_COMMAND_ID_PREFIX = "windows-inventory-";
 
 export const WINDOWS_APPLICATION_INVENTORY_COMMAND_ID_PREFIX = "windows-app-inventory-";
 
+/**
+ * Provider id used in the Windows DM tree (`DMClient/Provider/{ProviderID}`).
+ * It is written into the provisioning document at enrollment, so inventory and
+ * unenroll must address the same provider the device actually enrolled with.
+ */
+export const WINDOWS_MDM_PROVIDER_ID = "Mattrax";
+
+/** `DMClient/Provider/{ProviderID}/AADDeviceID`; presence means Entra joined. */
+export const windowsEntraDeviceIdUri = (providerId: string = WINDOWS_MDM_PROVIDER_ID): string =>
+  `./Vendor/MSFT/DMClient/Provider/${encodeURIComponent(providerId)}/AADDeviceID`;
+
+/** `DMClient/Provider/{ProviderID}/Unenroll`, the OMA-DM remote unenroll node. */
+export const windowsUnenrollUri = (providerId: string = WINDOWS_MDM_PROVIDER_ID): string =>
+  `./Vendor/MSFT/DMClient/Provider/${encodeURIComponent(providerId)}/Unenroll`;
+
 export const WINDOWS_INVENTORY_URI = {
   /** `MajorVersion.MinorVersion.BuildNumber.QFEnumber`. */
   osVersion: "./DevDetail/SwV",
@@ -44,6 +59,20 @@ export const WINDOWS_INVENTORY_URI = {
   freeStorage: "./DevDetail/Ext/Microsoft/FreeStorage",
   /** Hardware model (SystemProductName) from the OMA DevInfo object. */
   model: "./DevInfo/Mod",
+  /**
+   * DeviceStatus `Compliance/EncryptionCompliance`: 1 when the OS drive is
+   * encrypted, 0 when it is not. This is the boolean BitLocker signal; the
+   * BitLocker CSP status below is a policy-compliance bitmask.
+   */
+  bitLockerCompliance: "./Vendor/MSFT/DeviceStatus/Compliance/EncryptionCompliance",
+  /** BitLocker CSP `Status/DeviceEncryptionStatus` bitmask (0 = compliant). */
+  bitLockerStatus: "./Vendor/MSFT/BitLocker/Status/DeviceEncryptionStatus",
+  /** TPM specification version, for example `2.0`; absent without a TPM. */
+  tpmVersion: "./Vendor/MSFT/DeviceStatus/TPM/SpecificationVersion",
+  /** `0` unsupported, `1` enabled, `2` disabled. */
+  secureBootState: "./Vendor/MSFT/DeviceStatus/SecureBootState",
+  /** Fully qualified AD domain name; empty when not domain joined. */
+  domainName: "./Vendor/MSFT/DeviceStatus/DomainName",
 } as const;
 
 export type WindowsInventoryRequest = {
@@ -83,8 +112,13 @@ export const WINDOWS_APPLICATION_INVENTORY_REQUESTS: ReadonlyArray<WindowsInvent
 /**
  * The full inventory request set. Every entry is a leaf node: requesting an
  * interior node only returns the names of its children, not their values.
+ *
+ * The Entra device id lives under the provider-specific `DMClient` node, so
+ * the set is built for the provider the enrollment wrote into the device.
  */
-export const WINDOWS_INVENTORY_REQUESTS: ReadonlyArray<WindowsInventoryRequest> = [
+export const windowsInventoryRequests = (
+  providerId: string = WINDOWS_MDM_PROVIDER_ID,
+): ReadonlyArray<WindowsInventoryRequest> => [
   request("os-version", WINDOWS_INVENTORY_URI.osVersion),
   request("device-type", WINDOWS_INVENTORY_URI.deviceType),
   request("device-name", WINDOWS_INVENTORY_URI.deviceName),
@@ -94,15 +128,27 @@ export const WINDOWS_INVENTORY_REQUESTS: ReadonlyArray<WindowsInventoryRequest> 
   request("total-storage", WINDOWS_INVENTORY_URI.totalStorage),
   request("free-storage", WINDOWS_INVENTORY_URI.freeStorage),
   request("model", WINDOWS_INVENTORY_URI.model),
+  request("bitlocker-compliance", WINDOWS_INVENTORY_URI.bitLockerCompliance),
+  request("bitlocker-status", WINDOWS_INVENTORY_URI.bitLockerStatus),
+  request("tpm-version", WINDOWS_INVENTORY_URI.tpmVersion),
+  request("secure-boot-state", WINDOWS_INVENTORY_URI.secureBootState),
+  request("domain-name", WINDOWS_INVENTORY_URI.domainName),
+  request("entra-device-id", windowsEntraDeviceIdUri(providerId)),
 ];
 
+export const WINDOWS_INVENTORY_REQUESTS: ReadonlyArray<WindowsInventoryRequest> =
+  windowsInventoryRequests();
+
 /** `CmdRef` -> OMA-URI, for devices that omit `Item/Source` in a result. */
-const REQUESTED_URI_BY_COMMAND_ID = new Map(
-  [...WINDOWS_INVENTORY_REQUESTS, ...WINDOWS_APPLICATION_INVENTORY_REQUESTS].map((entry) => [
-    entry.cmdID,
-    entry.locURI,
-  ]),
-);
+const requestedUriByCommandId = (requests: ReadonlyArray<WindowsInventoryRequest>) =>
+  new Map(
+    [...requests, ...WINDOWS_APPLICATION_INVENTORY_REQUESTS].map((entry) => [
+      entry.cmdID,
+      entry.locURI,
+    ]),
+  );
+
+const REQUESTED_URI_BY_COMMAND_ID = requestedUriByCommandId(WINDOWS_INVENTORY_REQUESTS);
 
 const MAX_TEXT_LENGTH = 255;
 const MEBIBYTE = 1024 * 1024;
@@ -146,11 +192,7 @@ const ResultsEntry = Schema.Struct({
 });
 
 const textValue = (value: Schema.Json | undefined): string | undefined => {
-  if (Schema.is(Schema.String)(value)) {
-    const trimmed = value.trim();
-
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
+  if (Schema.is(Schema.String)(value)) return value.trim();
 
   if (Schema.is(Schema.Number)(value) && Number.isFinite(value)) return String(value);
 
@@ -175,21 +217,30 @@ const locURI = (value: Schema.Json | undefined): string | undefined => {
  */
 export const windowsInventoryValues = (
   results: ReadonlyArray<unknown> | undefined,
+  requests: ReadonlyArray<WindowsInventoryRequest> = WINDOWS_INVENTORY_REQUESTS,
 ): ReadonlyMap<string, string> => {
   const values = new Map<string, string>();
+
+  const fallbackURIs =
+    requests === WINDOWS_INVENTORY_REQUESTS
+      ? REQUESTED_URI_BY_COMMAND_ID
+      : requestedUriByCommandId(requests);
 
   for (const entry of results ?? []) {
     const parsed = Schema.decodeUnknownOption(ResultsEntry)(entry);
 
     if (Option.isNone(parsed)) continue;
     const commandId = textValue(parsed.value.cmdRef);
-    const fallbackURI = commandId ? REQUESTED_URI_BY_COMMAND_ID.get(commandId) : undefined;
+    const fallbackURI = commandId ? fallbackURIs.get(commandId) : undefined;
 
     for (const item of parsed.value.items ?? []) {
       const uri = locURI(item.source) ?? locURI(item.target) ?? fallbackURI;
       const data = textValue(item.data);
 
-      if (!uri || !data) continue;
+      // An answered node with an empty value is meaningful for security and
+      // join state: it clears a previously reported value. Keep it in the map
+      // so the parser can distinguish "not reported" from "reported empty".
+      if (!uri || data === undefined) continue;
       values.set(uri, data);
     }
   }
@@ -207,6 +258,12 @@ export type WindowsInventory = {
   readonly osBuild?: string;
   readonly diskTotal?: string;
   readonly diskUsed?: string;
+  readonly bitLockerEnabled?: boolean | null;
+  readonly bitLockerStatus?: number | null;
+  readonly tpmVersion?: string | null;
+  readonly secureBootState?: number | null;
+  readonly domainName?: string | null;
+  readonly entraDeviceId?: string | null;
 };
 
 /** Mutable subset used for the `device` column patch. */
@@ -226,6 +283,27 @@ const byteCount = (value: string | undefined): number | undefined => {
 
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 };
+
+/** Windows reports booleans as `0`/`1`, and some builds as `true`/`false`. */
+const booleanValue = (value: string | undefined): boolean | undefined => {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "1" || normalized === "true") return true;
+
+  if (normalized === "0" || normalized === "false") return false;
+
+  return undefined;
+};
+
+const integerValue = (value: string | undefined): number | undefined => {
+  if (!value || !/^-?\d+$/.test(value.trim())) return undefined;
+  const parsed = Number(value);
+
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+};
+
+const ENTRA_DEVICE_ID_URI = /\/DMClient\/Provider\/[^/]+\/AADDeviceID$/i;
 
 /**
  * `SwV` is `MajorVersion.MinorVersion.BuildNumber.QFEnumber`. Keep the product
@@ -275,6 +353,55 @@ export const parseWindowsInventory = (values: ReadonlyMap<string, string>): Wind
 
   if (osVersion?.build) inventory.osBuild = clamp(osVersion.build);
 
+  // Security and join state. Each node is read independently: a device may
+  // support BitLocker without a TPM, or be domain joined without Entra. An
+  // answered node with an empty value clears the previous value; a node that
+  // was not answered at all leaves it untouched.
+  const bitLockerRaw = at(WINDOWS_INVENTORY_URI.bitLockerCompliance);
+
+  if (values.has(WINDOWS_INVENTORY_URI.bitLockerCompliance)) {
+    const parsed = booleanValue(bitLockerRaw);
+
+    if (parsed !== undefined) inventory.bitLockerEnabled = parsed;
+    else if (!bitLockerRaw) inventory.bitLockerEnabled = null;
+  }
+
+  const bitLockerStatusRaw = at(WINDOWS_INVENTORY_URI.bitLockerStatus);
+
+  if (values.has(WINDOWS_INVENTORY_URI.bitLockerStatus)) {
+    const parsed = integerValue(bitLockerStatusRaw);
+
+    if (parsed !== undefined && parsed >= 0) inventory.bitLockerStatus = parsed;
+    else if (!bitLockerStatusRaw) inventory.bitLockerStatus = null;
+  }
+
+  const tpmVersion = at(WINDOWS_INVENTORY_URI.tpmVersion);
+
+  if (values.has(WINDOWS_INVENTORY_URI.tpmVersion))
+    inventory.tpmVersion = tpmVersion ? clamp(tpmVersion) : null;
+
+  const secureBootRaw = at(WINDOWS_INVENTORY_URI.secureBootState);
+
+  if (values.has(WINDOWS_INVENTORY_URI.secureBootState)) {
+    const parsed = integerValue(secureBootRaw);
+
+    if (parsed !== undefined && parsed >= 0) inventory.secureBootState = parsed;
+    else if (!secureBootRaw) inventory.secureBootState = null;
+  }
+
+  const domainRaw = at(WINDOWS_INVENTORY_URI.domainName);
+
+  if (values.has(WINDOWS_INVENTORY_URI.domainName))
+    inventory.domainName = domainRaw ? clamp(domainRaw) : null;
+
+  for (const [uri, value] of values) {
+    if (!ENTRA_DEVICE_ID_URI.test(uri)) continue;
+    const trimmed = value.trim();
+
+    inventory.entraDeviceId = trimmed ? clamp(trimmed) : null;
+    break;
+  }
+
   // Both figures are reported in MB. When they disagree (free > total) the
   // report is internally inconsistent: store neither so health does not pair a
   // new total with a stale used value. A reported total of zero is treated as
@@ -302,7 +429,22 @@ export const hasWindowsInventory = (inventory: WindowsInventory): boolean =>
   inventory.osVersion !== undefined ||
   inventory.osBuild !== undefined ||
   inventory.diskTotal !== undefined ||
-  inventory.diskUsed !== undefined;
+  inventory.diskUsed !== undefined ||
+  inventory.bitLockerEnabled !== undefined ||
+  inventory.bitLockerStatus !== undefined ||
+  inventory.tpmVersion !== undefined ||
+  inventory.secureBootState !== undefined ||
+  inventory.domainName !== undefined ||
+  inventory.entraDeviceId !== undefined;
+
+/** True when the report carried Windows security or join state. */
+export const hasWindowsSecurityInventory = (inventory: WindowsInventory): boolean =>
+  inventory.bitLockerEnabled !== undefined ||
+  inventory.bitLockerStatus !== undefined ||
+  inventory.tpmVersion !== undefined ||
+  inventory.secureBootState !== undefined ||
+  inventory.domainName !== undefined ||
+  inventory.entraDeviceId !== undefined;
 
 /**
  * Cadence guard: request a snapshot when the last successful report and the
@@ -412,6 +554,19 @@ export const windowsInventoryUpdate = (
 
   if (inventory.diskUsed) update.diskUsed = inventory.diskUsed;
 
+  if (inventory.bitLockerEnabled !== undefined)
+    update.bitLockerEnabled = inventory.bitLockerEnabled;
+
+  if (inventory.bitLockerStatus !== undefined) update.bitLockerStatus = inventory.bitLockerStatus;
+
+  if (inventory.tpmVersion !== undefined) update.tpmVersion = inventory.tpmVersion;
+
+  if (inventory.secureBootState !== undefined) update.secureBootState = inventory.secureBootState;
+
+  if (inventory.domainName !== undefined) update.domainName = inventory.domainName;
+
+  if (inventory.entraDeviceId !== undefined) update.entraDeviceId = inventory.entraDeviceId;
+
   return update;
 };
 
@@ -470,19 +625,60 @@ const queryless = (uri: string) => uri.split("?")[0]!;
  * a Windows build without the Win32AppInventory CSP); an empty array means it
  * answered and reported no applications.
  */
-export const parseWindowsApplications = (
+export type WindowsApplicationSources = {
+  /** The `Win32AppInventory` Get returned a report. */
+  readonly win32: boolean;
+  /** The `EnterpriseDesktopAppManagement/MSI` Get returned a report. */
+  readonly msi: boolean;
+};
+
+export type WindowsApplicationReport = {
+  readonly applications: ReadonlyArray<DeviceApplicationRecord>;
+  readonly sources: WindowsApplicationSources;
+};
+
+export type WindowsApplicationReportOptions = {
+  /**
+   * Application inventory `CmdRef`s that the device answered successfully.
+   * A `Results` item with no child values is a valid empty inventory, so the
+   * presence of the answer (not just parsed values) marks the source complete.
+   */
+  readonly reportedCommandIds?: ReadonlySet<string>;
+};
+
+const applicationSourceForCommandId = (
+  cmdID: string,
+): keyof WindowsApplicationSources | undefined => {
+  if (cmdID === `${WINDOWS_APPLICATION_INVENTORY_COMMAND_ID_PREFIX}win32`) return "win32";
+
+  if (cmdID === `${WINDOWS_APPLICATION_INVENTORY_COMMAND_ID_PREFIX}msi`) return "msi";
+
+  return undefined;
+};
+
+/**
+ * Parse installed applications and report which sources actually answered.
+ *
+ * A device can answer one CSP and reject the other (unsupported edition,
+ * missing policy, a `Get` error). Callers must not treat that as "the other
+ * source now has zero applications", because replacing the whole inventory
+ * would make healthy Win32 apps disappear and break install reconciliation.
+ */
+export const parseWindowsApplicationsReport = (
   values: ReadonlyMap<string, string>,
-): DeviceApplicationRecord[] | undefined => {
+  options: WindowsApplicationReportOptions = {},
+): WindowsApplicationReport | undefined => {
   const win32 = new Map<string, Record<string, string>>();
   const msi = new Map<string, Record<string, string>>();
-  let reported = false;
+  let win32Reported = false;
+  let msiReported = false;
 
   for (const [uri, value] of values) {
     const bare = queryless(uri);
     const win32Entry = childPath(bare, WIN32_APP_PREFIX);
 
     if (win32Entry) {
-      reported = true;
+      win32Reported = true;
       const fields = win32.get(win32Entry.key) ?? {};
       fields[win32Entry.field] = value;
       win32.set(win32Entry.key, fields);
@@ -492,14 +688,21 @@ export const parseWindowsApplications = (
     const msiEntry = childPath(bare, MSI_APP_PREFIX);
 
     if (msiEntry && !msiEntry.key.startsWith("UpgradeCode/")) {
-      reported = true;
+      msiReported = true;
       const fields = msi.get(msiEntry.key) ?? {};
       fields[msiEntry.field] = value;
       msi.set(msiEntry.key, fields);
     }
   }
 
-  if (!reported) return undefined;
+  for (const cmdID of options.reportedCommandIds ?? []) {
+    const source = applicationSourceForCommandId(cmdID);
+
+    if (source === "win32") win32Reported = true;
+    else if (source === "msi") msiReported = true;
+  }
+
+  if (!win32Reported && !msiReported) return undefined;
 
   const applications = new Map<string, DeviceApplicationRecord>();
 
@@ -541,5 +744,57 @@ export const parseWindowsApplications = (
     });
   }
 
-  return [...applications.values()];
+  return {
+    applications: [...applications.values()],
+    sources: { win32: win32Reported, msi: msiReported },
+  };
+};
+
+/**
+ * Merge a partial Windows report with the rows from the sources that did not
+ * answer. The report owns every bundle id it mentions; rows from an
+ * unreported source are kept. When only Win32 answered, a previously managed
+ * row keeps its managed flag (MSI did not contradict it).
+ */
+export const mergeWindowsApplicationReport = (
+  existing: ReadonlyArray<DeviceApplicationRecord>,
+  report: WindowsApplicationReport,
+): DeviceApplicationRecord[] => {
+  if (report.sources.win32 && report.sources.msi) return [...report.applications];
+
+  const merged = new Map<string, DeviceApplicationRecord>();
+
+  if (report.sources.win32) {
+    for (const row of existing) if (row.isManaged === true) merged.set(row.bundleId, row);
+
+    for (const application of report.applications) {
+      const previous = merged.get(application.bundleId);
+
+      merged.set(
+        application.bundleId,
+        previous?.isManaged === true ? { ...application, isManaged: true } : application,
+      );
+    }
+  } else {
+    // Only the MSI source answered: Win32 rows are the unmanaged rows.
+    for (const row of existing) if (row.isManaged !== true) merged.set(row.bundleId, row);
+
+    for (const application of report.applications) merged.set(application.bundleId, application);
+  }
+
+  return [...merged.values()];
+};
+
+/**
+ * Backwards-compatible helper for callers that only need the parsed list.
+ * New Windows ingest code uses {@link parseWindowsApplicationsReport} so it
+ * can avoid deleting the rows of a source that did not answer.
+ */
+export const parseWindowsApplications = (
+  values: ReadonlyMap<string, string>,
+  options: WindowsApplicationReportOptions = {},
+): DeviceApplicationRecord[] | undefined => {
+  const report = parseWindowsApplicationsReport(values, options);
+
+  return report === undefined ? undefined : [...report.applications];
 };

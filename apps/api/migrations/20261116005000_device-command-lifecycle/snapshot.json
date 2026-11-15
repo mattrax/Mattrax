@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "mysql",
   "id": "13a50bd2-4599-43fd-b658-8e1d4e344e4f",
-  "prevIds": ["621584d9-ff10-4ee4-81a3-e2f19ede6549"],
+  "prevIds": ["f3f66be4-bd98-44d7-89ce-2c4c242ea3b4"],
   "ddl": [
     {
       "name": "abm_device",

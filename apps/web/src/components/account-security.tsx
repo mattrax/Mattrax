@@ -167,7 +167,13 @@ export function AccountSecurity(props: {
     event.preventDefault();
     setPasskeyError(null);
     setPasskeyPending(true);
-    const result = await authClient.addPasskey(passkeyName().trim() || "Passkey");
+    // An account with no passkey (for example an SSO-only member meeting a
+    // tenant MFA requirement) cannot step up with one, so the first key is
+    // authorised by the session's own fresh evidence.
+    const firstPasskey = !props.passkeyEnabled;
+
+    const result = await authClient.addPasskey(passkeyName().trim() || "Passkey", { firstPasskey });
+
     setPasskeyPending(false);
 
     if (result.error) {
@@ -220,8 +226,16 @@ export function AccountSecurity(props: {
 
       <Show when={props.mfaRequired && !props.passkeyEnabled}>
         <Banner tone="warning" class="mt-4">
-          A tenant where you are an owner or admin requires MFA. Add a passkey to regain access to
-          its settings.
+          A tenant you belong to requires multi-factor authentication for every role. Add a passkey
+          below to reach it; your account settings stay available until you do.
+        </Banner>
+      </Show>
+
+      <Show when={passkeysLoaded() && passkeys().length === 1}>
+        <Banner tone="warning" class="mt-4">
+          This is your only passkey. If you lose this device you cannot sign in. Add a second
+          passkey, and know that break-glass recovery needs access to your verified email and — in a
+          shared tenant — another owner's approval.
         </Banner>
       </Show>
 
@@ -276,9 +290,7 @@ export function AccountSecurity(props: {
         <Show
           when={passkeysLoaded() && passkeys().length > 0}
           fallback={
-            <p class="mt-3 text-xs text-muted-foreground">
-              No passkeys yet. Add one to sign in.
-            </p>
+            <p class="mt-3 text-xs text-muted-foreground">No passkeys yet. Add one to sign in.</p>
           }
         >
           <ul class="mt-3 divide-y divide-white/[0.05] rounded-lg border border-white/[0.07]">

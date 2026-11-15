@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
+  appleCollectionManaged,
+  appleOsRangeLabel,
   collectionFileKey,
   loadCollection,
   loadManifest,
@@ -360,5 +362,48 @@ describe("policy catalogue loaders", () => {
       "Above Lock",
     ]);
     expect(searchCollections(summaries, "missing")).toEqual([]);
+  });
+});
+
+describe("Apple OS range labels", () => {
+  const support = {
+    supportedOs: {
+      "com.apple.configuration.security.certificate": {
+        macOS: { introduced: "14.0" },
+        iOS: { introduced: "17.0" },
+      },
+      "com.apple.security.FDERecoveryKeyEscrow": {
+        macOS: { introduced: "10.13" },
+      },
+    },
+  };
+
+  it("shows the per-family minimums the delivery path enforces", () => {
+    expect(
+      appleOsRangeLabel(
+        {
+          identifier: "com.apple.configuration.security.certificate",
+          minOs: "14.0",
+        },
+        support,
+      ),
+    ).toBe("macOS 14.0+ · iOS 17.0+");
+  });
+
+  it("falls back to the catalogue minimum when Apple publishes no block", () => {
+    expect(appleOsRangeLabel({ identifier: "com.example.custom", minOs: "13.0" }, support)).toBe(
+      "13.0+",
+    );
+  });
+
+  it("returns no label when nothing is known", () => {
+    expect(appleOsRangeLabel({ identifier: "com.example.custom" }, undefined)).toBeNull();
+  });
+
+  it("flags payloads that no managed OS family supports", () => {
+    expect(appleCollectionManaged(undefined)).toBe(true);
+    expect(appleCollectionManaged(["macOS"])).toBe(true);
+    expect(appleCollectionManaged(["iPadOS"])).toBe(true);
+    expect(appleCollectionManaged(["watchOS", "tvOS"])).toBe(false);
   });
 });

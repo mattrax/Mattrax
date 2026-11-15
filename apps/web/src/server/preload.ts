@@ -1,10 +1,15 @@
 import {
   MeResponse,
+  SSR_REVISION_COOKIE,
   SSR_TOKEN_COOKIE,
   SSR_TOKEN_TTL_MILLIS,
   ssrTenantPermissions,
 } from "@mattrax/enterprise-domain/client";
-import type { SsrTokenPayload, SsrTokenTenant } from "@mattrax/enterprise-domain/client";
+import type {
+  SsrRevisionPayload,
+  SsrTokenPayload,
+  SsrTokenTenant,
+} from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import type { PreloadedSession, PreloadedSessionData } from "../lib/session-store";
 import { isPassthroughPath, normalisePath } from "./security";
@@ -26,6 +31,10 @@ const BootstrapEnvelope = Schema.Struct({
   me: MeResponse,
   ssrToken: Schema.NullOr(Schema.String),
   ssrTokenExpiresAt: Schema.NullOr(Schema.Number),
+  // Optional during a rolling deploy: an older API does not mint a revision,
+  // and the edge simply treats its token as unusable (bootstrap each time).
+  ssrRevision: Schema.optional(Schema.NullOr(Schema.String)),
+  ssrRevisionExpiresAt: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
@@ -41,6 +50,11 @@ export type PreloadDependencies = {
     sessionCookie: string | undefined,
     now?: number,
   ) => Promise<SsrTokenPayload | undefined>;
+  readonly verifyRevision: (
+    secret: string,
+    token: string,
+    now?: number,
+  ) => Promise<SsrRevisionPayload | undefined>;
   readonly fetchBootstrap: (request: Request) => Promise<Response>;
 };
 
@@ -49,8 +63,12 @@ export type PreloadOutcome = {
   readonly session?: PreloadedSession;
   /** A fresh `__Host-mattrax_ssr` cookie to attach to the HTML response. */
   readonly setSsrCookie?: string;
+  /** The matching `__Host-mattrax_ssr_rev` cookie. */
+  readonly setSsrRevisionCookie?: string;
   /** Expire a token that no longer matches a session. */
   readonly clearSsrCookie?: boolean;
+  /** Expire the revision cookie alongside the token. */
+  readonly clearSsrRevisionCookie?: boolean;
   /**
    * A warm token was present but did not verify. Used for a one-time operator
    * warning; the request still rendered from bootstrap.
@@ -59,10 +77,7 @@ export type PreloadOutcome = {
 };
 
 /** Read one cookie without decoding the rest of the header. */
-export const readCookie = (
-  header: string | null | undefined,
-  name: string,
-): string | undefined => {
+export const readCookie = (header: string | null | undefined, name: string): string | undefined => {
   if (!header) return undefined;
 
   for (const part of header.split(";")) {
@@ -85,6 +100,15 @@ export const ssrSetCookie = (token: string): string =>
 export const ssrClearCookie = (): string =>
   `${SSR_TOKEN_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 
+/** Same lifetime and flags as {@link ssrSetCookie}: the pair expires together. */
+export const ssrRevisionSetCookie = (token: string): string =>
+  `${SSR_REVISION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${Math.round(
+    SSR_TOKEN_TTL_MILLIS / 1_000,
+  )}`;
+
+export const ssrRevisionClearCookie = (): string =>
+  `${SSR_REVISION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+
 /**
  * Re-attach the permissions a built-in-role token omitted for size. Custom
  * roles always carry theirs; an absent set still fails closed to the role key.
@@ -97,7 +121,8 @@ const restoreTenant = (tenant: SsrTokenTenant) => ({
 /**
  * Load the signed-in session before the page renders.
  *
- * 1. A valid unexpired `__Host-mattrax_ssr` token for a verified account answers
+ * 1. A valid unexpired `__Host-mattrax_ssr` token for a verified account whose
+ *    signed revision cookie names the same session and `authRevision` answers
  *    from memory: zero service-binding calls on a warm navigation.
  * 2. Otherwise one `GET /api/v1/bootstrap` (never `getSession` + `me`) supplies
  *    the session, `/me` shell and a fresh token. Bootstrap is not free: the API
@@ -106,7 +131,10 @@ const restoreTenant = (tenant: SsrTokenTenant) => ({
  * 3. No session cookie means signed out: no call, and a stale token is expired.
  *
  * The token is display-only. Every data endpoint still re-authorises the
- * session, and the 5-minute window bounds how long a stale shell can paint.
+ * session. The 5-minute window bounds how long a stale shell can paint, and the
+ * signed revision cookie normally closes that window immediately: a revoke,
+ * passkey/TOTP change or email change makes the API clear the pair in the same
+ * response that performed the change.
  *
  * A token minted before email verification is ignored even if the account has
  * since verified: bootstrap then returns the verified shell and a fresh token
@@ -133,11 +161,14 @@ export async function preloadSession(
   const cookieHeader = request.headers.get("cookie");
   const sessionCookie = readCookie(cookieHeader, SESSION_COOKIE);
   const ssrCookie = readCookie(cookieHeader, SSR_TOKEN_COOKIE);
+  const ssrRevisionCookie = readCookie(cookieHeader, SSR_REVISION_COOKIE);
 
   if (!sessionCookie) {
     // Signed out. Expire any token left behind by a sign-out or rotation so it
     // can never paint a stale shell on a later navigation.
-    return ssrCookie ? { session: null, clearSsrCookie: true } : {};
+    return ssrCookie !== undefined || ssrRevisionCookie !== undefined
+      ? { session: null, clearSsrCookie: true, clearSsrRevisionCookie: true }
+      : {};
   }
 
   let tokenRejected = false;
@@ -150,12 +181,24 @@ export async function preloadSession(
       now,
     );
 
+    const revision = ssrRevisionCookie
+      ? await dependencies.verifyRevision(dependencies.secret, ssrRevisionCookie, now)
+      : undefined;
+
     // A token without tenants was over budget at issue time (or came from a
     // legacy issuer); treat it as a miss so the shell still gets the full
     // membership list. An unverified account must also bootstrap so a
     // just-verified user is not pinned to the verification screen by a token
-    // minted before verification.
-    if (payload?.tenants && payload.user.emailVerified) {
+    // minted before verification. Finally, `ver` is only trustworthy when the
+    // signed revision cookie names the same session and revision: a missing,
+    // expired, tampered or rotated revision is a miss, never a pass.
+    if (
+      payload?.tenants &&
+      payload.user.emailVerified &&
+      revision !== undefined &&
+      revision.sid === payload.sid &&
+      revision.ver === payload.ver
+    ) {
       return {
         session: {
           sessionId: payload.sid,
@@ -170,6 +213,8 @@ export async function preloadSession(
       };
     }
 
+    // A revision mismatch is not a secret misconfiguration; only a token that
+    // failed its own signature/replay checks deserves the operator warning.
     tokenRejected = payload === undefined;
   }
 
@@ -187,21 +232,26 @@ export async function preloadSession(
 
     if (data === undefined) return {};
 
-    if (data.session === null)
+    if (data.session === null) {
+      const hadShellCookies = ssrCookie !== undefined || ssrRevisionCookie !== undefined;
+
       return withTokenRejection({
         session: null,
-        clearSsrCookie: ssrCookie !== undefined,
+        clearSsrCookie: hadShellCookies,
+        clearSsrRevisionCookie: hadShellCookies,
       });
+    }
 
     const session = { ...data.session, me: data.me };
 
     // Without the shared secret a token could never be verified, so do not set
     // a cookie the next request would simply ignore.
     if (data.ssrToken && dependencies.secret) {
-      // Verify the token we are about to store. A token without tenants (from
+      // Verify the pair we are about to store. A token without tenants (from
       // an older issuer during a deploy) or one signed with a different secret
       // would be a miss on every navigation, and the browser would keep a
-      // useless Set-Cookie while the API re-signs it each time.
+      // useless Set-Cookie while the API re-signs it each time. The revision
+      // must name the same session and revision as the token.
       const fresh = await dependencies.verifyToken(
         dependencies.secret,
         data.ssrToken,
@@ -209,11 +259,22 @@ export async function preloadSession(
         now,
       );
 
+      const freshRevision = data.ssrRevision
+        ? await dependencies.verifyRevision(dependencies.secret, data.ssrRevision, now)
+        : undefined;
+
       if (fresh === undefined) tokenRejected = true;
-      else if (fresh.tenants)
+      else if (
+        fresh.tenants &&
+        data.ssrRevision &&
+        freshRevision !== undefined &&
+        freshRevision.sid === fresh.sid &&
+        freshRevision.ver === fresh.ver
+      )
         return withTokenRejection({
           session,
           setSsrCookie: ssrSetCookie(data.ssrToken),
+          setSsrRevisionCookie: ssrRevisionSetCookie(data.ssrRevision),
         });
     }
 
@@ -250,10 +311,7 @@ const unreadableBootstrapResponse = (): Response =>
  * never reach a page request that came through `/api/*`.
  */
 export async function redactBootstrapResponse(response: Response): Promise<Response> {
-  if (
-    response.status !== 200 ||
-    !(response.headers.get("content-type") ?? "").includes("json")
-  )
+  if (response.status !== 200 || !(response.headers.get("content-type") ?? "").includes("json"))
     return response;
 
   try {
@@ -261,7 +319,13 @@ export async function redactBootstrapResponse(response: Response): Promise<Respo
 
     if (body === undefined) return unreadableBootstrapResponse();
 
-    if (!("ssrToken" in body) && !("ssrTokenExpiresAt" in body)) return response;
+    if (
+      !("ssrToken" in body) &&
+      !("ssrTokenExpiresAt" in body) &&
+      !("ssrRevision" in body) &&
+      !("ssrRevisionExpiresAt" in body)
+    )
+      return response;
 
     const headers = new Headers(response.headers);
 
@@ -275,7 +339,13 @@ export async function redactBootstrapResponse(response: Response): Promise<Respo
     headers.set("vary", "cookie");
 
     return Response.json(
-      { ...body, ssrToken: null, ssrTokenExpiresAt: null },
+      {
+        ...body,
+        ssrToken: null,
+        ssrTokenExpiresAt: null,
+        ssrRevision: null,
+        ssrRevisionExpiresAt: null,
+      },
       { status: response.status, headers },
     );
   } catch {

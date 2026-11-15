@@ -1,7 +1,7 @@
-import type { SsrTokenPayload } from "@mattrax/enterprise-domain/client";
+import type { SsrRevisionPayload, SsrTokenPayload } from "@mattrax/enterprise-domain/client";
 import { ssrSessionFingerprint } from "@mattrax/enterprise-domain/client";
 import { describe, expect, it } from "vitest";
-import { verifySsrToken } from "./ssr-token";
+import { verifySsrRevision, verifySsrToken } from "./ssr-token";
 
 const secret = "edge-verify-test-secret";
 
@@ -14,7 +14,10 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("=", "");
 
 /** Mirrors the API's HMAC encoding so the edge verifier is exercised for real. */
-type SignedPayload = SsrTokenPayload | { purpose: string; sub: string; email: string; exp: number };
+type SignedPayload =
+  | SsrTokenPayload
+  | SsrRevisionPayload
+  | { purpose: string; sub: string; email: string; exp: number };
 
 const sign = async (payload: SignedPayload, key = secret) => {
   const cryptoKey = await crypto.subtle.importKey(
@@ -150,6 +153,60 @@ describe("edge SSR token verification", () => {
   it("rejects malformed input without throwing", async () => {
     for (const token of ["", "not-a-token", "a.b.c", "."]) {
       expect(await verifySsrToken(secret, token, sessionCookie)).toBeUndefined();
+    }
+  });
+});
+
+const revision = (overrides: Partial<SsrRevisionPayload> = {}): SsrRevisionPayload => ({
+  purpose: "ssr-rev",
+  sid: "session-1",
+  ver: "revision-1",
+  iat: Date.now() - 1_000,
+  exp: Date.now() + 240_000,
+  ...overrides,
+});
+
+describe("edge SSR revision verification", () => {
+  it("accepts a signed, unexpired revision", async () => {
+    const token = await sign(revision());
+    const payload = await verifySsrRevision(secret, token);
+
+    expect(payload).toMatchObject({ sid: "session-1", ver: "revision-1" });
+  });
+
+  it("rejects an expired revision", async () => {
+    const token = await sign(revision({ exp: Date.now() - 1 }));
+
+    expect(await verifySsrRevision(secret, token)).toBeUndefined();
+  });
+
+  it("rejects a tampered body or signature", async () => {
+    const token = await sign(revision());
+    const [body, signature] = token.split(".");
+    const tampered = await sign(revision({ ver: "revision-2" }));
+    const tamperedSignature = `${body}.${signature!.startsWith("A") ? "B" : "A"}${signature!.slice(1)}`;
+
+    expect(await verifySsrRevision(secret, tamperedSignature)).toBeUndefined();
+    expect(
+      await verifySsrRevision(secret, `${tampered.split(".")[0]}.${signature}`),
+    ).toBeUndefined();
+  });
+
+  it("rejects another purpose or another secret", async () => {
+    const wrongPurpose = await sign({
+      purpose: "ssr",
+      sub: "session-1",
+      email: "owner@example.com",
+      exp: Date.now() + 60_000,
+    });
+
+    expect(await verifySsrRevision(secret, wrongPurpose)).toBeUndefined();
+    expect(await verifySsrRevision(secret, await sign(revision(), "other-secret"))).toBeUndefined();
+  });
+
+  it("rejects malformed input without throwing", async () => {
+    for (const token of ["", ".", "a.b.c", "not-a-token"]) {
+      expect(await verifySsrRevision(secret, token)).toBeUndefined();
     }
   });
 });

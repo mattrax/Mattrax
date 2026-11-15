@@ -171,3 +171,87 @@ describe("normalizeCapabilities", () => {
     expect(normalizeCapabilities({ managed: true })).toEqual({ managed: true });
   });
 });
+
+describe("compliance status items", () => {
+  it("parses passcode, software update, security and mdm.app reports", () => {
+    const inventory = parseDeviceInventory({
+      passcode: { "is-present": true, "is-compliant": false },
+      softwareupdate: {
+        "install-state": "prepared",
+        "pending-version": { "os-version": "15.2", "build-version": "24C101" },
+        "failure-reason": {
+          count: 2,
+          reason: "The update could not be prepared",
+          timestamp: "2026-04-01T09:30:00Z",
+        },
+      },
+      security: {
+        "lockdown-mode": true,
+        certificate: { list: [{ identifier: "a" }, { identifier: "b" }] },
+      },
+      mdm: {
+        app: [
+          { identifier: "com.example.z", state: "failed", version: "1.0" },
+          { identifier: "com.example.a", state: "managed", "short-version": "2.1" },
+        ],
+      },
+    });
+
+    expect(inventory.passcodePresent).toBe(true);
+    expect(inventory.passcodeCompliant).toBe(false);
+    expect(inventory.osUpdateInstallState).toBe("prepared");
+    expect(inventory.osUpdatePendingVersion).toBe("15.2");
+    expect(inventory.osUpdatePendingBuild).toBe("24C101");
+    expect(inventory.osUpdateFailureCount).toBe(2);
+    expect(inventory.osUpdateFailureReason).toBe("The update could not be prepared");
+    expect(inventory.osUpdateFailedAt?.toISOString()).toBe("2026-04-01T09:30:00.000Z");
+    expect(inventory.securityLockdownMode).toBe(true);
+    expect(inventory.managedCertificateCount).toBe(2);
+    expect(inventory.managementApps).toEqual([
+      {
+        identifier: "com.example.a",
+        state: "managed",
+        version: null,
+        shortVersion: "2.1",
+      },
+      {
+        identifier: "com.example.z",
+        state: "failed",
+        version: "1.0",
+        shortVersion: null,
+      },
+    ]);
+  });
+
+  it("keeps an empty pending version as null and rejects unknown install states", () => {
+    const inventory = parseDeviceInventory({
+      softwareupdate: {
+        "install-state": "something-new",
+        "pending-version": { "os-version": "", "build-version": "" },
+      },
+    });
+
+    expect(inventory.osUpdateInstallState).toBeNull();
+    expect(inventory.osUpdatePendingVersion).toBeNull();
+    expect(inventory.osUpdatePendingBuild).toBeNull();
+  });
+
+  it("reads flattened mdm.app entries and ignores malformed ones", () => {
+    const inventory = parseDeviceInventory({
+      "mdm.app": [{ identifier: "com.example.app", state: "installing" }, { state: "managed" }],
+    });
+
+    expect(inventory.managementApps).toEqual([
+      { identifier: "com.example.app", state: "installing", version: null, shortVersion: null },
+    ]);
+  });
+
+  it("does not invent values for items the device did not report", () => {
+    const inventory = parseDeviceInventory({ device: { identifier: { "serial-number": "S" } } });
+
+    expect(inventory.passcodePresent).toBeUndefined();
+    expect(inventory.osUpdateInstallState).toBeUndefined();
+    expect(inventory.managedCertificateCount).toBeUndefined();
+    expect(inventory.managementApps).toBeUndefined();
+  });
+});

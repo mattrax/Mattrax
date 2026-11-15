@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import {
   SSR_TOKEN_MAX_LENGTH,
   SSR_TOKEN_TTL_MILLIS,
+  SsrRevisionPayload,
   SsrTokenPayload,
   ssrSessionFingerprint,
   type SsrTokenTenant,
@@ -9,7 +10,11 @@ import {
 } from "@mattrax/enterprise-domain";
 import { signToken, verifyToken } from "./tokens.ts";
 
-export { SSR_TOKEN_COOKIE, SSR_TOKEN_TTL_MILLIS } from "@mattrax/enterprise-domain";
+export {
+  SSR_REVISION_COOKIE,
+  SSR_TOKEN_COOKIE,
+  SSR_TOKEN_TTL_MILLIS,
+} from "@mattrax/enterprise-domain";
 
 export type SignSsrTokenInput = {
   readonly subjectId: string;
@@ -88,9 +93,7 @@ export const signSsrToken = (secret: string, input: SignSsrTokenInput) =>
     const iat = input.now ?? Date.now();
     const exp = iat + SSR_TOKEN_TTL_MILLIS;
 
-    const ch = yield* Effect.promise(() =>
-      ssrSessionFingerprint(secret, input.sessionCookie),
-    );
+    const ch = yield* Effect.promise(() => ssrSessionFingerprint(secret, input.sessionCookie));
 
     const base = {
       purpose: "ssr",
@@ -118,6 +121,41 @@ export const signSsrToken = (secret: string, input: SignSsrTokenInput) =>
 
 const decodePayload = Schema.decodeUnknownOption(SsrTokenPayload);
 
+export type SignSsrRevisionInput = {
+  readonly sessionId: string;
+  readonly authRevision: string;
+  readonly now?: number;
+};
+
+export type SignedSsrRevision = {
+  readonly token: string;
+  readonly expiresAt: number;
+};
+
+/**
+ * Sign the edge comparison value for the SSR shell. It is not a credential: it
+ * carries only the session id and the account revision the API is currently
+ * willing to paint. The edge requires it to match the SSR token before using a
+ * warm token, so deleting or replaying one only forces bootstrap.
+ */
+export const signSsrRevision = (secret: string, input: SignSsrRevisionInput) =>
+  Effect.gen(function* () {
+    const iat = input.now ?? Date.now();
+    const exp = iat + SSR_TOKEN_TTL_MILLIS;
+
+    const token = yield* signToken(secret, {
+      sub: input.sessionId,
+      email: "",
+      purpose: "ssr-rev",
+      sid: input.sessionId,
+      ver: input.authRevision,
+      iat,
+      exp,
+    });
+
+    return { token, expiresAt: exp } satisfies SignedSsrRevision;
+  });
+
 /**
  * Verify and strictly decode an SSR token. Any failure is `undefined` so a
  * tampered, expired or foreign-purpose token simply falls through to the API.
@@ -131,6 +169,21 @@ export const verifySsrToken = (secret: string, token: string, now = Date.now()) 
     const payload = Option.getOrUndefined(decodePayload(raw));
 
     if (payload === undefined) return yield* Effect.fail(new Error("Invalid SSR token"));
+
+    return payload;
+  });
+
+const decodeRevision = Schema.decodeUnknownOption(SsrRevisionPayload);
+
+export const verifySsrRevision = (secret: string, token: string, now = Date.now()) =>
+  Effect.gen(function* () {
+    const raw = yield* verifyToken(secret, token);
+
+    if (raw.exp <= now) return yield* Effect.fail(new Error("Expired SSR revision"));
+
+    const payload = Option.getOrUndefined(decodeRevision(raw));
+
+    if (payload === undefined) return yield* Effect.fail(new Error("Invalid SSR revision"));
 
     return payload;
   });

@@ -50,13 +50,27 @@ The `<id>` suffix is up to 20 alphanumeric characters.
 ## Delivery
 
 On each SyncML management check-in, Mattrax resolves the device's effective policy and
-builds a `Replace` command for every node. The device returns a status per command:
+diffs it against the OMA-URIs already delivered:
 
-- `200` — applied
-- `418` — queued
-- Anything else — failed
+- a new or changed node is sent as a `Replace` command;
+- a node that is no longer provided by any policy is sent as a `Delete` command, which
+  removes the CSP node (and its subtree) instead of leaving the last value on the device;
+- the device returns a status per command:
+  - `200` — applied
+  - `418` — queued
+  - anything else — failed, with the failing OMA-URI and status recorded on the device
 
-Statuses update `device_command` and are visible on the device activity timeline.
+Each `Replace`/`Delete` has a stable `device_command` row derived from the device and
+OMA-URI, so its result updates the same row and the policy delivery state. The device
+payload exposes:
+
+- `windows.policy.appliedUris` — acknowledged settings;
+- `windows.policy.pendingUris` — delivered but not acknowledged;
+- `windows.policy.pendingRevertUris` — deletes in flight;
+- `windows.policy.failed` — last rejection per OMA-URI, including status and detail;
+- `windows.policy.revertedAt` — when the last removal was acknowledged.
+
+A rejected node is retried after 30 minutes (or immediately if its value changes).
 
 ## Merge and precedence
 
@@ -95,10 +109,10 @@ Everything else is rejected. There is no push; commands wait for the next poll.
 
 ## Limitations
 
-- Only OMA-URI `Replace` is generated. There is no `Add`, `Delete`, `Exec` or custom
-  SyncML authoring.
-- No Windows inventory, compliance, app install or BitLocker key escrow.
-- No per-device policy push; devices poll.
+- The server generates `Replace` and `Delete` commands for OMA-URI settings. There is no
+  `Add`, arbitrary `Exec` or custom SyncML authoring, and inventory `Get` requests are
+  server-generated.
+- No BitLocker key escrow, app install or per-device policy push; devices poll.
 - The policy designer's Windows catalogue is large; see
   [Policy catalogue](/reference/policy-catalogue).
 

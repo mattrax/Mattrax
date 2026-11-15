@@ -255,6 +255,13 @@ export default function LoginPage() {
             Sign up
           </a>
         </p>
+
+        <p class="mt-2 text-center text-[12.5px] text-stone-500">
+          Lost every passkey?{" "}
+          <a href="/recover" class="text-stone-900 font-medium hover:underline">
+            Recover access
+          </a>
+        </p>
       </div>
     </main>
   );

@@ -2604,12 +2604,16 @@ describe("device command lifecycle", () => {
     );
 
     // Each erase carries a fresh PIN, so the newer one supersedes the older
-    // rather than running both. Exactly one erase stays active.
+    // rather than running both. Exactly one erase stays active; the
+    // `Settings` pre-step that disables supervised Activation Lock is queued
+    // once and de-duplicated.
     const active = commands(db).filter((row: any) => row.status === "queued");
 
-    expect(active).toHaveLength(1);
-    expect(active[0]).toMatchObject({ requestType: "EraseDevice" });
-    expect(active[0].expiresAt).toBeInstanceOf(Date);
+    const erases = active.filter((row: any) => row.requestType === "EraseDevice");
+
+    expect(erases).toHaveLength(1);
+    expect(erases[0].expiresAt).toBeInstanceOf(Date);
+    expect(active.filter((row: any) => row.requestType === "Settings")).toHaveLength(1);
     expect(commands(db).filter((row: any) => row.status === "superseded")).toHaveLength(1);
   });
 
@@ -2660,6 +2664,7 @@ describe("device command lifecycle", () => {
 
     expect(statuses).toEqual([
       ["DeviceLock", "superseded"],
+      ["Settings", "queued"],
       ["EraseDevice", "queued"],
     ]);
   });

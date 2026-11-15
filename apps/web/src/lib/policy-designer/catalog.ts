@@ -110,6 +110,8 @@ export const CollectionSummary = Schema.Struct({
   group: Schema.optional(Schema.String),
   deprecated: Schema.optional(Schema.Boolean),
   minOs: Schema.optional(Schema.String),
+  /** OS families the collection applies to (Apple publishes them per payload). */
+  osVersions: Schema.optional(Schema.Array(Schema.String)),
   propertyCount: Schema.Number,
   /** File key when a platform ships one file per collection (Windows). */
   key: Schema.optional(Schema.String),
@@ -196,6 +198,82 @@ const fetchJson = async <S extends Schema.ConstraintDecoder<unknown>>(
   return Schema.decodeUnknownSync(schema)(await response.json());
 };
 
+/**
+ * Apple's published `supportedOS` data, keyed by payload/declaration type. The
+ * designer uses it to show the same OS range policy delivery enforces; a label
+ * it cannot derive is left off rather than guessed.
+ */
+export const AppleOsSupportEntry = Schema.Struct({
+  iOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+  iPadOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+  macOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+  tvOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+  visionOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+  watchOS: Schema.optional(Schema.Struct({ introduced: Schema.String })),
+});
+
+export const AppleOsSupportManifest = Schema.Struct({
+  supportedOs: Schema.Record(Schema.String, AppleOsSupportEntry),
+});
+
+export type AppleOsSupportManifest = typeof AppleOsSupportManifest.Type;
+
+let osSupportPromise: Promise<AppleOsSupportManifest> | undefined;
+
+export const loadAppleOsSupport = () => {
+  osSupportPromise ??= fetchJson(
+    AppleOsSupportManifest,
+    "/catalog/apple-supported-os.json",
+    "Apple OS support metadata",
+  ).catch((error) => {
+    osSupportPromise = undefined;
+    throw error;
+  });
+
+  return osSupportPromise;
+};
+
+const OS_LABEL_ORDER = ["macOS", "iOS", "tvOS", "watchOS", "visionOS"] as const;
+
+/**
+ * The OS range a collection applies to, for example `macOS 14+ · iOS 17+`.
+ *
+ * Falls back to the catalogue's earliest minimum when Apple publishes no
+ * `supportedOS` block (custom payloads), and returns null when neither is
+ * known — no label is better than one delivery does not honour.
+ */
+export const appleOsRangeLabel = (
+  collection: Pick<Collection, "identifier" | "minOs">,
+  support: AppleOsSupportManifest | undefined,
+): string | null => {
+  const entry = support?.supportedOs[collection.identifier];
+
+  if (entry) {
+    const parts: string[] = [];
+
+    for (const family of OS_LABEL_ORDER) {
+      const introduced =
+        entry[family]?.introduced ?? (family === "iOS" ? entry.iPadOS?.introduced : undefined);
+
+      if (introduced) parts.push(`${family} ${introduced}+`);
+    }
+
+    if (parts.length > 0) return parts.join(" · ");
+  }
+
+  return collection.minOs ? `${collection.minOs}+` : null;
+};
+
+/**
+ * Apple OS families Mattrax manages devices on. A payload that only supports
+ * watchOS/tvOS/visionOS would never be delivered to a Mac or iPhone, so the
+ * designer blocks it instead of letting it look configured.
+ */
+export const appleCollectionManaged = (osVersions: ReadonlyArray<string> | undefined) =>
+  osVersions === undefined ||
+  osVersions.length === 0 ||
+  osVersions.some((family) => /^(macos|ios|ipados)$/i.test(family));
+
 let manifestPromise: Promise<CatalogManifest> | undefined;
 const platformPromises = new Map<PlatformId, Promise<PlatformData>>();
 const indexPromises = new Map<PlatformId, Promise<PlatformIndex>>();
@@ -256,6 +334,7 @@ const summarizePlatform = (data: PlatformData): PlatformIndex => ({
     group: collection.group,
     deprecated: collection.deprecated,
     minOs: collection.minOs,
+    osVersions: collection.osVersions,
     propertyCount: collection.properties.length,
   })),
 });

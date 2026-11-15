@@ -10,18 +10,44 @@
  *    without a namespace still get some protection.
  *
  * The in-memory layer is intentionally not presented as a global limit: a
- * Worker runs many isolates and each one keeps its own counters. The exact gap
- * is documented in `docs/reference/production-readiness.md`.
+ * Worker runs many isolates and each one keeps its own counters. Credential
+ * endpoints (`auth`) therefore fail closed when their edge binding is
+ * configured but throws, instead of silently multiplying the limit by the
+ * isolate count. Other buckets keep the bounded fallback so an edge outage
+ * cannot take down enrollment, MDM or billing.
  */
 
+import { Option, Schema } from "effect";
+
 export type RateLimitBucket = "auth" | "enrollment" | "mdm" | "scep" | "scim" | "billing";
+
+/** The only shape a Cloudflare Rate Limiting binding may resolve to. */
+const RateLimitBindingResult = Schema.Struct({ success: Schema.Boolean });
 
 export type RateLimitRule = {
   readonly bucket: RateLimitBucket;
   readonly limit: number;
   /** Cloudflare's simple limiter only supports 10s or 60s periods. */
   readonly windowSeconds: 10 | 60;
+  /**
+   * Deny instead of falling back to the per-isolate counter when a configured
+   * edge limiter throws. Set for credential endpoints, where a silently weaker
+   * limit is a credential-stuffing window. Deployments without the binding
+   * still use the local counter, so local development keeps working.
+   */
+  readonly failClosedWhenUnavailable?: boolean;
 };
+
+/**
+ * Credential-stuffing and token-brute-force buckets. They share one rule so a
+ * new credential route cannot accidentally opt out of the fail-closed policy.
+ */
+const authRule = (): RateLimitRule => ({
+  bucket: "auth",
+  limit: 120,
+  windowSeconds: 60,
+  failClosedWhenUnavailable: true,
+});
 
 /** POST endpoints that issue sessions or mutate authentication factors. */
 export const SENSITIVE_AUTH_PATHS = new Set([
@@ -56,8 +82,7 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   // the credential-stuffing buckets: the API still requires a valid session.
   if (pathname === "/api/v1/bootstrap") return undefined;
 
-  if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname))
-    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+  if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname)) return authRule();
 
   // Invitation links are bearer credentials: preview and accept are public, so
   // they share the auth bucket's credential-stuffing ceiling.
@@ -65,7 +90,7 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
     (request.method === "POST" && pathname === "/api/v1/invitations/accept") ||
     (request.method === "GET" && pathname === "/api/v1/invitations/preview")
   )
-    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+    return authRule();
 
   // Creating and resending invitations sends mail; keep them in the auth bucket
   // so a compromised member cannot fan out unbounded messages.
@@ -73,11 +98,22 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
     request.method === "POST" &&
     /^\/api\/v1\/tenants\/[^/]+\/invitations(?:\/[^/]+\/resend)?$/.test(pathname)
   )
-    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+    return authRule();
 
   // Passkey ceremonies and step-up factor verification are credential checks.
   if (request.method === "POST" && (pathname.includes("/passkey") || pathname.includes("/step-up")))
-    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+    return authRule();
+
+  // The MCP OAuth endpoints exchange public-client authorization codes and
+  // refresh tokens without a client secret; they are credential endpoints too.
+  // Registration is included because each call writes a client row.
+  if (
+    request.method === "POST" &&
+    (pathname === "/api/oauth/token" ||
+      pathname === "/api/oauth/revoke" ||
+      pathname === "/api/oauth/register")
+  )
+    return authRule();
 
   if (pathname.startsWith("/api/v1/enrollment/"))
     return { bucket: "enrollment", limit: 600, windowSeconds: 60 };
@@ -220,7 +256,16 @@ export const createRateLimiter = ({
       try {
         const result = await binding.limit({ key });
 
-        return result.success
+        const decoded = Option.getOrUndefined(
+          Schema.decodeUnknownOption(RateLimitBindingResult)(result),
+        );
+
+        // A binding that resolves to an unexpected shape is treated exactly
+        // like an unavailable binding rather than allowing the request.
+        if (decoded === undefined)
+          throw new Error("Rate limiter binding returned an invalid result");
+
+        return decoded.success
           ? { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 }
           : {
               limited: true,
@@ -229,8 +274,24 @@ export const createRateLimiter = ({
               retryAfterSeconds: rule.windowSeconds,
             };
       } catch (cause) {
-        // A limiter outage must not take down auth or enrollment. Keep serving
-        // with the per-isolate fallback and make the degradation visible.
+        // Credential endpoints fail closed: the per-isolate counter is only
+        // meaningful for a single isolate, so a shared-limiter outage must not
+        // turn a global limit into N independent limits for a credential
+        // guessing window. Other buckets keep their bounded local fallback.
+        if (rule.failClosedWhenUnavailable) {
+          warn(`Cloudflare rate limiter failed for bucket ${rule.bucket}; failing closed`, cause);
+
+          return {
+            limited: true,
+            bucket: rule.bucket,
+            limit: rule.limit,
+            retryAfterSeconds: rule.windowSeconds,
+          };
+        }
+
+        // A limiter outage must not take down enrollment, MDM or billing. Keep
+        // serving with the per-isolate fallback and make the degradation
+        // visible.
         warn(
           `Cloudflare rate limiter failed for bucket ${rule.bucket}; using local fallback`,
           cause,

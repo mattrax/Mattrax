@@ -14,6 +14,9 @@ export const STEP_UP_ACTIONS = [
   "mfa-enroll",
   "mfa-disable",
   "mfa-regenerate",
+  "email-change",
+  "sessions-revoke-all",
+  "recovery-approve",
   "recovery-key-reveal",
   "backup-download",
   "backup-pin",
@@ -22,6 +25,7 @@ export const STEP_UP_ACTIONS = [
   "device-command",
   "billing-portal",
   "sso-policy",
+  "tenant-mfa-policy",
   "passkey-enroll",
   "passkey-remove",
 ] as const;
@@ -148,6 +152,12 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "turn off multi-factor authentication";
     case "mfa-regenerate":
       return "replace your recovery codes";
+    case "email-change":
+      return "change your email address";
+    case "sessions-revoke-all":
+      return "sign out everywhere";
+    case "recovery-approve":
+      return "approve this account recovery";
     case "recovery-key-reveal":
       return "reveal this recovery key";
     case "backup-download":
@@ -164,6 +174,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "open the billing portal";
     case "sso-policy":
       return "change the tenant sign-in policy";
+    case "tenant-mfa-policy":
+      return "change the tenant MFA requirement";
     case "passkey-enroll":
       return "add a passkey";
     case "passkey-remove":

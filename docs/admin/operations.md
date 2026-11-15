@@ -27,10 +27,97 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/audit/export?format=csv" \
 `format` is `csv` or `json`. Export is capped at 10,000 rows and sets
 `X-Export-Truncated` when clipped.
 
+### Account activity
+
+Account-scoped events live in their own stream because they happen before a tenant is
+chosen: sign-in, credential lifecycle, email changes, API tokens, session revocation,
+account deletion and break-glass recovery.
+
+```bash
+# Your own account, newest first, keyset paginated.
+curl "$MATTRAX_URL/api/v1/account/audit/search?limit=25" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+
+curl "$MATTRAX_URL/api/v1/account/audit/export?format=json" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -o account-activity.json
+```
+
+The same `action`, `targetType`, `targetId`, `from`, `to`, `limit`, `cursor` and `offset`
+filters apply, and the export is capped at 10,000 rows with `X-Export-Truncated`. A
+tenant owner cannot read another person's account stream: it is keyed by the subject user
+and always filtered by the authenticated account.
+
 ### Retention
 
-Daily maintenance applies `MAINTENANCE_AUDIT_RETENTION_DAYS` (default 365). Set it to `0`
-to keep audit entries indefinitely.
+Daily maintenance applies `MAINTENANCE_AUDIT_RETENTION_DAYS` (default 365) to **both**
+audit streams. Set it to `0` to keep audit entries indefinitely.
+
+Account deletion keeps a tombstone: `account_audit_log.subject_user_id` is nulled by the
+foreign key and the email snapshot stays until retention prunes the row.
+
+### Data retention
+
+| Data                   | Where                     | Lifetime                                                                |
+| ---------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| Audit entries (tenant) | `audit_log`               | `MAINTENANCE_AUDIT_RETENTION_DAYS`                                      |
+| Account activity       | `account_audit_log`       | Same setting                                                            |
+| Session descriptor     | `account_session_context` | Deleted with its session (revocation) or when the session expires       |
+| Email-change tokens    | `account_email_change`    | One hour; rows stay for reference until the account is deleted          |
+| Recovery ceremony      | `account_recovery`        | 30 minutes to prove, 15 minutes to complete; rows stay with the account |
+
+Session descriptors never contain a raw client address. The address is hashed with
+`AUTH_SECRET` (`SHA-256("<secret>:ip:<address>")`, first 128 bits) and only the
+browser/platform family is taken from the `User-Agent` — no version, locale or full
+header. The descriptor is captured on the session's first authenticated request, because
+the auth library owns session creation and its row has no request context. A deployment
+without `AUTH_SECRET` stores no address-derived value at all.
+
+Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
+IP address.
+
+## Operator account recovery
+
+Use this only when the account cannot complete the self-service ceremony, for example a
+self-hosted deployment without a mailer. It is the same ceremony with the operator
+delivering the link.
+
+1. Confirm the requester's identity out of band (video call, employee record, ticket
+   history). Record what you checked.
+2. Mint a completion token. Run this **in a transaction** on the deployment database:
+
+   ```sql
+   -- 1. Cancel any live ceremony and open a completed-by-operator one.
+   UPDATE account_recovery
+      SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3)
+    WHERE user_id = '<user id>'
+      AND status IN ('pending_proof', 'pending_approval', 'ready');
+
+   INSERT INTO account_recovery
+     (id, user_id, email, status, approval_required, proof_token_hash,
+      approval_token_hash, completion_token_hash, approved_by_user_id, approved_at,
+      completed_at, cancelled_at, approval_organization_id, expires_at, created_at, updated_at)
+   SELECT '<24 char id>', u.id, u.email, 'ready', 0,
+          SHA2('<proof token>', 256), NULL, SHA2('<completion token>', 256),
+          NULL, NULL, NULL, NULL, NULL,
+          DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 15 MINUTE), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)
+     FROM user u
+    WHERE u.id = '<user id>' AND u.email_verified = 1 AND u.disabled = 0;
+   ```
+
+   The hashes are plain SHA-256 hex of the raw tokens, matching `recovery.ts`.
+
+3. Send the account owner `https://<ORIGIN>/recover/complete?token=<completion token>`
+   over a channel you trust. The link works once and expires in 15 minutes.
+4. The ceremony bumps the account's security revision, so every existing session is
+   invalidated, and writes `account.recovery_completed` to the account audit stream. Have
+   the user enrol a new passkey immediately.
+5. Record the incident: who verified the requester, when, and which token was minted.
+   Never write a token into a ticket.
+
+Do not delete passkeys, TOTP factors or sessions by hand: the completion link already
+revokes sessions, and removing credentials would break the "last passkey cannot be
+removed" invariant that protects every other account.
 
 ## Outbound webhooks
 

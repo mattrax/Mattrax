@@ -6,16 +6,16 @@ authentication, SSO for the dashboard and Autopilot deployment profiles.
 
 ## What is supported
 
-| Area       | Support                                                   |
-| ---------- | --------------------------------------------------------- |
-| Enrollment | Tenant-scoped discovery URL, WSTEP policy and certificate |
-| Identity   | Device certificate, 365-day validity, 180-day renewal     |
-| Policy     | OMA-URI nodes delivered as SyncML `Replace` commands      |
-| Commands   | Remote wipe and restart                                   |
-| Zero-touch | Autopilot hardware-hash import and deployment profiles    |
-| Directory  | Entra ID SSO, directory sync, SCIM                        |
-| Push       | None; devices poll on their SyncML schedule               |
-| Inventory  | Model, serial, OS build and storage on a six-hour cadence |
+| Area       | Support                                                           |
+| ---------- | ----------------------------------------------------------------- |
+| Enrollment | Tenant-scoped discovery URL, WSTEP policy and certificate         |
+| Identity   | Device certificate, 365-day validity, 180-day renewal             |
+| Policy     | OMA-URI `Replace`/`Delete` SyncML commands with applied state     |
+| Commands   | Remote wipe, restart and unenroll                                 |
+| Zero-touch | Autopilot hardware-hash import and deployment profiles            |
+| Directory  | Entra ID SSO, directory sync, SCIM                                |
+| Push       | None; devices poll on their SyncML schedule                       |
+| Inventory  | Identity, OS, storage, BitLocker, TPM, Secure Boot and join state |
 
 ## Prerequisites
 
@@ -73,17 +73,26 @@ after enrollment (see [Inventory](#inventory)).
 The first management check-in after enrollment asks the device for a snapshot with OMA-DM
 `Get` commands:
 
-| OMA-URI                                        | Stored in                                                    |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| `./DevDetail/SwV`                              | `osVersion`, `osBuild`                                       |
-| `./DevInfo/Mod`                                | `model`                                                      |
-| `./DevDetail/DevTyp`                           | `model` fallback                                             |
-| `./DevDetail/Ext/Microsoft/SystemSKU`          | `modelIdentifier`                                            |
-| `./DevDetail/Ext/Microsoft/SMBIOSSerialNumber` | `serial`                                                     |
-| `./DevDetail/Ext/Microsoft/DeviceName`         | `physicalName`, and `name` while that is still a placeholder |
-| `./DevDetail/Ext/Microsoft/OSPlatform`         | `osEdition`                                                  |
-| `./DevDetail/Ext/Microsoft/TotalStorage`       | `diskTotal`                                                  |
-| `./DevDetail/Ext/Microsoft/FreeStorage`        | `diskUsed`                                                   |
+| OMA-URI                                                      | Stored in                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `./DevDetail/SwV`                                            | `osVersion`, `osBuild`                                       |
+| `./DevInfo/Mod`                                              | `model`                                                      |
+| `./DevDetail/DevTyp`                                         | `model` fallback                                             |
+| `./DevDetail/Ext/Microsoft/SystemSKU`                        | `modelIdentifier`                                            |
+| `./DevDetail/Ext/Microsoft/SMBIOSSerialNumber`               | `serial`                                                     |
+| `./DevDetail/Ext/Microsoft/DeviceName`                       | `physicalName`, and `name` while that is still a placeholder |
+| `./DevDetail/Ext/Microsoft/OSPlatform`                       | `osEdition`                                                  |
+| `./DevDetail/Ext/Microsoft/TotalStorage`                     | `diskTotal`                                                  |
+| `./DevDetail/Ext/Microsoft/FreeStorage`                      | `diskUsed`                                                   |
+| `./Vendor/MSFT/DeviceStatus/Compliance/EncryptionCompliance` | `bitLockerEnabled`                                           |
+| `./Vendor/MSFT/BitLocker/Status/DeviceEncryptionStatus`      | `bitLockerStatus` (raw bitmask)                              |
+| `./Vendor/MSFT/DeviceStatus/TPM/SpecificationVersion`        | `tpmVersion` (absent when no TPM)                            |
+| `./Vendor/MSFT/DeviceStatus/SecureBootState`                 | `secureBootState` (0 unsupported, 1 enabled, 2 disabled)     |
+| `./Vendor/MSFT/DeviceStatus/DomainName`                      | `domainName`                                                 |
+| `./Vendor/MSFT/DMClient/Provider/Mattrax/AADDeviceID`        | `entraDeviceId` (present when Entra joined)                  |
+
+The `{ProviderID}` in the `DMClient` path is the provider id written into the provisioning
+document (`Mattrax` unless the deployment overrides it).
 
 The device returns the values in a SyncML `<Results>` block on a later session. They are
 written to the same `device` columns Apple inventory uses, so search, filters, dashboards
@@ -103,6 +112,16 @@ and the health rollup work unchanged.
   value exceeds the total, neither figure is written. `TotalStorage` is documented as
   mobile-only; desktop devices may report no total, in which case only the model, serial
   and OS fields are populated.
+- **Security**: BitLocker (`EncryptionCompliance`), the BitLocker status bitmask, TPM
+  specification version, Secure Boot state, AD domain name and the Entra device id are read
+  in the same snapshot. The device health rollup uses them on Windows: BitLocker off, no
+  TPM, a TPM older than 2.0, Secure Boot disabled, and neither domain nor Entra joined are
+  compliance reasons. They are returned by `GET /devices/:id` under `windows.security` and
+  by `GET /devices/:id/health`.
+- **Security rules**: the security reasons only run after the device has returned at least
+  one security snapshot, so a device that rejects the nodes is not reported as having no
+  TPM forever. A node the device answers with an empty value clears the stored value (for
+  example after leaving a domain); a node it does not answer leaves the previous value.
 
 ## Installed applications
 
@@ -132,6 +151,12 @@ Education; a device that rejects the node reports no applications and keeps its 
 inventory. Store/modern apps are not inventoried because the `EnterpriseModernAppManagement`
 inventory is unbounded and expensive on fleets with many packages.
 
+The two sources are tracked independently. A device can answer the MSI block and reject
+`Win32AppInventory` (or the reverse); a partial report only replaces the rows belonging to
+the source that answered. The other source's applications survive, and the failed `Get` is
+recorded in the command history with its status. A successful empty `Results` block is a
+complete report for that source and does remove its previous rows.
+
 The device page marks the list stale after seven days without a report.
 
 Autopilot metadata is separate and still available from the Autopilot pages.
@@ -155,20 +180,38 @@ commands on the next management check-in.
 }
 ```
 
+Each `Replace` is stored as a `device_command` row with a stable id derived from the device
+and OMA-URI, so the device's status is matched to the command that caused it. The applied
+OMA-URIs are persisted on the device (`windows.policy.appliedUris`). On every check-in the
+resolved policy is diffed against what was delivered:
+
+- a new or changed node is sent with `Replace`;
+- a node that is no longer in any policy is sent with `Delete`, which removes the CSP value
+  instead of leaving the last setting on the device;
+- a node the device rejected keeps its failure (`windows.policy.failed`) visible for 30
+  minutes before it is retried;
+- deleting a policy, removing a Wi-Fi/restriction profile, or removing a node from a
+  configuration therefore reverts the setting. `windows.policy.pendingRevertUris` shows a
+  delete that has not been acknowledged yet and `revertedAt` the last completed revert.
+
 See [Windows policies](/platforms/windows/policies) for the node schema, formats and merge
 rules.
 
 ## Commands
 
-| Action    | OMA-DM command                                    |
-| --------- | ------------------------------------------------- |
-| `wipe`    | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected` |
-| `restart` | `./Device/Vendor/MSFT/Reboot/RebootNow`           |
+| Action     | OMA-DM command                                                              |
+| ---------- | --------------------------------------------------------------------------- |
+| `wipe`     | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected`                           |
+| `restart`  | `./Device/Vendor/MSFT/Reboot/RebootNow`                                     |
+| `unenroll` | `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll` (Exec, provider id data) |
 
-Other actions return an error: Windows supports remote erase and restart only.
+Other actions are rejected. In particular `sync` is not offered for Windows: there is no
+push channel, so a command or policy change is delivered the next time the device polls.
+The API's per-device `actions` array is the authoritative list of supported actions.
 
-There is no push channel. A command is delivered the next time the device polls. Policy
-changes also wait for the next SyncML session.
+Every delivered command (policy, inventory and imperative) is recorded in the device command
+history with its `locURI`, status, and result. A rejected policy command records the exact
+OMA-URI and SyncML status on the device.
 
 ## Device identity
 
@@ -183,12 +226,16 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 
 ## Limitations
 
-- No BitLocker key escrow, Defender or OS-build compliance checks.
+- No BitLocker key escrow, Defender or OS-build compliance checks. Windows activation
+  status is not collected: the `WindowsLicensing` CSP reports edition-upgrade state, not
+  whether Windows is activated.
 - Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
   documented as mobile-only), so storage health may be unavailable for some laptops.
 - Inventory depends on the device answering `Get`; no push channel wakes it early.
 - No remote lock, shutdown, app install or per-device policy push.
-- No Windows unenroll command; deleting the device removes the local row only.
+- Device-initiated unenroll is recognised from the OMA-DM `1226` Generic Alert. A device
+  that is wiped or removed from management without sending it stays `enrolled` until an
+  operator deletes or unenrolls it.
 - Pre-registrations are not consumed: enrollment has no hardware serial to match.
 - Federated Entra enrollment and Autopilot OOBE are fixture-tested, not validated on real
   hardware.
@@ -196,18 +243,21 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 
 ## API endpoints
 
-| Method      | Path                                           |
-| ----------- | ---------------------------------------------- |
-| `POST`      | `/mdm/windows/discovery`                       |
-| `POST`      | `/mdm/windows/policy`                          |
-| `POST`      | `/mdm/windows/enroll`                          |
-| `POST`      | `/mdm/windows/management`                      |
-| `GET/PATCH` | `/api/v1/tenants/:tenantId/enrollment`         |
-| `POST`      | `/api/v1/tenants/:tenantId/devices/:id/action` |
-| `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot`          |
-| `POST`      | `/api/v1/tenants/:tenantId/autopilot/import`   |
-| `POST`      | `/api/v1/tenants/:tenantId/autopilot/sync`     |
-| `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot/profiles` |
+| Method      | Path                                             |
+| ----------- | ------------------------------------------------ |
+| `POST`      | `/mdm/windows/discovery`                         |
+| `POST`      | `/mdm/windows/policy`                            |
+| `POST`      | `/mdm/windows/enroll`                            |
+| `POST`      | `/mdm/windows/management`                        |
+| `GET/PATCH` | `/api/v1/tenants/:tenantId/enrollment`           |
+| `POST`      | `/api/v1/tenants/:tenantId/devices/:id/action`   |
+| `POST`      | `/api/v1/tenants/:tenantId/devices/:id/unenroll` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/commands` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/health`   |
+| `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot`            |
+| `POST`      | `/api/v1/tenants/:tenantId/autopilot/import`     |
+| `POST`      | `/api/v1/tenants/:tenantId/autopilot/sync`       |
+| `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot/profiles`   |
 
 ## Next
 

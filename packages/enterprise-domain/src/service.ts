@@ -74,6 +74,8 @@ export class EnterpriseAuth extends Context.Service<
       payload: Dynamic,
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly verifyEmailChange: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    /** Cancel a pending address change from the old address's link. */
+    readonly cancelEmailChange: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
   }
 >()("@mattrax/enterprise-domain/EnterpriseAuth") {}
 

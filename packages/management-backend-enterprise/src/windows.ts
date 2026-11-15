@@ -1,5 +1,5 @@
-import { Effect, Match, Predicate, Schema } from "effect";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { Effect, Option, Predicate, Schema } from "effect";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
@@ -8,8 +8,28 @@ import {
   COMMAND_EXPIRED_DETAIL,
   DEVICE_COMMAND_ACTIVE_LIMIT,
   RECONCILED_RESULT_STATUS,
+  commandStatusIsActive,
   planCommandDeliveryBatch,
 } from "./commands.ts";
+import {
+  WINDOWS_APPLICATION_INVENTORY_GET_REQUEST_TYPE,
+  WINDOWS_INVENTORY_GET_REQUEST_TYPE,
+  WINDOWS_POLICY_DELETE_REQUEST_TYPE,
+  WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+  WINDOWS_STATE_COMMAND_REQUEST_TYPES,
+  WINDOWS_UNENROLL_ALERT,
+  WINDOWS_UNENROLL_REQUEST_TYPE,
+  planWindowsPolicyDelivery,
+  windowsCommandOutcome,
+  windowsInventoryCommandRowId,
+  windowsPolicyCommandId,
+  windowsPolicyNodeHash,
+  windowsPolicyRejectionDetail,
+  windowsSyncMLData,
+  windowsSyncMLLocURI,
+  type WindowsDeliveredPolicyNode,
+  type WindowsPolicyFailure,
+} from "./windowsCommands.ts";
 import {
   deviceLimitForOrganization,
   replaceDeviceApplications,
@@ -21,12 +41,15 @@ import { certificateSerialHex, ensureScepCa, signScepCsr } from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial, ScepRepositoryLive } from "./scep.ts";
 import {
   WINDOWS_APPLICATION_INVENTORY_REQUESTS,
-  WINDOWS_INVENTORY_REQUESTS,
+  WINDOWS_MDM_PROVIDER_ID,
   hasWindowsInventory,
-  parseWindowsApplications,
+  hasWindowsSecurityInventory,
+  mergeWindowsApplicationReport,
+  parseWindowsApplicationsReport,
   parseWindowsInventory,
   windowsApplicationInventoryDue,
   windowsInventoryDue,
+  windowsInventoryRequests,
   windowsInventoryUpdate,
   windowsInventoryValues,
 } from "./windowsInventory.ts";
@@ -63,11 +86,65 @@ const StatusEntry = Schema.Struct({
   data: Schema.optional(Schema.Json),
 });
 
-type DesiredCommand = {
-  policyId: string;
-  data: string;
-  format?: string;
+const AlertEntry = Schema.Struct({
+  cmdRef: Schema.optional(Schema.Json),
+  data: Schema.optional(Schema.Json),
+  items: Schema.optional(Schema.Array(Schema.Json)),
+});
+
+type WindowsCommandPayload = { [key: string]: Schema.Json };
+
+const commandPayload = (value: Schema.Json | null | undefined): WindowsCommandPayload =>
+  Schema.is(Schema.JsonObject)(value) ? value : {};
+
+const payloadString = (payload: WindowsCommandPayload, key: string): string | undefined => {
+  const value = payload[key];
+
+  return Schema.is(Schema.String)(value) ? value : undefined;
 };
+
+const payloadArray = (
+  value: Schema.Json | null | undefined,
+): ReadonlyArray<WindowsDeliveredPolicyNode> => {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry) => {
+    if (!Schema.is(Schema.JsonObject)(entry)) return [];
+    const uri = entry["uri"];
+    const hash = entry["hash"];
+
+    return Schema.is(Schema.String)(uri) && Schema.is(Schema.String)(hash) ? [{ uri, hash }] : [];
+  });
+};
+
+const policyFailures = (
+  value: Schema.Json | null | undefined,
+): ReadonlyArray<WindowsPolicyFailure> => {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry) => {
+    if (!Schema.is(Schema.JsonObject)(entry)) return [];
+    const uri = entry["uri"];
+    const hash = entry["hash"];
+    const resultStatus = entry["resultStatus"];
+    const detail = entry["detail"];
+    const at = entry["at"];
+
+    if (
+      !Schema.is(Schema.String)(uri) ||
+      !Schema.is(Schema.String)(hash) ||
+      !Schema.is(Schema.String)(resultStatus) ||
+      !Schema.is(Schema.String)(detail) ||
+      !Schema.is(Schema.String)(at)
+    )
+      return [];
+
+    return [{ uri, hash, resultStatus, detail, at }];
+  });
+};
+
+const stringArray = (value: Schema.Json | null | undefined): ReadonlyArray<string> =>
+  Array.isArray(value) ? value.filter(Schema.is(Schema.String)) : [];
 
 type WindowsCommand = {
   kind: string;
@@ -75,6 +152,16 @@ type WindowsCommand = {
   locURI?: string;
   data?: string;
   format?: string;
+};
+
+/** Payload of a state command (policy or inventory) written by the server. */
+type WindowsStateCommandPayload = {
+  kind: string;
+  locURI: string;
+  cmdID?: string;
+  data?: string;
+  format?: string;
+  hash?: string;
 };
 
 const toBase64Url = (bytes: Uint8Array): string => {
@@ -446,6 +533,12 @@ export type WindowsBackendOptions = {
   readonly tenantTokenTtlSeconds?: number;
   /** Require a verified client certificate on SyncML check-in. */
   readonly requireDeviceIdentity?: boolean;
+  /**
+   * `DMClient/Provider/{ProviderID}` written into the provisioning document.
+   * Inventory and unenroll address the same provider, so changing it must be
+   * done for the whole deployment (`WindowsMdmServiceLive` too).
+   */
+  readonly providerId?: string;
   /** Deployment plan catalogue; omitted means unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
   /**
@@ -550,6 +643,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     options.tenantTokenTtlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS;
 
   const internal = () => new InternalServerError();
+  const providerId = options.providerId?.trim() || WINDOWS_MDM_PROVIDER_ID;
+  const inventoryRequests = windowsInventoryRequests(providerId);
 
   const requireSecret = (): Effect.Effect<string, InternalServerError> =>
     authSecret ? Effect.succeed(authSecret) : Effect.fail(new InternalServerError());
@@ -787,6 +882,79 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       }
 
       return false;
+    });
+
+  /**
+   * Revoke every identity certificate bound to a device that has left
+   * management. Device-initiated unenrolment reports itself on a check-in and
+   * has no operator request to run this cleanup, so the management layer owns
+   * it here.
+   */
+  const revokeWindowsIdentityCertificates = (
+    organizationId: string,
+    device: { readonly id: string; readonly dmIdentifier?: string | null },
+  ): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      const deviceIds = certificateDeviceIdsFor(device);
+
+      if (deviceIds.length === 0) return;
+
+      yield* db
+        .update(s.scepIssuedCertificate)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(s.scepIssuedCertificate.organizationId, organizationId),
+            inArray(s.scepIssuedCertificate.deviceId, deviceIds),
+            isNull(s.scepIssuedCertificate.revokedAt),
+          ),
+        );
+    });
+
+  /**
+   * Finish a device-initiated or server-acknowledged unenrolment: the device
+   * is no longer managed, every queued command is moot, and its identity
+   * certificate must not stay usable.
+   */
+  const completeWindowsUnenrollment = (
+    organizationId: string,
+    device: { readonly id: string; readonly dmIdentifier?: string | null },
+    timestamp: Date,
+  ): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      yield* db
+        .update(s.device)
+        .set({
+          status: "unenrolled",
+          windowsPolicyApplied: null,
+          windowsPolicyDelivered: null,
+          windowsPolicyReverting: null,
+          windowsPolicyFailures: null,
+          windowsPolicyUpdatedAt: timestamp,
+          windowsPolicyRevertedAt: timestamp,
+        })
+        .where(eq(s.device.id, device.id));
+
+      yield* db
+        .update(s.deviceCommand)
+        .set({
+          status: "cancelled",
+          dedupeKey: null,
+          resultStatus: RECONCILED_RESULT_STATUS,
+          resultDetail: "The device left management, so the command was never delivered.",
+          updatedAt: timestamp,
+        })
+        .where(
+          and(
+            eq(s.deviceCommand.deviceId, device.id),
+            inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+          ),
+        );
+
+      yield* revokeWindowsIdentityCertificates(organizationId, device).pipe(
+        Effect.catch(() => Effect.void),
+      );
+      yield* touchDevice(device.id, organizationId, timestamp);
     });
 
   /** Preserve the tenant token through discovery -> policy -> enroll URLs. */
@@ -1139,7 +1307,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           // the secret only needs to be unguessable.
           username: deviceIdentifier,
           secret: crypto.randomUUID(),
-          providerId: "Mattrax",
+          providerId,
         };
       }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
 
@@ -1181,38 +1349,223 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         const timestamp = new Date();
 
+        // Command rows for policy, inventory and imperative actions. Policy and
+        // inventory rows are generated from device state, so they are loaded
+        // here and reconciled below; action rows are queued by an operator.
+        const stateRows = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, [...WINDOWS_STATE_COMMAND_REQUEST_TYPES]),
+            ),
+          );
+
+        const activeCommandRows = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .orderBy(asc(s.deviceCommand.createdAt))
+          .limit(DEVICE_COMMAND_ACTIVE_LIMIT);
+
+        type CommandRow = (typeof stateRows)[number];
+
+        const rowsById = new Map<string, CommandRow>();
+        const replaceRowsByUri = new Map<string, CommandRow>();
+        const deleteRowsByUri = new Map<string, CommandRow>();
+        const inventoryRowsByCommandId = new Map<string, CommandRow>();
+
+        for (const row of [...stateRows, ...activeCommandRows]) {
+          const payload = commandPayload(row.payload);
+          const uri = payloadString(payload, "locURI");
+          const cmdID = payloadString(payload, "cmdID");
+
+          rowsById.set(row.id, row);
+
+          if (row.requestType === WINDOWS_POLICY_REPLACE_REQUEST_TYPE && uri)
+            replaceRowsByUri.set(uri, row);
+          else if (row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE && uri)
+            deleteRowsByUri.set(uri, row);
+          else if (
+            (row.requestType === WINDOWS_INVENTORY_GET_REQUEST_TYPE ||
+              row.requestType === WINDOWS_APPLICATION_INVENTORY_GET_REQUEST_TYPE) &&
+            cmdID
+          )
+            inventoryRowsByCommandId.set(cmdID, row);
+        }
+
+        const applied = new Set(stringArray(device.windowsPolicyApplied));
+
+        const delivered = new Map(
+          payloadArray(device.windowsPolicyDelivered).map((node) => [node.uri, node.hash]),
+        );
+
+        const failures = new Map(
+          policyFailures(device.windowsPolicyFailures).map((failure) => [failure.uri, failure]),
+        );
+
+        const reverting = new Set(stringArray(device.windowsPolicyReverting));
+
+        let policyStateChanged = false;
+        let revertedAt = device.windowsPolicyRevertedAt;
+        let unenrolled = false;
+
+        // Application inventory `Get`s that the device answered: a successful
+        // status or a `<Results>` block. Used to classify a partial app report.
+        const reportedInventoryCommandIds = new Set<string>();
+
+        const recordPolicySuccess = (row: CommandRow, uri: string) => {
+          applied.add(uri);
+          failures.delete(uri);
+          policyStateChanged = true;
+
+          if (row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE) {
+            applied.delete(uri);
+            delivered.delete(uri);
+            reverting.delete(uri);
+            revertedAt = timestamp;
+          }
+        };
+
+        const recordPolicyFailure = (row: CommandRow, uri: string, resultStatus: string) => {
+          const detail = windowsPolicyRejectionDetail(uri, resultStatus);
+
+          failures.set(uri, {
+            uri,
+            hash: payloadString(commandPayload(row.payload), "hash") ?? "",
+            resultStatus,
+            detail,
+            at: timestamp.toISOString(),
+          });
+          policyStateChanged = true;
+
+          return detail;
+        };
+
         for (const status of checkinRequest.statuses) {
           if (!Schema.is(StatusEntry)(status)) continue;
           const commandId = Schema.is(Schema.String)(status.cmdRef) ? status.cmdRef : undefined;
 
           if (!commandId) continue;
 
-          const data = Schema.is(Schema.String)(status.data)
-            ? status.data
-            : Schema.is(Schema.Number)(status.data)
-              ? String(status.data)
-              : "";
+          const data = windowsSyncMLData(status.data) ?? "";
+          const outcome = windowsCommandOutcome(data);
+          const row = rowsById.get(commandId) ?? inventoryRowsByCommandId.get(commandId);
 
-          const commandStatus = Match.value(data).pipe(
-            Match.when("200", () => "succeeded"),
-            Match.when("418", () => "queued"),
-            Match.orElse(() => "failed"),
-          );
+          if (!row) {
+            // An imperative command is addressed by its row id, which is also
+            // the SyncML CmdID.
+            yield* db
+              .update(s.deviceCommand)
+              .set({
+                status: outcome.status,
+                resultStatus: outcome.resultStatus,
+                dedupeKey: outcome.status === "queued" ? undefined : null,
+                updatedAt: timestamp,
+              })
+              .where(
+                and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)),
+              );
+            continue;
+          }
+
+          if (row.requestType === WINDOWS_UNENROLL_REQUEST_TYPE && outcome.status === "succeeded")
+            unenrolled = true;
+
+          const isPolicy =
+            row.requestType === WINDOWS_POLICY_REPLACE_REQUEST_TYPE ||
+            row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE;
+
+          const isInventory =
+            row.requestType === WINDOWS_INVENTORY_GET_REQUEST_TYPE ||
+            row.requestType === WINDOWS_APPLICATION_INVENTORY_GET_REQUEST_TYPE;
+
+          const uri = payloadString(commandPayload(row.payload), "locURI");
+
+          const detail =
+            isPolicy && uri && outcome.status === "failed"
+              ? recordPolicyFailure(row, uri, outcome.resultStatus)
+              : outcome.status === "succeeded"
+                ? null
+                : undefined;
+
+          if (isPolicy && uri && outcome.status === "succeeded") recordPolicySuccess(row, uri);
+
+          const commandPatch: Partial<typeof s.deviceCommand.$inferInsert> = {
+            status: outcome.status,
+            resultStatus: outcome.resultStatus,
+            updatedAt: timestamp,
+          };
+
+          if (detail !== undefined) commandPatch.resultDetail = detail;
+
+          if (outcome.status !== "queued") commandPatch.dedupeKey = null;
+
+          yield* db
+            .update(s.deviceCommand)
+            .set(commandPatch)
+            .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+
+          // A `Get` status is a response too; keep the row terminal like any
+          // other command rather than leaving it `sent`.
+          if (isInventory && outcome.status === "succeeded") {
+            reportedInventoryCommandIds.add(commandId);
+            yield* db
+              .update(s.deviceCommand)
+              .set({ resultStatus: outcome.resultStatus, dedupeKey: null, updatedAt: timestamp })
+              .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+          }
+        }
+
+        // A Generic Alert 1226 is how a Windows client reports that the user
+        // removed management locally. Any other alert that names a policy node
+        // is recorded against that node so the failure is visible.
+        for (const alert of checkinRequest.alerts) {
+          if (!Schema.is(AlertEntry)(alert)) continue;
+          const data = windowsSyncMLData(alert.data)?.trim();
+
+          if (!data) continue;
+
+          if (data === WINDOWS_UNENROLL_ALERT) {
+            unenrolled = true;
+            continue;
+          }
+
+          const uri = (alert.items ?? []).map(windowsSyncMLLocURI).find(Boolean);
+          const row = uri ? replaceRowsByUri.get(uri) : undefined;
+
+          if (!uri || !row) continue;
+
+          const detail = recordPolicyFailure(row, uri, data);
 
           yield* db
             .update(s.deviceCommand)
             .set({
-              status: commandStatus,
+              status: "failed",
               resultStatus: data,
+              resultDetail: detail,
+              dedupeKey: null,
               updatedAt: timestamp,
             })
-            .where(and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)));
+            .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+        }
+
+        if (unenrolled) {
+          yield* completeWindowsUnenrollment(organizationId, device, timestamp);
+
+          return { commands: [] };
         }
 
         // Inventory results arrive in the same SyncML message that answers the
         // previous session's `Get` commands. Parse them before deciding whether
         // this session should ask for another snapshot.
-        const inventoryValues = windowsInventoryValues(checkinRequest.results);
+        const inventoryValues = windowsInventoryValues(checkinRequest.results, inventoryRequests);
         const inventory = parseWindowsInventory(inventoryValues);
 
         const inventoryUpdate = windowsInventoryUpdate(inventory, device);
@@ -1243,18 +1596,75 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           now: timestamp,
         });
 
-        const applications = parseWindowsApplications(inventoryValues);
+        // A `<Results>` block proves the `Get` that produced it completed. The
+        // row is part of the command history like any other result.
+        const resultCommandIds = new Set<string>();
+
+        for (const entry of checkinRequest.results ?? []) {
+          const parsed = Schema.decodeUnknownOption(
+            Schema.Struct({ cmdRef: Schema.optional(Schema.Json) }),
+          )(entry);
+
+          if (Option.isNone(parsed)) continue;
+          const cmdRef = windowsSyncMLData(parsed.value.cmdRef);
+
+          if (cmdRef) {
+            resultCommandIds.add(cmdRef);
+            reportedInventoryCommandIds.add(cmdRef);
+          }
+        }
+
+        for (const cmdRef of resultCommandIds) {
+          const row = inventoryRowsByCommandId.get(cmdRef);
+
+          if (!row) continue;
+
+          yield* db
+            .update(s.deviceCommand)
+            .set({
+              status: "succeeded",
+              resultStatus: "200",
+              dedupeKey: null,
+              updatedAt: timestamp,
+            })
+            .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+        }
+
+        const applicationReport = parseWindowsApplicationsReport(inventoryValues, {
+          reportedCommandIds: reportedInventoryCommandIds,
+        });
+
+        const applications = applicationReport?.applications;
 
         // The application inventory is much larger than the DevDetail nodes, so
         // it only replaces rows (and moves its own request clock) when the
-        // device actually answered an application `Get`.
-        if (applications !== undefined)
+        // device actually answered an application `Get`. A partial report (one
+        // CSP answered) only replaces the rows that source owns; the other
+        // source's apps must survive.
+        if (applicationReport !== undefined) {
+          let reportedApplications = applicationReport.applications;
+
+          if (!(applicationReport.sources.win32 && applicationReport.sources.msi)) {
+            const existing = yield* db
+              .select()
+              .from(s.deviceApplication)
+              .where(
+                and(
+                  eq(s.deviceApplication.deviceId, device.id),
+                  eq(s.deviceApplication.organizationId, organizationId),
+                ),
+              );
+
+            reportedApplications = mergeWindowsApplicationReport(existing, applicationReport);
+          }
+
           yield* replaceDeviceApplications(db, {
             deviceId: device.id,
             organizationId,
-            applications,
+            applications: reportedApplications,
             reportedAt: timestamp,
           });
+        }
 
         const applicationsDue = windowsApplicationInventoryDue({
           lastUpdatedAt: applications !== undefined ? timestamp : device.applicationsUpdatedAt,
@@ -1267,6 +1677,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         };
 
         if (hasInventoryUpdate) inventoryColumns.inventoryUpdatedAt = timestamp;
+
+        if (hasWindowsSecurityInventory(inventory)) inventoryColumns.securityUpdatedAt = timestamp;
 
         if (inventoryDue) inventoryColumns.inventoryRequestedAt = timestamp;
 
@@ -1292,90 +1704,286 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         const commands: Array<WindowsCommand> = [];
 
-        // 1 is reserved for the SyncHdr status; server commands start at 2.
-        let index = 2;
+        type DesiredPolicyNode = {
+          readonly uri: string;
+          readonly data: string;
+          readonly format?: string;
+          readonly hash: string;
+        };
 
         // Resolve duplicate OMA-URIs deterministically. A policy with a
         // lexicographically smaller id wins, so check-ins are stable across
         // group ordering and devices.
-        const desired = new Map<string, DesiredCommand>();
+        const desired = new Map<string, DesiredPolicyNode>();
 
         const sorted = [...configurations].sort((left, right) =>
           String(left.policyId).localeCompare(String(right.policyId)),
         );
 
-        for (const configuration of sorted) {
-          for (const node of windowsPolicyNodes({
-            policyId: configuration.policyId,
-            kind: configuration.kind,
-            data: configuration.data,
-            hash: "",
-          })) {
-            if (desired.has(node.omaUri)) continue;
-
-            const value = node.value;
-
-            const serializedValue = Schema.is(Schema.String)(value)
-              ? value
-              : Schema.is(Schema.JsonObject)(value) || Schema.is(JsonArray)(value) || value === null
-                ? JSON.stringify(value)
-                : String(value);
-
-            const desiredNode: DesiredCommand = {
+        if (device.status === "enrolled") {
+          for (const configuration of sorted) {
+            for (const node of windowsPolicyNodes({
               policyId: configuration.policyId,
-              data: serializedValue,
-            };
+              kind: configuration.kind,
+              data: configuration.data,
+              hash: "",
+            })) {
+              if (desired.has(node.omaUri)) continue;
 
-            if (node.format) desiredNode.format = node.format;
+              const value = node.value;
 
-            desired.set(node.omaUri, desiredNode);
+              const serializedValue = Schema.is(Schema.String)(value)
+                ? value
+                : Schema.is(Schema.JsonObject)(value) ||
+                    Schema.is(JsonArray)(value) ||
+                    value === null
+                  ? JSON.stringify(value)
+                  : String(value);
+
+              const hash = yield* Effect.promise(() =>
+                windowsPolicyNodeHash(serializedValue, node.format),
+              );
+
+              const desiredNode = node.format
+                ? { uri: node.omaUri, data: serializedValue, hash, format: node.format }
+                : { uri: node.omaUri, data: serializedValue, hash };
+
+              desired.set(node.omaUri, desiredNode);
+            }
           }
         }
 
-        // OMA-DM has no per-setting diff here: a `Delete` is never emitted, so
-        // removing a setting from every policy leaves the last CSP value on the
-        // device until it is re-enrolled. The assignment UI warns that Windows
-        // applies on check-in; persistence of applied URIs is still required
-        // before user-targeted removal can revert a setting.
-        for (const [locURI, node] of desired) {
+        const writeStateCommand = (input: {
+          readonly id: string;
+          readonly requestType: string;
+          readonly payload: WindowsStateCommandPayload;
+          readonly existing?: CommandRow;
+        }): Effect.Effect<unknown, unknown> => {
+          if (input.existing)
+            return db
+              .update(s.deviceCommand)
+              .set({
+                requestType: input.requestType,
+                payload: input.payload,
+                status: "sent",
+                dedupeKey: null,
+                expiresAt: null,
+                resultStatus: null,
+                resultDetail: null,
+                updatedAt: timestamp,
+              })
+              .where(
+                and(eq(s.deviceCommand.id, input.id), eq(s.deviceCommand.deviceId, device.id)),
+              );
+
+          return db.insert(s.deviceCommand).values({
+            id: input.id,
+            organizationId,
+            deviceId: device.id,
+            requestType: input.requestType,
+            payload: input.payload,
+            status: "sent",
+            dedupeKey: null,
+            expiresAt: null,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+        };
+
+        // Diff the resolved policy against what was actually delivered. Nodes
+        // that left every policy are reverted with a `Delete`; a disabled
+        // policy or a removed Wi-Fi/restriction profile therefore does not
+        // leave the last CSP value on the device indefinitely.
+        const policyPlan = planWindowsPolicyDelivery({
+          desired: new Map([...desired].map(([uri, node]) => [uri, { uri, hash: node.hash }])),
+          delivered: [...delivered].map(([uri, hash]) => ({ uri, hash })),
+          applied: [...applied],
+          failures: [...failures.values()],
+          now: timestamp,
+        });
+
+        // A URI that is desired again after a pending revert must not leave a
+        // stale `Delete` row (or pending-revert state) behind.
+        for (const uri of desired.keys()) {
+          if (reverting.delete(uri)) policyStateChanged = true;
+          const deleteRow = deleteRowsByUri.get(uri);
+
+          if (deleteRow && commandStatusIsActive(deleteRow.status)) {
+            yield* db
+              .update(s.deviceCommand)
+              .set({
+                status: "cancelled",
+                dedupeKey: null,
+                resultStatus: RECONCILED_RESULT_STATUS,
+                resultDetail: "The setting was assigned again before the delete completed.",
+                updatedAt: timestamp,
+              })
+              .where(
+                and(eq(s.deviceCommand.id, deleteRow.id), eq(s.deviceCommand.deviceId, device.id)),
+              );
+          }
+        }
+
+        for (const entry of policyPlan.replace) {
+          const node = desired.get(entry.uri);
+
+          if (!node) continue;
+          const row = replaceRowsByUri.get(entry.uri);
+
+          const commandId =
+            row?.id ??
+            (yield* Effect.promise(() => windowsPolicyCommandId(device.id, "replace", entry.uri)));
+
+          const payload: WindowsStateCommandPayload = {
+            kind: "Replace",
+            locURI: entry.uri,
+            data: node.data,
+            hash: entry.hash,
+          };
+
+          if (node.format) payload.format = node.format;
+
+          yield* writeStateCommand({
+            id: commandId,
+            requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+            payload,
+            existing: row,
+          });
+
           const command: WindowsCommand = {
             kind: "Replace",
-            cmdID: String(index++),
-            locURI,
+            cmdID: commandId,
+            locURI: entry.uri,
             data: node.data,
           };
 
           if (node.format) command.format = node.format;
 
           commands.push(command);
+          delivered.set(entry.uri, entry.hash);
+          policyStateChanged = true;
         }
+
+        for (const uri of policyPlan.remove) {
+          const row = deleteRowsByUri.get(uri);
+
+          const replaceRow = replaceRowsByUri.get(uri);
+
+          if (replaceRow && commandStatusIsActive(replaceRow.status))
+            yield* db
+              .update(s.deviceCommand)
+              .set({
+                status: "cancelled",
+                dedupeKey: null,
+                resultStatus: RECONCILED_RESULT_STATUS,
+                resultDetail: "The setting left every policy; a delete replaces delivery.",
+                updatedAt: timestamp,
+              })
+              .where(
+                and(eq(s.deviceCommand.id, replaceRow.id), eq(s.deviceCommand.deviceId, device.id)),
+              );
+
+          const commandId =
+            row?.id ??
+            (yield* Effect.promise(() => windowsPolicyCommandId(device.id, "delete", uri)));
+
+          yield* writeStateCommand({
+            id: commandId,
+            requestType: WINDOWS_POLICY_DELETE_REQUEST_TYPE,
+            payload: { kind: "Delete", locURI: uri },
+            existing: row,
+          });
+
+          commands.push({ kind: "Delete", cmdID: commandId, locURI: uri });
+          reverting.add(uri);
+          policyStateChanged = true;
+        }
+
+        const policyColumns: Partial<typeof s.device.$inferInsert> = {};
+
+        if (policyStateChanged) {
+          policyColumns.windowsPolicyApplied = [...applied];
+          policyColumns.windowsPolicyDelivered = [...delivered].map(([uri, hash]) => ({
+            uri,
+            hash,
+          }));
+          policyColumns.windowsPolicyReverting = [...reverting];
+          policyColumns.windowsPolicyFailures = [...failures.values()];
+          policyColumns.windowsPolicyUpdatedAt = timestamp;
+          policyColumns.windowsPolicyRevertedAt = revertedAt;
+        }
+
+        if (Object.keys(policyColumns).length > 0)
+          yield* db.update(s.device).set(policyColumns).where(eq(s.device.id, device.id));
 
         // Inventory `Get`s use stable command ids so a later `<Results>` entry
         // can be matched back to its OMA-URI even when the device omits
         // `Item/Source`. They are only emitted when the cadence guard says the
-        // snapshot is stale or was never collected.
-        if (inventoryDue)
-          for (const inventoryRequest of WINDOWS_INVENTORY_REQUESTS)
+        // snapshot is stale or was never collected. A device that is leaving
+        // management is not asked for more inventory.
+        if (inventoryDue && device.status === "enrolled")
+          for (const inventoryRequest of inventoryRequests) {
+            const row = inventoryRowsByCommandId.get(inventoryRequest.cmdID);
+
+            const commandId =
+              row?.id ??
+              (yield* Effect.promise(() =>
+                windowsInventoryCommandRowId(device.id, inventoryRequest.cmdID),
+              ));
+
+            yield* writeStateCommand({
+              id: commandId,
+              requestType: WINDOWS_INVENTORY_GET_REQUEST_TYPE,
+              payload: {
+                kind: "Get",
+                cmdID: inventoryRequest.cmdID,
+                locURI: inventoryRequest.locURI,
+              },
+              existing: row,
+            });
+
             commands.push({
               kind: "Get",
               cmdID: inventoryRequest.cmdID,
               locURI: inventoryRequest.locURI,
             });
+          }
 
         // The application inventory is requested on its own daily cadence; a
         // `Get` on `?list=StructData` returns every app in one `Results` block.
-        if (applicationsDue)
-          for (const inventoryRequest of WINDOWS_APPLICATION_INVENTORY_REQUESTS)
+        if (applicationsDue && device.status === "enrolled")
+          for (const inventoryRequest of WINDOWS_APPLICATION_INVENTORY_REQUESTS) {
+            const row = inventoryRowsByCommandId.get(inventoryRequest.cmdID);
+
+            const commandId =
+              row?.id ??
+              (yield* Effect.promise(() =>
+                windowsInventoryCommandRowId(device.id, inventoryRequest.cmdID),
+              ));
+
+            yield* writeStateCommand({
+              id: commandId,
+              requestType: WINDOWS_APPLICATION_INVENTORY_GET_REQUEST_TYPE,
+              payload: {
+                kind: "Get",
+                cmdID: inventoryRequest.cmdID,
+                locURI: inventoryRequest.locURI,
+              },
+              existing: row,
+            });
+
             commands.push({
               kind: "Get",
               cmdID: inventoryRequest.cmdID,
               locURI: inventoryRequest.locURI,
             });
+          }
 
         // Commands handed out but never acknowledged must not stay "sent"
         // forever, and work whose delivery budget elapsed must never fire
         // days later. Plan from the active rows so expiry, retry and delivery
         // use the same rules as Apple instead of a bespoke 30 minute sweep.
+        // Policy and inventory rows are delivered above, from device state.
         const activeCommands = yield* db
           .select()
           .from(s.deviceCommand)
@@ -1388,7 +1996,10 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           .orderBy(asc(s.deviceCommand.createdAt))
           .limit(DEVICE_COMMAND_ACTIVE_LIMIT);
 
-        const plan = planCommandDeliveryBatch(activeCommands, timestamp);
+        const plan = planCommandDeliveryBatch(
+          activeCommands.filter((row) => !WINDOWS_STATE_COMMAND_REQUEST_TYPES.has(row.requestType)),
+          timestamp,
+        );
 
         if (plan.expire.length > 0)
           yield* db
@@ -1409,19 +2020,21 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             .where(inArray(s.deviceCommand.id, plan.requeue));
 
         for (const command of plan.deliver) {
-          const payload = Schema.is(Schema.JsonObject)(command.payload) ? command.payload : {};
-          const locURI = payload.locURI;
-          const data = payload.data;
+          const payload = commandPayload(command.payload);
+          const kind = payloadString(payload, "kind") ?? "Exec";
+          const locURI = payloadString(payload, "locURI");
+          const data = payloadString(payload, "data");
+          const format = payloadString(payload, "format");
 
-          commands.push({
-            kind: "Exec",
+          const syncCommand: WindowsCommand = {
+            kind: ["Get", "Replace", "Delete", "Exec"].includes(kind) ? kind : "Exec",
             cmdID: command.id,
-            locURI: Schema.is(Schema.String)(locURI)
-              ? locURI
-              : "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
-            data: Schema.is(Schema.String)(data) ? data : "",
-            format: "chr",
-          });
+            locURI: locURI ?? "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
+            data: data ?? "",
+          };
+
+          syncCommand.format = format ?? "chr";
+          commands.push(syncCommand);
           yield* db
             .update(s.deviceCommand)
             .set({ status: "sent", updatedAt: timestamp })
@@ -1495,8 +2108,82 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         if (!device) return yield* Effect.fail(new UnknownDevice());
-        // ManagementCheckin and CommandResult both prove liveness. Command
-        // history is not persisted because command delivery is not implemented.
+
+        // A `CommandResult` carries a status for one command. Persist it
+        // against the row it names so Windows command history and policy
+        // delivery state are as complete as Apple's.
+        if (Predicate.isTagged("CommandResult")(event)) {
+          const commandId = event.commandRef?.trim();
+
+          if (commandId) {
+            const [exact] = yield* db
+              .select()
+              .from(s.deviceCommand)
+              .where(
+                and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)),
+              )
+              .limit(1);
+
+            const inventoryId =
+              exact === undefined && commandId.startsWith("windows-")
+                ? yield* Effect.promise(() => windowsInventoryCommandRowId(device.id, commandId))
+                : undefined;
+
+            const [row] =
+              inventoryId === undefined
+                ? [exact]
+                : yield* db
+                    .select()
+                    .from(s.deviceCommand)
+                    .where(
+                      and(
+                        eq(s.deviceCommand.id, inventoryId),
+                        eq(s.deviceCommand.deviceId, device.id),
+                      ),
+                    )
+                    .limit(1);
+
+            const outcome = windowsCommandOutcome(event.status);
+            const uri = row ? payloadString(commandPayload(row.payload), "locURI") : undefined;
+
+            const detail =
+              outcome.status === "failed" && uri
+                ? windowsPolicyRejectionDetail(uri, outcome.resultStatus)
+                : outcome.status === "succeeded"
+                  ? null
+                  : undefined;
+
+            const resultPatch: Partial<typeof s.deviceCommand.$inferInsert> = {
+              status: outcome.status,
+              resultStatus: outcome.resultStatus,
+              updatedAt: timestamp,
+            };
+
+            if (detail !== undefined) resultPatch.resultDetail = detail;
+
+            if (outcome.status !== "queued") resultPatch.dedupeKey = null;
+
+            yield* db
+              .update(s.deviceCommand)
+              .set(resultPatch)
+              .where(
+                and(
+                  eq(s.deviceCommand.id, row?.id ?? commandId),
+                  eq(s.deviceCommand.deviceId, device.id),
+                ),
+              );
+
+            if (
+              row?.requestType === WINDOWS_UNENROLL_REQUEST_TYPE &&
+              outcome.status === "succeeded"
+            ) {
+              yield* completeWindowsUnenrollment(organizationId, device, timestamp);
+
+              return;
+            }
+          }
+        }
+
         yield* touchDevice(device.id, organizationId, timestamp);
       }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
   };

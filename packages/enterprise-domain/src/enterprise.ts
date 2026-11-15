@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
+import { DeviceActionName } from "./deviceActions.ts";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 import {
   CreateDashboardRequest,
@@ -375,7 +376,11 @@ export const UserInfo = Schema.Struct({
   totpEnabled: Schema.Boolean,
   /** Whether at least one active passkey is enrolled for this account. */
   passkeyEnabled: Schema.Boolean,
-  /** Whether one of the user's owner/admin tenants requires MFA. */
+  /**
+   * Whether any tenant this account belongs to requires MFA. The requirement
+   * applies to every role, so a read-only member of a tenant that demands MFA
+   * sees `true` here as well.
+   */
   mfaRequired: Schema.Boolean,
 });
 
@@ -905,16 +910,33 @@ export const ScimTokenInfo = Schema.Struct({
   name: Schema.String,
   createdAt: Schema.String,
   lastUsedAt: Schema.optional(NullableString),
+  /** When the bearer token stops authenticating; null only for legacy rows. */
+  expiresAt: Schema.optional(NullableString),
+  /**
+   * True when the token is expired or inside the 14-day rotation window. The
+   * dashboard surfaces this so an IdP credential is rotated before it breaks
+   * provisioning.
+   */
+  rotationDue: Schema.Boolean,
 });
 
 export const ScimTokensResponse = Schema.Struct({ tokens: Schema.Array(ScimTokenInfo) });
-export const CreateScimTokenRequest = Schema.Struct({ name: Schema.String });
+
+export const CreateScimTokenRequest = Schema.Struct({
+  name: Schema.String,
+  /**
+   * Absolute ISO-8601 expiry. Omitted means 90 days; the API refuses a date in
+   * the past or more than 365 days ahead.
+   */
+  expiresAt: Schema.optional(NullableString),
+});
 
 export const CreateScimTokenResponse = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   token: Schema.String,
   baseUrl: Schema.String,
+  expiresAt: Schema.optional(NullableString),
 });
 
 export const AuditLogEntry = Schema.Struct({
@@ -1037,6 +1059,80 @@ export const AndroidDeviceInfo = Schema.Struct({
 
 export type AndroidDeviceInfo = typeof AndroidDeviceInfo.Type;
 
+/**
+ * Windows security and join state collected by the inventory `Get` set.
+ *
+ * `null` means the device has not reported the node (or rejected it), which is
+ * different from a reported `false`. Health rules only fire once the device
+ * has reported a security snapshot (`updatedAt` is set).
+ */
+export const WindowsSecurityInfo = Schema.Struct({
+  /** `DeviceStatus/Compliance/EncryptionCompliance`: 1 encrypted, 0 not. */
+  bitLockerEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** Raw `BitLocker/Status/DeviceEncryptionStatus` bitmask (0 = compliant). */
+  bitLockerStatus: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** Reported when a TPM is present; absent means no TPM answered the node. */
+  tpmVersion: Schema.optional(NullableString),
+  /** `DeviceStatus/SecureBootState`: 0 unsupported, 1 enabled, 2 disabled. */
+  secureBootState: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** `DeviceStatus/DomainName`; empty when the device is not domain joined. */
+  domainName: Schema.optional(NullableString),
+  /** `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
+  entraDeviceId: Schema.optional(NullableString),
+  /** When the security snapshot was last written. */
+  updatedAt: Schema.optional(NullableString),
+});
+
+export type WindowsSecurityInfo = typeof WindowsSecurityInfo.Type;
+
+/** The last time an OMA-URI was rejected by the device. */
+export const WindowsPolicyFailure = Schema.Struct({
+  uri: Schema.String,
+  /** SyncML status the device returned (for example `400` or `500`). */
+  resultStatus: Schema.String,
+  detail: Schema.String,
+  at: Schema.String,
+});
+
+export type WindowsPolicyFailure = typeof WindowsPolicyFailure.Type;
+
+/**
+ * Per-device Windows policy delivery state.
+ *
+ * `appliedUris` are the nodes whose `Replace` the device acknowledged.
+ * `pendingUris` are desired nodes delivered but not acknowledged yet.
+ * `pendingRevertUris` are nodes removed from every policy whose `Delete` has
+ * been delivered but not acknowledged. `revertedAt` records the last completed
+ * revert, so a deployment view can distinguish "reverted" from "pending".
+ */
+export const WindowsPolicyInfo = Schema.Struct({
+  appliedUris: Schema.Array(Schema.String),
+  pendingUris: Schema.Array(Schema.String),
+  pendingRevertUris: Schema.Array(Schema.String),
+  failed: Schema.Array(WindowsPolicyFailure),
+  updatedAt: Schema.optional(NullableString),
+  revertedAt: Schema.optional(NullableString),
+});
+
+export type WindowsPolicyInfo = typeof WindowsPolicyInfo.Type;
+
+export const WindowsDeviceInfo = Schema.Struct({
+  security: WindowsSecurityInfo,
+  policy: WindowsPolicyInfo,
+});
+
+export type WindowsDeviceInfo = typeof WindowsDeviceInfo.Type;
+
+/** One `mdm.app` entry: an MDM-installed app and its install state. */
+export const DeviceManagementApp = Schema.Struct({
+  identifier: Schema.String,
+  state: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  shortVersion: Schema.optional(NullableString),
+});
+
+export type DeviceManagementApp = typeof DeviceManagementApp.Type;
+
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
   proto: DeviceProtocol,
@@ -1066,6 +1162,38 @@ export const DeviceRow = Schema.Struct({
   inventoryUpdatedAt: Schema.optional(NullableString),
   /** Normalised FileVault state shared by DDM inventory and SecurityInfo. */
   fileVaultStatus: Schema.optional(Schema.NullOr(DeviceFileVaultStatus)),
+  /** `passcode.is-present`; absent on macOS, which has no device passcode. */
+  passcodePresent: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** `passcode.is-compliant`. */
+  passcodeCompliant: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** `softwareupdate.install-state`. */
+  osUpdateInstallState: Schema.optional(NullableString),
+  osUpdatePendingVersion: Schema.optional(NullableString),
+  osUpdatePendingBuild: Schema.optional(NullableString),
+  osUpdateFailureReason: Schema.optional(NullableString),
+  osUpdateFailureCount: Schema.optional(Schema.NullOr(Schema.Number)),
+  osUpdateFailedAt: Schema.optional(NullableString),
+  /** `security.lockdown-mode`. */
+  securityLockdownMode: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  managedCertificateCount: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** Apps from the last `mdm.app` report (MDM-installed apps only). */
+  managementApps: Schema.optional(Schema.NullOr(Schema.Array(DeviceManagementApp))),
+  /**
+   * Policy delivery path. `legacy` means the device cannot apply declarations
+   * and receives `.mobileconfig` profiles instead.
+   */
+  declarationMode: Schema.optional(Schema.NullOr(Schema.Literals(["ddm", "legacy"]))),
+  /** Why that path was chosen, for support. */
+  declarationModeReason: Schema.optional(NullableString),
+  declarationModeUpdatedAt: Schema.optional(NullableString),
+  /** `SecurityInfo.ManagementStatus.IsActivationLockManageable`. */
+  isActivationLockManageable: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** Whether a device-generated Activation Lock bypass code is escrowed. */
+  activationLockBypassCodeEscrowed: Schema.optional(Schema.Boolean),
+  /** When the last `SecurityInfo` answer was persisted. */
+  securityInfoUpdatedAt: Schema.optional(NullableString),
+  /** True when that answer is older than the refresh window. */
+  securityInfoStale: Schema.optional(Schema.Boolean),
   /**
    * Device detail escrow metadata. The recovery key and bootstrap token are
    * never included in device payloads; use the recovery-key endpoint to read
@@ -1075,6 +1203,8 @@ export const DeviceRow = Schema.Struct({
   bootstrapTokenEscrowed: Schema.optional(Schema.Boolean),
   recoveryKeyUpdatedAt: Schema.optional(NullableString),
   recoveryKeyRotatedAt: Schema.optional(NullableString),
+  /** `plaintext` or `cms` (CMS is unwrapped on reveal, never returned raw). */
+  recoveryKeyFormat: Schema.optional(Schema.NullOr(Schema.Literals(["plaintext", "cms"]))),
   bootstrapTokenUpdatedAt: Schema.optional(NullableString),
   applicationsUpdatedAt: Schema.optional(NullableString),
   /**
@@ -1086,8 +1216,26 @@ export const DeviceRow = Schema.Struct({
   applicationsStale: Schema.optional(Schema.Boolean),
   /** Android Management API state; absent for Apple and Windows devices. */
   android: Schema.optional(Schema.NullOr(AndroidDeviceInfo)),
+  /** Windows security inventory and policy delivery state. */
+  windows: Schema.optional(Schema.NullOr(WindowsDeviceInfo)),
+  /**
+   * Remote actions this device currently supports, derived from its platform,
+   * enrollment status and reported capabilities. The dashboard renders its
+   * action menu from this instead of guessing per platform.
+   */
+  actions: Schema.optional(Schema.Array(DeviceActionName)),
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
+  /** Group memberships, populated on device detail (not the list payload). */
+  groups: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        name: Schema.String,
+        source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
+      }),
+    ),
+  ),
 });
 
 export type DeviceRow = typeof DeviceRow.Type;
@@ -1155,6 +1303,48 @@ export const DeviceRecoveryKeyResponse = Schema.Struct({
 });
 
 export type DeviceRecoveryKeyResponse = typeof DeviceRecoveryKeyResponse.Type;
+
+/**
+ * Device-generated Activation Lock bypass code. Apple only returns a code
+ * before Activation Lock is enabled, so an empty escrow is not proof that the
+ * device is clear.
+ */
+export const DeviceActivationLockBypassCodeResponse = Schema.Struct({
+  bypassCode: Schema.String,
+  /** When the escrowed code was last received from the device. */
+  updatedAt: Schema.String,
+  /** When the code last changed. */
+  rotatedAt: Schema.optional(NullableString),
+  /** `ManagementStatus.IsActivationLockManageable` from the last report. */
+  isActivationLockManageable: Schema.optional(Schema.NullOr(Schema.Boolean)),
+});
+
+export type DeviceActivationLockBypassCodeResponse =
+  typeof DeviceActivationLockBypassCodeResponse.Type;
+
+/** Tenant FileVault personal recovery key escrow identity (public half only). */
+export const AppleFdeEscrowKeyInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  /** PEM certificate; the private key never leaves the backend. */
+  certificatePem: Schema.optional(NullableString),
+  fingerprintSha256: Schema.optional(NullableString),
+  subject: Schema.optional(NullableString),
+  notAfter: Schema.optional(NullableString),
+  source: Schema.optional(Schema.NullOr(Schema.Literals(["generated", "uploaded"]))),
+  createdAt: Schema.optional(NullableString),
+  updatedAt: Schema.optional(NullableString),
+});
+
+export type AppleFdeEscrowKeyInfo = typeof AppleFdeEscrowKeyInfo.Type;
+
+/** Upload a matching certificate/private-key pair for FileVault escrow. */
+export const UploadAppleFdeEscrowKeyRequest = Schema.Struct({
+  certificatePem: Schema.String,
+  /** Unencrypted PKCS#8 PEM private key. */
+  privateKeyPem: Schema.String,
+});
+
+export type UploadAppleFdeEscrowKeyRequest = typeof UploadAppleFdeEscrowKeyRequest.Type;
 
 /**
  * Lifecycle of a queued MDM command.
@@ -1228,6 +1418,8 @@ export const DeviceCommandInfo = Schema.Struct({
   status: DeviceCommandStatus,
   /** Human-readable lifecycle label for the status. */
   statusLabel: Schema.String,
+  /** OMA-URI (Windows) or target the command addressed, when it carries one. */
+  locURI: Schema.optional(NullableString),
   resultStatus: Schema.optional(NullableString),
   resultDetail: Schema.optional(NullableString),
   createdAt: Schema.String,
@@ -1377,6 +1569,8 @@ export const DeviceHealthResponse = Schema.Struct({
   declarations: Schema.Array(DeviceDeclarationInfo),
   certificates: Schema.Array(DeviceCertificateInfo),
   push: DevicePushInfo,
+  /** Windows security inventory, absent for other platforms. */
+  windows: Schema.optional(Schema.NullOr(WindowsSecurityInfo)),
 });
 
 export type DeviceHealthResponse = typeof DeviceHealthResponse.Type;
@@ -1483,6 +1677,11 @@ export const DeviceActionResponse = Schema.Struct({
   commandId: Schema.optional(Schema.String),
   /** True when an identical command was already queued or in flight. */
   deduplicated: Schema.optional(Schema.Boolean),
+  /**
+   * Activation Lock caveat for an erase. Apple cannot confirm Activation Lock
+   * is clear, so the dashboard must not imply that it is.
+   */
+  activationLockWarning: Schema.optional(Schema.String),
 });
 
 export const DeviceActionRequest = Schema.Struct({
@@ -1497,10 +1696,16 @@ export const DeviceActionRequest = Schema.Struct({
       "install-app",
       "collect-security-info",
       "refresh-applications",
+      "collect-activation-lock-code",
+      "rotate-filevault-key",
+      "set-recovery-lock",
+      "verify-recovery-lock",
     ]),
   ),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
+  /** New Recovery Lock password; generated when omitted. */
+  recoveryLockPassword: Schema.optional(Schema.String),
 });
 
 export const PatchDeviceRequest = Schema.Struct({
@@ -1526,7 +1731,13 @@ export const GroupRow = Schema.Struct({
 export type GroupRow = typeof GroupRow.Type;
 
 export const GroupRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
-export const DeviceRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
+
+export const DeviceRelation = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** How the device joined the group; absent on older payloads. */
+  source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
+});
 
 /** Policy rows shown inside a group assignment table. */
 export const PolicyAssignmentMode = Schema.Literals(["include", "exclude"]);
@@ -3003,11 +3214,84 @@ export const AccountSessionInfo = Schema.Struct({
   createdAt: Schema.String,
   expiresAt: Schema.String,
   method: Schema.optional(NullableString),
+  /** When the session last authenticated a request; null before first use. */
+  lastUsedAt: Schema.optional(NullableString),
+  /** Parsed client descriptor: browser and platform come from the User-Agent. */
+  browser: Schema.optional(NullableString),
+  platform: Schema.optional(NullableString),
+  deviceType: Schema.optional(NullableString),
 });
 
 export const AccountSessionsResponse = Schema.Struct({
   sessions: Schema.Array(AccountSessionInfo),
 });
+
+/**
+ * Account-scoped audit entry. It carries no tenant reference: these events
+ * happen before a tenant is chosen (sign-in, credential changes) or exist
+ * independently of one (API tokens, account deletion).
+ */
+export const AccountAuditEntry = AuditLogEntry;
+
+export type AccountAuditEntry = typeof AccountAuditEntry.Type;
+
+export const AccountAuditSearchResponse = AuditSearchResponse;
+
+export type AccountAuditSearchResponse = typeof AccountAuditSearchResponse.Type;
+
+/** Effective tenant security policy, independent of the SSO configuration. */
+export const TenantSecuritySettings = Schema.Struct({
+  /**
+   * Every member of the tenant — including viewer and auditor roles — must have
+   * a passkey or authenticator app. Account settings stay reachable so a member
+   * can enrol a factor.
+   */
+  requireMfa: Schema.Boolean,
+});
+
+export type TenantSecuritySettings = typeof TenantSecuritySettings.Type;
+
+export const UpdateTenantSecurityRequest = Schema.Struct({
+  requireMfa: Schema.Boolean,
+});
+
+/* -------------------------------------------------------------------------- */
+/* Break-glass account recovery                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Recovery is deliberately non-enumerable: the response never says whether the
+ * address exists. The account owner learns the outcome from email.
+ */
+export const RequestAccountRecovery = Schema.Struct({
+  email: Schema.String.check(Schema.isMaxLength(320)),
+});
+
+export const AccountRecoveryStatus = Schema.Literals([
+  /** The proof link has not been used yet. */
+  "pending_proof",
+  /** Email control is proven; another owner must approve. */
+  "pending_approval",
+  /** A single-use completion link exists and can sign the account in. */
+  "ready",
+]);
+
+export const AccountRecoveryResponse = Schema.Struct({
+  status: AccountRecoveryStatus,
+  /**
+   * Only present when the ceremony can complete in this browser: proof of the
+   * verified address was just consumed and no approval is outstanding. It is a
+   * single-use token exchanged for a session by the auth `recoverySignIn`
+   * action.
+   */
+  signInToken: Schema.optional(Schema.String),
+});
+
+export type AccountRecoveryResponse = typeof AccountRecoveryResponse.Type;
+
+export const VerifyAccountRecoveryRequest = Schema.Struct({ token: Schema.String });
+
+export const ApproveAccountRecoveryRequest = Schema.Struct({ token: Schema.String });
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
@@ -3032,7 +3316,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("verifyEmailChange", "/v1/account/email-change/verify", {
-      error: EnterpriseAccountErrors,
+      error: [...EnterpriseAccountErrors, EnterpriseConflict.pipe(HttpApiSchema.status(409))],
       payload: VerifyEmailChangeRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -3129,6 +3413,59 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("revokeAccountSession", "/v1/account/sessions/:sessionId", {
       error: EnterpriseAccountErrors,
       params: { sessionId: Schema.String },
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeAllAccountSessions", "/v1/account/sessions/revoke-all", {
+      error: EnterpriseStepUpErrors,
+      success: Schema.Struct({ status: Schema.Literal("ok"), revoked: Schema.Number }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("searchAccountAuditLog", "/v1/account/audit/search", {
+      error: EnterpriseAccountErrors,
+      query: AuditSearchQuery,
+      success: AccountAuditSearchResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("exportAccountAuditLog", "/v1/account/audit/export", {
+      error: EnterpriseAccountErrors,
+      query: AuditExportQuery,
+      success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/csv; charset=utf-8" })),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("requestAccountRecovery", "/v1/account/recovery", {
+      error: [
+        ...EnterpriseDbErrors,
+        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
+      payload: RequestAccountRecovery,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("verifyAccountRecovery", "/v1/account/recovery/verify", {
+      error: [
+        ...EnterpriseDbErrors,
+        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
+      payload: VerifyAccountRecoveryRequest,
+      success: AccountRecoveryResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("cancelEmailChange", "/v1/account/email-change/cancel", {
+      error: [
+        ...EnterpriseDbErrors,
+        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
+      payload: VerifyEmailChangeRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
@@ -3270,6 +3607,29 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: [...EnterpriseTenantDeleteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       success: DeleteTenantResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantSecurity", "/v1/tenants/:tenantId/security", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: TenantSecuritySettings,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchTenantSecurity", "/v1/tenants/:tenantId/security", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantParam,
+      payload: UpdateTenantSecurityRequest,
+      success: TenantSecuritySettings,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("approveAccountRecovery", "/v1/tenants/:tenantId/recovery/approve", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantParam,
+      payload: ApproveAccountRecoveryRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
@@ -3807,6 +4167,40 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     ),
   )
   .add(
+    HttpApiEndpoint.get(
+      "getAppleFdeEscrowKey",
+      "/v1/tenants/:tenantId/apple/filevault-escrow-key",
+      {
+        error: EnterpriseAppleReadErrors,
+        params: TenantParam,
+        success: AppleFdeEscrowKeyInfo,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "generateAppleFdeEscrowKey",
+      "/v1/tenants/:tenantId/apple/filevault-escrow-key",
+      {
+        error: EnterpriseAppleWriteErrors,
+        params: TenantParam,
+        success: AppleFdeEscrowKeyInfo,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "uploadAppleFdeEscrowKey",
+      "/v1/tenants/:tenantId/apple/filevault-escrow-key",
+      {
+        error: EnterpriseAppleWriteErrors,
+        params: TenantParam,
+        payload: UploadAppleFdeEscrowKeyRequest,
+        success: AppleFdeEscrowKeyInfo,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("getVpp", "/v1/tenants/:tenantId/vpp", {
       error: EnterpriseAppleReadErrors,
       params: TenantParam,
@@ -4018,6 +4412,18 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantIdParam,
       success: DeviceRecoveryKeyResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getDeviceActivationLockBypassCode",
+      "/v1/tenants/:tenantId/devices/:id/activation-lock-bypass-code",
+      {
+        // Same privilege, step-up and audit requirements as the recovery key.
+        error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+        params: TenantIdParam,
+        success: DeviceActivationLockBypassCodeResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get(

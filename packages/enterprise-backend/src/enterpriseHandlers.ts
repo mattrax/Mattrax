@@ -12,7 +12,6 @@ import {
   BUILT_IN_ROLE_PERMISSIONS,
   BUILT_IN_ROLE_LABELS,
   BUILT_IN_TENANT_ROLES,
-  hasAnyWritePermission,
   hasPermission,
   isBuiltInTenantRole,
   EnterpriseLastTenantUser,
@@ -39,19 +38,25 @@ import {
   resolveTenantBranding,
   validateTenantBranding,
   dynamicGroupRulesProblem,
+  isMacOsDevice,
+  DEVICE_SECURITY_INFO_STALE_AFTER_DAYS,
   defaultOverviewWidgets,
   defaultErrorCode,
   applicationsInventoryStale,
   deviceCommandStatusLabel,
+  deviceActionUnavailableReason,
+  deviceAvailableActions,
   diagnoseError,
   errorDiagnostic,
   evaluateDeviceQuery,
   normalizeDeviceCommandStatus,
   type DashboardQueryRequest,
+  DeviceActionName,
   DashboardWidgetType,
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   DynamicGroupRules,
+  DeviceManagementApp,
   type StepUpAction,
   type TenantScepCaInfo,
   type WebhookTestResponse,
@@ -105,6 +110,8 @@ import {
   webhookEventForAuditAction,
   webhookSecretPrefix,
   windowsTenantTokenExpiresAt,
+  WINDOWS_UNENROLL_REQUEST_TYPE,
+  windowsUnenrollUri,
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   RECONCILED_RESULT_STATUS,
@@ -140,10 +147,11 @@ import {
   validateConfiguration,
 } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
+import { certificateDer } from "@mattrax/scep";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.ts";
 import { tokenScopes } from "./enterpriseAuth.ts";
 import { sessionCookie } from "./auth.ts";
-import { cookieValue, signSsrToken } from "./ssrToken.ts";
+import { cookieValue, signSsrRevision, signSsrToken } from "./ssrToken.ts";
 import {
   ApnsService,
   NoopPushTransport,
@@ -155,6 +163,14 @@ import {
   validateApnsCertificate,
 } from "@mattrax/apns";
 import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import {
+  EscrowKeyError,
+  escrowKeyInfo,
+  generateTenantEscrowKey,
+  loadTenantEscrowKey,
+  revealRecoveryKey,
+  uploadTenantEscrowKey,
+} from "./fdeEscrow.ts";
 import { applePushService } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import {
@@ -203,6 +219,22 @@ import {
   type AuditExportEntry,
   type AuditSearchFilters,
 } from "./auditLog.ts";
+import {
+  ACCOUNT_AUDIT,
+  accountAuditEntry,
+  accountAuditOrder,
+  accountAuditWhere,
+  clientAddress,
+  recordAccountAudit,
+} from "./accountAudit.ts";
+import {
+  approveAccountRecovery as approveRecoveryRequest,
+  createRecoveryLimiter,
+  RECOVERY_REQUEST_LIMIT,
+  RECOVERY_WINDOW_MILLIS,
+  requestAccountRecovery as startRecoveryRequest,
+  verifyAccountRecoveryProof as consumeRecoveryProof,
+} from "./recovery.ts";
 import { canEnrollDevice } from "./enrollmentLimit.ts";
 import {
   AndroidDeliveryError,
@@ -286,7 +318,7 @@ import {
   replaceScepCa,
   type ScepCaDescription,
 } from "@mattrax/scep";
-import { listUserSessions, revokeUserSession } from "./sessions.ts";
+import { listUserSessions, revokeAllUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
   R2StorageLive,
@@ -631,6 +663,48 @@ const isEffectStripeClient = (
 
 const now = () => new Date();
 
+/**
+ * SCIM bearer-token lifetime policy. Provisioning credentials are long-lived by
+ * nature (an IdP connector), so expiry is measured in days and rotation is
+ * reminded in the dashboard rather than forced.
+ */
+const SCIM_TOKEN_DEFAULT_TTL_DAYS = 90;
+const SCIM_TOKEN_MAX_TTL_DAYS = 365;
+const SCIM_TOKEN_ROTATION_WINDOW_DAYS = 14;
+const DAY_MILLIS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Resolve the requested SCIM token expiry. `undefined`/empty means the default
+ * lifetime; anything else must be a valid future ISO timestamp within the
+ * maximum lifetime. A discriminated result keeps the handler free of date
+ * parsing branches at every use site.
+ */
+type ScimTokenExpiry =
+  | { readonly ok: true; readonly value: Date }
+  | { readonly ok: false; readonly message: string };
+
+const scimTokenExpiry = (requested: string | null | undefined, at: Date): ScimTokenExpiry => {
+  const trimmed = requested?.trim();
+
+  if (!trimmed)
+    return { ok: true, value: new Date(at.getTime() + SCIM_TOKEN_DEFAULT_TTL_DAYS * DAY_MILLIS) };
+
+  const parsed = new Date(trimmed);
+
+  if (Number.isNaN(parsed.getTime())) return { ok: false, message: "Enter a valid expiry date" };
+
+  if (parsed.getTime() <= at.getTime())
+    return { ok: false, message: "The expiry must be in the future" };
+
+  if (parsed.getTime() > at.getTime() + SCIM_TOKEN_MAX_TTL_DAYS * DAY_MILLIS)
+    return {
+      ok: false,
+      message: `SCIM tokens can expire at most ${SCIM_TOKEN_MAX_TTL_DAYS} days from now`,
+    };
+
+  return { ok: true, value: parsed };
+};
+
 const optionalText = (value: string | null | undefined): string | null | undefined => {
   if (value === undefined) return undefined;
   const trimmed = value?.trim();
@@ -723,6 +797,16 @@ const allowAppleProfileRequest = (ip: string | null | undefined) => {
 
   return entry.count <= APPLE_PROFILE_PER_IP_LIMIT;
 };
+
+/**
+ * Break-glass recovery limiter. Keys are transient: they are held in this
+ * isolate's memory only, matched per account and per client, and never written
+ * to the database or a log.
+ */
+const recoveryLimiter = createRecoveryLimiter({
+  limit: RECOVERY_REQUEST_LIMIT,
+  windowMillis: RECOVERY_WINDOW_MILLIS,
+});
 
 /** Filesystem-safe tenant name for the mobileconfig `Content-Disposition`. */
 const safeFilename = (value: string) =>
@@ -868,6 +952,9 @@ const iso = (date: Date | number | null | undefined) => {
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
+/** ISO timestamp for values that are genuinely absent (null, never 1970). */
+const isoOrNull = (date: Date | number | null | undefined) => (date == null ? null : iso(date));
+
 /** Copy bytes into a plain ArrayBuffer so WebCrypto never sees a shared buffer. */
 const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
   const copy = new Uint8Array(bytes.byteLength);
@@ -997,6 +1084,20 @@ const canWriteTenant = (role: string) =>
   role.split(",").some((item) => item === "owner" || item === "admin");
 
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
+
+/** The action response, with the optional fields built conditionally. */
+type DeviceActionOutcome = {
+  status: "ok";
+  pin?: string;
+  commandId?: string;
+  deduplicated?: boolean;
+  activationLockWarning?: string;
+};
+
+/** Whether the last security report is older than the refresh window. */
+const securityInfoIsStale = (updatedAt: Date | null, at: Date): boolean =>
+  updatedAt === null ||
+  at.getTime() - updatedAt.getTime() > DEVICE_SECURITY_INFO_STALE_AFTER_DAYS * 24 * 60 * 60 * 1000;
 
 export const createEnterpriseService = ({
   db,
@@ -1289,21 +1390,18 @@ export const createEnterpriseService = ({
       if (!organization)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
-      // A tenant can require owners and admins to enroll an authenticator.
-      // Members keep read access so they can reach their account page and enroll.
-      if (!hasMfaFactor(user) && hasAnyWritePermission(role.permissions)) {
-        const sso = yield* db.query.ssoConfig.findFirst({
-          where: { organizationId: member.organizationId },
-        });
-
-        if (sso?.requireMfa)
-          return yield* Effect.fail(
-            new EnterpriseForbidden({
-              message:
-                "This tenant requires multi-factor authentication. Enable an authenticator on your account first.",
-            }),
-          );
-      }
+      // A tenant-wide MFA requirement applies to every role, including viewers
+      // and auditors: read access to tenant data is exactly what an attacker
+      // with a borrowed session is after. Account endpoints are not
+      // tenant-scoped, so a blocked member can always reach Account settings to
+      // enrol a factor.
+      if (!hasMfaFactor(user) && organization.requireMfa)
+        return yield* Effect.fail(
+          new EnterpriseForbidden({
+            message:
+              "This tenant requires multi-factor authentication. Add a passkey or authenticator app to your account first.",
+          }),
+        );
 
       const credential = apiToken
         ? { type: "api_token" as const, id: apiToken.id, name: apiToken.name }
@@ -1472,6 +1570,83 @@ export const createEnterpriseService = ({
       });
 
       yield* Effect.retry(insertOnce, { times: 20 });
+    });
+
+  /**
+   * Apply the tenant-wide MFA requirement and record the change.
+   *
+   * The requirement binds every role, so enabling it is refused while any
+   * member cannot satisfy it: a member who cannot would lose all tenant access
+   * (Account settings stay reachable, so they can enrol and retry).
+   */
+  const setTenantMfaPolicy = (
+    ctx: {
+      readonly user: {
+        readonly id: string;
+        readonly email: string;
+        readonly totpEnabled?: boolean | null;
+        readonly passkeyEnabled?: boolean | null;
+      };
+      readonly organization: { readonly id: string; readonly requireMfa: boolean };
+      readonly credential?:
+        | { readonly type: "api_token"; readonly id: string; readonly name: string }
+        | {
+            readonly type: "oauth";
+            readonly id: string;
+            readonly name: string;
+            readonly clientId: string;
+          };
+      readonly rbac?: {
+        readonly permission?: string;
+        readonly roleName: string;
+        readonly roleKind: "built-in" | "custom";
+        readonly roleId?: string | null;
+      };
+    },
+    requireMfa: boolean,
+  ) =>
+    Effect.gen(function* () {
+      if (requireMfa && !ctx.organization.requireMfa) {
+        if (!hasMfaFactor(ctx.user))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Add a passkey or authenticator app to your own account before requiring MFA for this tenant.",
+            }),
+          );
+
+        const members = yield* db
+          .select({
+            role: schema.member.role,
+            totpEnabled: schema.user.totpEnabled,
+            passkeyEnabled: schema.user.passkeyEnabled,
+          })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, ctx.organization.id));
+
+        const missing = members.filter((member) => !hasMfaFactor(member)).length;
+
+        if (missing > 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `${missing} member account${missing === 1 ? " has" : "s have"} not enrolled a factor. Ask them to enrol before enabling this requirement.`,
+            }),
+          );
+      }
+
+      if (ctx.organization.requireMfa !== requireMfa) {
+        yield* db
+          .update(schema.organization)
+          .set({ requireMfa, updatedAt: now() })
+          .where(eq(schema.organization.id, ctx.organization.id));
+
+        yield* audit(ctx, "tenant.mfa_policy_updated", "tenant", ctx.organization.id, {
+          requireMfa,
+        });
+      }
+
+      return requireMfa;
     });
 
   const audit = (
@@ -2343,6 +2518,198 @@ export const createEnterpriseService = ({
       );
     });
 
+  /** Windows security inventory, shared by the device row and health endpoint. */
+  const rowWindowsSecurity = (
+    row: Pick<
+      EnterpriseDevice,
+      | "bitLockerEnabled"
+      | "bitLockerStatus"
+      | "tpmVersion"
+      | "secureBootState"
+      | "domainName"
+      | "entraDeviceId"
+      | "securityUpdatedAt"
+    >,
+  ) => ({
+    bitLockerEnabled: row.bitLockerEnabled,
+    bitLockerStatus: row.bitLockerStatus,
+    tpmVersion: row.tpmVersion,
+    secureBootState: row.secureBootState,
+    domainName: row.domainName,
+    entraDeviceId: row.entraDeviceId,
+    updatedAt: row.securityUpdatedAt ? iso(row.securityUpdatedAt) : null,
+  });
+
+  /**
+   * Persisted Windows policy delivery state. `pendingUris` are nodes delivered
+   * but not acknowledged; `pendingRevertUris` are nodes whose `Delete` is in
+   * flight. The deployment view uses this to distinguish applied, pending and
+   * reverted settings.
+   */
+  const rowWindowsPolicy = (
+    row: Pick<
+      EnterpriseDevice,
+      | "windowsPolicyApplied"
+      | "windowsPolicyDelivered"
+      | "windowsPolicyReverting"
+      | "windowsPolicyFailures"
+      | "windowsPolicyUpdatedAt"
+      | "windowsPolicyRevertedAt"
+    >,
+  ) => {
+    const applied = row.windowsPolicyApplied ?? [];
+    const appliedSet = new Set(applied);
+    const reverting = new Set(row.windowsPolicyReverting ?? []);
+
+    return {
+      appliedUris: [...applied],
+      pendingUris: (row.windowsPolicyDelivered ?? [])
+        .map((node) => node.uri)
+        .filter((uri) => !appliedSet.has(uri) && !reverting.has(uri)),
+      pendingRevertUris: [...reverting],
+      failed: (row.windowsPolicyFailures ?? []).map((failure) => ({
+        uri: failure.uri,
+        resultStatus: failure.resultStatus,
+        detail: failure.detail,
+        at: failure.at,
+      })),
+      updatedAt: row.windowsPolicyUpdatedAt ? iso(row.windowsPolicyUpdatedAt) : null,
+      revertedAt: row.windowsPolicyRevertedAt ? iso(row.windowsPolicyRevertedAt) : null,
+    };
+  };
+
+  /** A random Recovery Lock password the operator can read back from the device page. */
+  const recoveryLockPassword = () =>
+    Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+
+  /** The escrowed Recovery Lock password in plaintext, or null when unset. */
+  const resolveRecoveryLockPassword = (device: { readonly id: string }) =>
+    Effect.gen(function* () {
+      if (!authSecret) return null;
+
+      const [secret] = yield* db
+        .select({ sealedValue: schema.deviceSecret.sealedValue })
+        .from(schema.deviceSecret)
+        .where(
+          and(
+            eq(schema.deviceSecret.deviceId, device.id),
+            eq(schema.deviceSecret.kind, "recovery_lock_password"),
+          ),
+        )
+        .limit(1);
+
+      if (!secret) return null;
+
+      return yield* Effect.tryPromise(() => openSecret(authSecret, secret.sealedValue)).pipe(
+        Effect.orElseSucceed(() => null),
+      );
+    });
+
+  /**
+   * Payload for `RotateFileVaultKey`.
+   *
+   * Changing the personal recovery key requires the current key as the
+   * FileVault password, and Apple wraps the replacement key for
+   * `ReplyEncryptionCertificate` — the tenant escrow certificate, so the new key
+   * is escrowable by the same reveal path.
+   */
+  const rotateFileVaultKeyPayload = (device: {
+    readonly id: string;
+    readonly organizationId: string;
+  }) =>
+    Effect.gen(function* () {
+      if (!authSecret)
+        return yield* Effect.fail(
+          new EnterpriseNotConfigured({
+            message: "FileVault key rotation requires AUTH_SECRET to unseal the current key",
+          }),
+        );
+
+      const escrowKey = yield* loadTenantEscrowKey(db, device.organizationId);
+
+      if (!escrowKey)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message:
+              "Generate or upload a FileVault escrow key before rotating a recovery key, otherwise the new key cannot be escrowed.",
+          }),
+        );
+
+      const [secret] = yield* db
+        .select({
+          sealedValue: schema.deviceSecret.sealedValue,
+          format: schema.deviceSecret.format,
+        })
+        .from(schema.deviceSecret)
+        .where(
+          and(
+            eq(schema.deviceSecret.deviceId, device.id),
+            eq(schema.deviceSecret.kind, "filevault_recovery_key"),
+          ),
+        )
+        .limit(1);
+
+      if (!secret)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message:
+              "No FileVault recovery key is escrowed for this device, so the key cannot be rotated. Collect security info first.",
+          }),
+        );
+
+      const password = yield* revealRecoveryKey({
+        db,
+        organizationId: device.organizationId,
+        sealedValue: secret.sealedValue,
+        format: secret.format,
+        authSecret,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new EnterpriseBadRequest({
+              message:
+                cause instanceof EscrowKeyError
+                  ? cause.message
+                  : "The escrowed recovery key could not be read",
+            }),
+        ),
+      );
+
+      let certificate: string;
+
+      try {
+        const der = certificateDer(escrowKey.certificatePem);
+        let binary = "";
+
+        for (const byte of der) binary += String.fromCharCode(byte);
+        certificate = btoa(binary);
+      } catch {
+        return yield* Effect.fail(
+          new EnterpriseInternal({
+            message: "The stored FileVault escrow certificate could not be encoded",
+          }),
+        );
+      }
+
+      return {
+        KeyType: "personal",
+        FileVaultUnlock: { Password: password },
+        ReplyEncryptionCertificate: certificate,
+      } satisfies CommandPayload;
+    });
+
+  /**
+   * Fingerprint of the tenant's FileVault escrow certificate, used to reject a
+   * profile that pins a certificate Mattrax holds no private key for.
+   */
+  const tenantEscrowFingerprint = (organizationId: string) =>
+    loadTenantEscrowKey(db, organizationId).pipe(
+      Effect.map((row) => row?.certificateFingerprintSha256 ?? null),
+      Effect.orElseSucceed(() => null),
+    );
+
   const rowDevice = (row: EnterpriseDevice) => ({
     id: row.id,
     proto: row.proto,
@@ -2372,12 +2739,36 @@ export const createEnterpriseService = ({
     batteryHealth: row.batteryHealth,
     capabilities: row.capabilities,
     modelNumber: row.modelNumber,
+    passcodePresent: row.passcodePresent,
+    passcodeCompliant: row.passcodeCompliant,
+    osUpdateInstallState: row.osUpdateInstallState,
+    osUpdatePendingVersion: row.osUpdatePendingVersion,
+    osUpdatePendingBuild: row.osUpdatePendingBuild,
+    osUpdateFailureReason: row.osUpdateFailureReason,
+    osUpdateFailureCount: row.osUpdateFailureCount,
+    osUpdateFailedAt: row.osUpdateFailedAt ? iso(row.osUpdateFailedAt) : null,
+    securityLockdownMode: row.securityLockdownMode,
+    managedCertificateCount: row.managedCertificateCount,
+    managementApps: Option.getOrNull(
+      Schema.decodeUnknownOption(Schema.Array(DeviceManagementApp))(row.managementApps),
+    ),
     inventoryUpdatedAt: row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : null,
     applicationsUpdatedAt: row.applicationsUpdatedAt ? iso(row.applicationsUpdatedAt) : null,
     // Staleness is derived rather than stored so a device that stops reporting
     // becomes stale without any write: Apple refreshes daily, Windows daily and
     // Android on every status notification.
     applicationsStale: applicationsInventoryStale({ updatedAt: row.applicationsUpdatedAt }),
+    windows:
+      row.proto === "win"
+        ? { security: rowWindowsSecurity(row), policy: rowWindowsPolicy(row) }
+        : null,
+    actions: deviceAvailableActions({
+      proto: row.proto,
+      status: row.status,
+      capabilities: Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
+      ),
+    }),
   });
 
   /** Android Management API fields shown on the device page. */
@@ -2559,6 +2950,13 @@ export const createEnterpriseService = ({
       | "osEdition"
       | "fileVaultEnabled"
       | "batteryHealth"
+      | "bitLockerEnabled"
+      | "bitLockerStatus"
+      | "tpmVersion"
+      | "secureBootState"
+      | "domainName"
+      | "entraDeviceId"
+      | "securityUpdatedAt"
     >,
     declarations: ReadonlyArray<{
       readonly identifier?: string;
@@ -2579,6 +2977,13 @@ export const createEnterpriseService = ({
       osEdition: device.osEdition,
       fileVaultEnabled: device.fileVaultEnabled,
       batteryHealth: device.batteryHealth,
+      bitLockerEnabled: device.bitLockerEnabled,
+      bitLockerStatus: device.bitLockerStatus,
+      tpmVersion: device.tpmVersion,
+      secureBootState: device.secureBootState,
+      domainName: device.domainName,
+      entraDeviceId: device.entraDeviceId,
+      windowsSecurityReported: device.securityUpdatedAt != null,
     });
 
   const rowCertificate = (row: typeof schema.scepIssuedCertificate.$inferSelect) => ({
@@ -2835,6 +3240,7 @@ export const createEnterpriseService = ({
           like(schema.device.model, pattern),
           like(schema.device.dmIdentifier, pattern),
           like(schema.device.assetTag, pattern),
+          like(schema.device.notes, pattern),
         );
 
         if (condition) conditions.push(condition);
@@ -2960,7 +3366,10 @@ export const createEnterpriseService = ({
   /** Load group memberships for a page of devices in one query (avoids N+1). */
   const deviceGroupsFor = (organizationId: string, deviceIds: string[]) =>
     Effect.gen(function* () {
-      const groups = new Map<string, Array<{ id: string; name: string }>>();
+      const groups = new Map<
+        string,
+        Array<{ id: string; name: string; source: "manual" | "dynamic" }>
+      >();
 
       if (deviceIds.length === 0) return groups;
 
@@ -2969,6 +3378,7 @@ export const createEnterpriseService = ({
           deviceId: schema.groupDevice.deviceId,
           id: schema.enterpriseGroup.id,
           name: schema.enterpriseGroup.name,
+          source: schema.groupDevice.source,
         })
         .from(schema.groupDevice)
         .innerJoin(
@@ -2984,7 +3394,7 @@ export const createEnterpriseService = ({
 
       for (const row of rows) {
         const list = groups.get(row.deviceId) ?? [];
-        list.push({ id: row.id, name: row.name });
+        list.push({ id: row.id, name: row.name, source: row.source });
         groups.set(row.deviceId, list);
       }
 
@@ -2998,6 +3408,24 @@ export const createEnterpriseService = ({
         .from(schema.auditLog)
         .where(auditWhere(schema, organizationId, filters))
         .orderBy(...auditOrder(schema))
+        .limit(take)
+        .offset(filters.offset);
+
+      return rows;
+    });
+
+  /** Account-scoped equivalent: the subject column is the tenant boundary. */
+  const loadAccountAuditEntries = (
+    subjectUserId: string,
+    filters: AuditSearchFilters,
+    take: number,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* db
+        .select()
+        .from(schema.accountAuditLog)
+        .where(accountAuditWhere(schema, subjectUserId, filters))
+        .orderBy(...accountAuditOrder(schema))
         .limit(take)
         .offset(filters.offset);
 
@@ -3460,18 +3888,25 @@ export const createEnterpriseService = ({
         where: { userId: user.id },
       });
 
+      // The requirement is a tenant property and binds every role, so it is
+      // reported for any membership rather than only owner/admin ones.
       const mfaRequired = yield* Effect.gen(function* () {
-        for (const membership of memberships) {
-          if (!canWriteTenant(membership.role)) continue;
+        const organizationIds = memberships.map((membership) => membership.organizationId);
 
-          const sso = yield* db.query.ssoConfig.findFirst({
-            where: { organizationId: membership.organizationId },
-          });
+        if (organizationIds.length === 0) return false;
 
-          if (sso?.requireMfa) return true;
-        }
+        const requiring = yield* db
+          .select({ id: schema.organization.id })
+          .from(schema.organization)
+          .where(
+            and(
+              inArray(schema.organization.id, organizationIds),
+              eq(schema.organization.requireMfa, true),
+            ),
+          )
+          .limit(1);
 
-        return false;
+        return requiring.length > 0;
       });
 
       return {
@@ -3721,6 +4156,26 @@ export const createEnterpriseService = ({
       return cancelled?.cancel_at_period_end ? ("at_period_end" as const) : ("cancelled" as const);
     });
 
+  /**
+   * The same check as `teardownSubscription` without cancelling anything, so a
+   * deployment that cannot settle billing fails before devices are contacted.
+   */
+  const preflightTeardown = (organization: EnterpriseOrganization) =>
+    Effect.gen(function* () {
+      const [row] = yield* db
+        .select({ stripeSubscriptionId: schema.subscription.stripeSubscriptionId })
+        .from(schema.subscription)
+        .where(eq(schema.subscription.referenceId, organization.id))
+        .limit(1);
+
+      if (row?.stripeSubscriptionId && !stripe)
+        return yield* Effect.fail(
+          new Error(
+            "This tenant has a Stripe subscription but billing is not configured on this deployment.",
+          ),
+        );
+    });
+
   const service = {
     /**
      * The account and tenant shell. Kept as one helper so bootstrap reuses the
@@ -3744,7 +4199,15 @@ export const createEnterpriseService = ({
         // A bearer-token caller has no browser session to snapshot. The web
         // Worker only calls bootstrap with the session cookie, so this is a
         // defensive answer rather than a supported sign-in path.
-        if (!session) return { session: null, me, ssrToken: null, ssrTokenExpiresAt: null };
+        if (!session)
+          return {
+            session: null,
+            me,
+            ssrToken: null,
+            ssrTokenExpiresAt: null,
+            ssrRevision: null,
+            ssrRevisionExpiresAt: null,
+          };
 
         const boundCookie = cookieValue(request.headers.cookie, sessionCookie);
 
@@ -3763,6 +4226,16 @@ export const createEnterpriseService = ({
               }).pipe(Effect.catch(() => Effect.succeed(undefined)))
             : undefined;
 
+        // The revision cookie is what makes `ver` enforceable at the edge. It
+        // is only useful alongside a token, so it shares the token's fate.
+        const revision =
+          signed && authSecret
+            ? yield* signSsrRevision(authSecret, {
+                sessionId: session.sessionId,
+                authRevision: user.authRevision,
+              }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined;
+
         return {
           session: {
             sessionId: session.sessionId,
@@ -3776,6 +4249,8 @@ export const createEnterpriseService = ({
           me,
           ssrToken: signed?.token ?? null,
           ssrTokenExpiresAt: signed?.expiresAt ?? null,
+          ssrRevision: revision?.token ?? null,
+          ssrRevisionExpiresAt: revision?.expiresAt ?? null,
         };
       }),
     updateMe: (request, payload) =>
@@ -3852,6 +4327,16 @@ export const createEnterpriseService = ({
             sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
           );
 
+        // The audit row outlives the account: `subject_user_id` is set null by
+        // the foreign key and the email snapshot remains until retention
+        // prunes it, so the deletion itself is still answerable later.
+        yield* recordAccountAudit(db, {
+          subjectUserId: user.id,
+          subjectEmail: user.email,
+          action: ACCOUNT_AUDIT.deleted,
+          targetType: "account",
+        }).pipe(Effect.catchCause(() => Effect.void));
+
         yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
 
         return ok;
@@ -3874,8 +4359,147 @@ export const createEnterpriseService = ({
         if (!revoked)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
 
+        yield* recordAccountAudit(db, {
+          subjectUserId: user.id,
+          subjectEmail: user.email,
+          action: ACCOUNT_AUDIT.sessionRevoked,
+          targetType: "session",
+          targetId: sessionId,
+        }).pipe(Effect.catchCause(() => Effect.void));
+
         return ok;
       }),
+    /**
+     * Sign out everywhere. Every session row for the account is deleted,
+     * including the caller's, and the security revision is bumped so any signed
+     * artifact minted from a session is stale too.
+     */
+    revokeAllAccountSessions: (request) =>
+      Effect.gen(function* () {
+        const { user } = yield* requireStepUp(auth, request, "sessions-revoke-all");
+
+        const { revoked } = yield* revokeAllUserSessions(db, user.id);
+
+        yield* db
+          .update(schema.user)
+          .set({ authRevision: id(), updatedAt: now() })
+          .where(eq(schema.user.id, user.id));
+
+        yield* recordAccountAudit(db, {
+          subjectUserId: user.id,
+          subjectEmail: user.email,
+          action: ACCOUNT_AUDIT.sessionsRevoked,
+          targetType: "session",
+          metadata: { revoked },
+        }).pipe(Effect.catchCause(() => Effect.void));
+
+        return { status: "ok" as const, revoked };
+      }),
+    searchAccountAuditLog: (request, query) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+        const filters = yield* normalizedAuditFilters(query);
+
+        const rows = yield* loadAccountAuditEntries(user.id, filters, filters.limit + 1);
+        const hasMore = rows.length > filters.limit;
+        const page = hasMore ? rows.slice(0, filters.limit) : rows;
+        let nextCursor: string | null = null;
+
+        if (hasMore && page.length > 0) {
+          const last = page[page.length - 1]!;
+
+          nextCursor = filters.offsetPaging
+            ? encodeAuditOffsetCursor(filters.offset + filters.limit)
+            : encodeAuditCursor({ createdAt: last.createdAt, id: last.id });
+        }
+
+        return { entries: page.map((entry: any) => accountAuditEntry(entry)), nextCursor };
+      }),
+    exportAccountAuditLog: (request, query) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+        const format = query.format ?? "csv";
+
+        // Exports always start at the newest matching row; a cursor from an
+        // interactive page would silently export only the remainder.
+        const filters = {
+          ...(yield* normalizedAuditFilters(query)),
+          cursor: undefined,
+          offset: 0,
+        };
+
+        const rows = yield* loadAccountAuditEntries(user.id, filters, AUDIT_EXPORT_MAX_ROWS + 1);
+
+        const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
+
+        const entries = (truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows).map(
+          (entry: any) => accountAuditEntry(entry),
+        );
+
+        return {
+          format,
+          body: format === "json" ? auditJson(entries) : auditCsv(entries),
+          truncated,
+          rowCount: entries.length,
+        };
+      }),
+    /**
+     * Start the break-glass recovery ceremony. The answer is identical for
+     * every address so the endpoint cannot be used to discover accounts.
+     */
+    requestAccountRecovery: (request, payload) =>
+      Effect.gen(function* () {
+        const email = payload.email.trim().toLowerCase();
+        const address = clientAddress(request.headers);
+
+        // Two independent windows: one per account and one per client, so
+        // neither a single mailbox nor a single host can drive a loop.
+        const allowed =
+          recoveryLimiter.allow(`account:${email}`) &&
+          recoveryLimiter.allow(`client:${address ?? "unknown"}`);
+
+        if (!allowed)
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseBadRequest({
+                message: "Too many recovery requests. Try again in an hour.",
+              }),
+              { code: "rate_limited", retryable: true },
+            ),
+          );
+
+        return yield* startRecoveryRequest(
+          { db, authSecret: authSecret ?? "", origin, email },
+          { email },
+        );
+      }),
+    verifyAccountRecovery: (request, payload) =>
+      Effect.gen(function* () {
+        // The proof link is rate limited as well: token guessing is otherwise
+        // the only barrier for a 256-bit secret.
+        const address = clientAddress(request.headers);
+
+        if (!recoveryLimiter.allow(`verify:${address ?? "unknown"}`))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Too many recovery attempts. Try again in an hour.",
+            }),
+          );
+
+        // Recovery failures are typed internally; the public contract returns a
+        // 400 so the caller never learns which check rejected the link.
+        return yield* consumeRecoveryProof(
+          { db, authSecret: authSecret ?? "", origin, email },
+          payload,
+        ).pipe(
+          Effect.catchTag("RecoveryRejected", (error) =>
+            Effect.fail(new EnterpriseBadRequest({ message: error.message })),
+          ),
+        );
+      }),
+    cancelEmailChange: (_request, payload) => auth.cancelEmailChange(payload),
     listTenants: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
@@ -4290,7 +4914,11 @@ export const createEnterpriseService = ({
                   message: `Policy "${policyName}" has invalid configuration data`,
                 }),
               );
-            yield* validateConfiguration(kind, configuration).pipe(
+            // An imported bundle has no escrow key yet: a FileVault escrow
+            // profile is rejected until the operator adds one and re-saves it.
+            yield* validateConfiguration(kind, configuration, {
+              escrowCertificateFingerprintSha256: null,
+            }).pipe(
               Effect.mapError(
                 (message) =>
                   new EnterpriseBadRequest({
@@ -4769,6 +5397,7 @@ export const createEnterpriseService = ({
           organizationId: ctx.organization.id,
           actor: { id: ctx.user.id, email: ctx.user.email },
           deps: {
+            preflight: () => preflightTeardown(ctx.organization),
             unenrollDevices: teardownDevices,
             cancelSubscription: teardownSubscription,
           },
@@ -5376,6 +6005,43 @@ export const createEnterpriseService = ({
 
         return autopilotProfileInfo(profile);
       }),
+    /**
+     * The tenant-wide MFA requirement binds every role, so enabling it is
+     * refused while any member cannot satisfy it. A member who loses tenant
+     * access as a result is still able to reach Account settings and enrol a
+     * factor; turning the requirement on is what closes the read-only gap.
+     */
+    getTenantSecurity: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return { requireMfa: ctx.organization.requireMfa };
+      }),
+    patchTenantSecurity: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "tenant-mfa-policy");
+
+        return { requireMfa: yield* setTenantMfaPolicy(ctx, payload.requireMfa) };
+      }),
+    approveAccountRecovery: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "recovery-approve");
+
+        return yield* approveRecoveryRequest(
+          { db, authSecret: authSecret ?? "", origin, email },
+          {
+            token: payload.token,
+            organizationId: ctx.organization.id,
+            approverUserId: ctx.user.id,
+          },
+        ).pipe(
+          Effect.catchTag("RecoveryRejected", (error) =>
+            Effect.fail(new EnterpriseBadRequest({ message: error.message })),
+          ),
+        );
+      }),
     getSsoConfig: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -5388,7 +6054,9 @@ export const createEnterpriseService = ({
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
-          requireMfa: config?.requireMfa ?? false,
+          // The MFA requirement is a tenant property, not an SSO one. It is
+          // still reported here so the existing SSO form keeps working.
+          requireMfa: ctx.organization.requireMfa,
         };
       }),
     patchSsoConfig: (request, tenantId, payload) =>
@@ -5423,36 +6091,10 @@ export const createEnterpriseService = ({
             );
         }
 
-        if (body.requireMfa === true) {
-          if (!hasMfaFactor(ctx.user))
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message:
-                  "Enable an authenticator app for your own account before requiring MFA for the tenant.",
-              }),
-            );
-
-          const privileged = yield* db
-            .select({
-              role: schema.member.role,
-              totpEnabled: schema.user.totpEnabled,
-              passkeyEnabled: schema.user.passkeyEnabled,
-            })
-            .from(schema.member)
-            .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-            .where(eq(schema.member.organizationId, ctx.organization.id));
-
-          const missing = privileged.filter(
-            (member) => canWriteTenant(member.role) && !hasMfaFactor(member),
-          ).length;
-
-          if (missing > 0)
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: `${missing} owner/admin account${missing === 1 ? " has" : "s have"} not enrolled MFA. Ask them to enrol before enabling this requirement.`,
-              }),
-            );
-        }
+        const requireMfa =
+          body.requireMfa === undefined
+            ? ctx.organization.requireMfa
+            : yield* setTenantMfaPolicy(ctx, body.requireMfa);
 
         const timestamp = now();
 
@@ -5486,7 +6128,6 @@ export const createEnterpriseService = ({
               enabled: body.enabled !== undefined ? body.enabled : undefined,
               azureTenantId: body.azureTenantId !== undefined ? body.azureTenantId : undefined,
               autoProvision: body.autoProvision !== undefined ? body.autoProvision : undefined,
-              requireMfa: body.requireMfa !== undefined ? body.requireMfa : undefined,
               updatedAt: timestamp,
             })
             .where(eq(schema.ssoConfig.organizationId, ctx.organization.id));
@@ -5496,7 +6137,6 @@ export const createEnterpriseService = ({
             enabled: body.enabled ?? false,
             azureTenantId: body.azureTenantId ?? null,
             autoProvision: body.autoProvision ?? true,
-            requireMfa: body.requireMfa ?? false,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -5514,12 +6154,13 @@ export const createEnterpriseService = ({
           enabled: config?.enabled ?? false,
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
-          requireMfa: config?.requireMfa ?? false,
+          requireMfa,
         };
       }),
     listScimTokens: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        const timestamp = now();
 
         const rows = yield* db
           .select()
@@ -5529,21 +6170,48 @@ export const createEnterpriseService = ({
               eq(schema.scimToken.organizationId, ctx.organization.id),
               isNull(schema.scimToken.revokedAt),
             ),
-          );
+          )
+          .orderBy(asc(schema.scimToken.createdAt));
 
         return {
-          tokens: rows.map((row: any) => ({
-            id: row.id,
-            name: row.name,
-            createdAt: iso(row.createdAt),
-            lastUsedAt: row.lastUsedAt ? iso(row.lastUsedAt) : null,
-          })),
+          tokens: rows.map((row: any) => {
+            const expiresAt = row.expiresAt ? new Date(row.expiresAt) : null;
+
+            return {
+              id: row.id,
+              name: row.name,
+              createdAt: iso(row.createdAt),
+              lastUsedAt: row.lastUsedAt ? iso(row.lastUsedAt) : null,
+              expiresAt: expiresAt ? iso(expiresAt) : null,
+              rotationDue:
+                expiresAt !== null &&
+                expiresAt.getTime() <=
+                  timestamp.getTime() + SCIM_TOKEN_ROTATION_WINDOW_DAYS * DAY_MILLIS,
+            };
+          }),
         };
       }),
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body: { name: string } = payload;
+        const body: { name: string; expiresAt?: string | null } = payload;
+        const name = body.name.trim();
+
+        if (name.length === 0)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Enter a token name" }));
+
+        if (name.length > 255)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Token names must be 255 characters or fewer" }),
+          );
+
+        const timestamp = now();
+        const expiry = scimTokenExpiry(body.expiresAt, timestamp);
+
+        if (!expiry.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: expiry.message }));
+
+        const expiresAt = expiry.value;
 
         const raw = `scim_${bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
           .replaceAll("+", "-")
@@ -5552,24 +6220,28 @@ export const createEnterpriseService = ({
 
         const tokenHash = yield* sha256Hex(bytesToArrayBuffer(new TextEncoder().encode(raw)));
         const scimId = id();
-        const timestamp = now();
         yield* db.insert(schema.scimToken).values({
           id: scimId,
           organizationId: ctx.organization.id,
-          name: body.name,
+          name,
           tokenHash,
           lastUsedAt: null,
+          expiresAt,
           revokedAt: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        yield* audit(ctx, "scim.token_created", "scim_token", scimId, { name: body.name });
+        yield* audit(ctx, "scim.token_created", "scim_token", scimId, {
+          name,
+          expiresAt: iso(expiresAt),
+        });
 
         return {
           id: scimId,
-          name: body.name,
+          name,
           token: raw,
           baseUrl: `${origin}/scim/v2/${ctx.organization.id}`,
+          expiresAt: iso(expiresAt),
         };
       }),
     revokeScimToken: (request, tenantId, tokenId) =>
@@ -8667,14 +9339,43 @@ export const createEnterpriseService = ({
           action?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
+          recoveryLockPassword?: string;
         } = payload ?? {};
 
         const action = body.action ?? "sync";
+
+        // Capability gating: the platform, enrollment state and the device's
+        // own reported capabilities decide which actions are legal. RBAC is
+        // still enforced by `requireTenant` above.
+        const deviceActionInput = {
+          proto: device.proto,
+          status: device.status,
+          capabilities: Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Json)(device.capabilities),
+          ),
+        };
+
+        const requestedAction = Option.getOrUndefined(
+          Schema.decodeUnknownOption(DeviceActionName)(action),
+        );
+
+        if (
+          device.status === "enrolled" &&
+          (!requestedAction || !deviceAvailableActions(deviceActionInput).includes(requestedAction))
+        )
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: requestedAction
+                ? deviceActionUnavailableReason(deviceActionInput, requestedAction)
+                : "Unknown device action",
+            }),
+          );
 
         if (!["sync", "collect-security-info", "refresh-applications"].includes(action))
           yield* requireStepUp(auth, request, "device-command");
         let lockPin: string | undefined;
         let command: { commandId: string; deduplicated: boolean } | undefined;
+        let activationLockWarning: string | undefined;
 
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
           yield* mapAndroidFailure(
@@ -8757,11 +9458,20 @@ export const createEnterpriseService = ({
                   lockPin = randomPin;
 
                   return { requestType: "DeviceLock", payload: { PIN: randomPin } };
-                case "wipe":
-                  return {
-                    requestType: "EraseDevice",
-                    payload: { PIN: randomPin, ObliterationBehavior: "Default" },
-                  };
+                case "wipe": {
+                  // Erase flags are explicit rather than defaulted. Proximity
+                  // Setup is an iOS/iPadOS key (macOS rejects it), and the
+                  // obliteration fallback is pinned so a T2/Apple silicon Mac
+                  // erases even when Erase All Content and Settings cannot run.
+                  const erase = { PIN: randomPin, ObliterationBehavior: "Default" };
+
+                  const payload = isMacOsDevice(device)
+                    ? erase
+                    : { ...erase, DisallowProximitySetup: true, PreserveDataPlan: false };
+
+                  return { requestType: "EraseDevice", payload };
+                }
+
                 case "restart":
                   return { requestType: "RestartDevice", payload: {} };
                 case "shutdown":
@@ -8772,6 +9482,27 @@ export const createEnterpriseService = ({
                   // SecurityInfo takes no query payload; the response always
                   // carries FileVault and bootstrap-token escrow state.
                   return { requestType: "SecurityInfo", payload: {} };
+                case "collect-activation-lock-code":
+                  // The bypass code is a separate command: SecurityInfo only
+                  // reports whether Activation Lock is manageable.
+                  return { requestType: "ActivationLockBypassCode", payload: {} };
+                case "rotate-filevault-key":
+                  // The payload is completed below once the escrowed key and
+                  // tenant escrow certificate have been read.
+                  return { requestType: "RotateFileVaultKey", payload: {} };
+                case "set-recovery-lock":
+                  return {
+                    requestType: "SetRecoveryLock",
+                    payload: {
+                      NewPassword:
+                        body.recoveryLockPassword && body.recoveryLockPassword.length > 0
+                          ? body.recoveryLockPassword
+                          : recoveryLockPassword(),
+                    },
+                  };
+                case "verify-recovery-lock":
+                  // Filled below from the escrowed Recovery Lock password.
+                  return { requestType: "VerifyRecoveryLock", payload: {} };
                 case "refresh-applications":
                   return {
                     requestType: "InstalledApplicationList",
@@ -8845,6 +9576,75 @@ export const createEnterpriseService = ({
               request.payload = { UnlockToken: apple.unlockToken };
             }
 
+            if (action === "rotate-filevault-key")
+              request.payload = yield* rotateFileVaultKeyPayload(device);
+
+            if (action === "verify-recovery-lock") {
+              const password = yield* resolveRecoveryLockPassword(device);
+
+              if (!password)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "No Recovery Lock password is stored for this device. Set one before verifying it.",
+                  }),
+                );
+
+              request.payload = { Password: password };
+            }
+
+            if (action === "wipe" && device.proto === "apple") {
+              // A supervised device must not be able to re-enable Activation
+              // Lock after the wipe. This is an MDM setting, not an erase key,
+              // so it is queued as its own `Settings` command before the erase
+              // (delivery is oldest first).
+              yield* queueDeviceCommand({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                requestType: "Settings",
+                payload: {
+                  Settings: [
+                    {
+                      MDMOptions: {
+                        Item: "MDMOptions",
+                        MDMOptions: { ActivationLockAllowedWhileSupervised: false },
+                      },
+                    },
+                  ],
+                },
+                at: new Date(timestamp.getTime() - 2),
+              });
+
+              // An erase is the moment a Mac's Recovery Lock password would
+              // outlive its purpose. Clear it first (oldest-first delivery)
+              // using the password Mattrax stored, then erase.
+              const recoveryLock = yield* resolveRecoveryLockPassword(device);
+
+              if (recoveryLock) {
+                yield* queueDeviceCommand({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  requestType: "SetRecoveryLock",
+                  payload: { CurrentPassword: recoveryLock, NewPassword: "" },
+                  at: new Date(timestamp.getTime() - 1),
+                });
+              }
+
+              const [apple] = yield* db
+                .select({
+                  isActivationLockManageable: schema.deviceApple.isActivationLockManageable,
+                })
+                .from(schema.deviceApple)
+                .where(eq(schema.deviceApple.deviceId, device.id))
+                .limit(1);
+
+              // Never imply Activation Lock is cleared: Apple cannot confirm it,
+              // and only a bypass code or the user's Apple Account can remove it.
+              if (apple?.isActivationLockManageable !== true)
+                activationLockWarning =
+                  "Activation Lock cannot be confirmed as manageable for this enrolment. If it is enabled, the device will stay locked after erase until the bypass code is used or the user removes it with their Apple Account.";
+            }
+
             const queued = yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -8854,6 +9654,39 @@ export const createEnterpriseService = ({
             });
 
             command = { commandId: queued.id, deduplicated: queued.deduplicated };
+
+            // Keep the Recovery Lock password so a later verify/erase can use
+            // it as `CurrentPassword`. Re-queuing an identical command reuses
+            // the password already in flight.
+            if (action === "set-recovery-lock" && authSecret) {
+              const newPassword = Option.getOrUndefined(
+                Schema.decodeUnknownOption(Schema.Struct({ NewPassword: Schema.String }))(
+                  request.payload,
+                ),
+              )?.NewPassword;
+
+              if (newPassword) {
+                const sealedValue = yield* Effect.tryPromise(() =>
+                  sealSecret(authSecret, newPassword),
+                );
+
+                yield* db
+                  .insert(schema.deviceSecret)
+                  .values({
+                    deviceId: device.id,
+                    organizationId: ctx.organization.id,
+                    kind: "recovery_lock_password",
+                    sealedValue,
+                    format: "plaintext",
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                    rotatedAt: timestamp,
+                  })
+                  .onDuplicateKeyUpdate({
+                    set: { sealedValue, updatedAt: timestamp, rotatedAt: timestamp },
+                  });
+              }
+            }
 
             // A de-duplicated lock reuses the PIN of the command already in
             // flight, otherwise the administrator would be shown a PIN the
@@ -8871,7 +9704,13 @@ export const createEnterpriseService = ({
 
         yield* audit(ctx, "device.action", "device", deviceId, auditMetadata);
 
-        return lockPin ? { ...ok, pin: lockPin, ...command } : { ...ok, ...command };
+        const response: DeviceActionOutcome = { ...ok, ...command };
+
+        if (lockPin) response.pin = lockPin;
+
+        if (activationLockWarning) response.activationLockWarning = activationLockWarning;
+
+        return response;
       }),
     listDeviceCommands: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -8906,11 +9745,16 @@ export const createEnterpriseService = ({
               requestType: command.requestType,
               status,
               statusLabel: deviceCommandStatusLabel(status),
+              locURI:
+                Schema.is(Schema.JsonObject)(command.payload) &&
+                Schema.is(Schema.String)(command.payload["locURI"])
+                  ? command.payload["locURI"]
+                  : null,
               resultStatus: command.resultStatus,
               resultDetail: command.resultDetail,
               createdAt: iso(command.createdAt),
               updatedAt: iso(command.updatedAt),
-              expiresAt: iso(commandDeadline(command)),
+              expiresAt: isoOrNull(commandDeadline(command)),
             };
           }),
         };
@@ -8940,10 +9784,10 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        if (device.proto !== "apple")
+        if (device.proto === "android")
           return yield* Effect.fail(
             new EnterpriseBadRequest({
-              message: "Remote unenroll is only available for Apple devices today.",
+              message: "Remote unenroll is only available for Apple and Windows devices.",
             }),
           );
 
@@ -8977,9 +9821,31 @@ export const createEnterpriseService = ({
             ),
           );
 
+        // Windows leaves management with an OMA-DM `Exec` on the provider's
+        // `Unenroll` node. The device removes the management account and the
+        // settings it applied, then stops syncing; the row moves to
+        // `unenrolled` when the device acknowledges the command (or reports
+        // the unenroll Generic Alert on a later check-in).
+        if (device.proto === "win" && device.status !== "unenrolled")
+          yield* queueDeviceCommand({
+            organizationId: ctx.organization.id,
+            deviceId: device.id,
+            requestType: WINDOWS_UNENROLL_REQUEST_TYPE,
+            payload: {
+              kind: "Exec",
+              locURI: windowsUnenrollUri(WINDOWS_MDM_PROVIDER_ID),
+              data: WINDOWS_MDM_PROVIDER_ID,
+              format: "chr",
+            },
+            at: now(),
+          });
+
         // mttx pushes both enrolled and already-unenrolling devices so repeated
         // requests still nudge the device.
-        if (device.status === "enrolled" || device.status === "unenrolling")
+        if (
+          device.proto === "apple" &&
+          (device.status === "enrolled" || device.status === "unenrolling")
+        )
           yield* applePush.pushAppleDevice(device.id, true);
         // Retiring a device must also invalidate its SCEP identity, otherwise a
         // stolen certificate could renew forever. Windows certificates and
@@ -9015,6 +9881,7 @@ export const createEnterpriseService = ({
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
           push: rowPushInfo(apple),
+          windows: device.proto === "win" ? rowWindowsSecurity(device) : null,
         };
       }),
     getDeviceActivity: (request, tenantId, deviceId, query) =>
@@ -9706,6 +10573,7 @@ export const createEnterpriseService = ({
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
         const configurations = Object.entries(body.configurations ?? {});
+        const escrowFingerprint = yield* tenantEscrowFingerprint(ctx.organization.id);
 
         // Validate the whole patch before mutating anything so a bad
         // configuration cannot leave the policy half-updated.
@@ -9717,9 +10585,9 @@ export const createEnterpriseService = ({
           );
 
           if (configuration === undefined) continue;
-          yield* validateConfiguration(kind, configuration).pipe(
-            Effect.mapError((message) => new EnterpriseBadRequest({ message })),
-          );
+          yield* validateConfiguration(kind, configuration, {
+            escrowCertificateFingerprintSha256: escrowFingerprint,
+          }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
         }
 
         yield* db
@@ -11677,6 +12545,7 @@ export const createEnterpriseService = ({
             "Battery health",
             "Capabilities",
             "Inventory updated",
+            "Notes",
             "Groups",
           ],
           exportedRows.map((row) => [
@@ -11701,6 +12570,7 @@ export const createEnterpriseService = ({
               Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.capabilities)),
             ),
             row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : "",
+            row.notes,
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
           ]),
         );
@@ -11721,6 +12591,7 @@ export const createEnterpriseService = ({
         const secrets = yield* db
           .select({
             kind: schema.deviceSecret.kind,
+            format: schema.deviceSecret.format,
             updatedAt: schema.deviceSecret.updatedAt,
             rotatedAt: schema.deviceSecret.rotatedAt,
           })
@@ -11735,8 +12606,17 @@ export const createEnterpriseService = ({
         const recoveryKey = secrets.find((secret) => secret.kind === "filevault_recovery_key");
         const bootstrapToken = secrets.find((secret) => secret.kind === "bootstrap_token");
 
+        const bypassCode = secrets.find((secret) => secret.kind === "activation_lock_bypass_code");
+
         const [apple] = yield* db
-          .select({ bootstrapTokenEscrowed: schema.deviceApple.bootstrapTokenEscrowed })
+          .select({
+            bootstrapTokenEscrowed: schema.deviceApple.bootstrapTokenEscrowed,
+            declarationMode: schema.deviceApple.declarationMode,
+            declarationModeReason: schema.deviceApple.declarationModeReason,
+            declarationModeUpdatedAt: schema.deviceApple.declarationModeUpdatedAt,
+            isActivationLockManageable: schema.deviceApple.isActivationLockManageable,
+            securityInfoUpdatedAt: schema.deviceApple.securityInfoUpdatedAt,
+          })
           .from(schema.deviceApple)
           .where(eq(schema.deviceApple.deviceId, row.id))
           .limit(1);
@@ -11771,14 +12651,29 @@ export const createEnterpriseService = ({
                 .limit(1)
             : [];
 
+        const groups = yield* deviceGroupsFor(ctx.organization.id, [row.id]);
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
           ...rowDevice(row),
+          groups: groups.get(row.id) ?? [],
           recoveryKeyEscrowed: Boolean(recoveryKey),
           bootstrapTokenEscrowed: apple?.bootstrapTokenEscrowed ?? Boolean(bootstrapToken),
           recoveryKeyUpdatedAt: recoveryKey ? iso(recoveryKey.updatedAt) : null,
           recoveryKeyRotatedAt: recoveryKey?.rotatedAt ? iso(recoveryKey.rotatedAt) : null,
+          recoveryKeyFormat: recoveryKey?.format ?? null,
           bootstrapTokenUpdatedAt: bootstrapToken ? iso(bootstrapToken.updatedAt) : null,
+          activationLockBypassCodeEscrowed: Boolean(bypassCode),
+          isActivationLockManageable: apple?.isActivationLockManageable ?? null,
+          declarationMode: apple?.declarationMode ?? null,
+          declarationModeReason: apple?.declarationModeReason ?? null,
+          declarationModeUpdatedAt: apple?.declarationModeUpdatedAt
+            ? iso(apple.declarationModeUpdatedAt)
+            : null,
+          securityInfoUpdatedAt: apple?.securityInfoUpdatedAt
+            ? iso(apple.securityInfoUpdatedAt)
+            : null,
+          securityInfoStale: securityInfoIsStale(apple?.securityInfoUpdatedAt ?? null, now()),
           android: android ? rowAndroidDevice(android) : null,
           autopilot: autopilot ? autopilotDeviceInfo(autopilot) : null,
         };
@@ -11853,13 +12748,26 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const recoveryKey = yield* Effect.tryPromise({
-          try: () => openSecret(authSecret, secret.sealedValue),
-          catch: () =>
-            new EnterpriseBadRequest({
-              message: "The escrowed recovery key could not be decrypted",
-            }),
-        });
+        // CMS-wrapped keys are unwrapped with the tenant escrow private key, so
+        // the operator receives a key they can type into Recovery Assistant
+        // rather than the ciphertext the device returned.
+        const recoveryKey = yield* revealRecoveryKey({
+          db,
+          organizationId: ctx.organization.id,
+          sealedValue: secret.sealedValue,
+          format: secret.format,
+          authSecret,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new EnterpriseBadRequest({
+                message:
+                  cause instanceof EscrowKeyError
+                    ? cause.message
+                    : "The escrowed recovery key could not be decrypted",
+              }),
+          ),
+        );
 
         yield* audit(ctx, "device.recovery_key_viewed", "device", device.id, {
           kind: "filevault_recovery_key",
@@ -11870,6 +12778,177 @@ export const createEnterpriseService = ({
           updatedAt: iso(secret.updatedAt),
           rotatedAt: secret.rotatedAt ? iso(secret.rotatedAt) : null,
         };
+      }),
+    getDeviceActivationLockBypassCode: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        // Same privilege class as the recovery key: the bypass code disables
+        // Activation Lock, so it is restricted to owners/admins, requires a
+        // fresh step-up and every reveal is audited.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        yield* requireStepUp(auth, request, "recovery-key-reveal");
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Secret escrow is not configured on this deployment",
+            }),
+          );
+
+        const [secret] = yield* db
+          .select()
+          .from(schema.deviceSecret)
+          .where(
+            and(
+              eq(schema.deviceSecret.deviceId, device.id),
+              eq(schema.deviceSecret.organizationId, ctx.organization.id),
+              eq(schema.deviceSecret.kind, "activation_lock_bypass_code"),
+            ),
+          )
+          .limit(1);
+
+        if (!secret)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message:
+                "No Activation Lock bypass code has been collected for this device. Apple only returns one before Activation Lock is enabled, so collect it while the device is still under management.",
+            }),
+          );
+
+        const bypassCode = yield* Effect.tryPromise({
+          try: () => openSecret(authSecret, secret.sealedValue),
+          catch: () =>
+            new EnterpriseBadRequest({
+              message: "The escrowed Activation Lock bypass code could not be decrypted",
+            }),
+        });
+
+        const [apple] = yield* db
+          .select({ isActivationLockManageable: schema.deviceApple.isActivationLockManageable })
+          .from(schema.deviceApple)
+          .where(eq(schema.deviceApple.deviceId, device.id))
+          .limit(1);
+
+        yield* audit(ctx, "device.activation_lock_bypass_code_viewed", "device", device.id, {
+          kind: "activation_lock_bypass_code",
+        });
+
+        return {
+          bypassCode,
+          updatedAt: iso(secret.updatedAt),
+          rotatedAt: secret.rotatedAt ? iso(secret.rotatedAt) : null,
+          isActivationLockManageable: apple?.isActivationLockManageable ?? null,
+        };
+      }),
+    getAppleFdeEscrowKey: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const row = yield* loadTenantEscrowKey(db, ctx.organization.id).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not read the escrow key" }),
+          ),
+        );
+
+        return escrowKeyInfo(row);
+      }),
+    generateAppleFdeEscrowKey: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "FileVault escrow requires AUTH_SECRET to seal the private key",
+            }),
+          );
+
+        // Idempotent: regenerating would silently invalidate every key already
+        // escrowed for the old certificate. Replacing a key is an explicit
+        // upload of a new pair.
+        const existing = yield* loadTenantEscrowKey(db, ctx.organization.id).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not read the escrow key" }),
+          ),
+        );
+
+        if (existing) return escrowKeyInfo(existing);
+
+        const row = yield* generateTenantEscrowKey({
+          db,
+          organizationId: ctx.organization.id,
+          organizationName: ctx.organization.name,
+          authSecret,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new EnterpriseInternal({
+                message:
+                  cause instanceof EscrowKeyError
+                    ? cause.message
+                    : "The FileVault escrow key could not be generated",
+              }),
+          ),
+        );
+
+        yield* audit(
+          ctx,
+          "tenant.apple_filevault_escrow_key_generated",
+          "tenant",
+          ctx.organization.id,
+          {
+            fingerprintSha256: row.certificateFingerprintSha256,
+          },
+        );
+
+        return escrowKeyInfo(row);
+      }),
+    uploadAppleFdeEscrowKey: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "FileVault escrow requires AUTH_SECRET to seal the private key",
+            }),
+          );
+
+        const row = yield* uploadTenantEscrowKey({
+          db,
+          organizationId: ctx.organization.id,
+          certificatePem: payload.certificatePem,
+          privateKeyPem: payload.privateKeyPem,
+          authSecret,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new EnterpriseBadRequest({
+                message:
+                  cause instanceof EscrowKeyError
+                    ? cause.message
+                    : "The FileVault escrow key could not be stored",
+              }),
+          ),
+        );
+
+        yield* audit(
+          ctx,
+          "tenant.apple_filevault_escrow_key_uploaded",
+          "tenant",
+          ctx.organization.id,
+          {
+            fingerprintSha256: row.certificateFingerprintSha256,
+          },
+        );
+
+        return escrowKeyInfo(row);
       }),
     getApplicationInventory: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -12291,6 +13370,14 @@ export const createEnterpriseService = ({
           }),
         );
 
+        yield* recordAccountAudit(db, {
+          subjectUserId: user.id,
+          subjectEmail: user.email,
+          action: ACCOUNT_AUDIT.passkeyRemoved,
+          targetType: "passkey",
+          targetId: credentialId,
+        }).pipe(Effect.catchCause(() => Effect.void));
+
         return ok;
       }),
     stepUpMethods: (request) => auth.stepUpMethods(webRequestFromRequest(request, origin)),
@@ -12371,6 +13458,48 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) =>
         service.revokeAccountSession(request, params.sessionId),
       ),
+    )
+    .handle("revokeAllAccountSessions", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.revokeAllAccountSessions(request)),
+    )
+    .handle("searchAccountAuditLog", ({ request, query }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.searchAccountAuditLog(request, query)),
+    )
+    .handleRaw("exportAccountAuditLog", ({ request, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportAccountAuditLog(request, query),
+          (result: {
+            format: "csv" | "json";
+            body: string;
+            truncated: boolean;
+            rowCount: number;
+          }) =>
+            HttpServerResponse.text(result.body, {
+              contentType:
+                result.format === "json"
+                  ? "application/json; charset=utf-8"
+                  : "text/csv; charset=utf-8",
+              headers: exportHeaders(
+                `account-activity-${new Date().toISOString().slice(0, 10)}.${result.format}`,
+                result,
+              ),
+            }),
+        ),
+      ),
+    )
+    .handle("requestAccountRecovery", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.requestAccountRecovery(request, payload),
+      ),
+    )
+    .handle("verifyAccountRecovery", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.verifyAccountRecovery(request, payload),
+      ),
+    )
+    .handle("cancelEmailChange", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.cancelEmailChange(request, payload)),
     )
     .handle("me", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.me(request)),
@@ -12535,6 +13664,21 @@ export const enterpriseHandlers = (
     .handle("assignAutopilotProfile", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.assignAutopilotProfile(request, params.tenantId, params.profileId, payload),
+      ),
+    )
+    .handle("getTenantSecurity", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantSecurity(request, params.tenantId),
+      ),
+    )
+    .handle("patchTenantSecurity", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantSecurity(request, params.tenantId, payload),
+      ),
+    )
+    .handle("approveAccountRecovery", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.approveAccountRecovery(request, params.tenantId, payload),
       ),
     )
     .handle("getSsoConfig", ({ request, params }) =>
@@ -12795,6 +13939,21 @@ export const enterpriseHandlers = (
         service.syncTenantAndroid(request, params.tenantId),
       ),
     )
+    .handle("getAppleFdeEscrowKey", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAppleFdeEscrowKey(request, params.tenantId),
+      ),
+    )
+    .handle("generateAppleFdeEscrowKey", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.generateAppleFdeEscrowKey(request, params.tenantId),
+      ),
+    )
+    .handle("uploadAppleFdeEscrowKey", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadAppleFdeEscrowKey(request, params.tenantId, payload),
+      ),
+    )
     .handle("getAppleBusinessManager", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getAppleBusinessManager(request, params.tenantId),
@@ -12973,6 +14132,11 @@ export const enterpriseHandlers = (
     .handle("getDeviceRecoveryKey", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDeviceRecoveryKey(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceActivationLockBypassCode", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceActivationLockBypassCode(request, params.tenantId, params.id),
       ),
     )
     .handle("getDeviceEffectivePolicy", ({ request, params }) =>

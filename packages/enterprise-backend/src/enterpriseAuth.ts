@@ -3,6 +3,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
+  EnterpriseConflict,
   EnterpriseForbidden,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
@@ -15,6 +16,7 @@ import {
   type StepUpMethod,
 } from "@mattrax/enterprise-domain";
 import { Db, authIdentifiers, schema } from "@mattrax/enterprise-core";
+import { ACCOUNT_AUDIT, clientDescriptor, recordAccountAudit } from "./accountAudit.ts";
 import { sessionCookie, type AppAuthService } from "./auth.ts";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
@@ -28,6 +30,7 @@ import {
   verifyAnyStepUpFlow,
   verifyStepUpGrant,
 } from "./stepUp.ts";
+import { captureSessionContext } from "./sessions.ts";
 import { signToken, verifyToken } from "./tokens.ts";
 
 type HeadersRecord = Record<string, string | string[] | undefined>;
@@ -42,16 +45,22 @@ const StepUpMethods = Schema.Struct({
   passkey: Schema.Boolean,
 });
 
-const enabledStepUpMethods = (
-  value: Schema.Json | undefined,
-): Array<StepUpMethod> => {
-  const methods = Option.getOrElse(
-    Schema.decodeUnknownOption(StepUpMethods)(value),
-    () => ({ totp: false, passkey: false }),
-  );
+const enabledStepUpMethods = (value: Schema.Json | undefined): Array<StepUpMethod> => {
+  const methods = Option.getOrElse(Schema.decodeUnknownOption(StepUpMethods)(value), () => ({
+    totp: false,
+    passkey: false,
+  }));
 
   return (["totp", "passkey"] as const).filter((name) => methods[name]);
 };
+
+const SessionAssurance = Schema.Struct({
+  assurance: Schema.optional(Schema.Struct({ method: Schema.optional(Schema.String) })),
+});
+
+/** Human sign-in method recorded on the session ("passkey", "sso-oidc", …). */
+const sessionMethod = (session: Schema.Json | undefined): string | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(SessionAssurance)(session))?.assurance?.method;
 
 const parseCookies = (header: string | null | undefined) =>
   Object.fromEntries(
@@ -156,6 +165,8 @@ const normalizeTokenScopes = (scopes: readonly string[] | undefined) => {
   return API_TOKEN_SCOPES.filter((scope) => requested.has(scope));
 };
 
+const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const randomToken = (prefix = "") =>
   `${prefix}${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
     .replaceAll("+", "-")
@@ -181,6 +192,15 @@ const sha256Base64Url = (value: string) =>
   );
 
 const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
+
+/** An email change must complete within the hour, like a password reset link. */
+const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+
+const emailChangeLinkFor = (origin: string, token: string) =>
+  `${origin}/account?emailToken=${encodeURIComponent(token)}`;
+
+const emailChangeCancelLinkFor = (origin: string, token: string) =>
+  `${origin}/account?emailCancelToken=${encodeURIComponent(token)}`;
 
 /** Six digits, zero padded. Randomness comes from the platform CSPRNG. */
 const generateEmailCode = () => {
@@ -254,15 +274,71 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
         }).pipe(Effect.catchCause(() => Effect.void));
 
+      /**
+       * Record the client descriptor for this session and, the first time the
+       * session authenticates a request, the sign-in event itself.
+       *
+       * The auth library owns session creation, so first authenticated use is
+       * the earliest point that both the session id and the request headers
+       * exist. Failure to record is never allowed to fail authentication: a
+       * descriptor is metadata, not a security decision.
+       */
+      const captureSession = (request: Request, session: Schema.Json | undefined) =>
+        Effect.gen(function* () {
+          const reference = Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.Struct({
+                sessionId: Schema.optional(Schema.String),
+                subjectId: Schema.optional(Schema.String),
+              }),
+            )(session),
+          );
+
+          if (!reference?.sessionId || !reference.subjectId) return;
+
+          // Every field below is metadata; nothing here can decide access.
+          const descriptor = yield* clientDescriptor(request.headers, authSecret);
+
+          const captured = yield* captureSessionContext(db, {
+            sessionId: reference.sessionId,
+            userId: reference.subjectId,
+            descriptor,
+          });
+
+          if (!captured.created) return;
+
+          const user = yield* db.query.user.findFirst({ where: { id: reference.subjectId } });
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: reference.subjectId,
+            subjectEmail: user?.email ?? null,
+            action: ACCOUNT_AUDIT.signIn,
+            targetType: "session",
+            targetId: reference.sessionId,
+            metadata: {
+              method: sessionMethod(session) ?? null,
+              browser: descriptor.browser,
+              platform: descriptor.platform,
+              deviceType: descriptor.deviceType,
+            },
+          });
+        }).pipe(Effect.catchCause(() => Effect.void));
+
       const resolveSession = (request: Request) =>
         Effect.gen(function* () {
           const cookie = parseCookies(request.headers.get("cookie"))[sessionCookie];
 
           if (!cookie) return undefined;
 
-          return yield* auth
+          const session = yield* auth
             .verifySession(Redacted.make(cookie))
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+          if (!session) return undefined;
+
+          yield* captureSession(request, session);
+
+          return session;
         });
 
       const resolveApiToken = (request: Request) =>
@@ -571,7 +647,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const verified = yield* stepUp.verifyTotp(user.id, body.code);
 
           if (!verified) {
-            const error = yield* invalidStepUp(user.id, body.action);
+            const error = yield* invalidStepUp(user, body.action, "totp");
 
             return yield* Effect.fail(error);
           }
@@ -631,7 +707,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           });
 
           if (verified === undefined) {
-            const error = yield* invalidStepUp(user.id, bound.action);
+            const error = yield* invalidStepUp(user, bound.action, "passkey");
 
             return yield* Effect.fail(error);
           }
@@ -639,10 +715,28 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           return yield* grant(user, sessionId, bound.action, "passkey", verified);
         });
 
-      /** Reject a bad factor without revealing which accounts have one. */
-      const invalidStepUp = (subjectId: string, action: StepUpAction) =>
+      /**
+       * Reject a bad factor without revealing which accounts have one. The
+       * failure is auditable here because the account is already known: a
+       * first-factor passkey rejection carries no identity, so it cannot be
+       * attributed to an account at all.
+       */
+      const invalidStepUp = (
+        user: { readonly id: string; readonly email: string },
+        action: StepUpAction,
+        method: StepUpMethod,
+      ) =>
         Effect.gen(function* () {
-          const methods = yield* stepUp.methods(subjectId);
+          const methods = yield* stepUp.methods(user.id);
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: user.id,
+            subjectEmail: user.email,
+            action: ACCOUNT_AUDIT.stepUpFailed,
+            targetType: "step_up",
+            targetId: action,
+            metadata: { action, method },
+          }).pipe(Effect.catchCause(() => Effect.void));
 
           return new StepUpRequired({
             message: "That confirmation was not accepted. Try again.",
@@ -761,28 +855,65 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           yield* db.insert(schema.accountApiToken).values(item);
 
+          yield* recordAccountAudit(db, {
+            subjectUserId: user.id,
+            subjectEmail: user.email,
+            action: ACCOUNT_AUDIT.apiTokenCreated,
+            targetType: "api_token",
+            targetId: item.id,
+            metadata: {
+              name,
+              scopes,
+              tenantId,
+              expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              // The display prefix only: enough to correlate the row, never the
+              // token itself.
+              tokenPrefix: item.tokenPrefix,
+            },
+          }).pipe(Effect.catchCause(() => Effect.void));
+
           return { token: raw, item: tokenInfo(item) };
         });
 
       const revokeApiToken = (request: Request, tokenId: string) =>
         Effect.gen(function* () {
           const { user } = yield* requireStepUp(request, "api-token-revoke");
-          yield* db
+
+          const revoked = yield* db
             .update(schema.accountApiToken)
             .set({ revokedAt: new Date(), updatedAt: new Date() })
             .where(
               and(
                 eq(schema.accountApiToken.id, tokenId),
                 eq(schema.accountApiToken.userId, user.id),
+                isNull(schema.accountApiToken.revokedAt),
               ),
             );
+
+          if (revoked && revoked.affectedRows > 0)
+            yield* recordAccountAudit(db, {
+              subjectUserId: user.id,
+              subjectEmail: user.email,
+              action: ACCOUNT_AUDIT.apiTokenRevoked,
+              targetType: "api_token",
+              targetId: tokenId,
+            }).pipe(Effect.catchCause(() => Effect.void));
 
           return { status: "ok" as const };
         });
 
+      /**
+       * Start an email-address change.
+       *
+       * Possession of the session is not enough: the change needs a step-up
+       * grant, because the address is the account's recovery channel. The new
+       * address receives the confirmation link and the *old* address receives a
+       * cancellation link, so the current owner sees the attempt even if they
+       * never clicked anything.
+       */
       const requestEmailChange = (request: Request, body: { newEmail: string }) =>
         Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
+          const { user } = yield* requireStepUp(request, "email-change");
 
           if (!user.emailVerified)
             return yield* Effect.fail(
@@ -796,6 +927,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Enter a valid email address" }),
             );
+
+          if (newEmail === user.email.toLowerCase())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "That is already your email address" }),
+            );
+
           const existing = yield* db.query.user.findFirst({ where: { email: newEmail } });
 
           if (existing && existing.id !== user.id)
@@ -803,14 +940,38 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               new EnterpriseBadRequest({ message: "That email address is already in use" }),
             );
 
-          const token = yield* signToken(authSecret, {
-            sub: user.id,
-            email: newEmail,
-            exp: Date.now() + 60 * 60 * 1000,
-            purpose: "email-change",
+          const now = new Date();
+          const confirmToken = randomToken();
+          const cancelToken = randomToken();
+
+          // One live request per account: a new request supersedes any pending
+          // one, which also invalidates its links.
+          yield* db
+            .update(schema.accountEmailChange)
+            .set({ cancelledAt: now, updatedAt: now })
+            .where(
+              and(
+                eq(schema.accountEmailChange.userId, user.id),
+                isNull(schema.accountEmailChange.consumedAt),
+                isNull(schema.accountEmailChange.cancelledAt),
+              ),
+            );
+
+          yield* db.insert(schema.accountEmailChange).values({
+            id: newId(),
+            userId: user.id,
+            oldEmail: user.email,
+            newEmail,
+            confirmTokenHash: yield* sha256(confirmToken),
+            cancelTokenHash: yield* sha256(cancelToken),
+            expiresAt: new Date(now.getTime() + EMAIL_CHANGE_TTL_MS),
+            consumedAt: null,
+            cancelledAt: null,
+            createdAt: now,
+            updatedAt: now,
           });
 
-          const link = `${origin}/account?emailToken=${encodeURIComponent(token)}`;
+          const confirmLink = emailChangeLinkFor(origin, confirmToken);
 
           if (email) {
             yield* Effect.tryPromise({
@@ -819,15 +980,65 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                   to: newEmail,
                   from: { name: "Mattrax", email: "hello@mattrax.cloud" },
                   subject: "Confirm your new Mattrax email address",
-                  text: `Confirm your new Mattrax email address by opening this link:\n\n${link}`,
-                  html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${link}">${link}</a></p>`,
+                  text: `Confirm your new Mattrax email address by opening this link:\n\n${confirmLink}\n\nThe link works once and expires in one hour.`,
+                  html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${confirmLink}">${confirmLink}</a></p><p>The link works once and expires in one hour.</p>`,
                 }),
               catch: () =>
                 new EnterpriseBadRequest({ message: "Could not send the verification email" }),
             });
           } else {
-            console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, link);
+            console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, confirmLink);
           }
+
+          // The old address is the account's recovery channel, so it is told
+          // about the attempt and can stop it without signing in.
+          const cancelLink = emailChangeCancelLinkFor(origin, cancelToken);
+
+          if (email) {
+            yield* Effect.tryPromise({
+              try: () =>
+                email.send({
+                  to: user.email,
+                  from: { name: "Mattrax", email: "hello@mattrax.cloud" },
+                  subject: "Your Mattrax email address is being changed",
+                  text: `Someone signed in to your Mattrax account and asked to change its email address to ${newEmail}.\n\nIf this was you, no action is needed: the change completes only after the new address confirms it.\n\nIf this was not you, cancel the change here:\n\n${cancelLink}\n\nThe link works once and expires in one hour. Then review your active sessions in Account settings.`,
+                  html: `<p>Someone signed in to your Mattrax account and asked to change its email address to <strong>${newEmail}</strong>.</p><p>If this was you, no action is needed: the change completes only after the new address confirms it.</p><p>If this was not you, <a href="${cancelLink}">cancel the change</a>. The link works once and expires in one hour. Then review your active sessions in Account settings.</p>`,
+                }),
+              // A failure here must not leave the new address holding a live
+              // confirmation link, so the request is cancelled below.
+              catch: () =>
+                new EnterpriseBadRequest({ message: "Could not notify your current address" }),
+            }).pipe(
+              Effect.catch(() =>
+                Effect.gen(function* () {
+                  yield* db
+                    .update(schema.accountEmailChange)
+                    .set({ cancelledAt: new Date(), updatedAt: new Date() })
+                    .where(
+                      and(
+                        eq(schema.accountEmailChange.userId, user.id),
+                        isNull(schema.accountEmailChange.consumedAt),
+                      ),
+                    );
+
+                  return yield* Effect.fail(
+                    new EnterpriseBadRequest({ message: "Could not notify your current address" }),
+                  );
+                }),
+              ),
+            );
+          } else {
+            console.log("EMAIL CHANGE NOTICE", user.email, "->", newEmail, cancelLink);
+          }
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: user.id,
+            subjectEmail: user.email,
+            action: ACCOUNT_AUDIT.emailChangeRequested,
+            targetType: "email",
+            targetId: newEmail,
+            metadata: { from: user.email, to: newEmail },
+          }).pipe(Effect.catchCause(() => Effect.void));
 
           return { status: "ok" as const };
         });
@@ -933,10 +1144,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               .update(authIdentifiers)
               .set({ verifiedAt: Date.now() })
               .where(
-                and(
-                  eq(authIdentifiers.subjectId, user.id),
-                  eq(authIdentifiers.namespace, "email"),
-                ),
+                and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
               );
             yield* sendWelcomeAfterVerification(user);
 
@@ -967,49 +1175,193 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .update(authIdentifiers)
             .set({ verifiedAt: Date.now() })
             .where(
-              and(
-                eq(authIdentifiers.subjectId, user.id),
-                eq(authIdentifiers.namespace, "email"),
-              ),
+              and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
             );
           yield* sendWelcomeAfterVerification(user);
 
           return { status: "ok" as const };
         });
 
+      /**
+       * Complete a pending address change.
+       *
+       * The token is consumed with a conditional update first, so a replay can
+       * never apply a second time. Uniqueness is re-checked inside the
+       * transaction and a unique-index violation is translated to a 409: the
+       * address may have been registered in the hour since the request.
+       */
       const verifyEmailChange = (body: { token: string }) =>
         Effect.gen(function* () {
-          const payload = yield* verifyToken(authSecret, body.token).pipe(
-            Effect.catch(() =>
-              Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
-            ),
-          );
+          const invalid = new EnterpriseBadRequest({
+            message: "That email change link is invalid or has expired.",
+          });
 
-          if (payload.exp <= Date.now() || payload.purpose !== "email-change")
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "Invalid or expired token" }),
-            );
+          if (!body.token) return yield* Effect.fail(invalid);
 
-          const user = yield* db.query.user.findFirst({ where: { id: payload.sub } });
+          const now = new Date();
+          const tokenHash = yield* sha256(body.token);
 
-          if (!user)
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "Invalid or expired token" }),
-            );
+          const pending = yield* db.query.accountEmailChange.findFirst({
+            where: { confirmTokenHash: tokenHash },
+          });
+
+          if (
+            !pending ||
+            pending.consumedAt != null ||
+            pending.cancelledAt != null ||
+            new Date(pending.expiresAt).getTime() <= now.getTime()
+          )
+            return yield* Effect.fail(invalid);
+
+          const user = yield* db.query.user.findFirst({ where: { id: pending.userId } });
+
+          if (!user) return yield* Effect.fail(invalid);
+
+          // The account moved on (a different change completed or the address
+          // was changed elsewhere) since the request was made.
+          if (user.email.toLowerCase() !== pending.oldEmail.toLowerCase())
+            return yield* Effect.fail(invalid);
+
+          const revision = newId();
 
           yield* db
-            .update(schema.user)
-            .set({ email: payload.email, emailVerified: true, updatedAt: new Date() })
-            .where(eq(schema.user.id, user.id));
-          yield* db
-            .update(authIdentifiers)
-            .set({ value: payload.email, verifiedAt: Date.now() })
-            .where(
-              and(
-                eq(authIdentifiers.subjectId, user.id),
-                eq(authIdentifiers.namespace, "email"),
+            .transaction((tx) =>
+              Effect.gen(function* () {
+                const consumed = yield* tx
+                  .update(schema.accountEmailChange)
+                  .set({ consumedAt: now, updatedAt: now })
+                  .where(
+                    and(
+                      eq(schema.accountEmailChange.id, pending.id),
+                      isNull(schema.accountEmailChange.consumedAt),
+                      isNull(schema.accountEmailChange.cancelledAt),
+                    ),
+                  );
+
+                if (!consumed || consumed.affectedRows === 0) return yield* Effect.fail(invalid);
+
+                const clash = yield* tx
+                  .select({ id: schema.user.id, email: schema.user.email })
+                  .from(schema.user)
+                  .where(eq(schema.user.email, pending.newEmail))
+                  .limit(1);
+
+                if (clash.some((row: any) => row.id !== user.id))
+                  return yield* Effect.fail(
+                    new EnterpriseConflict({
+                      message: "That email address was registered by someone else. Try another.",
+                    }),
+                  );
+
+                yield* tx
+                  .update(schema.user)
+                  .set({
+                    email: pending.newEmail,
+                    emailVerified: true,
+                    // Invalidate every other session: their claims still carry
+                    // the old address.
+                    authRevision: revision,
+                    updatedAt: now,
+                  })
+                  .where(eq(schema.user.id, user.id));
+
+                yield* tx
+                  .update(authIdentifiers)
+                  .set({ value: pending.newEmail, verifiedAt: Date.now() })
+                  .where(
+                    and(
+                      eq(authIdentifiers.subjectId, user.id),
+                      eq(authIdentifiers.namespace, "email"),
+                    ),
+                  );
+
+                return true;
+              }),
+            )
+            .pipe(
+              // The pre-check inside the transaction can still lose a race with
+              // a concurrent registration. Re-read the address on any failure:
+              // if it is now taken the request is a conflict, otherwise the
+              // original cause (a database fault) is re-raised unchanged.
+              Effect.catchCause((cause) =>
+                Effect.gen(function* () {
+                  const taken = yield* db
+                    .select({ id: schema.user.id })
+                    .from(schema.user)
+                    .where(eq(schema.user.email, pending.newEmail))
+                    .limit(1);
+
+                  if (taken.some((row: any) => row.id !== user.id))
+                    return yield* Effect.fail(
+                      new EnterpriseConflict({
+                        message: "That email address was registered by someone else. Try another.",
+                      }),
+                    );
+
+                  return yield* Effect.failCause(cause);
+                }),
               ),
             );
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: user.id,
+            subjectEmail: pending.newEmail,
+            action: ACCOUNT_AUDIT.emailChangeCompleted,
+            targetType: "email",
+            targetId: pending.newEmail,
+            metadata: { from: pending.oldEmail, to: pending.newEmail },
+          }).pipe(Effect.catchCause(() => Effect.void));
+
+          return { status: "ok" as const };
+        });
+
+      /**
+       * Cancel a pending change from the old address's link. The link is single
+       * use and needs no session, because it exists precisely for the case
+       * where the account owner is not the one who started the change.
+       */
+      const cancelEmailChange = (body: { token: string }) =>
+        Effect.gen(function* () {
+          const now = new Date();
+          const tokenHash = yield* sha256(body.token ?? "");
+
+          const pending = yield* db.query.accountEmailChange.findFirst({
+            where: { cancelTokenHash: tokenHash },
+          });
+
+          if (
+            !pending ||
+            pending.consumedAt != null ||
+            pending.cancelledAt != null ||
+            new Date(pending.expiresAt).getTime() <= now.getTime()
+          )
+            return { status: "ok" as const };
+
+          const cancelled = yield* db
+            .update(schema.accountEmailChange)
+            .set({ cancelledAt: now, updatedAt: now })
+            .where(
+              and(
+                eq(schema.accountEmailChange.id, pending.id),
+                isNull(schema.accountEmailChange.consumedAt),
+                isNull(schema.accountEmailChange.cancelledAt),
+              ),
+            );
+
+          if (!cancelled || cancelled.affectedRows === 0) return { status: "ok" as const };
+
+          yield* recordAccountAudit(db, {
+            subjectUserId: pending.userId,
+            subjectEmail: pending.oldEmail,
+            action: ACCOUNT_AUDIT.emailChangeCancelled,
+            targetType: "email",
+            targetId: pending.newEmail,
+            metadata: {
+              from: pending.oldEmail,
+              to: pending.newEmail,
+              reason: "cancelled_by_owner",
+            },
+          }).pipe(Effect.catchCause(() => Effect.void));
 
           return { status: "ok" as const };
         });
@@ -1027,6 +1379,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         createApiToken,
         revokeApiToken,
         requestEmailChange,
+        cancelEmailChange,
         requestEmailVerification,
         verifyEmail,
         verifyEmailChange,

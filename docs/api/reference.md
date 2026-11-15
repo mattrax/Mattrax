@@ -5,36 +5,42 @@ All paths are relative to `/api/v1` unless noted. Authentication and conventions
 
 ## Account and identity
 
-| Method   | Path                                | Purpose                               |
-| -------- | ----------------------------------- | ------------------------------------- |
-| `POST`   | `/account/email-verification`       | Send a verification email             |
-| `POST`   | `/verify-email`                     | Consume a verification token          |
-| `POST`   | `/account/email-change`             | Send a confirmation to a new email    |
-| `POST`   | `/account/email-change/verify`      | Consume the change token              |
-| `GET`    | `/account/api-tokens`               | List the caller's tokens              |
-| `POST`   | `/account/api-tokens`               | Create a token (step-up)              |
-| `DELETE` | `/account/api-tokens/:tokenId`      | Revoke a token (step-up)              |
-| `GET`    | `/account/step-up`                  | Available step-up factors             |
-| `POST`   | `/account/step-up/totp`             | TOTP step-up grant                    |
-| `POST`   | `/account/step-up/passkey/begin`    | Begin passkey step-up                 |
-| `POST`   | `/account/step-up/passkey/complete` | Complete passkey step-up              |
-| `DELETE` | `/account/passkeys/:credentialId`   | Remove a passkey (step-up)            |
-| `GET`    | `/account/sessions`                 | List sessions                         |
-| `DELETE` | `/account/sessions/:sessionId`      | Revoke a session                      |
-| `GET`    | `/me`                               | Current user and tenants              |
-| `PATCH`  | `/me`                               | Update name or image                  |
-| `DELETE` | `/me`                               | Delete the account                    |
-| `GET`    | `/tenants`                          | Tenants the user belongs to           |
-| `POST`   | `/tenants`                          | Create a tenant                       |
-| `GET`    | `/tenants/:tenantId`                | Tenant detail and branding            |
-| `PATCH`  | `/tenants/:tenantId`                | Update name, slug, branding, metadata |
-| `DELETE` | `/tenants/:tenantId`                | Full teardown (owner + step-up)       |
+| Method   | Path                                | Purpose                                           |
+| -------- | ----------------------------------- | ------------------------------------------------- |
+| `POST`   | `/account/email-verification`       | Send a verification email                         |
+| `POST`   | `/verify-email`                     | Consume a verification token                      |
+| `POST`   | `/account/email-change`             | Start a change (step-up; notifies both addresses) |
+| `POST`   | `/account/email-change/verify`      | Consume the confirmation token (409 if taken)     |
+| `POST`   | `/account/email-change/cancel`      | Consume the cancellation token                    |
+| `GET`    | `/account/api-tokens`               | List the caller's tokens                          |
+| `POST`   | `/account/api-tokens`               | Create a token (step-up)                          |
+| `DELETE` | `/account/api-tokens/:tokenId`      | Revoke a token (step-up)                          |
+| `GET`    | `/account/step-up`                  | Available step-up factors                         |
+| `POST`   | `/account/step-up/totp`             | TOTP step-up grant                                |
+| `POST`   | `/account/step-up/passkey/begin`    | Begin passkey step-up                             |
+| `POST`   | `/account/step-up/passkey/complete` | Complete passkey step-up                          |
+| `DELETE` | `/account/passkeys/:credentialId`   | Remove a passkey (step-up)                        |
+| `GET`    | `/account/sessions`                 | List sessions with device and last use            |
+| `DELETE` | `/account/sessions/:sessionId`      | Revoke a session                                  |
+| `POST`   | `/account/sessions/revoke-all`      | Sign out everywhere (step-up)                     |
+| `GET`    | `/account/audit/search`             | Account activity, cursor paginated                |
+| `GET`    | `/account/audit/export`             | Account activity as CSV or JSON                   |
+| `POST`   | `/account/recovery`                 | Send a break-glass proof link                     |
+| `POST`   | `/account/recovery/verify`          | Consume the proof link                            |
+| `GET`    | `/me`                               | Current user and tenants                          |
+| `PATCH`  | `/me`                               | Update name or image                              |
+| `DELETE` | `/me`                               | Delete the account                                |
+| `GET`    | `/tenants`                          | Tenants the user belongs to                       |
+| `POST`   | `/tenants`                          | Create a tenant                                   |
+| `GET`    | `/tenants/:tenantId`                | Tenant detail and branding                        |
+| `PATCH`  | `/tenants/:tenantId`                | Update name, slug, branding, metadata             |
+| `DELETE` | `/tenants/:tenantId`                | Full teardown (owner + step-up)                   |
 
 ### Auth actions
 
 `/api/v1/<action>`:
 
-`ssoSignIn`, `beginPasskeyRegistration`, `completePasskeyRegistration`,
+`ssoSignIn`, `recoverySignIn`, `beginPasskeyRegistration`, `completePasskeyRegistration`,
 `beginTotpEnrollment`, `confirmTotpEnrollment`, `disableTotp`,
 `regenerateTotpRecoveryCodes`, `verifyTotpPending`, `recoverTotpPending`,
 `beginPasskeySignIn`, `completePasskeySignIn`, `beginPasskeyPending`,

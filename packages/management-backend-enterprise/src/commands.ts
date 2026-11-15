@@ -21,6 +21,14 @@ const BUDGETS = new Map<string, number>([
   // Queries: harmless whenever they land, but still bounded.
   ["SecurityInfo", 24 * HOUR],
   ["DeviceInformation", 24 * HOUR],
+  ["ActivationLockBypassCode", 24 * HOUR],
+  // Legacy policy profiles and FileVault key maintenance.
+  ["InstallProfile", 7 * DAY],
+  ["RemoveProfile", 7 * DAY],
+  ["RotateFileVaultKey", 24 * HOUR],
+  ["SetRecoveryLock", 30 * MINUTE],
+  ["Settings", 30 * MINUTE],
+  ["VerifyRecoveryLock", HOUR],
   // Installs: an app download is allowed a day to complete.
   ["InstallApplication", 24 * HOUR],
   ["InstalledApplicationList", 7 * DAY],
@@ -54,10 +62,13 @@ export const DEVICE_COMMAND_SENT_RETRY_MS = 30 * MINUTE;
 
 /**
  * How long after delivery a fresh application inventory is trusted as evidence
- * that an `InstallApplication` failed. An App Store download can take minutes,
- * so the absence of the app is only conclusive after this settling window.
+ * that an `InstallApplication` failed. An App Store download can take minutes
+ * on a slow link, and a status subscription can push an inventory while the
+ * install is still running; a short window would mark it failed and re-queue a
+ * duplicate. Two hours is longer than a normal download but still well inside
+ * the 24 hour install budget.
  */
-export const DEVICE_COMMAND_INSTALL_SETTLE_MS = 15 * MINUTE;
+export const DEVICE_COMMAND_INSTALL_SETTLE_MS = 2 * HOUR;
 
 /** Active commands loaded per device when planning delivery. */
 export const DEVICE_COMMAND_ACTIVE_LIMIT = 100;
@@ -259,6 +270,7 @@ const SINGLETON_REQUEST_TYPES: ReadonlySet<string> = new Set([
   "AndroidLock",
   "AndroidReboot",
   "SecurityInfo",
+  "ActivationLockBypassCode",
   "InstalledApplicationList",
   "DeviceInformation",
 ]);
@@ -284,9 +296,15 @@ export const supersededRequestTypes = (requestType: string): ReadonlyArray<strin
       "AndroidLock",
       "AndroidReboot",
       "SecurityInfo",
+      "ActivationLockBypassCode",
       "InstalledApplicationList",
       "DeviceInformation",
       "InstallApplication",
+      "InstallProfile",
+      "RemoveProfile",
+      "RotateFileVaultKey",
+      "SetRecoveryLock",
+      "VerifyRecoveryLock",
       "EraseDevice",
       "WindowsWipe",
       "AndroidWipe",

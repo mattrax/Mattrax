@@ -113,6 +113,11 @@ export default function DirectorySyncPage() {
                   )}
                 </Show>
               </div>
+              <p class="mt-2 text-[11.5px] text-muted-foreground">
+                {value().configured
+                  ? "Microsoft Graph configured: directory sync can read users, groups and domains."
+                  : "Graph not configured: the deployment is missing a Microsoft Graph application, so directory sync is unavailable."}
+              </p>
 
               <Show when={!value().configured}>
                 <div class="mt-4 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-xs leading-relaxed text-warning-foreground">

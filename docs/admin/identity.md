@@ -19,7 +19,10 @@ groups.
 2. Enter the Entra tenant id.
 3. Enable SSO.
 4. Choose whether to create members on first sign-in.
-5. Optionally require MFA for owners and admins.
+
+The MFA requirement is not part of this form any more: it is a tenant property under
+**Settings → Identity → Multi-factor authentication**, so a tenant that signs in with
+passkeys can require it without configuring an IdP.
 
 New accounts verify their address with a six-digit email code before the dashboard or any
 tenant API is available, and an address cannot be changed until the current one is verified.
@@ -39,9 +42,20 @@ They determine which email domains route to the tenant's SSO.
 
 ### Require MFA
 
-When enabled, owners and admins without an authenticator or passkey receive a 403 on
-tenant APIs and are prompted to enroll. Members keep read access. See
-[Security](/manage/security).
+**Settings → Identity → Multi-factor authentication** turns on `organization.require_mfa`.
+It is independent of SSO and applies to **every role** — members and auditors included —
+so read access is protected too. A member without a factor gets a 403 on tenant APIs but
+keeps access to their own account settings to enrol one, and enabling the requirement is
+refused while any member still lacks a factor. Changing it needs a step-up and is audited.
+See [Security](/manage/security#tenant-mfa-requirement).
+
+### Approving a co-owner's account recovery
+
+If a co-owner loses every passkey, they can prove control of their verified email address
+and ask for approval. Every other owner receives an approval link that opens this page
+with an **Approve an account recovery** panel. Approving needs your own step-up, and the
+person being recovered cannot approve it themselves. See
+[Security](/manage/security#break-glass-account-recovery).
 
 ## Directory sync
 

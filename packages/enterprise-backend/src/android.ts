@@ -31,6 +31,7 @@ const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed
 import {
   ACTIVE_COMMAND_STATUSES,
   commandDedupeKey,
+  commandIsExpired,
   deviceCommandExpiresAt,
   resolveEffectivePolicyForDevice,
   syncDynamicGroupsForDevice,
@@ -1843,9 +1844,9 @@ export const issueAndroidCommand = (input: {
       .orderBy(desc(schema.deviceCommand.createdAt))
       .limit(50);
 
-    const duplicate = active.find(
-      (row) => row.dedupeKey === dedupeKey || row.requestType === command.requestType,
-    );
+    const duplicate = active
+      .filter((row) => !commandIsExpired(row, timestamp))
+      .find((row) => row.dedupeKey === dedupeKey || row.requestType === command.requestType);
 
     if (duplicate) {
       const payload = Schema.is(Schema.JsonObject)(duplicate.payload) ? duplicate.payload : {};

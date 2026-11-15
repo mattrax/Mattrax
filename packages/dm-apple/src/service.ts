@@ -427,6 +427,15 @@ const makeAppleMdmService = (
       );
   };
 
+  /** Command payload keys Apple requires as plist `<data>` rather than `<string>`. */
+  const DATA_PAYLOAD_KEYS: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+    ["ClearPasscode", ["UnlockToken"]],
+    // The `.mobileconfig` bytes are a data field; a string is rejected.
+    ["InstallProfile", ["Payload"]],
+    // DER certificate the replacement personal recovery key is wrapped for.
+    ["RotateFileVaultKey", ["ReplyEncryptionCertificate"]],
+  ]);
+
   const handleCheckin = (
     scope: CheckinScope,
   ): Effect.Effect<
@@ -452,16 +461,19 @@ const makeAppleMdmService = (
       if (Predicate.isTagged(manifest, "Command")) {
         let payload = Schema.is(PlistValue)(manifest.payload) ? manifest.payload : null;
 
-        const unlockToken =
-          payload && Schema.is(PlistDictionary)(payload) ? payload["UnlockToken"] : undefined;
+        // Command payloads are stored as JSON, which has no byte type. Apple
+        // expects `<data>` for these keys, so a base64 string is decoded here
+        // (the same place the plist is built) rather than in the command queue.
+        for (const key of DATA_PAYLOAD_KEYS.get(manifest.requestType) ?? []) {
+          const value = payload && Schema.is(PlistDictionary)(payload) ? payload[key] : undefined;
 
-        if (manifest.requestType === "ClearPasscode" && Schema.is(Schema.String)(unlockToken)) {
-          const binary = atob(unlockToken);
+          if (!Schema.is(Schema.String)(value)) continue;
+          const binary = atob(value);
           const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
 
           payload = Schema.is(PlistDictionary)(payload)
-            ? Object.assign({}, payload, { UnlockToken: bytes })
-            : { UnlockToken: bytes };
+            ? Object.assign({}, payload, { [key]: bytes })
+            : { [key]: bytes };
         }
 
         return {

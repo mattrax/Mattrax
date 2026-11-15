@@ -3,15 +3,17 @@ import type { StartMiddleware } from "@solidjs/vite-plugin";
 import { Option, Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
-import {
-  getPreloadedSession,
-  setPreloadedSession,
-} from "~/lib/session-store";
+import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { setPostHogConfig } from "~/lib/posthog-config-store";
-import { preloadSession, redactBootstrapResponse, ssrClearCookie } from "./preload";
+import {
+  preloadSession,
+  redactBootstrapResponse,
+  ssrClearCookie,
+  ssrRevisionClearCookie,
+} from "./preload";
 import { isBootstrapPath } from "./security";
-import { verifySsrToken } from "./ssr-token";
+import { verifySsrRevision, verifySsrToken } from "./ssr-token";
 
 const api = createAPIHandler(routes);
 
@@ -146,6 +148,7 @@ const middleware: StartMiddleware = async (event, next) => {
   const outcome = await preloadSession(event.request, {
     secret: env.AUTH_SECRET,
     verifyToken: verifySsrToken,
+    verifyRevision: verifySsrRevision,
     fetchBootstrap,
   });
 
@@ -169,7 +172,13 @@ const middleware: StartMiddleware = async (event, next) => {
   if (event.request.method !== "GET" || !isHtml(proxied)) return proxied;
   const presence = getPreloadedSession(event.request);
 
-  if (presence === undefined && outcome.setSsrCookie === undefined && !outcome.clearSsrCookie)
+  if (
+    presence === undefined &&
+    outcome.setSsrCookie === undefined &&
+    outcome.setSsrRevisionCookie === undefined &&
+    !outcome.clearSsrCookie &&
+    !outcome.clearSsrRevisionCookie
+  )
     return proxied;
 
   const secure = new URL(event.request.url).protocol === "https:";
@@ -177,7 +186,11 @@ const middleware: StartMiddleware = async (event, next) => {
 
   if (outcome.setSsrCookie) headers.append("set-cookie", outcome.setSsrCookie);
 
+  if (outcome.setSsrRevisionCookie) headers.append("set-cookie", outcome.setSsrRevisionCookie);
+
   if (outcome.clearSsrCookie) headers.append("set-cookie", ssrClearCookie());
+
+  if (outcome.clearSsrRevisionCookie) headers.append("set-cookie", ssrRevisionClearCookie());
 
   if (presence !== undefined)
     headers.append(

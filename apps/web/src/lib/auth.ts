@@ -9,10 +9,7 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
 import { errorMessage, errorTag, raisedFailure } from "~/lib/errors";
 import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
-import {
-  getPreloadedSession,
-  type PreloadedSession as Session,
-} from "~/lib/session-store";
+import { getPreloadedSession, type PreloadedSession as Session } from "~/lib/session-store";
 import { capturePostHog } from "~/lib/posthog";
 import { clearMeCache } from "~/lib/me-cache";
 import { clearSessionPresence } from "~/lib/session-presence";
@@ -35,6 +32,15 @@ const PrivateReveal = Schema.Struct({
 });
 
 type PrivateReveal = typeof PrivateReveal.Type;
+
+/** Payload for `/beginPasskeyEnrollment`; the proof is present when one was required. */
+type PasskeyEnrollmentRequest = {
+  flowId: string;
+  commandId: string;
+  profileId: string;
+  name: string;
+  actionProof?: string;
+};
 
 type AuthEnvelope<T> = {
   value: T;
@@ -515,27 +521,34 @@ export const authClient = {
       }>("/listPasskeys", { method: "POST", body: authBody({ limit: 64 }) }),
     ),
   /**
-   * Add a passkey. The step-up grant doubles as the library's action proof, so
-   * enrollment is authorised by recent possession rather than a bare session.
+   * Add a passkey.
+   *
+   * A step-up is required when the account already has one, because the new key
+   * must be authorised by existing possession. An account with no passkey yet
+   * (an SSO-only member meeting a tenant MFA requirement) cannot step up at all,
+   * so the library authorises the enrolment from the session's own fresh
+   * evidence instead.
    */
-  addPasskey: (name: string) =>
+  addPasskey: (name: string, options: { firstPasskey?: boolean } = {}) =>
     result(async () => {
-      const actionProof = await requireStepUpGrant("passkey-enroll");
+      const actionProof = options.firstPasskey
+        ? undefined
+        : await requireStepUpGrant("passkey-enroll");
+
+      const enrollment: PasskeyEnrollmentRequest = {
+        flowId: crypto.randomUUID(),
+        commandId: crypto.randomUUID(),
+        profileId: "default",
+        name,
+      };
+
+      if (actionProof !== undefined) enrollment.actionProof = actionProof;
 
       const started = await request<{
         flowId: string;
         expiresAtMillis: number;
         options: PublicKeyCredentialCreationOptionsJSON;
-      }>("/beginPasskeyEnrollment", {
-        method: "POST",
-        body: authBody({
-          flowId: crypto.randomUUID(),
-          commandId: crypto.randomUUID(),
-          profileId: "default",
-          name,
-          actionProof,
-        }),
-      });
+      }>("/beginPasskeyEnrollment", { method: "POST", body: authBody(enrollment) });
 
       let response: unknown;
 
@@ -652,6 +665,27 @@ export const authClient = {
         }),
       });
     }),
+  /**
+   * Exchange a break-glass recovery completion token for a session. The token
+   * was minted only after the account proved control of its verified address
+   * (and, for a shared tenant, another owner approved), and it is single use.
+   */
+  recoverySignIn: (token: string) =>
+    result(async () => {
+      const completion = await request<Schema.Json>("/recoverySignIn", {
+        method: "POST",
+        body: authBody({ token }),
+      });
+
+      const state = completionState(completion);
+
+      if (!state.user && !state.pending)
+        throw new Error("That recovery link is invalid or has expired.");
+
+      if (state.session) commitSession(state.session);
+
+      return state;
+    }),
   updateUser: (payload: { name?: string; image?: string | null }) =>
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>
@@ -671,13 +705,30 @@ export const authClient = {
 
       return { status: "ok" as const };
     }),
+  /**
+   * Changing the address is an account-takeover primitive, so it needs a recent
+   * factor proof. The current address is also notified and can cancel.
+   */
   changeEmail: (payload: { newEmail: string; callbackURL?: string }) =>
     result(() =>
-      request<{ status: "ok" }>("/v1/account/email-change", {
-        method: "POST",
-        body: body({ newEmail: payload.newEmail }),
-      }),
+      withStepUp("email-change", (grant) =>
+        request<{ status: "ok" }>(
+          "/v1/account/email-change",
+          withStepUpHeaders({ method: "POST", body: body({ newEmail: payload.newEmail }) }, grant),
+        ),
+      ),
     ),
+  /** Cancel a pending change from the link mailed to the old address. */
+  cancelEmailChange: (token: string) =>
+    result(async () => {
+      await request<{ status: "ok" }>("/v1/account/email-change/cancel", {
+        method: "POST",
+        body: body({ token }),
+      });
+      clearMeCache();
+
+      return { status: "ok" as const };
+    }),
   verifyEmailChange: (payload: { token: string }) =>
     result(async () => {
       await request<{ status: "ok" }>("/v1/account/email-change/verify", {

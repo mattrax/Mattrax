@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { Option, Schema } from "effect";
+import { AccountActivity } from "~/components/account-activity";
 import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import {
@@ -14,11 +15,33 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+
+/** "2h ago" style label for a session's last authenticated request. */
+const relativeTime = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "recently";
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+
+  if (days < 30) return `${days}d ago`;
+
+  return date.toLocaleDateString();
+};
 
 export default function AccountPage() {
   const session = authClient.useSession();
@@ -28,6 +51,29 @@ export default function AccountPage() {
 
   onSettled(() => {
     void (async () => {
+      const cancelToken = searchParams.emailCancelToken;
+
+      if (cancelToken && !Array.isArray(cancelToken)) {
+        const result = await authClient.cancelEmailChange(cancelToken);
+
+        setSearchParams({ emailCancelToken: undefined }, { replace: true });
+
+        if (result.error) {
+          setEmailError(
+            errorMessage(
+              raisedFailure(result.error),
+              "That cancellation link is invalid or expired.",
+            ),
+          );
+
+          return;
+        }
+
+        setEmailCancelled(true);
+
+        return;
+      }
+
       const token = searchParams.emailToken;
 
       if (!token || Array.isArray(token)) return;
@@ -119,6 +165,7 @@ export default function AccountPage() {
   const [emailPending, setEmailPending] = createSignal(false);
   const [emailError, setEmailError] = createSignal<string | null>(null);
   const [emailSent, setEmailSent] = createSignal(false);
+  const [emailCancelled, setEmailCancelled] = createSignal(false);
 
   const handleEmailChange = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -173,7 +220,11 @@ export default function AccountPage() {
         current: Schema.Boolean,
         createdAt: Schema.String,
         expiresAt: Schema.String,
-        method: Schema.optional(Schema.String),
+        method: Schema.optional(Schema.NullOr(Schema.String)),
+        lastUsedAt: Schema.optional(Schema.NullOr(Schema.String)),
+        browser: Schema.optional(Schema.NullOr(Schema.String)),
+        platform: Schema.optional(Schema.NullOr(Schema.String)),
+        deviceType: Schema.optional(Schema.NullOr(Schema.String)),
       }),
     ),
   });
@@ -257,7 +308,40 @@ export default function AccountPage() {
     }
   };
 
+  const [signingOutEverywhere, setSigningOutEverywhere] = createSignal(false);
+  const [signOutEverywhereOpen, setSignOutEverywhereOpen] = createSignal(false);
+
+  /**
+   * Revoke every session, including this one. The next request is
+   * unauthenticated, so the page navigates to the sign-in screen.
+   */
+  const signOutEverywhere = async () => {
+    setSessionsError(null);
+    setSigningOutEverywhere(true);
+
+    try {
+      await enterprise.revokeAllAccountSessions();
+      window.location.href = "/login";
+    } catch (error) {
+      setSigningOutEverywhere(false);
+      setSessionsError(
+        errorMessage(raisedFailure(error), "Could not sign out everywhere. Try again."),
+      );
+    }
+  };
+
+  const sessionLabel = (item: Sessions["sessions"][number]) => {
+    if (item.browser && item.platform) return `${item.browser} on ${item.platform}`;
+
+    if (item.browser) return item.browser;
+
+    if (item.platform) return item.platform;
+
+    return item.method ? `${item.method} sign-in` : "Unknown device";
+  };
+
   const connections = useQuery(() => enterpriseQueries.mcpConnections());
+
   const [revoking, setRevoking] = createSignal<string | null>(null);
   const [connectionError, setConnectionError] = createSignal<string | null>(null);
 
@@ -426,6 +510,12 @@ export default function AccountPage() {
             </Badge>
           </Show>
         </p>
+        <Show when={emailCancelled()}>
+          <div class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-warning-foreground">
+            The pending address change was cancelled. No change was made. If you did not expect a
+            change, review your active sessions below and add another passkey.
+          </div>
+        </Show>
         <Show
           when={!emailSent()}
           fallback={
@@ -470,6 +560,8 @@ export default function AccountPage() {
         email={email() ?? ""}
       />
 
+      <AccountActivity userId={user()?.id} />
+
       <Show when={sessionsError()}>
         {(msg) => (
           <p role="alert" class="text-[12.5px] text-destructive">
@@ -478,50 +570,65 @@ export default function AccountPage() {
         )}
       </Show>
 
-      <Show when={(sessions()?.sessions.length ?? 0) > 0}>
-        <Panel
-          title="Active sessions"
-          description="Devices and browsers currently signed in to your account."
-        >
-          <div class="space-y-2">
-            <For each={sessions()?.sessions ?? []}>
-              {(item) => (
-                <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div class="min-w-0">
-                    <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
-                      <span class="capitalize">{item.method ?? "Unknown"}</span>
-                      <Show when={item.current}>
-                        <Badge
-                          variant="outline"
-                          class="border-success/25 bg-success/10 text-success-foreground"
-                        >
-                          This session
-                        </Badge>
-                      </Show>
-                    </p>
-                    <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                      Signed in {new Date(item.createdAt).toLocaleString()} · expires{" "}
-                      {new Date(item.expiresAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={
-                      item.current
-                        ? "Sign out of this session"
-                        : `Revoke ${item.method ?? "unknown"} session signed in ${new Date(item.createdAt).toLocaleString()}`
-                    }
-                    onClick={() => revokeSession(item.id, item.current)}
-                  >
-                    {item.current ? "Sign out" : "Revoke"}
-                  </Button>
+      <Panel
+        title="Active sessions"
+        description="Devices and browsers currently signed in to your account. Client details are captured the first time a session is used."
+        actions={
+          <Button
+            variant="outline"
+            disabled={signingOutEverywhere()}
+            onClick={() => setSignOutEverywhereOpen(true)}
+          >
+            Sign out everywhere
+          </Button>
+        }
+      >
+        <div class="space-y-2">
+          <For each={sessions()?.sessions ?? []}>
+            {(item) => (
+              <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
+                    <span>{sessionLabel(item)}</span>
+                    <Show when={item.current}>
+                      <Badge
+                        variant="outline"
+                        class="border-success/25 bg-success/10 text-success-foreground"
+                      >
+                        This session
+                      </Badge>
+                    </Show>
+                  </p>
+                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {item.lastUsedAt
+                      ? `Last used ${relativeTime(item.lastUsedAt)}`
+                      : "Not used since sign-in"}
+                    {" · "}Signed in {new Date(item.createdAt).toLocaleString()}
+                    {" · "}expires {new Date(item.expiresAt).toLocaleString()}
+                  </p>
                 </div>
-              )}
-            </For>
-          </div>
-        </Panel>
-      </Show>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={
+                    item.current
+                      ? "Sign out of this session"
+                      : `Revoke ${sessionLabel(item)} last used ${item.lastUsedAt ? relativeTime(item.lastUsedAt) : "never"}`
+                  }
+                  onClick={() => revokeSession(item.id, item.current)}
+                >
+                  {item.current ? "Sign out" : "Revoke"}
+                </Button>
+              </div>
+            )}
+          </For>
+          <Show when={(sessions()?.sessions.length ?? 0) === 0}>
+            <p class="text-[12.5px] text-muted-foreground">
+              No active sessions were found. Sign in again to start one.
+            </p>
+          </Show>
+        </div>
+      </Panel>
 
       <Panel
         title="API tokens"
@@ -767,6 +874,17 @@ export default function AccountPage() {
           </Show>
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={signOutEverywhereOpen()}
+        onOpenChange={setSignOutEverywhereOpen}
+        title="Sign out everywhere?"
+        description="Every browser session for this account is revoked, including this one. You will need a passkey to sign in again."
+        confirmLabel="Sign out everywhere"
+        destructive
+        pending={signingOutEverywhere()}
+        onConfirm={() => void signOutEverywhere()}
+      />
 
       <Panel
         class="border-destructive/25 bg-destructive/[0.025]"

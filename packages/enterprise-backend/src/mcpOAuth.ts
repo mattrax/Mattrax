@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { sessionCookie } from "./auth.ts";
@@ -58,18 +58,50 @@ const randomToken = (prefix: string) =>
 const sha256 = async (value: string) =>
   base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))));
 
-const validRedirectUri = (value: string) => {
+export const validRedirectUri = (value: string) => {
   try {
     const url = new URL(value);
 
+    // RFC 6749 §3.1.2: the redirection endpoint URI must be an absolute URI
+    // without a fragment. Credentials in the URI are never a callback.
+    if (url.hash !== "" || url.username !== "" || url.password !== "") return false;
+
     return (
       url.protocol === "https:" ||
-      (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1"))
+      (url.protocol === "http:" &&
+        (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"))
     );
   } catch {
     return false;
   }
 };
+
+/**
+ * PKCE S256 values. The challenge is the base64url encoding of a SHA-256 digest
+ * (43 characters); the verifier is 43–128 unreserved characters (RFC 7636
+ * §4.1–4.2). Bounding both at the edge keeps a malformed ceremony from reaching
+ * the token endpoint.
+ */
+const PKCE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+const PKCE_VERIFIER = /^[A-Za-z0-9\-._~]{43,128}$/;
+
+const validCodeChallenge = (value: string | null): value is string =>
+  value !== null && PKCE_CHALLENGE.test(value);
+
+/** Constant-time comparison for equal-length SHA-256 digests. */
+const equalChallenges = (left: string, right: string): boolean => {
+  if (left.length !== right.length) return false;
+
+  let difference = 0;
+
+  for (let index = 0; index < left.length; index++)
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+
+  return difference === 0;
+};
+
+const tokenExpired = (value: Date | string | null | undefined, now: Date): boolean =>
+  value === null || value === undefined || new Date(value).getTime() <= now.getTime();
 
 const parseForm = (value: string) => new URLSearchParams(value);
 
@@ -317,7 +349,10 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         return errorResponse("unsupported_response_type", "Only response_type=code is supported");
       const codeChallenge = url.searchParams.get("code_challenge");
 
-      if (!codeChallenge || url.searchParams.get("code_challenge_method") !== "S256")
+      if (!validCodeChallenge(codeChallenge))
+        return errorResponse("invalid_request", "PKCE with S256 is required");
+
+      if (url.searchParams.get("code_challenge_method") !== "S256")
         return errorResponse("invalid_request", "PKCE with S256 is required");
       const me = yield* resolveUser(request);
 
@@ -350,9 +385,13 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
       if (!client || !redirectUri)
         return errorResponse("invalid_request", "Unknown client or redirect URI");
+
+      if (form.get("response_type") !== "code")
+        return errorResponse("unsupported_response_type", "Only response_type=code is supported");
       const codeChallenge = form.get("code_challenge") ?? "";
 
-      if (!codeChallenge) return errorResponse("invalid_request", "PKCE challenge is required");
+      if (form.get("code_challenge_method") !== "S256" || !validCodeChallenge(codeChallenge))
+        return errorResponse("invalid_request", "PKCE with S256 is required");
 
       const me = yield* resolveUser(request);
 
@@ -442,6 +481,10 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
             "invalid_request",
             "code, redirect_uri and code_verifier are required",
           );
+
+        if (!PKCE_VERIFIER.test(verifier))
+          return errorResponse("invalid_grant", "PKCE verification failed");
+        const now = new Date();
         const codeHash = yield* Effect.promise(() => sha256(code));
 
         const row = yield* db.query.mcpOAuthCode.findFirst({
@@ -449,15 +492,22 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
             codeHash,
             clientId,
             consumedAt: { isNull: true },
-            expiresAt: { gt: new Date() },
           },
         });
 
-        if (!row || row.redirectUri !== redirectUri)
+        // Expiry is re-checked here rather than in the query so a malformed or
+        // historical row cannot be treated as live by a different driver.
+        if (!row || tokenExpired(row.expiresAt, now))
           return errorResponse("invalid_grant", "Invalid or expired authorization code");
+
+        if (row.clientId !== client.id || row.redirectUri !== redirectUri)
+          return errorResponse("invalid_grant", "Invalid or expired authorization code");
+
+        if (row.codeChallengeMethod !== "S256")
+          return errorResponse("invalid_grant", "PKCE verification failed");
         const expected = yield* Effect.promise(() => sha256(verifier));
 
-        if (expected !== row.codeChallenge)
+        if (!equalChallenges(expected, row.codeChallenge))
           return errorResponse("invalid_grant", "PKCE verification failed");
 
         const connection = yield* db.query.mcpOAuthConnection.findFirst({
@@ -467,11 +517,26 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
           },
         });
 
-        if (!connection) return errorResponse("invalid_grant", "This connection was revoked");
-        yield* db
+        if (!connection || connection.clientId !== client.id)
+          return errorResponse("invalid_grant", "This connection was revoked");
+
+        // Consume the code with one conditional UPDATE. Two concurrent
+        // exchanges of the same code both reach this statement; exactly one
+        // sees `affectedRows === 1` and only that request mints tokens. The
+        // expiry predicate closes the gap between the read and the consume.
+        const consumed = yield* db
           .update(schema.mcpOAuthCode)
-          .set({ consumedAt: new Date() })
-          .where(eq(schema.mcpOAuthCode.id, row.id));
+          .set({ consumedAt: now })
+          .where(
+            and(
+              eq(schema.mcpOAuthCode.id, row.id),
+              isNull(schema.mcpOAuthCode.consumedAt),
+              gt(schema.mcpOAuthCode.expiresAt, now),
+            ),
+          );
+
+        if (consumed.affectedRows !== 1)
+          return errorResponse("invalid_grant", "Invalid or expired authorization code");
         const tokens = yield* issueTokens(connection.id, client.id);
 
         return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
@@ -482,6 +547,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
         if (!refreshToken) return errorResponse("invalid_request", "refresh_token is required");
         const tokenHash = yield* Effect.promise(() => sha256(refreshToken));
+        const now = new Date();
 
         const row = yield* db.query.mcpOAuthToken.findFirst({
           where: {
@@ -489,21 +555,34 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
             kind: "refresh",
             clientId,
             revokedAt: { isNull: true },
-            expiresAt: { gt: new Date() },
           },
         });
 
-        if (!row) return errorResponse("invalid_grant", "Invalid or expired refresh token");
+        if (!row || tokenExpired(row.expiresAt, now))
+          return errorResponse("invalid_grant", "Invalid or expired refresh token");
 
         const connection = yield* db.query.mcpOAuthConnection.findFirst({
           where: { id: row.connectionId, revokedAt: { isNull: true } },
         });
 
-        if (!connection) return errorResponse("invalid_grant", "This connection was revoked");
-        yield* db
+        if (!connection || connection.clientId !== client.id)
+          return errorResponse("invalid_grant", "This connection was revoked");
+
+        // Rotate with a conditional UPDATE so a replay of the same refresh
+        // token cannot mint a second token family.
+        const revoked = yield* db
           .update(schema.mcpOAuthToken)
-          .set({ revokedAt: new Date() })
-          .where(eq(schema.mcpOAuthToken.id, row.id));
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(schema.mcpOAuthToken.id, row.id),
+              isNull(schema.mcpOAuthToken.revokedAt),
+              gt(schema.mcpOAuthToken.expiresAt, now),
+            ),
+          );
+
+        if (revoked.affectedRows !== 1)
+          return errorResponse("invalid_grant", "Invalid or expired refresh token");
         const tokens = yield* issueTokens(connection.id, client.id);
 
         return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);

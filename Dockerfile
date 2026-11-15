@@ -32,7 +32,10 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 
 # Prebuild every Worker and module. Nothing is bundled or transpiled at boot.
-RUN pnpm api build && pnpm web build
+# The docs are built into the dashboard's assets so a self-hosted install serves
+# the same `/docs/` surface (and sitemap) as the hosted deployment.
+RUN pnpm api build && pnpm web build && pnpm doc:build \
+    && cd apps/web && node ../../scripts/copy-docs.mjs
 
 # Collect Workers, static assets and migrations, dropping source maps and
 # editor-only migration snapshots.

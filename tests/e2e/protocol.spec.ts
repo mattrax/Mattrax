@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { bootstrapTenant } from "./helpers";
 
 /**
  * Booted-worker regression tests for the Cloud API's protocol routes.
@@ -8,12 +9,23 @@ import { expect, test } from "@playwright/test";
  * `provideMerge`, so unit tests that build their own layer never caught it.
  */
 test.describe("protocol routes", () => {
-  test("serves SCEP GetCACaps from the real service layer", async ({ page }) => {
-    const response = await page.request.get("/mdm/apple/scep?operation=GetCACaps");
+  test("serves SCEP GetCACaps from the tenant-scoped service layer", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "SCEP Tenant");
+
+    const response = await page.request.get(`/mdm/apple/scep/${tenant.id}?operation=GetCACaps`);
+
     expect(response.status()).toBe(200);
     const body = await response.text();
     expect(body).toContain("SCEPStandard");
     expect(body).toContain("POSTPKIOperation");
+  });
+
+  test("retires the deployment-wide SCEP URL", async ({ page }) => {
+    // Identity is issued per tenant; a shared CA cannot be trusted by a
+    // tenant-scoped profile, so the legacy URL must never issue a challenge.
+    const response = await page.request.get("/mdm/apple/scep?operation=GetCACaps");
+
+    expect(response.status()).toBe(410);
   });
 
   test("malformed Apple MDM requests are protocol errors, not 500", async ({ page }) => {

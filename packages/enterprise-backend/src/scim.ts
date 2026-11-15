@@ -5,8 +5,7 @@ import { Db, schema } from "@mattrax/enterprise-core";
 import { isBuiltInOwnerMember } from "./rbac.ts";
 import { settlePendingInvitations } from "./invitations.ts";
 
-const json = (body: Schema.Json, status = 200) =>
-  HttpServerResponse.jsonUnsafe(body, { status });
+const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
 /**
  * Optional hook invoked after a SCIM mutation that changes which users belong
@@ -106,9 +105,17 @@ const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: st
       .limit(1);
 
     if (!token || token.revokedAt) return yield* Effect.fail(scimError(401, "Invalid SCIM token"));
+
+    // An expired token is reported exactly like an unknown or revoked one so a
+    // caller cannot distinguish "expired" from "wrong token".
+    const timestamp = now();
+
+    if (token.expiresAt && new Date(token.expiresAt).getTime() <= timestamp.getTime())
+      return yield* Effect.fail(scimError(401, "Invalid SCIM token"));
+
     yield* db
       .update(schema.scimToken)
-      .set({ lastUsedAt: now(), updatedAt: now() })
+      .set({ lastUsedAt: timestamp, updatedAt: timestamp })
       .where(eq(schema.scimToken.id, token.id));
 
     return {
@@ -252,9 +259,9 @@ const createUser = (ctx: ScimContext, body: any) =>
       email;
 
     const requestedRole =
-      Option.getOrUndefined(
-        Schema.decodeUnknownOption(ScimRole)(body.roles?.[0]),
-      )?.value?.trim().toLowerCase() ?? "";
+      Option.getOrUndefined(Schema.decodeUnknownOption(ScimRole)(body.roles?.[0]))
+        ?.value?.trim()
+        .toLowerCase() ?? "";
 
     if (SCIM_PRIVILEGED_ROLES.has(requestedRole))
       return scimError(
@@ -570,111 +577,116 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
     if (HttpServerResponse.isHttpServerResponse(ctx)) return ctx;
 
     const response = yield* Effect.gen(function* () {
-        if (!parsed.resource) {
-          return json({
-            schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-            patch: { supported: true },
-            bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
-            filter: { supported: false, maxResults: 200 },
-            changePassword: { supported: false },
-            sort: { supported: false },
-            etag: { supported: false },
-            authenticationSchemes: [{ type: "oauthbearertoken", name: "Bearer token", primary: true }],
-          });
+      if (!parsed.resource) {
+        return json({
+          schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
+          patch: { supported: true },
+          bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
+          filter: { supported: false, maxResults: 200 },
+          changePassword: { supported: false },
+          sort: { supported: false },
+          etag: { supported: false },
+          authenticationSchemes: [
+            { type: "oauthbearertoken", name: "Bearer token", primary: true },
+          ],
+        });
+      }
+
+      const method = request.method;
+
+      if (parsed.resource === "Users" && !parsed.id) {
+        if (method === "GET") return yield* listUsers(ctx);
+
+        if (method === "POST") {
+          const body = yield* readJson(request);
+
+          if (!body.valid)
+            return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+
+          return yield* createUser(ctx, body.body);
         }
 
-        const method = request.method;
+        return scimError(405, "Method not allowed");
+      }
 
-        if (parsed.resource === "Users" && !parsed.id) {
-          if (method === "GET") return yield* listUsers(ctx);
+      if (parsed.resource === "Users" && parsed.id) {
+        if (method === "GET") {
+          const found = yield* findUser(ctx, parsed.id);
 
-          if (method === "POST") {
-            const body = yield* readJson(request);
-
-            if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
-
-            return yield* createUser(ctx, body.body);
-          }
-
-          return scimError(405, "Method not allowed");
+          return found
+            ? json(userResource(found.user, found.member))
+            : scimError(404, "User not found");
         }
 
-        if (parsed.resource === "Users" && parsed.id) {
-          if (method === "GET") {
-            const found = yield* findUser(ctx, parsed.id);
+        if (method === "PATCH") {
+          const body = yield* readJson(request);
 
-            return found
-              ? json(userResource(found.user, found.member))
-              : scimError(404, "User not found");
-          }
+          if (!body.valid)
+            return scimError(400, "Request body must be valid JSON", "invalidSyntax");
 
-          if (method === "PATCH") {
-            const body = yield* readJson(request);
-
-            if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
-
-            return yield* patchUser(ctx, parsed.id, body.body);
-          }
-
-          if (method === "DELETE") return yield* deleteUser(ctx, parsed.id);
-
-          return scimError(405, "Method not allowed");
+          return yield* patchUser(ctx, parsed.id, body.body);
         }
 
-        if (parsed.resource === "Groups" && !parsed.id) {
-          if (method === "GET") return yield* listGroups(ctx);
+        if (method === "DELETE") return yield* deleteUser(ctx, parsed.id);
 
-          if (method === "POST") {
-            const body = yield* readJson(request);
+        return scimError(405, "Method not allowed");
+      }
 
-            if (!body.valid) return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+      if (parsed.resource === "Groups" && !parsed.id) {
+        if (method === "GET") return yield* listGroups(ctx);
 
-            return yield* createGroup(ctx, body.body);
-          }
+        if (method === "POST") {
+          const body = yield* readJson(request);
 
-          return scimError(405, "Method not allowed");
+          if (!body.valid)
+            return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+
+          return yield* createGroup(ctx, body.body);
         }
 
-        if (parsed.resource === "Groups" && parsed.id) {
-          if (method === "GET") {
-            const found = yield* findGroup(ctx, parsed.id);
+        return scimError(405, "Method not allowed");
+      }
 
-            return found
-              ? json(groupResource(found.group, found.members))
-              : scimError(404, "Group not found");
-          }
+      if (parsed.resource === "Groups" && parsed.id) {
+        if (method === "GET") {
+          const found = yield* findGroup(ctx, parsed.id);
 
-          if (method === "PATCH") {
-            const parsedBody = yield* readJson(request);
-
-            if (!parsedBody.valid)
-              return scimError(400, "Request body must be valid JSON", "invalidSyntax");
-
-            const patch = Option.getOrUndefined(
-              Schema.decodeUnknownOption(ScimGroupPatch)(parsedBody.body),
-            );
-
-            const members = Option.getOrUndefined(
-              Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(
-                patch?.Operations?.find((operation) => operation.path === "members")?.value,
-              ),
-            );
-
-            if (members) return yield* replaceGroupMembers(ctx, parsed.id, members);
-
-            const found = yield* findGroup(ctx, parsed.id);
-
-            if (!found) return scimError(404, "Group not found");
-
-            return json(groupResource(found.group, []));
-          }
-
-          if (method === "DELETE") return yield* deleteGroup(ctx, parsed.id);
-
-          return scimError(405, "Method not allowed");
+          return found
+            ? json(groupResource(found.group, found.members))
+            : scimError(404, "Group not found");
         }
 
-        return scimError(404, "Unknown SCIM endpoint");
+        if (method === "PATCH") {
+          const parsedBody = yield* readJson(request);
+
+          if (!parsedBody.valid)
+            return scimError(400, "Request body must be valid JSON", "invalidSyntax");
+
+          const patch = Option.getOrUndefined(
+            Schema.decodeUnknownOption(ScimGroupPatch)(parsedBody.body),
+          );
+
+          const members = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(
+              patch?.Operations?.find((operation) => operation.path === "members")?.value,
+            ),
+          );
+
+          if (members) return yield* replaceGroupMembers(ctx, parsed.id, members);
+
+          const found = yield* findGroup(ctx, parsed.id);
+
+          if (!found) return scimError(404, "Group not found");
+
+          return json(groupResource(found.group, []));
+        }
+
+        if (method === "DELETE") return yield* deleteGroup(ctx, parsed.id);
+
+        return scimError(405, "Method not allowed");
+      }
+
+      return scimError(404, "Unknown SCIM endpoint");
     });
 
     if (ctx.changedUserIds.size > 0) {
@@ -682,11 +694,11 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
 
       if (Option.isSome(notifier)) {
         const db = yield* Db;
-        yield* notifier.value(db, ctx.organizationId, [...ctx.changedUserIds]).pipe(
-          Effect.catch((cause) =>
-            Effect.logWarning("SCIM membership refresh failed", cause),
-          ),
-        );
+        yield* notifier
+          .value(db, ctx.organizationId, [...ctx.changedUserIds])
+          .pipe(
+            Effect.catch((cause) => Effect.logWarning("SCIM membership refresh failed", cause)),
+          );
       }
     }
 

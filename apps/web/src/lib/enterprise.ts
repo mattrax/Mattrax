@@ -82,9 +82,15 @@ export type {
   ApplicationRow,
   ApnsInfo,
   AcceptInvitationResponse,
+  AccountAuditEntry,
+  AccountAuditSearchResponse,
+  AccountRecoveryResponse,
+  AccountSessionInfo,
+  AccountSessionsResponse,
   AuditLogEntry,
   AuditSearchQuery,
   AuditSearchResponse,
+  TenantSecuritySettings,
   AutopilotDeploymentMode,
   AutopilotDeviceInfo,
   AutopilotImportRequest,
@@ -132,7 +138,9 @@ export type {
   DevicePushHealthCounts,
   DevicePushHealthResponse,
   DevicePushInfo,
+  DeviceActivationLockBypassCodeResponse,
   DeviceRecoveryKeyResponse,
+  AppleFdeEscrowKeyInfo,
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
@@ -252,6 +260,10 @@ export const enterpriseKeys = {
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
     ["enterprise", "dashboard-query", tenantId ?? "", request] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
+  accountActivity: (query: AuditSearchQuery = {}) =>
+    ["enterprise", "account-activity", query] as const,
+  tenantSecurity: (tenantId: RouteParam) =>
+    ["enterprise", "tenant-security", tenantId ?? ""] as const,
   auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
     ["enterprise", "audit-search", tenantId ?? "", query] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
@@ -784,6 +796,36 @@ export const enterprise = {
           params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         }),
       { stepUp: "recovery-key-reveal" },
+    ),
+  getDeviceActivationLockBypassCode: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.getDeviceActivationLockBypassCode({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  getAppleFdeEscrowKey: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getAppleFdeEscrowKey({
+        params: { tenantId: required(tenantId, "tenantId") },
+      }),
+    ),
+  generateAppleFdeEscrowKey: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.generateAppleFdeEscrowKey({
+        params: { tenantId: required(tenantId, "tenantId") },
+      }),
+    ),
+  uploadAppleFdeEscrowKey: (
+    tenantId: RouteParam,
+    payload: { certificatePem: string; privateKeyPem: string },
+  ) =>
+    endpoint((api) =>
+      api.uploadAppleFdeEscrowKey({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
     ),
   getApplicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
     endpoint((api) =>
@@ -1365,6 +1407,40 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getTenantSecurity: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getTenantSecurity({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchTenantSecurity: (tenantId: RouteParam, payload: { requireMfa: boolean }) =>
+    endpoint(
+      (api) =>
+        api.patchTenantSecurity({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "tenant-mfa-policy" },
+    ),
+  approveAccountRecovery: (tenantId: RouteParam, token: string) =>
+    endpoint(
+      (api) =>
+        api.approveAccountRecovery({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload: { token },
+        }),
+      { stepUp: "recovery-approve" },
+    ),
+  cancelEmailChange: (token: string) =>
+    endpoint((api) => api.cancelEmailChange({ payload: { token } })),
+  requestAccountRecovery: (email: string) =>
+    endpoint((api) => api.requestAccountRecovery({ payload: { email } })),
+  verifyAccountRecovery: (token: string) =>
+    endpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
+  revokeAllAccountSessions: () =>
+    endpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
+  searchAccountAuditLog: (query: AuditSearchQuery = {}) =>
+    endpoint((api) => api.searchAccountAuditLog({ query })),
+  exportAccountAuditLog: (query: AuditSearchQuery = {}) =>
+    endpoint((api) => api.exportAccountAuditLog({ query })),
   getSsoConfig: (tenantId: RouteParam) =>
     endpoint((api) => api.getSsoConfig({ params: { tenantId: required(tenantId, "tenantId") } })),
   patchSsoConfig: (
@@ -1383,7 +1459,7 @@ export const enterprise = {
     ),
   listScimTokens: (tenantId: RouteParam) =>
     endpoint((api) => api.listScimTokens({ params: { tenantId: required(tenantId, "tenantId") } })),
-  createScimToken: (tenantId: RouteParam, payload: { name: string }) =>
+  createScimToken: (tenantId: RouteParam, payload: { name: string; expiresAt?: string | null }) =>
     endpoint((api) =>
       api.createScimToken({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),

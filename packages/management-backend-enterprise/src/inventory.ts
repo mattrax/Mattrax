@@ -32,13 +32,46 @@ export type DeviceInventory = {
   readonly capabilities?: PlistValue | null;
   readonly diskTotal?: string;
   readonly diskUsed?: string;
+  readonly passcodePresent?: boolean | null;
+  readonly passcodeCompliant?: boolean | null;
+  readonly osUpdateInstallState?: string | null;
+  readonly osUpdatePendingVersion?: string | null;
+  readonly osUpdatePendingBuild?: string | null;
+  readonly osUpdateFailureReason?: string | null;
+  readonly osUpdateFailureCount?: number | null;
+  readonly osUpdateFailedAt?: Date | null;
+  readonly securityLockdownMode?: boolean | null;
+  readonly managedCertificateCount?: number | null;
+  readonly managementApps?: ReadonlyArray<ManagementAppStatus> | null;
 };
 
+/** One entry of the `mdm.app` status item. */
+export type ManagementAppStatus = {
+  readonly identifier: string;
+  readonly state: string | null;
+  readonly version: string | null;
+  readonly shortVersion: string | null;
+};
+
+/** Apple's documented `softwareupdate.install-state` values. */
+export const OS_UPDATE_INSTALL_STATES = [
+  "none",
+  "downloading",
+  "prepared",
+  "installing",
+  "failed",
+] as const;
+
+const OS_UPDATE_INSTALL_STATE_SET: ReadonlySet<string> = new Set(OS_UPDATE_INSTALL_STATES);
+
+const MAX_STATUS_ENTRIES = 200;
+const MAX_STATUS_TEXT = 255;
+
+const clampText = (value: string): string =>
+  value.length > MAX_STATUS_TEXT ? value.slice(0, MAX_STATUS_TEXT) : value;
+
 /** Resolve a dotted path, falling back to a flattened key on the root object. */
-export const statusItemValue = (
-  statusItems: PlistInput,
-  path: string,
-): PlistInput => {
+export const statusItemValue = (statusItems: PlistInput, path: string): PlistInput => {
   if (!isPlistObject(statusItems)) return undefined;
   let current: PlistInput = statusItems;
 
@@ -180,10 +213,49 @@ const byteCount = (value: PlistInput): number | undefined => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
+/** Status entries are sometimes wrapped in `{ status_value: {...} }`. */
+const statusEntry = (value: PlistInput) =>
+  isPlistObject(value) && isPlistObject(value.status_value) ? value.status_value : value;
+
+const timestampValue = (value: PlistInput): Date | null => {
+  const raw = text(value);
+
+  if (!raw) return null;
+  const parsed = new Date(raw);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+/** `mdm.app` lists MDM-installed apps; DDM-managed apps are excluded by Apple. */
+const managementApps = (value: PlistInput): ManagementAppStatus[] | undefined => {
+  const entries = isPlistObject(value) && isPlistArray(value["mdm.app"]) ? value["mdm.app"] : value;
+
+  if (!isPlistArray(entries)) return undefined;
+
+  const apps: ManagementAppStatus[] = [];
+
+  for (const raw of entries.slice(0, MAX_STATUS_ENTRIES)) {
+    const entry = statusEntry(raw);
+
+    if (!isPlistObject(entry)) continue;
+    const identifier = text(entry.identifier);
+
+    if (!identifier) continue;
+    apps.push({
+      identifier: clampText(identifier),
+      state: text(entry.state) ? clampText(text(entry.state)!) : null,
+      version: text(entry.version) ? clampText(text(entry.version)!) : null,
+      shortVersion: text(entry["short-version"]) ? clampText(text(entry["short-version"])!) : null,
+    });
+  }
+
+  if (apps.length === 0 && !isPlistArray(entries)) return undefined;
+
+  return apps.sort((left, right) => left.identifier.localeCompare(right.identifier));
+};
+
 /** Merge the status items into a normalised inventory fragment. */
-export const parseDeviceInventory = (
-  statusItems: PlistInput,
-): DeviceInventory => {
+export const parseDeviceInventory = (statusItems: PlistInput): DeviceInventory => {
   const at = (path: string) => statusItemValue(statusItems, path);
 
   const inventory: {
@@ -224,6 +296,62 @@ export const parseDeviceInventory = (
 
   if (capabilities !== undefined)
     inventory.capabilities = normalizeCapabilities(capabilities) ?? null;
+
+  // The status items below are only subscribed on OS versions that report them,
+  // so an absent value means "not reported", not "false".
+  const passcode = at("passcode.is-present");
+
+  if (passcode !== undefined) inventory.passcodePresent = normalizeBoolean(passcode) ?? null;
+
+  const passcodeCompliance = at("passcode.is-compliant");
+
+  if (passcodeCompliance !== undefined)
+    inventory.passcodeCompliant = normalizeBoolean(passcodeCompliance) ?? null;
+
+  const installState = text(at("softwareupdate.install-state"));
+
+  if (installState !== undefined) {
+    const normalised = installState.trim().toLowerCase();
+
+    inventory.osUpdateInstallState = OS_UPDATE_INSTALL_STATE_SET.has(normalised)
+      ? normalised
+      : null;
+  }
+
+  const pending = at("softwareupdate.pending-version");
+
+  if (pending !== undefined) {
+    const version = text(isPlistObject(pending) ? pending["os-version"] : pending);
+    const build = text(isPlistObject(pending) ? pending["build-version"] : undefined);
+
+    // Apple sends an empty string when nothing is pending.
+    inventory.osUpdatePendingVersion = version?.trim() ? clampText(version.trim()) : null;
+    inventory.osUpdatePendingBuild = build?.trim() ? clampText(build.trim()) : null;
+  }
+
+  const failure = at("softwareupdate.failure-reason");
+
+  if (failure !== undefined) {
+    const count = isPlistObject(failure) ? byteCount(failure.count) : undefined;
+    const reason = text(isPlistObject(failure) ? failure.reason : undefined);
+    const failedAt = isPlistObject(failure) ? timestampValue(failure.timestamp) : null;
+
+    inventory.osUpdateFailureCount = count ?? null;
+    inventory.osUpdateFailureReason = reason?.trim() ? clampText(reason.trim()) : null;
+    inventory.osUpdateFailedAt = failedAt;
+  }
+
+  const lockdown = at("security.lockdown-mode");
+
+  if (lockdown !== undefined) inventory.securityLockdownMode = normalizeBoolean(lockdown) ?? null;
+
+  const certificates = statusEntry(at("security.certificate.list"));
+
+  if (isPlistArray(certificates)) inventory.managedCertificateCount = certificates.length;
+
+  const apps = at("mdm.app");
+
+  if (apps !== undefined) inventory.managementApps = managementApps(apps) ?? null;
 
   // Apple reports both storage figures in bytes. `diskTotal`/`diskUsed` are
   // stored as decimal strings for portability across MySQL int widths. When the

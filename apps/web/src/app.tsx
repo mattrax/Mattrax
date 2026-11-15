@@ -92,7 +92,13 @@ export default function App() {
   // Browser tests (and the first user interaction) need a deterministic signal
   // that hydration completed; SSR markup alone does not attach event handlers.
   onSettled(() => {
-    if (typeof document !== "undefined") document.documentElement.dataset.hydrated = "true";
+    if (typeof document !== "undefined") {
+      // Re-assert script capability: the Document's fallback timer removes it
+      // after ten seconds so a broken bundle can still explain itself, and a
+      // slow-but-successful hydration must not leave the notice on screen.
+      document.documentElement.classList.add("js");
+      document.documentElement.dataset.hydrated = "true";
+    }
   });
 
   return (

@@ -152,6 +152,15 @@ export class SsoRejected extends Schema.TaggedError<SsoRejected>()("SsoRejected"
   message: Schema.String,
 }) {}
 
+/**
+ * A break-glass recovery link was rejected. The ceremony is single use, so an
+ * expired, consumed, unapproved or cancelled token all land here with the same
+ * message: the caller never learns which check failed.
+ */
+export class RecoveryRejected extends Schema.TaggedError<RecoveryRejected>()("RecoveryRejected", {
+  message: Schema.String,
+}) {}
+
 export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
   basePath: "/api/v1",
   claims: AuthClaims,
@@ -183,10 +192,10 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
       // An account is created by registering its first passkey. The library
       // provisions the subject and credential; the browser then signs in with
       // that same passkey.
-      beginPasskeyRegistration: AuthContract.fromOperation(
-        passkeyRegistration.operations.Begin,
-        { strategy: "registration", method: "register" },
-      ),
+      beginPasskeyRegistration: AuthContract.fromOperation(passkeyRegistration.operations.Begin, {
+        strategy: "registration",
+        method: "register",
+      }),
 
       completePasskeyRegistration: AuthContract.fromOperation(
         passkeyRegistration.operations.Complete,
@@ -206,6 +215,24 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
         replay: "single-use",
         method: "signIn",
         strategy: "sso",
+      }),
+
+      /**
+       * Break-glass recovery. The token is minted by the recovery ceremony only
+       * after the account proved control of its verified address (and, for a
+       * shared tenant, another owner approved). It signs the account in so a new
+       * passkey can be enrolled; it never removes or replaces an existing
+       * credential.
+       */
+      recoverySignIn: AuthContract.action({
+        payload: Schema.Struct({ token: Schema.String }),
+        success: sessions.CompletionResult,
+        error: RecoveryRejected,
+        mode: "mutation",
+        credentials: true,
+        replay: "single-use",
+        method: "signIn",
+        strategy: "recovery",
       }),
 
       beginTotpEnrollment: AuthContract.fromOperation(totp.operations.Begin, {
@@ -416,10 +443,7 @@ type ExtraAuthStrategies = Readonly<
  * supplies its own `completionLayer` with a pending lifetime. The server layer
  * provides both the strategy and completion layers from `appSessionConfiguration`.
  */
-export const makeAppAuth = (
-  _origin: string,
-  extraStrategies: ExtraAuthStrategies = {},
-): any =>
+export const makeAppAuth = (_origin: string, extraStrategies: ExtraAuthStrategies = {}): any =>
   Auth.make(AuthApi, {
     strategies: {
       totp: Totp.make(TOTP_POLICY),

@@ -1,4 +1,8 @@
-import type { MeResponse, SsrTokenPayload } from "@mattrax/enterprise-domain/client";
+import type {
+  MeResponse,
+  SsrRevisionPayload,
+  SsrTokenPayload,
+} from "@mattrax/enterprise-domain/client";
 import {
   BUILT_IN_ROLE_PERMISSIONS,
   MeResponse as MeResponseSchema,
@@ -10,6 +14,8 @@ import {
   preloadSession,
   redactBootstrapResponse,
   ssrClearCookie,
+  ssrRevisionClearCookie,
+  ssrRevisionSetCookie,
   ssrSetCookie,
 } from "./preload";
 
@@ -60,6 +66,15 @@ const tokenPayload = (overrides: Partial<SsrTokenPayload> = {}): SsrTokenPayload
   ...overrides,
 });
 
+const revisionPayload = (overrides: Partial<SsrRevisionPayload> = {}): SsrRevisionPayload => ({
+  purpose: "ssr-rev",
+  sid: "session-1",
+  ver: "revision-1",
+  iat: Date.now() - 1_000,
+  exp: Date.now() + 240_000,
+  ...overrides,
+});
+
 const htmlRequest = (cookies: string[], path = "/dashboard") => {
   const headers = new Headers({ accept: "text/html" });
 
@@ -70,11 +85,21 @@ const htmlRequest = (cookies: string[], path = "/dashboard") => {
 
 /** The API's cold-path verifier: only the freshly minted token verifies. */
 const verifyFreshToken =
-  (freshToken: string) =>
-  async (_secret: string, token: string, _cookie: string | undefined) =>
+  (freshToken: string) => async (_secret: string, token: string, _cookie: string | undefined) =>
     token === freshToken ? tokenPayload() : undefined;
 
-const bootstrapResponse = (ssrToken: string | null = "signed-token") =>
+/** The revision verifier is a real HMAC check production; tests steer it by value. */
+const verifyRevision = async (
+  _secret: string,
+  token: string,
+  _now?: number,
+): Promise<SsrRevisionPayload | undefined> =>
+  token === "revision-token" ? revisionPayload() : undefined;
+
+const bootstrapResponse = (
+  ssrToken: string | null = "signed-token",
+  revisionToken: string | null = "revision-token",
+) =>
   Response.json({
     session: {
       sessionId: "session-1",
@@ -84,23 +109,27 @@ const bootstrapResponse = (ssrToken: string | null = "signed-token") =>
     me,
     ssrToken,
     ssrTokenExpiresAt: ssrToken ? Date.now() + 300_000 : null,
+    ssrRevision: revisionToken,
+    ssrRevisionExpiresAt: revisionToken ? Date.now() + 300_000 : null,
   });
 
 const sessionCookie = "__Host-mattrax_session=opaque-session";
 const ssrCookie = "__Host-mattrax_ssr=opaque-token";
+const revisionCookie = "__Host-mattrax_ssr_rev=revision-token";
 
 describe("SSR preload", () => {
-  it("answers a warm token with zero service-binding calls", async () => {
+  it("answers a warm token and matching revision with zero service-binding calls", async () => {
     let bootstrapCalls = 0;
     let boundCookie: string | undefined;
 
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async (_secret, _token, cookie) => {
         boundCookie = cookie;
 
         return tokenPayload();
       },
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -115,12 +144,115 @@ describe("SSR preload", () => {
     expect(outcome.session?.me?.tenants[0]?.permissions).toContain("devices.write");
   });
 
-  it("calls bootstrap once on a miss and sets the five-minute HttpOnly cookie", async () => {
+  it("bootstraps when the revision cookie is missing", async () => {
     let bootstrapCalls = 0;
 
     const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
       secret,
+      verifyToken: async () => tokenPayload(),
+      verifyRevision,
+      fetchBootstrap: async () => {
+        bootstrapCalls++;
+
+        return bootstrapResponse();
+      },
+    });
+
+    // Without a signed revision there is nothing to compare `ver` with, so a
+    // warm token must not be trusted.
+    expect(bootstrapCalls).toBe(1);
+    expect(outcome.setSsrCookie).toBeDefined();
+    expect(outcome.setSsrRevisionCookie).toBeDefined();
+  });
+
+  it("bootstraps when the revision was rotated for the same session", async () => {
+    let bootstrapCalls = 0;
+    let revisionCalls = 0;
+
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
+      secret,
+      verifyToken: async () => tokenPayload({ ver: "revision-1" }),
+      // The warm call sees the rotated revision; the bootstrap's freshly minted
+      // revision (same cookie value in this fake) agrees with the new token.
+      verifyRevision: async () =>
+        revisionCalls++ === 0
+          ? revisionPayload({ ver: "revision-2" })
+          : revisionPayload({ ver: "revision-1" }),
+      fetchBootstrap: async () => {
+        bootstrapCalls++;
+
+        return bootstrapResponse();
+      },
+    });
+
+    expect(bootstrapCalls).toBe(1);
+    expect(outcome.session?.me).toEqual(me);
+    // The fresh pair is stored, replacing the stale revision.
+    expect(outcome.setSsrCookie).toBeDefined();
+    expect(outcome.setSsrRevisionCookie).toContain("revision-token");
+    expect(outcome.ssrTokenRejected).toBeUndefined();
+  });
+
+  it("bootstraps when the revision belongs to another session", async () => {
+    let bootstrapCalls = 0;
+
+    await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
+      secret,
+      verifyToken: async () => tokenPayload({ sid: "session-2" }),
+      verifyRevision: async () => revisionPayload({ sid: "session-1" }),
+      fetchBootstrap: async () => {
+        bootstrapCalls++;
+
+        return bootstrapResponse();
+      },
+    });
+
+    expect(bootstrapCalls).toBe(1);
+  });
+
+  it("bootstraps when the revision cannot be verified (expired or tampered)", async () => {
+    // The real verifier returns `undefined` for both cases; the preload layer
+    // must treat that exactly like a missing cookie rather than a pass.
+    for (const verifyRevisionCase of [async () => undefined]) {
+      let bootstrapCalls = 0;
+
+      await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
+        secret,
+        verifyToken: async () => tokenPayload(),
+        verifyRevision: verifyRevisionCase,
+        fetchBootstrap: async () => {
+          bootstrapCalls++;
+
+          return bootstrapResponse();
+        },
+      });
+
+      expect(bootstrapCalls).toBe(1);
+    }
+  });
+
+  it("does not store a bootstrap pair whose revision disagrees with the token", async () => {
+    const outcome = await preloadSession(htmlRequest([sessionCookie]), {
+      secret,
+      verifyToken: async () => tokenPayload({ ver: "revision-1" }),
+      // The API minted a token for a different session (or a stale revision):
+      // the pair cannot be proven consistent, so neither cookie is stored.
+      verifyRevision: async () => revisionPayload({ sid: "session-2" }),
+      fetchBootstrap: async () => bootstrapResponse(),
+    });
+
+    expect(outcome.session).toBeDefined();
+    expect(outcome.setSsrCookie).toBeUndefined();
+    expect(outcome.setSsrRevisionCookie).toBeUndefined();
+  });
+
+  it("calls bootstrap once on a miss and sets both five-minute HttpOnly cookies", async () => {
+    let bootstrapCalls = 0;
+
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
+      secret,
       verifyToken: verifyFreshToken("signed-token"),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -136,15 +268,19 @@ describe("SSR preload", () => {
     expect(outcome.setSsrCookie).toContain("SameSite=Lax");
     expect(outcome.setSsrCookie).toContain("Path=/");
     expect(outcome.setSsrCookie).toContain("Max-Age=300");
+    expect(outcome.setSsrRevisionCookie).toBeDefined();
+    expect(outcome.setSsrRevisionCookie).toContain("__Host-mattrax_ssr_rev=");
+    expect(outcome.setSsrRevisionCookie).toContain("Max-Age=300");
   });
 
   it("treats a token without tenants as a miss", async () => {
     let bootstrapCalls = 0;
 
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async (_secret, token) =>
         token === "signed-token" ? tokenPayload() : tokenPayload({ tenants: undefined }),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -159,7 +295,7 @@ describe("SSR preload", () => {
   it("ignores a warm token minted before email verification", async () => {
     let bootstrapCalls = 0;
 
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async (_secret, token) =>
         token === "fresh-verified-token"
@@ -168,6 +304,7 @@ describe("SSR preload", () => {
               emailVerified: false,
               user: { ...me.user, emailVerified: false },
             }),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -186,9 +323,10 @@ describe("SSR preload", () => {
   it("flags a warm token that fails verification so the edge can report it", async () => {
     let bootstrapCalls = 0;
 
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: verifyFreshToken("signed-token"),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -207,6 +345,7 @@ describe("SSR preload", () => {
     const outcome = await preloadSession(htmlRequest([]), {
       secret,
       verifyToken: async () => tokenPayload(),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -218,12 +357,13 @@ describe("SSR preload", () => {
     expect(outcome).toEqual({});
   });
 
-  it("expires a leftover token once the session cookie is gone", async () => {
+  it("expires both leftover cookies once the session cookie is gone", async () => {
     let bootstrapCalls = 0;
 
-    const outcome = await preloadSession(htmlRequest([ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async () => tokenPayload(),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -234,6 +374,7 @@ describe("SSR preload", () => {
     expect(bootstrapCalls).toBe(0);
     expect(outcome.session).toBeNull();
     expect(outcome.clearSsrCookie).toBe(true);
+    expect(outcome.clearSsrRevisionCookie).toBe(true);
   });
 
   it("renders signed out when bootstrap fails or throws", async () => {
@@ -246,6 +387,7 @@ describe("SSR preload", () => {
       const outcome = await preloadSession(htmlRequest([sessionCookie]), {
         secret,
         verifyToken: async () => undefined,
+        verifyRevision,
         fetchBootstrap,
       });
 
@@ -257,17 +399,20 @@ describe("SSR preload", () => {
     const outcome = await preloadSession(htmlRequest([sessionCookie]), {
       secret,
       verifyToken: async () => undefined,
-      fetchBootstrap: async () => bootstrapResponse(null),
+      verifyRevision,
+      fetchBootstrap: async () => bootstrapResponse(null, null),
     });
 
     expect(outcome.session).toBeDefined();
     expect(outcome.setSsrCookie).toBeUndefined();
+    expect(outcome.setSsrRevisionCookie).toBeUndefined();
   });
 
   it("does not store a fresh token that the API issued without tenants", async () => {
     const outcome = await preloadSession(htmlRequest([sessionCookie]), {
       secret,
       verifyToken: async () => tokenPayload({ tenants: undefined }),
+      verifyRevision,
       fetchBootstrap: async () => bootstrapResponse("tenant-less-token"),
     });
 
@@ -275,6 +420,7 @@ describe("SSR preload", () => {
     // every navigation and would be reissued forever.
     expect(outcome.session).toBeDefined();
     expect(outcome.setSsrCookie).toBeUndefined();
+    expect(outcome.setSsrRevisionCookie).toBeUndefined();
     expect(outcome.ssrTokenRejected).toBeUndefined();
   });
 
@@ -282,6 +428,7 @@ describe("SSR preload", () => {
     const outcome = await preloadSession(htmlRequest([sessionCookie]), {
       secret,
       verifyToken: async () => undefined,
+      verifyRevision,
       fetchBootstrap: async () => bootstrapResponse("signed-with-another-secret"),
     });
 
@@ -291,12 +438,13 @@ describe("SSR preload", () => {
   });
 
   it("reconstructs built-in permissions omitted from a warm token", async () => {
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async () =>
         tokenPayload({
           tenants: [{ ...me.tenants[0]!, permissions: undefined }],
         }),
+      verifyRevision,
       fetchBootstrap: async () => {
         throw new Error("a warm built-in token must not call bootstrap");
       },
@@ -318,9 +466,10 @@ describe("SSR preload", () => {
 
     let bootstrapCalls = 0;
 
-    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie]), {
+    const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
       secret,
       verifyToken: async () => tokenPayload({ tenants }),
+      verifyRevision,
       fetchBootstrap: async () => {
         bootstrapCalls++;
 
@@ -349,15 +498,19 @@ describe("SSR preload", () => {
     ]) {
       let bootstrapCalls = 0;
 
-      const outcome = await preloadSession(htmlRequest([sessionCookie, ssrCookie], path), {
-        secret,
-        verifyToken: async () => tokenPayload(),
-        fetchBootstrap: async () => {
-          bootstrapCalls++;
+      const outcome = await preloadSession(
+        htmlRequest([sessionCookie, ssrCookie, revisionCookie], path),
+        {
+          secret,
+          verifyToken: async () => tokenPayload(),
+          verifyRevision,
+          fetchBootstrap: async () => {
+            bootstrapCalls++;
 
-          return bootstrapResponse();
+            return bootstrapResponse();
+          },
         },
-      });
+      );
 
       // No API call, no Set-Cookie, no clear: the owning handler answers it.
       expect(bootstrapCalls, path).toBe(0);
@@ -369,25 +522,34 @@ describe("SSR preload", () => {
     expect(ssrSetCookie("abc")).toBe(
       "__Host-mattrax_ssr=abc; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300",
     );
+    expect(ssrRevisionSetCookie("rev")).toBe(
+      "__Host-mattrax_ssr_rev=rev; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300",
+    );
     expect(ssrClearCookie()).toContain("Max-Age=0");
     expect(ssrClearCookie()).toContain("Path=/");
+    expect(ssrRevisionClearCookie()).toContain("__Host-mattrax_ssr_rev=");
+    expect(ssrRevisionClearCookie()).toContain("Max-Age=0");
   });
 });
 
 const RedactedBootstrap = Schema.Struct({
   ssrToken: Schema.NullOr(Schema.String),
   ssrTokenExpiresAt: Schema.NullOr(Schema.Number),
+  ssrRevision: Schema.NullOr(Schema.String),
+  ssrRevisionExpiresAt: Schema.NullOr(Schema.Number),
   session: Schema.Unknown,
   me: MeResponseSchema,
 });
 
 describe("bootstrap proxy redaction", () => {
-  it("strips the SSR token from a browser-visible response", async () => {
+  it("strips the SSR token and revision from a browser-visible response", async () => {
     const response = await redactBootstrapResponse(bootstrapResponse("must-not-leak"));
     const body = Schema.decodeUnknownSync(RedactedBootstrap)(await response.json());
 
     expect(body.ssrToken).toBeNull();
     expect(body.ssrTokenExpiresAt).toBeNull();
+    expect(body.ssrRevision).toBeNull();
+    expect(body.ssrRevisionExpiresAt).toBeNull();
     expect(body.session).toBeDefined();
     expect(body.me).toEqual(me);
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -413,9 +575,10 @@ describe("bootstrap proxy redaction", () => {
     expect(response.headers.get("last-modified")).toBeNull();
     expect(response.headers.get("content-length")).toBeNull();
 
-    const body: { ssrToken?: unknown } = await response.json();
+    const body: { ssrToken?: unknown; ssrRevision?: unknown } = await response.json();
 
     expect(body.ssrToken).toBeNull();
+    expect(body.ssrRevision).toBeNull();
   });
 
   it("leaves unrelated responses untouched", async () => {
@@ -439,7 +602,7 @@ describe("bootstrap proxy redaction", () => {
       // forwarded verbatim.
       expect(redacted.status).toBe(502);
       expect(json).not.toHaveProperty("ssrToken");
-      expect(json).not.toHaveProperty("ssrTokenExpiresAt");
+      expect(json).not.toHaveProperty("ssrRevision");
       expect(redacted.headers.get("cache-control")).toBe("no-store");
     }
   });
