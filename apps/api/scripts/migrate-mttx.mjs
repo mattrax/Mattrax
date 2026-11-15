@@ -8,7 +8,7 @@
  *   MTTX_DATABASE_URL=... TARGET_DATABASE_URL=... \
  *     node apps/api/scripts/migrate-mttx.mjs --dry-run
  *
- * See apps/api/scripts/README.md and docs/enterprise/mttx-data-migration.md.
+ * See apps/api/scripts/README.md and docs/migration/mttx.md.
  */
 
 import crypto from "node:crypto";

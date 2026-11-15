@@ -5,7 +5,7 @@ migrated `mattraxe` database. It is an **operator tool**, not a deployment step:
 it is not wired into CI and must never run automatically.
 
 The full mapping, cutover checklist and open decisions live in
-[`docs/enterprise/mttx-data-migration.md`](../../../docs/enterprise/mttx-data-migration.md).
+[`docs/migration/mttx.md`](../../../docs/migration/mttx.md).
 The original design issue is [#5](https://github.com/oscartbeaumont/mattraxe/issues/5).
 
 ## Prerequisites
