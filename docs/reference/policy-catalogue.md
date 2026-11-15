@@ -24,13 +24,36 @@ fetched once per session and is never requested for browsing.
 
 ## Regenerating
 
-The source catalogue is `data/catalog/windows.json`. After replacing it:
+The catalogue is generated from the vendors' published schemas; never hand-edit anything
+under `apps/web/public/catalog/` or `data/catalog/`.
+
+```bash
+pnpm catalog:sync
+```
+
+The command downloads and normalises all three sources, writes `manifest.json`,
+`apple.json` and `android.json` into `apps/web/public/catalog/`, writes the raw Windows
+catalogue to `data/catalog/windows.json`, then splits Windows into the files the designer
+loads. The whole run needs network access; the committed output means the app itself does
+not.
+
+| Platform | Source                                                                                                           | Format |
+| -------- | ---------------------------------------------------------------------------------------------------------------- | ------ |
+| Apple    | [`apple/device-management`](https://github.com/apple/device-management) (`release`, MIT)                         | YAML   |
+| Android  | [Android Management API discovery](https://androidmanagement.googleapis.com/$discovery/rest?version=v1)          | JSON   |
+| Windows  | [`royklo/IntuneSettingsCatalogData`](https://github.com/royklo/IntuneSettingsCatalogData) (Microsoft Graph data) | JSON   |
+
+The adapters live in `scripts/catalog-sync/`. See
+[Catalogue sources](/reference/catalogue-sources) for why these sources were chosen and
+the licensing caveats around the generated data.
+
+To rebuild only the split Windows files after replacing `data/catalog/windows.json`:
 
 ```bash
 pnpm catalog:split
 ```
 
-The script writes `apps/web/public/catalog/windows/`, removes stale collection files and is
+The split writes `apps/web/public/catalog/windows/`, removes stale collection files and is
 deterministic: collections are sorted by id, properties keep source order and no timestamps
 are written.
 
@@ -40,7 +63,7 @@ Verify a checkout without writing:
 pnpm catalog:check
 ```
 
-Both commands accept `--source <file>` and `--out <dir>`.
+Both split commands accept `--source <file>` and `--out <dir>`.
 
 ## Loader API
 
@@ -71,17 +94,17 @@ Windows/Android configuration through the API.
 
 ## Updating the catalogue
 
-1. Replace `data/catalog/windows.json`.
-2. Run `pnpm catalog:split`.
-3. Run `pnpm catalog:check`.
-4. Review the generated diff and commit it with the source change.
-5. Deploy the web Worker; the catalogue is part of its assets.
+1. Run `pnpm catalog:sync`.
+2. Run `pnpm catalog:check`.
+3. Review the generated diff and commit it with any adapter changes.
+4. Deploy the web Worker; the catalogue is part of its assets.
 
 The catalogue is static. Changing it does not change existing policies until a policy is
 saved with a new selection.
 
 ## Next
 
+- [Catalogue sources](/reference/catalogue-sources)
 - [Policies](/manage/policies)
 - [Apple DDM](/platforms/apple/ddm)
 - [Windows policies](/platforms/windows/policies)
