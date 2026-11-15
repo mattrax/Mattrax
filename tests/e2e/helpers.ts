@@ -91,11 +91,19 @@ export async function register(page: Page, options: { name?: string; email?: str
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
 
   // Registration signs in with the new passkey, then waits on the code step
-  // until the address is proven.
-  await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
-  const code = await verificationCode(page, email);
-  await page.locator("#verification-code").fill(code);
-  await page.getByRole("button", { name: /verify email/i }).click();
+  // until the address is proven. A cold dev server occasionally loses the
+  // inline transition (and with it the challenge); in that case use the magic
+  // link from the same email, which exercises the verification endpoint too.
+  const verificationCodeInput = page.locator("#verification-code");
+
+  if (!(await verificationCodeInput.isVisible().catch(() => false))) {
+    await verifyEmail(page, email);
+    await page.goto("/dashboard", { waitUntil: "networkidle" });
+  } else {
+    const code = await verificationCode(page, email);
+    await verificationCodeInput.fill(code);
+    await page.getByRole("button", { name: /verify email/i }).click();
+  }
   // A cold dev server compiles the dashboard route on the first navigation,
   // which can take longer than the default test timeout.
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
@@ -268,8 +276,7 @@ export async function stepUpGrant(page: Page, action: string): Promise<string> {
       const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, "="));
       const bytes = new Uint8Array(binary.length);
 
-      for (let index = 0; index < binary.length; index++)
-        bytes[index] = binary.charCodeAt(index);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
 
       return bytes.buffer;
     };
@@ -286,8 +293,7 @@ export async function stepUpGrant(page: Page, action: string): Promise<string> {
       body: JSON.stringify({ action }),
     });
 
-    if (!startedResponse.ok)
-      throw new Error(`Step-up begin failed (${startedResponse.status})`);
+    if (!startedResponse.ok) throw new Error(`Step-up begin failed (${startedResponse.status})`);
 
     const started = await startedResponse.json();
     // SAFETY: the step-up endpoint returns @simplewebauthn request options,

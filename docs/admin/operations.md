@@ -296,10 +296,12 @@ duplicate:
 
 1. Takes a pinned `manual` backup first (the pre-restore snapshot).
 2. Replaces the tenant's policies, groups, group/policy links, application metadata,
-   pre-registrations and enrollment settings from the bundle.
+   direct device policy/application assignments, pre-registrations and enrollment
+   settings from the bundle.
 3. Keeps members, devices, SCEP certificates and audit history. Device group
-   memberships are re-linked by device id with a serial-number fallback; devices that no
-   longer exist are reported as skipped.
+   memberships and direct device assignments are re-linked by device id with a
+   serial-number fallback; entries whose device no longer exists are reported as
+   skipped instead of failing the restore.
 4. Writes a `tenant.restored` audit entry containing the backup id and snapshot id.
 
 The caller must send `{ "confirm": "<tenant-slug>" }`. The restore is one transaction,
@@ -389,9 +391,13 @@ A failed reclamation step (Stripe error, R2 error, database error) returns
 `EnterpriseTenantTeardownFailed` with the failing `step`, keeps the tenant intact and
 leaves a `tenant_deletion` journal row. Repeating `DELETE` resumes from that journal;
 already-cancelled subscriptions, already-deleted objects and already-removed devices are
-idempotent. The journal has no foreign key to `organization`, so support can still read
-what was freed after the tenant row and its audit log are gone. Only a completed teardown
-removes the row; a second delete after completion returns `404 tenant not found`.
+idempotent. Only one attempt runs at a time: a `pending` job is leased for ten minutes
+(refreshed by every journal write), and a concurrent `DELETE` returns `409` telling the
+operator to retry instead of repeating unenroll, Stripe and R2 side effects. A crashed
+attempt becomes claimable once its lease expires. The journal has no foreign key to
+`organization`, so support can still read what was freed after the tenant row and its
+audit log are gone. Only a completed teardown removes the row; a second delete after
+completion returns `404 tenant not found`.
 
 ### Infrastructure backups
 

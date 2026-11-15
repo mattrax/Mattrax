@@ -271,6 +271,44 @@ describe("tenant export", () => {
     expect(serialized).not.toContain("certPem");
   });
 
+  it("exports direct device policy and application assignments", async () => {
+    const context = makeContext();
+    const { tenant, policy, application } = await seedTenant(context);
+    const timestamp = new Date();
+
+    context.db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Alice's Mac",
+      serial: "C02ACMEMAC",
+      enrolledAt: timestamp,
+      lastSeenAt: timestamp,
+    });
+    context.db.store.device_policy.push({
+      deviceId: "device-1",
+      policyId: policy.id,
+      mode: "exclude",
+    });
+    context.db.store.application_device.push({
+      deviceId: "device-1",
+      applicationId: application.id,
+    });
+
+    const { bundle } = await exportBundle(context, tenant.id);
+
+    expect(bundle.deviceAssignments).toEqual([
+      {
+        deviceKey: "device-1",
+        deviceSerial: "C02ACMEMAC",
+        policyKeys: [],
+        excludedPolicyKeys: [policy.id],
+        applicationKeys: [application.id],
+      },
+    ]);
+  });
+
   it("only exports rows belonging to the requested tenant", async () => {
     const context = makeContext();
     const first = await seedTenant(context);

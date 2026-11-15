@@ -1,5 +1,5 @@
-import { Data, Effect, Match } from "effect";
-import { eq } from "drizzle-orm";
+import { Data, Effect, Match, Option, Schema } from "effect";
+import { and, eq, lte, or } from "drizzle-orm";
 import { schema, type R2Bucket, type TenantDeletionStep } from "@mattrax/enterprise-core";
 import type { EnterpriseDb, EnterpriseOrganization } from "./schema.ts";
 
@@ -106,6 +106,22 @@ export class TenantTeardownStepFailed extends Data.TaggedError("TenantTeardownSt
   readonly message: string;
 }> {}
 
+/**
+ * Another request owns the teardown job. The caller must not repeat the
+ * outbound side effects (unenroll, Stripe cancellation, object deletion).
+ */
+export class TenantTeardownInProgress extends Data.TaggedError("TenantTeardownInProgress")<{
+  readonly message: string;
+  readonly retryAfterSeconds: number;
+}> {}
+
+/**
+ * How long one attempt owns a `pending` job. Every journal write refreshes the
+ * lease, so a progressing attempt keeps it; a crashed attempt is reclaimable
+ * after this window instead of blocking the tenant forever.
+ */
+export const TENANT_TEARDOWN_LEASE_MS = 10 * 60 * 1000;
+
 export type TenantTeardownResult = {
   readonly devices: DeviceUnenrollSummary;
   readonly subscription: SubscriptionReclamation;
@@ -121,6 +137,30 @@ export type TenantTeardownOptions = {
 };
 
 const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
+const ErrorDetails = Schema.Struct({
+  code: Schema.optional(Schema.String),
+  errno: Schema.optional(Schema.Number),
+  message: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Unknown),
+});
+
+/**
+ * MySQL reports the unique `tenant_deletion.organization_id` index as
+ * `ER_DUP_ENTRY`/1062. Losing that insert race means another request claimed
+ * the job first, so this attempt must not repeat its side effects.
+ */
+const isDuplicateJobError = (cause: unknown): boolean => {
+  const top = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(cause));
+  const nested = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(top?.cause));
+  const code = top?.code ?? nested?.code;
+  const errno = top?.errno ?? nested?.errno;
+  const message = top?.message ?? nested?.message ?? "";
+
+  if (code === "ER_DUP_ENTRY" || errno === 1062) return true;
+
+  return /tenant_deletion/i.test(message);
+};
 
 type MutableStep = { -readonly [Key in keyof TenantDeletionStep]: TenantDeletionStep[Key] };
 
@@ -159,7 +199,11 @@ export const teardownTenant = (
   db: EnterpriseDb,
   storage: R2Bucket,
   { organizationId, actor, deps, now = () => new Date() }: TenantTeardownOptions,
-): Effect.Effect<TenantTeardownResult, TenantTeardownStepFailed, never> =>
+): Effect.Effect<
+  TenantTeardownResult,
+  TenantTeardownStepFailed | TenantTeardownInProgress,
+  never
+> =>
   Effect.gen(function* () {
     const existing = yield* db.query.tenantDeletion.findFirst({
       where: { organizationId },
@@ -167,50 +211,117 @@ export const teardownTenant = (
 
     if (existing?.status === "completed") return summaryFromSteps(existing.steps);
 
-    const organization = yield* db.query.organization.findFirst({
-      where: { id: organizationId },
-    });
+    const startedAt = now();
+    const leaseCutoff = new Date(startedAt.getTime() - TENANT_TEARDOWN_LEASE_MS);
+
+    const inProgress = (retryAfterSeconds: number) =>
+      new TenantTeardownInProgress({
+        message: `A tenant deletion is already in progress. Retry in ${Math.max(
+          1,
+          Math.ceil(retryAfterSeconds / 60),
+        )} minute(s).`,
+        retryAfterSeconds: Math.max(1, Math.ceil(retryAfterSeconds)),
+      });
 
     const steps: TenantDeletionStep[] = [];
     const timestamp = () => now().toISOString();
 
-    const jobId = existing?.id ?? newId();
-    const createdAt = existing?.createdAt ?? now();
-    // Set once the claim below inserts the row; later persists must update it.
-    let jobExists = existing !== undefined;
+    let jobId: string;
+
+    if (existing) {
+      // A `failed` attempt has finished, so a retry may claim immediately. A
+      // `pending` attempt holds a bounded lease that every journal write
+      // refreshes; only an expired lease is claimable.
+      if (existing.status === "pending" && existing.updatedAt.getTime() > leaseCutoff.getTime())
+        return yield* Effect.fail(
+          inProgress(
+            (existing.updatedAt.getTime() + TENANT_TEARDOWN_LEASE_MS - startedAt.getTime()) / 1000,
+          ),
+        );
+
+      const claim = yield* db
+        .update(schema.tenantDeletion)
+        .set({
+          status: "pending",
+          attempts: (existing.attempts ?? 0) + 1,
+          updatedAt: startedAt,
+          lastError: null,
+          completedAt: null,
+          requestedByUserId: actor?.id ?? existing.requestedByUserId ?? null,
+          requestedByEmail: actor?.email ?? existing.requestedByEmail ?? null,
+        })
+        .where(
+          and(
+            eq(schema.tenantDeletion.id, existing.id),
+            or(
+              and(
+                eq(schema.tenantDeletion.status, "pending"),
+                lte(schema.tenantDeletion.updatedAt, leaseCutoff),
+              ),
+              eq(schema.tenantDeletion.status, "failed"),
+            ),
+          ),
+        );
+
+      // Another request claimed the row between the read and this update.
+      if (claim.affectedRows !== 1)
+        return yield* Effect.fail(inProgress(TENANT_TEARDOWN_LEASE_MS / 1000));
+
+      jobId = existing.id;
+    } else {
+      jobId = newId();
+
+      // The unique organization index is the cross-request claim for a new
+      // job. A duplicate insert means another request won the race.
+      const claimNewJob: Effect.Effect<
+        void,
+        TenantTeardownStepFailed | TenantTeardownInProgress,
+        never
+      > = Effect.catch(
+        Effect.gen(function* () {
+          yield* db.insert(schema.tenantDeletion).values({
+            id: jobId,
+            organizationId,
+            status: "pending",
+            steps: [],
+            attempts: 1,
+            lastError: null,
+            requestedByUserId: actor?.id ?? null,
+            requestedByEmail: actor?.email ?? null,
+            createdAt: startedAt,
+            updatedAt: startedAt,
+            completedAt: null,
+          });
+        }),
+        (cause): Effect.Effect<never, TenantTeardownStepFailed | TenantTeardownInProgress> =>
+          isDuplicateJobError(cause)
+            ? Effect.fail(inProgress(TENANT_TEARDOWN_LEASE_MS / 1000))
+            : Effect.fail(
+                new TenantTeardownStepFailed({
+                  step: "tenant",
+                  message: `Could not claim the tenant deletion: ${describeTeardownError(cause)}`,
+                }),
+              ),
+      );
+
+      yield* claimNewJob;
+    }
 
     const persist = (patch: {
       readonly status: "pending" | "failed" | "completed";
       readonly lastError?: string | null;
       readonly completedAt?: Date | null;
     }) =>
-      Effect.gen(function* () {
-        const value = {
+      db
+        .update(schema.tenantDeletion)
+        .set({
           steps: [...steps],
           status: patch.status,
           lastError: patch.lastError ?? null,
           updatedAt: now(),
           completedAt: patch.completedAt ?? null,
-        };
-
-        if (jobExists) {
-          yield* db
-            .update(schema.tenantDeletion)
-            .set(value)
-            .where(eq(schema.tenantDeletion.id, jobId));
-        } else {
-          yield* db.insert(schema.tenantDeletion).values({
-            id: jobId,
-            organizationId,
-            attempts: 1,
-            requestedByUserId: actor?.id ?? null,
-            requestedByEmail: actor?.email ?? null,
-            createdAt,
-            ...value,
-          });
-          jobExists = true;
-        }
-      });
+        })
+        .where(eq(schema.tenantDeletion.id, jobId));
 
     const record = (
       step: TenantDeletionStep["step"],
@@ -228,6 +339,10 @@ export const teardownTenant = (
         steps.push(entry);
       });
 
+    const organization = yield* db.query.organization.findFirst({
+      where: { id: organizationId },
+    });
+
     if (!organization) {
       // The row is already gone: a previous attempt finished the reclamation
       // but did not get to write the final journal entry.
@@ -236,36 +351,6 @@ export const teardownTenant = (
 
       return summaryFromSteps(steps);
     }
-
-    // Claim the job before doing work so a crash is visible to support. The
-    // existing journal is kept: a retry resumes from the last successful step
-    // and repeats the idempotent ones.
-    if (existing)
-      yield* db
-        .update(schema.tenantDeletion)
-        .set({
-          status: "pending",
-          attempts: (existing.attempts ?? 0) + 1,
-          updatedAt: now(),
-          requestedByUserId: actor?.id ?? existing.requestedByUserId ?? null,
-          requestedByEmail: actor?.email ?? existing.requestedByEmail ?? null,
-        })
-        .where(eq(schema.tenantDeletion.id, jobId));
-    else
-      yield* db.insert(schema.tenantDeletion).values({
-        id: jobId,
-        organizationId,
-        status: "pending",
-        steps: [],
-        attempts: 1,
-        lastError: null,
-        requestedByUserId: actor?.id ?? null,
-        requestedByEmail: actor?.email ?? null,
-        createdAt,
-        updatedAt: now(),
-        completedAt: null,
-      });
-    jobExists = true;
 
     const fail = (step: TenantDeletionStep["step"], detail: string) =>
       Effect.gen(function* () {
@@ -393,8 +478,8 @@ export const teardownTenant = (
       steps: [...steps],
     };
   }).pipe(
-    Effect.mapError((cause: unknown): TenantTeardownStepFailed =>
-      cause instanceof TenantTeardownStepFailed
+    Effect.mapError((cause: unknown): TenantTeardownStepFailed | TenantTeardownInProgress =>
+      cause instanceof TenantTeardownStepFailed || cause instanceof TenantTeardownInProgress
         ? cause
         : new TenantTeardownStepFailed({
             step: "tenant",

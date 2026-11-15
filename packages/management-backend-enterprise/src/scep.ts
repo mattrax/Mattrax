@@ -58,6 +58,13 @@ export type ScepRepositoryOptions = {
   readonly authSecret?: string;
 };
 
+/**
+ * The database operations the SCEP repository needs. Narrower than the full
+ * service so the repository can run inside a transaction handle, which omits
+ * the client-only `$client` property.
+ */
+type ScepDatabase = Pick<Db["Service"], "select" | "insert" | "update">;
+
 export type IssueScepChallengeOptions = {
   readonly enrollmentId: string;
   readonly organizationId: string;
@@ -128,7 +135,7 @@ export const issueScepChallenge = (
 
 export class ScepRepositoryLive extends ScepRepository {
   static readonly make = (
-    db: Db["Service"],
+    db: ScepDatabase,
     options: ScepRepositoryOptions = {},
   ): ScepRepository["Service"] => {
     const authenticatePkcsReq = (

@@ -43,7 +43,6 @@ test.describe("policy precedence", () => {
     await page.getByRole("button", { name: /^edit$/i }).click();
     await page.getByRole("button", { name: /^policies$/i }).click();
     const row = page.getByRole("row").filter({ hasText: "Mode policy" });
-    await row.getByRole("checkbox").check();
     await row.locator("select").selectOption("exclude");
     await page.getByRole("button", { name: /^save$/i }).click();
 

@@ -170,6 +170,27 @@ export const commandIsExpired = (row: CommandLifecycleRow, now: Date) => {
   return deadline != null && deadline.getTime() <= now.getTime();
 };
 
+/**
+ * New deadline for a duplicate command that is still active. Clicking the same
+ * action again is a fresh intent, so it buys the command a new delivery window
+ * instead of leaving it a minute from expiry. A command type without a budget
+ * never expires, so it needs no extension (`null` means "leave the row").
+ */
+export const extendedCommandDeadline = (
+  row: Pick<CommandLifecycleRow, "requestType" | "createdAt" | "expiresAt">,
+  requestType: string,
+  now: Date,
+): Date | null => {
+  const budgetDeadline = deviceCommandExpiresAt(requestType, now);
+
+  if (budgetDeadline === null) return null;
+  const current = commandDeadline(row);
+
+  if (current !== null && current.getTime() >= budgetDeadline.getTime()) return null;
+
+  return budgetDeadline;
+};
+
 export const COMMAND_EXPIRED_DETAIL = "The delivery deadline passed before the device ran it.";
 
 export type CommandDeliveryPlan = {

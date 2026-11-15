@@ -144,6 +144,29 @@ describe("SSR preload", () => {
     expect(outcome.session?.me?.tenants[0]?.permissions).toContain("devices.write");
   });
 
+  it("bootstraps when the token predates the tenant in the URL", async () => {
+    let bootstrapCalls = 0;
+
+    const outcome = await preloadSession(
+      htmlRequest([sessionCookie, ssrCookie, revisionCookie], "/t/tenant-2/devices"),
+      {
+        secret,
+        verifyToken: async () => tokenPayload(),
+        verifyRevision,
+        fetchBootstrap: async () => {
+          bootstrapCalls++;
+
+          return bootstrapResponse();
+        },
+      },
+    );
+
+    // The warm token only names tenant-1; painting it for tenant-2 would show
+    // a shell without the tenant (and an empty switcher) for five minutes.
+    expect(bootstrapCalls).toBe(1);
+    expect(outcome.session?.me?.tenants.map((tenant) => tenant.id)).toEqual(["tenant-1"]);
+  });
+
   it("bootstraps when the revision cookie is missing", async () => {
     let bootstrapCalls = 0;
 

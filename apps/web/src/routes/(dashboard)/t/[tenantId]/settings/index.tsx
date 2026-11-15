@@ -233,7 +233,9 @@ export default function GeneralSettingsPage() {
       applications: number;
       preRegistrations: number;
       devices: number;
+      deviceAssignments: number;
     };
+    skipped: { deviceAssignments: number };
   } | null>(null);
 
   const [deleteBackupTarget, setDeleteBackupTarget] = createSignal<{
@@ -269,6 +271,7 @@ export default function GeneralSettingsPage() {
       setRestoreResult({
         preRestoreBackupId: result.preRestoreBackupId,
         counts: result.counts,
+        skipped: { deviceAssignments: result.skipped.deviceAssignments },
       });
       await Promise.all([
         refetchBackups(),
@@ -1067,8 +1070,16 @@ export default function GeneralSettingsPage() {
                 <p class="text-muted-foreground">
                   {result().counts.groups} groups, {result().counts.policies} policies,{" "}
                   {result().counts.applications} applications, {result().counts.preRegistrations}{" "}
-                  pre-registrations and {result().counts.devices} device assignments.
+                  pre-registrations, {result().counts.devices} group device assignments and{" "}
+                  {result().counts.deviceAssignments} direct device assignments.
                 </p>
+                <Show when={result().skipped.deviceAssignments > 0}>
+                  <p class="text-xs text-muted-foreground">
+                    {result().skipped.deviceAssignments} direct device assignment
+                    {result().skipped.deviceAssignments === 1 ? "" : "s"} referenced a device that
+                    no longer exists and were skipped.
+                  </p>
+                </Show>
                 <p class="text-xs text-muted-foreground">
                   A pinned pre-restore snapshot was saved as{" "}
                   <code>{result().preRestoreBackupId}</code>. Restore it if this was the wrong

@@ -87,6 +87,11 @@ export const apiWorker = {
     STRIPE_DEVICE_MONTHLY_PRICE_ID: bindings.secret(),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
+    /**
+     * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
+     * One hour by default; deployments can raise it up to one day.
+     */
+    MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: bindings.text("3600"),
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     // Apple profile signing is optional (see `useAppleProfileSigning` below).

@@ -4,10 +4,12 @@ import type { R2Bucket, TenantDeletionStep } from "@mattrax/enterprise-core";
 import {
   deleteTenantObjects,
   teardownTenant,
+  TenantTeardownInProgress,
   type DeviceUnenrollSummary,
+  type TenantTeardownDependencies,
   type TenantTeardownStepFailed,
 } from "../src/tenantTeardown.js";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, runEffect, schema } from "./helpers.js";
 
 const failureStep = (failure: TenantTeardownStepFailed | null) => failure?.step;
 
@@ -356,6 +358,190 @@ describe("tenant teardown", () => {
 
     expect(result.objectsDeleted).toBe(7);
     expect(result.subscription).toBe("cancelled");
+  });
+
+  it("rejects a second attempt while another holds the lease", async () => {
+    const db = makeDb();
+    seed(db);
+
+    const now = new Date("2026-11-01T00:00:00Z");
+    db.store.tenant_deletion.push({
+      id: "job-1",
+      organizationId: "org-1",
+      status: "pending",
+      steps: [],
+      attempts: 1,
+      lastError: null,
+      requestedByUserId: null,
+      requestedByEmail: null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+
+    const calls: string[] = [];
+
+    const failure = await runEffect(
+      Effect.match(
+        teardownTenant(db, makeStorage(), {
+          organizationId: "org-1",
+          deps: makeDeps({ calls }),
+          now: () => now,
+        }),
+        { onFailure: (error) => error, onSuccess: () => null },
+      ),
+    );
+
+    expect(failure).toBeInstanceOf(TenantTeardownInProgress);
+    expect(failure).toMatchObject({ retryAfterSeconds: expect.any(Number) });
+    // No side effect is repeated by the request that lost the claim.
+    expect(calls).toEqual([]);
+    expect(db.store.organization).toHaveLength(1);
+    expect(db.store.tenant_deletion.at(0)).toMatchObject({ status: "pending", attempts: 1 });
+  });
+
+  it("reclaims a pending job once its lease has expired", async () => {
+    const db = makeDb();
+    seed(db);
+
+    const now = new Date("2026-11-01T00:00:00Z");
+    db.store.tenant_deletion.push({
+      id: "job-1",
+      organizationId: "org-1",
+      status: "pending",
+      steps: [],
+      attempts: 1,
+      lastError: null,
+      requestedByUserId: null,
+      requestedByEmail: null,
+      createdAt: new Date(now.getTime() - 60 * 60 * 1000),
+      updatedAt: new Date(now.getTime() - 11 * 60 * 1000),
+      completedAt: null,
+    });
+
+    const result = await runEffect(
+      teardownTenant(db, makeStorage(), {
+        organizationId: "org-1",
+        deps: makeDeps(),
+        now: () => now,
+      }),
+    );
+
+    expect(result.subscription).toBe("cancelled");
+    expect(db.store.organization).toHaveLength(0);
+    expect(db.store.tenant_deletion.at(0)).toMatchObject({ status: "completed", attempts: 2 });
+  });
+
+  it("runs the side effects once when two deletions race", async () => {
+    const db = makeDb();
+    seed(db);
+
+    const calls: string[] = [];
+    let release: () => void = () => {};
+    let started: () => void = () => {};
+
+    const unenrollStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const deps: TenantTeardownDependencies = {
+      unenrollDevices: () =>
+        Effect.promise(async () => {
+          calls.push("devices");
+          started();
+          await gate;
+
+          return makeDeviceSummary();
+        }),
+      cancelSubscription: () =>
+        Effect.sync(() => {
+          calls.push("subscription");
+
+          return "cancelled" as const;
+        }),
+    };
+
+    const attempt = (background: boolean) =>
+      Effect.match(
+        Effect.gen(function* () {
+          if (background) yield* Effect.promise(() => unenrollStarted);
+
+          return yield* teardownTenant(db, makeStorage(), { organizationId: "org-1", deps });
+        }),
+        {
+          onFailure: (error: TenantTeardownStepFailed | TenantTeardownInProgress) => error,
+          onSuccess: () => null,
+        },
+      );
+
+    const [first, second] = await runEffect(
+      Effect.all(
+        [
+          attempt(false),
+          Effect.gen(function* () {
+            const outcome = yield* attempt(true);
+            release();
+
+            return outcome;
+          }),
+        ],
+        { concurrency: 2 },
+      ),
+    );
+
+    // Note: the shapes differ on success (null) and failure (the error).
+    expect(first).toBeNull();
+    expect(second).toBeInstanceOf(TenantTeardownInProgress);
+    expect(calls).toEqual(["devices", "subscription"]);
+    expect(db.store.organization).toHaveLength(0);
+    expect(db.store.tenant_deletion).toHaveLength(1);
+  });
+
+  it("treats a duplicate insert as another attempt claiming the job", async () => {
+    const db = makeDb();
+    seed(db);
+
+    const calls: string[] = [];
+
+    const duplicate = Object.assign(
+      new Error("Duplicate entry 'org-1' for key 'tenant_deletion_organization_unique'"),
+      {
+        code: "ER_DUP_ENTRY",
+        errno: 1062,
+      },
+    );
+
+    // Model the exact race: this attempt read before the winner committed, and
+    // now loses the unique-index insert.
+    const findFirst = db.query.tenantDeletion.findFirst;
+    let reads = 0;
+    db.query.tenantDeletion.findFirst = (input: any) => {
+      reads++;
+
+      return reads === 1 ? Effect.succeed(undefined) : findFirst(input);
+    };
+
+    const insert = db.insert;
+    db.insert = (table: any) => {
+      if (table !== schema.tenantDeletion) return insert(table);
+
+      return { values: () => Effect.fail(duplicate) };
+    };
+
+    const failure = await runEffect(
+      Effect.match(
+        teardownTenant(db, makeStorage(), { organizationId: "org-1", deps: makeDeps({ calls }) }),
+        { onFailure: (error) => error, onSuccess: () => null },
+      ),
+    );
+
+    expect(failure).toBeInstanceOf(TenantTeardownInProgress);
+    expect(calls).toEqual([]);
+    expect(db.store.organization).toHaveLength(1);
   });
 });
 

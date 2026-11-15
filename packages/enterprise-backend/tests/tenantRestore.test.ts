@@ -7,6 +7,7 @@ import {
   restoreTenantFromBackup,
   type TenantRestoreError,
 } from "../src/tenantRestore.js";
+import { buildTenantExport } from "../src/tenantExport.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | TenantRestoreError | null) => failure?.reason;
@@ -204,6 +205,129 @@ describe("in-place tenant restore", () => {
       targetType: "tenant",
     });
     expect(db.store.device).toHaveLength(1);
+  });
+
+  it("round-trips direct device policy and application assignments", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    db.store.application.push({
+      id: "app-1",
+      organizationId: "org-1",
+      name: "Slack",
+      platform: "apple",
+      bundleId: null,
+      version: null,
+      source: "store",
+      manifestUrl: null,
+      storeId: "803453959",
+      fileName: null,
+      contentType: null,
+      size: null,
+      sha256: null,
+      r2Key: null,
+      notes: null,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    });
+
+    // A direct exclusion and a direct app assignment. Neither is derived from
+    // group membership, which is exactly what the restore used to drop.
+    db.store.device_policy.push({ deviceId: "device-1", policyId: "old-policy", mode: "exclude" });
+    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-1" });
+
+    const exported = await runEffect(
+      buildTenantExport(db, organization, { now: new Date("2026-10-02T00:00:00Z") }),
+    );
+
+    expect(exported.bundle.deviceAssignments).toMatchObject([
+      {
+        deviceKey: "device-1",
+        deviceSerial: "SERIAL-1",
+        policyKeys: [],
+        excludedPolicyKeys: ["old-policy"],
+        applicationKeys: ["app-1"],
+      },
+    ]);
+
+    objects.set("backups/org-1/run-2.json", exported.body);
+    db.store.backup_run.push({
+      id: "run-2",
+      organizationId: "org-1",
+      status: "succeeded",
+      r2Key: "backups/org-1/run-2.json",
+      sizeBytes: exported.body.length,
+      startedAt,
+      completedAt: startedAt,
+      error: null,
+      trigger: "manual",
+      retention: "default",
+    });
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-2",
+        actor: { userId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-02T00:00:00Z"),
+      }),
+    );
+
+    expect(result.counts.deviceAssignments).toBe(2);
+    expect(result.skipped.deviceAssignments).toBe(0);
+
+    const policy = db.store.policy.find(
+      (row: { organizationId: string }) => row.organizationId === "org-1",
+    )!;
+
+    const application = db.store.application.find(
+      (row: { organizationId: string }) => row.organizationId === "org-1",
+    )!;
+
+    expect(db.store.device_policy).toEqual([
+      { deviceId: "device-1", policyId: policy.id, mode: "exclude" },
+    ]);
+    expect(db.store.application_device).toEqual([
+      { deviceId: "device-1", applicationId: application.id },
+    ]);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "tenant.restored",
+      metadata: { counts: { deviceAssignments: 2 } },
+    });
+  });
+
+  it("skips a device assignment whose device no longer exists", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({
+        ...bundle,
+        deviceAssignments: [
+          {
+            deviceKey: "deleted-device",
+            deviceSerial: "GONE-1",
+            policyKeys: ["policy-1"],
+            excludedPolicyKeys: [],
+            applicationKeys: [],
+          },
+        ],
+      }),
+    );
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { userId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(result.counts.deviceAssignments).toBe(0);
+    expect(result.skipped).toMatchObject({ deviceAssignments: 1 });
+    expect(db.store.device_policy).toEqual([]);
+    // The rest of the restore still applies.
+    expect(db.store.policy.map((row: { name: string }) => row.name)).toEqual(["Baseline"]);
   });
 
   it("refuses a restore the operator did not confirm", async () => {

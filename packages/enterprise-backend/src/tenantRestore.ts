@@ -38,10 +38,14 @@ export type TenantRestoreResult = {
     readonly preRegistrations: number;
     /** Device group memberships re-linked to devices still in the tenant. */
     readonly devices: number;
+    /** Device-level policy and application links restored. */
+    readonly deviceAssignments: number;
   };
   readonly skipped: {
     readonly members: number;
     readonly devices: number;
+    /** Device-level links whose device no longer exists in the tenant. */
+    readonly deviceAssignments: number;
     readonly certificates: number;
     readonly auditLog: number;
   };
@@ -89,6 +93,13 @@ type ParsedBundle = {
     r2Key: string | null;
     notes: string | null;
     groupKeys: ReadonlyArray<string>;
+  }>;
+  deviceAssignments: ReadonlyArray<{
+    deviceKey: string;
+    deviceSerial: string | null;
+    policyKeys: ReadonlyArray<string>;
+    excludedPolicyKeys: ReadonlyArray<string>;
+    applicationKeys: ReadonlyArray<string>;
   }>;
   preRegistrations: ReadonlyArray<{
     serial: string;
@@ -298,6 +309,69 @@ export const parseTenantRestoreBundle = (
           );
     }
 
+    const deviceAssignments = bundle.deviceAssignments ?? [];
+
+    if (deviceAssignments.length > TENANT_EXPORT_MAX_ROWS)
+      return yield* Effect.fail(
+        invalid(
+          `The backup contains too many device assignments (limit ${TENANT_EXPORT_MAX_ROWS})`,
+        ),
+      );
+
+    const assignmentDeviceKeys = new Set<string>();
+    const parsedDeviceAssignments: Array<ParsedBundle["deviceAssignments"][number]> = [];
+
+    for (const assignment of deviceAssignments) {
+      const deviceKey = text(assignment.deviceKey, 255);
+
+      if (!deviceKey)
+        return yield* Effect.fail(invalid("Every device assignment needs a device key"));
+
+      if (assignmentDeviceKeys.has(deviceKey))
+        return yield* Effect.fail(invalid(`Duplicate device assignment "${deviceKey}"`));
+      assignmentDeviceKeys.add(deviceKey);
+
+      const excluded = new Set(assignment.excludedPolicyKeys);
+
+      for (const policyKey of assignment.policyKeys) {
+        if (!policyKeys.has(policyKey))
+          return yield* Effect.fail(
+            invalid(
+              `Device assignment "${deviceKey}" references policy "${policyKey}", which is not in this backup`,
+            ),
+          );
+
+        if (excluded.has(policyKey))
+          return yield* Effect.fail(
+            invalid(`Device assignment "${deviceKey}" includes and excludes policy "${policyKey}"`),
+          );
+      }
+
+      for (const policyKey of assignment.excludedPolicyKeys)
+        if (!policyKeys.has(policyKey))
+          return yield* Effect.fail(
+            invalid(
+              `Device assignment "${deviceKey}" references policy "${policyKey}", which is not in this backup`,
+            ),
+          );
+
+      for (const applicationKey of assignment.applicationKeys)
+        if (!applicationKeys.has(applicationKey))
+          return yield* Effect.fail(
+            invalid(
+              `Device assignment "${deviceKey}" references application "${applicationKey}", which is not in this backup`,
+            ),
+          );
+
+      parsedDeviceAssignments.push({
+        deviceKey,
+        deviceSerial: text(assignment.deviceSerial, 255),
+        policyKeys: [...new Set(assignment.policyKeys)],
+        excludedPolicyKeys: [...new Set(assignment.excludedPolicyKeys)],
+        applicationKeys: [...new Set(assignment.applicationKeys)],
+      });
+    }
+
     const serials = new Set<string>();
 
     for (const row of preRegistrations) {
@@ -371,6 +445,7 @@ export const parseTenantRestoreBundle = (
         notes: text(row.notes, 10_000),
         groupKey: row.groupKey ?? null,
       })),
+      deviceAssignments: parsedDeviceAssignments,
       members: bundle.members?.length ?? 0,
       certificates: bundle.scepCertificates?.length ?? 0,
       auditLog: bundle.auditLog?.length ?? 0,
@@ -415,7 +490,8 @@ const hashJson = (value: Schema.Json) =>
  * untouched.
  *
  * Device group membership is re-linked when the exported device key (or its
- * serial) still exists in the tenant. Uploaded application objects are also
+ * serial) still exists in the tenant, and direct device-level policy/application
+ * assignments are restored the same way. Uploaded application objects are also
  * reused: they live under this tenant's `a/<tenant>/` prefix and were not
  * touched by the restore.
  */
@@ -429,6 +505,8 @@ const applyBundle = (
   {
     counts: TenantRestoreResult["counts"];
     skippedDevices: number;
+    /** Device-level assignment rows whose device no longer exists. */
+    skippedDeviceAssignments: number;
     applicationsWithoutFiles: number;
   },
   unknown,
@@ -447,6 +525,15 @@ const applyBundle = (
         device.serial ? [[device.serial.toLowerCase(), device.id] as const] : [],
       ),
     );
+
+    /**
+     * Resolve an exported device to a device that still exists. The stable id
+     * is authoritative; the serial is the fallback for a bundle captured before
+     * the device was re-enrolled (which mints a new id).
+     */
+    const resolveDevice = (key: string, serial: string | null | undefined) =>
+      (deviceIds.has(key) ? key : undefined) ??
+      (serial ? serials.get(serial.toLowerCase()) : undefined);
 
     const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
       where: { organizationId: organization.id },
@@ -586,9 +673,7 @@ const applyBundle = (
           const groupId = groupIdByKey.get(group.key)!;
 
           for (const device of group.devices ?? []) {
-            const deviceId =
-              (deviceIds.has(device.key) ? device.key : undefined) ??
-              (device.serial ? serials.get(device.serial.toLowerCase()) : undefined);
+            const deviceId = resolveDevice(device.key, device.serial);
 
             if (!deviceId) {
               skippedDevices++;
@@ -651,6 +736,56 @@ const applyBundle = (
         if (applicationGroupValues.length > 0)
           yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
 
+        // Device-level assignments are part of the configuration, not the
+        // device: the device itself survives a restore. A bundle entry whose
+        // device has since been deleted is skipped and reported rather than
+        // failing the whole restore.
+        let skippedDeviceAssignments = 0;
+        const devicePolicyValues: Array<{
+          deviceId: string;
+          policyId: string;
+          mode: "include" | "exclude";
+        }> = [];
+        const applicationDeviceValues: Array<{ deviceId: string; applicationId: string }> = [];
+
+        for (const assignment of bundle.deviceAssignments) {
+          const deviceId = resolveDevice(assignment.deviceKey, assignment.deviceSerial);
+
+          if (!deviceId) {
+            skippedDeviceAssignments++;
+            continue;
+          }
+
+          for (const policyKey of assignment.policyKeys)
+            // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
+            devicePolicyValues.push({
+              deviceId,
+              policyId: policyIdByKey.get(policyKey)!,
+              mode: "include",
+            });
+
+          for (const policyKey of assignment.excludedPolicyKeys)
+            // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
+            devicePolicyValues.push({
+              deviceId,
+              policyId: policyIdByKey.get(policyKey)!,
+              mode: "exclude",
+            });
+
+          for (const applicationKey of assignment.applicationKeys)
+            // SAFETY: parseTenantRestoreBundle rejected unknown application keys.
+            applicationDeviceValues.push({
+              deviceId,
+              applicationId: applicationIdByKey.get(applicationKey)!,
+            });
+        }
+
+        if (devicePolicyValues.length > 0)
+          yield* tx.insert(schema.devicePolicy).ignore().values(devicePolicyValues);
+
+        if (applicationDeviceValues.length > 0)
+          yield* tx.insert(schema.applicationDevice).ignore().values(applicationDeviceValues);
+
         for (const row of bundle.preRegistrations)
           yield* tx.insert(schema.devicePreRegistration).values({
             id: newId(),
@@ -710,8 +845,10 @@ const applyBundle = (
             applications: bundle.applications.length,
             preRegistrations: bundle.preRegistrations.length,
             devices: groupDeviceValues.length,
+            deviceAssignments: devicePolicyValues.length + applicationDeviceValues.length,
           },
           skippedDevices,
+          skippedDeviceAssignments,
           applicationsWithoutFiles,
         };
       }),
@@ -814,6 +951,7 @@ export const restoreTenantFromBackup = (
           skipped: {
             members: bundle.members,
             devices: applied.skippedDevices,
+            deviceAssignments: applied.skippedDeviceAssignments,
             certificates: bundle.certificates,
             auditLog: bundle.auditLog,
           },
@@ -840,6 +978,7 @@ export const restoreTenantFromBackup = (
       skipped: {
         members: bundle.members,
         devices: applied.skippedDevices,
+        deviceAssignments: applied.skippedDeviceAssignments,
         certificates: bundle.certificates,
         auditLog: bundle.auditLog,
       },

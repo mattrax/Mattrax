@@ -37,8 +37,10 @@ activity timeline.
 ### SCEP failures
 
 - The deployment has `AUTH_SECRET` (without it SCEP fails closed).
-- The enrollment challenge has not expired (seven days) and was issued for the same
-  tenant as the SCEP URL (`/mdm/apple/scep/<organizationId>`). Challenges are one-time.
+- The enrollment challenge has not expired (one hour by default; see
+  `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS`) and was issued for the same tenant as the
+  SCEP URL (`/mdm/apple/scep/<organizationId>`). Challenges are one-time, and changing
+  the enrollment settings or resetting the enrollment invalidates unused ones.
 - A profile installed before upgrading to per-tenant CAs points at the old
   `/mdm/apple/scep` URL, which now returns `410`. Download the enrollment profile again.
 - The device is still `enrolled` for renewal.

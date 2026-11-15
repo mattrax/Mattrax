@@ -91,7 +91,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
   certificateDeviceIdsFor,
@@ -120,6 +120,7 @@ import {
   commandIsExpired,
   commandStatusIsActive,
   deviceCommandExpiresAt,
+  extendedCommandDeadline,
   planCommandQueueing,
   type CommandPayload,
 } from "@mattrax/management-backend-enterprise";
@@ -174,10 +175,13 @@ import {
 import { applePushService } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import {
-  DEVICE_ACTIVITY_MAX_OFFSET,
+  DEVICE_ACTIVITY_AUDIT_PREFIX,
+  DEVICE_ACTIVITY_COMMAND_PREFIX,
+  decodeDeviceActivityCursor,
   deviceActivityPage,
+  deviceActivitySourceKeyset,
   normalizeDeviceActivityLimit,
-  normalizeDeviceActivityOffset,
+  type DeviceActivitySourceKeyset,
 } from "./deviceActivity.ts";
 import {
   hasOwnerRole,
@@ -432,6 +436,12 @@ export type EnterpriseHandlersConfig = {
    * Cloudflare Email sender; defaults to `hello@mattrax.cloud`.
    */
   readonly invitationFromEmail?: string;
+  /**
+   * Lifetime of the bearer SCEP challenge embedded in an Apple enrollment
+   * profile, in seconds. Defaults to one hour and is bounded to a day so a
+   * shared profile link cannot stay live indefinitely.
+   */
+  readonly enrollmentProfileTtlSeconds?: number;
 };
 
 type ServiceFailure = Error | Schema.Json | null | undefined;
@@ -662,6 +672,48 @@ const isEffectStripeClient = (
 };
 
 const now = () => new Date();
+
+/**
+ * One hour is long enough to install a profile on a device an administrator is
+ * holding, and short enough that a leaked profile link stops working the same
+ * day. The challenge is one-time and bound to the tenant's enrollment id.
+ */
+export const ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS = 60 * 60;
+export const ENROLLMENT_PROFILE_MAX_TTL_SECONDS = 24 * 60 * 60;
+
+export const normalizeEnrollmentProfileTtlSeconds = (value: number | undefined) => {
+  if (value === undefined) return ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS;
+
+  if (!Number.isInteger(value) || value < 60 || value > ENROLLMENT_PROFILE_MAX_TTL_SECONDS)
+    throw new Error(
+      `enrollmentProfileTtlSeconds must be a whole number of seconds between 60 and ${ENROLLMENT_PROFILE_MAX_TTL_SECONDS}`,
+    );
+
+  return value;
+};
+
+/**
+ * Restrict one activity source to rows older than the keyset cursor. The
+ * timestamp column is the source's event time (`createdAt` for audits,
+ * `updatedAt` for commands); the id tiebreaker matches the merged feed.
+ */
+const deviceActivityKeysetCondition = (
+  keyset: DeviceActivitySourceKeyset,
+  at: AnyColumn,
+  id: AnyColumn,
+): SQL => {
+  const before = lt(at, keyset.at);
+
+  if ("beforeId" in keyset) {
+    const sameInstant = and(eq(at, keyset.at), lt(id, keyset.beforeId));
+
+    return or(before, sameInstant) ?? before;
+  }
+
+  if (keyset.sameInstant === "all") return or(before, eq(at, keyset.at)) ?? before;
+
+  return before;
+};
 
 /**
  * SCIM bearer-token lifetime policy. Provisioning credentials are long-lived by
@@ -1122,8 +1174,13 @@ export const createEnterpriseService = ({
   planLimits,
   appleProfileSigning,
   analytics,
+  enrollmentProfileTtlSeconds: configuredEnrollmentProfileTtlSeconds,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
+  const enrollmentProfileTtlSeconds = normalizeEnrollmentProfileTtlSeconds(
+    configuredEnrollmentProfileTtlSeconds,
+  );
 
   const auth = wrapServiceErrors(authService);
 
@@ -2329,12 +2386,29 @@ export const createEnterpriseService = ({
         { requestType: input.requestType, payload: input.payload, now: input.at },
       );
 
-      if (plan.duplicate)
+      if (plan.duplicate) {
+        // Re-issuing the same action is a fresh intent: extend the delivery
+        // window instead of reporting success for a command that expires
+        // moments later. A type without a budget has no deadline to move.
+        const extended = extendedCommandDeadline(plan.duplicate, input.requestType, input.at);
+
+        if (extended !== null)
+          yield* db
+            .update(schema.deviceCommand)
+            .set({ expiresAt: extended })
+            .where(
+              and(
+                eq(schema.deviceCommand.deviceId, input.deviceId),
+                eq(schema.deviceCommand.id, plan.duplicate.id),
+              ),
+            );
+
         return {
           id: plan.duplicate.id,
           payload: plan.duplicate.payload ?? null,
           deduplicated: true,
         };
+      }
 
       if (plan.supersedeIds.length > 0)
         yield* db
@@ -3117,6 +3191,21 @@ export const createEnterpriseService = ({
         }
       );
     });
+
+  /**
+   * Drop challenges that were minted but never redeemed. Changing the
+   * enrollment settings or rotating its id must invalidate profile links that
+   * were already handed out; consumed rows are kept as the replay record.
+   */
+  const invalidateUnusedScepChallenges = (organizationId: string) =>
+    db
+      .delete(schema.scepChallenge)
+      .where(
+        and(
+          eq(schema.scepChallenge.organizationId, organizationId),
+          isNull(schema.scepChallenge.consumedAt),
+        ),
+      );
 
   /**
    * Append an enrollment diagnostic. Diagnostics must never break enrollment,
@@ -5402,14 +5491,25 @@ export const createEnterpriseService = ({
             cancelSubscription: teardownSubscription,
           },
         }).pipe(
-          Effect.mapError((error: TenantTeardownStepFailed) =>
-            diagnoseError(
-              new EnterpriseTenantTeardownFailed({
-                message: `${error.message} The tenant was kept so the deletion can be retried.`,
-                step: error.step,
+          Effect.catchTag("TenantTeardownInProgress", (error) =>
+            Effect.fail(
+              diagnoseError(new EnterpriseConflict({ message: error.message }), {
+                code: "conflict",
+                reason: "teardown_in_progress",
+                details: { retryAfterSeconds: error.retryAfterSeconds },
               }),
-              { code: "teardown_failed", details: { step: error.step } },
             ),
+          ),
+          Effect.mapError((cause: TenantTeardownStepFailed | EnterpriseConflict) =>
+            cause instanceof EnterpriseConflict
+              ? cause
+              : diagnoseError(
+                  new EnterpriseTenantTeardownFailed({
+                    message: `${cause.message} The tenant was kept so the deletion can be retried.`,
+                    step: cause.step,
+                  }),
+                  { code: "teardown_failed", details: { step: cause.step } },
+                ),
           ),
         );
 
@@ -7714,9 +7814,9 @@ export const createEnterpriseService = ({
             enrollmentId: enrollment.id,
             organizationId: enrollment.organizationId,
             authSecret: authSecret ?? "",
-            // Enrollment profiles are shareable links; allow a week before the
-            // challenge goes stale. The persisted row makes it one-time.
-            ttlSeconds: 7 * 24 * 60 * 60,
+            // The profile link is a bearer credential until the challenge is
+            // consumed, so it is deliberately short-lived.
+            ttlSeconds: enrollmentProfileTtlSeconds,
           }).pipe(
             Effect.match({
               onFailure: () => {
@@ -8008,7 +8108,7 @@ export const createEnterpriseService = ({
           enrollmentId: enrollment.id,
           organizationId: enrollment.organizationId,
           authSecret: authSecret!,
-          ttlSeconds: 7 * 24 * 60 * 60,
+          ttlSeconds: enrollmentProfileTtlSeconds,
         }).pipe(
           Effect.mapError(
             () =>
@@ -8071,31 +8171,46 @@ export const createEnterpriseService = ({
     rotateTenantScepCa: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        // Changing the CA invalidates every device identity issued by the old
+        // one, so it is a high-impact action that needs fresh proof of presence.
+        yield* requireStepUp(auth, request, "scep-ca-rotate");
         const organizationId = ctx.organization.id;
-        const repository = ScepRepositoryLive.make(db, { authSecret });
+        const rotatedAt = now();
 
         // Rotation is deliberately explicit: every identity issued by the
         // previous CA stops being usable for renewal or mTLS check-in once the
         // tenant CA changes, so they are revoked and the devices must re-enroll.
-        yield* generateScepCa(organizationId).pipe(
-          Effect.flatMap((candidate) => replaceScepCa(repository, { organizationId }, candidate)),
+        // The key is generated before the transaction and the replacement and
+        // revocation commit together; a partial write would leave devices
+        // holding identities the new CA never issued.
+        const candidate = yield* generateScepCa(organizationId).pipe(
           Effect.mapError(
             () => new EnterpriseInternal({ message: "Could not rotate the tenant SCEP CA." }),
           ),
         );
 
-        yield* db
-          .update(schema.scepIssuedCertificate)
-          .set({ revokedAt: new Date() })
-          .where(
-            and(
-              eq(schema.scepIssuedCertificate.organizationId, organizationId),
-              isNull(schema.scepIssuedCertificate.revokedAt),
-            ),
+        const revokedCertificates = yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const repository = ScepRepositoryLive.make(tx, { authSecret });
+              yield* replaceScepCa(repository, { organizationId }, candidate);
+
+              const revoked = yield* tx
+                .update(schema.scepIssuedCertificate)
+                .set({ revokedAt: rotatedAt })
+                .where(
+                  and(
+                    eq(schema.scepIssuedCertificate.organizationId, organizationId),
+                    isNull(schema.scepIssuedCertificate.revokedAt),
+                  ),
+                );
+
+              return revoked.affectedRows;
+            }),
           )
           .pipe(
             Effect.mapError(
-              () => new EnterpriseDbError({ message: "Could not revoke the old identities." }),
+              () => new EnterpriseInternal({ message: "Could not rotate the tenant SCEP CA." }),
             ),
           );
 
@@ -8111,40 +8226,52 @@ export const createEnterpriseService = ({
           ),
         );
 
+        yield* audit(ctx, "scep_ca.rotated", "scep_ca", null, {
+          source: "generated",
+          commonName: description.commonName,
+          fingerprintSha256: description.fingerprintSha256,
+          revokedCertificates,
+        });
+
         return tenantScepCaInfo(organizationId, row!, description);
       }),
     importTenantScepCa: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        // Importing a CA replaces the root every device identity chains to.
+        yield* requireStepUp(auth, request, "scep-ca-import");
         const organizationId = ctx.organization.id;
-        const repository = ScepRepositoryLive.make(db, { authSecret });
 
         const material = yield* importScepCa({
           certificatePem: payload.certificatePem,
           privateKeyPem: payload.privateKeyPem,
         }).pipe(Effect.mapError((cause) => new EnterpriseBadRequest({ message: cause.message })));
 
-        yield* replaceScepCa(repository, { organizationId }, material).pipe(
-          Effect.mapError(
-            () => new EnterpriseInternal({ message: "Could not store the supplied SCEP CA." }),
-          ),
-        );
-
         // Importing a different CA invalidates every identity issued by the old
-        // one for renewal purposes. Revoke them so health and device views are
-        // truthful; devices must re-enroll against the new CA.
-        yield* db
-          .update(schema.scepIssuedCertificate)
-          .set({ revokedAt: new Date() })
-          .where(
-            and(
-              eq(schema.scepIssuedCertificate.organizationId, organizationId),
-              isNull(schema.scepIssuedCertificate.revokedAt),
-            ),
+        // one for renewal purposes. Revoke them in the same transaction as the
+        // replacement so the CA and the revocation list cannot disagree.
+        const revokedCertificates = yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const repository = ScepRepositoryLive.make(tx, { authSecret });
+              yield* replaceScepCa(repository, { organizationId }, material);
+
+              const revoked = yield* tx
+                .update(schema.scepIssuedCertificate)
+                .set({ revokedAt: now() })
+                .where(
+                  and(
+                    eq(schema.scepIssuedCertificate.organizationId, organizationId),
+                    isNull(schema.scepIssuedCertificate.revokedAt),
+                  ),
+                );
+
+              return revoked.affectedRows;
+            }),
           )
           .pipe(
             Effect.mapError(
-              () => new EnterpriseDbError({ message: "Could not revoke the old identities." }),
+              () => new EnterpriseInternal({ message: "Could not store the supplied SCEP CA." }),
             ),
           );
 
@@ -8159,6 +8286,13 @@ export const createEnterpriseService = ({
             () => new EnterpriseInternal({ message: "Could not read the supplied SCEP CA." }),
           ),
         );
+
+        yield* audit(ctx, "scep_ca.imported", "scep_ca", null, {
+          source: "imported",
+          commonName: description.commonName,
+          fingerprintSha256: description.fingerprintSha256,
+          revokedCertificates,
+        });
 
         return tenantScepCaInfo(organizationId, row!, description);
       }),
@@ -8250,6 +8384,7 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           })
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+        yield* invalidateUnusedScepChallenges(ctx.organization.id);
         yield* audit(ctx, "enrollment.updated", "enrollment", null, {
           fields: Object.keys(body),
         });
@@ -8265,6 +8400,7 @@ export const createEnterpriseService = ({
           .update(schema.enterpriseEnrollment)
           .set({ id: newId, updatedAt: now() })
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+        yield* invalidateUnusedScepChallenges(ctx.organization.id);
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
 
         return { id: newId };
@@ -9895,14 +10031,29 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const limit = normalizeDeviceActivityLimit(query?.limit);
-        const offset = normalizeDeviceActivityOffset(query?.offset);
+        const cursor = query?.cursor ? decodeDeviceActivityCursor(query.cursor) : undefined;
 
-        // Past the deepest page there is nothing left to merge; skip the reads.
-        if (offset >= DEVICE_ACTIVITY_MAX_OFFSET) return { events: [], hasMore: false };
+        // Offset paging re-read every row above the page from both sources on
+        // each request, so it is retired. The first page is still `offset=0` or
+        // omitted; deeper pages use the cursor returned by the previous page.
+        if (!cursor && query?.offset !== undefined && query.offset > 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "offset paging is not supported; pass the cursor from the previous page",
+            }),
+          );
 
-        // Every source contributes at most one page window; the merge picks the
-        // newest `offset + limit` entries before slicing out this page.
-        const window = offset + limit + 1;
+        // Fetch one bounded window per source. Each page reads at most
+        // `limit + 1` rows per source regardless of how deep it is.
+        const window = limit + 1;
+
+        const auditFilter = cursor
+          ? deviceActivityKeysetCondition(
+              deviceActivitySourceKeyset(cursor, DEVICE_ACTIVITY_AUDIT_PREFIX),
+              schema.auditLog.createdAt,
+              schema.auditLog.id,
+            )
+          : undefined;
 
         const auditRows = yield* db
           .select()
@@ -9912,9 +10063,10 @@ export const createEnterpriseService = ({
               eq(schema.auditLog.organizationId, ctx.organization.id),
               eq(schema.auditLog.targetType, "device"),
               eq(schema.auditLog.targetId, device.id),
+              auditFilter,
             ),
           )
-          .orderBy(desc(schema.auditLog.createdAt))
+          .orderBy(desc(schema.auditLog.createdAt), desc(schema.auditLog.id))
           .limit(window);
 
         const audits = auditRows.map((row) => ({
@@ -9922,11 +10074,23 @@ export const createEnterpriseService = ({
           metadata: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.metadata)),
         }));
 
+        const commandFilter = cursor
+          ? deviceActivityKeysetCondition(
+              deviceActivitySourceKeyset(cursor, DEVICE_ACTIVITY_COMMAND_PREFIX),
+              schema.deviceCommand.updatedAt,
+              schema.deviceCommand.id,
+            )
+          : undefined;
+
         const commandRows = yield* db
           .select()
           .from(schema.deviceCommand)
-          .where(eq(schema.deviceCommand.deviceId, device.id))
-          .orderBy(desc(schema.deviceCommand.updatedAt))
+          .where(
+            commandFilter
+              ? and(eq(schema.deviceCommand.deviceId, device.id), commandFilter)
+              : eq(schema.deviceCommand.deviceId, device.id),
+          )
+          .orderBy(desc(schema.deviceCommand.updatedAt), desc(schema.deviceCommand.id))
           .limit(window);
 
         const at = now();
@@ -9953,7 +10117,7 @@ export const createEnterpriseService = ({
               inventoryUpdatedAt: device.inventoryUpdatedAt,
             },
           },
-          { limit, offset },
+          { limit, cursor },
         );
       }),
     getDeviceHealthSummary: (request, tenantId) =>

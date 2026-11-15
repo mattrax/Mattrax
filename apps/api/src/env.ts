@@ -89,6 +89,11 @@ const ApiEnvSchema = Schema.Struct({
   /** Verified sender for invitation email; defaults to `hello@mattrax.cloud`. */
   MATTRAX_INVITATION_FROM: Schema.optional(nonEmptyString),
   /**
+   * Lifetime in seconds of the bearer SCEP challenge embedded in an Apple
+   * enrollment profile. Defaults to one hour; bounded to 60..86400.
+   */
+  MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: Schema.optional(Schema.String),
+  /**
    * Reply-To for the one-time onboarding emails. Defaults to
    * `oscar@otbeaumont.me`; set it to a monitored mailbox, never `no-reply@`.
    */
@@ -192,6 +197,7 @@ const RawApiEnvSchema = Schema.Struct({
   DEV_MAILBOX_ALLOW_REMOTE: optionalString,
   DEV_MAILBOX_SECRET: optionalString,
   MATTRAX_INVITATION_FROM: optionalString,
+  MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: optionalString,
   MATTRAX_ONBOARDING_REPLY_TO: optionalString,
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
   MATTRAX_ONBOARDING_SINCE: optionalString,
@@ -258,6 +264,9 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   DEV_MAILBOX_ALLOW_REMOTE: emptyStringAsUndefined(rawEnv.DEV_MAILBOX_ALLOW_REMOTE),
   DEV_MAILBOX_SECRET: emptyStringAsUndefined(rawEnv.DEV_MAILBOX_SECRET),
   MATTRAX_INVITATION_FROM: emptyStringAsUndefined(rawEnv.MATTRAX_INVITATION_FROM),
+  MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: emptyStringAsUndefined(
+    rawEnv.MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS,
+  ),
   MATTRAX_ONBOARDING_REPLY_TO: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_REPLY_TO),
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL),
   MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),

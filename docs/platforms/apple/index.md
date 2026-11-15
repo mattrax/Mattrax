@@ -41,9 +41,10 @@ The enrollment profile contains two payloads:
 
 - `com.apple.security.scep` — points at
   `<origin>/mdm/apple/scep/<organizationId>`, requests an RSA 2048 key with key usage 5,
-  and carries a per-enrollment, one-time challenge that expires after seven days. The
-  tenant id is a path segment (not a query parameter) because SCEP clients append their
-  own `?operation=...` to the configured URL.
+  and carries a per-enrollment, one-time challenge that expires after one hour
+  (`MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS`, 60–86400 seconds). The tenant id is a path
+  segment (not a query parameter) because SCEP clients append their own `?operation=...`
+  to the configured URL.
 - `com.apple.mdm` — points check-in and command URLs at `<origin>/mdm/apple/mdm`, requires
   signed messages, references the SCEP identity, supplies the tenant APNs topic and asks
   the device to check out when the profile is removed.
@@ -96,6 +97,10 @@ RSA-2048, ten-year self-signed CA whose subject carries the tenant id as `OU`.
 - **Rotation.** Rotating regenerates the tenant CA. Identities issued by the previous CA
   can no longer renew or authenticate mTLS check-in, so they are revoked and the tenant's
   devices must enroll again. Other tenants are unaffected.
+- **Protected change.** Rotate and import both require a fresh step-up (`scep-ca-rotate`,
+  `scep-ca-import`). The CA replacement and the revocation of old identities commit in one
+  transaction, and the audit log records the actor, source and the new CA's SHA-256
+  fingerprint (`scep_ca.rotated`, `scep_ca.imported`). A failure writes neither.
 - **Migration.** Upgrading copies the legacy deployment-wide CA row into every tenant that
   had used it, preserving existing device identities; from then on each tenant rotates
   independently.
@@ -114,7 +119,13 @@ Open **Devices → Enrollment**:
   independently; whichever is lower wins.
 
 `POST /api/v1/tenants/:tenantId/enrollment/reset` replaces the enrollment id and
-invalidates old links and challenges. Existing devices stay enrolled.
+invalidates old links and challenges. Changing the enrollment settings also drops
+every unused challenge, so a profile issued before the change cannot be redeemed.
+Existing devices stay enrolled.
+
+The profile link carries a one-time bearer challenge. It defaults to a one-hour
+lifetime and is deliberately short: the profile URL is a credential until its
+first use, and resetting or reconfiguring the enrollment invalidates it.
 
 ### Check-in lifecycle
 

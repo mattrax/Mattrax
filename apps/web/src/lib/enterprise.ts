@@ -851,12 +851,12 @@ export const enterprise = {
   getDeviceActivity: (
     tenantId: RouteParam,
     id: RouteParam,
-    options: { limit?: number; offset?: number } = {},
+    options: { limit?: number; cursor?: string } = {},
   ) =>
     endpoint((api) =>
       api.getDeviceActivity({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
-        query: { limit: options.limit ?? 50, offset: options.offset },
+        query: { limit: options.limit ?? 50, cursor: options.cursor },
       }),
     ),
   getCredentialHealth: (tenantId: RouteParam) =>

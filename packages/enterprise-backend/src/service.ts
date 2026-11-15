@@ -49,6 +49,11 @@ export type EnterpriseServiceOptions = {
   };
   /** Verified invitation sender; defaults to `hello@mattrax.cloud`. */
   readonly invitationFromEmail?: string;
+  /**
+   * Lifetime of the bearer SCEP challenge in an Apple enrollment profile, in
+   * seconds. Defaults to one hour (see `ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS`).
+   */
+  readonly enrollmentProfileTtlSeconds?: number;
 };
 
 export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
@@ -108,6 +113,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           analytics: options.analytics,
           email: options.email,
           invitationFromEmail: options.invitationFromEmail,
+          enrollmentProfileTtlSeconds: options.enrollmentProfileTtlSeconds,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,
           windowsFederated: options.windowsFederated,

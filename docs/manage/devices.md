@@ -152,12 +152,13 @@ GET  /api/v1/tenants/:tenantId/devices/:id/applications
 GET  /api/v1/tenants/:tenantId/devices/:id/recovery-key
 ```
 
-`GET .../activity` accepts `limit` (1–200, default 50) and `offset` and returns
-`{ events, hasMore }`. Pages are newest first across every source (audit log,
-commands, declarations, certificates and device lifecycle), so walk older
-history by adding `limit` to `offset` until `hasMore` is false. The endpoint
-serves at most 5,000 events per device; the dashboard exposes the same walk as
-"Load older activity".
+`GET .../activity` accepts `limit` (1–200, default 50) and returns
+`{ events, hasMore, nextCursor? }`. Pages are newest first across every source
+(audit log, commands, declarations, certificates and device lifecycle) and use a
+keyset cursor: pass `nextCursor` back as `cursor` until `hasMore` is false. Each
+page reads at most `limit + 1` rows per source, so paging depth does not add
+reads. `offset` is retired; any non-zero value without a `cursor` returns `400`.
+The dashboard exposes the same walk as "Load older activity".
 
 ## Edit a device
 

@@ -8,6 +8,7 @@ import {
   type TenantExportApplication,
   type TenantExportAuditEntry,
   type TenantExportCertificate,
+  type TenantExportDeviceAssignment,
   type TenantExportEnvelope,
   type TenantExportEnrollment,
   type TenantExportGroup,
@@ -57,9 +58,7 @@ const exportMetadata = (
   if (!value) return null;
 
   try {
-    return Option.getOrUndefined(
-      Schema.decodeUnknownOption(JsonRecord)(JSON.parse(value)),
-    ) ?? null;
+    return Option.getOrUndefined(Schema.decodeUnknownOption(JsonRecord)(JSON.parse(value))) ?? null;
   } catch {
     return null;
   }
@@ -114,6 +113,7 @@ export const buildTenantExport = (
       .where(eq(schema.application.organizationId, organizationId));
 
     const applicationIds = applications.map((application) => application.id);
+    const applicationIdSet = new Set(applicationIds);
 
     const groupDevices = groupIds.length
       ? yield* db
@@ -122,7 +122,30 @@ export const buildTenantExport = (
           .where(inArray(schema.groupDevice.groupId, groupIds))
       : [];
 
-    const deviceIds = [...new Set(groupDevices.map((link) => link.deviceId))];
+    // Direct device assignments are not derived from group membership, so they
+    // need their own reads. Their devices are exported too, so a restore can
+    // re-link them (or fall back to the serial when ids changed).
+    const devicePolicies = policyIds.length
+      ? yield* db
+          .select()
+          .from(schema.devicePolicy)
+          .where(inArray(schema.devicePolicy.policyId, policyIds))
+      : [];
+
+    const applicationDevices = applicationIds.length
+      ? yield* db
+          .select()
+          .from(schema.applicationDevice)
+          .where(inArray(schema.applicationDevice.applicationId, applicationIds))
+      : [];
+
+    const deviceIds = [
+      ...new Set([
+        ...groupDevices.map((link) => link.deviceId),
+        ...devicePolicies.map((link) => link.deviceId),
+        ...applicationDevices.map((link) => link.deviceId),
+      ]),
+    ];
 
     const devices = deviceIds.length
       ? yield* db
@@ -294,6 +317,56 @@ export const buildTenantExport = (
       groupKeys: applicationGroupKeys.get(application.id) ?? [],
     }));
 
+    const assignments = new Map<
+      string,
+      { policyKeys: string[]; excludedPolicyKeys: string[]; applicationKeys: string[] }
+    >();
+
+    const targetFor = (deviceId: string) => {
+      const current = assignments.get(deviceId);
+
+      if (current) return current;
+      const created = { policyKeys: [], excludedPolicyKeys: [], applicationKeys: [] };
+
+      assignments.set(deviceId, created);
+
+      return created;
+    };
+
+    for (const link of devicePolicies) {
+      const device = devicesById.get(link.deviceId);
+
+      if (!device || !policyKeys.has(link.policyId)) continue;
+      const target = targetFor(device.id);
+
+      if (link.mode === "exclude") target.excludedPolicyKeys.push(link.policyId);
+      else target.policyKeys.push(link.policyId);
+    }
+
+    for (const link of applicationDevices) {
+      if (!devicesById.has(link.deviceId) || !applicationIdSet.has(link.applicationId)) continue;
+      targetFor(link.deviceId).applicationKeys.push(link.applicationId);
+    }
+
+    const exportedDeviceAssignments: TenantExportDeviceAssignment[] = [...assignments.keys()]
+      .sort()
+      .flatMap((deviceId) => {
+        const device = devicesById.get(deviceId);
+        const target = assignments.get(deviceId);
+
+        if (!device || !target) return [];
+
+        return [
+          {
+            deviceKey: device.id,
+            deviceSerial: device.serial,
+            policyKeys: target.policyKeys.sort(),
+            excludedPolicyKeys: target.excludedPolicyKeys.sort(),
+            applicationKeys: target.applicationKeys.sort(),
+          },
+        ];
+      });
+
     const exportedEnrollment: TenantExportEnrollment | undefined = enrollment
       ? {
           code: enrollment.code,
@@ -332,6 +405,7 @@ export const buildTenantExport = (
       groups: exportedGroups,
       policies: exportedPolicies,
       applications: exportedApplications,
+      deviceAssignments: exportedDeviceAssignments,
       enrollment: exportedEnrollment,
       preRegistrations: exportedPreRegistrations,
       scepCertificates: exportedCertificates,

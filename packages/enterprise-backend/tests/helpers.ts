@@ -609,9 +609,22 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     update: (table: any) => new UpdateBuilder(store, tableName(table)),
     delete: (table: any) => new DeleteBuilder(store, tableName(table)),
     select: (fields?: any) => new SelectBuilder(store, fields),
-    // The production Db exposes a transaction; the in-memory fake applies the
-    // work directly so page-per-transaction code paths can be exercised.
-    transaction: <Result>(work: (tx: any) => Result): Result => work(db),
+    // The production Db wraps this work in one transaction. The fake runs it
+    // eagerly but restores the previous rows if it fails, so rollback paths are
+    // observable without a database.
+    transaction: <Result>(work: (tx: any) => Result): Result => {
+      const snapshot = Object.fromEntries(
+        Object.entries(store).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]),
+      );
+
+      const rollback = Effect.sync(() => {
+        for (const [name, rows] of Object.entries(snapshot)) store[name] = rows;
+      });
+
+      // SAFETY: the production transaction returns the same `Result` the work
+      // effect produces; wrapping it only adds rollback on failure.
+      return Effect.suspend(() => work(db)).pipe(Effect.onError(() => rollback)) as Result;
+    },
   };
 
   return db;

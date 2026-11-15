@@ -192,12 +192,19 @@ export async function preloadSession(
     // minted before verification. Finally, `ver` is only trustworthy when the
     // signed revision cookie names the same session and revision: a missing,
     // expired, tampered or rotated revision is a miss, never a pass.
+    // A token minted before the account joined this tenant would paint a
+    // shell without it (and the tenant switcher would lie) for the rest of its
+    // five-minute window. A tenant-scoped navigation that is not in the signed
+    // membership list is therefore a miss; bootstrap has the current list.
+    const tenantInPath = /^\/t\/([^/]+)/.exec(new URL(request.url).pathname)?.[1];
+
     if (
       payload?.tenants &&
       payload.user.emailVerified &&
       revision !== undefined &&
       revision.sid === payload.sid &&
-      revision.ver === payload.ver
+      revision.ver === payload.ver &&
+      (tenantInPath === undefined || payload.tenants.some((tenant) => tenant.id === tenantInPath))
     ) {
       return {
         session: {

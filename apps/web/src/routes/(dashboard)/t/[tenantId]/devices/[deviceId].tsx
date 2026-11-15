@@ -320,6 +320,8 @@ export default function DeviceDetailPage() {
   const { can } = useCan();
   const writable = () => can("devices.write");
   const canCommand = () => can("devices.command");
+  /** The server derives the legal action set from platform, status and reported capabilities. */
+  const supports = (action: string) => (row()?.actions ?? []).some((name) => name === action);
   const canRevealKey = () => can("devices.recovery_key");
 
   const device = useQuery(() => ({
@@ -559,17 +561,16 @@ export default function DeviceDetailPage() {
     Error,
     InfiniteData<DeviceActivityResponse>,
     readonly unknown[],
-    number
+    string | undefined
   >(() => ({
     queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
     queryFn: ({ pageParam }) =>
       enterprise.getDeviceActivity(params.tenantId, params.deviceId, {
         limit: ACTIVITY_PAGE_SIZE,
-        offset: pageParam,
+        cursor: pageParam,
       }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, _pages, lastOffset) =>
-      lastPage.hasMore ? lastOffset + ACTIVITY_PAGE_SIZE : undefined,
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : undefined),
     // Infinite queries are client-driven; the first page during SSR would not
     // carry the request cookie and would render as unauthenticated.
     enabled: Boolean(params.tenantId) && !isServer,
@@ -1192,7 +1193,7 @@ export default function DeviceDetailPage() {
                     <SettingsIcon class="size-3.5" />
                   </Button>
                 </Show>
-                <Show when={canCommand()}>
+                <Show when={canCommand() && supports("sync")}>
                   <Button
                     variant="outline"
                     size="icon-sm"
@@ -1957,7 +1958,7 @@ export default function DeviceDetailPage() {
                     >
                       <div class="space-y-3">
                         <div class="grid grid-cols-2 gap-2">
-                          <Show when={row()!.proto === "apple" || row()!.proto === "android"}>
+                          <Show when={supports("lock")}>
                             <Button
                               variant="outline"
                               disabled={command.isPending}
@@ -1966,14 +1967,16 @@ export default function DeviceDetailPage() {
                               Lock
                             </Button>
                           </Show>
-                          <Button
-                            variant="outline"
-                            disabled={command.isPending}
-                            onClick={() => command.mutate({ action: "restart" })}
-                          >
-                            Restart
-                          </Button>
-                          <Show when={row()!.proto === "apple"}>
+                          <Show when={supports("restart")}>
+                            <Button
+                              variant="outline"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "restart" })}
+                            >
+                              Restart
+                            </Button>
+                          </Show>
+                          <Show when={supports("shutdown")}>
                             <Button
                               variant="outline"
                               disabled={command.isPending}
@@ -1981,6 +1984,8 @@ export default function DeviceDetailPage() {
                             >
                               Shut down
                             </Button>
+                          </Show>
+                          <Show when={supports("clear-passcode")}>
                             <Button
                               variant="outline"
                               disabled={command.isPending}
@@ -1989,23 +1994,25 @@ export default function DeviceDetailPage() {
                               Clear passcode
                             </Button>
                           </Show>
-                          <Button
-                            variant="destructive"
-                            class="col-span-2"
-                            disabled={command.isPending}
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  "Erase this device? This cannot be undone and will wipe all data.",
+                          <Show when={supports("wipe")}>
+                            <Button
+                              variant="destructive"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Erase this device? This cannot be undone and will wipe all data.",
+                                  )
                                 )
-                              )
-                                command.mutate({ action: "wipe" });
-                            }}
-                          >
-                            Erase device
-                          </Button>
+                                  command.mutate({ action: "wipe" });
+                              }}
+                            >
+                              Erase device
+                            </Button>
+                          </Show>
                         </div>
-                        <Show when={row()!.proto === "apple"}>
+                        <Show when={supports("install-app")}>
                           <Field label="Install app from manifest URL">
                             <div class="flex gap-2">
                               <Input

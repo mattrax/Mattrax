@@ -101,6 +101,25 @@ const planLimits = parsePlanLimits(apiEnv.MATTRAX_PLAN_LIMITS);
 for (const warning of planLimits.warnings) console.warn(warning);
 
 /**
+ * Apple enrollment profiles carry a one-time bearer challenge. The default
+ * lifetime is one hour; a deployment can choose any whole number of seconds
+ * between one minute and one day.
+ */
+const enrollmentProfileTtlSeconds = (() => {
+  const raw = apiEnv.MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS;
+
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+
+  if (!Number.isInteger(parsed) || parsed < 60 || parsed > 86_400)
+    throw new Error(
+      "MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS must be a whole number of seconds between 60 and 86400",
+    );
+
+  return parsed;
+})();
+
+/**
  * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
  * without one use the per-isolate fallback.
  */
@@ -607,6 +626,7 @@ const makeAppLayer = (env: Env) => {
     EnterpriseService({
       email,
       invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM,
+      enrollmentProfileTtlSeconds,
       azureClientId: env.AZURE_CLIENT_ID,
       windowsFederated: windowsFederatedAudience
         ? { audience: windowsFederatedAudience }

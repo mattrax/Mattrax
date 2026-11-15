@@ -13,6 +13,7 @@ import {
   commandDedupeKey,
   commandIsExpired,
   deviceCommandExpiresAt,
+  extendedCommandDeadline,
   installApplicationTarget,
   planCommandDelivery,
   planCommandDeliveryBatch,
@@ -77,6 +78,41 @@ describe("command expiry budgets", () => {
 
     expect(commandIsExpired(legacy, at("2026-01-01T00:14:59.000Z"))).toBe(false);
     expect(commandIsExpired(legacy, at("2026-01-01T00:15:00.000Z"))).toBe(true);
+  });
+
+  it("extends a duplicate command's deadline from the new click", () => {
+    const now = at("2026-01-01T00:14:00.000Z");
+
+    const duplicate = row({
+      id: "lock",
+      requestType: "DeviceLock",
+      createdAt: at("2026-01-01T00:00:00.000Z"),
+      expiresAt: at("2026-01-01T00:15:00.000Z"),
+    });
+
+    expect(extendedCommandDeadline(duplicate, "DeviceLock", now)).toEqual(
+      at("2026-01-01T00:29:00.000Z"),
+    );
+    // A later deadline already covers the new window; leave the row alone.
+    expect(
+      extendedCommandDeadline(
+        { ...duplicate, expiresAt: at("2026-01-02T00:00:00.000Z") },
+        "DeviceLock",
+        now,
+      ),
+    ).toBeNull();
+    // A type without a budget never expires, so there is nothing to extend.
+    expect(
+      extendedCommandDeadline(
+        { ...duplicate, requestType: "SomethingNew", expiresAt: null },
+        "SomethingNew",
+        now,
+      ),
+    ).toBeNull();
+    // A legacy row without a stored deadline is derived from its creation time.
+    expect(extendedCommandDeadline({ ...duplicate, expiresAt: null }, "DeviceLock", now)).toEqual(
+      at("2026-01-01T00:29:00.000Z"),
+    );
   });
 });
 

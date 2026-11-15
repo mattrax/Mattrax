@@ -21,6 +21,7 @@ import {
   EnterpriseStripeError,
   EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
+  StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/management-backend-enterprise";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
@@ -136,6 +137,8 @@ const makeContext = async (
     apiToken?: any;
     db?: any;
     analytics?: any;
+    auth?: { requireStepUp?: (request: any, action: any) => Effect.Effect<any, any> };
+    enrollmentProfileTtlSeconds?: number;
   } = {},
 ) => {
   const db = overrides.db ?? makeDb();
@@ -167,6 +170,7 @@ const makeContext = async (
     requestEmailChange: () => Effect.succeed({ status: "ok" }),
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
     requireStepUp: () => Effect.void,
+    ...overrides.auth,
   };
 
   const service = createEnterpriseService({
@@ -183,6 +187,7 @@ const makeContext = async (
     apns: overrides.apns,
     email: overrides.email,
     analytics: overrides.analytics,
+    enrollmentProfileTtlSeconds: overrides.enrollmentProfileTtlSeconds,
   });
 
   return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
@@ -2561,6 +2566,62 @@ describe("enterprise service APNs", () => {
       runEffect(service.getDeviceActivity(request(headers), other.id, "device-1", {})),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
+
+  it("pages device activity with a keyset cursor instead of deep offsets", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedDevice(db, tenant.id, "device-1");
+
+    for (let index = 0; index < 7; index++)
+      db.store.audit_log.push({
+        id: `audit-${index}`,
+        organizationId: tenant.id,
+        action: "device.updated",
+        targetType: "device",
+        targetId: "device-1",
+        createdAt: new Date(Date.UTC(2026, 0, 3, 0, 0, 7 - index)),
+      });
+
+    const first = await runEffect(
+      service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 3 }),
+    );
+
+    expect(first.hasMore).toBe(true);
+    expect(first.nextCursor).toBeTruthy();
+
+    const second = await runEffect(
+      service.getDeviceActivity(request(headers), tenant.id, "device-1", {
+        limit: 3,
+        cursor: first.nextCursor!,
+      }),
+    );
+
+    const third = await runEffect(
+      service.getDeviceActivity(request(headers), tenant.id, "device-1", {
+        limit: 3,
+        cursor: second.nextCursor!,
+      }),
+    );
+
+    const ids = [...first.events, ...second.events, ...third.events].map((event) => event.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(9);
+    expect(ids).toContain("lifecycle:enrolled");
+    expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toBeUndefined();
+
+    // Offset paging is retired; callers must continue from the cursor.
+    await expect(
+      runEffect(
+        service.getDeviceActivity(request(headers), tenant.id, "device-1", { limit: 3, offset: 3 }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
 });
 
 describe("device command lifecycle", () => {
@@ -2642,6 +2703,37 @@ describe("device command lifecycle", () => {
     const firstCommandId = "commandId" in first ? first.commandId : undefined;
 
     expect(second).toMatchObject({ deduplicated: true, commandId: firstCommandId });
+  });
+
+  it("extends the deadline when a duplicate command is clicked again", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "collect-security-info",
+      }),
+    );
+
+    // Simulate the row reaching the end of its delivery window.
+    const existing = commands(db)[0]!;
+    existing.expiresAt = new Date(Date.now() + 60 * 1000);
+
+    const second = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "collect-security-info",
+      }),
+    );
+
+    expect(second).toMatchObject({ deduplicated: true });
+    expect(commands(db)).toHaveLength(1);
+    // A fresh 24-hour budget from the second click, not the old deadline.
+    expect(commands(db)[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
   });
 
   it("supersedes a pending lock when a wipe is queued", async () => {
@@ -3939,6 +4031,153 @@ describe("tenant SCEP CA", () => {
     expect(context.db.store.scep_issued_certificate[0]?.revokedAt).toBeInstanceOf(Date);
   });
 
+  it("requires step-up for CA rotation and import", async () => {
+    const context = await makeContext({
+      auth: {
+        requireStepUp: (_request: any, action: any) =>
+          Effect.fail(
+            new StepUpRequired({
+              message: "Confirm this action with your authenticator or passkey.",
+              action,
+              methods: ["passkey", "totp"],
+            }),
+          ),
+      },
+    });
+
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(context.service.rotateTenantScepCa(request(context.headers), tenant.id)),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+
+    await expect(
+      runEffect(
+        context.service.importTenantScepCa(request(context.headers), tenant.id, {
+          certificatePem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+          privateKeyPem: "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+
+    // Step-up happens before any CA read or write.
+    expect(context.db.store.scep_ca).toHaveLength(0);
+    expect(context.db.store.audit_log.some((row: any) => row.action.startsWith("scep_ca."))).toBe(
+      false,
+    );
+  });
+
+  it("audits a CA rotation with its source and fingerprint", async () => {
+    const context = await makeContext();
+    const { tenant, enrollment } = await prepareTenant(context, "Alpha", "alpha");
+    await profileFor(context, enrollment, "profile-alpha");
+
+    const rotated = await runEffect(
+      context.service.rotateTenantScepCa(request(context.headers), tenant.id),
+    );
+
+    const entry = context.db.store.audit_log.find((row: any) => row.action === "scep_ca.rotated");
+
+    expect(entry).toMatchObject({
+      organizationId: tenant.id,
+      actorUserId: "user-1",
+      actorEmail: "owner@example.com",
+      targetType: "scep_ca",
+      metadata: {
+        source: "generated",
+        fingerprintSha256: rotated.fingerprintSha256,
+        commonName: "Mattrax SCEP CA",
+      },
+    });
+  });
+
+  it("rolls back the CA replacement when revoking old identities fails", async () => {
+    const context = await makeContext();
+    const { tenant, enrollment } = await prepareTenant(context, "Alpha", "alpha");
+    await profileFor(context, enrollment, "profile-alpha");
+
+    const before = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), tenant.id),
+    );
+
+    const certPem = context.db.store.scep_ca[0]?.certPem;
+
+    const update = context.db.update;
+    context.db.update = (table: any) => {
+      if (table === schema.scepIssuedCertificate)
+        return {
+          set: () => ({
+            where: () => Effect.fail(new Error("revocation failed")),
+          }),
+        };
+
+      return update(table);
+    };
+
+    await expect(
+      runEffect(context.service.rotateTenantScepCa(request(context.headers), tenant.id)),
+    ).rejects.toBeTruthy();
+
+    // The replacement and the revocation are one transaction: neither landed.
+    expect(context.db.store.scep_ca[0]?.certPem).toBe(certPem);
+    expect(context.db.store.audit_log.some((row: any) => row.action === "scep_ca.rotated")).toBe(
+      false,
+    );
+
+    const after = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), tenant.id),
+    );
+
+    expect(after.fingerprintSha256).toBe(before.fingerprintSha256);
+  });
+
+  it("issues a short-lived enrollment challenge and invalidates it on reset", async () => {
+    const context = await makeContext();
+    const { tenant, enrollment } = await prepareTenant(context, "Alpha", "alpha");
+
+    await profileFor(context, enrollment, "profile-alpha");
+
+    const challenges = () =>
+      context.db.store.scep_challenge.filter((row: any) => row.organizationId === tenant.id);
+
+    const challenge = challenges().at(-1)!;
+    const lifetime = challenge.expiresAt.getTime() - Date.now();
+
+    expect(lifetime).toBeGreaterThan(59 * 60 * 1000);
+    expect(lifetime).toBeLessThanOrEqual(60 * 60 * 1000 + 5_000);
+
+    // Changing the enrollment settings invalidates profiles already handed out.
+    await runEffect(
+      context.service.patchTenantEnrollment(request(context.headers), tenant.id, {
+        enabledApple: true,
+      }),
+    );
+
+    expect(challenges()).toHaveLength(0);
+
+    await profileFor(context, enrollment, "profile-beta");
+    expect(challenges()).toHaveLength(1);
+
+    // Resetting issues a new enrollment id and drops every unused challenge.
+    await runEffect(context.service.resetTenantEnrollment(request(context.headers), tenant.id));
+    expect(challenges()).toHaveLength(0);
+  });
+
+  it("honours a configured enrollment challenge lifetime", async () => {
+    const context = await makeContext({ enrollmentProfileTtlSeconds: 120 });
+    const { enrollment } = await prepareTenant(context, "Alpha", "alpha");
+
+    await profileFor(context, enrollment, "profile-alpha");
+
+    const challenge = context.db.store.scep_challenge.at(-1)!;
+    const lifetime = challenge.expiresAt.getTime() - Date.now();
+
+    expect(lifetime).toBeGreaterThan(115_000);
+    expect(lifetime).toBeLessThanOrEqual(125_000);
+  });
+
   it("imports a tenant-supplied CA and rejects a mismatched key", async () => {
     const context = await makeContext();
 
@@ -3978,6 +4217,14 @@ describe("tenant SCEP CA", () => {
       fingerprintSha256: fingerprint,
     });
     expect(context.db.store.scep_ca[0]?.certPem).toBe(certificatePem);
+
+    expect(
+      context.db.store.audit_log.find((row: any) => row.action === "scep_ca.imported"),
+    ).toMatchObject({
+      organizationId: tenant.id,
+      actorUserId: "user-1",
+      metadata: { source: "imported", fingerprintSha256: fingerprint },
+    });
 
     // A key that does not match the certificate is rejected before it is stored.
     const otherKeys = await generateCaKeyPair();

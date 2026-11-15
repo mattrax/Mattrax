@@ -43,20 +43,13 @@ export type WebConfig = UnwrapConfig<typeof webWorker>;
 
 export type WebEnv = InferEnv<WebConfig>;
 
-/**
- * Keeping `AUTH_SECRET` byte-identical to the API's lets this Worker verify the
- * SSR bootstrap token without a service-binding call. `cf deploy` refuses to
- * ship a declared secret that has no value, so the binding is only reserved
- * when the deploy supplies it; without it authenticated HTML falls back to
- * bootstrap and logs one error per isolate.
- */
-const useBootstrapSecret = Boolean(process.env.AUTH_SECRET);
-
 export default defineConfig({
-  worker: useBootstrapSecret
-    ? {
-        ...webWorker,
-        env: { ...webWorker.env, AUTH_SECRET: bindings.secret() },
-      }
-    : webWorker,
+  // The dashboard verifies SSR bootstrap tokens with the same secret as the
+  // API. It is required rather than optional: a deployment without it would
+  // silently fall back to a service-binding bootstrap on every page view, and
+  // `cf deploy` refusing an unset secret is the correct failure.
+  worker: {
+    ...webWorker,
+    env: { ...webWorker.env, AUTH_SECRET: bindings.secret() },
+  },
 });

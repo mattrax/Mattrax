@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEVICE_ACTIVITY_AUDIT_PREFIX,
+  DEVICE_ACTIVITY_COMMAND_PREFIX,
   DEVICE_ACTIVITY_DEFAULT_LIMIT,
   DEVICE_ACTIVITY_MAX_LIMIT,
-  DEVICE_ACTIVITY_MAX_OFFSET,
   buildDeviceActivity,
+  decodeDeviceActivityCursor,
   deviceActivityPage,
+  deviceActivitySourceKeyset,
+  encodeDeviceActivityCursor,
   normalizeDeviceActivityLimit,
-  normalizeDeviceActivityOffset,
+  type DeviceActivityPage,
 } from "../src/deviceActivity.js";
 
 const at = (value: string) => new Date(value);
@@ -81,8 +85,8 @@ describe("buildDeviceActivity", () => {
       "lifecycle:inventory",
       "declaration:com.example.policy",
       "command:command-1",
-      "certificate:serial-1:issued",
       "lifecycle:enrolled",
+      "certificate:serial-1:issued",
     ]);
     expect(events.every((event) => !Number.isNaN(Date.parse(event.at)))).toBe(true);
   });
@@ -171,17 +175,46 @@ describe("buildDeviceActivity", () => {
   });
 });
 
-describe("normalizeDeviceActivityOffset", () => {
-  it("starts at zero and clamps to the deepest page", () => {
-    expect(normalizeDeviceActivityOffset(undefined)).toBe(0);
-    expect(normalizeDeviceActivityOffset(-10)).toBe(0);
-    expect(normalizeDeviceActivityOffset(25.9)).toBe(25);
-    expect(normalizeDeviceActivityOffset(10_000_000)).toBe(DEVICE_ACTIVITY_MAX_OFFSET);
+describe("activity cursor", () => {
+  it("round-trips an opaque position", () => {
+    const cursor = { at: at("2026-01-02T03:04:05.678Z"), id: "audit:abc" };
+    const encoded = encodeDeviceActivityCursor(cursor);
+
+    expect(encoded).not.toContain(":");
+    expect(decodeDeviceActivityCursor(encoded)).toEqual(cursor);
   });
 
-  it("accepts numeric strings", () => {
-    expect(normalizeDeviceActivityOffset("50")).toBe(50);
-    expect(normalizeDeviceActivityOffset(" nope ")).toBe(0);
+  it("rejects a malformed cursor", () => {
+    expect(() => decodeDeviceActivityCursor("not-a-cursor")).toThrow();
+    expect(() =>
+      decodeDeviceActivityCursor(
+        encodeDeviceActivityCursor({
+          at: at("2026-01-02T03:04:05.678Z"),
+          id: "",
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it("restricts each source by its event timestamp and id", () => {
+    const cursor = { at: at("2026-01-02T03:04:05.678Z"), id: "audit:abc" };
+
+    expect(deviceActivitySourceKeyset(cursor, DEVICE_ACTIVITY_AUDIT_PREFIX)).toEqual({
+      at: cursor.at,
+      beforeId: "abc",
+    });
+    // A cursor from a source that sorts later includes every row at that
+    // instant; one from an earlier source includes none.
+    expect(deviceActivitySourceKeyset(cursor, DEVICE_ACTIVITY_COMMAND_PREFIX)).toEqual({
+      at: cursor.at,
+      sameInstant: "none",
+    });
+    expect(
+      deviceActivitySourceKeyset(
+        { at: cursor.at, id: "command:abc" },
+        DEVICE_ACTIVITY_AUDIT_PREFIX,
+      ),
+    ).toEqual({ at: cursor.at, sameInstant: "all" });
   });
 });
 
@@ -203,19 +236,23 @@ describe("deviceActivityPage", () => {
     certificates: [],
   });
 
+  const cursorOf = (page: DeviceActivityPage) =>
+    page.nextCursor ? decodeDeviceActivityCursor(page.nextCursor) : undefined;
+
   it("returns a full first page and reports that more exist", () => {
-    const page = deviceActivityPage(feed(10), { limit: 4, offset: 0 });
+    const page = deviceActivityPage(feed(10), { limit: 4 });
 
     expect(page.events).toHaveLength(4);
     expect(page.events[0]?.id).toBe("audit:audit-000");
     expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toBeDefined();
   });
 
-  it("walks the feed without gaps or repeats", () => {
+  it("walks the feed with a cursor without gaps or repeats", () => {
     const inputs = feed(10);
-    const first = deviceActivityPage(inputs, { limit: 4, offset: 0 });
-    const second = deviceActivityPage(inputs, { limit: 4, offset: 4 });
-    const third = deviceActivityPage(inputs, { limit: 4, offset: 8 });
+    const first = deviceActivityPage(inputs, { limit: 4 });
+    const second = deviceActivityPage(inputs, { limit: 4, cursor: cursorOf(first) });
+    const third = deviceActivityPage(inputs, { limit: 4, cursor: cursorOf(second) });
 
     const ids = [...first.events, ...second.events, ...third.events].map((event) => event.id);
 
@@ -223,24 +260,58 @@ describe("deviceActivityPage", () => {
     expect(ids).toHaveLength(12);
     expect(second.hasMore).toBe(true);
     expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toBeUndefined();
     expect(third.events.map((event) => event.id)).toEqual([
       "audit:audit-008",
       "audit:audit-009",
-      "lifecycle:enrolled",
       "lifecycle:last-seen",
+      "lifecycle:enrolled",
     ]);
   });
 
-  it("returns an empty final page past the end of the feed", () => {
-    const page = deviceActivityPage(feed(3), { limit: 10, offset: 50 });
+  it("pages events that share one instant exactly once", () => {
+    const inputs = {
+      ...feed(0),
+      audits: Array.from({ length: 5 }, (_, index) => ({
+        id: `same-${index}`,
+        action: "device.updated",
+        createdAt: at("2026-01-03T00:00:00.000Z"),
+      })),
+    };
 
-    expect(page.events).toEqual([]);
-    expect(page.hasMore).toBe(false);
+    const first = deviceActivityPage(inputs, { limit: 3 });
+    const second = deviceActivityPage(inputs, { limit: 3, cursor: cursorOf(first) });
+    const third = deviceActivityPage(inputs, { limit: 3, cursor: cursorOf(second) });
+    const ids = [...first.events, ...second.events, ...third.events].map((event) => event.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([
+      "audit:same-4",
+      "audit:same-3",
+      "audit:same-2",
+      "audit:same-1",
+      "audit:same-0",
+      "lifecycle:last-seen",
+      "lifecycle:enrolled",
+    ]);
+    expect(third.hasMore).toBe(false);
   });
 
-  it("stops at the maximum offset instead of paging forever", () => {
-    const page = deviceActivityPage(feed(5), { limit: 50, offset: DEVICE_ACTIVITY_MAX_OFFSET });
+  it("returns an empty final page past the end of the feed", () => {
+    const inputs = feed(2);
+    const first = deviceActivityPage(inputs, { limit: 3 });
+    const second = deviceActivityPage(inputs, { limit: 10, cursor: cursorOf(first) });
+    const last = second.events.at(-1)!;
 
-    expect(page).toEqual({ events: [], hasMore: false });
+    const page = deviceActivityPage(inputs, {
+      limit: 10,
+      cursor: { at: new Date(last.at), id: last.id },
+    });
+
+    expect(first.hasMore).toBe(true);
+    expect(second.events).toHaveLength(1);
+    expect(second.hasMore).toBe(false);
+    expect(page.events).toEqual([]);
+    expect(page.hasMore).toBe(false);
   });
 });

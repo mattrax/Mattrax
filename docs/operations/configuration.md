@@ -82,15 +82,16 @@ All are optional. Without them billing reports `configured: false`.
 
 ## Apple
 
-| Variable                      | Purpose                                          |
-| ----------------------------- | ------------------------------------------------ |
-| `CLOUD_APPLE_VENDOR_CERT`     | Vendor certificate for APNs CSR signing          |
-| `CLOUD_APPLE_VENDOR_KEY`      | Vendor private key                               |
-| `APPLE_PROFILE_SIGNING_CERT`  | Leaf certificate used to CMS-sign Apple profiles |
-| `APPLE_PROFILE_SIGNING_KEY`   | RSA PKCS#8 PEM private key for profile signing   |
-| `APPLE_PROFILE_SIGNING_CHAIN` | Optional intermediate/root PEM bundle            |
-| `APNS_RELAY_URL`              | Multi-tenant APNs relay base URL                 |
-| `APNS_RELAY_SECRET`           | Relay HMAC secret (at least 32 characters)       |
+| Variable                                 | Purpose                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CLOUD_APPLE_VENDOR_CERT`                | Vendor certificate for APNs CSR signing                                                         |
+| `CLOUD_APPLE_VENDOR_KEY`                 | Vendor private key                                                                              |
+| `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
+| `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
+| `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
+| `APNS_RELAY_URL`                         | Multi-tenant APNs relay base URL                                                                |
+| `APNS_RELAY_SECRET`                      | Relay HMAC secret (at least 32 characters)                                                      |
+| `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
 Without the vendor key, tenants upload a manually signed APNs certificate. Without the
 relay, hosted multi-tenant Cloud has no push transport and devices poll.

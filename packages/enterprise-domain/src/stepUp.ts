@@ -24,6 +24,8 @@ export const STEP_UP_ACTIONS = [
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
+  "scep-ca-rotate",
+  "scep-ca-import",
   "passkey-enroll",
   "passkey-remove",
 ] as const;

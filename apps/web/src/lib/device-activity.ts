@@ -27,9 +27,9 @@ export const isActiveCommandStatus = (status: DeviceCommandStatus) =>
   status === "queued" || status === "sent" || status === "deferred";
 
 /**
- * Flatten activity pages into one feed. Pages are newest-first windows over a
- * live merge, so a new event can shift an older page and repeat a row; ids are
- * unique across sources, so the first occurrence wins and order is preserved.
+ * Flatten activity pages into one feed. Each page continues from an opaque
+ * keyset cursor, so an event that arrives while paging is not repeated; ids are
+ * unique across sources and the first occurrence wins.
  */
 export function mergeActivityPages(
   pages: ReadonlyArray<{ readonly events: ReadonlyArray<DeviceActivityEntry> }> | undefined,

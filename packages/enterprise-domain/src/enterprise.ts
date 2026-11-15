@@ -515,6 +515,13 @@ export const BootstrapResponse = Schema.Struct({
    */
   ssrToken: Schema.NullOr(Schema.String),
   ssrTokenExpiresAt: Schema.NullOr(Schema.Number),
+  /**
+   * Signed session/auth revision the edge compares before trusting a warm
+   * token. Optional during a rolling deploy: an older edge ignores it, and an
+   * older API omits it.
+   */
+  ssrRevision: Schema.optional(Schema.NullOr(Schema.String)),
+  ssrRevisionExpiresAt: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 
 export type BootstrapResponse = typeof BootstrapResponse.Type;
@@ -1558,8 +1565,13 @@ export type DeviceActivityEntry = typeof DeviceActivityEntry.Type;
 
 export const DeviceActivityResponse = Schema.Struct({
   events: Schema.Array(DeviceActivityEntry),
-  /** Older events exist behind this page; request the next `offset`. */
+  /** Older events exist behind this page; request the next page with `nextCursor`. */
   hasMore: Schema.Boolean,
+  /**
+   * Opaque keyset position of the last event on this page. Absent when there
+   * is no older activity. Clients must not parse or construct it.
+   */
+  nextCursor: Schema.optional(NullableString),
 });
 
 export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
@@ -1971,6 +1983,23 @@ export const TenantExportGroup = Schema.Struct({
   policyKeys: Schema.Array(Schema.String),
 });
 
+/**
+ * Per-device assignments. Devices are never created by a restore, so a bundle
+ * carries the device key (and serial fallback) plus the policies and
+ * applications that were assigned directly to it.
+ */
+export const TenantExportDeviceAssignment = Schema.Struct({
+  deviceKey: Schema.String,
+  deviceSerial: Schema.optional(NullableString),
+  /** Directly included policies. */
+  policyKeys: Schema.Array(Schema.String),
+  /** Policies excluded from the device even when a group includes them. */
+  excludedPolicyKeys: Schema.Array(Schema.String),
+  applicationKeys: Schema.Array(Schema.String),
+});
+
+export type TenantExportDeviceAssignment = typeof TenantExportDeviceAssignment.Type;
+
 export type TenantExportGroup = typeof TenantExportGroup.Type;
 
 export const TenantExportPolicy = Schema.Struct({
@@ -2056,6 +2085,8 @@ export const TenantExportEnvelope = Schema.Struct({
   groups: Schema.Array(TenantExportGroup),
   policies: Schema.Array(TenantExportPolicy),
   applications: Schema.Array(TenantExportApplication),
+  /** Direct device-to-policy/application assignments (restore only). */
+  deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.Array(TenantExportPreRegistration),
   scepCertificates: Schema.Array(TenantExportCertificate),
@@ -2114,10 +2145,14 @@ export const BackupRestoreResponse = Schema.Struct({
     preRegistrations: Schema.Number,
     /** Device group memberships re-linked to devices still in the tenant. */
     devices: Schema.Number,
+    /** Device-level policy and application links restored. */
+    deviceAssignments: Schema.Number,
   }),
   skipped: Schema.Struct({
     members: Schema.Number,
     devices: Schema.Number,
+    /** Device-level links whose device no longer exists in the tenant. */
+    deviceAssignments: Schema.Number,
     certificates: Schema.Number,
     auditLog: Schema.Number,
   }),
@@ -2163,6 +2198,7 @@ export const TenantImportRequest = Schema.Struct({
   groups: Schema.optional(Schema.Array(TenantExportGroup)),
   policies: Schema.optional(Schema.Array(TenantExportPolicy)),
   applications: Schema.optional(Schema.Array(TenantExportApplication)),
+  deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.optional(Schema.Array(TenantExportPreRegistration)),
   scepCertificates: Schema.optional(Schema.Array(TenantExportCertificate)),
@@ -4544,7 +4580,15 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantIdParam,
       query: Schema.Struct({
         limit: Schema.optional(Schema.Number),
-        /** Newest-first page offset; the response reports whether more exist. */
+        /**
+         * Opaque keyset position returned as `nextCursor` by the previous
+         * page. Keyset paging never re-reads the events already delivered.
+         */
+        cursor: Schema.optional(Schema.String),
+        /**
+         * Retired offset paging. Only `0` (the first page) is still accepted;
+         * deeper pages must use `cursor`.
+         */
         offset: Schema.optional(Schema.Number),
       }),
       success: DeviceActivityResponse,

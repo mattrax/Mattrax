@@ -26,6 +26,8 @@ export const STEP_UP_ACTIONS = [
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
+  "scep-ca-rotate",
+  "scep-ca-import",
   "passkey-enroll",
   "passkey-remove",
 ] as const;
@@ -176,6 +178,10 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "change the tenant sign-in policy";
     case "tenant-mfa-policy":
       return "change the tenant MFA requirement";
+    case "scep-ca-rotate":
+      return "rotate the tenant SCEP identity";
+    case "scep-ca-import":
+      return "replace the tenant SCEP identity";
     case "passkey-enroll":
       return "add a passkey";
     case "passkey-remove":
