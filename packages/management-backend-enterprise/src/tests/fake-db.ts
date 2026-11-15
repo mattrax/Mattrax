@@ -158,6 +158,7 @@ class SelectBuilder {
   ) {}
 
   private table = "";
+  private joined?: string;
 
   from(table: any) {
     this.table = tableName(table);
@@ -171,9 +172,16 @@ class SelectBuilder {
     return this;
   }
 
-  // The fake store has no relational join engine. Tests only assert behaviour
-  // with empty related tables, so joins are a no-op here.
-  innerJoin(_table: any, _condition?: any) {
+  /**
+   * Minimal join support for the two shapes the backend reads with a Drizzle
+   * join: `configuration → policy` and `device_apple → device`. The joined row
+   * is nested under its table name, matching Drizzle's unprojected result.
+   * When the joined table is empty the historical no-op is kept so unrelated
+   * tests are unaffected.
+   */
+  innerJoin(table: any, _condition?: any) {
+    this.joined = tableName(table);
+
     return this;
   }
 
@@ -208,6 +216,20 @@ class SelectBuilder {
 
         return a < b ? -1 : a > b ? 1 : 0;
       });
+    }
+
+    if (this.joined) {
+      const joinedRows = this.rows().filter((row) => row.__table === this.joined);
+
+      if (joinedRows.length > 0) {
+        const localKey = `${camel(this.joined)}Id`;
+
+        return matched.flatMap((left) =>
+          joinedRows
+            .filter((right) => right.id === (left[localKey] ?? left[camel(localKey)]))
+            .map((right) => ({ [this.table]: unprefix(left), [this.joined!]: unprefix(right) })),
+        );
+      }
     }
 
     const fields = this.fields;
@@ -336,14 +358,18 @@ export const makeDb = (initial: Partial<Store> = {}) => {
   ensure(tableName(schema.scepCa));
   ensure(tableName(schema.scepChallenge));
 
-  return {
+  const db = {
     store,
     insert: (table: any) => new InsertBuilder(() => ensure(tableName(table)), tableName(table)),
     update: (table: any) => new UpdateBuilder(() => ensure(tableName(table)), tableName(table)),
     delete: (table: any) => new DeleteBuilder(() => ensure(tableName(table)), tableName(table)),
-    select: (fields?: Fields) =>
-      new SelectBuilder(() => Object.values(store).flat(), fields),
+    select: (fields?: Fields) => new SelectBuilder(() => Object.values(store).flat(), fields),
+    // The production Db exposes a transaction; the in-memory fake applies the
+    // work directly so transactional code paths can be exercised.
+    transaction: <Result>(work: (tx: any) => Result): Result => work(db),
   };
+
+  return db;
 };
 
 export const dbRows = (db: ReturnType<typeof makeDb>, table: string) =>

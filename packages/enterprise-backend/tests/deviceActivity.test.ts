@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   DEVICE_ACTIVITY_DEFAULT_LIMIT,
   DEVICE_ACTIVITY_MAX_LIMIT,
+  DEVICE_ACTIVITY_MAX_OFFSET,
   buildDeviceActivity,
+  deviceActivityPage,
   normalizeDeviceActivityLimit,
+  normalizeDeviceActivityOffset,
 } from "../src/deviceActivity.js";
 
 const at = (value: string) => new Date(value);
@@ -88,7 +91,7 @@ describe("buildDeviceActivity", () => {
     const events = buildDeviceActivity(inputs);
     expect(events.find((event) => event.kind === "command")).toMatchObject({
       title: "Command: DeviceLock",
-      status: "succeeded",
+      status: "Succeeded",
       detail: "Acknowledged",
     });
     expect(events.find((event) => event.kind === "declaration")).toMatchObject({
@@ -98,6 +101,44 @@ describe("buildDeviceActivity", () => {
     expect(events.find((event) => event.kind === "certificate")?.title).toBe(
       "Identity certificate revoked",
     );
+  });
+
+  it("shows the command lifecycle and its deadline", () => {
+    const events = buildDeviceActivity({
+      ...inputs,
+      commands: [
+        {
+          id: "command-expired",
+          requestType: "DeviceLock",
+          status: "expired",
+          resultStatus: "Reconciled",
+          resultDetail: "The delivery deadline passed before the device ran it.",
+          createdAt: at("2026-01-02T00:00:00.000Z"),
+          updatedAt: at("2026-01-02T00:15:00.000Z"),
+          expiresAt: at("2026-01-02T00:15:00.000Z"),
+        },
+        {
+          id: "command-queued",
+          requestType: "EraseDevice",
+          status: "not-now",
+          resultStatus: null,
+          resultDetail: null,
+          createdAt: at("2026-01-03T00:00:00.000Z"),
+          updatedAt: at("2026-01-03T00:00:00.000Z"),
+          expiresAt: at("2026-01-10T00:00:00.000Z"),
+        },
+      ],
+    });
+
+    expect(events.find((event) => event.id === "command:command-expired")).toMatchObject({
+      status: "Expired",
+      detail: "Reconciled: The delivery deadline passed before the device ran it.",
+    });
+    expect(events.find((event) => event.id === "command:command-queued")).toMatchObject({
+      // Legacy rows stored Apple's NotNow result as `not-now`.
+      status: "Deferred by device",
+      detail: "Deadline 2026-01-10T00:00:00.000Z",
+    });
   });
 
   it("only surfaces known audit metadata", () => {
@@ -127,5 +168,79 @@ describe("buildDeviceActivity", () => {
     });
 
     expect(events.some((event) => event.id === "audit:audit-bad")).toBe(false);
+  });
+});
+
+describe("normalizeDeviceActivityOffset", () => {
+  it("starts at zero and clamps to the deepest page", () => {
+    expect(normalizeDeviceActivityOffset(undefined)).toBe(0);
+    expect(normalizeDeviceActivityOffset(-10)).toBe(0);
+    expect(normalizeDeviceActivityOffset(25.9)).toBe(25);
+    expect(normalizeDeviceActivityOffset(10_000_000)).toBe(DEVICE_ACTIVITY_MAX_OFFSET);
+  });
+
+  it("accepts numeric strings", () => {
+    expect(normalizeDeviceActivityOffset("50")).toBe(50);
+    expect(normalizeDeviceActivityOffset(" nope ")).toBe(0);
+  });
+});
+
+describe("deviceActivityPage", () => {
+  /** `audits` audit rows plus the two lifecycle entries every device has. */
+  const feed = (audits: number) => ({
+    device: {
+      enrolledAt: at("2026-01-01T00:00:00.000Z"),
+      lastSeenAt: at("2026-01-01T00:00:00.000Z"),
+    },
+    audits: Array.from({ length: audits }, (_, index) => ({
+      id: `audit-${String(index).padStart(3, "0")}`,
+      action: "device.updated",
+      // Newer than the lifecycle rows, and newest first as the query returns them.
+      createdAt: new Date(Date.UTC(2026, 0, 2, 0, 0, audits - index)),
+    })),
+    commands: [],
+    declarations: [],
+    certificates: [],
+  });
+
+  it("returns a full first page and reports that more exist", () => {
+    const page = deviceActivityPage(feed(10), { limit: 4, offset: 0 });
+
+    expect(page.events).toHaveLength(4);
+    expect(page.events[0]?.id).toBe("audit:audit-000");
+    expect(page.hasMore).toBe(true);
+  });
+
+  it("walks the feed without gaps or repeats", () => {
+    const inputs = feed(10);
+    const first = deviceActivityPage(inputs, { limit: 4, offset: 0 });
+    const second = deviceActivityPage(inputs, { limit: 4, offset: 4 });
+    const third = deviceActivityPage(inputs, { limit: 4, offset: 8 });
+
+    const ids = [...first.events, ...second.events, ...third.events].map((event) => event.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toHaveLength(12);
+    expect(second.hasMore).toBe(true);
+    expect(third.hasMore).toBe(false);
+    expect(third.events.map((event) => event.id)).toEqual([
+      "audit:audit-008",
+      "audit:audit-009",
+      "lifecycle:enrolled",
+      "lifecycle:last-seen",
+    ]);
+  });
+
+  it("returns an empty final page past the end of the feed", () => {
+    const page = deviceActivityPage(feed(3), { limit: 10, offset: 50 });
+
+    expect(page.events).toEqual([]);
+    expect(page.hasMore).toBe(false);
+  });
+
+  it("stops at the maximum offset instead of paging forever", () => {
+    const page = deviceActivityPage(feed(5), { limit: 50, offset: DEVICE_ACTIVITY_MAX_OFFSET });
+
+    expect(page).toEqual({ events: [], hasMore: false });
   });
 });

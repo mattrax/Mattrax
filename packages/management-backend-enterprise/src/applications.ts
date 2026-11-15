@@ -15,6 +15,34 @@ import {
   type PlistInput,
 } from "./internal/plistValue.js";
 
+/**
+ * The installed-application query used at enrolment and by the daily sweep.
+ * Only the fields the inventory table persists are requested: an
+ * `InstalledApplicationList` response can be large, and every extra item
+ * multiplies the payload across a fleet.
+ */
+export const APPLE_APPLICATION_INVENTORY_PAYLOAD = {
+  Items: [
+    "Identifier",
+    "Name",
+    "Version",
+    "ShortVersion",
+    "BundleSize",
+    "DynamicSize",
+    "HasUpdateAvailable",
+  ],
+  ManagedAppsOnly: false,
+};
+
+/**
+ * The identity query used at enrolment. macOS reports the user-visible
+ * computer name in `DeviceName`; without this query the management name stays
+ * a serial number forever.
+ */
+export const APPLE_DEVICE_INFORMATION_PAYLOAD = {
+  Queries: ["DeviceName", "Model", "ModelName", "SerialNumber", "OSVersion", "BuildVersion"],
+};
+
 export type InstalledApplicationReport = {
   readonly bundleId: string;
   readonly name?: string;

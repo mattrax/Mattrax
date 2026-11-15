@@ -15,7 +15,6 @@ import {
   parseCertRep,
 } from "../fixtures/pki.ts";
 
-
 const withDayN = (result: Check, dayN: boolean): Check =>
   dayN ? { ...result, dayN: true } : result;
 
@@ -140,7 +139,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       assert.ok(sameBytes(certRep.recipientNonce, senderNonce));
       assert.equal(certRep.signerVerified, true);
       assert.equal(certRep.certificates.length, 2);
-      const deviceJwk = (await crypto.subtle.exportKey("jwk", deviceKeys.privateKey));
+      const deviceJwk = await crypto.subtle.exportKey("jwk", deviceKeys.privateKey);
       const issued = await decryptCertRep(certRep, deviceJwk);
       assert.equal(certificateValue(issued, "2.5.4.3"), "Compliance Device");
       assert.equal(certificateValue(issued, "2.5.4.11"), "tenant-authenticated");
@@ -279,10 +278,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       assert.equal(certRep.pkiStatus, "0");
       assert.equal(certRep.transactionId, "txn-renewal-1");
 
-      const deviceJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        identity.keyPair.privateKey,
-      ));
+      const deviceJwk = await crypto.subtle.exportKey("jwk", identity.keyPair.privateKey);
 
       const renewed = await decryptCertRep(certRep, deviceJwk);
       assert.notEqual(

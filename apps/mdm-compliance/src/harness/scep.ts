@@ -43,7 +43,9 @@ export const createScepHarness = async (
 
   const state: ScepHarnessState = {
     ca,
-    authenticate: options.authenticate ?? (() => Effect.void),
+    authenticate:
+      options.authenticate ??
+      (() => Effect.succeed({ organizationalUnit: "tenant-authenticated" })),
     issued: new Map((options.issued ? [...options.issued] : []).map((item) => [item.serial, item])),
     recorded: [],
     saveCount: 0,
@@ -57,17 +59,20 @@ export const createScepHarness = async (
         state.getCaFailure
           ? Effect.fail(state.getCaFailure)
           : Effect.succeed({ certPem: ca.certPem, privateKeyJwk: ca.privateKeyJwk }),
-      saveCa: () =>
+      saveCa: (_scope, candidate) =>
         Effect.sync(() => {
           state.saveCount++;
+
+          return candidate;
         }),
-      authenticatePkcsReq: (request) => state.authenticate(request),
+      replaceCa: (_scope, candidate) => Effect.succeed(candidate),
+      authenticatePkcsReq: (_scope, request) => state.authenticate(request),
       recordIssuedCertificate: (certificate) =>
         Effect.sync(() => {
           state.recorded.push(certificate);
           state.issued.set(certificate.serial, certificate);
         }),
-      findIssuedCertificate: (serial) => Effect.succeed(state.issued.get(serial) ?? null),
+      findIssuedCertificate: (_scope, serial) => Effect.succeed(state.issued.get(serial) ?? null),
     }),
   );
 
@@ -79,11 +84,16 @@ export const createScepHarness = async (
 };
 
 export const scepGet = (operation: string): Request =>
-  new Request(`https://mdm.example.test/mdm/apple/scep?operation=${encodeURIComponent(operation)}`);
+  new Request(
+    `https://mdm.example.test/mdm/apple/scep/tenant-authenticated?operation=${encodeURIComponent(operation)}`,
+  );
 
 export const scepPost = (body: ArrayBuffer | Uint8Array): Request =>
-  new Request("https://mdm.example.test/mdm/apple/scep?operation=PKIOperation", {
-    method: "POST",
-    headers: { "content-type": "application/x-pki-message" },
-    body: body instanceof Uint8Array ? Uint8Array.from(body).buffer : body,
-  });
+  new Request(
+    "https://mdm.example.test/mdm/apple/scep/tenant-authenticated?operation=PKIOperation",
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-pki-message" },
+      body: body instanceof Uint8Array ? Uint8Array.from(body).buffer : body,
+    },
+  );

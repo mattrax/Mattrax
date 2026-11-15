@@ -16,7 +16,11 @@ import {
   createAndroidSignup,
   handleAndroidPubSub,
   issueAndroidCommand,
+  mergeAndroidDevice,
+  mergeAndroidDeviceInfo,
+  parseAndroidDeviceResource,
   syncAndroidPoliciesForTenant,
+  withStatusReporting,
   type AndroidDeliveryConfig,
 } from "../src/android.js";
 import { makeDb, runEffect } from "./helpers.js";
@@ -31,7 +35,11 @@ const jwksUri = "https://keys.test/jwks";
 const kid = "android-test-key";
 
 let privateKey: CryptoKey;
-let publicJwk: JsonWebKey;
+
+/** A JWKS public key: WebCrypto's JWK plus the key id the JWKS document advertises. */
+type PublicJwk = JsonWebKey & { kid?: string };
+
+let publicJwk: PublicJwk;
 
 const encoder = new TextEncoder();
 
@@ -207,12 +215,15 @@ function activeEnterpriseRow(organization = organizationId) {
   };
 }
 
+/** The `device` row that `mergeAndroidDevice` merges a report into. */
+type AndroidDeviceRow = NonNullable<Parameters<typeof mergeAndroidDevice>[0]["existing"]>;
+
 function androidDeviceRow() {
   return {
     id: "device-1",
     organizationId,
-    proto: "android",
-    status: "enrolled",
+    proto: "android" as const,
+    status: "enrolled" as const,
     name: "Pixel 9",
     model: "Pixel 9",
     modelIdentifier: null,
@@ -234,6 +245,8 @@ function androidDeviceRow() {
     modelNumber: null,
     inventoryUpdatedAt: null,
     applicationsUpdatedAt: null,
+    inventoryRequestedAt: null,
+    applicationsRequestedAt: null,
     dmIdentifier: deviceName,
     dmCertHash: null,
     dmIdentityFingerprint: null,
@@ -275,7 +288,9 @@ describe("Android Enterprise delivery", () => {
     expect(info.status).toBe("disabled");
     expect(info.available).toBe(false);
 
-    const configError = await Effect.runPromise(
+    const { service } = makeAndroid();
+
+    const configError = await provideAndroid(
       Effect.flip(
         createAndroidSignup({
           db,
@@ -284,11 +299,16 @@ describe("Android Enterprise delivery", () => {
           organization: { id: organizationId, name: "Acme" },
         }),
       ),
+      service,
     );
 
     expect(configError.kind).toBe("not_configured");
 
-    const sync = await Effect.runPromise(syncAndroidPoliciesForTenant({ db, organizationId }));
+    const sync = await provideAndroid(
+      syncAndroidPoliciesForTenant({ db, organizationId }),
+      service,
+    );
+
     expect(sync).toEqual({ devices: 0, updated: 0, skipped: 0, failed: 0 });
   });
 
@@ -616,6 +636,7 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies[0]!.policy).toEqual({
       applications: [{ packageName: "com.example.app", installType: "FORCE_INSTALLED" }],
       cameraDisabled: true,
+      statusReportingSettings: { softwareInfoEnabled: true, applicationReportsEnabled: true },
     });
     expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
     expect(db.store.android_device![0]).toMatchObject({
@@ -778,5 +799,318 @@ describe("Android Enterprise delivery", () => {
     expect(error.kind).toBe("upstream");
     expect(error.message).not.toContain(serviceAccountEmail);
     expect(error.message).toContain("[email]");
+  });
+});
+
+describe("Android device inventory", () => {
+  const statusReportTime = "2026-11-11T00:05:00Z";
+
+  const fullResource = {
+    name: deviceName,
+    enterpriseName,
+    state: "ACTIVE",
+    managementMode: "DEVICE_OWNER",
+    ownership: "COMPANY_OWNED",
+    apiLevel: 34,
+    appliedPolicyName: `${enterpriseName}/policies/mattrax-abc123`,
+    appliedPolicyVersion: "7",
+    enrollmentTokenName: `${enterpriseName}/enrollmentTokens/t1`,
+    disabledReason: { localizedMessage: "Contact IT" },
+    hardwareInfo: {
+      brand: "google",
+      hardware: "husky",
+      manufacturer: "Google",
+      model: "Pixel 8 Pro",
+      serialNumber: "SER-1",
+    },
+    softwareInfo: {
+      androidVersion: "14",
+      androidBuildNumber: "UQ1A.240205.004",
+      securityPatchLevel: "2024-02-05",
+    },
+    memoryInfo: { totalRam: "12345678901", totalInternalStorage: "128000000000" },
+    networkInfo: { networkOperatorName: "Vodafone" },
+    applicationReports: [
+      {
+        packageName: "com.example.work",
+        displayName: "Work App",
+        versionName: "3.2.1",
+        state: "INSTALLED",
+      },
+      {
+        packageName: "com.example.gone",
+        displayName: "Gone",
+        versionName: "1.0.0",
+        state: "REMOVED",
+      },
+    ],
+    enrollmentTime: "2026-11-10T00:00:00Z",
+    lastStatusReportTime: statusReportTime,
+  };
+
+  it("parses the whole device resource", () => {
+    const resource = parseAndroidDeviceResource(fullResource, enterpriseName);
+
+    expect(resource).toMatchObject({
+      name: deviceName,
+      state: "ACTIVE",
+      managementMode: "DEVICE_OWNER",
+      ownership: "COMPANY_OWNED",
+      apiLevel: 34,
+      appliedPolicyName: `${enterpriseName}/policies/mattrax-abc123`,
+      appliedPolicyVersion: "7",
+      enrollmentTokenName: `${enterpriseName}/enrollmentTokens/t1`,
+      disabledReason: "Contact IT",
+      hardwareName: "husky",
+      model: "Pixel 8 Pro",
+      manufacturer: "Google",
+      serial: "SER-1",
+      osVersion: "14",
+      buildNumber: "UQ1A.240205.004",
+      securityPatchLevel: "2024-02-05",
+      networkOperator: "Vodafone",
+      totalRam: 12345678901,
+      totalInternalStorage: 128000000000,
+      hasInventory: true,
+    });
+    expect(resource!.lastSeenAt.toISOString()).toBe("2026-11-11T00:05:00.000Z");
+    // Removed packages are not installed, so they are not inventoried.
+    expect(resource!.applications).toEqual([
+      { bundleId: "com.example.work", name: "Work App", version: "3.2.1" },
+    ]);
+  });
+
+  it("reports a partial resource without inventory", () => {
+    const resource = parseAndroidDeviceResource(
+      { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },
+      enterpriseName,
+    );
+
+    expect(resource).toMatchObject({ name: deviceName, state: "ACTIVE", hasInventory: false });
+    expect(resource!.model).toBeUndefined();
+    expect(resource!.applications).toBeUndefined();
+  });
+
+  it("never blanks a known value with a partial notification", () => {
+    const full = parseAndroidDeviceResource(fullResource, enterpriseName)!;
+    const at = new Date("2026-11-11T00:05:00.000Z");
+
+    const first = mergeAndroidDevice({
+      resource: full,
+      serial: "SER-1",
+      status: "enrolled",
+      now: at,
+    });
+
+    expect(first).toMatchObject({
+      name: "Pixel 8 Pro",
+      physicalName: "Pixel 8 Pro",
+      model: "Pixel 8 Pro",
+      modelIdentifier: "husky",
+      osVersion: "14",
+      osBuild: "UQ1A.240205.004",
+      diskTotal: "128000000000",
+      serial: "SER-1",
+      inventoryUpdatedAt: at,
+    });
+
+    // SAFETY: the fixture is the `device` row shape this merge is written for;
+    // the patch only fills columns the fixture leaves undefined.
+    const existing: AndroidDeviceRow = { ...androidDeviceRow(), ...first };
+
+    const partial = parseAndroidDeviceResource(
+      { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },
+      enterpriseName,
+    )!;
+
+    const merged = mergeAndroidDevice({
+      existing,
+      resource: partial,
+      serial: null,
+      status: "enrolled",
+      now: new Date("2026-11-12T00:00:00.000Z"),
+    });
+
+    expect(merged).toMatchObject({
+      name: "Pixel 8 Pro",
+      model: "Pixel 8 Pro",
+      modelIdentifier: "husky",
+      serial: "SER-1",
+      osVersion: "14",
+      osBuild: "UQ1A.240205.004",
+      diskTotal: "128000000000",
+      // A report with no inventory must not move the inventory clock.
+      inventoryUpdatedAt: at,
+    });
+
+    // Operator renames survive the next reported name.
+    const renamed = { ...existing, name: "Warehouse scanner" };
+    expect(
+      mergeAndroidDevice({
+        existing: renamed,
+        resource: parseAndroidDeviceResource(
+          { ...fullResource, hardwareInfo: { ...fullResource.hardwareInfo, model: "Pixel 9" } },
+          enterpriseName,
+        )!,
+        serial: "SER-1",
+        status: "enrolled",
+        now: at,
+      }),
+    ).toMatchObject({ name: "Warehouse scanner", physicalName: "Pixel 9" });
+  });
+
+  it("merges the android_device columns without clearing them", () => {
+    const full = parseAndroidDeviceResource(fullResource, enterpriseName)!;
+
+    expect(mergeAndroidDeviceInfo(full)).toMatchObject({
+      managementMode: "DEVICE_OWNER",
+      ownership: "COMPANY_OWNED",
+      apiLevel: 34,
+      securityPatchLevel: "2024-02-05",
+      appliedPolicyName: `${enterpriseName}/policies/mattrax-abc123`,
+      enrollmentTokenName: `${enterpriseName}/enrollmentTokens/t1`,
+      disabledReason: "Contact IT",
+      networkOperator: "Vodafone",
+      totalRam: 12345678901,
+    });
+
+    const partial = parseAndroidDeviceResource(
+      { name: deviceName, state: "ACTIVE" },
+      enterpriseName,
+    )!;
+
+    // Omitted fields are absent from the patch, so an update cannot null them.
+    expect(mergeAndroidDeviceInfo(partial)).toEqual({ state: "ACTIVE" });
+  });
+
+  it("persists inventory and application reports across notifications", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+
+    const deliver = (body: Schema.Json, messageId: string) =>
+      provideAndroid(
+        handleAndroidPubSub({
+          db,
+          config,
+          authSecret: "test-secret",
+          origin: "https://mattrax.test",
+          authorization: `Bearer ${token}`,
+          body: pushBody(body, "STATUS_REPORT", messageId),
+          fetch: jwksFetch,
+        }),
+        service,
+      );
+
+    expect((await deliver(fullResource, "message-1")).status).toBe("ok");
+
+    expect(db.store.device![0]).toMatchObject({
+      proto: "android",
+      status: "enrolled",
+      name: "Pixel 8 Pro",
+      physicalName: "Pixel 8 Pro",
+      model: "Pixel 8 Pro",
+      modelIdentifier: "husky",
+      serial: "SER-1",
+      osEdition: "Android",
+      osVersion: "14",
+      osBuild: "UQ1A.240205.004",
+      diskTotal: "128000000000",
+    });
+    expect(db.store.device![0]!.inventoryUpdatedAt).toBeInstanceOf(Date);
+    expect(db.store.device![0]!.applicationsUpdatedAt).toBeInstanceOf(Date);
+
+    expect(db.store.android_device![0]).toMatchObject({
+      managementMode: "DEVICE_OWNER",
+      ownership: "COMPANY_OWNED",
+      apiLevel: 34,
+      securityPatchLevel: "2024-02-05",
+      appliedPolicyName: `${enterpriseName}/policies/mattrax-abc123`,
+      enrollmentTokenName: `${enterpriseName}/enrollmentTokens/t1`,
+      state: "ACTIVE",
+    });
+
+    expect(db.store.device_application!.map((row: any) => row.bundleId)).toEqual([
+      "com.example.work",
+    ]);
+    expect(db.store.device_application![0]).toMatchObject({
+      name: "Work App",
+      version: "3.2.1",
+      organizationId,
+      deviceId: db.store.device![0]!.id,
+    });
+
+    // A later status report that omits hardwareInfo must keep everything the
+    // first report established.
+    await deliver(
+      { name: deviceName, state: "ACTIVE", lastStatusReportTime: "2026-11-12T00:00:00Z" },
+      "message-2",
+    );
+
+    expect(db.store.device![0]).toMatchObject({
+      name: "Pixel 8 Pro",
+      model: "Pixel 8 Pro",
+      serial: "SER-1",
+      osVersion: "14",
+      osBuild: "UQ1A.240205.004",
+    });
+    expect(db.store.android_device![0]).toMatchObject({ managementMode: "DEVICE_OWNER" });
+    // The app inventory is untouched because the report carried none.
+    expect(db.store.device_application).toHaveLength(1);
+
+    // A newer full report replaces the application list.
+    await deliver(
+      {
+        ...fullResource,
+        lastStatusReportTime: "2026-11-13T00:00:00Z",
+        applicationReports: [
+          { packageName: "com.example.work", displayName: "Work App", versionName: "4.0.0" },
+          { packageName: "com.example.mail", displayName: "Mail", versionName: "1.0.0" },
+        ],
+      },
+      "message-3",
+    );
+
+    expect(
+      db.store
+        .device_application!.map((row: any) => row.bundleId)
+        .sort((a: string, b: string) => a.localeCompare(b)),
+    ).toEqual(["com.example.mail", "com.example.work"]);
+
+    // Repeating the same list refreshes the report clock without duplicating
+    // rows or rewriting the inventory.
+    await deliver(
+      {
+        ...fullResource,
+        lastStatusReportTime: "2026-11-14T00:00:00Z",
+        applicationReports: [
+          { packageName: "com.example.work", displayName: "Work App", versionName: "4.0.0" },
+          { packageName: "com.example.mail", displayName: "Mail", versionName: "1.0.0" },
+        ],
+      },
+      "message-4",
+    );
+
+    expect(db.store.device_application).toHaveLength(2);
+  });
+
+  it("keeps application reporting on in every compiled policy", () => {
+    expect(withStatusReporting({ cameraDisabled: true })).toEqual({
+      cameraDisabled: true,
+      statusReportingSettings: { softwareInfoEnabled: true, applicationReportsEnabled: true },
+    });
+
+    // An explicit tenant value still wins.
+    expect(
+      withStatusReporting({
+        statusReportingSettings: { applicationReportsEnabled: false },
+      }),
+    ).toEqual({
+      statusReportingSettings: { applicationReportsEnabled: false, softwareInfoEnabled: true },
+    });
   });
 });

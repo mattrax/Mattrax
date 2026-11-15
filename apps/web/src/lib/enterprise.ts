@@ -48,8 +48,10 @@ import {
   type PolicyRow,
   type RowFor,
   type TenantEnrollmentInfo,
+  type TenantScepCaInfo,
   type TenantImportRequest,
   type TenantInfo,
+  type BackupRestoreResponse,
   type CreateTenantRoleRequest,
   type ListTenantInvitationsQuery,
   type PatchTenantRoleRequest,
@@ -102,6 +104,7 @@ export type {
   BillingSummary,
   CredentialHealthResponse,
   BackupRunInfo,
+  BackupRestoreResponse,
   TenantBackupsResponse,
   CredentialInfo,
   CredentialLevel,
@@ -211,8 +214,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-health-summary", tenantId ?? ""] as const,
   devicePushHealth: (tenantId: RouteParam) =>
     ["enterprise", "device-push-health", tenantId ?? ""] as const,
-  deviceActivity: (tenantId: RouteParam, id: RouteParam, limit = 50) =>
-    ["enterprise", "device-activity", tenantId ?? "", id ?? "", limit] as const,
+  deviceActivity: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-activity", tenantId ?? "", id ?? ""] as const,
   credentialHealth: (tenantId: RouteParam) =>
     ["enterprise", "credential-health", tenantId ?? ""] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
@@ -235,6 +238,7 @@ export const enterpriseKeys = {
     ["enterprise", "vpp-assignments", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
+  scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", tenantId ?? ""] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
     ["enterprise", "enrollment-attempts", tenantId ?? "", limit] as const,
   devicePreRegistrations: (tenantId: RouteParam) =>
@@ -428,6 +432,47 @@ export const enterprise = {
   listTenantBackups: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantBackups({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  /** Exempt a run from age-based pruning. Requires step-up. */
+  pinTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.pinTenantBackup({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "backup-pin" },
+    ),
+  /** Return a pinned run to the normal retention window. Requires step-up. */
+  unpinTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.unpinTenantBackup({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "backup-pin" },
+    ),
+  /** Delete one run and its stored object. Requires step-up. */
+  deleteTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.deleteTenantBackup({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "backup-delete" },
+    ),
+  /** Restore a run into this tenant, after retyping its slug. Requires step-up. */
+  restoreTenantBackup: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    confirm: string,
+  ): Promise<BackupRestoreResponse> =>
+    endpoint(
+      (api) =>
+        api.restoreTenantBackup({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload: { confirm },
+        }),
+      { stepUp: "backup-restore" },
     ),
   getTenant: (tenantId: RouteParam) =>
     endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
@@ -761,11 +806,15 @@ export const enterprise = {
     endpoint((api) =>
       api.getDevicePushHealth({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  getDeviceActivity: (tenantId: RouteParam, id: RouteParam, limit = 50) =>
+  getDeviceActivity: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    options: { limit?: number; offset?: number } = {},
+  ) =>
     endpoint((api) =>
       api.getDeviceActivity({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
-        query: { limit },
+        query: { limit: options.limit ?? 50, offset: options.offset },
       }),
     ),
   getCredentialHealth: (tenantId: RouteParam) =>
@@ -1286,6 +1335,24 @@ export const enterprise = {
   resetTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.resetTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getTenantScepCa: (tenantId: RouteParam): EndpointPromise<TenantScepCaInfo, unknown> =>
+    endpoint((api) =>
+      api.getTenantScepCa({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  rotateTenantScepCa: (tenantId: RouteParam): EndpointPromise<TenantScepCaInfo, unknown> =>
+    endpoint((api) =>
+      api.rotateTenantScepCa({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  importTenantScepCa: (
+    tenantId: RouteParam,
+    payload: { certificatePem: string; privateKeyPem: string },
+  ): EndpointPromise<TenantScepCaInfo, unknown> =>
+    endpoint((api) =>
+      api.importTenantScepCa({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
     ),
   listEnrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
     endpoint((api) =>

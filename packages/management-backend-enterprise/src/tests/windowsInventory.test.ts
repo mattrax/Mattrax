@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  WINDOWS_APPLICATION_INVENTORY_REQUESTS,
+  WINDOWS_APPLICATION_INVENTORY_URI,
   WINDOWS_INVENTORY_COMMAND_ID_PREFIX,
   WINDOWS_INVENTORY_REFRESH_MS,
   WINDOWS_INVENTORY_REQUESTS,
   WINDOWS_INVENTORY_URI,
   hasWindowsInventory,
+  parseWindowsApplications,
   parseWindowsInventory,
   parseWindowsOsVersion,
-  shouldApplyInventoryName,
+  windowsApplicationInventoryDue,
   windowsInventoryDue,
   windowsInventoryUpdate,
   windowsInventoryValues,
@@ -184,9 +187,9 @@ describe("parseWindowsInventory", () => {
   });
 
   it("stores total storage without free space when only the total is reported", () => {
-    expect(
-      parseWindowsInventory(values({ [WINDOWS_INVENTORY_URI.totalStorage]: "1024" })),
-    ).toEqual({ diskTotal: String(1024 * MEBIBYTE) });
+    expect(parseWindowsInventory(values({ [WINDOWS_INVENTORY_URI.totalStorage]: "1024" }))).toEqual(
+      { diskTotal: String(1024 * MEBIBYTE) },
+    );
   });
 
   it("truncates oversized values to the device column width", () => {
@@ -229,24 +232,119 @@ describe("windowsInventoryDue", () => {
 });
 
 describe("name handling", () => {
-  it("only fills a blank name or the enrollment DeviceID placeholder", () => {
-    expect(shouldApplyInventoryName({ name: "", dmIdentifier: "device-1" })).toBe(true);
-    expect(shouldApplyInventoryName({ name: "device-1", dmIdentifier: "device-1" })).toBe(true);
-    expect(shouldApplyInventoryName({ name: "DESKTOP-ADMIN", dmIdentifier: "device-1" })).toBe(
-      false,
-    );
-  });
-
-  it("keeps an administrator-edited name out of the patch", () => {
+  it("stores the reported name as the physical name without renaming a managed device", () => {
     const inventory = parseWindowsInventory(fullReport());
 
-    expect(
-      windowsInventoryUpdate(inventory, { name: "DESKTOP-ADMIN", dmIdentifier: "device-1" }).name,
-    ).toBeUndefined();
+    const edited = windowsInventoryUpdate(inventory, {
+      name: "DESKTOP-ADMIN",
+      dmIdentifier: "device-1",
+      physicalName: "DESKTOP-OLD",
+    });
+
+    expect(edited.name).toBeUndefined();
+    expect(edited.physicalName).toBe("DESKTOP-ABC");
 
     expect(
       windowsInventoryUpdate(inventory, { name: "device-1", dmIdentifier: "device-1" }).name,
     ).toBe("DESKTOP-ABC");
+
+    expect(
+      windowsInventoryUpdate(inventory, { name: "DESKTOP-OLD", physicalName: "DESKTOP-OLD" }).name,
+    ).toBe("DESKTOP-ABC");
+  });
+});
+
+describe("Windows application inventory", () => {
+  const win32 = (key: string, field: string, value: string) =>
+    [
+      `./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram/InstalledProgram/${key}/${field}`,
+      value,
+    ] as const;
+
+  it("requests the Win32 inventory and the deployed MSI state", () => {
+    expect(WINDOWS_APPLICATION_INVENTORY_REQUESTS.map((request) => request.locURI)).toEqual([
+      WINDOWS_APPLICATION_INVENTORY_URI.win32,
+      WINDOWS_APPLICATION_INVENTORY_URI.msi,
+    ]);
+
+    for (const request of WINDOWS_APPLICATION_INVENTORY_REQUESTS)
+      expect(request.locURI).toContain("?list=StructData");
+  });
+
+  it("normalises Win32 programs, keyed by MSI product code when there is one", () => {
+    const applications = parseWindowsApplications(
+      values(
+        Object.fromEntries([
+          win32("Google Chrome", "Name", "Google Chrome"),
+          win32("Google Chrome", "Version", "131.0.6778.86"),
+          win32("Google Chrome", "Publisher", "Google LLC"),
+          win32("Google Chrome", "RegKey", "Google Chrome"),
+          win32("Slack", "Name", "Slack"),
+          win32("Slack", "Version", "4.41.96"),
+          win32("Slack", "MsiProductCode", "{A1B2C3D4-0000-0000-0000-000000000000}"),
+        ]),
+      ),
+    );
+
+    expect(applications).toEqual([
+      {
+        bundleId: "Google Chrome",
+        name: "Google Chrome",
+        version: "131.0.6778.86",
+        publisher: "Google LLC",
+      },
+      {
+        bundleId: "{A1B2C3D4-0000-0000-0000-000000000000}",
+        name: "Slack",
+        version: "4.41.96",
+        publisher: undefined,
+      },
+    ]);
+  });
+
+  it("marks successfully deployed MSI packages as managed and skips failed installs", () => {
+    const prefix = "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI";
+
+    const applications = parseWindowsApplications(
+      values({
+        [`${prefix}/COMPANY-APP/Name`]: "Contoso Client",
+        [`${prefix}/COMPANY-APP/Version`]: "2.0.1",
+        [`${prefix}/COMPANY-APP/Publisher`]: "Contoso",
+        [`${prefix}/COMPANY-APP/Status`]: "70",
+        [`${prefix}/BROKEN-APP/Name`]: "Broken",
+        [`${prefix}/BROKEN-APP/Status`]: "60",
+      }),
+    );
+
+    expect(applications).toEqual([
+      {
+        bundleId: "COMPANY-APP",
+        name: "Contoso Client",
+        version: "2.0.1",
+        publisher: "Contoso",
+        isManaged: true,
+      },
+    ]);
+  });
+
+  it("returns undefined when the device did not answer an application Get", () => {
+    expect(parseWindowsApplications(values({}))).toBeUndefined();
+    expect(
+      parseWindowsApplications(values({ [WINDOWS_INVENTORY_URI.deviceName]: "DESKTOP-ABC" })),
+    ).toBeUndefined();
+  });
+});
+
+describe("windowsApplicationInventoryDue", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+  it("runs on a daily cadence rather than the six-hour device cadence", () => {
+    expect(windowsApplicationInventoryDue({ now })).toBe(true);
+    expect(windowsApplicationInventoryDue({ lastUpdatedAt: hoursAgo(1), now })).toBe(false);
+    expect(windowsApplicationInventoryDue({ lastUpdatedAt: hoursAgo(7), now })).toBe(false);
+    expect(windowsApplicationInventoryDue({ lastUpdatedAt: hoursAgo(25), now })).toBe(true);
+    expect(windowsApplicationInventoryDue({ lastRequestedAt: hoursAgo(25), now })).toBe(true);
   });
 });
 

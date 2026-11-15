@@ -40,7 +40,7 @@ describe("Apple enrollment profile", () => {
       "Key Type": "RSA",
       "Key Usage": 5,
       Keysize: 2048,
-      URL: "https://mdm.example.com/mdm/apple/scep",
+      URL: "https://mdm.example.com/mdm/apple/scep/org-123",
       Subject: [[["O", "Acme Corp"]], [["OU", "org-123"]], [["CN", "Acme Corp Identity"]]],
     });
   });
@@ -120,7 +120,36 @@ describe("Apple enrollment profile", () => {
     if (!Schema.is(Schema.JsonObject)(scepContent))
       throw new Error("SCEP payload must have content");
 
-    expect(scepContent["URL"]).toBe("https://mdm.example.com/mdm/apple/scep");
+    expect(scepContent["URL"]).toBe("https://mdm.example.com/mdm/apple/scep/org");
+  });
+
+  it("points SCEP at the tenant CA endpoint", () => {
+    const profile = build();
+
+    const scep = profile.PayloadContent.find(
+      (payload) => payload.PayloadType === "com.apple.security.scep",
+    )!;
+
+    // A path segment (not a query parameter) so SCEP clients can append
+    // `?operation=...` without losing the tenant.
+    expect(Schema.decodeUnknownSync(Schema.JsonObject)(scep.PayloadContent)["URL"]).toBe(
+      "https://mdm.example.com/mdm/apple/scep/org-123",
+    );
+  });
+
+  it("accepts an explicit SCEP URL override", () => {
+    const profile = buildAppleEnrollmentProfile({
+      origin: "https://mdm.example.com",
+      topic: "topic",
+      organizationId: "org",
+      organizationName: "Acme",
+      challenge: "challenge",
+      scepUrl: "https://scep.example.com/acme",
+    });
+
+    expect(
+      Schema.decodeUnknownSync(Schema.JsonObject)(profile.PayloadContent[0]!.PayloadContent)["URL"],
+    ).toBe("https://scep.example.com/acme");
   });
 
   it("keeps stable identifiers when only the branding changes", () => {

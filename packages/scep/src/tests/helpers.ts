@@ -5,8 +5,10 @@ import { publicEncrypt, constants } from "node:crypto";
 import {
   ScepRepository,
   type ScepAuthentication,
+  type ScepCaScope,
   type ScepIssuedCertificate,
   type ScepPkcsReq,
+  type ScepStoredCa,
 } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { pemEncode } from "../crypto.js";
@@ -305,11 +307,16 @@ export async function buildPkcsReq(
 
 export function mockScepRepository(
   overrides?: Partial<{
-    getCa: () => Effect.Effect<{ certPem: string; privateKeyJwk: JsonWebKey } | null, ScepError>;
-    saveCa: (certPem: string, privateKeyJwk: JsonWebKey) => Effect.Effect<void, ScepError>;
-    authenticatePkcsReq: (req: ScepPkcsReq) => Effect.Effect<ScepAuthentication | void, ScepError>;
+    getCa: (scope: ScepCaScope) => Effect.Effect<ScepStoredCa | null, ScepError>;
+    saveCa: (scope: ScepCaScope, ca: ScepStoredCa) => Effect.Effect<ScepStoredCa, ScepError>;
+    replaceCa: (scope: ScepCaScope, ca: ScepStoredCa) => Effect.Effect<ScepStoredCa, ScepError>;
+    authenticatePkcsReq: (
+      scope: ScepCaScope,
+      req: ScepPkcsReq,
+    ) => Effect.Effect<ScepAuthentication | void, ScepError>;
     recordIssuedCertificate: (certificate: ScepIssuedCertificate) => Effect.Effect<void, ScepError>;
     findIssuedCertificate: (
+      scope: ScepCaScope,
       serial: string,
     ) => Effect.Effect<ScepIssuedCertificate | null, ScepError>;
   }>,
@@ -318,7 +325,8 @@ export function mockScepRepository(
     ScepRepository,
     ScepRepository.of({
       getCa: overrides?.getCa ?? (() => Effect.succeed(null)),
-      saveCa: overrides?.saveCa ?? (() => Effect.void),
+      saveCa: overrides?.saveCa ?? ((_scope, ca) => Effect.succeed(ca)),
+      replaceCa: overrides?.replaceCa ?? ((_scope, ca) => Effect.succeed(ca)),
       authenticatePkcsReq: overrides?.authenticatePkcsReq ?? (() => Effect.void),
       recordIssuedCertificate: overrides?.recordIssuedCertificate,
       findIssuedCertificate: overrides?.findIssuedCertificate,

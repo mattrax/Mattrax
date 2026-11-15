@@ -90,14 +90,16 @@ export default function PoliciesPage() {
         rows={rows()}
         selectable={can("policies.write")}
         loading={policies.isPending}
+        isFetching={policies.isFetching}
+        onRefresh={() => void policies.refetch()}
         error={policies.error}
         storageKey="policies"
         toolbar={
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
         rowHref={(row) => `/t/${params.tenantId}/policies/${row.id}`}
-        actions={(selected, clear) => (
-          <EntityActions entity="policy" selected={selected} clear={clear} />
+        actions={(selected, clear, select) => (
+          <EntityActions entity="policy" selected={selected} clear={clear} select={select} />
         )}
         empty={
           conditions().length > 0 ? (

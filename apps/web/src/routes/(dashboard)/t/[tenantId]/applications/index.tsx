@@ -114,6 +114,8 @@ export default function ApplicationsPage() {
       <MdmTable<ApplicationRow>
         rows={rows()}
         loading={apps.isPending}
+        isFetching={apps.isFetching}
+        onRefresh={() => void apps.refetch()}
         error={apps.error}
         storageKey="applications"
         toolbar={

@@ -635,9 +635,7 @@ export default function DevicesPage() {
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Show
-              when={can("enrollment.write") && (total() > 0 || hasFilters())}
-            >
+            <Show when={can("enrollment.write") && (total() > 0 || hasFilters())}>
               <Button
                 as="a"
                 href={`/t/${params.tenantId}/settings/enrollment`}
@@ -683,6 +681,8 @@ export default function DevicesPage() {
         selectable={canAny(["devices.command", "devices.write", "groups.write"])}
         total={devices.data?.total}
         loading={devices.isPending}
+        isFetching={devices.isFetching}
+        onRefresh={() => void devices.refetch()}
         error={devices.error}
         storageKey="devices"
         rowHref={(row) => `/t/${params.tenantId}/devices/${row.id}`}
@@ -910,7 +910,11 @@ export default function DevicesPage() {
             class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5"
             aria-busy={devices.isFetching ? "true" : undefined}
           >
-            <span role="status" aria-live="polite" class="text-[12px] tabular-nums text-muted-foreground">
+            <span
+              role="status"
+              aria-live="polite"
+              class="text-[12px] tabular-nums text-muted-foreground"
+            >
               Page {page() + 1} of {pageCount()}
               <Show when={total() > 0}>
                 <span class="text-muted-foreground">
@@ -939,8 +943,8 @@ export default function DevicesPage() {
             </div>
           </div>
         }
-        actions={(selected, clear) => (
-          <EntityActions entity="device" selected={selected} clear={clear} />
+        actions={(selected, clear, select) => (
+          <EntityActions entity="device" selected={selected} clear={clear} select={select} />
         )}
         empty={
           <EmptyState

@@ -55,9 +55,9 @@ with the write and avoids similar stale reads on policy and membership changes.
 
 ## Auth and origins
 
-| Variable          | Default  | Purpose                                    |
-| ----------------- | -------- | ------------------------------------------ |
-| `TRUSTED_ORIGINS` | —        | Comma-separated extra same-site origins    |
+| Variable          | Default | Purpose                                 |
+| ----------------- | ------- | --------------------------------------- |
+| `TRUSTED_ORIGINS` | —       | Comma-separated extra same-site origins |
 
 ## Billing
 
@@ -95,9 +95,9 @@ All are optional. Without them billing reports `configured: false`.
 Without the vendor key, tenants upload a manually signed APNs certificate. Without the
 relay, hosted multi-tenant Cloud has no push transport and devices poll.
 
-When the profile signing identity is absent, the deployment-global SCEP CA signs profile
-downloads once it exists. Until then the plist is served unsigned. A configured identity
-that cannot be loaded fails the download rather than serving an unsigned profile.
+When the profile signing identity is absent, the owning tenant's SCEP CA signs profile
+downloads. The CA is created on first use, so there is no unsigned window. A configured
+identity that cannot be loaded fails the download rather than serving an unsigned profile.
 
 ## Windows and Entra
 

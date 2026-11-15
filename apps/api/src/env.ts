@@ -102,6 +102,12 @@ const ApiEnvSchema = Schema.Struct({
   MATTRAX_ONBOARDING_SINCE: Schema.optional(nonEmptyString),
   /** Disable the scheduled one-week follow-up with `false`, `0` or `off`. */
   MAINTENANCE_ONBOARDING_EMAILS: Schema.optional(nonEmptyString),
+  /**
+   * Explicitly declare that this deployment has no outbound email. Readiness
+   * reports `mailer: skipped` (degraded) instead of failing, and the
+   * self-hosted runner sets this when it removes the email binding.
+   */
+  MATTRAX_EMAIL_DISABLED: Schema.optional(nonEmptyString),
   /** Days after tenant creation before the follow-up is eligible. Defaults to 7. */
   MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: Schema.optional(nonEmptyString),
   /** Extra eligible days after the follow-up threshold. Defaults to 7. */
@@ -190,6 +196,7 @@ const RawApiEnvSchema = Schema.Struct({
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
   MATTRAX_ONBOARDING_SINCE: optionalString,
   MAINTENANCE_ONBOARDING_EMAILS: optionalString,
+  MATTRAX_EMAIL_DISABLED: optionalString,
   MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: optionalString,
   MAINTENANCE_ONBOARDING_WINDOW_DAYS: optionalString,
   MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: optionalString,
@@ -252,11 +259,10 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   DEV_MAILBOX_SECRET: emptyStringAsUndefined(rawEnv.DEV_MAILBOX_SECRET),
   MATTRAX_INVITATION_FROM: emptyStringAsUndefined(rawEnv.MATTRAX_INVITATION_FROM),
   MATTRAX_ONBOARDING_REPLY_TO: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_REPLY_TO),
-  MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(
-    rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL,
-  ),
+  MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL),
   MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
   MAINTENANCE_ONBOARDING_EMAILS: emptyStringAsUndefined(rawEnv.MAINTENANCE_ONBOARDING_EMAILS),
+  MATTRAX_EMAIL_DISABLED: emptyStringAsUndefined(rawEnv.MATTRAX_EMAIL_DISABLED),
   MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: emptyStringAsUndefined(
     rawEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
   ),

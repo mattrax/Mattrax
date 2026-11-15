@@ -179,9 +179,12 @@ describe("tenant export", () => {
     });
     context.db.store.scep_ca.push({
       id: 1,
+      organizationId: tenant.id,
       certPem: "SECRET-CA-CERT",
       privateKeyJwk: { private: "SECRET-CA-KEY" },
+      source: "generated",
       createdAt: timestamp,
+      rotatedAt: null,
     });
     context.db.store.scep_issued_certificate.push({
       serial: "cert-serial-1",
@@ -211,21 +214,21 @@ describe("tenant export", () => {
       { email: "owner@example.com", name: "Owner", role: "owner" },
     ]);
     expect(bundle.policies).toHaveLength(1);
-    expect(bundle.policies[0]).toMatchObject({
+    expect(bundle.policies?.[0]).toMatchObject({
       key: policy.id,
       name: "Baseline",
       notes: "Managed settings",
       configurations: { "mttx.apple.device": { camera: false } },
     });
     expect(bundle.groups).toHaveLength(1);
-    expect(bundle.groups[0]).toMatchObject({
+    expect(bundle.groups?.[0]).toMatchObject({
       key: group.id,
       name: "Staff",
       notes: "Everyone",
       policyKeys: [policy.id],
     });
     expect(bundle.applications).toHaveLength(1);
-    expect(bundle.applications[0]).toMatchObject({
+    expect(bundle.applications?.[0]).toMatchObject({
       key: application.id,
       name: "Slack",
       platform: "apple",
@@ -288,8 +291,8 @@ describe("tenant export", () => {
     );
 
     const { bundle } = await exportBundle(context, first.tenant.id);
-    expect(bundle.policies.map((policy: any) => policy.name)).toEqual(["Baseline"]);
-    expect(bundle.groups.map((group: any) => group.name)).toEqual(["Staff"]);
+    expect(bundle.policies?.map((policy: any) => policy.name)).toEqual(["Baseline"]);
+    expect(bundle.groups?.map((group: any) => group.name)).toEqual(["Staff"]);
     expect(JSON.stringify(bundle)).not.toContain(second.id);
     expect(JSON.stringify(bundle)).not.toContain("Other group");
   });

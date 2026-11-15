@@ -115,6 +115,18 @@ export class EnterpriseTenantHasMembers extends Schema.TaggedError<EnterpriseTen
   },
 ) {}
 
+/**
+ * A teardown step could not finish, so the tenant was left in place for a
+ * retry rather than half-deleted. `step` names the reclamation that failed.
+ */
+export class EnterpriseTenantTeardownFailed extends Schema.TaggedError<EnterpriseTenantTeardownFailed>()(
+  "EnterpriseTenantTeardownFailed",
+  {
+    message: Schema.String,
+    step: Schema.String,
+  },
+) {}
+
 export class EnterpriseLastTenantUser extends Schema.TaggedError<EnterpriseLastTenantUser>()(
   "EnterpriseLastTenantUser",
   {
@@ -211,6 +223,13 @@ const EnterpriseTenantWriteErrors = [
 const EnterpriseTenantDeleteErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseTenantHasMembers.pipe(HttpApiSchema.status(409)),
+  // A failed reclamation keeps the tenant so the operator can retry.
+  EnterpriseTenantTeardownFailed.pipe(HttpApiSchema.status(409)),
+] as const;
+
+const EnterpriseBackupWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
 
 const EnterpriseTenantUserRemoveErrors = [
@@ -989,6 +1008,35 @@ export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "un
 
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
 
+/**
+ * Android Management API state that does not apply to Apple or Windows.
+ * Enum values are the raw AMAPI identifiers so a new Google value is surfaced
+ * rather than dropped; the dashboard humanises them for display.
+ */
+export const AndroidDeviceInfo = Schema.Struct({
+  /** `DEVICE_OWNER`, `PROFILE_OWNER` or `MANAGEMENT_MODE_UNSPECIFIED`. */
+  managementMode: Schema.optional(NullableString),
+  /** `COMPANY_OWNED`, `PERSONALLY_OWNED` or `OWNERSHIP_UNSPECIFIED`. */
+  ownership: Schema.optional(NullableString),
+  /** Raw AMAPI device state (`ACTIVE`, `DISABLED`, `PROVISIONING`, ...). */
+  state: Schema.optional(NullableString),
+  /** `softwareInfo.androidVersion`'s API level, for example `34`. */
+  apiLevel: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** `softwareInfo.securityPatchLevel`, for example `2026-10-05`. */
+  securityPatchLevel: Schema.optional(NullableString),
+  appliedPolicyName: Schema.optional(NullableString),
+  appliedPolicyVersion: Schema.optional(NullableString),
+  enrollmentTokenName: Schema.optional(NullableString),
+  /** Free-text reason Google shows on the device while it is disabled. */
+  disabledReason: Schema.optional(NullableString),
+  /** Registered network operator from `networkInfo`. */
+  networkOperator: Schema.optional(NullableString),
+  /** `memoryInfo.totalRam`, in bytes. */
+  totalRam: Schema.optional(Schema.NullOr(Schema.Number)),
+});
+
+export type AndroidDeviceInfo = typeof AndroidDeviceInfo.Type;
+
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
   proto: DeviceProtocol,
@@ -1029,6 +1077,15 @@ export const DeviceRow = Schema.Struct({
   recoveryKeyRotatedAt: Schema.optional(NullableString),
   bootstrapTokenUpdatedAt: Schema.optional(NullableString),
   applicationsUpdatedAt: Schema.optional(NullableString),
+  /**
+   * True when the installed-application inventory is older than the refresh
+   * cadence (or has never been reported). The device page uses it to warn that
+   * the software list may be out of date instead of presenting stale rows as
+   * current.
+   */
+  applicationsStale: Schema.optional(Schema.Boolean),
+  /** Android Management API state; absent for Apple and Windows devices. */
+  android: Schema.optional(Schema.NullOr(AndroidDeviceInfo)),
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
 });
@@ -1037,10 +1094,13 @@ export type DeviceRow = typeof DeviceRow.Type;
 
 /** One installed application reported by a managed device. */
 export const DeviceApplication = Schema.Struct({
+  /** Apple bundle id, Android package name or Windows product/registry key. */
   bundleId: Schema.String,
   name: Schema.optional(NullableString),
   version: Schema.optional(NullableString),
   shortVersion: Schema.optional(NullableString),
+  /** Vendor as reported by Windows inventory (`Publisher`). */
+  publisher: Schema.optional(NullableString),
   bundleSize: Schema.optional(Schema.NullOr(Schema.Number)),
   dynamicSize: Schema.optional(Schema.NullOr(Schema.Number)),
   hasUpdateAvailable: Schema.Boolean,
@@ -1096,14 +1156,84 @@ export const DeviceRecoveryKeyResponse = Schema.Struct({
 
 export type DeviceRecoveryKeyResponse = typeof DeviceRecoveryKeyResponse.Type;
 
+/**
+ * Lifecycle of a queued MDM command.
+ *
+ * `queued`, `sent` and `deferred` are active: the device may still run the
+ * command. `succeeded` and `failed` are outcomes reported by the device (or
+ * reconciled from what it reports). `expired` means the delivery deadline
+ * passed before the device ran it, `superseded` means a newer command made it
+ * obsolete, and `cancelled` means the device left management first.
+ */
+export const DeviceCommandStatus = Schema.Literals([
+  "queued",
+  "sent",
+  "deferred",
+  "succeeded",
+  "failed",
+  "expired",
+  "superseded",
+  "cancelled",
+  "unknown",
+]);
+
+export type DeviceCommandStatus = typeof DeviceCommandStatus.Type;
+
+/** Statuses where the device can still run the command. */
+export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "deferred"] as const;
+
+const DEVICE_COMMAND_STATUS_LABELS: Record<DeviceCommandStatus, string> = {
+  queued: "Queued",
+  sent: "Sent",
+  deferred: "Deferred by device",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  expired: "Expired",
+  superseded: "Superseded",
+  cancelled: "Cancelled",
+  unknown: "Unknown",
+};
+
+/**
+ * Map a stored status onto the public lifecycle. Rows written before the
+ * lifecycle was introduced stored Apple's `NotNow` result as `not-now`.
+ */
+export const normalizeDeviceCommandStatus = (
+  value: string | null | undefined,
+): DeviceCommandStatus => {
+  switch (value) {
+    case "queued":
+    case "sent":
+    case "succeeded":
+    case "failed":
+    case "expired":
+    case "superseded":
+    case "cancelled":
+      return value;
+    case "deferred":
+    case "not-now":
+      return "deferred";
+    default:
+      return "unknown";
+  }
+};
+
+/** Short, human-readable label for a stored command status. */
+export const deviceCommandStatusLabel = (value: string | null | undefined): string =>
+  DEVICE_COMMAND_STATUS_LABELS[normalizeDeviceCommandStatus(value)];
+
 export const DeviceCommandInfo = Schema.Struct({
   id: Schema.String,
   requestType: Schema.String,
-  status: Schema.String,
+  status: DeviceCommandStatus,
+  /** Human-readable lifecycle label for the status. */
+  statusLabel: Schema.String,
   resultStatus: Schema.optional(NullableString),
   resultDetail: Schema.optional(NullableString),
   createdAt: Schema.String,
   updatedAt: Schema.String,
+  /** Delivery deadline. Absent only for request types without a budget. */
+  expiresAt: Schema.optional(NullableString),
 });
 
 export const DeviceCommandsResponse = Schema.Struct({
@@ -1236,6 +1366,8 @@ export type DeviceActivityEntry = typeof DeviceActivityEntry.Type;
 
 export const DeviceActivityResponse = Schema.Struct({
   events: Schema.Array(DeviceActivityEntry),
+  /** Older events exist behind this page; request the next `offset`. */
+  hasMore: Schema.Boolean,
 });
 
 export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
@@ -1347,6 +1479,10 @@ export const DeviceActionResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Present for a lock command so the administrator can unlock the device. */
   pin: Schema.optional(Schema.String),
+  /** The command that was queued, or the still-active duplicate that was reused. */
+  commandId: Schema.optional(Schema.String),
+  /** True when an identical command was already queued or in flight. */
+  deduplicated: Schema.optional(Schema.Boolean),
 });
 
 export const DeviceActionRequest = Schema.Struct({
@@ -1747,6 +1883,62 @@ export const TenantBackupsResponse = Schema.Struct({
 });
 
 export type TenantBackupsResponse = typeof TenantBackupsResponse.Type;
+
+/** Confirmation for an in-place restore: the operator retypes the tenant slug. */
+export const BackupRestoreRequest = Schema.Struct({
+  confirm: Schema.String,
+});
+
+export type BackupRestoreRequest = typeof BackupRestoreRequest.Type;
+
+export const BackupRestoreResponse = Schema.Struct({
+  backupId: Schema.String,
+  /** Pinned snapshot taken immediately before the restore. */
+  preRestoreBackupId: Schema.String,
+  restoredAt: Schema.String,
+  counts: Schema.Struct({
+    groups: Schema.Number,
+    policies: Schema.Number,
+    applications: Schema.Number,
+    preRegistrations: Schema.Number,
+    /** Device group memberships re-linked to devices still in the tenant. */
+    devices: Schema.Number,
+  }),
+  skipped: Schema.Struct({
+    members: Schema.Number,
+    devices: Schema.Number,
+    certificates: Schema.Number,
+    auditLog: Schema.Number,
+  }),
+  applicationsWithoutFiles: Schema.Number,
+});
+
+export type BackupRestoreResponse = typeof BackupRestoreResponse.Type;
+
+/** A device the teardown could not reach, reported back to the operator. */
+export const TenantDeletionUnreachableDevice = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  platform: Schema.Literals(["apple", "win", "android"]),
+  reason: Schema.String,
+});
+
+export type TenantDeletionUnreachableDevice = typeof TenantDeletionUnreachableDevice.Type;
+
+/** What a completed tenant deletion actually reclaimed. */
+export const DeleteTenantResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  reclaimed: Schema.Struct({
+    devices: Schema.Number,
+    /** Devices the platform accepted an unenroll request for. */
+    contacted: Schema.Number,
+    unreachableDevices: Schema.Array(TenantDeletionUnreachableDevice),
+    objects: Schema.Number,
+    subscription: Schema.Literals(["cancelled", "at_period_end", "none"]),
+  }),
+});
+
+export type DeleteTenantResponse = typeof DeleteTenantResponse.Type;
 
 /**
  * An imported bundle. Arrays are optional so a trimmed or hand-edited bundle
@@ -2678,6 +2870,34 @@ export const TenantEnrollmentInfo = Schema.Struct({
 
 export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
+/**
+ * The tenant's SCEP CA as shown to administrators. The private key is never
+ * returned; the fingerprint is enough to verify which CA a device trusts.
+ */
+export const TenantScepCaInfo = Schema.Struct({
+  configured: Schema.Boolean,
+  /** Tenant-scoped SCEP endpoint embedded in enrollment profiles. */
+  scepUrl: Schema.String,
+  source: Schema.optional(Schema.NullOr(Schema.Literals(["generated", "imported"]))),
+  commonName: Schema.optional(NullableString),
+  /** Lowercase hex SHA-256 of the CA certificate DER. */
+  fingerprintSha256: Schema.optional(NullableString),
+  notAfter: Schema.optional(NullableString),
+  createdAt: Schema.optional(NullableString),
+  rotatedAt: Schema.optional(NullableString),
+});
+
+export type TenantScepCaInfo = typeof TenantScepCaInfo.Type;
+
+/**
+ * Upload a CA minted outside Mattrax. The key must be an unencrypted PKCS#8 RSA
+ * private key and must match the certificate.
+ */
+export const ImportTenantScepCaRequest = Schema.Struct({
+  certificatePem: Schema.String,
+  privateKeyPem: Schema.String,
+});
+
 export const PatchTenantEnrollmentRequest = Schema.Struct({
   code: Schema.optional(NullableString),
   enabledApple: Schema.optional(Schema.Boolean),
@@ -3003,6 +3223,41 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.post("pinTenantBackup", "/v1/tenants/:tenantId/backups/:id/pin", {
+      error: [...EnterpriseBackupWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      success: BackupRunInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("unpinTenantBackup", "/v1/tenants/:tenantId/backups/:id/unpin", {
+      error: [...EnterpriseBackupWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      success: BackupRunInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteTenantBackup", "/v1/tenants/:tenantId/backups/:id", {
+      error: [...EnterpriseBackupWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("restoreTenantBackup", "/v1/tenants/:tenantId/backups/:id/restore", {
+      error: [
+        ...EnterpriseBackupWriteErrors,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+        ...EnterpriseStepUpRequired,
+      ],
+      params: TenantIdParam,
+      payload: BackupRestoreRequest,
+      success: BackupRestoreResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
@@ -3014,7 +3269,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", {
       error: [...EnterpriseTenantDeleteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: DeleteTenantResponse,
     }),
   )
   .add(
@@ -3381,6 +3636,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterprisePublicAdeProfileErrors,
       params: { token: Schema.String },
       success: AppleEnrollmentProfileResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantScepCa", "/v1/tenants/:tenantId/identity/scep", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: TenantScepCaInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("rotateTenantScepCa", "/v1/tenants/:tenantId/identity/scep/rotate", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: TenantScepCaInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("importTenantScepCa", "/v1/tenants/:tenantId/identity/scep", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: ImportTenantScepCaRequest,
+      success: TenantScepCaInfo,
     }),
   )
   .add(
@@ -3859,7 +4136,11 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.get("getDeviceActivity", "/v1/tenants/:tenantId/devices/:id/activity", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
-      query: Schema.Struct({ limit: Schema.optional(Schema.Number) }),
+      query: Schema.Struct({
+        limit: Schema.optional(Schema.Number),
+        /** Newest-first page offset; the response reports whether more exist. */
+        offset: Schema.optional(Schema.Number),
+      }),
       success: DeviceActivityResponse,
     }),
   )

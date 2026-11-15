@@ -87,6 +87,8 @@ export default function GroupsPage() {
         rows={filteredRows()}
         selectable={can("groups.write")}
         loading={groups.isPending}
+        isFetching={groups.isFetching}
+        onRefresh={() => void groups.refetch()}
         error={groups.error}
         storageKey="groups"
         toolbar={
@@ -94,8 +96,8 @@ export default function GroupsPage() {
         }
         searchPlaceholder="Search groups…"
         rowHref={(row) => `/t/${params.tenantId}/groups/${row.id}`}
-        actions={(selected, clear) => (
-          <EntityActions entity="group" selected={selected} clear={clear} />
+        actions={(selected, clear, select) => (
+          <EntityActions entity="group" selected={selected} clear={clear} select={select} />
         )}
         empty={
           conditions().length > 0 ? (

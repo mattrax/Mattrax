@@ -153,9 +153,9 @@ class FakeDelete implements Iterable<Effect.Effect<Row[]>> {
 }
 
 type FakeQuery = {
-  readonly findFirst: (
-    options?: { readonly where?: Schema.JsonObject },
-  ) => Effect.Effect<Row | undefined>;
+  readonly findFirst: (options?: {
+    readonly where?: Schema.JsonObject;
+  }) => Effect.Effect<Row | undefined>;
   readonly findMany: (options?: {
     readonly where?: Schema.JsonObject;
   }) => Effect.Effect<Array<Row>>;

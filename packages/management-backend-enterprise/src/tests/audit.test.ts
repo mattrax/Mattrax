@@ -9,7 +9,7 @@ import {
   isDeclarationFailure,
   pushInvalidTokenTransition,
 } from "../index.js";
-import {  dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -53,7 +53,7 @@ const setup = () => {
     [tableName(schema.device)]: [device("device-1", "org-1"), device("device-2", "org-2")],
   });
 
-// SAFETY: The fake store implements only the query chains these tests exercise.
+  // SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
   return { db, backend };
@@ -117,8 +117,12 @@ describe("system audit device lifecycle", () => {
 
   it("records a device check-out once and keeps it tenant scoped", async () => {
     const { db, backend } = setup();
-    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }));
-    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }));
+    await run(
+      backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }),
+    );
+    await run(
+      backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }),
+    );
 
     expect(auditRows(db)).toHaveLength(1);
     expect(auditRows(db)[0]).toMatchObject({
@@ -214,7 +218,7 @@ describe("system audit transition helpers", () => {
 
   it("dedupes command terminal states", () => {
     expect(commandFailureTransition("sent", "failed")).toBe(true);
-    expect(commandFailureTransition("sent", "not-now")).toBe(true);
+    expect(commandFailureTransition("sent", "deferred")).toBe(true);
     expect(commandFailureTransition("failed", "failed")).toBe(false);
     expect(commandFailureTransition("sent", "succeeded")).toBe(false);
   });

@@ -11,6 +11,7 @@ import {
   sealCaPrivateKey,
   verifyScepChallenge,
   type ScepAuthentication,
+  type ScepCaScope,
   type ScepPkcsReq,
 } from "@mattrax/scep";
 
@@ -130,7 +131,10 @@ export class ScepRepositoryLive extends ScepRepository {
     db: Db["Service"],
     options: ScepRepositoryOptions = {},
   ): ScepRepository["Service"] => {
-    const authenticatePkcsReq = (req: ScepPkcsReq): Effect.Effect<ScepAuthentication, ScepError> =>
+    const authenticatePkcsReq = (
+      scope: ScepCaScope,
+      req: ScepPkcsReq,
+    ): Effect.Effect<ScepAuthentication, ScepError> =>
       Effect.gen(function* () {
         const secret = options.authSecret ?? processEnvSecret();
 
@@ -170,6 +174,12 @@ export class ScepRepositoryLive extends ScepRepository {
 
         if (!enrollment) {
           return yield* Effect.fail(new ScepError({ message: "Unknown SCEP enrollment" }));
+        }
+
+        // A challenge minted for one tenant must only be redeemable against
+        // that tenant's SCEP URL (and therefore its CA).
+        if (enrollment.organizationId !== scope.organizationId) {
+          return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
         }
 
         // Consume the persisted challenge before issuance. One conditional
@@ -248,13 +258,13 @@ export class ScepRepositoryLive extends ScepRepository {
     const authSecret = (): string | undefined => options.authSecret ?? processEnvSecret();
 
     /**
-     * Resolve the tenant-wide CA signing key. The column holds either the
-     * sealed envelope or a legacy plaintext JWK; the latter is sealed and
-     * written back before it is used, so a database or backup reader can no
-     * longer mint device identities. Any failure is fatal: regenerating the CA
-     * here would invalidate every certificate already issued to a device.
+     * Resolve a tenant's CA signing key. The column holds either the sealed
+     * envelope or a legacy plaintext JWK; the latter is sealed and written back
+     * before it is used, so a database or backup reader can no longer mint
+     * device identities. Any failure is fatal: regenerating the CA here would
+     * invalidate every certificate already issued to a device.
      */
-    const loadCaPrivateKey = (stored: Schema.Json) =>
+    const loadCaPrivateKey = (organizationId: string, stored: Schema.Json) =>
       Effect.gen(function* () {
         const opened = yield* Effect.tryPromise({
           try: () => openCaPrivateKey(stored, authSecret()),
@@ -269,7 +279,7 @@ export class ScepRepositoryLive extends ScepRepository {
           yield* db
             .update(schema.scepCa)
             .set({ privateKeyJwk: sealed })
-            .where(eq(schema.scepCa.id, 1))
+            .where(eq(schema.scepCa.organizationId, organizationId))
             .pipe(
               Effect.mapError(
                 () =>
@@ -284,53 +294,139 @@ export class ScepRepositoryLive extends ScepRepository {
         return opened.privateKeyJwk;
       });
 
+    /** Read and unseal the tenant's CA row. */
+    const readCa = (organizationId: string) =>
+      Effect.gen(function* () {
+        const [row] = yield* db
+          .select()
+          .from(schema.scepCa)
+          .where(eq(schema.scepCa.organizationId, organizationId))
+          .limit(1);
+
+        if (!row) return null;
+        const stored = Schema.decodeUnknownOption(Schema.Json)(row.privateKeyJwk);
+
+        if (Option.isNone(stored))
+          return yield* Effect.fail(
+            new ScepError({ message: "Stored SCEP CA private key is not valid JSON" }),
+          );
+
+        const privateKeyJwk = yield* loadCaPrivateKey(organizationId, stored.value);
+
+        return { certPem: row.certPem, privateKeyJwk };
+      });
+
+    /**
+     * The tenant must exist before a CA is bootstrapped. Checking here keeps an
+     * arbitrary `/mdm/apple/scep/<id>` URL from turning into an FK error (and
+     * makes the HTTP layer a clean 404).
+     */
+    const requireOrganization = (organizationId: string) =>
+      Effect.gen(function* () {
+        const [row] = yield* db
+          .select({ id: schema.organization.id })
+          .from(schema.organization)
+          .where(eq(schema.organization.id, organizationId))
+          .limit(1);
+
+        if (!row)
+          return yield* Effect.fail(
+            new ScepError({ message: "Unknown SCEP tenant", reason: "unknown_tenant" }),
+          );
+      });
+
+    const sealCa = (ca: { certPem: string; privateKeyJwk: JsonWebKey }) =>
+      Effect.tryPromise({
+        try: () => sealCaPrivateKey(authSecret(), ca.privateKeyJwk),
+        catch: (cause) =>
+          cause instanceof ScepCaKeyError
+            ? new ScepError({ message: cause.message })
+            : new ScepError({ message: "Failed to encrypt the SCEP CA private key" }),
+      });
+
     return ScepRepository.of({
-      getCa: () =>
+      getCa: (scope) =>
         Effect.gen(function* () {
-          const [row] = yield* db
-            .select()
-            .from(schema.scepCa)
-            .where(eq(schema.scepCa.id, 1))
-            .limit(1);
+          const ca = yield* readCa(scope.organizationId);
 
-          if (!row) return null;
-          const stored = Schema.decodeUnknownOption(Schema.Json)(row.privateKeyJwk);
+          if (ca) return ca;
 
-          if (Option.isNone(stored))
-            return yield* Effect.fail(
-              new ScepError({ message: "Stored SCEP CA private key is not valid JSON" }),
-            );
+          yield* requireOrganization(scope.organizationId);
 
-          const privateKeyJwk = yield* loadCaPrivateKey(stored.value);
-
-          return {
-            certPem: row.certPem,
-            privateKeyJwk,
-          };
+          return null;
         }).pipe(Effect.mapError(databaseError("Failed to get CA"))),
 
-      saveCa: (certPem: string, privateKeyJwk: JsonWebKey) =>
+      /**
+       * Insert-if-absent. The unique organization column makes this atomic:
+       * concurrent cold requests both insert, MySQL keeps exactly one row, and
+       * both callers read back the same persisted CA.
+       */
+      saveCa: (scope, ca) =>
         Effect.gen(function* () {
-          const sealed = yield* Effect.tryPromise({
-            try: () => sealCaPrivateKey(authSecret(), privateKeyJwk),
-            catch: (cause) =>
-              cause instanceof ScepCaKeyError
-                ? new ScepError({ message: cause.message })
-                : new ScepError({ message: "Failed to encrypt the SCEP CA private key" }),
-          });
+          const sealed = yield* sealCa(ca);
+          const timestamp = new Date();
+
+          yield* requireOrganization(scope.organizationId);
 
           yield* db
             .insert(schema.scepCa)
+            .ignore()
             .values({
-              id: 1,
-              certPem,
+              organizationId: scope.organizationId,
+              certPem: ca.certPem,
               privateKeyJwk: sealed,
-              createdAt: new Date(),
-            })
-            .onDuplicateKeyUpdate({
-              set: { certPem, privateKeyJwk: sealed },
+              source: ca.source ?? "generated",
+              createdAt: timestamp,
+              rotatedAt: null,
             });
+
+          const stored = yield* readCa(scope.organizationId);
+
+          if (!stored)
+            return yield* Effect.fail(
+              new ScepError({ message: "Failed to persist the SCEP CA", reason: "internal" }),
+            );
+
+          return stored;
         }).pipe(Effect.mapError(databaseError("Failed to save CA"))),
+
+      replaceCa: (scope, ca) =>
+        Effect.gen(function* () {
+          const sealed = yield* sealCa(ca);
+          const timestamp = new Date();
+
+          yield* requireOrganization(scope.organizationId);
+
+          const updated = yield* db
+            .update(schema.scepCa)
+            .set({
+              certPem: ca.certPem,
+              privateKeyJwk: sealed,
+              source: ca.source ?? "generated",
+              rotatedAt: timestamp,
+            })
+            .where(eq(schema.scepCa.organizationId, scope.organizationId));
+
+          if (updated.affectedRows === 0) {
+            yield* db.insert(schema.scepCa).values({
+              organizationId: scope.organizationId,
+              certPem: ca.certPem,
+              privateKeyJwk: sealed,
+              source: ca.source ?? "generated",
+              createdAt: timestamp,
+              rotatedAt: null,
+            });
+          }
+
+          const stored = yield* readCa(scope.organizationId);
+
+          if (!stored)
+            return yield* Effect.fail(
+              new ScepError({ message: "Failed to persist the SCEP CA", reason: "internal" }),
+            );
+
+          return stored;
+        }).pipe(Effect.mapError(databaseError("Failed to replace CA"))),
 
       authenticatePkcsReq,
       recordIssuedCertificate: (certificate) =>
@@ -386,12 +482,17 @@ export class ScepRepositoryLive extends ScepRepository {
               : new ScepError({ message: "Failed to record certificate", cause }),
           ),
         ),
-      findIssuedCertificate: (serial) =>
+      findIssuedCertificate: (scope, serial) =>
         Effect.gen(function* () {
           const [row] = yield* db
             .select()
             .from(schema.scepIssuedCertificate)
-            .where(eq(schema.scepIssuedCertificate.serial, serial))
+            .where(
+              and(
+                eq(schema.scepIssuedCertificate.serial, serial),
+                eq(schema.scepIssuedCertificate.organizationId, scope.organizationId),
+              ),
+            )
             .limit(1)
             .pipe(
               Effect.mapError(

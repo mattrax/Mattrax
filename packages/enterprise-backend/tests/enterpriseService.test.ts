@@ -23,6 +23,7 @@ import {
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/management-backend-enterprise";
+import { certToPem, createCaCertificate } from "@mattrax/scep";
 import {
   appleEnrollmentProfileResponse,
   createEnterpriseService,
@@ -282,7 +283,7 @@ describe("enterprise service tenant flow", () => {
       service.getDashboard(request(headers), tenant.id, created.id),
     );
 
-    const moved = afterLayout.widgets.find((item: { id: string }) => item.id === widget.id);
+    const moved = afterLayout.widgets.find((item: { id: string }) => item.id === widget.id)!;
     expect(moved.x).toBe(2);
     expect(moved.y).toBe(widget.y);
 
@@ -779,7 +780,9 @@ describe("enterprise service tenant flow", () => {
         status: "pending",
       },
     ]);
-    const listed = await runEffect(service.listTenantInvitations(request(headers), tenant.id));
+
+    const listed = await runEffect(service.listTenantInvitations(request(headers), tenant.id, {}));
+
     expect(listed.invitations[0]).toMatchObject({
       id: invitation.id,
       email: "new@example.com",
@@ -934,24 +937,21 @@ describe("enterprise service billing flow", () => {
     const createdCustomers: any[] = [];
     const portalSessions: any[] = [];
 
-    const stripeClient = makeStripeClient({
-      customers: {
-        create: async (payload: any) => {
-          createdCustomers.push(payload);
+    const stripeClient = makeStripeClient();
 
-          return { id: "cus_new" };
-        },
-      },
-      billingPortal: {
-        sessions: {
-          create: async (payload: any) => {
-            portalSessions.push(payload);
+    // The Stripe SDK's `create` takes a params object; the shared fake types
+    // the no-argument shape, so the recorder is attached to the untyped fake.
+    stripeClient.customers.create = async (payload: any) => {
+      createdCustomers.push(payload);
 
-            return { url: "https://billing.test/session" };
-          },
-        },
-      },
-    });
+      return { id: "cus_new" };
+    };
+
+    stripeClient.billingPortal.sessions.create = async (payload: any) => {
+      portalSessions.push(payload);
+
+      return { url: "https://billing.test/session" };
+    };
 
     const service = createEnterpriseService({
       db,
@@ -1072,32 +1072,37 @@ describe("enterprise service billing flow", () => {
 
     const listCalls: any[] = [];
 
+    const stripeClient = makeStripeClient({
+      customers: {
+        search: async () => {
+          throw new Error("search is unavailable");
+        },
+        create: async () => {
+          throw new Error("should not create a customer");
+        },
+      },
+    });
+
+    // `list` is a page fetch in the billing path; the shared fake types it as
+    // an iterator, so the bounded page is attached to the untyped fake.
+    stripeClient.customers.list = async (args: any) => {
+      listCalls.push(args);
+
+      return {
+        data: [
+          {
+            id: "cus_bounded",
+            metadata: { organizationId: tenant.id, customerType: "organization" },
+          },
+        ],
+      };
+    };
+
     const boundedService = createEnterpriseService({
       db,
       schema,
       origin,
-      stripeClient: makeStripeClient({
-        customers: {
-          search: async () => {
-            throw new Error("search is unavailable");
-          },
-          list: async (args: any) => {
-            listCalls.push(args);
-
-            return {
-              data: [
-                {
-                  id: "cus_bounded",
-                  metadata: { organizationId: tenant.id, customerType: "organization" },
-                },
-              ],
-            };
-          },
-          create: async () => {
-            throw new Error("should not create a customer");
-          },
-        },
-      }),
+      stripeClient,
       // SAFETY: this test never reaches R2; the service only stores the binding.
       storage: {} as any,
       // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -1880,7 +1885,7 @@ describe("enterprise service APNs", () => {
     await seedCertificate(db, tenant.id);
     await seedDevice(db, tenant.id, "device-1");
 
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
     expect(pushes).toHaveLength(1);
     expect(pushes[0]).toMatchObject({
       pushToken: "device-1-token",
@@ -1890,7 +1895,7 @@ describe("enterprise service APNs", () => {
 
     // A device that is not enrolled must not be pushed.
     await seedDevice(db, tenant.id, "device-2", { status: "unenrolled" });
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2", {}));
     expect(pushes).toHaveLength(1);
 
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
@@ -2083,7 +2088,9 @@ describe("enterprise service APNs", () => {
     const scep = ScepRepositoryLive.make(db, { authSecret });
     // Renewal resolves through the internal id before revocation.
     await expect(
-      Effect.runPromise(scep.findIssuedCertificate!(certificate.serial)),
+      Effect.runPromise(
+        scep.findIssuedCertificate!({ organizationId: tenant.id }, certificate.serial),
+      ),
     ).resolves.toMatchObject({ deviceId: device.id, organizationId: tenant.id });
 
     const revoked = await runEffect(
@@ -2094,7 +2101,10 @@ describe("enterprise service APNs", () => {
     expect(certificate.revokedAt).toBeInstanceOf(Date);
 
     // The renewed identity can no longer be used to renew.
-    const lookup = Effect.runPromise(scep.findIssuedCertificate!(certificate.serial));
+    const lookup = Effect.runPromise(
+      scep.findIssuedCertificate!({ organizationId: tenant.id }, certificate.serial),
+    );
+
     await expect(lookup).rejects.toHaveProperty("_tag", "ScepError");
     await expect(lookup).rejects.toMatchObject({ message: expect.stringContaining("revoked") });
 
@@ -2132,7 +2142,11 @@ describe("enterprise service APNs", () => {
     expect(certificate.revokedAt).toBeInstanceOf(Date);
 
     const scep = ScepRepositoryLive.make(db, { authSecret });
-    const legacy = Effect.runPromise(scep.findIssuedCertificate!("legacy-serial"));
+
+    const legacy = Effect.runPromise(
+      scep.findIssuedCertificate!({ organizationId: tenant.id }, "legacy-serial"),
+    );
+
     await expect(legacy).rejects.toHaveProperty("_tag", "ScepError");
     await expect(legacy).rejects.toMatchObject({ message: expect.stringContaining("revoked") });
   });
@@ -2335,7 +2349,7 @@ describe("enterprise service APNs", () => {
     await seedDevice(db, tenant.id, "device-1");
     const apple = () => db.store.device_apple.find((row: any) => row.deviceId === "device-1")!;
 
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
     expect(apple().lastPushAt).toBeInstanceOf(Date);
     expect(apple().lastPushOkAt).toBeInstanceOf(Date);
     expect(apple().lastPushError).toBeNull();
@@ -2344,21 +2358,21 @@ describe("enterprise service APNs", () => {
     const firstSuccess = apple().lastPushOkAt;
 
     mode = "fail";
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
     expect(apple().lastPushOkAt).toEqual(firstSuccess);
     expect(apple().consecutivePushFailures).toBe(1);
     expect(apple().lastPushErrorCode).toBe("delivery_failed");
     expect(apple().lastPushError).toContain("temporary");
 
     mode = "ok";
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
     expect(apple().consecutivePushFailures).toBe(0);
     expect(apple().lastPushError).toBeNull();
     expect(apple().lastPushErrorCode).toBeNull();
     expect(apple().lastPushOkAt.getTime()).toBeGreaterThanOrEqual(firstSuccess.getTime());
 
     mode = "invalid";
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
     expect(apple().lastPushErrorCode).toBe("invalid_token");
     expect(apple().consecutivePushFailures).toBe(1);
     expect(apple().lastPushError).toContain("Unregistered");
@@ -2408,9 +2422,9 @@ describe("enterprise service APNs", () => {
     await seedCertificate(db, other.id);
     await seedDevice(db, other.id, "device-other");
 
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2"));
-    await runEffect(service.deviceAction(request(headers), other.id, "device-other"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2", {}));
+    await runEffect(service.deviceAction(request(headers), other.id, "device-other", {}));
 
     const health = await runEffect(service.getDevicePushHealth(request(headers), tenant.id));
     expect(health.counts).toEqual({
@@ -2437,7 +2451,7 @@ describe("enterprise service APNs", () => {
 
     // Recovery removes the device from both filters.
     rejectDeviceOne = false;
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1", {}));
 
     const none = await runEffect(
       service.searchDevices(request(headers), tenant.id, { push: "failing" }),
@@ -2546,6 +2560,200 @@ describe("enterprise service APNs", () => {
     await expect(
       runEffect(service.getDeviceActivity(request(headers), other.id, "device-1", {})),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+});
+
+describe("device command lifecycle", () => {
+  const seed = (db: any, tenantId: string) => {
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenantId,
+      proto: "apple",
+      status: "enrolled",
+      name: "device-1",
+      dmIdentifier: "dm-device-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device_apple.push({
+      deviceId: "device-1",
+      token: "device-1-token",
+      pushMagic: "device-1-magic",
+      topic: "com.apple.mgmt.External.acme",
+    });
+  };
+
+  const commands = (db: any) =>
+    db.store.device_command.filter((row: any) => row.deviceId === "device-1");
+
+  it("queues one erase when the action is submitted twice", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+
+    // Each erase carries a fresh PIN, so the newer one supersedes the older
+    // rather than running both. Exactly one erase stays active.
+    const active = commands(db).filter((row: any) => row.status === "queued");
+
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({ requestType: "EraseDevice" });
+    expect(active[0].expiresAt).toBeInstanceOf(Date);
+    expect(commands(db).filter((row: any) => row.status === "superseded")).toHaveLength(1);
+  });
+
+  it("returns the in-flight command for identical work instead of queueing twice", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const first = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "collect-security-info",
+      }),
+    );
+
+    const second = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "collect-security-info",
+      }),
+    );
+
+    expect(commands(db)).toHaveLength(1);
+    const firstCommandId = "commandId" in first ? first.commandId : undefined;
+
+    expect(second).toMatchObject({ deduplicated: true, commandId: firstCommandId });
+  });
+
+  it("supersedes a pending lock when a wipe is queued", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "lock" }),
+    );
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+
+    const statuses = commands(db).map((row: any) => [row.requestType, row.status]);
+
+    expect(statuses).toEqual([
+      ["DeviceLock", "superseded"],
+      ["EraseDevice", "queued"],
+    ]);
+  });
+
+  it("queues a fresh command when the identical one already expired", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const stale = new Date(Date.now() - 60 * 60 * 1000);
+    db.store.device_command.push({
+      id: "stale-lock",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      requestType: "DeviceLock",
+      payload: { PIN: "123456" },
+      status: "queued",
+      dedupeKey: null,
+      expiresAt: stale,
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: new Date(stale.getTime() - 15 * 60 * 1000),
+      updatedAt: new Date(stale.getTime() - 15 * 60 * 1000),
+    });
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "lock" }),
+    );
+
+    const byId = new Map(commands(db).map((row: any) => [row.id, row]));
+    expect(byId.get("stale-lock")).toMatchObject({ status: "expired", dedupeKey: null });
+
+    const queued = commands(db).filter((row: any) => row.status === "queued");
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.requestType).toBe("DeviceLock");
+    expect(queued[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("reports the lifecycle in the command history with expiry and a label", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const stale = new Date(Date.now() - 60 * 60 * 1000);
+    db.store.device_command.push({
+      id: "stale-lock",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      requestType: "DeviceLock",
+      payload: { PIN: "123456" },
+      status: "queued",
+      dedupeKey: null,
+      expiresAt: stale,
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: new Date(stale.getTime() - 15 * 60 * 1000),
+      updatedAt: new Date(stale.getTime() - 15 * 60 * 1000),
+    });
+
+    const history = await runEffect(
+      service.listDeviceCommands(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(history.commands[0]).toMatchObject({
+      id: "stale-lock",
+      status: "expired",
+      statusLabel: "Expired",
+    });
+    expect(history.commands[0]!.expiresAt).toBe(stale.toISOString());
+  });
+
+  it("cancels queued commands when the device is unenrolled", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "lock" }),
+    );
+    await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
+
+    expect(commands(db)[0]).toMatchObject({ status: "cancelled", dedupeKey: null });
   });
 });
 
@@ -3078,8 +3286,8 @@ describe("Apple enrollment profile download", () => {
     return { ...context, tenant, enrollment };
   };
 
-  it("serves an unsigned plist until a signing identity or SCEP CA exists", async () => {
-    const { service, enrollment } = await setupEnrollment();
+  it("signs the profile, bootstrapping the tenant CA on first use", async () => {
+    const { db, service, tenant, enrollment } = await setupEnrollment();
 
     const result = await runEffect(
       service.getAppleEnrollmentProfile(enrollment.id, undefined, { ip: "profile-ok" }),
@@ -3087,11 +3295,34 @@ describe("Apple enrollment profile download", () => {
 
     expect(result.filename).toBe("profile-tenant-enrollment.mobileconfig");
 
-    const plist = new TextDecoder().decode(result.profile);
+    const buffer = new ArrayBuffer(result.profile.byteLength);
+
+    new Uint8Array(buffer).set(result.profile);
+
+    const contentInfo = pkijs.ContentInfo.fromBER(buffer);
+    expect(contentInfo.contentType).toBe(pkijs.ContentInfo.SIGNED_DATA);
+
+    const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+
+    const plist = new TextDecoder().decode(
+      new Uint8Array(signedData.encapContentInfo.eContent!.getValue()),
+    );
 
     expect(plist).toContain("<plist");
     expect(plist).toContain("com.apple.security.scep");
+    expect(plist).toContain(`/mdm/apple/scep/${tenant.id}`);
     expect(plist).toContain("com.apple.mdm.token");
+
+    const verification = await signedData.verify({
+      signer: 0,
+      checkChain: false,
+      extendedMode: true,
+    });
+
+    expect(verification.signatureVerified).toBe(true);
+    // The tenant CA was created and is the signer.
+    expect(db.store.scep_ca).toHaveLength(1);
+    expect(db.store.scep_ca[0]?.organizationId).toBe(tenant.id);
 
     const response = appleEnrollmentProfileResponse(result);
     expect(response.headers["content-type"]).toBe("application/x-apple-aspen-config");
@@ -3101,15 +3332,19 @@ describe("Apple enrollment profile download", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
   });
 
-  it("serves a CMS SignedData profile when the SCEP CA exists", async () => {
-    const { db, service, enrollment } = await setupEnrollment();
+  it("signs with the tenant's existing CA and seals a legacy plaintext key", async () => {
+    const { db, service, tenant, enrollment } = await setupEnrollment();
     const caKeys = await generateCaKeyPair();
+    const caCertPem = await testCertificate({ keyPair: caKeys });
 
     db.store.scep_ca.push({
       id: 1,
-      certPem: await testCertificate({ keyPair: caKeys }),
+      organizationId: tenant.id,
+      certPem: caCertPem,
       privateKeyJwk: await exportPrivateKeyJwk(caKeys.privateKey),
+      source: "generated",
       createdAt: new Date(),
+      rotatedAt: null,
     });
 
     const result = await runEffect(
@@ -3288,7 +3523,7 @@ describe("device pre-registration", () => {
     );
 
     expect(imported.created).toBe(2);
-    const ids = db.store.device_pre_registration.map((row) => row.id);
+    const ids = db.store.device_pre_registration.map((row: { id: string }) => row.id);
     await runEffect(service.deleteDevicePreRegistrations(request(headers), first.id, ids));
     expect(db.store.device_pre_registration).toHaveLength(0);
   });
@@ -3566,5 +3801,195 @@ describe("Autopilot service configuration", () => {
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+});
+
+describe("tenant SCEP CA", () => {
+  const prepareTenant = async (
+    context: Awaited<ReturnType<typeof makeContext>>,
+    name: string,
+    slug: string,
+  ) => {
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name, slug }),
+    );
+
+    const enrollmentRow = context.db.store.enterprise_enrollment.find(
+      (row: any) => row.organizationId === tenant.id,
+    )!;
+
+    Object.assign(enrollmentRow, { enabledApple: true, maxDevices: 100 });
+    context.db.store.apple_push_certificate.push({
+      organizationId: tenant.id,
+      email: `admin@${slug}.test`,
+      topic: `com.apple.mgmt.External.${slug}`,
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: null,
+      updatedAt: new Date(),
+    });
+
+    const enrollment = await runEffect(
+      context.service.getTenantEnrollment(request(context.headers), tenant.id),
+    );
+
+    return { tenant, enrollment };
+  };
+
+  const profileFor = (
+    context: Awaited<ReturnType<typeof makeContext>>,
+    enrollment: { id: string },
+    ip: string,
+  ) => runEffect(context.service.getAppleEnrollmentProfile(enrollment.id, undefined, { ip }));
+
+  it("reports an unconfigured CA and the tenant SCEP URL before first use", async () => {
+    const context = await makeContext();
+
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const info = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), tenant.id),
+    );
+
+    expect(info.configured).toBe(false);
+    expect(info.scepUrl).toBe(`${origin}/mdm/apple/scep/${tenant.id}`);
+    expect(info.fingerprintSha256).toBeNull();
+    expect(context.db.store.scep_ca).toHaveLength(0);
+  });
+
+  it("bootstraps an isolated CA per tenant", async () => {
+    const context = await makeContext();
+    const first = await prepareTenant(context, "Alpha", "alpha");
+    const second = await prepareTenant(context, "Beta", "beta");
+
+    await profileFor(context, first.enrollment, "profile-alpha");
+    await profileFor(context, second.enrollment, "profile-beta");
+
+    const firstInfo = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), first.tenant.id),
+    );
+
+    const secondInfo = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), second.tenant.id),
+    );
+
+    expect(firstInfo).toMatchObject({
+      configured: true,
+      source: "generated",
+      commonName: "Mattrax SCEP CA",
+    });
+    expect(secondInfo).toMatchObject({ configured: true, source: "generated" });
+    expect(firstInfo.fingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(firstInfo.fingerprintSha256).not.toBe(secondInfo.fingerprintSha256);
+
+    const rows = context.db.store.scep_ca;
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row: any) => row.organizationId === first.tenant.id)?.certPem).not.toBe(
+      rows.find((row: any) => row.organizationId === second.tenant.id)?.certPem,
+    );
+  });
+
+  it("rotates a tenant CA without invalidating another tenant", async () => {
+    const context = await makeContext();
+    const first = await prepareTenant(context, "Alpha", "alpha");
+    const second = await prepareTenant(context, "Beta", "beta");
+
+    await profileFor(context, first.enrollment, "profile-alpha");
+    await profileFor(context, second.enrollment, "profile-beta");
+
+    const before = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), first.tenant.id),
+    );
+
+    const otherBefore = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), second.tenant.id),
+    );
+
+    context.db.store.scep_issued_certificate.push({
+      serial: "alpha-serial",
+      organizationId: first.tenant.id,
+      enrollmentId: null,
+      deviceId: null,
+      notAfter: new Date(Date.now() + 86_400_000),
+      revokedAt: null,
+      createdAt: new Date(),
+    });
+
+    const rotated = await runEffect(
+      context.service.rotateTenantScepCa(request(context.headers), first.tenant.id),
+    );
+
+    expect(rotated.configured).toBe(true);
+    expect(rotated.fingerprintSha256).not.toBe(before.fingerprintSha256);
+    expect(rotated.rotatedAt).toBeTruthy();
+
+    const otherAfter = await runEffect(
+      context.service.getTenantScepCa(request(context.headers), second.tenant.id),
+    );
+
+    expect(otherAfter.fingerprintSha256).toBe(otherBefore.fingerprintSha256);
+
+    // Identities issued by the retired CA can no longer renew.
+    expect(context.db.store.scep_issued_certificate[0]?.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("imports a tenant-supplied CA and rejects a mismatched key", async () => {
+    const context = await makeContext();
+
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const keys = await generateCaKeyPair();
+
+    const caCert = await createCaCertificate(keys, "Acme Trusted CA", {
+      organizationalUnit: tenant.id,
+    });
+
+    const certificatePem = certToPem(caCert);
+
+    const privateKeyPem = pemEncode(
+      "PRIVATE KEY",
+      await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+    );
+
+    const fingerprint = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", caCert.toSchema().toBER(false))),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+
+    const imported = await runEffect(
+      context.service.importTenantScepCa(request(context.headers), tenant.id, {
+        certificatePem,
+        privateKeyPem,
+      }),
+    );
+
+    expect(imported).toMatchObject({
+      configured: true,
+      source: "imported",
+      commonName: "Acme Trusted CA",
+      fingerprintSha256: fingerprint,
+    });
+    expect(context.db.store.scep_ca[0]?.certPem).toBe(certificatePem);
+
+    // A key that does not match the certificate is rejected before it is stored.
+    const otherKeys = await generateCaKeyPair();
+
+    const mismatchedKeyPem = pemEncode(
+      "PRIVATE KEY",
+      await crypto.subtle.exportKey("pkcs8", otherKeys.privateKey),
+    );
+
+    await expect(
+      runEffect(
+        context.service.importTenantScepCa(request(context.headers), tenant.id, {
+          certificatePem,
+          privateKeyPem: mismatchedKeyPem,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+    expect(context.db.store.scep_ca[0]?.certPem).toBe(certificatePem);
   });
 });

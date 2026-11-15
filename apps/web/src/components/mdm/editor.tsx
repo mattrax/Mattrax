@@ -16,6 +16,7 @@ import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
@@ -125,7 +126,12 @@ export function PolicyConfigurationEditor() {
       });
       setCanEdit(false);
       setInitial(JSON.stringify(config()));
+      toast.success("Policy configurations saved");
     },
+    onError: (error) =>
+      toast.error("Could not save the configurations", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const toggleEdit = () => {

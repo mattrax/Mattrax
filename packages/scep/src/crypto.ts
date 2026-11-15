@@ -31,6 +31,43 @@ export const importPrivateKeyJwk = (jwk: JsonWebKey): Effect.Effect<CryptoKey, S
     catch: (cause) => new ScepError({ message: "Failed to import private key", cause }),
   });
 
+/**
+ * Import an unencrypted PKCS#8 RSA private key (PEM) as an exportable JWK.
+ *
+ * Used for an operator-supplied tenant CA: the key must be importable as a
+ * signing key before it is stored, and the JWK form is what the CA repository
+ * persists.
+ */
+export const importPrivateKeyPem = (pem: string): Effect.Effect<JsonWebKey, ScepError> =>
+  Effect.gen(function* () {
+    const der = yield* Effect.try({
+      try: () => pemDecodeRaw("PRIVATE KEY", pem),
+      catch: (cause) =>
+        new ScepError({
+          message:
+            "The SCEP CA key is not an unencrypted PKCS#8 PEM private key (expected -----BEGIN PRIVATE KEY-----)",
+          cause,
+        }),
+    });
+
+    const key = yield* Effect.tryPromise({
+      try: () =>
+        crypto.subtle.importKey(
+          "pkcs8",
+          der,
+          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+          true,
+          ["sign"],
+        ),
+      catch: (cause) => new ScepError({ message: "The SCEP CA key could not be imported", cause }),
+    });
+
+    return yield* Effect.tryPromise({
+      try: () => exportPrivateKeyJwkRaw(key),
+      catch: (cause) => new ScepError({ message: "Failed to export private key", cause }),
+    });
+  });
+
 export const exportPublicKeySpki = (key: CryptoKey): Effect.Effect<ArrayBuffer, ScepError> =>
   Effect.tryPromise({
     try: () => exportPublicKeySpkiRaw(key),

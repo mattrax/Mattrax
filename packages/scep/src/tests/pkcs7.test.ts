@@ -228,9 +228,7 @@ async function buildFullPkcsReq(
   // Encrypt CSR for the CA
   const envelopedCsrDer = await encryptTestEnvelopedData(csrDer, caCert);
 
-  const envelopedDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", envelopedCsrDer),
-  );
+  const envelopedDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", envelopedCsrDer));
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -517,7 +515,7 @@ describe("SCEP PKCS#7", () => {
         senderNonce,
       );
 
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
+      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -552,7 +550,7 @@ describe("SCEP PKCS#7", () => {
         senderNonce,
       );
 
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
+      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -601,7 +599,7 @@ describe("SCEP PKCS#7", () => {
   describe("Full SCEP roundtrip with EnvelopedData", () => {
     it("issues a cert and builds a CertRep that the device can decrypt", async () => {
       const signerCert = await createScepSignerCert(deviceKeyPair, "MyDevice");
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
+      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
       // Build CSR
       const csr = new pkijs.CertificationRequest();
@@ -702,10 +700,7 @@ describe("SCEP PKCS#7", () => {
       // valueHexView is empty on the outer node. getValue() reassembles the chunks.
       const envelopedDer = octetString(eContentNode).getValue();
 
-      const deviceJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        deviceKeyPair.privateKey,
-      ));
+      const deviceJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey);
 
       const decryptedDer = await decryptTestEnvelopedData(envelopedDer, deviceJwk);
 

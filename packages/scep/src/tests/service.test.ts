@@ -3,7 +3,12 @@ import { Effect, Layer } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { ScepService, ScepServiceTag } from "../service.js";
-import { ScepRepository, type ScepIssuedCertificate } from "../repository.js";
+import {
+  ScepRepository,
+  type ScepCaScope,
+  type ScepIssuedCertificate,
+  type ScepStoredCa,
+} from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import {
@@ -22,6 +27,8 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
     pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
+
+const scope: ScepCaScope = { organizationId: "tenant-1" };
 
 function attributeText(attribute: pkijs.AttributeTypeAndValue | undefined): string | undefined {
   if (!attribute || !(attribute.value instanceof asn1js.Utf8String)) return undefined;
@@ -42,8 +49,6 @@ function printableAttributeValue(attributes: Map<string, pkijs.Attribute>, oid: 
   return value.valueBlock.value;
 }
 
-type SavedCa = { certPem: string; privateKeyJwk: JsonWebKey };
-
 function runWithService<A, E>(
   repoLayer: Layer.Layer<ScepRepository>,
   effect: Effect.Effect<A, E, ScepServiceTag>,
@@ -52,6 +57,25 @@ function runWithService<A, E>(
 
   return effect.pipe(Effect.provide(layer), Effect.runPromise);
 }
+
+const makeCa = async (commonName: string): Promise<ScepStoredCa> => {
+  const keyPair = await generateKeyPair();
+  const caCert = await createTestCaCert(keyPair, commonName);
+
+  return {
+    certPem: certToPem(caCert),
+    privateKeyJwk: await crypto.subtle.exportKey("jwk", keyPair.privateKey),
+  };
+};
+
+const caCertDer = (certPem: string) => {
+  const base64 = certPem
+    .replace(/-----BEGIN CERTIFICATE-----/, "")
+    .replace(/-----END CERTIFICATE-----/, "")
+    .replace(/\s/g, "");
+
+  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+};
 
 describe("ScepService", () => {
   describe("getCaCaps", () => {
@@ -74,15 +98,16 @@ describe("ScepService", () => {
   });
 
   describe("getCaCert", () => {
-    it("generates a new CA when repository returns null", async () => {
-      const saved: SavedCa = { certPem: "", privateKeyJwk: {} };
+    it("bootstraps and persists a tenant CA when none exists", async () => {
+      let saved: ScepStoredCa | undefined;
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed(null),
-        saveCa: (certPem, privateKeyJwk) =>
+        saveCa: (_scope, ca) =>
           Effect.sync(() => {
-            saved.certPem = certPem;
-            saved.privateKeyJwk = privateKeyJwk;
+            saved = ca;
+
+            return ca;
           }),
       });
 
@@ -91,33 +116,49 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.getCaCert();
+          return yield* scep.getCaCert(scope);
         }),
       );
 
       expect(result.raw.byteLength).toBeGreaterThan(0);
       expect(result.isPkcs7).toBe(false);
-      expect(saved.certPem).toContain("BEGIN CERTIFICATE");
-      expect(saved.privateKeyJwk.kty).toBe("RSA");
+      expect(saved?.certPem).toContain("BEGIN CERTIFICATE");
+      expect(saved?.privateKeyJwk.kty).toBe("RSA");
+      expect(saved?.source).toBe("generated");
+    });
+
+    it("uses the CA persisted by a concurrent bootstrap instead of its own", async () => {
+      const winner = await makeCa("Winner CA");
+
+      const repo = mockScepRepository({
+        getCa: () => Effect.succeed(null),
+        // Simulate losing the insert race: another request persisted first.
+        saveCa: () => Effect.succeed(winner),
+      });
+
+      const result = await runWithService(
+        repo,
+        Effect.gen(function* () {
+          const scep = yield* ScepServiceTag;
+
+          return yield* scep.getCaCert(scope);
+        }),
+      );
+
+      expect(new Uint8Array(result.raw)).toEqual(caCertDer(winner.certPem));
     });
 
     it("reuses an existing valid CA", async () => {
-      const keyPair = await generateKeyPair();
-      const caCert = await createTestCaCert(keyPair, "Reuse CA");
-      const certPem = certToPem(caCert);
-
-      const privateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        keyPair.privateKey,
-      ));
-
+      const ca = await makeCa("Reuse CA");
       let saveCount = 0;
 
       const repo = mockScepRepository({
-        getCa: () => Effect.succeed({ certPem, privateKeyJwk }),
+        getCa: () => Effect.succeed(ca),
         saveCa: () =>
           Effect.sync(() => {
             saveCount++;
+
+            return ca;
           }),
       });
 
@@ -126,37 +167,62 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.getCaCert();
+          return yield* scep.getCaCert(scope);
         }),
       );
 
       expect(result.raw.byteLength).toBeGreaterThan(0);
-      expect(result.isPkcs7).toBe(false);
       expect(saveCount).toBe(0);
     });
 
-    it("regenerates CA when stored PEM is malformed", async () => {
+    it("resolves a different CA per tenant", async () => {
+      const tenantA = await makeCa("Tenant A CA");
+      const tenantB = await makeCa("Tenant B CA");
+
+      const repo = mockScepRepository({
+        getCa: (caScope) =>
+          Effect.succeed(caScope.organizationId === "tenant-a" ? tenantA : tenantB),
+      });
+
+      const read = (organizationId: string) =>
+        runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
+
+            return yield* scep.getCaCert({ organizationId });
+          }),
+        );
+
+      expect(new Uint8Array((await read("tenant-a")).raw)).toEqual(caCertDer(tenantA.certPem));
+      expect(new Uint8Array((await read("tenant-b")).raw)).toEqual(caCertDer(tenantB.certPem));
+    });
+
+    it("fails closed when the stored CA cannot be parsed instead of replacing it", async () => {
       let saveCount = 0;
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: "invalid-pem", privateKeyJwk: {} }),
-        saveCa: () =>
+        saveCa: (_scope, ca) =>
           Effect.sync(() => {
             saveCount++;
+
+            return ca;
           }),
       });
 
-      const result = await runWithService(
-        repo,
-        Effect.gen(function* () {
-          const scep = yield* ScepServiceTag;
+      await expect(
+        runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
 
-          return yield* scep.getCaCert();
-        }),
-      );
-
-      expect(result.raw.byteLength).toBeGreaterThan(0);
-      expect(saveCount).toBe(1);
+            return yield* scep.getCaCert(scope);
+          }),
+        ),
+      ).rejects.toMatchObject({ message: expect.stringContaining("invalid") });
+      // Generating a replacement here would invalidate every device identity.
+      expect(saveCount).toBe(0);
     });
 
     it("does not regenerate the CA when the stored key cannot be opened", async () => {
@@ -167,9 +233,11 @@ describe("ScepService", () => {
           Effect.fail(
             new ScepError({ message: "Failed to decrypt the stored SCEP CA private key" }),
           ),
-        saveCa: () =>
+        saveCa: (_scope, ca) =>
           Effect.sync(() => {
             saveCount++;
+
+            return ca;
           }),
       });
 
@@ -179,7 +247,7 @@ describe("ScepService", () => {
           Effect.gen(function* () {
             const scep = yield* ScepServiceTag;
 
-            return yield* scep.getCaCert();
+            return yield* scep.getCaCert(scope);
           }),
         ),
       ).rejects.toMatchObject({ message: expect.stringContaining("decrypt") });
@@ -189,15 +257,11 @@ describe("ScepService", () => {
   });
 
   describe("pkiOperation", () => {
-    it("issues a device certificate from a valid PKCSReq", async () => {
+    const makePkcsReq = async (transactionId = "txn-001") => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Test CA");
       const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
+      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
@@ -209,19 +273,25 @@ describe("ScepService", () => {
         caCert,
         signerCert,
         deviceKeyPair.privateKey,
-        "txn-001",
+        transactionId,
         senderNonce,
         true,
       );
 
+      return { caCert, caCertPem, caPrivateKeyJwk, deviceKeyPair, pkcsReq };
+    };
+
+    it("issues a device certificate from a valid PKCSReq", async () => {
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makePkcsReq();
       let authenticated = false;
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-        saveCa: () => Effect.void,
         authenticatePkcsReq: () =>
           Effect.sync(() => {
             authenticated = true;
+
+            return { organizationalUnit: scope.organizationId };
           }),
       });
 
@@ -230,7 +300,7 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.pkiOperation(pkcsReq);
+          return yield* scep.pkiOperation(scope, pkcsReq);
         }),
       );
 
@@ -246,33 +316,10 @@ describe("ScepService", () => {
     });
 
     it("returns a failure CertRep when authenticatePkcsReq fails", async () => {
-      const caKeyPair = await generateKeyPair();
-      const caCert = await createTestCaCert(caKeyPair, "Test CA");
-      const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
-
-      const deviceKeyPair = await generateKeyPair();
-      const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
-      const csr = await buildTestCsr(deviceKeyPair, "Device");
-      const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-
-      const pkcsReq = await buildPkcsReq(
-        csr,
-        caCert,
-        signerCert,
-        deviceKeyPair.privateKey,
-        "txn-002",
-        senderNonce,
-        true,
-      );
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makePkcsReq("txn-002");
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-        saveCa: () => Effect.void,
         authenticatePkcsReq: () => Effect.fail(new ScepError({ message: "Authentication failed" })),
       });
 
@@ -281,22 +328,81 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.pkiOperation(pkcsReq);
+          return yield* scep.pkiOperation(scope, pkcsReq);
         }),
       );
 
       expect(result.byteLength).toBeGreaterThan(0);
     });
 
+    it("rejects a challenge authenticated for another tenant", async () => {
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makePkcsReq("txn-foreign");
+
+      const repo = mockScepRepository({
+        getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
+        authenticatePkcsReq: () =>
+          Effect.succeed({ organizationalUnit: "tenant-2", enrollmentId: "enrollment-2" }),
+      });
+
+      const result = await runWithService(
+        repo,
+        Effect.gen(function* () {
+          const scep = yield* ScepServiceTag;
+
+          return yield* scep.pkiOperation(scope, pkcsReq);
+        }),
+      );
+
+      const parsed = asn1js.fromBER(result);
+      const signedData = new pkijs.SignedData({ schema: parsed.result });
+
+      const attributes = new Map(
+        signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+          attribute.type,
+          attribute,
+        ]),
+      );
+
+      expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.3")).toBe("2");
+      expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.4")).toBe("2");
+    });
+
+    it("pins the subject OU to the tenant even when the CSR asks for another", async () => {
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makePkcsReq("txn-ou");
+
+      const repo = mockScepRepository({
+        getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
+        authenticatePkcsReq: () => Effect.succeed({ organizationalUnit: scope.organizationId }),
+      });
+
+      const response = await runWithService(
+        repo,
+        Effect.gen(function* () {
+          const scep = yield* ScepServiceTag;
+
+          return yield* scep.pkiOperation(scope, pkcsReq);
+        }),
+      );
+
+      const contentInfo = pkijs.ContentInfo.fromBER(response);
+      const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+      const deviceCert = signedData.certificates?.[0];
+
+      if (!(deviceCert instanceof pkijs.Certificate))
+        throw new Error("response did not contain a certificate");
+
+      const ou = deviceCert.subject.typesAndValues.find(
+        (attribute) => attribute.type === "2.5.4.11",
+      );
+
+      expect(attributeText(ou)).toBe("tenant-1");
+    });
+
     it("extracts the CN from the CSR as the subject", async () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Test CA");
       const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
+      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
@@ -315,8 +421,7 @@ describe("ScepService", () => {
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-        saveCa: () => Effect.void,
-        authenticatePkcsReq: () => Effect.void,
+        authenticatePkcsReq: () => Effect.succeed({ organizationalUnit: scope.organizationId }),
       });
 
       const response = await runWithService(
@@ -324,7 +429,7 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.pkiOperation(pkcsReq);
+          return yield* scep.pkiOperation(scope, pkcsReq);
         }),
       );
 
@@ -343,11 +448,7 @@ describe("ScepService", () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Test CA");
       const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
+      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
       const deviceKeyPair = await generateKeyPair();
       const now = new Date();
@@ -379,12 +480,7 @@ describe("ScepService", () => {
         "17",
       );
 
-      return {
-        caCertPem,
-        caPrivateKeyJwk,
-        identitySerial,
-        renewal,
-      };
+      return { caCertPem, caPrivateKeyJwk, identitySerial, renewal };
     };
 
     it("keeps deviceId on renewed certificates so they remain revocable", async () => {
@@ -397,10 +493,9 @@ describe("ScepService", () => {
             certPem: fixture.caCertPem,
             privateKeyJwk: fixture.caPrivateKeyJwk,
           }),
-        saveCa: () => Effect.void,
-        findIssuedCertificate: (serial) =>
+        findIssuedCertificate: (caScope, serial) =>
           Effect.succeed(
-            serial === fixture.identitySerial
+            caScope.organizationId === scope.organizationId && serial === fixture.identitySerial
               ? {
                   serial,
                   organizationId: "tenant-1",
@@ -421,7 +516,7 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.pkiOperation(fixture.renewal);
+          return yield* scep.pkiOperation(scope, fixture.renewal);
         }),
       );
 
@@ -443,7 +538,6 @@ describe("ScepService", () => {
             certPem: fixture.caCertPem,
             privateKeyJwk: fixture.caPrivateKeyJwk,
           }),
-        saveCa: () => Effect.void,
         // The repository rejects deleted/unenrolled devices, which reaches the
         // service as a failed lookup rather than a renewable identity.
         findIssuedCertificate: () => Effect.succeed(null),
@@ -455,7 +549,7 @@ describe("ScepService", () => {
         Effect.gen(function* () {
           const scep = yield* ScepServiceTag;
 
-          return yield* scep.pkiOperation(fixture.renewal);
+          return yield* scep.pkiOperation(scope, fixture.renewal);
         }),
       );
 

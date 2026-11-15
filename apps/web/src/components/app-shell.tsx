@@ -34,6 +34,7 @@ import {
   User,
 } from "~/components/ui/icons";
 import { meQueryOptions } from "~/lib/enterprise";
+import { announce, announcementText, Toaster } from "~/components/toast";
 import {
   SETTINGS_READ_PERMISSIONS,
   tenantRoleName,
@@ -94,12 +95,11 @@ export function rememberTenant(id: string | undefined) {
  * The shell owns one polite status region. Actions elsewhere in the dashboard
  * (bulk delete, sync, unenroll, …) report their result through it so the
  * confirmation is spoken without adding another live region per page.
+ *
+ * `announce` and the visible toast surface live in `~/components/toast`; the
+ * re-export keeps the original import path working.
  */
-let announceToStatusRegion: ((message: string) => void) | undefined;
-
-export function announce(message: string) {
-  announceToStatusRegion?.(message);
-}
+export { announce } from "~/components/toast";
 
 function TenantSwitcher(props: { activeId: string | undefined; userId: string | undefined }) {
   const me = useQuery(() => meQueryOptions(props.userId));
@@ -476,16 +476,6 @@ export function AppShell(props: {
     return tenant ? `${label} · ${tenant}` : label;
   });
 
-  const [announcement, setAnnouncement] = createSignal("");
-
-  onSettled(() => {
-    announceToStatusRegion = (message) => setAnnouncement(message);
-
-    return () => {
-      announceToStatusRegion = undefined;
-    };
-  });
-
   createEffect(
     () => pageTitle(),
     (title) => {
@@ -519,7 +509,7 @@ export function AppShell(props: {
         return;
 
       document.getElementById("main")?.focus({ preventScroll: true });
-      setAnnouncement(untrack(pageTitle));
+      announce(untrack(pageTitle));
     },
   );
 
@@ -741,8 +731,9 @@ export function AppShell(props: {
         </Errored>
       </main>
       <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
-        {announcement()}
+        {announcementText()}
       </div>
+      <Toaster />
     </div>
   );
 }

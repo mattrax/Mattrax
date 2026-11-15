@@ -6,15 +6,16 @@ devices. Treat it as preview.
 
 ## What is supported
 
-| Area          | Support                                                  |
-| ------------- | -------------------------------------------------------- |
-| Signup        | Google-hosted enterprise signup with a signed callback   |
-| Enrollment    | One-time AMAPI enrollment token and QR code              |
-| Policy        | AMAPI policy fragments, deterministic merge and delivery |
-| Commands      | Wipe, restart, lock and policy sync                      |
-| Notifications | Google Pub/Sub with OIDC verification and idempotency    |
-| Apps          | Not implemented                                          |
-| Compliance    | Derived device health only                               |
+| Area          | Support                                                                  |
+| ------------- | ------------------------------------------------------------------------ |
+| Signup        | Google-hosted enterprise signup with a signed callback                   |
+| Enrollment    | One-time AMAPI enrollment token and QR code                              |
+| Policy        | AMAPI policy fragments, deterministic merge and delivery                 |
+| Commands      | Wipe, restart, lock and policy sync                                      |
+| Notifications | Google Pub/Sub with OIDC verification and idempotency                    |
+| Inventory     | Hardware, software, memory, network, management state and installed apps |
+| Apps          | Installed-application inventory; no distribution yet                     |
+| Compliance    | Derived device health only                                               |
 
 ## Prerequisites
 
@@ -101,14 +102,59 @@ account email, JWKS signature) and records `message.messageId` in an idempotency
 Notification types:
 
 - `ENROLLMENT` and `STATUS_REPORT` — upsert the device, map AMAPI state to Mattrax status,
-  populate model/manufacturer/serial/OS and sync policy.
+  refresh inventory, ingest `applicationReports` and sync policy.
 - `COMMAND` — match the operation name to the queued command and update its status.
 
 Messages are recorded only after a successful apply, so a retry is safe.
 
+## Inventory
+
+Every `ENROLLMENT` and `STATUS_REPORT` merges the AMAPI `Device` resource into the device
+row. Google sends partial resources, so a field that is absent means "not reported" and
+never clears a known value:
+
+| AMAPI field                                 | Stored in                                   |
+| ------------------------------------------- | ------------------------------------------- |
+| `hardwareInfo.model`                        | `model`, and `physicalName`/`name`          |
+| `hardwareInfo.hardware`                     | `modelIdentifier`                           |
+| `hardwareInfo.serialNumber`                 | `serial`                                    |
+| `hardwareInfo.manufacturer`                 | `vendor`                                    |
+| `displayName`                               | `physicalName` when the enterprise sets one |
+| `softwareInfo.androidVersion`               | `osEdition` (`Android`), `osVersion`        |
+| `softwareInfo.androidBuildNumber`           | `osBuild`                                   |
+| `softwareInfo.securityPatchLevel`           | `android_device.security_patch_level`       |
+| `memoryInfo.totalInternalStorage`           | `diskTotal`                                 |
+| `memoryInfo.totalRam`                       | `android_device.total_ram`                  |
+| `apiLevel`                                  | `android_device.api_level`                  |
+| `managementMode`, `ownership`, `state`      | `android_device` management columns         |
+| `appliedPolicyName`, `appliedPolicyVersion` | `android_device` policy columns             |
+| `enrollmentTokenName`                       | `android_device.enrollment_token_name`      |
+| `disabledReason.localizedMessage`           | `android_device.disabled_reason`            |
+| `networkInfo.networkOperatorName`           | `android_device.network_operator`           |
+| `applicationReports`                        | `device_application` (full replacement)     |
+| any of the above                            | `inventoryUpdatedAt`                        |
+
+IMEI, MEID and Wi-Fi MAC addresses are deliberately not parsed or stored.
+
+**Device names.** AMAPI has no field for the user-visible Android device name. The reported
+name is the enterprise `displayName` when present, otherwise the hardware model (for
+example `Pixel 9 Pro`). It becomes the management name while that is still blank or a
+placeholder (serial, model, resource id or previous reported name); an administrator's
+rename is never overwritten. The applied policy is shown separately on the device page.
+
+**Application reporting.** Google only reports software, application and network detail
+when `statusReportingSettings` enables it, and disables most of it by default. Mattrax
+merges `softwareInfoEnabled` and `applicationReportsEnabled` underneath every compiled
+policy; an explicit tenant value still wins (at the cost of that inventory). Applications
+whose AMAPI state is `REMOVED` or `PENDING_UNINSTALL` are not listed as installed.
+
+The device page marks the application list stale after seven days without a report.
+
 ## Limitations
 
 - No managed Google Play approval, app distribution or app install/uninstall.
+- App inventory depends on `statusReportingSettings.applicationReportsEnabled`; a tenant
+  policy that turns it off leaves the list empty.
 - No password reset, lost mode, clear app data or eSIM commands exposed.
 - No Android compliance state ingestion.
 - Deleting a device removes local rows only; the Google device and enterprise mapping

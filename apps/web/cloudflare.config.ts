@@ -17,6 +17,11 @@ export const webWorker = {
   // the web Worker there too would add a transatlantic round trip to every page
   // load without making the proxy faster than the API hop it already makes.
   placement: { mode: "off" as const },
+  // `robots.txt` and `sitemap.xml` are generated per request so they advertise
+  // the origin the visitor actually used; self-hosted, preview and custom
+  // domains never inherit `mattrax.app`. Everything else still comes straight
+  // from the asset layer.
+  assets: { runWorkerFirst: ["/robots.txt", "/sitemap.xml"] },
   env: {
     API: bindings.worker({ worker: "mattrax-api" }),
     /** Optional fast path; see `useBootstrapSecret` below. */

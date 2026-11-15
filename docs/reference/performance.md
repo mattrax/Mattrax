@@ -60,12 +60,12 @@ Category, accessibility, SEO and agentic-browsing scores were repaired after tha
 recording. A local Lighthouse 13.6.0 run on 2026-11-14 reports **1 for
 performance-independent categories on every public page**:
 
-| Page | Perf | A11y | Best practices | SEO | Agentic | CLS |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/` | 69* | 100 | 100 | 100 | 100 | 0.002 |
-| `/login` | 73* | 100 | 100 | 100 | 100 | 0 |
-| `/register` | 73* | 100 | 100 | 100 | 100 | 0 |
-| `/designer` | 70* | 100 | 100 | 100 | 100 | 0.001 |
+| Page        | Perf | A11y | Best practices | SEO | Agentic | CLS   |
+| ----------- | ---- | ---- | -------------- | --- | ------- | ----- |
+| `/`         | 69*  | 100  | 100            | 100 | 100     | 0.002 |
+| `/login`    | 73*  | 100  | 100            | 100 | 100     | 0     |
+| `/register` | 73*  | 100  | 100            | 100 | 100     | 0     |
+| `/designer` | 70*  | 100  | 100            | 100 | 100     | 0.001 |
 
 *Dev-server performance numbers; production remains 100.
 
@@ -118,3 +118,21 @@ The same oxlint config enables eslint-plugin-jsx-a11y's recommended rules
 
 The remaining violations are real violations to fix, not suppressed with
 comments.
+
+## Without JavaScript
+
+The public surface is server-rendered and does not depend on hydration:
+
+- The landing page, `/privacy`, `/terms` and the 404 page are rendered by the
+  Worker and remain readable with scripting disabled.
+- Documentation is pre-rendered by Rspress; the reading pane, sidebar and every
+  internal link work without JavaScript. The search dialog and the light/dark
+  toggle are the only docs features that need it.
+- The dashboard renders a styled `<noscript>` notice instead of an empty shell.
+  It explains why the page needs JavaScript, links to the docs and support, and
+  covers the whole viewport so no half-rendered dashboard is visible.
+
+`tests/e2e/metadata.spec.ts` drives the public pages in a browser context with
+`javaScriptEnabled: false` to keep this working. The deliberate limitation is
+the dashboard itself: devices, policies and enrollment data are fetched in the
+browser, so there is no server-rendered fallback for the authenticated app.

@@ -103,12 +103,18 @@ const DASHBOARD_WRITE = new Set([
 
 const ENROLLMENT_READ = new Set([
   "getTenantEnrollment",
+  "getTenantScepCa",
   "listEnrollmentAttempts",
   "getAppleEnrollmentProfile",
   "getAdeEnrollmentProfile",
 ]);
 
-const ENROLLMENT_WRITE = new Set(["patchTenantEnrollment", "resetTenantEnrollment"]);
+const ENROLLMENT_WRITE = new Set([
+  "patchTenantEnrollment",
+  "resetTenantEnrollment",
+  "rotateTenantScepCa",
+  "importTenantScepCa",
+]);
 
 const IDENTITY_READ = new Set([
   "getSsoConfig",
@@ -205,6 +211,10 @@ const EXPLICIT = {
   runTenantBackup: "backups.write",
   listTenantBackups: "backups.read",
   downloadTenantBackup: "backups.read",
+  pinTenantBackup: "backups.write",
+  unpinTenantBackup: "backups.write",
+  deleteTenantBackup: "backups.write",
+  restoreTenantBackup: "backups.write",
   listAuditLog: "audit.read",
   searchAuditLog: "audit.read",
   exportAuditLog: "audit.read",
@@ -282,11 +292,7 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   // Public invitations: accepting and previewing are token-bound and gated by
   // the caller layer's rate limit instead of a tenant membership.
-  if (
-    method === "acceptInvitation" ||
-    method === "previewInvitation" ||
-    method === "getEnrollment"
-  )
+  if (method === "acceptInvitation" || method === "previewInvitation" || method === "getEnrollment")
     return undefined;
 
   // Unknown methods fail safe to tenant write for mutations and tenant read for

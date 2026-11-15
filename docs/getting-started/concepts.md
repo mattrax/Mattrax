@@ -126,10 +126,14 @@ to groups or devices.
 
 ## Commands and health
 
-Remote actions create **commands** with a lifecycle: `queued → sent → succeeded`,
-`failed` or `not-now`. Apple commands are delivered on check-in and can be woken with
-APNs. Windows commands are delivered in the next SyncML session. Android commands are
-issued through AMAPI.
+Remote actions create **commands** with a lifecycle: `queued → sent → deferred`
+(Apple answered `NotNow`) and then a terminal `succeeded`, `failed`, `expired`,
+`superseded` or `cancelled`. Every command has a delivery deadline, so a lock queued for
+a device that stays offline expires instead of firing weeks later. Identical requests are
+de-duplicated while a command is queued or in flight. Apple commands are delivered on
+check-in and can be woken with APNs. Windows commands are delivered in the next SyncML
+session. Android commands are issued through AMAPI. See
+[Devices](/manage/devices#actions) for the lifecycle table.
 
 **Device health** is a derived rollup, not a compliance engine. It combines enrollment
 state, last-seen age, declaration failures, FileVault state, disk pressure and battery

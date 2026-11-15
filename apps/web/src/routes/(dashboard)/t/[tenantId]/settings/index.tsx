@@ -26,6 +26,7 @@ import {
 } from "~/components/ui/dialog";
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
@@ -174,11 +175,26 @@ export default function GeneralSettingsPage() {
 
   const del = useMutation(() => ({
     mutationFn: () => enterprise.deleteTenant(params.tenantId),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      setDeleteResult(result);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
-      navigate("/dashboard");
     },
   }));
+
+  const [deleteResult, setDeleteResult] = createSignal<{
+    reclaimed: {
+      devices: number;
+      contacted: number;
+      unreachableDevices: ReadonlyArray<{
+        id: string;
+        name: string;
+        platform: string;
+        reason: string;
+      }>;
+      objects: number;
+      subscription: string;
+    };
+  } | null>(null);
 
   // Backups are an operational admin surface. Skip the request entirely for
   // roles that cannot read it instead of retrying a 403 on every visit.
@@ -196,6 +212,70 @@ export default function GeneralSettingsPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.backups(params.tenantId) });
     },
+  }));
+
+  const refetchBackups = () =>
+    qc.invalidateQueries({ queryKey: enterpriseKeys.backups(params.tenantId) });
+
+  const [backupActionError, setBackupActionError] = createSignal<unknown>(null);
+
+  const [restoreTarget, setRestoreTarget] = createSignal<{ id: string; startedAt: string } | null>(
+    null,
+  );
+
+  const [restoreConfirm, setRestoreConfirm] = createSignal("");
+
+  const [restoreResult, setRestoreResult] = createSignal<{
+    preRestoreBackupId: string;
+    counts: {
+      groups: number;
+      policies: number;
+      applications: number;
+      preRegistrations: number;
+      devices: number;
+    };
+  } | null>(null);
+
+  const [deleteBackupTarget, setDeleteBackupTarget] = createSignal<{
+    id: string;
+    startedAt: string;
+  } | null>(null);
+
+  const pinBackup = useMutation(() => ({
+    mutationFn: (run: { id: string; retention: string }) =>
+      run.retention === "pinned"
+        ? enterprise.unpinTenantBackup(params.tenantId, run.id)
+        : enterprise.pinTenantBackup(params.tenantId, run.id),
+    onMutate: () => setBackupActionError(null),
+    onSuccess: () => refetchBackups(),
+    onError: setBackupActionError,
+  }));
+
+  const removeBackup = useMutation(() => ({
+    mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
+    onMutate: () => setBackupActionError(null),
+    onSuccess: async () => {
+      setDeleteBackupTarget(null);
+      await refetchBackups();
+    },
+    onError: setBackupActionError,
+  }));
+
+  const restoreBackup = useMutation(() => ({
+    mutationFn: (input: { id: string; confirm: string }) =>
+      enterprise.restoreTenantBackup(params.tenantId, input.id, input.confirm),
+    onMutate: () => setBackupActionError(null),
+    onSuccess: async (result) => {
+      setRestoreResult({
+        preRestoreBackupId: result.preRestoreBackupId,
+        counts: result.counts,
+      });
+      await Promise.all([
+        refetchBackups(),
+        qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) }),
+      ]);
+    },
+    onError: setBackupActionError,
   }));
 
   // Plain functions, not memos: a memo created in the component body would
@@ -757,6 +837,11 @@ export default function GeneralSettingsPage() {
                             >
                               {run.status}
                             </StatusChip>
+                            <Show when={run.retention === "pinned"}>
+                              <span class="ml-1 text-[11px] font-medium text-warning-foreground">
+                                pinned
+                              </span>
+                            </Show>
                             <Show when={run.error}>
                               <span class="ml-1 text-xs text-destructive" title={run.error ?? ""}>
                                 ({run.error?.slice(0, 60)})
@@ -767,15 +852,49 @@ export default function GeneralSettingsPage() {
                             {formatBackupSize(run.sizeBytes)}
                           </td>
                           <td class="px-3 py-2 text-right">
-                            <Show when={run.status === "succeeded"}>
-                              <button
-                                type="button"
-                                class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
-                                onClick={() => void downloadBackup(run.id)}
-                              >
-                                Download
-                              </button>
-                            </Show>
+                            <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                              <Show when={run.status === "succeeded"}>
+                                <button
+                                  type="button"
+                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  onClick={() => void downloadBackup(run.id)}
+                                >
+                                  Download
+                                </button>
+                                <button
+                                  type="button"
+                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  onClick={() => {
+                                    setBackupActionError(null);
+                                    setRestoreResult(null);
+                                    setRestoreConfirm("");
+                                    setRestoreTarget({ id: run.id, startedAt: run.startedAt });
+                                  }}
+                                >
+                                  Restore
+                                </button>
+                              </Show>
+                              <Show when={run.status !== "running"}>
+                                <button
+                                  type="button"
+                                  class="text-xs font-medium text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
+                                  disabled={!canRunBackup()}
+                                  onClick={() => pinBackup.mutate(run)}
+                                >
+                                  {run.retention === "pinned" ? "Unpin" : "Pin"}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="text-xs font-medium text-destructive underline decoration-destructive/30 underline-offset-2 transition-colors hover:decoration-destructive/60"
+                                  disabled={!canRunBackup()}
+                                  onClick={() =>
+                                    setDeleteBackupTarget({ id: run.id, startedAt: run.startedAt })
+                                  }
+                                >
+                                  Delete
+                                </button>
+                              </Show>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -784,16 +903,20 @@ export default function GeneralSettingsPage() {
                 </div>
               </Show>
 
+              <ErrorText error={backupActionError()} />
+
               <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-                Backups older than the configured retention window are deleted automatically. Need
-                to restore?{" "}
+                Runs older than the configured retention window are deleted automatically. Pin a run
+                to keep it until you unpin it. Restore replaces this tenant's groups, policies,
+                applications and pre-registrations in place, keeps its members, devices and
+                certificates, and takes a pinned snapshot first.{" "}
                 <a
                   class="text-foreground underline decoration-white/25 underline-offset-2 transition-colors hover:decoration-white/60"
                   href="#restore"
                 >
                   Import a bundle
-                </a>
-                .
+                </a>{" "}
+                instead to create a separate tenant.
               </p>
             </section>
           </Show>
@@ -901,6 +1024,113 @@ export default function GeneralSettingsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={restoreTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRestoreTarget(null);
+            setRestoreResult(null);
+            setRestoreConfirm("");
+            setBackupActionError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore this backup?</DialogTitle>
+            <DialogDescription>
+              {restoreTarget()
+                ? `Backup from ${new Date(restoreTarget()!.startedAt).toLocaleString()} replaces this tenant's groups, policies, applications and pre-registrations. Members, devices, certificates and audit history are kept, and a pinned snapshot is taken before anything changes.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <Show
+            when={restoreResult()}
+            fallback={
+              <>
+                <p class="text-xs leading-relaxed text-muted-foreground">
+                  Type the tenant slug{" "}
+                  <span class="font-mono font-medium">{tenant.data?.slug}</span> to confirm.
+                </p>
+                <Input
+                  value={restoreConfirm()}
+                  onInput={(e) => setRestoreConfirm(e.currentTarget.value)}
+                  placeholder={tenant.data?.slug}
+                />
+                <ErrorText error={backupActionError()} />
+              </>
+            }
+          >
+            {(result) => (
+              <div class="space-y-2 rounded-lg border border-success/25 bg-success/[0.07] p-3 text-sm">
+                <p class="font-medium text-success-foreground">Backup restored</p>
+                <p class="text-muted-foreground">
+                  {result().counts.groups} groups, {result().counts.policies} policies,{" "}
+                  {result().counts.applications} applications, {result().counts.preRegistrations}{" "}
+                  pre-registrations and {result().counts.devices} device assignments.
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  A pinned pre-restore snapshot was saved as{" "}
+                  <code>{result().preRestoreBackupId}</code>. Restore it if this was the wrong
+                  backup.
+                </p>
+              </div>
+            )}
+          </Show>
+          <DialogFooter>
+            <Show
+              when={restoreResult()}
+              fallback={
+                <>
+                  <Button variant="outline" onClick={() => setRestoreTarget(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={
+                      !restoreTarget() ||
+                      restoreConfirm() !== tenant.data?.slug ||
+                      restoreBackup.isPending
+                    }
+                    onClick={() => {
+                      const target = restoreTarget();
+
+                      if (!target) return;
+
+                      restoreBackup.mutate({ id: target.id, confirm: restoreConfirm() });
+                    }}
+                  >
+                    {restoreBackup.isPending ? "Restoring…" : "Restore backup"}
+                  </Button>
+                </>
+              }
+            >
+              <Button onClick={() => setRestoreTarget(null)}>Close</Button>
+            </Show>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={deleteBackupTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteBackupTarget(null);
+        }}
+        title="Delete this backup?"
+        description={
+          deleteBackupTarget()
+            ? `The backup from ${new Date(deleteBackupTarget()!.startedAt).toLocaleString()} and its stored object are removed permanently.`
+            : ""
+        }
+        confirmLabel="Delete backup"
+        destructive
+        pending={removeBackup.isPending}
+        onConfirm={() => {
+          const target = deleteBackupTarget();
+
+          if (target) removeBackup.mutate(target.id);
+        }}
+      />
+
       <Show when={canDelete()}>
         <Panel
           class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
@@ -915,7 +1145,10 @@ export default function GeneralSettingsPage() {
             <div class="min-w-0">
               <p class="text-[13px] font-medium text-foreground">Delete this tenant</p>
               <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Devices are sent an unenroll request and all tenant data is permanently removed.
+                Enrolled devices are sent their platform's unenroll request, the billing
+                subscription is cancelled, all tenant files and backups are deleted, then the tenant
+                is removed. Offline and Windows devices usually still need manual removal; the
+                result lists every device that could not be fully released.
               </p>
               <ErrorText error={del.error} />
             </div>
@@ -925,32 +1158,90 @@ export default function GeneralSettingsPage() {
           </div>
         </Panel>
 
-        <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
+        <Dialog
+          open={deleteOpen()}
+          onOpenChange={(open) => {
+            setDeleteOpen(open);
+
+            if (!open && deleteResult()) navigate("/dashboard");
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Delete {tenant.data?.name ?? "tenant"}?</DialogTitle>
               <DialogDescription>
-                This cannot be undone. Type the tenant slug{" "}
+                Devices get an unenroll request, billing is cancelled, and every file and backup is
+                deleted before the tenant is removed. If any step fails, the tenant is kept so you
+                can retry. Type the tenant slug{" "}
                 <span class="font-mono font-medium">{tenant.data?.slug}</span> to confirm.
               </DialogDescription>
             </DialogHeader>
-            <Input
-              value={confirm()}
-              onInput={(e) => setConfirm(e.currentTarget.value)}
-              placeholder={tenant.data?.slug}
-            />
-            <ErrorText error={del.error} />
+            <Show
+              when={deleteResult()}
+              fallback={
+                <>
+                  <Input
+                    value={confirm()}
+                    onInput={(e) => setConfirm(e.currentTarget.value)}
+                    placeholder={tenant.data?.slug}
+                  />
+                  <ErrorText error={del.error} />
+                </>
+              }
+            >
+              {(result) => (
+                <div class="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-sm">
+                  <p class="font-medium text-success-foreground">Tenant deleted</p>
+                  <p class="text-muted-foreground">
+                    {result().reclaimed.contacted} of {result().reclaimed.devices} enrolled device
+                    {result().reclaimed.devices === 1 ? "" : "s"} contacted,{" "}
+                    {result().reclaimed.objects} stored object
+                    {result().reclaimed.objects === 1 ? "" : "s"} deleted,{" "}
+                    {Match.value(result().reclaimed.subscription).pipe(
+                      Match.when("cancelled", () => "subscription cancelled"),
+                      Match.when("at_period_end", () => "subscription ends at period end"),
+                      Match.orElse(() => "no billing subscription"),
+                    )}
+                    .
+                  </p>
+                  <Show when={result().reclaimed.unreachableDevices.length > 0}>
+                    <div class="space-y-1">
+                      <p class="text-xs font-medium text-destructive">
+                        These devices could not be reached and still need manual removal:
+                      </p>
+                      <ul class="space-y-1 text-xs text-muted-foreground">
+                        {result().reclaimed.unreachableDevices.map((device) => (
+                          <li>
+                            <span class="font-medium text-foreground">{device.name}</span> (
+                            {device.platform}) — {device.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={confirm() !== tenant.data?.slug || del.isPending}
-                onClick={() => del.mutate()}
+              <Show
+                when={deleteResult()}
+                fallback={
+                  <>
+                    <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={confirm() !== tenant.data?.slug || del.isPending}
+                      onClick={() => del.mutate()}
+                    >
+                      {del.isPending ? "Deleting…" : "Delete tenant"}
+                    </Button>
+                  </>
+                }
               >
-                Delete tenant
-              </Button>
+                <Button onClick={() => navigate("/dashboard")}>Go to dashboard</Button>
+              </Show>
             </DialogFooter>
           </DialogContent>
         </Dialog>

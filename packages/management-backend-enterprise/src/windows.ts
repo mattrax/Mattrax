@@ -1,20 +1,31 @@
-import { Effect, Match, Option, Predicate, Schema } from "effect";
-import { and, asc, eq, lt } from "drizzle-orm";
+import { Effect, Match, Predicate, Schema } from "effect";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
 import {
+  ACTIVE_COMMAND_STATUSES,
+  COMMAND_EXPIRED_DETAIL,
+  DEVICE_COMMAND_ACTIVE_LIMIT,
+  RECONCILED_RESULT_STATUS,
+  planCommandDeliveryBatch,
+} from "./commands.ts";
+import {
   deviceLimitForOrganization,
+  replaceDeviceApplications,
   schema as s,
   type Db,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { certificateSerialHex, openCaPrivateKey, signScepCsr } from "@mattrax/scep";
-import { normalizeIssuedCertificateSerial } from "./scep.ts";
+import { certificateSerialHex, ensureScepCa, signScepCsr } from "@mattrax/scep";
+import { normalizeIssuedCertificateSerial, ScepRepositoryLive } from "./scep.ts";
 import {
+  WINDOWS_APPLICATION_INVENTORY_REQUESTS,
   WINDOWS_INVENTORY_REQUESTS,
   hasWindowsInventory,
+  parseWindowsApplications,
   parseWindowsInventory,
+  windowsApplicationInventoryDue,
   windowsInventoryDue,
   windowsInventoryUpdate,
   windowsInventoryValues,
@@ -819,7 +830,10 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             enrollmentServiceUrl: `${origin}/mdm/windows/enroll${query}`,
             authServiceUrl:
               federated?.authServiceUrl?.(azureTenantId) ??
-              federatedAuthServiceUrl(azureTenantId, (federated?.clientId ? { clientId: federated.clientId } : {})),
+              federatedAuthServiceUrl(
+                azureTenantId,
+                federated?.clientId ? { clientId: federated.clientId } : {},
+              ),
           };
         }
 
@@ -1013,28 +1027,13 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           if (planStatus.reached) return yield* Effect.fail(new UnknownDevice());
         }
 
-        const [ca] = yield* db.select().from(s.scepCa).where(eq(s.scepCa.id, 1)).limit(1);
-
-        if (!ca) return yield* Effect.fail(internal());
-
-        // Windows issuance reads the same sealed CA key as SCEP issuance. Pick
-        // up a lazy migration (legacy plaintext row) exactly like the SCEP
-        // repository does; failure must never fall back to a new CA.
-        const storedCaKey = Schema.decodeUnknownOption(Schema.Json)(ca.privateKeyJwk);
-
-        if (Option.isNone(storedCaKey)) return yield* Effect.fail(internal());
-
-        const caKey = yield* Effect.tryPromise({
-          try: () => openCaPrivateKey(storedCaKey.value, authSecret),
-          catch: internal,
-        });
-
-        if (caKey.migrated) {
-          yield* db
-            .update(s.scepCa)
-            .set({ privateKeyJwk: caKey.migrated })
-            .where(eq(s.scepCa.id, 1));
-        }
+        // Windows issues from the tenant's CA, bootstrapping it on first use so
+        // a tenant that only uses Windows still gets an isolated identity. The
+        // repository opens (and lazily seals) the key; failure must never fall
+        // back to a different CA.
+        const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
+          organizationId,
+        }).pipe(Effect.mapError(() => internal()));
 
         const timestamp = new Date();
         const notAfter = new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000);
@@ -1042,7 +1041,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const signed = yield* signScepCsr({
           csr: request.csr,
           caCertPem: ca.certPem,
-          caPrivateKeyJwk: caKey.privateKeyJwk,
+          caPrivateKeyJwk: ca.privateKeyJwk,
           notBefore: timestamp,
           notAfter,
           deviceId: deviceIdentifier,
@@ -1213,7 +1212,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // Inventory results arrive in the same SyncML message that answers the
         // previous session's `Get` commands. Parse them before deciding whether
         // this session should ask for another snapshot.
-        const inventory = parseWindowsInventory(windowsInventoryValues(checkinRequest.results));
+        const inventoryValues = windowsInventoryValues(checkinRequest.results);
+        const inventory = parseWindowsInventory(inventoryValues);
 
         const inventoryUpdate = windowsInventoryUpdate(inventory, device);
 
@@ -1243,6 +1243,25 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           now: timestamp,
         });
 
+        const applications = parseWindowsApplications(inventoryValues);
+
+        // The application inventory is much larger than the DevDetail nodes, so
+        // it only replaces rows (and moves its own request clock) when the
+        // device actually answered an application `Get`.
+        if (applications !== undefined)
+          yield* replaceDeviceApplications(db, {
+            deviceId: device.id,
+            organizationId,
+            applications,
+            reportedAt: timestamp,
+          });
+
+        const applicationsDue = windowsApplicationInventoryDue({
+          lastUpdatedAt: applications !== undefined ? timestamp : device.applicationsUpdatedAt,
+          lastRequestedAt: device.applicationsRequestedAt,
+          now: timestamp,
+        });
+
         const inventoryColumns: Partial<typeof s.device.$inferInsert> = {
           ...inventoryUpdate,
         };
@@ -1250,6 +1269,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         if (hasInventoryUpdate) inventoryColumns.inventoryUpdatedAt = timestamp;
 
         if (inventoryDue) inventoryColumns.inventoryRequestedAt = timestamp;
+
+        if (applicationsDue) inventoryColumns.applicationsRequestedAt = timestamp;
 
         if (Object.keys(inventoryColumns).length > 0)
           yield* db.update(s.device).set(inventoryColumns).where(eq(s.device.id, device.id));
@@ -1294,14 +1315,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
             const value = node.value;
 
-            const serializedValue =
-              Schema.is(Schema.String)(value)
-                ? value
-                : Schema.is(Schema.JsonObject)(value) ||
-                    Schema.is(JsonArray)(value) ||
-                    value === null
-                  ? JSON.stringify(value)
-                  : String(value);
+            const serializedValue = Schema.is(Schema.String)(value)
+              ? value
+              : Schema.is(Schema.JsonObject)(value) || Schema.is(JsonArray)(value) || value === null
+                ? JSON.stringify(value)
+                : String(value);
 
             const desiredNode: DesiredCommand = {
               policyId: configuration.policyId,
@@ -1344,27 +1362,53 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               locURI: inventoryRequest.locURI,
             });
 
-        // Commands handed out but never acknowledged would otherwise stay
-        // "sent" forever. Re-queue them so the next check-in retries.
-        yield* db
-          .update(s.deviceCommand)
-          .set({ status: "queued", updatedAt: new Date() })
+        // The application inventory is requested on its own daily cadence; a
+        // `Get` on `?list=StructData` returns every app in one `Results` block.
+        if (applicationsDue)
+          for (const inventoryRequest of WINDOWS_APPLICATION_INVENTORY_REQUESTS)
+            commands.push({
+              kind: "Get",
+              cmdID: inventoryRequest.cmdID,
+              locURI: inventoryRequest.locURI,
+            });
+
+        // Commands handed out but never acknowledged must not stay "sent"
+        // forever, and work whose delivery budget elapsed must never fire
+        // days later. Plan from the active rows so expiry, retry and delivery
+        // use the same rules as Apple instead of a bespoke 30 minute sweep.
+        const activeCommands = yield* db
+          .select()
+          .from(s.deviceCommand)
           .where(
             and(
               eq(s.deviceCommand.deviceId, device.id),
-              eq(s.deviceCommand.status, "sent"),
-              lt(s.deviceCommand.updatedAt, new Date(Date.now() - 30 * 60 * 1000)),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
             ),
-          );
-
-        const queued = yield* db
-          .select()
-          .from(s.deviceCommand)
-          .where(and(eq(s.deviceCommand.deviceId, device.id), eq(s.deviceCommand.status, "queued")))
+          )
           .orderBy(asc(s.deviceCommand.createdAt))
-          .limit(1000);
+          .limit(DEVICE_COMMAND_ACTIVE_LIMIT);
 
-        for (const command of queued) {
+        const plan = planCommandDeliveryBatch(activeCommands, timestamp);
+
+        if (plan.expire.length > 0)
+          yield* db
+            .update(s.deviceCommand)
+            .set({
+              status: "expired",
+              dedupeKey: null,
+              resultStatus: RECONCILED_RESULT_STATUS,
+              resultDetail: COMMAND_EXPIRED_DETAIL,
+              updatedAt: timestamp,
+            })
+            .where(inArray(s.deviceCommand.id, plan.expire));
+
+        if (plan.requeue.length > 0)
+          yield* db
+            .update(s.deviceCommand)
+            .set({ status: "queued", updatedAt: timestamp })
+            .where(inArray(s.deviceCommand.id, plan.requeue));
+
+        for (const command of plan.deliver) {
           const payload = Schema.is(Schema.JsonObject)(command.payload) ? command.payload : {};
           const locURI = payload.locURI;
           const data = payload.data;
@@ -1380,7 +1424,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           });
           yield* db
             .update(s.deviceCommand)
-            .set({ status: "sent", updatedAt: new Date() })
+            .set({ status: "sent", updatedAt: timestamp })
             .where(eq(s.deviceCommand.id, command.id));
         }
 

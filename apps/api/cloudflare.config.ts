@@ -129,6 +129,12 @@ export const apiWorker = {
     MATTRAX_ONBOARDING_REPLY_TO: bindings.secret(),
     /** Support address in the onboarding footer; defaults to the sender. */
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: bindings.secret(),
+    /**
+     * Set to `true` only on a deployment that intentionally has no outbound
+     * email. Readiness then reports `mailer: skipped` (degraded) instead of
+     * failing while the `EMAIL` binding is absent.
+     */
+    MATTRAX_EMAIL_DISABLED: bindings.secret(),
     /** PostHog project API key, ingestion host and error sampling. */
     POSTHOG_KEY: bindings.secret(),
     POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),

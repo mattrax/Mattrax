@@ -747,32 +747,42 @@ export function CommandPalette() {
     });
   };
 
-  const run = (item: Command | undefined) => {
-    if (!item) return;
+  /**
+   * Selection is remembered through this variable rather than a signal write:
+   * writing palette state in the same tick as a navigation cancels Solid
+   * Router's transition, so the route change would never commit. The close
+   * effect records it after the navigation settles.
+   */
+  let pendingRecent: Command | undefined;
 
-    const href = item.href;
-
-    try {
-      remember(item);
-    } catch {
-      // Recents are a convenience; storage may be unavailable or full.
-    }
-
+  const resetSearch = () => {
     setQuery("");
     setDebouncedQuery("");
     setTruncated(false);
+  };
 
-    // Programmatic navigation from inside the modal is dropped by the router
-    // in this Solid Router/Kobalte combination. Use a document navigation;
-    // in-page links and filters outside the palette remain SPA.
-    if (href) {
-      window.location.assign(href);
+  /** Run a non-navigation command and close the palette. */
+  const runAction = (item: Command) => {
+    pendingRecent = item;
+
+    // Let the command's own handler run before the dialog unmounts.
+    void item.run();
+    queueMicrotask(close);
+  };
+
+  const run = (item: Command | undefined) => {
+    if (!item) return;
+
+    if (item.href) {
+      // Anchor clicks navigate through the router's document handler; this
+      // branch serves the keyboard (Enter) and direct invocation.
+      pendingRecent = item;
+      navigate(item.href);
 
       return;
     }
 
-    void item.run();
-    close();
+    runAction(item);
   };
 
   /**
@@ -799,7 +809,21 @@ export function CommandPalette() {
   createEffect(
     () => ({ path: location.pathname, open: open() }),
     ({ open }) => {
-      if (!open) setActive(0);
+      if (open) return;
+
+      const selected = pendingRecent;
+      pendingRecent = undefined;
+
+      setActive(0);
+      resetSearch();
+
+      if (!selected) return;
+
+      try {
+        remember(selected);
+      } catch {
+        // Recents are a convenience; storage may be unavailable or full.
+      }
     },
   );
 
@@ -1020,191 +1044,207 @@ export function CommandPalette() {
     `command-palette-group-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
   return (
-    <Show when={open()}>
-      {/*
+    <>
+      <Show when={open()}>
+        {/*
         A fresh uncontrolled dialog per open. The window shortcut and the header
         button both flip `open`, and mounting the primitive fresh keeps its own
         open state authoritative while it is on screen (Escape, light dismiss and
         command selection all unmount it).
       */}
-      <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
-        <DialogPortal>
-          <DialogOverlay
-            class="palette-overlay bg-black/60 backdrop-blur-sm"
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) close();
-            }}
-          />
-          <DialogPrimitive.Content
-            data-slot="command-palette"
-            aria-modal="true"
-            class="palette-card dark fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-white/[0.09] bg-popover text-foreground shadow-2xl shadow-black/70 outline-none"
-            onKeyDown={onContentKeyDown}
-          >
-            <DialogBackgroundIsolation />
-            <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
-            <DialogPrimitive.Description class="sr-only">
-              Search settings, devices, policies, people, and commands. Use the arrow keys to move
-              through results and Enter to run the highlighted one.
-            </DialogPrimitive.Description>
+        <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
+          <DialogPortal>
+            <DialogOverlay
+              class="palette-overlay bg-black/60 backdrop-blur-sm"
+              onPointerDown={(event) => {
+                if (event.target === event.currentTarget) close();
+              }}
+            />
+            <DialogPrimitive.Content
+              data-slot="command-palette"
+              aria-modal="true"
+              class="palette-card dark fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-white/[0.09] bg-popover text-foreground shadow-2xl shadow-black/70 outline-none"
+              onKeyDown={onContentKeyDown}
+            >
+              <DialogBackgroundIsolation />
+              <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
+              <DialogPrimitive.Description class="sr-only">
+                Search settings, devices, policies, people, and commands. Use the arrow keys to move
+                through results and Enter to run the highlighted one.
+              </DialogPrimitive.Description>
 
-            <div class="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-              <Search class="size-4 text-muted-foreground" />
-              <input
-                ref={(element) => {
-                  input = element;
-                }}
-                role="combobox"
-                aria-expanded={items().length > 0 ? "true" : "false"}
-                aria-controls="command-palette-list"
-                aria-autocomplete="list"
-                aria-label="Search settings, devices, policies, people or commands"
-                aria-activedescendant={
-                  items()[active()] ? `command-palette-option-${active()}` : undefined
-                }
-                value={query()}
-                onInput={(event) => updateQuery(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    close();
-
-                    return;
+              <div class="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+                <Search class="size-4 text-muted-foreground" />
+                <input
+                  ref={(element) => {
+                    input = element;
+                  }}
+                  role="combobox"
+                  aria-expanded={items().length > 0 ? "true" : "false"}
+                  aria-controls="command-palette-list"
+                  aria-autocomplete="list"
+                  aria-label="Search settings, devices, policies, people or commands"
+                  aria-activedescendant={
+                    items()[active()] ? `command-palette-option-${active()}` : undefined
                   }
+                  value={query()}
+                  onInput={(event) => updateQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      close();
 
-                  if (event.key !== "Enter" || event.isComposing) return;
+                      return;
+                    }
 
-                  // Some primitives stop Enter before it bubbles to the dialog,
-                  // so run the active item directly from the combobox.
-                  event.preventDefault();
-                  run(items()[active()]);
-                }}
-                placeholder="Search or run a command…"
-                class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
-              />
-              <kbd class="hidden rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
-                esc
-              </kbd>
-            </div>
+                    if (event.key !== "Enter" || event.isComposing) return;
 
-            <Show when={results.error}>
-              {(error) => (
-                <div
-                  role="alert"
-                  class="mx-3 mt-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
-                >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
-                      <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                        {errorMessage(error(), "Search is unavailable right now.")}
-                      </p>
-                    </div>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={results.isFetching}
-                      onClick={() => void results.refetch()}
-                    >
-                      {results.isFetching ? "Retrying…" : "Try again"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </Show>
-
-            <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
-              <div
-                id="command-palette-list"
-                role="listbox"
-                aria-label="Search results"
-                aria-busy={results.isFetching ? "true" : undefined}
-              >
-                <For each={grouped()}>
-                  {([group, groupItems]) => (
-                    <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
-                      <p
-                        id={groupDomId(group)}
-                        class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
-                      >
-                        {group}
-                      </p>
-                      <For each={groupItems}>
-                        {(item) => {
-                          const index = () => items().indexOf(item);
-
-                          return (
-                            <button
-                              type="button"
-                              role="option"
-                              tabindex="-1"
-                              id={`command-palette-option-${index()}`}
-                              aria-selected={active() === index() ? "true" : "false"}
-                              onClick={() => run(item)}
-                              class={cn(
-                                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
-                                active() === index() ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
-                              )}
-                            >
-                              <Show when={item.icon}>
-                                {(icon) => {
-                                  const Icon = icon();
-
-                                  return <Icon class="size-4 shrink-0 text-muted-foreground" />;
-                                }}
-                              </Show>
-                              <span class="min-w-0 flex-1">
-                                <span class="block truncate font-[450] text-foreground">
-                                  {item.title}
-                                </span>
-                                <Show when={item.subtitle}>
-                                  <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
-                                    {item.subtitle}
-                                  </span>
-                                </Show>
-                              </span>
-                              <Show when={item.shortcut}>
-                                {(shortcut) => (
-                                  <kbd class="hidden shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
-                                    {shortcutLabel(shortcut())}
-                                  </kbd>
-                                )}
-                              </Show>
-                            </button>
-                          );
-                        }}
-                      </For>
-                    </div>
-                  )}
-                </For>
+                    // Some primitives stop Enter before it bubbles to the dialog,
+                    // so run the active item directly from the combobox.
+                    event.preventDefault();
+                    run(items()[active()]);
+                  }}
+                  placeholder="Search or run a command…"
+                  class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
+                />
+                <kbd class="hidden rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+                  esc
+                </kbd>
               </div>
 
-              <Show when={items().length === 0 && !results.error}>
-                <div class="px-3 py-8 text-center">
-                  <p class="text-[13px] text-muted-foreground">No results.</p>
-                  <p class="mt-1 text-[11px] text-muted-foreground">
-                    Try a device, policy, person, setting or a query like “devices critical”.
-                  </p>
+              <Show when={results.error}>
+                {(error) => (
+                  <div
+                    role="alert"
+                    class="mx-3 mt-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
+                        <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                          {errorMessage(error(), "Search is unavailable right now.")}
+                        </p>
+                      </div>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={results.isFetching}
+                        onClick={() => void results.refetch()}
+                      >
+                        {results.isFetching ? "Retrying…" : "Try again"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Show>
+
+              <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
+                <div
+                  id="command-palette-list"
+                  role="listbox"
+                  aria-label="Search results"
+                  aria-busy={results.isFetching ? "true" : undefined}
+                >
+                  <For each={grouped()}>
+                    {([group, groupItems]) => (
+                      <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
+                        <p
+                          id={groupDomId(group)}
+                          class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
+                        >
+                          {group}
+                        </p>
+                        <For each={groupItems}>
+                          {(item) => {
+                            const index = () => items().indexOf(item);
+
+                            return (
+                              <a
+                                href={item.href ?? "#"}
+                                role="option"
+                                tabindex="-1"
+                                id={`command-palette-option-${index()}`}
+                                aria-selected={active() === index() ? "true" : "false"}
+                                onClick={(event) => {
+                                  if (item.href) {
+                                    // Remember after the route change commits;
+                                    // writing palette state here would cancel the
+                                    // router's transition.
+                                    pendingRecent = item;
+
+                                    return;
+                                  }
+
+                                  event.preventDefault();
+                                  runAction(item);
+                                }}
+                                class={cn(
+                                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
+                                  active() === index()
+                                    ? "bg-white/[0.07]"
+                                    : "hover:bg-white/[0.04]",
+                                )}
+                              >
+                                <Show when={item.icon}>
+                                  {(icon) => {
+                                    const Icon = icon();
+
+                                    return <Icon class="size-4 shrink-0 text-muted-foreground" />;
+                                  }}
+                                </Show>
+                                <span class="min-w-0 flex-1">
+                                  <span class="block truncate font-[450] text-foreground">
+                                    {item.title}
+                                  </span>
+                                  <Show when={item.subtitle}>
+                                    <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+                                      {item.subtitle}
+                                    </span>
+                                  </Show>
+                                </span>
+                                <Show when={item.shortcut}>
+                                  {(shortcut) => (
+                                    <kbd class="hidden shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
+                                      {shortcutLabel(shortcut())}
+                                    </kbd>
+                                  )}
+                                </Show>
+                              </a>
+                            );
+                          }}
+                        </For>
+                      </div>
+                    )}
+                  </For>
                 </div>
-              </Show>
-            </div>
 
-            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
-              {statusText()}
-            </div>
+                <Show when={items().length === 0 && !results.error}>
+                  <div class="px-3 py-8 text-center">
+                    <p class="text-[13px] text-muted-foreground">No results.</p>
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      Try a device, policy, person, setting or a query like “devices critical”.
+                    </p>
+                  </div>
+                </Show>
+              </div>
 
-            <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] px-4 py-2 text-[11px] text-muted-foreground sm:flex">
-              <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
-              <Show
-                when={truncated()}
-                fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
-              >
-                <span>Showing first {SEARCH_LIMIT} matches</span>
-              </Show>
-            </div>
-          </DialogPrimitive.Content>
-        </DialogPortal>
-      </Dialog>
-    </Show>
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+                {statusText()}
+              </div>
+
+              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+                <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
+                <Show
+                  when={truncated()}
+                  fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
+                >
+                  <span>Showing first {SEARCH_LIMIT} matches</span>
+                </Show>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+      </Show>
+    </>
   );
 }

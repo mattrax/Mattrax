@@ -47,6 +47,9 @@ const makeRepository = (db: StoreDb, options: { authSecret?: string } = { authSe
 // request object and does not require the full PKCS#10 request contract.
 const request = (challengePassword: string | undefined) => ({ challengePassword }) as never;
 
+/** The URL scope every SCEP request carries. */
+const scope = { organizationId: "tenant-1" };
+
 const challengeRows = (db: StoreDb) => dbRows(db, tableName(schema.scepChallenge));
 
 describe("ScepRepositoryLive challenge authentication", () => {
@@ -57,7 +60,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const repository = makeRepository(db);
 
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
     ).resolves.toEqual({ organizationalUnit: "tenant-1", enrollmentId: "enrollment-1" });
 
     expect(challengeRows(db)).toMatchObject([
@@ -76,10 +79,10 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     const wrong = await issueChallenge(db, { authSecret: "another-secret" });
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(undefined))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(undefined))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const });
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(wrong.challenge))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(wrong.challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const });
 
     const now = Date.now() - 120_000;
@@ -87,7 +90,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const expired = await issueChallenge(db, { ttlSeconds: 60, now });
 
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(expired.challenge))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(expired.challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const });
   });
 
@@ -107,11 +110,11 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const repository = makeRepository(db);
 
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
     ).resolves.toMatchObject({ organizationalUnit: "tenant-1" });
 
     await expect(
-      Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
     ).rejects.toMatchObject({
       _tag: "ScepError" as const,
       message: "Invalid SCEP challenge",
@@ -126,7 +129,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     db.store[tableName(schema.scepChallenge)]![0]!.expiresAt = new Date(Date.now() - 1_000);
 
     await expect(
-      Effect.runPromise(makeRepository(db).authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
   });
 
@@ -135,7 +138,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const { challenge } = await issueChallenge(db, { organizationId: "tenant-2" });
 
     await expect(
-      Effect.runPromise(makeRepository(db).authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
     expect(challengeRows(db)[0]!.consumedAt).toBeNull();
   });
@@ -146,7 +149,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const repository = makeRepository(db);
 
     const attempt = () =>
-      repository.authenticatePkcsReq(request(challenge)).pipe(
+      repository.authenticatePkcsReq(scope, request(challenge)).pipe(
         Effect.match({
           onFailure: () => false,
           onSuccess: () => true,
@@ -166,7 +169,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const { challenge } = await issueChallenge(db, { enrollmentId: "missing-enrollment" });
 
     await expect(
-      Effect.runPromise(makeRepository(db).authenticatePkcsReq(request(challenge))),
+      Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const });
   });
 
@@ -180,7 +183,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     try {
       await expect(
-        Effect.runPromise(makeRepository(db, {}).authenticatePkcsReq(request(challenge))),
+        Effect.runPromise(makeRepository(db, {}).authenticatePkcsReq(scope, request(challenge))),
       ).rejects.toMatchObject({ _tag: "ScepError" as const });
     } finally {
       if (previous !== undefined) process.env.AUTH_SECRET = previous;
@@ -231,7 +234,9 @@ describe("ScepRepositoryLive identity revocation", () => {
       { authSecret },
     );
 
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).rejects.toMatchObject({
       _tag: "ScepError" as const,
       message: expect.stringContaining("revoked"),
     });
@@ -243,7 +248,9 @@ describe("ScepRepositoryLive identity revocation", () => {
       { authSecret },
     );
 
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).rejects.toMatchObject({
       _tag: "ScepError" as const,
       message: expect.stringContaining("no longer enrolled"),
     });
@@ -255,7 +262,9 @@ describe("ScepRepositoryLive identity revocation", () => {
       { authSecret },
     );
 
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).rejects.toMatchObject({
       _tag: "ScepError" as const,
       message: expect.stringContaining("no longer enrolled"),
     });
@@ -267,9 +276,9 @@ describe("ScepRepositoryLive identity revocation", () => {
       { authSecret },
     );
 
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
-      { serial: "01", organizationId: "tenant-1", deviceId: "device-1" },
-    );
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).resolves.toMatchObject({ serial: "01", organizationId: "tenant-1", deviceId: "device-1" });
   });
 
   it("accepts non-device-scoped (Apple) certificates until they are revoked", async () => {
@@ -277,14 +286,16 @@ describe("ScepRepositoryLive identity revocation", () => {
       authSecret,
     });
 
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
-      { serial: "01" },
-    );
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).resolves.toMatchObject({ serial: "01" });
   });
 
   it("returns null for an unknown serial", async () => {
     const repository = ScepRepositoryLive.make(makeQueuedDb([[]]), { authSecret });
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("ff"))).resolves.toBeNull();
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "ff")),
+    ).resolves.toBeNull();
   });
 });
 
@@ -312,12 +323,12 @@ describe("ScepRepositoryLive certificate linkage", () => {
 
     seedDevice(db);
     const repository = makeRepository(db);
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
-      {
-        serial: "01",
-        deviceId: "internal-device-1",
-      },
-    );
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).resolves.toMatchObject({
+      serial: "01",
+      deviceId: "internal-device-1",
+    });
   });
 
   it("accepts renewal for a legacy certificate linked by dmIdentifier", async () => {
@@ -329,12 +340,12 @@ describe("ScepRepositoryLive certificate linkage", () => {
 
     seedDevice(db);
     const repository = makeRepository(db);
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).resolves.toMatchObject(
-      {
-        serial: "01",
-        deviceId: "windows-device-id",
-      },
-    );
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).resolves.toMatchObject({
+      serial: "01",
+      deviceId: "windows-device-id",
+    });
   });
 
   it("rejects renewal when the linked device is no longer enrolled", async () => {
@@ -346,7 +357,9 @@ describe("ScepRepositoryLive certificate linkage", () => {
 
     seedDevice(db, { status: "unenrolled" });
     const repository = makeRepository(db);
-    await expect(Effect.runPromise(repository.findIssuedCertificate!("01"))).rejects.toMatchObject({
+    await expect(
+      Effect.runPromise(repository.findIssuedCertificate!(scope, "01")),
+    ).rejects.toMatchObject({
       _tag: "ScepError" as const,
       message: expect.stringContaining("no longer enrolled"),
     });

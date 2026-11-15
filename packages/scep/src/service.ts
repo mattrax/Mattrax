@@ -1,22 +1,15 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
-import { ScepRepository, type ScepIssuedCertificate } from "./repository.js";
-import {
-  generateCaKeyPair,
-  exportPrivateKeyJwk,
-  importPrivateKeyJwk,
-  randomCertificateSerial,
-} from "./crypto.js";
+import { ScepRepository, type ScepCaScope, type ScepIssuedCertificate } from "./repository.js";
+import { randomCertificateSerial } from "./crypto.js";
+import { ensureScepCa } from "./ca.js";
 import {
   parseScepPkcsReq,
   createDeviceCertificate,
-  createCaCertificate,
   buildScepCertRep,
   buildScepCertFailure,
   certificateSerialHex,
-  certToPem,
-  pemToCert,
 } from "./pkcs7.js";
 
 type AttributeValueBlock = { readonly value?: unknown };
@@ -39,8 +32,17 @@ export class ScepServiceTag extends Context.Service<
   ScepServiceTag,
   {
     readonly getCaCaps: () => Effect.Effect<string, ScepError>;
-    readonly getCaCert: () => Effect.Effect<{ raw: ArrayBuffer; isPkcs7: boolean }, ScepError>;
-    readonly pkiOperation: (message: ArrayBuffer) => Effect.Effect<ArrayBuffer, ScepError>;
+    /**
+     * The CA certificate for a tenant. Bootstraps the tenant CA on first use;
+     * there is no deployment-wide fallback, so the URL must name a tenant.
+     */
+    readonly getCaCert: (
+      scope: ScepCaScope,
+    ) => Effect.Effect<{ raw: ArrayBuffer; isPkcs7: boolean }, ScepError>;
+    readonly pkiOperation: (
+      scope: ScepCaScope,
+      message: ArrayBuffer,
+    ) => Effect.Effect<ArrayBuffer, ScepError>;
   }
 >()("ScepService") {}
 
@@ -49,63 +51,36 @@ export const ScepService = Layer.effect(
   Effect.gen(function* () {
     const repo = yield* ScepRepository;
 
-    const ensureCa = Effect.gen(function* () {
-      const existing = yield* repo.getCa();
-
-      if (existing) {
-        const caCert = yield* Effect.sync(() => {
-          try {
-            return pemToCert(existing.certPem);
-          } catch {
-            return null;
-          }
-        });
-
-        if (caCert) {
-          const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
-
-          return {
-            privateKey,
-            privateKeyJwk: existing.privateKeyJwk,
-            caCert,
-            certPem: existing.certPem,
-          };
-        }
-        // Stored cert is malformed (e.g. from old hand-written ASN.1 code) — regenerate
-      }
-
-      const keyPair = yield* generateCaKeyPair();
-      const jwk = yield* exportPrivateKeyJwk(keyPair.privateKey);
-
-      const caCert = yield* Effect.tryPromise({
-        try: () => createCaCertificate(keyPair, "Mattrax SCEP CA"),
-        catch: (cause) => new ScepError({ message: "Failed to create CA certificate", cause }),
-      });
-
-      const certPem = certToPem(caCert);
-
-      yield* repo.saveCa(certPem, jwk);
-      const privateKey = yield* importPrivateKeyJwk(jwk);
-
-      return { privateKey, privateKeyJwk: jwk, caCert, certPem };
-    });
-
     const getCaCaps = (): Effect.Effect<string, ScepError> => Effect.succeed(SCEP_CAPS);
 
-    const getCaCert = (): Effect.Effect<{ raw: ArrayBuffer; isPkcs7: boolean }, ScepError> =>
+    const getCaCert = (
+      scope: ScepCaScope,
+    ): Effect.Effect<{ raw: ArrayBuffer; isPkcs7: boolean }, ScepError> =>
       Effect.gen(function* () {
-        const ca = yield* ensureCa;
-        // Return raw DER for single CA cert (Apple expects this)
+        const ca = yield* ensureScepCa(repo, scope);
+        // Return raw DER for a single CA cert (Apple expects this)
         const raw = ca.caCert.toSchema().toBER(false);
 
         return { raw, isPkcs7: false };
       });
 
-    const pkiOperation = (message: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError> =>
+    const pkiOperation = (
+      scope: ScepCaScope,
+      message: ArrayBuffer,
+    ): Effect.Effect<ArrayBuffer, ScepError> =>
       Effect.gen(function* () {
-        const ca = yield* ensureCa;
+        const ca = yield* ensureScepCa(repo, scope);
 
-        const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
+        const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ScepError({
+                message: cause.message,
+                reason: "invalid_request",
+                cause,
+              }),
+          ),
+        );
 
         const failureCertRep = (failInfo: "1" | "2" | "4" = "2") =>
           Effect.tryPromise({
@@ -123,13 +98,19 @@ export const ScepService = Layer.effect(
 
         const csrValid = yield* Effect.tryPromise({
           try: () => req.csr.verify(),
-          catch: (cause) => new ScepError({ message: "Failed to verify the CSR signature", cause }),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to verify the CSR signature",
+              reason: "invalid_request",
+              cause,
+            }),
         });
 
         if (!csrValid) return yield* failureCertRep("1");
 
-        // Renewals carry a currently-valid identity certificate signed by this
-        // CA instead of the original enrollment challenge.
+        // The tenant is authenticated before issuance and must match the tenant
+        // in the SCEP URL. A challenge minted for tenant A can never issue an
+        // identity from tenant B's CA, even if an attacker swaps the URL.
         let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
           undefined;
 
@@ -147,7 +128,9 @@ export const ScepService = Layer.effect(
 
           if (!valid) return yield* failureCertRep("1");
           const serial = certificateSerialHex(signer);
-          issued = repo.findIssuedCertificate ? yield* repo.findIssuedCertificate(serial) : null;
+          issued = repo.findIssuedCertificate
+            ? yield* repo.findIssuedCertificate(scope, serial)
+            : null;
 
           if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date()))
             return yield* failureCertRep("4");
@@ -161,13 +144,15 @@ export const ScepService = Layer.effect(
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
           const authenticated = yield* repo
-            .authenticatePkcsReq(req)
+            .authenticatePkcsReq(scope, req)
             .pipe(Effect.match({ onFailure: () => null, onSuccess: (value) => value ?? {} }));
 
           if (authenticated === null) return yield* failureCertRep("2");
           authentication = authenticated;
         }
 
+        if (authentication?.organizationalUnit !== scope.organizationId)
+          return yield* failureCertRep("2");
         // Allow ten minutes of clock skew between the CA and device, matching
         // common SCEP clients.
         const notBefore = new Date(Date.now() - 10 * 60 * 1000);
@@ -191,17 +176,13 @@ export const ScepService = Layer.effect(
         if (!subject.some((item) => item.type === "2.5.4.3"))
           subject.push({ type: "2.5.4.3", value: "device" });
 
-        // Pin the certificate to the authenticated tenant. This mirrors mttx's
-        // SCEP challenge middleware, which overwrites the CSR subject OU with the
-        // tenant id resolved from the challenge.
-        const organizationalUnit = authentication?.organizationalUnit;
+        // Pin the certificate to the tenant whose CA and URL authenticated this
+        // request, regardless of what the CSR requested.
+        const filtered = subject.filter((item) => item.type !== "2.5.4.11");
 
-        if (organizationalUnit) {
-          const filtered = subject.filter((item) => item.type !== "2.5.4.11");
-          filtered.push({ type: "2.5.4.11", value: organizationalUnit });
-          subject.length = 0;
-          subject.push(...filtered);
-        }
+        filtered.push({ type: "2.5.4.11", value: scope.organizationId });
+        subject.length = 0;
+        subject.push(...filtered);
 
         const deviceCert = yield* Effect.tryPromise({
           try: () =>
@@ -213,11 +194,11 @@ export const ScepService = Layer.effect(
             new ScepError({ message: "Failed to create device certificate", cause }),
         });
 
-        if (repo.recordIssuedCertificate && authentication?.organizationalUnit) {
+        if (repo.recordIssuedCertificate) {
           yield* repo.recordIssuedCertificate({
             serial: certificateSerialHex(deviceCert),
-            organizationId: authentication.organizationalUnit,
-            enrollmentId: authentication.enrollmentId,
+            organizationId: scope.organizationId,
+            enrollmentId: authentication?.enrollmentId,
             // Renewals must stay linked to the device so revocation, health and
             // the next renewal keep working instead of orphaning the identity.
             deviceId: issued?.deviceId,

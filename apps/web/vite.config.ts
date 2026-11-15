@@ -4,12 +4,68 @@ import tailwindcss from "@tailwindcss/vite";
 import { PageFileSystemRouter } from "filesystem-routing";
 import { fileRoutes } from "filesystem-routing/vite";
 import fs from "node:fs";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+import { type Plugin, defineConfig } from "vite";
 import { apiWorker } from "../api/cloudflare.config.ts";
+import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/public-routes.ts";
 
 const routesDir = path.resolve("src/routes");
 const extensions = ["js", "jsx", "ts", "tsx"];
+
+const docsSourceDirectory = fileURLToPath(new URL("../../docs/", import.meta.url));
+const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta.url));
+
+/** Every file below a directory, as forward-slash paths relative to it. */
+async function listFiles(directory: string): Promise<string[]> {
+  if (!fs.existsSync(directory)) return [];
+
+  const entries = await readdir(directory, { withFileTypes: true, recursive: true });
+
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      path.relative(directory, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"),
+    );
+}
+
+/**
+ * Documentation routes for the sitemap.
+ *
+ * CI builds the docs before the web app, so production and CI read the rspress
+ * output (`doc_build`), which stays correct if a page ever sets a custom route.
+ * A plain dev checkout has no `doc_build`; the markdown sources produce the
+ * same list there, so `/sitemap.xml` works in development too.
+ */
+async function listDocsRoutes(): Promise<string[]> {
+  const built = docsRoutesFromBuildFiles(await listFiles(docsBuildDirectory));
+
+  if (built.length > 0) return built;
+
+  return docsRoutesFromSourceFiles(await listFiles(docsSourceDirectory));
+}
+
+/** Exposes the documentation route list to the Worker without a generated file. */
+function docsRoutesModule(): Plugin {
+  const id = "virtual:docs-routes";
+  const resolvedId = `\0${id}`;
+  let routes: Promise<string[]> | undefined;
+
+  return {
+    name: "mattraxe:docs-routes",
+    resolveId(source) {
+      if (source === id) return resolvedId;
+    },
+    async load(source) {
+      if (source !== resolvedId) return;
+
+      routes ??= listDocsRoutes();
+
+      return `export default ${JSON.stringify(await routes)};`;
+    },
+  };
+}
 
 // Local dev normally runs over HTTP. Set `DEV_HTTPS=1` to serve HTTPS with the
 // self-signed certificate from `scripts/dev-cert.mjs`; the API's `ORIGIN` must
@@ -37,12 +93,13 @@ export default defineConfig({
   // Rolldown's build report feeds `@rolldown/perf-kit` and the module-graph
   // commands. It is opt-in: the client sourcemaps land in the served asset
   // directory, so a normal production build must not emit them.
-  build: process.env.MATTRAX_PERF_REPORT === "1"
-    ? {
-        sourcemap: true,
-        rolldownOptions: { devtools: { mode: "report" as const } },
-      }
-    : {},
+  build:
+    process.env.MATTRAX_PERF_REPORT === "1"
+      ? {
+          sourcemap: true,
+          rolldownOptions: { devtools: { mode: "report" as const } },
+        }
+      : {},
   resolve: {
     tsconfigPaths: true,
   },
@@ -110,6 +167,7 @@ export default defineConfig({
       experimental: { headersAndRedirectsDevModeSupport: true },
     }),
     tailwindcss(),
+    docsRoutesModule(),
     {
       // The Cloudflare plugin enables SSR dependency discovery for its worker
       // environment. On a cold CI checkout that optimizer can rewrite its

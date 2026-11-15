@@ -221,7 +221,12 @@ const apiOverrides = {
 
 // Email delivery needs a provider binding that a container cannot synthesise.
 // Removing it makes the application log messages instead of failing requests.
-if (emailBinding) apiOverrides[emailBinding[0]] = undefined;
+// The explicit flag makes readiness report `mailer: skipped` (degraded) rather
+// than treating the missing binding as a misconfiguration.
+if (emailBinding) {
+  apiOverrides[emailBinding[0]] = undefined;
+  apiOverrides.MATTRAX_EMAIL_DISABLED = { type: "text", value: "true" };
+}
 
 const apiConfig = await loadWorker(api, apiOverrides, { cron: true });
 
@@ -258,17 +263,14 @@ if (process.env.SKIP_MIGRATIONS !== "1") {
 
 if (emailBinding)
   console.warn(
-    "mattrax self-host: outbound email is disabled; sign-in codes and password-reset links are written to the log",
+    "mattrax self-host: outbound email is disabled; sign-in codes and password-reset links are written to the log (/api/ready reports mailer: skipped)",
   );
 
 const miniflare = new Miniflare({
   // The first Worker receives requests from the public listener; the web
   // Worker proxies /api, /mdm and /scim to the API Worker over a service
   // binding, matching the Cloudflare deployment topology.
-  workers: [
-    { config: webConfig },
-    { config: apiConfig },
-  ],
+  workers: [{ config: webConfig }, { config: apiConfig }],
   host,
   port,
   resourcePersistencePath: dataDirectory,

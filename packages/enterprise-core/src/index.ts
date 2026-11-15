@@ -1,5 +1,7 @@
 export * as schema from "./schema.ts";
 
+export type { TenantDeletionStep } from "./schema.ts";
+
 export {
   AuthPersistenceConfig,
   authCredentials,
@@ -19,6 +21,14 @@ export {
 } from "./schema.ts";
 
 export { Db, type EnterpriseDb } from "./db.ts";
+
+export {
+  MAX_DEVICE_APPLICATIONS,
+  clearDeviceApplications,
+  deviceApplicationIds,
+  replaceDeviceApplications,
+  type DeviceApplicationRecord,
+} from "./deviceApplications.ts";
 
 export { R2, type R2Bucket, type R2ObjectBody, type R2PutOptions } from "./r2.ts";
 

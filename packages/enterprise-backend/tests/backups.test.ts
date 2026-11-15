@@ -421,4 +421,34 @@ describe("backup API", () => {
       runEffect(service.downloadTenantBackup(request(headers), "org-1", "foreign")),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
+
+  it("pins and deletes a run through the API", async () => {
+    const { service, db } = makeContext();
+    const run = await runEffect(service.runTenantBackup(request(headers), "org-1"));
+
+    const pinned = await runEffect(service.pinTenantBackup(request(headers), "org-1", run.id));
+    expect(pinned.retention).toBe("pinned");
+
+    const unpinned = await runEffect(service.unpinTenantBackup(request(headers), "org-1", run.id));
+    expect(unpinned.retention).toBe("default");
+
+    await runEffect(service.deleteTenantBackup(request(headers), "org-1", run.id));
+    expect(db.store.backup_run).toHaveLength(0);
+  });
+
+  it("reports what tenant deletion reclaimed", async () => {
+    const { service, db } = makeContext();
+
+    const result = await runEffect(service.deleteTenant(request(headers), "org-1"));
+
+    expect(result).toMatchObject({
+      status: "ok",
+      reclaimed: { devices: 0, objects: 0, subscription: "none" },
+    });
+    expect(db.store.organization).toHaveLength(0);
+    expect(db.store.tenant_deletion.at(0)).toMatchObject({
+      organizationId: "org-1",
+      status: "completed",
+    });
+  });
 });

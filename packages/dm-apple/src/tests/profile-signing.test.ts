@@ -155,6 +155,24 @@ describe("Apple profile signing", () => {
     ).toHaveLength(2);
   });
 
+  it("detects a modified profile body", async () => {
+    const material = await makeSigningMaterial();
+
+    const bytes = await signAppleProfilePlist("<plist>original</plist>", {
+      certificatePem: material.certificatePem,
+      privateKey: material.privateKeyPem,
+    });
+
+    const signedData = parseSignedData(bytes);
+    signedData.encapContentInfo.eContent = new asn1js.OctetString({
+      valueHex: new TextEncoder().encode("<plist>tampered</plist>").buffer,
+    });
+
+    await expect(
+      signedData.verify({ signer: 0, checkChain: false, extendedMode: true }),
+    ).rejects.toThrow();
+  });
+
   it("reuses the loaded identity in the signer factory", async () => {
     const material = await makeSigningMaterial();
     const signer = createAppleProfileSigner(material);

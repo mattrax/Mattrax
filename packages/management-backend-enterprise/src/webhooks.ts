@@ -383,7 +383,7 @@ export const dispatchWebhookEvent = (
     if (!options.authSecret) return;
     const payload = buildWebhookPayload(event, options.now);
 
-    const endpoints = (yield* db
+    const endpoints = yield* db
       .select()
       .from(s.webhookEndpoint)
       .where(
@@ -391,7 +391,7 @@ export const dispatchWebhookEvent = (
           eq(s.webhookEndpoint.organizationId, event.organizationId),
           eq(s.webhookEndpoint.enabled, true),
         ),
-      ));
+      );
 
     const matching = endpoints.filter((endpoint) => eventMatchesFilters(endpoint, payload.type));
 
@@ -497,7 +497,7 @@ export const retryFailedWebhookDeliveries = (
     const limit = Math.max(1, Math.floor(options.limit ?? 100));
     const cutoff = new Date(now.getTime() - (options.maxAgeHours ?? 24) * 60 * 60 * 1000);
 
-    const rows = (yield* db
+    const rows = yield* db
       .select()
       .from(s.webhookDelivery)
       .where(
@@ -508,13 +508,13 @@ export const retryFailedWebhookDeliveries = (
         ),
       )
       .orderBy(asc(s.webhookDelivery.createdAt))
-      .limit(limit));
+      .limit(limit);
 
     yield* Effect.forEach(
       rows,
       (row) =>
         Effect.gen(function* () {
-          const [endpoint] = (yield* db
+          const [endpoint] = yield* db
             .select()
             .from(s.webhookEndpoint)
             .where(
@@ -523,7 +523,7 @@ export const retryFailedWebhookDeliveries = (
                 eq(s.webhookEndpoint.organizationId, row.organizationId),
               ),
             )
-            .limit(1));
+            .limit(1);
 
           if (!endpoint || !endpoint.enabled) return;
           const payload = Schema.decodeUnknownOption(WebhookPayload)(row.payload);
@@ -599,10 +599,10 @@ export const pruneWebhookDeliveries = (
     const now = options.now ?? new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
 
-    const stale = (yield* db
+    const stale = yield* db
       .select({ id: s.webhookDelivery.id })
       .from(s.webhookDelivery)
-      .where(lt(s.webhookDelivery.createdAt, cutoff)));
+      .where(lt(s.webhookDelivery.createdAt, cutoff));
 
     if (stale.length === 0) return 0;
     yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));

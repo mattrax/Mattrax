@@ -39,9 +39,11 @@ legacy `.mobileconfig` profiles where DDM does not cover the setting.
 
 The enrollment profile contains two payloads:
 
-- `com.apple.security.scep` — points at `<origin>/mdm/apple/scep`, requests an RSA 2048
-  key with key usage 5, and carries a per-enrollment, one-time challenge that expires
-  after seven days.
+- `com.apple.security.scep` — points at
+  `<origin>/mdm/apple/scep/<organizationId>`, requests an RSA 2048 key with key usage 5,
+  and carries a per-enrollment, one-time challenge that expires after seven days. The
+  tenant id is a path segment (not a query parameter) because SCEP clients append their
+  own `?operation=...` to the configured URL.
 - `com.apple.mdm` — points check-in and command URLs at `<origin>/mdm/apple/mdm`, requires
   signed messages, references the SCEP identity, supplies the tenant APNs topic and asks
   the device to check out when the profile is removed.
@@ -51,11 +53,14 @@ of creating a duplicate.
 
 ### Profile signing
 
-Profile downloads are CMS (PKCS#7) `SignedData` messages with the plist encapsulated,
-SHA-256, and the standard `contentType`/`messageDigest` signed attributes. The response is
-still served as `application/x-apple-aspen-config` with `Cache-Control: no-store`.
+Every enrollment profile download is signed. The response is a CMS (PKCS#7)
+`SignedData` message with the plist encapsulated, SHA-256, and the standard
+`contentType`/`messageDigest` signed attributes. It is still served as
+`application/x-apple-aspen-config` with `Cache-Control: no-store`.
 
-A dedicated deployment signing identity is configured with:
+Signing uses, in order:
+
+1. An explicit deployment identity, when configured (self-hosted override):
 
 | Variable                      | Purpose                                            |
 | ----------------------------- | -------------------------------------------------- |
@@ -63,18 +68,40 @@ A dedicated deployment signing identity is configured with:
 | `APPLE_PROFILE_SIGNING_KEY`   | Unencrypted RSA PKCS#8 private key, PEM            |
 | `APPLE_PROFILE_SIGNING_CHAIN` | Optional intermediate/root certificate bundle, PEM |
 
-When no dedicated identity is configured, Mattrax signs with the deployment-global SCEP CA
-(`scep_ca` id 1) if it already exists. The download handler never generates a CA; before
-the CA has bootstrapped the plist is served unsigned and a warning is logged. A configured
-identity that cannot be loaded or used fails the download with an internal error rather
-than falling back to an unsigned profile.
+2. The owning tenant's SCEP CA. It is created on first use (enrollment page download or
+   the first SCEP request), so there is no unsigned window.
+
+There is no unsigned fallback: a profile that cannot be signed fails the download with an
+internal error and a log line instead of being served as a plain plist. A configured
+identity that cannot be loaded fails closed the same way.
 
 **Signed is not the same as verified.** A CMS signature proves the profile body was not
 modified and identifies the signing certificate. Apple shows the profile as _verified_ only
-when that certificate chains to a CA the device already trusts. The SCEP CA fallback is
+when that certificate chains to a CA the device already trusts. A generated tenant CA is
 not an Apple-trusted root, so a profile signed with it is integrity-checked but still
-displayed as unverified. Use a certificate issued by a CA distributed to managed devices
+displayed as unverified. Import a tenant CA issued by a CA distributed to managed devices
 for a verified install prompt.
+
+### Tenant SCEP CA
+
+Each tenant owns one active SCEP CA (`scep_ca`, unique `organization_id`). It is an
+RSA-2048, ten-year self-signed CA whose subject carries the tenant id as `OU`.
+
+- **Bootstrap is race-safe.** The first cold request inserts the CA with
+  `INSERT IGNORE`; concurrent requests read back the same persisted row, so two keys can
+  never be issued for one tenant.
+- **Import.** Settings → Enrollment → SCEP identity accepts an operator-supplied CA
+  (PEM certificate plus unencrypted PKCS#8 key). Mattrax validates that the certificate is
+  a CA, is unexpired and permits certificate signing, and that the key matches it.
+- **Rotation.** Rotating regenerates the tenant CA. Identities issued by the previous CA
+  can no longer renew or authenticate mTLS check-in, so they are revoked and the tenant's
+  devices must enroll again. Other tenants are unaffected.
+- **Migration.** Upgrading copies the legacy deployment-wide CA row into every tenant that
+  had used it, preserving existing device identities; from then on each tenant rotates
+  independently.
+
+The CA private key is sealed with `AUTH_SECRET`. A missing or wrong secret fails closed;
+Mattrax never silently generates a new CA when the stored one cannot be read.
 
 ### Enrollment link
 
@@ -104,15 +131,17 @@ fingerprint.
 
 ### SCEP
 
-- One global SCEP CA per deployment, RSA-2048, ten-year validity.
+- One CA per tenant, RSA-2048, ten-year validity, served only from
+  `/mdm/apple/scep/<organizationId>`. The old deployment-wide URL returns `410`; install a
+  fresh enrollment profile after upgrading.
 - Enrollment challenges are one-time: the digest is stored and consumed before the
   certificate is issued, so a captured PKCSReq cannot be replayed. A failed issuance
-  burns the challenge and the device must fetch a fresh profile.
-- Device certificates are valid for 365 days with the client-auth EKU.
-- The CA private key is sealed with `AUTH_SECRET`. A missing or wrong secret fails closed;
-  Mattrax never silently generates a new CA.
-- Renewal authenticates with a currently valid certificate issued by the CA and stays bound
-  to the same device.
+  burns the challenge and the device must fetch a fresh profile. The URL tenant must match
+  the tenant that minted the challenge.
+- Device certificates are valid for 365 days with the client-auth EKU and their subject
+  `OU` is pinned to the tenant.
+- Renewal authenticates with a currently valid certificate issued by the same tenant CA
+  and stays bound to the same device.
 - Unenrollment, device deletion and the revoke-identity action revoke certificates.
   Renewal rejects revoked identities.
 - There is no published CRL or OCSP endpoint. Revocation is enforced at renewal and on
@@ -161,6 +190,13 @@ certificate. Existing devices do not need to re-enroll.
 Every action except `sync`, `collect-security-info` and `refresh-applications` requires a
 step-up confirmation in the browser. See [Security](/manage/security).
 
+Commands are delivered on the next check-in and each has a deadline (15 minutes for a lock,
+30 minutes for a restart, 24 hours for an install, 7 days for an inventory refresh or erase).
+A command past its deadline is expired, never delivered and never retried. Identical
+requests are de-duplicated while a command is queued or in flight, a wipe supersedes other
+pending actions, and a reported inventory reconciles installs that already landed. See
+[Devices](/manage/devices#actions) for the full lifecycle.
+
 ## Limitations
 
 - ADE zero-touch is incomplete: the `Authenticate` response does not yet include the ADE
@@ -184,6 +220,9 @@ step-up confirmation in the browser. See [Security](/manage/security).
 | `GET/PATCH` | `/api/v1/tenants/:tenantId/enrollment`                  |
 | `POST`      | `/api/v1/tenants/:tenantId/enrollment/reset`            |
 | `GET`       | `/api/v1/tenants/:tenantId/enrollment/attempts`         |
+| `GET`       | `/api/v1/tenants/:tenantId/identity/scep`               |
+| `PUT`       | `/api/v1/tenants/:tenantId/identity/scep`               |
+| `POST`      | `/api/v1/tenants/:tenantId/identity/scep/rotate`        |
 | `POST`      | `/api/v1/tenants/:tenantId/devices/:id/action`          |
 | `POST`      | `/api/v1/tenants/:tenantId/devices/:id/unenroll`        |
 | `POST`      | `/api/v1/tenants/:tenantId/devices/:id/revoke-identity` |

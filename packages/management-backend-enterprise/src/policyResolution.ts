@@ -693,9 +693,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       const effective = [...members(group)].some((userId) => {
         const contribution = contributions?.get(userId);
 
-        return (
-          contribution !== undefined && contribution.groups.length > 0 && !contribution.direct
-        );
+        return contribution !== undefined && contribution.groups.length > 0 && !contribution.direct;
       });
 
       exclusions.push({

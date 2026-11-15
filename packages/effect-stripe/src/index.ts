@@ -12,6 +12,7 @@ export {
   type StripeCustomer,
   type StripeList,
   type StripePortalSession,
+  type StripeSubscription,
 } from "./http.ts";
 
 export interface StripeErrorDetails {
@@ -57,7 +58,9 @@ export class StripeSignatureVerificationError extends Data.TaggedError(
   "StripeSignatureVerificationError",
 )<StripeErrorDetails> {}
 
-export class StripeUnknownError extends Data.TaggedError("StripeUnknownError")<StripeErrorDetails> {}
+export class StripeUnknownError extends Data.TaggedError(
+  "StripeUnknownError",
+)<StripeErrorDetails> {}
 
 export type StripeError =
   | StripeCardError
@@ -78,6 +81,12 @@ type CustomerSearch = StripeClientLike["customers"]["search"];
 type CustomerList = StripeClientLike["customers"]["list"];
 
 type BillingPortalSessionCreate = StripeClientLike["billingPortal"]["sessions"]["create"];
+
+type SubscriptionRetrieve = StripeClientLike["subscriptions"]["retrieve"];
+
+type SubscriptionCancel = StripeClientLike["subscriptions"]["cancel"];
+
+type SubscriptionUpdate = StripeClientLike["subscriptions"]["update"];
 
 export interface EffectStripeClient {
   readonly client: StripeClientLike;
@@ -101,6 +110,17 @@ export interface EffectStripeClient {
         ...args: Parameters<BillingPortalSessionCreate>
       ) => Effect.Effect<Awaited<ReturnType<BillingPortalSessionCreate>>, StripeError>;
     };
+  };
+  readonly subscriptions: {
+    readonly retrieve: (
+      ...args: Parameters<SubscriptionRetrieve>
+    ) => Effect.Effect<Awaited<ReturnType<SubscriptionRetrieve>>, StripeError>;
+    readonly cancel: (
+      ...args: Parameters<SubscriptionCancel>
+    ) => Effect.Effect<Awaited<ReturnType<SubscriptionCancel>>, StripeError>;
+    readonly update: (
+      ...args: Parameters<SubscriptionUpdate>
+    ) => Effect.Effect<Awaited<ReturnType<SubscriptionUpdate>>, StripeError>;
   };
 }
 
@@ -193,6 +213,11 @@ export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeCl
         create: (...args) => effect((stripe) => stripe.billingPortal.sessions.create(...args)),
       },
     },
+    subscriptions: {
+      retrieve: (...args) => effect((stripe) => stripe.subscriptions.retrieve(...args)),
+      cancel: (...args) => effect((stripe) => stripe.subscriptions.cancel(...args)),
+      update: (...args) => effect((stripe) => stripe.subscriptions.update(...args)),
+    },
   };
 };
 
@@ -208,8 +233,10 @@ export class StripeService extends Context.Service<StripeService, EffectStripeCl
   static readonly make = (apiKey: string, config?: StripeClientConfig): EffectStripeClient =>
     makeEffectStripeClient(new HttpStripeClient(apiKey, config));
 
-  static readonly layer = (apiKey: string, config?: StripeClientConfig): Layer.Layer<StripeService> =>
-    Layer.succeed(StripeService, StripeService.make(apiKey, config));
+  static readonly layer = (
+    apiKey: string,
+    config?: StripeClientConfig,
+  ): Layer.Layer<StripeService> => Layer.succeed(StripeService, StripeService.make(apiKey, config));
 }
 
 export const StripeServiceLive = (apiKey: string, config?: StripeClientConfig) =>

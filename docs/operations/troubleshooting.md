@@ -37,9 +37,15 @@ activity timeline.
 ### SCEP failures
 
 - The deployment has `AUTH_SECRET` (without it SCEP fails closed).
-- The enrollment challenge has not expired (seven days).
+- The enrollment challenge has not expired (seven days) and was issued for the same
+  tenant as the SCEP URL (`/mdm/apple/scep/<organizationId>`). Challenges are one-time.
+- A profile installed before upgrading to per-tenant CAs points at the old
+  `/mdm/apple/scep` URL, which now returns `410`. Download the enrollment profile again.
 - The device is still `enrolled` for renewal.
-- The identity certificate has not been revoked.
+- The identity certificate has not been revoked, and the tenant CA has not been rotated
+  since it was issued.
+- The tenant CA private key can be opened with the current `AUTH_SECRET` (a rotated secret
+  makes stored CA keys unreadable; Mattrax fails closed rather than replacing the CA).
 
 ### Windows link expired
 

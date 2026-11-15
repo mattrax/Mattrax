@@ -12,7 +12,6 @@ import {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
-  ManagementManifest,
   MdmOrigin,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
@@ -252,7 +251,10 @@ const makeAppleMdmService = (
         return null;
       }
 
-      const caCertPems = yield* trust.caCertPems;
+      // Resolve the tenant's CA from the identity certificate subject (its OU)
+      // so one tenant's identity can never be verified (or trusted) against
+      // another tenant's CA.
+      const caCertPems = yield* trust.caCertPems(input.identityCertificateSubject);
 
       if (caCertPems.length === 0) {
         if (trust.requireSignature)
@@ -381,13 +383,11 @@ const makeAppleMdmService = (
           mdmOrigin,
         });
 
-    return backend
-      .appleDeviceEvent(scope, CheckOutEvent.make({ userId: checkout.UserID }))
-      .pipe(
-        Effect.catchTag("ManagementNotSupported", () => Effect.void),
-        Effect.catchTag("UnknownDevice", () => Effect.void),
-        Effect.mapError(toMdmError("Failed to send CheckOut event")),
-      );
+    return backend.appleDeviceEvent(scope, CheckOutEvent.make({ userId: checkout.UserID })).pipe(
+      Effect.catchTag("ManagementNotSupported", () => Effect.void),
+      Effect.catchTag("UnknownDevice", () => Effect.void),
+      Effect.mapError(toMdmError("Failed to send CheckOut event")),
+    );
   };
 
   const handleCommandResult = (
@@ -435,9 +435,10 @@ const makeAppleMdmService = (
   > =>
     Effect.gen(function* () {
       const manifest = yield* backend.appleManagementCheckin(scope).pipe(
-        Effect.catchTag("UnknownDevice", () =>
-          Effect.succeed(ManagementManifest.members[0].make({})),
-        ),
+        // Unknown devices must receive Apple's 410 Gone so they stop checking
+        // in and remove the (now meaningless) management profile. An Idle 200
+        // would leave a deleted or unenrolled device polling forever.
+        Effect.catchTag("UnknownDevice", () => Effect.fail(new DeviceUnenrolled())),
         Effect.catchTag("ServerInitiatedUnenrollment", () => Effect.fail(new DeviceUnenrolled())),
         Effect.mapError((error) =>
           error instanceof DeviceUnenrolled
@@ -450,7 +451,9 @@ const makeAppleMdmService = (
 
       if (Predicate.isTagged(manifest, "Command")) {
         let payload = Schema.is(PlistValue)(manifest.payload) ? manifest.payload : null;
-        const unlockToken = payload && Schema.is(PlistDictionary)(payload) ? payload["UnlockToken"] : undefined;
+
+        const unlockToken =
+          payload && Schema.is(PlistDictionary)(payload) ? payload["UnlockToken"] : undefined;
 
         if (manifest.requestType === "ClearPasscode" && Schema.is(Schema.String)(unlockToken)) {
           const binary = atob(unlockToken);
@@ -666,12 +669,12 @@ const makeAppleMdmService = (
     serializePlist(
       Schema.decodeUnknownSync(PlistValue)(
         buildAppleEnrollmentProfile({
-        origin: config.origin,
-        topic,
-        organizationId: options?.organizationId ?? config.organizationId ?? "",
-        organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
-        supportEmail: options?.supportEmail ?? config.supportEmail,
-        challenge: options?.challenge ?? crypto.randomUUID(),
+          origin: config.origin,
+          topic,
+          organizationId: options?.organizationId ?? config.organizationId ?? "",
+          organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
+          supportEmail: options?.supportEmail ?? config.supportEmail,
+          challenge: options?.challenge ?? crypto.randomUUID(),
           displayName: options?.displayName,
           identifier: options?.identifier,
         }),

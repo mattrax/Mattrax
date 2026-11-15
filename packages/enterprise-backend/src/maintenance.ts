@@ -5,9 +5,11 @@ import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
+  sweepDeviceCommands,
   syncDynamicGroupsForTenant,
 } from "@mattrax/management-backend-enterprise";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
+import { refreshAppleApplicationInventory } from "./appleInventory.ts";
 import { isBuiltInOwnerMember } from "./rbac.ts";
 import type { WebhookDeliveryOptions } from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
@@ -94,6 +96,17 @@ export type MaintenanceOptions = {
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Maximum recorded attempts for a retried delivery. Defaults to 3. */
   readonly webhookMaxAttempts?: number;
+  /**
+   * Queue the daily Apple `InstalledApplicationList` refresh. Defaults to true;
+   * disable it in tests that assert on the command queue.
+   */
+  readonly applicationInventory?: boolean;
+  /**
+   * Terminal device-command rows older than this many days are deleted.
+   * Defaults to 90. Active commands are never pruned; they expire first.
+   * Set to `0` to keep command history indefinitely.
+   */
+  readonly commandRetentionDays?: number;
 };
 
 export type MaintenanceResult = {
@@ -115,6 +128,12 @@ export type MaintenanceResult = {
   readonly webhookRetries: number;
   readonly webhookRetrySucceeded: number;
   readonly webhookRetryFailed: number;
+  /** Apple devices whose installed-application inventory was requested. */
+  readonly applicationInventoryRefreshes: number;
+  /** Active commands whose delivery deadline elapsed during this run. */
+  readonly expiredCommands: number;
+  /** Terminal command rows deleted by retention. */
+  readonly purgedCommands: number;
 };
 
 const day = 24 * 60 * 60 * 1000;
@@ -280,6 +299,7 @@ export const runMaintenance = (
     const enrollmentAttemptRetentionDays = options.enrollmentAttemptRetentionDays ?? 30;
     const androidPubSubRetentionDays = options.androidPubSubRetentionDays ?? 30;
     const webhookDeliveryRetentionDays = options.webhookDeliveryRetentionDays ?? 30;
+    const commandRetentionDays = options.commandRetentionDays ?? 90;
 
     const result = {
       expiredInvitations: 0,
@@ -294,6 +314,9 @@ export const runMaintenance = (
       webhookRetries: 0,
       webhookRetrySucceeded: 0,
       webhookRetryFailed: 0,
+      applicationInventoryRefreshes: 0,
+      expiredCommands: 0,
+      purgedCommands: 0,
     };
 
     // 1. Expire pending invitations whose acceptance window has closed.
@@ -323,9 +346,7 @@ export const runMaintenance = (
       const staleDeviceRows = yield* db
         .select({ id: s.device.id, organizationId: s.device.organizationId })
         .from(s.device)
-        .where(
-          and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)),
-        );
+        .where(and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)));
 
       const staleDevices = staleDeviceRows.map((row) =>
         Schema.decodeUnknownSync(
@@ -454,9 +475,7 @@ export const runMaintenance = (
         .from(s.organization);
 
       const organizations = organizationRows.map((row) =>
-        Schema.decodeUnknownSync(
-          Schema.Struct({ id: Schema.String, name: Schema.String }),
-        )(row),
+        Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String, name: Schema.String }))(row),
       );
 
       for (const organization of organizations) {
@@ -575,6 +594,29 @@ export const runMaintenance = (
         result.dynamicGroupsEvaluated += evaluated.length;
       }
     }
+
+    // 9. Apple installed-application inventory. iOS and macOS only report their
+    //    applications on request, so the daily sweep queues one
+    //    `InstalledApplicationList` per device whose inventory is missing or
+    //    older than a day. Devices with a refresh already in flight are left
+    //    alone. The sweep runs last, so a failure here still leaves the
+    //    retention, alerting and webhook work above completed.
+    if (options.applicationInventory !== false) {
+      result.applicationInventoryRefreshes = yield* refreshAppleApplicationInventory(db, { now });
+    }
+
+    // 10. Command queue housekeeping. Android commands are issued directly and
+    //     rely on a Pub/Sub notification to become terminal; if that never
+    //     arrives the row would stay `sent` forever. The sweep applies every
+    //     command's delivery deadline regardless of platform, then prunes
+    //     terminal history past retention. Idempotent and bounded.
+    const commands = yield* sweepDeviceCommands(db, {
+      now,
+      retentionDays: commandRetentionDays,
+    });
+
+    result.expiredCommands = commands.expired;
+    result.purgedCommands = commands.pruned;
 
     return result;
   });

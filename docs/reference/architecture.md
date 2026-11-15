@@ -72,21 +72,30 @@ requires re-sealing; there is no online re-wrap.
 Core tables:
 
 - `organization` (tenant), `user`, `member`, `invitation`.
-- `device`, `device_apple`, `device_secret`, `device_command`, `device_declaration`,
-  `device_application`.
+- `device` (identity, management name, physical name and the cross-platform inventory
+  columns), `device_apple`, `device_secret`, `device_command`, `device_declaration`,
+  `device_application` (Apple bundle ids, Android package names and Windows product/registry
+  keys share one table).
 - `enterprise_group`, `group_device`, `group_policy`, `device_policy`.
 - `policy`, `configuration`, `policy_deployment`.
 - `application`, `application_group`, `application_device`.
 - `apple_push_certificate`, `apple_push_key`, `apple_business_manager`, `abm_device`,
   `vpp_token`, `vpp_asset`, `device_vpp_assignment`.
-- `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device`.
+- `scep_ca` (one active CA per tenant, unique `organization_id`), `scep_challenge`,
+  `scep_issued_certificate`.
+- `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device` (AMAPI
+  resource name, policy hash and the Android-only inventory columns).
 - `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`.
+- `tenant_deletion`: the teardown journal (no foreign key to `organization`, so it
+  survives the row) and the retry record for device unenroll, Stripe cancellation, object
+  reclamation and the final delete.
 
 Migrations live in `apps/api/migrations` and are applied with Drizzle Kit.
 
 ## Protocol boundaries
 
-- Apple: `PUT /mdm/apple/mdm`, SCEP, assets and signed profiles.
+- Apple: `PUT /mdm/apple/mdm`, `/mdm/apple/scep/<organizationId>`, expiring
+  device-bound asset URLs and signed profiles.
 - Windows: discovery, policy, enroll and SyncML management.
 - Android: AMAPI client, Pub/Sub receiver and policy delivery.
 - Whitelabel: the same protocol routes, with the management contract over HTTP.

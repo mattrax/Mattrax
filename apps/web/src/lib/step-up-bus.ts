@@ -16,6 +16,9 @@ export const STEP_UP_ACTIONS = [
   "mfa-regenerate",
   "recovery-key-reveal",
   "backup-download",
+  "backup-pin",
+  "backup-delete",
+  "backup-restore",
   "device-command",
   "billing-portal",
   "sso-policy",
@@ -149,6 +152,12 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "reveal this recovery key";
     case "backup-download":
       return "download this tenant backup";
+    case "backup-pin":
+      return "change this backup's retention";
+    case "backup-delete":
+      return "delete this backup";
+    case "backup-restore":
+      return "restore this tenant from a backup";
     case "device-command":
       return "run this device action";
     case "billing-portal":

@@ -174,11 +174,26 @@ const build = async () => {
     certPem: await makeCertificate(daysFromNow(90)),
     updatedAt: now,
   });
-  db.store.scep_ca.push({
-    id: 1,
-    certPem: await makeCertificate(daysFromNow(5)),
-    createdAt: now,
-  });
+  db.store.scep_ca.push(
+    {
+      id: 1,
+      organizationId: "org-a",
+      certPem: await makeCertificate(daysFromNow(5)),
+      privateKeyJwk: {},
+      source: "generated",
+      createdAt: now,
+      rotatedAt: null,
+    },
+    {
+      id: 2,
+      organizationId: "org-b",
+      certPem: await makeCertificate(daysFromNow(5)),
+      privateKeyJwk: {},
+      source: "generated",
+      createdAt: now,
+      rotatedAt: null,
+    },
+  );
   db.store.scep_issued_certificate.push(
     { serial: "a-1", organizationId: "org-a", notAfter: daysFromNow(20), createdAt: now },
     { serial: "a-2", organizationId: "org-a", notAfter: daysFromNow(-1), createdAt: now },
@@ -249,7 +264,9 @@ describe("loadCredentialHealth", () => {
     const first = await run(now);
     expect(first.credentialAlerts).toBe(2);
     expect(
-      db.store.audit_log.filter((row) => row.action === "credentials.expiry_warning"),
+      db.store.audit_log.filter(
+        (row: { action: string }) => row.action === "credentials.expiry_warning",
+      ),
     ).toHaveLength(2);
 
     // Same thresholds on the same day: deduped.
@@ -280,8 +297,8 @@ describe("loadCredentialHealth", () => {
     expect(alerts.credentialAlerts).toBe(2);
     expect(
       db.store.audit_log
-        .filter((row) => row.action === "credentials.expiry_warning")
-        .map((row) => row.metadata.day),
+        .filter((row: { action: string }) => row.action === "credentials.expiry_warning")
+        .map((row: { metadata: { day?: string } }) => row.metadata.day),
     ).toEqual(["2026-11-10", "2026-11-10", "2026-11-11", "2026-11-11"]);
   });
 });

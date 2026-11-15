@@ -1,8 +1,18 @@
 import { Option, Schema } from "effect";
-import type { DeviceActivityEntry } from "@mattrax/enterprise-domain";
+import {
+  deviceCommandStatusLabel,
+  normalizeDeviceCommandStatus,
+  type DeviceActivityEntry,
+} from "@mattrax/enterprise-domain";
 
 export const DEVICE_ACTIVITY_DEFAULT_LIMIT = 50;
 export const DEVICE_ACTIVITY_MAX_LIMIT = 200;
+
+/**
+ * Deepest offset the merged feed serves. Each page re-merges the sources from
+ * the top, so the cap keeps that window bounded for deliberate deep paging.
+ */
+export const DEVICE_ACTIVITY_MAX_OFFSET = 5_000;
 
 /**
  * Coerce the `limit` query parameter. The HTTP layer forwards query strings
@@ -16,6 +26,16 @@ export const normalizeDeviceActivityLimit = (value: number | string | undefined)
   return Math.min(
     Math.max(parsed === undefined ? DEVICE_ACTIVITY_DEFAULT_LIMIT : Math.trunc(parsed), 1),
     DEVICE_ACTIVITY_MAX_LIMIT,
+  );
+};
+
+/** Coerce the newest-first page offset; negative and non-numeric values start at 0. */
+export const normalizeDeviceActivityOffset = (value: number | string | undefined) => {
+  const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(NumericLimit)(value));
+
+  return Math.min(
+    Math.max(parsed === undefined ? 0 : Math.trunc(parsed), 0),
+    DEVICE_ACTIVITY_MAX_OFFSET,
   );
 };
 
@@ -42,6 +62,7 @@ type CommandRow = {
   readonly resultDetail?: string | null;
   readonly createdAt: Date | string;
   readonly updatedAt: Date | string;
+  readonly expiresAt?: Date | string | null;
 };
 
 type DeclarationRow = {
@@ -166,16 +187,21 @@ export const buildDeviceActivity = (
 
     if (!at) continue;
 
+    const status = normalizeDeviceCommandStatus(row.status);
+
     const result = [trimmed(row.resultStatus, 80), trimmed(row.resultDetail, 160)]
       .filter(Boolean)
       .join(": ");
+
+    const deadline = iso(row.expiresAt);
 
     events.push({
       id: `command:${row.id}`,
       kind: "command",
       title: `Command: ${row.requestType}`,
-      detail: result || null,
-      status: row.status,
+      // The timeline shows the human lifecycle, not the stored column value.
+      detail: result || (deadline ? `Deadline ${deadline}` : null),
+      status: deviceCommandStatusLabel(status),
       at,
     });
   }
@@ -246,4 +272,31 @@ export const buildDeviceActivity = (
       return delta !== 0 ? delta : left.id.localeCompare(right.id);
     })
     .slice(0, limit);
+};
+
+export type DeviceActivityPage = {
+  readonly events: Array<DeviceActivityEntry>;
+  readonly hasMore: boolean;
+};
+
+/**
+ * Slice one newest-first page out of the merged feed. The sources are merged
+ * from the top because a page can contain events from any of them; `hasMore`
+ * is false once the page reaches `DEVICE_ACTIVITY_MAX_OFFSET`.
+ */
+export const deviceActivityPage = (
+  inputs: DeviceActivityInputs,
+  options: { readonly limit: number; readonly offset: number },
+): DeviceActivityPage => {
+  const { limit, offset } = options;
+
+  if (offset >= DEVICE_ACTIVITY_MAX_OFFSET) return { events: [], hasMore: false };
+
+  // One extra entry tells us whether an older page exists.
+  const window = buildDeviceActivity(inputs, offset + limit + 1);
+
+  return {
+    events: window.slice(offset, offset + limit),
+    hasMore: window.length > offset + limit && offset + limit < DEVICE_ACTIVITY_MAX_OFFSET,
+  };
 };

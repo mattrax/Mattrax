@@ -82,9 +82,19 @@ GET /mdm/apple/profiles/:deviceToken/:policyId/:kind?token=...
 GET /mdm/apple/assets/:identifier?token=...
 ```
 
-The token is HMAC-signed with `AUTH_SECRET` and binds the policy, kind and (for profiles)
-the device token. Asset identifiers use `<policyId>.<kind>.asset`. An mTLS identity
-certificate whose OU matches the tenant is also accepted for assets.
+The token is HMAC-signed with `AUTH_SECRET`.
+
+- **Profile tokens** bind the policy, kind and device token. They do not expire; the
+  declaration is re-issued when its content changes.
+- **Asset tokens** bind the policy, kind, the internal device id and an expiry. A link is
+  valid for 30–60 minutes. The asset declaration's `ServerToken` rotates on the same
+  fixed 30-minute window, so on its next DDM sync the device sees the changed token,
+  re-fetches the declaration and receives a fresh `DataURL` without re-enrolling. The API
+  rejects an expired token, a token for another device, and a token whose device is no
+  longer enrolled (or belongs to another tenant), so a leaked link is revocable by
+  unenrolling or deleting the device.
+
+An mTLS identity certificate whose OU matches the tenant is also accepted for assets.
 
 These URLs are intentionally accessible without a dashboard session: the device fetches
 them during a DDM sync.

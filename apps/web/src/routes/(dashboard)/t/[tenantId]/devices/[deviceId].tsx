@@ -1,8 +1,19 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { DeviceRow, EffectivePolicyResponse } from "@mattrax/enterprise-domain/client";
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/solid-query";
+import {
+  DeviceRow,
+  EffectivePolicyResponse,
+  type DeviceActivityResponse,
+} from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createSignal, Errored, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Errored, For, Show } from "solid-js";
+import { isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import {
   DeviceHealthBadge,
@@ -33,9 +44,22 @@ import {
   enterpriseQueries,
   type DeviceApplication,
 } from "~/lib/enterprise";
+import {
+  commandStatusTone,
+  isActiveCommandStatus,
+  mergeActivityPages,
+} from "~/lib/device-activity";
+import { errorMessage, raisedFailure } from "~/lib/errors";
+import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
+
+const ACTIVITY_PAGE_SIZE = 50;
+
+/** The command endpoint returns the newest 200 rows; page them on the client. */
+const COMMAND_FETCH_LIMIT = 200;
+const COMMAND_PAGE_SIZE = 20;
 
 const decodeDeviceRow = Schema.decodeUnknownOption(DeviceRow);
 
@@ -368,12 +392,28 @@ export default function DeviceDetailPage() {
         assetTag: assetTag() || null,
         notes: notes() || null,
       }),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Device details saved");
+    },
+    onError: (error) =>
+      toast.error("Could not save device details", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Sync requested", {
+        description: "The device checks in for pending commands on its next contact.",
+      });
+    },
+    onError: (error) =>
+      toast.error("Could not request a sync", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const commands = useQuery(() => ({
@@ -381,10 +421,44 @@ export default function DeviceDetailPage() {
     queryFn: () => enterprise.listDeviceCommands(params.tenantId, params.deviceId),
   }));
 
-  const activity = useQuery(() => ({
-    queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId, 50),
-    queryFn: () => enterprise.getDeviceActivity(params.tenantId, params.deviceId, 50),
+  const activity = useInfiniteQuery<
+    DeviceActivityResponse,
+    Error,
+    InfiniteData<DeviceActivityResponse>,
+    readonly unknown[],
+    number
+  >(() => ({
+    queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
+    queryFn: ({ pageParam }) =>
+      enterprise.getDeviceActivity(params.tenantId, params.deviceId, {
+        limit: ACTIVITY_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _pages, lastOffset) =>
+      lastPage.hasMore ? lastOffset + ACTIVITY_PAGE_SIZE : undefined,
+    // Infinite queries are client-driven; the first page during SSR would not
+    // carry the request cookie and would render as unauthenticated.
+    enabled: Boolean(params.tenantId) && !isServer,
   }));
+
+  const activityEvents = createMemo(() => mergeActivityPages(activity.data?.pages));
+
+  // Command history pages on the client: the endpoint already bounds the
+  // response, and this keeps the panel's height predictable.
+  const [commandLimit, setCommandLimit] = createSignal(COMMAND_PAGE_SIZE);
+
+  createEffect(
+    () => params.deviceId,
+    () => {
+      setCommandLimit(COMMAND_PAGE_SIZE);
+    },
+  );
+
+  const commandRows = () => commands.data?.commands ?? [];
+  const visibleCommands = () => commandRows().slice(0, commandLimit());
+  const hasOlderCommands = () => commandRows().length > commandLimit();
+  const commandHistoryTruncated = () => commandRows().length >= COMMAND_FETCH_LIMIT;
 
   const health = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
@@ -548,6 +622,20 @@ export default function DeviceDetailPage() {
   };
 
   const appNames = (): readonly DeviceApplication[] => applications.data?.applications ?? [];
+
+  /** Human label for the raw AMAPI enum values stored on Android devices. */
+  const androidLabel = (value: string | null | undefined) => {
+    if (!value) return "Not reported";
+
+    if (value === "MANAGEMENT_MODE_UNSPECIFIED" || value === "OWNERSHIP_UNSPECIFIED")
+      return "Not reported";
+
+    return value
+      .toLowerCase()
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  };
 
   const capabilityLabels = () => {
     const value = row()?.capabilities;
@@ -1437,18 +1525,27 @@ export default function DeviceDetailPage() {
                     : "Installed applications reported by the device."
                 }
                 actions={
-                  <Show
-                    when={canCommand() && row()!.proto === "apple" && row()!.status === "enrolled"}
-                  >
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate({ action: "refresh-applications" })}
+                  <span class="flex flex-wrap items-center justify-end gap-2">
+                    <Show when={row()!.applicationsStale}>
+                      <Chip tone="warning">
+                        {row()!.applicationsUpdatedAt ? "Stale" : "Never reported"}
+                      </Chip>
+                    </Show>
+                    <Show
+                      when={
+                        canCommand() && row()!.proto === "apple" && row()!.status === "enrolled"
+                      }
                     >
-                      Refresh applications
-                    </Button>
-                  </Show>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={command.isPending}
+                        onClick={() => command.mutate({ action: "refresh-applications" })}
+                      >
+                        Refresh applications
+                      </Button>
+                    </Show>
+                  </span>
                 }
               >
                 <Show
@@ -1473,8 +1570,9 @@ export default function DeviceDetailPage() {
                     when={appNames().length > 0}
                     fallback={
                       <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
-                        No installed applications have been reported. Run refresh applications to
-                        collect the inventory from this device.
+                        No installed applications have been reported yet. Apple devices are
+                        refreshed daily; Android devices report on every status notification and
+                        Windows devices daily.
                       </p>
                     }
                   >
@@ -1488,6 +1586,10 @@ export default function DeviceDetailPage() {
                               </span>
                               <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
                                 {application.bundleId}
+                                <Show when={application.publisher}>
+                                  {" · "}
+                                  {application.publisher}
+                                </Show>
                               </span>
                             </span>
                             <span class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
@@ -1531,6 +1633,54 @@ export default function DeviceDetailPage() {
                   </For>
                 </dl>
               </Panel>
+
+              <Show when={row()!.android}>
+                {(android) => (
+                  <Panel
+                    title="Android management"
+                    description="State reported by the Android Management API."
+                  >
+                    <dl class="grid gap-x-6 sm:grid-cols-2">
+                      <MetaRow label="Management mode">
+                        {androidLabel(android().managementMode)}
+                      </MetaRow>
+                      <MetaRow label="Ownership">{androidLabel(android().ownership)}</MetaRow>
+                      <MetaRow label="Google state">{androidLabel(android().state)}</MetaRow>
+                      <MetaRow label="API level">
+                        {android().apiLevel === null ? "Not reported" : String(android().apiLevel)}
+                      </MetaRow>
+                      <MetaRow label="Security patch">
+                        {android().securityPatchLevel ?? "Not reported"}
+                      </MetaRow>
+                      <MetaRow label="Applied policy">
+                        <span class="break-all font-mono text-[11px]">
+                          {android().appliedPolicyName ?? "Not reported"}
+                        </span>
+                      </MetaRow>
+                      <MetaRow label="Network operator">
+                        {android().networkOperator ?? "Not reported"}
+                      </MetaRow>
+                      <MetaRow label="Memory">
+                        {android().totalRam === null
+                          ? "Not reported"
+                          : formatBytes(android().totalRam)}
+                      </MetaRow>
+                      <MetaRow label="Enrollment token">
+                        <span class="break-all font-mono text-[11px]">
+                          {android().enrollmentTokenName ?? "Not reported"}
+                        </span>
+                      </MetaRow>
+                    </dl>
+                    <Show when={android().disabledReason}>
+                      {(reason) => (
+                        <p class="mt-3 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                          {reason()}
+                        </p>
+                      )}
+                    </Show>
+                  </Panel>
+                )}
+              </Show>
 
               <Show when={row()!.proto === "apple" && row()!.serial}>
                 {(serial) => (
@@ -1710,7 +1860,7 @@ export default function DeviceDetailPage() {
                   }
                 >
                   <Show
-                    when={(activity.data?.events.length ?? 0) > 0}
+                    when={activityEvents().length > 0}
                     fallback={
                       <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
                         No activity has been recorded for this device yet.
@@ -1718,7 +1868,7 @@ export default function DeviceDetailPage() {
                     }
                   >
                     <ul class="max-h-[26rem] divide-y divide-white/[0.05] overflow-auto">
-                      <For each={activity.data?.events ?? []}>
+                      <For each={activityEvents()}>
                         {(event) => (
                           <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
                             <div class="flex items-center justify-between gap-2">
@@ -1750,10 +1900,39 @@ export default function DeviceDetailPage() {
                       </For>
                     </ul>
                   </Show>
+                  <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
+                    <span class="text-[11px] tabular-nums text-muted-foreground">
+                      {activityEvents().length}
+                      {activity.hasNextPage ? "+" : ""} event
+                      {activityEvents().length === 1 ? "" : "s"}
+                    </span>
+                    <Show when={activity.isFetchNextPageError}>
+                      <span role="status" class="text-[11px] text-destructive">
+                        Could not load older activity. Try again.
+                      </span>
+                    </Show>
+                    <Show
+                      when={activity.hasNextPage}
+                      fallback={
+                        <span class="text-[11px] text-muted-foreground">
+                          All older activity is loaded.
+                        </span>
+                      }
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={activity.isFetchingNextPage}
+                        onClick={() => void activity.fetchNextPage()}
+                      >
+                        {activity.isFetchingNextPage ? "Loading…" : "Load older activity"}
+                      </Button>
+                    </Show>
+                  </div>
                 </Show>
               </Panel>
 
-              <Show when={(commands.data?.commands.length ?? 0) > 0 || commands.isError}>
+              <Show when={commandRows().length > 0 || commands.isError}>
                 <Panel
                   flush
                   title="Command history"
@@ -1771,21 +1950,34 @@ export default function DeviceDetailPage() {
                     }
                   >
                     <ul class="max-h-72 divide-y divide-white/[0.05] overflow-auto">
-                      <For each={commands.data?.commands ?? []}>
+                      <For each={visibleCommands()}>
                         {(command) => (
                           <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
                             <div class="flex items-center justify-between gap-2">
                               <strong class="min-w-0 truncate font-medium text-foreground">
                                 {command.requestType}
                               </strong>
-                              <span class="shrink-0 capitalize text-muted-foreground">
-                                {command.status}
-                              </span>
+                              <Chip tone={commandStatusTone(command.status)}>
+                                {command.statusLabel}
+                              </Chip>
                             </div>
                             <Show when={command.resultStatus || command.resultDetail}>
                               <p class="mt-1 text-muted-foreground">
                                 {command.resultStatus ?? ""} {command.resultDetail ?? ""}
                               </p>
+                            </Show>
+                            <Show
+                              when={
+                                command.expiresAt && isActiveCommandStatus(command.status)
+                                  ? command.expiresAt
+                                  : undefined
+                              }
+                            >
+                              {(deadline) => (
+                                <p class="mt-1 text-muted-foreground">
+                                  Deadline {formatDate(deadline())}
+                                </p>
+                              )}
                             </Show>
                             <p class="mt-1 text-muted-foreground">
                               {formatDate(command.createdAt)}
@@ -1794,6 +1986,27 @@ export default function DeviceDetailPage() {
                         )}
                       </For>
                     </ul>
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
+                      <span class="text-[11px] tabular-nums text-muted-foreground">
+                        {visibleCommands().length} of {commandRows().length}
+                        {commandHistoryTruncated() ? "+" : ""} command
+                        {commandRows().length === 1 ? "" : "s"}
+                      </span>
+                      <Show when={hasOlderCommands()}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCommandLimit((value) => value + COMMAND_PAGE_SIZE)}
+                        >
+                          Show older commands
+                        </Button>
+                      </Show>
+                      <Show when={commandHistoryTruncated()}>
+                        <p class="basis-full text-[11px] text-muted-foreground">
+                          Showing the newest {COMMAND_FETCH_LIMIT} commands for this device.
+                        </p>
+                      </Show>
+                    </div>
                   </Show>
                 </Panel>
               </Show>

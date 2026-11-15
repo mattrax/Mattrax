@@ -202,9 +202,13 @@ describe("SCEP challenge", () => {
       }),
     ).resolves.toBeNull();
     await expect(
-      verifyScepChallenge(`${enrollmentId}.${Number(expiresAt) + 1}.${nonce}.${signature}`, SECRET, {
-        now: now * 1000,
-      }),
+      verifyScepChallenge(
+        `${enrollmentId}.${Number(expiresAt) + 1}.${nonce}.${signature}`,
+        SECRET,
+        {
+          now: now * 1000,
+        },
+      ),
     ).resolves.toBeNull();
     await expect(
       verifyScepChallenge(challenge, SECRET, { now: (now + 61) * 1000 }),
@@ -223,15 +227,11 @@ async function makeScepHandler(secret: string) {
   const caCert = await createTestCaCert(caKeyPair, "Challenge SCEP CA");
   const { certToPem } = await import("../pkcs7.js");
 
-  const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-    "jwk",
-    caKeyPair.privateKey,
-  ));
+  const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
   const repoLayer: Layer.Layer<ScepRepository> = mockScepRepository({
     getCa: () => Effect.succeed({ certPem: certToPem(caCert), privateKeyJwk: caPrivateKeyJwk }),
-    saveCa: () => Effect.void,
-    authenticatePkcsReq: (req) =>
+    authenticatePkcsReq: (_scope, req) =>
       Effect.gen(function* () {
         const verification = yield* Effect.tryPromise({
           try: () => verifyScepChallenge(req.challengePassword, secret),
@@ -273,7 +273,7 @@ const pkiOperation = async (
   );
 
   return handler(
-    new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+    new Request("http://localhost/mdm/apple/scep/tenant-from-challenge?operation=PKIOperation", {
       method: "POST",
       body: request,
     }),

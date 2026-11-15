@@ -2,7 +2,7 @@ import { Data, Schema } from "effect";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 
 /**
- * At-rest protection for the global SCEP CA private key.
+ * At-rest protection for the tenant SCEP CA private key.
  *
  * The key is an RSA JWK with full signing power over every tenant's device
  * identities, so it must never be persisted as plaintext. It is sealed with
@@ -85,7 +85,11 @@ export const isSealedCaPrivateKey = (value: StoredCaPrivateKey): value is Sealed
 
   const sealed = value.sealed;
 
-  return value.v === SCEP_CA_KEY_ENVELOPE_VERSION && Schema.is(Schema.String)(sealed) && sealed.length > 0;
+  return (
+    value.v === SCEP_CA_KEY_ENVELOPE_VERSION &&
+    Schema.is(Schema.String)(sealed) &&
+    sealed.length > 0
+  );
 };
 
 const requireSecret = (authSecret: string | undefined): string => {

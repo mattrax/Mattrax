@@ -15,6 +15,9 @@ import {
   mockScepRepository,
 } from "./helpers.js";
 
+const TENANT = "tenant-route";
+const SCEP_URL = `http://localhost/mdm/apple/scep/${TENANT}`;
+
 async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
@@ -24,33 +27,30 @@ async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
 }
 
 describe("SCEP routes", () => {
-  describe("GET /mdm/apple/scep", () => {
+  describe("GET /mdm/apple/scep/:organizationId", () => {
     it("returns CA caps for GetCACaps", async () => {
       const repo = mockScepRepository();
       const handler = await makeScepHandler(repo);
-      const request = new Request("http://localhost/mdm/apple/scep?operation=GetCACaps");
+      const request = new Request(`${SCEP_URL}?operation=GetCACaps`);
       const response = await handler(request);
       expect(response.status).toBe(200);
       const text = await response.text();
       expect(text).toContain("SHA-256");
     });
 
-    it("returns CA cert for GetCACert", async () => {
+    it("returns the tenant CA for GetCACert", async () => {
       const keyPair = await generateKeyPair();
       const caCert = await createTestCaCert(keyPair, "Route CA");
       const certPem = certToPem(caCert);
 
-      const privateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        keyPair.privateKey,
-      ));
+      const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem, privateKeyJwk }),
       });
 
       const handler = await makeScepHandler(repo);
-      const request = new Request("http://localhost/mdm/apple/scep?operation=GetCACert");
+      const request = new Request(`${SCEP_URL}?operation=GetCACert`);
       const response = await handler(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("application/x-x509-ca-cert");
@@ -58,33 +58,53 @@ describe("SCEP routes", () => {
       expect(body.byteLength).toBeGreaterThan(0);
     });
 
+    it("returns 404 for an unknown tenant", async () => {
+      const repo = mockScepRepository({
+        getCa: () =>
+          Effect.fail(new ScepError({ message: "Unknown SCEP tenant", reason: "unknown_tenant" })),
+      });
+
+      const handler = await makeScepHandler(repo);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/scep/missing?operation=GetCACert"),
+      );
+
+      expect(response.status).toBe(404);
+    });
+
     it("returns 400 for missing operation", async () => {
       const repo = mockScepRepository();
       const handler = await makeScepHandler(repo);
-      const request = new Request("http://localhost/mdm/apple/scep");
-      const response = await handler(request);
+      const response = await handler(new Request(SCEP_URL));
       expect(response.status).toBe(400);
     });
 
     it("returns 400 for invalid operation", async () => {
       const repo = mockScepRepository();
       const handler = await makeScepHandler(repo);
-      const request = new Request("http://localhost/mdm/apple/scep?operation=InvalidOperation");
-      const response = await handler(request);
+      const response = await handler(new Request(`${SCEP_URL}?operation=InvalidOperation`));
       expect(response.status).toBe(400);
+    });
+
+    it("rejects the old deployment-wide endpoint", async () => {
+      const handler = await makeScepHandler(mockScepRepository());
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/scep?operation=GetCACert"),
+      );
+
+      expect(response.status).toBe(410);
+      expect(await response.text()).toContain("/mdm/apple/scep/<organizationId>");
     });
   });
 
-  describe("POST /mdm/apple/scep", () => {
-    it("returns a CertRep for valid PKIOperation", async () => {
+  describe("POST /mdm/apple/scep/:organizationId", () => {
+    const makeRequest = async (transactionId: string) => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
+      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
@@ -96,20 +116,25 @@ describe("SCEP routes", () => {
         caCert,
         signerCert,
         deviceKeyPair.privateKey,
-        "txn-post-001",
+        transactionId,
         senderNonce,
         true,
       );
 
+      return { caCertPem, caPrivateKeyJwk, pkcsReq };
+    };
+
+    it("returns a CertRep for valid PKIOperation", async () => {
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makeRequest("txn-post-001");
+
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-        saveCa: () => Effect.void,
-        authenticatePkcsReq: () => Effect.void,
+        authenticatePkcsReq: () => Effect.succeed({ organizationalUnit: TENANT }),
       });
 
       const handler = await makeScepHandler(repo);
 
-      const request = new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+      const request = new Request(`${SCEP_URL}?operation=PKIOperation`, {
         method: "POST",
         body: pkcsReq,
       });
@@ -122,39 +147,16 @@ describe("SCEP routes", () => {
     });
 
     it("returns a failure CertRep when authentication fails", async () => {
-      const caKeyPair = await generateKeyPair();
-      const caCert = await createTestCaCert(caKeyPair, "Post CA");
-      const caCertPem = certToPem(caCert);
-
-      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-        "jwk",
-        caKeyPair.privateKey,
-      ));
-
-      const deviceKeyPair = await generateKeyPair();
-      const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
-      const csr = await buildTestCsr(deviceKeyPair, "PostDevice");
-      const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-
-      const pkcsReq = await buildPkcsReq(
-        csr,
-        caCert,
-        signerCert,
-        deviceKeyPair.privateKey,
-        "txn-post-002",
-        senderNonce,
-        true,
-      );
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makeRequest("txn-post-002");
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-        saveCa: () => Effect.void,
         authenticatePkcsReq: () => Effect.fail(new ScepError({ message: "Auth failed" })),
       });
 
       const handler = await makeScepHandler(repo);
 
-      const request = new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+      const request = new Request(`${SCEP_URL}?operation=PKIOperation`, {
         method: "POST",
         body: pkcsReq,
       });
@@ -162,6 +164,19 @@ describe("SCEP routes", () => {
       const response = await handler(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("application/x-pki-message");
+    });
+
+    it("rejects the old deployment-wide endpoint", async () => {
+      const handler = await makeScepHandler(mockScepRepository());
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+          method: "POST",
+          body: new Uint8Array(),
+        }),
+      );
+
+      expect(response.status).toBe(410);
     });
   });
 });

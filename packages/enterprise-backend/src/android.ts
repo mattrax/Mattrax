@@ -2,7 +2,8 @@ import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { Data, Effect, Option, Schema } from "effect";
 import {
   AndroidManagement,
-  compileAndroidPolicyWithHash,
+  androidPolicyHash,
+  compileAndroidPolicy,
   decodePubSubPush,
   androidPolicyIdForHash,
   bearerToken,
@@ -12,10 +13,12 @@ import {
 } from "@mattrax/dm-android";
 import {
   deviceLimitForOrganization,
+  replaceDeviceApplications,
   schema,
   type EnterpriseDb,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
+import { shouldApplyReportedName } from "@mattrax/enterprise-domain";
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
@@ -26,6 +29,9 @@ const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed
 ]);
 
 import {
+  ACTIVE_COMMAND_STATUSES,
+  commandDedupeKey,
+  deviceCommandExpiresAt,
   resolveEffectivePolicyForDevice,
   syncDynamicGroupsForDevice,
   writeSystemAudit,
@@ -43,6 +49,36 @@ import { signToken, verifyToken } from "./tokens.ts";
  */
 
 export const DEFAULT_ANDROID_POLICY_ID = "mattrax-default";
+
+/**
+ * Status reporting Mattrax always requests. Google only reports
+ * `softwareInfo` and `applicationReports` when the applied policy opts in, so
+ * without this baseline every Android device would show no OS build, no patch
+ * level and no installed applications. An explicit tenant value still wins,
+ * which lets an operator switch reporting off.
+ */
+const STATUS_REPORTING_BASELINE = {
+  softwareInfoEnabled: true,
+  applicationReportsEnabled: true,
+} as const;
+
+/**
+ * Merge the reporting baseline underneath the tenant's compiled policy. Kept
+ * pure so the policy hash covers exactly what is pushed to Google.
+ */
+export const withStatusReporting = (policy: Schema.JsonObject): Schema.JsonObject => {
+  const configured = policy["statusReportingSettings"];
+
+  // `Object.assign` keeps the baseline's literal keys while letting a tenant
+  // override either flag (or add reporting settings Mattrax does not request).
+  const statusReportingSettings = Object.assign(
+    {},
+    STATUS_REPORTING_BASELINE,
+    Schema.is(Schema.JsonObject)(configured) ? configured : null,
+  );
+
+  return { ...policy, statusReportingSettings };
+};
 
 /** Notification types requested when the enterprise is created. */
 export const ANDROID_NOTIFICATION_TYPES = ["ENROLLMENT", "STATUS_REPORT", "COMMAND"] as const;
@@ -515,13 +551,13 @@ export const completeAndroidSignup = (input: {
         enabledNotificationTypes: [...ANDROID_NOTIFICATION_TYPES],
       });
 
-      // A policy must exist before an enrollment token can reference it. An
-      // empty policy is the correct starting point; device-specific policy is
-      // pushed after enrollment.
+      // A policy must exist before an enrollment token can reference it. It
+      // only requests the status reporting every device needs; device-specific
+      // policy is pushed after enrollment.
       yield* android.patchPolicy({
         enterpriseName: enterprise.name,
         policyId: defaultPolicyId,
-        policy: {},
+        policy: withStatusReporting({}),
       });
 
       return enterprise.name;
@@ -662,7 +698,12 @@ function recordOf(value: Schema.Json | undefined): Record<string, Schema.Json> |
 }
 
 function stringOf(value: Schema.Json | undefined): string | undefined {
-  return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+  const text = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
+  if (text === undefined) return undefined;
+  const trimmed = text.trim();
+
+  return trimmed ? trimmed : undefined;
 }
 
 function dateOf(value: Schema.Json | undefined): Date | undefined {
@@ -674,32 +715,126 @@ function dateOf(value: Schema.Json | undefined): Date | undefined {
   return Number.isFinite(parsed) ? new Date(parsed) : undefined;
 }
 
+/** AMAPI encodes 64-bit values (RAM, storage) as strings, but tests and older
+ * responses use plain numbers. Accept both and reject negatives. */
+function intOf(value: Schema.Json | undefined): number | undefined {
+  const raw = Schema.is(Schema.Number)(value)
+    ? value
+    : Schema.is(Schema.String)(value) && /^\d+$/.test(value.trim())
+      ? Number(value.trim())
+      : undefined;
+
+  return raw !== undefined && Number.isSafeInteger(raw) && raw >= 0 ? raw : undefined;
+}
+
 function androidDeviceStatus(value: string | undefined): "enrolling" | "enrolled" | "unenrolled" {
   switch (value) {
     case "ACTIVE":
       return "enrolled";
     case "DELETED":
     case "DISABLED":
+    case "LOST":
+    case "DEACTIVATED_BY_DEVICE_FINANCE":
       return "unenrolled";
     default:
       return "enrolling";
   }
 }
 
-type AndroidDeviceResource = {
+/** One installed application from an AMAPI `applicationReports` entry. */
+export type AndroidApplicationReport = {
+  readonly bundleId: string;
+  readonly name?: string;
+  readonly version?: string;
+};
+
+/**
+ * Application states Google reports. A report carries every package the device
+ * told Android Device Policy about, including packages that are on their way
+ * out, so uninstalled apps must be dropped rather than shown as installed.
+ */
+const ANDROID_ABSENT_APPLICATION_STATES = new Set(["REMOVED", "PENDING_UNINSTALL"]);
+
+function applicationReports(
+  value: Schema.Json | undefined,
+): AndroidApplicationReport[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const applications = new Map<string, AndroidApplicationReport>();
+
+  for (const entry of value) {
+    const report = recordOf(entry);
+
+    if (!report) continue;
+    const packageName = stringOf(report["packageName"]);
+
+    if (!packageName) continue;
+
+    const state = stringOf(report["state"]);
+
+    if (state && ANDROID_ABSENT_APPLICATION_STATES.has(state)) continue;
+
+    applications.set(packageName, {
+      bundleId: packageName,
+      name: stringOf(report["displayName"]) ?? packageName,
+      version: stringOf(report["versionName"]),
+    });
+  }
+
+  return [...applications.values()];
+}
+
+/**
+ * Everything Mattrax keeps from one AMAPI device resource.
+ *
+ * Google sends partial resources: a status notification can carry only the
+ * fields that changed, and several inventory groups (`softwareInfo`,
+ * `networkInfo`, `applicationReports`) depend on `statusReportingSettings` in
+ * the applied policy. Every optional field therefore means "the device did not
+ * report this", never "the value is now empty".
+ */
+export type AndroidDeviceResource = {
   readonly name: string;
   readonly enterpriseName: string;
   readonly state?: string;
+  /** Admin-assigned name, when the enterprise provides one. */
   readonly displayName?: string;
+  /** `hardwareInfo.hardware`: the hardware name, for example `Angler`. */
+  readonly hardwareName?: string;
   readonly model?: string;
   readonly manufacturer?: string;
+  readonly brand?: string;
   readonly serial?: string;
   readonly osVersion?: string;
+  readonly buildNumber?: string;
+  readonly securityPatchLevel?: string;
+  readonly apiLevel?: number;
+  readonly managementMode?: string;
+  readonly ownership?: string;
+  readonly appliedPolicyName?: string;
+  readonly appliedPolicyVersion?: string;
+  readonly enrollmentTokenName?: string;
+  readonly disabledReason?: string;
+  readonly networkOperator?: string;
+  readonly totalRam?: number;
+  readonly totalInternalStorage?: number;
   readonly enrolledAt?: Date;
   readonly lastSeenAt: Date;
+  /** `undefined` when the report did not include `applicationReports`. */
+  readonly applications?: ReadonlyArray<AndroidApplicationReport>;
+  /** True when any inventory field was present in the report. */
+  readonly hasInventory: boolean;
 };
 
-function parseDeviceResource(
+/**
+ * Parse one AMAPI `Device` resource.
+ *
+ * AMAPI has no single "device name" field: `displayName` is the name an
+ * enterprise assigns, `hardwareInfo.model` is the only user-visible name the
+ * device itself reports and `appliedPolicyName` identifies the policy it runs.
+ * The name precedence is documented on {@link androidReportedName}.
+ */
+export function parseAndroidDeviceResource(
   data: Schema.Json | undefined,
   fallbackEnterpriseName: string,
 ): AndroidDeviceResource | undefined {
@@ -709,22 +844,64 @@ function parseDeviceResource(
   const name = stringOf(record["name"]);
 
   if (!name) return undefined;
-  const hardware = recordOf(record["hardwareInfo"]) ?? {};
-  const software = recordOf(record["softwareInfo"]) ?? {};
+  const hardware = recordOf(record["hardwareInfo"]);
+  const software = recordOf(record["softwareInfo"]);
+  const memory = recordOf(record["memoryInfo"]);
+  const network = recordOf(record["networkInfo"]);
+  const disabledReason = recordOf(record["disabledReason"]);
 
-  return {
+  const applications = applicationReports(record["applicationReports"]);
+
+  const resource = {
     name,
     enterpriseName: stringOf(record["enterpriseName"]) ?? fallbackEnterpriseName,
     state: stringOf(record["state"]),
     displayName: stringOf(record["displayName"]),
-    model: stringOf(hardware["model"]) ?? stringOf(record["model"]),
-    manufacturer: stringOf(hardware["manufacturer"]) ?? stringOf(record["manufacturer"]),
-    serial: stringOf(hardware["serialNumber"]) ?? stringOf(record["serialNumber"]),
-    osVersion:
-      stringOf(software["androidVersion"]) ??
-      stringOf(software["androidBuildVersionSecurityPatchLevel"]),
+    hardwareName: stringOf(hardware?.["hardware"]),
+    model: stringOf(hardware?.["model"]) ?? stringOf(record["model"]),
+    manufacturer: stringOf(hardware?.["manufacturer"]) ?? stringOf(record["manufacturer"]),
+    brand: stringOf(hardware?.["brand"]),
+    serial: stringOf(hardware?.["serialNumber"]) ?? stringOf(record["serialNumber"]),
+    osVersion: stringOf(software?.["androidVersion"]),
+    buildNumber: stringOf(software?.["androidBuildNumber"]),
+    securityPatchLevel: stringOf(software?.["securityPatchLevel"]),
+    apiLevel: intOf(record["apiLevel"]),
+    managementMode: stringOf(record["managementMode"]),
+    ownership: stringOf(record["ownership"]),
+    appliedPolicyName: stringOf(record["appliedPolicyName"]),
+    appliedPolicyVersion: stringOf(record["appliedPolicyVersion"]),
+    enrollmentTokenName: stringOf(record["enrollmentTokenName"]),
+    // `UserFacingMessage.localizedMessage` is what the operator sees on the
+    // device; the message id alone is not actionable.
+    disabledReason: stringOf(disabledReason?.["localizedMessage"]),
+    // IMEI, MEID and Wi-Fi MAC are deliberately not parsed: they are personal
+    // data and no inventory view needs them.
+    networkOperator: stringOf(network?.["networkOperatorName"]),
+    totalRam: intOf(memory?.["totalRam"]),
+    totalInternalStorage: intOf(memory?.["totalInternalStorage"]),
     enrolledAt: dateOf(record["enrollmentTime"]),
     lastSeenAt: dateOf(record["lastStatusReportTime"]) ?? now(),
+    applications,
+  };
+
+  return {
+    ...resource,
+    hasInventory: [
+      resource.model,
+      resource.manufacturer,
+      resource.serial,
+      resource.osVersion,
+      resource.buildNumber,
+      resource.securityPatchLevel,
+      resource.apiLevel,
+      resource.totalRam,
+      resource.totalInternalStorage,
+      resource.networkOperator,
+      resource.appliedPolicyName,
+      resource.enrollmentTokenName,
+      resource.managementMode,
+      resource.ownership,
+    ].some((value) => value !== undefined),
   };
 }
 
@@ -754,6 +931,116 @@ type UpsertAndroidDeviceResult = {
   readonly created: boolean;
   readonly previousStatus?: string;
   readonly limitReached?: boolean;
+};
+
+type AndroidDeviceRow = typeof schema.device.$inferSelect;
+
+/** Never replace a known value with a value the report omitted. */
+const mergeValue = <T>(reported: T | undefined, known: T | null | undefined): T | null =>
+  reported ?? known ?? null;
+
+/**
+ * The name Android reports for the device.
+ *
+ * AMAPI does not expose the user-visible device name ("Oscar's Pixel"); the
+ * closest value is the enterprise-assigned `displayName` when present, then the
+ * hardware model Google reports (`Pixel 9`). The applied policy name is
+ * persisted separately on `android_device` so an unnamed device can still be
+ * traced to the policy that manages it.
+ */
+export const androidReportedName = (
+  resource: Pick<AndroidDeviceResource, "displayName" | "model">,
+): string | undefined => resource.displayName ?? resource.model;
+
+/**
+ * Merge one device resource into the `device` row.
+ *
+ * Google sends partial resources, so every optional field means "not reported
+ * in this notification". A missing `hardwareInfo` therefore keeps the known
+ * model and serial instead of blanking them, and `inventoryUpdatedAt` only
+ * moves when the report actually carried inventory.
+ */
+export const mergeAndroidDevice = (input: {
+  readonly existing?: AndroidDeviceRow;
+  readonly resource: AndroidDeviceResource;
+  readonly serial: string | null;
+  readonly status: "enrolling" | "enrolled" | "unenrolled";
+  readonly now: Date;
+}): Partial<typeof schema.device.$inferInsert> => {
+  const { existing, resource } = input;
+  const reportedName = androidReportedName(resource);
+
+  const name = existing
+    ? shouldApplyReportedName({
+        currentName: existing.name,
+        reportedName,
+        // Anything the server itself derived the current name from is a
+        // placeholder; an administrator's rename is not.
+        placeholders: [
+          existing.physicalName,
+          existing.dmIdentifier,
+          existing.serial,
+          existing.model,
+          resource.serial,
+          resource.model,
+        ],
+      })
+      ? (reportedName ?? existing.name)
+      : existing.name
+    : (reportedName ?? resource.serial ?? resource.name.split("/").at(-1) ?? "Android device");
+
+  return {
+    proto: "android",
+    status: input.status,
+    name,
+    physicalName: mergeValue(reportedName, existing?.physicalName),
+    model: mergeValue(resource.model, existing?.model),
+    modelIdentifier: mergeValue(resource.hardwareName, existing?.modelIdentifier),
+    serial: input.serial ?? existing?.serial ?? null,
+    vendor: mergeValue(resource.manufacturer ?? resource.brand, existing?.vendor) ?? "Google",
+    osEdition: existing?.osEdition ?? "Android",
+    osVersion: mergeValue(resource.osVersion, existing?.osVersion),
+    osBuild: mergeValue(resource.buildNumber, existing?.osBuild),
+    // AMAPI only reports totals; used storage is derived nowhere, so leave a
+    // previously known figure alone rather than clearing it.
+    diskTotal:
+      resource.totalInternalStorage !== undefined
+        ? String(resource.totalInternalStorage)
+        : (existing?.diskTotal ?? null),
+    lastSeenAt: resource.lastSeenAt,
+    inventoryUpdatedAt: resource.hasInventory ? input.now : (existing?.inventoryUpdatedAt ?? null),
+    dmIdentifier: resource.name,
+  };
+};
+
+/**
+ * Merge one device resource into the `android_device` row. Only values the
+ * report actually carried are returned, so an update patch never blanks a
+ * known column.
+ */
+export const mergeAndroidDeviceInfo = (
+  resource: AndroidDeviceResource,
+): Partial<typeof schema.androidDevice.$inferInsert> => {
+  const patch: Partial<typeof schema.androidDevice.$inferInsert> = {
+    state: resource.state,
+    managementMode: resource.managementMode,
+    ownership: resource.ownership,
+    apiLevel: resource.apiLevel,
+    securityPatchLevel: resource.securityPatchLevel,
+    appliedPolicyName: resource.appliedPolicyName,
+    appliedPolicyVersion: resource.appliedPolicyVersion,
+    enrollmentTokenName: resource.enrollmentTokenName,
+    disabledReason: resource.disabledReason,
+    networkOperator: resource.networkOperator,
+    totalRam: resource.totalRam,
+  };
+
+  // SAFETY: the keys are this object's own keys, so each one is a valid patch
+  // column and can be deleted when the report omitted it.
+  for (const key of Object.keys(patch) as Array<keyof typeof patch>)
+    if (patch[key] === undefined) delete patch[key];
+
+  return patch;
 };
 
 const upsertAndroidDevice = (input: {
@@ -808,27 +1095,18 @@ const upsertAndroidDevice = (input: {
     const timestamp = now();
     const status = androidDeviceStatus(input.resource.state);
 
-    const name =
-      input.resource.displayName ??
-      input.resource.model ??
-      input.resource.serial ??
-      input.resource.name.split("/").at(-1) ??
-      "Android device";
+    const devicePatch = mergeAndroidDevice({
+      existing: existingDevice,
+      resource: input.resource,
+      serial,
+      status,
+      now: timestamp,
+    });
 
     if (existingDevice) {
       yield* input.db
         .update(schema.device)
-        .set({
-          proto: "android",
-          status,
-          name,
-          model: input.resource.model ?? null,
-          serial,
-          lastSeenAt: input.resource.lastSeenAt,
-          vendor: input.resource.manufacturer ?? existingDevice.vendor ?? "Google",
-          osVersion: input.resource.osVersion ?? existingDevice.osVersion ?? null,
-          dmIdentifier: input.resource.name,
-        })
+        .set(devicePatch)
         .where(
           and(
             eq(schema.device.id, deviceId),
@@ -841,26 +1119,26 @@ const upsertAndroidDevice = (input: {
         organizationId: input.organizationId,
         proto: "android",
         status,
-        name,
-        model: input.resource.model ?? null,
-        modelIdentifier: null,
-        serial,
+        name: devicePatch.name ?? "Android device",
+        physicalName: devicePatch.physicalName ?? null,
+        model: devicePatch.model ?? null,
+        modelIdentifier: devicePatch.modelIdentifier ?? null,
+        serial: devicePatch.serial ?? null,
         enrolledAt: input.resource.enrolledAt ?? timestamp,
         lastSeenAt: input.resource.lastSeenAt,
         notes: null,
         assetTag: null,
-        physicalName: null,
-        vendor: input.resource.manufacturer ?? "Google",
-        osEdition: null,
-        osVersion: input.resource.osVersion ?? null,
-        osBuild: null,
-        diskTotal: null,
+        vendor: devicePatch.vendor ?? "Google",
+        osEdition: devicePatch.osEdition ?? "Android",
+        osVersion: devicePatch.osVersion ?? null,
+        osBuild: devicePatch.osBuild ?? null,
+        diskTotal: devicePatch.diskTotal ?? null,
         diskUsed: null,
         fileVaultEnabled: null,
         batteryHealth: null,
         capabilities: null,
         modelNumber: null,
-        inventoryUpdatedAt: null,
+        inventoryUpdatedAt: devicePatch.inventoryUpdatedAt ?? null,
         applicationsUpdatedAt: null,
         dmIdentifier: input.resource.name,
         dmCertHash: null,
@@ -869,6 +1147,7 @@ const upsertAndroidDevice = (input: {
       });
     }
 
+    const infoPatch = mergeAndroidDeviceInfo(input.resource);
     const mapping = yield* input.db.query.androidDevice.findFirst({ where: { deviceId } });
 
     if (!mapping) {
@@ -879,21 +1158,31 @@ const upsertAndroidDevice = (input: {
         deviceName: input.resource.name,
         policyId: null,
         policyHash: null,
-        state: input.resource.state ?? null,
         lastError: null,
         lastSyncedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
+        ...infoPatch,
       });
     } else {
       yield* updateAndroidDevice(input.db, deviceId, {
         organizationId: input.organizationId,
         enterpriseName: input.enterpriseName,
         deviceName: input.resource.name,
-        state: input.resource.state ?? null,
         lastError: null,
+        ...infoPatch,
       });
     }
+
+    // Google only sends `applicationReports` when the applied policy enables
+    // status reporting, so an absent list means "not reported", not "no apps".
+    if (input.resource.applications !== undefined)
+      yield* replaceDeviceApplications(input.db, {
+        deviceId,
+        organizationId: input.organizationId,
+        applications: input.resource.applications,
+        reportedAt: timestamp,
+      });
 
     return {
       deviceId,
@@ -945,7 +1234,15 @@ const syncAndroidPolicyForDevice = (input: {
     );
 
     const compiled = yield* Effect.tryPromise({
-      try: () => compileAndroidPolicyWithHash(configurations),
+      try: async () => {
+        // Mattrax needs software and application status to inventory a
+        // device, and Google disables both by default. The baseline sits
+        // underneath the tenant's own reporting settings, so an operator can
+        // still turn either off (at the cost of that inventory).
+        const policy = withStatusReporting(compileAndroidPolicy(configurations));
+
+        return { policy, hash: await androidPolicyHash(policy) };
+      },
       catch: (cause) =>
         new AndroidDeliveryError({
           kind: "invalid_payload",
@@ -1170,7 +1467,7 @@ const applyDeviceNotification = (
 
     if (!enterpriseName)
       return { status: "ignored" as const, reason: "enterprise has no Google name" };
-    const resource = parseDeviceResource(input.data, enterpriseName);
+    const resource = parseAndroidDeviceResource(input.data, enterpriseName);
 
     if (!resource) return { status: "ignored" as const, reason: "notification is not a device" };
 
@@ -1310,6 +1607,7 @@ const applyCommandNotification = (
           .update(schema.deviceCommand)
           .set({
             status: nextStatus,
+            dedupeKey: null,
             resultStatus: status ?? null,
             resultDetail: nextStatus === "failed" ? describeAndroidError(input.data) : null,
             updatedAt: now(),
@@ -1522,8 +1820,63 @@ export const issueAndroidCommand = (input: {
         }),
       );
     const android = yield* AndroidManagement;
-    const commandId = crypto.randomUUID();
     const timestamp = now();
+    const dedupePayload = { type: command.type };
+
+    const dedupeKey = yield* Effect.promise(() =>
+      commandDedupeKey(command.requestType, dedupePayload),
+    );
+
+    // Android issues commands directly, so de-duplicate before the network
+    // call: a double-clicked erase must not reach Google twice. Rows queued
+    // before the lifecycle columns existed have no key, so the request type is
+    // a safe fallback for these singleton actions.
+    const active = yield* input.db
+      .select()
+      .from(schema.deviceCommand)
+      .where(
+        and(
+          eq(schema.deviceCommand.deviceId, input.device.id),
+          inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+        ),
+      )
+      .orderBy(desc(schema.deviceCommand.createdAt))
+      .limit(50);
+
+    const duplicate = active.find(
+      (row) => row.dedupeKey === dedupeKey || row.requestType === command.requestType,
+    );
+
+    if (duplicate) {
+      const payload = Schema.is(Schema.JsonObject)(duplicate.payload) ? duplicate.payload : {};
+      const operationName = payload.operationName;
+
+      return {
+        operationName: Schema.is(Schema.String)(operationName) ? operationName : "",
+        commandId: duplicate.id,
+      };
+    }
+
+    // A wipe erases the device, so every other pending action is moot. Cancel
+    // them before issuing it rather than leaving work that can never run.
+    if (command.requestType === "AndroidWipe" && active.length > 0)
+      yield* input.db
+        .update(schema.deviceCommand)
+        .set({
+          status: "cancelled",
+          dedupeKey: null,
+          resultStatus: "Reconciled",
+          resultDetail: "The device was wiped before this action could run.",
+          updatedAt: timestamp,
+        })
+        .where(
+          inArray(
+            schema.deviceCommand.id,
+            active.map((row) => row.id),
+          ),
+        );
+
+    const commandId = crypto.randomUUID();
 
     const operation = yield* android
       .issueCommand({
@@ -1548,6 +1901,8 @@ export const issueAndroidCommand = (input: {
       requestType: command.requestType,
       payload: { type: command.type, operationName: operation.operationName },
       status: "sent",
+      dedupeKey,
+      expiresAt: deviceCommandExpiresAt(command.requestType, timestamp),
       resultStatus: null,
       resultDetail: null,
       createdAt: timestamp,

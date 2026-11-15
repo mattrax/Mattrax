@@ -56,7 +56,7 @@ import { ssoRoutes } from "./sso.js";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
-import { AppleMdmTrust, MdmError } from "@mattrax/dm-apple";
+import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
 import {
   isDevMailboxEnabled,
@@ -310,8 +310,7 @@ const optionalIsoDate = (value: string | undefined) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const onboardingReplyTo = () =>
-  apiEnv.MATTRAX_ONBOARDING_REPLY_TO ?? DEFAULT_ONBOARDING_REPLY_TO;
+const onboardingReplyTo = () => apiEnv.MATTRAX_ONBOARDING_REPLY_TO ?? DEFAULT_ONBOARDING_REPLY_TO;
 
 const onboardingSupportEmail = () =>
   apiEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL ?? ONBOARDING_SUPPORT_EMAIL;
@@ -447,11 +446,7 @@ const makeAppLayer = (env: Env) => {
 
   /** Dev mailbox records one entry per recipient so tests can find their own. */
   const replyToAddress = (replyTo: EmailReplyTo | undefined) =>
-    replyTo === undefined
-      ? undefined
-      : Schema.is(Schema.String)(replyTo)
-        ? replyTo
-        : replyTo.email;
+    replyTo === undefined ? undefined : Schema.is(Schema.String)(replyTo) ? replyTo : replyTo.email;
 
   const devEmail = devMailbox
     ? {
@@ -534,15 +529,35 @@ const makeAppLayer = (env: Env) => {
 
       return AppleMdmTrust.of({
         requireSignature: true,
-        caCertPems: Effect.gen(function* () {
-          const ca = yield* db.query.scepCa.findFirst();
+        // Each tenant has its own SCEP CA. The check-in identity certificate
+        // names the tenant in its OU, so only that tenant's CA is a valid trust
+        // anchor for the message signature.
+        caCertPems: (identityCertificateSubject) =>
+          Effect.gen(function* () {
+            if (!identityCertificateSubject) return [];
 
-          return ca ? [ca.certPem] : [];
-        }).pipe(
-          Effect.mapError(
-            (cause) => new MdmError({ message: `Could not load SCEP CA: ${String(cause)}` }),
+            let subject = identityCertificateSubject;
+
+            try {
+              subject = decodeURIComponent(subject);
+            } catch {
+              // The forwarder may already have decoded the header.
+            }
+
+            const organizationId = parseSubjectDn(subject).find(
+              (attribute) => attribute.type === "OU",
+            )?.value;
+
+            if (!organizationId) return [];
+
+            const ca = yield* db.query.scepCa.findFirst({ where: { organizationId } });
+
+            return ca ? [ca.certPem] : [];
+          }).pipe(
+            Effect.mapError(
+              (cause) => new MdmError({ message: `Could not load SCEP CA: ${String(cause)}` }),
+            ),
           ),
-        ),
       });
     }),
   ).pipe(Layer.provide(Db.layer));
@@ -670,18 +685,9 @@ const makeAppLayer = (env: Env) => {
                     origin: env.ORIGIN,
                     replyTo: onboardingReplyTo(),
                     supportEmail: onboardingSupportEmail(),
-                    followUpDays: parseDayCount(
-                      apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
-                      7,
-                    ),
-                    windowDays: parseDayCount(
-                      apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS,
-                      7,
-                    ),
-                    cooldownDays: parseDayCount(
-                      apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS,
-                      7,
-                    ),
+                    followUpDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS, 7),
+                    windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
+                    cooldownDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS, 7),
                     since: onboardingSince,
                   })
                 : null;
@@ -763,9 +769,63 @@ const checkDatabaseReady = (env: Env) =>
 
 const deploymentId = (env: Env): string | null => env.CF_VERSION_METADATA?.id ?? null;
 
+/**
+ * Prove object storage is writable, readable and deletable with one real probe
+ * object. A read-only volume or an unbound bucket fails here instead of on the
+ * first upload, backup or download.
+ */
+const checkStorageReady = async (env: Env): Promise<"ok"> => {
+  const key = `__readiness/${crypto.randomUUID()}`;
+  let failure: unknown;
+
+  try {
+    const object = await env.STORAGE.put(key, "ok", {
+      httpMetadata: { contentType: "text/plain; charset=utf-8" },
+    });
+
+    if (!object) throw new Error("storage probe put returned no object");
+
+    const head = await env.STORAGE.head(key);
+
+    if (!head) throw new Error("storage probe object is not readable");
+  } catch (cause) {
+    failure = cause;
+  }
+
+  try {
+    await env.STORAGE.delete(key);
+  } catch (cause) {
+    failure ??= cause;
+  }
+
+  if (failure) throw failure;
+
+  return "ok";
+};
+
+/**
+ * Outbound email is either configured, captured by the local dev mailbox, or
+ * explicitly declared disabled. Silence is not accepted: a deployment that
+ * forgot the binding must not report ready while every sign-in email fails.
+ */
+const checkMailerReady = async (env: Env): Promise<"ok" | "skipped"> => {
+  const disabled = apiEnv.MATTRAX_EMAIL_DISABLED?.trim().toLowerCase();
+
+  if (disabled === "true" || disabled === "1" || disabled === "yes" || disabled === "on")
+    return "skipped";
+
+  if (env.EMAIL) return "ok";
+
+  if (isDevMailboxEnabled(env, env.ORIGIN, env.ORIGIN)) return "ok";
+
+  throw new Error("no outbound email binding is configured");
+};
+
 const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {
   const result = await checkReadiness({
     checkDatabase: () => checkDatabaseReady(env),
+    checkStorage: () => checkStorageReady(env),
+    checkMailer: () => checkMailerReady(env),
     version,
     deploymentId: deploymentId(env),
   });
@@ -1088,15 +1148,9 @@ export default {
                 origin: apiEnv.ORIGIN,
                 replyTo: onboardingReplyTo(),
                 supportEmail: onboardingSupportEmail(),
-                followUpDays: parseDayCount(
-                  apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
-                  7,
-                ),
+                followUpDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS, 7),
                 windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
-                cooldownDays: parseDayCount(
-                  apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS,
-                  7,
-                ),
+                cooldownDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS, 7),
                 since: onboardingSince,
               })
             : null;

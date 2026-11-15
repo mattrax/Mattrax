@@ -854,19 +854,36 @@ export function parseScepPkcsReq(
 export async function createCaCertificate(
   keyPair: CryptoKeyPair,
   commonName: string,
+  options: { readonly organization?: string; readonly organizationalUnit?: string } = {},
 ): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = new asn1js.Integer({ value: 1 });
 
-  const name = new pkijs.RelativeDistinguishedNames({
-    typesAndValues: [
+  const attributes = [
+    new pkijs.AttributeTypeAndValue({
+      type: "2.5.4.3",
+      value: new asn1js.Utf8String({ value: commonName }),
+    }),
+  ];
+
+  if (options.organization)
+    attributes.push(
       new pkijs.AttributeTypeAndValue({
-        type: "2.5.4.3",
-        value: new asn1js.Utf8String({ value: commonName }),
+        type: "2.5.4.10",
+        value: new asn1js.Utf8String({ value: options.organization }),
       }),
-    ],
-  });
+    );
+
+  if (options.organizationalUnit)
+    attributes.push(
+      new pkijs.AttributeTypeAndValue({
+        type: "2.5.4.11",
+        value: new asn1js.Utf8String({ value: options.organizationalUnit }),
+      }),
+    );
+
+  const name = new pkijs.RelativeDistinguishedNames({ typesAndValues: attributes });
 
   cert.issuer = name;
   cert.subject = name;

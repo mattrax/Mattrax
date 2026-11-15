@@ -26,7 +26,7 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
-import { Effect } from "effect";
+import { Effect, Schema as EffectSchema } from "effect";
 
 /**
  * MySQL stores indexes as key prefixes. Every column that participates in a
@@ -119,8 +119,7 @@ export const hasMfaFactor = (subject: AuthSubjectFactors): boolean =>
  */
 export const authRequirementForSubject = (
   subject: AuthSubjectFactors,
-): Sessions.AuthenticationRequirement =>
-  authenticationRequirement(subject.totpEnabled === true);
+): Sessions.AuthenticationRequirement => authenticationRequirement(subject.totpEnabled === true);
 
 /**
  * Passkey ceremony rows. The managed layout stores the WebAuthn ceremony in
@@ -999,6 +998,47 @@ export const backupRun = mysqlTable(
   ],
 );
 
+/** One reclamation step of a tenant teardown, persisted for support. */
+export type TenantDeletionStep = {
+  readonly step: "devices" | "subscription" | "storage" | "tenant";
+  readonly status: "succeeded" | "failed" | "skipped";
+  /** Human-readable summary; never contains tokens or personal data. */
+  readonly detail: string;
+  /** Machine-readable outcome for steps the retry path reads back. */
+  readonly result?: string;
+  readonly count?: number;
+  readonly at: string;
+};
+
+/**
+ * Durable record of a tenant teardown. It deliberately has no foreign key to
+ * `organization`: the whole point is to keep a support-visible log of what was
+ * reclaimed after the tenant row (and its audit log) is gone. `steps` is also
+ * the retry journal, so repeating DELETE resumes instead of starting over.
+ */
+export const tenantDeletion = mysqlTable(
+  "tenant_deletion",
+  {
+    id: id().primaryKey(),
+    organizationId: shortText("organization_id").notNull(),
+    status: varchar("status", { length: 16, enum: ["pending", "failed", "completed"] })
+      .notNull()
+      .default("pending"),
+    steps: json("steps").$type<ReadonlyArray<TenantDeletionStep>>().notNull(),
+    attempts: int("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    requestedByUserId: shortText("requested_by_user_id"),
+    requestedByEmail: varchar("requested_by_email", { length: 320 }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("tenant_deletion_organization_unique").on(table.organizationId),
+    index("tenant_deletion_status_updated_idx").on(table.status, table.updatedAt),
+  ],
+);
+
 /**
  * One diagnostic record per public enrollment-link visit. Attempts are
  * append-only and short-lived (pruned by maintenance), and never contain the
@@ -1161,6 +1201,12 @@ export const device = mysqlTable(
     inventoryRequestedAt: timestamp("inventory_requested_at"),
     /** When the installed-application inventory was last refreshed. */
     applicationsUpdatedAt: timestamp("applications_updated_at"),
+    /**
+     * When the server last asked a Windows device for an installed-application
+     * snapshot. Separate from `applicationsUpdatedAt` so a device that never
+     * answers cannot make every check-in re-request the whole app inventory.
+     */
+    applicationsRequestedAt: timestamp("applications_requested_at"),
     dmIdentifier: shortText("dm_identifier"),
     dmCertHash: shortText("dm_cert_hash"),
     /**
@@ -1204,6 +1250,25 @@ export const androidDevice = mysqlTable(
     policyHash: shortText("policy_hash"),
     /** Last `state` reported by Google (for example `ACTIVE`). */
     state: varchar("state", { length: 32 }),
+    /** AMAPI `managementMode`: `DEVICE_OWNER`, `PROFILE_OWNER` or unspecified. */
+    managementMode: varchar("management_mode", { length: 32 }),
+    /** AMAPI `ownership`: `COMPANY_OWNED`, `PERSONALLY_OWNED` or unspecified. */
+    ownership: varchar("ownership", { length: 32 }),
+    /** Android platform API level (for example `34`). */
+    apiLevel: int("api_level"),
+    /** `softwareInfo.securityPatchLevel` (for example `2026-10-05`). */
+    securityPatchLevel: shortText("security_patch_level"),
+    /** `appliedPolicyName`, the Google resource name of the effective policy. */
+    appliedPolicyName: shortText("applied_policy_name"),
+    appliedPolicyVersion: shortText("applied_policy_version"),
+    /** `enrollmentTokenName`, so an operator can trace which token enrolled it. */
+    enrollmentTokenName: shortText("enrollment_token_name"),
+    /** `disabledReason.localizedMessage`, shown on the device while disabled. */
+    disabledReason: text("disabled_reason"),
+    /** Registered network operator from `networkInfo`. */
+    networkOperator: shortText("network_operator"),
+    /** `memoryInfo.totalRam`, in bytes (bigint: large devices exceed int4). */
+    totalRam: bigint("total_ram", { mode: "number" }),
     /** Truncated, secret-free description of the last sync failure. */
     lastError: text("last_error"),
     lastSyncedAt: timestamp("last_synced_at"),
@@ -1220,6 +1285,12 @@ export const androidDevice = mysqlTable(
  * Queued imperative MDM commands. DDM is the long-term policy channel, but
  * remote actions (lock, wipe, app install) still use the classic command
  * protocol and are delivered on the next device check-in.
+ *
+ * Lifecycle: `queued` -> `sent` -> `deferred` (the device returned NotNow) ->
+ * terminal (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`).
+ * `expiresAt` is the hard deadline derived from the per-request-type budget; a
+ * command is never delivered or retried after it, even if the device only
+ * comes back online weeks later.
  */
 export const deviceCommand = mysqlTable(
   "device_command",
@@ -1232,15 +1303,26 @@ export const deviceCommand = mysqlTable(
       .notNull()
       .references(() => device.id, { onDelete: "cascade" }),
     requestType: shortText("request_type").notNull(),
-    payload: json("payload"),
+    /** Apple/Windows command body; always a JSON value written by the command queue. */
+    payload: json("payload").$type<EffectSchema.Json | null>(),
     status: varchar("status", { length: 32 }).notNull().default("queued"),
+    /**
+     * SHA-256 of the request type and canonical payload while the command is
+     * still active; nulled when it reaches a terminal state. The unique index
+     * makes "double-click" de-duplication race-safe, while terminal history is
+     * free to repeat the same request.
+     */
+    dedupeKey: varchar("dedupe_key", { length: 64 }),
+    /** Delivery deadline. Null only for request types without a budget. */
+    expiresAt: timestamp("expires_at"),
     resultStatus: shortText("result_status"),
     resultDetail: text("result_detail"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("device_command_device_status_idx").on(table.deviceId, table.status),
+    index("device_command_device_status_idx").on(table.deviceId, table.status, table.expiresAt),
+    uniqueIndex("device_command_device_dedupe_unique").on(table.deviceId, table.dedupeKey),
     index("device_command_organization_idx").on(table.organizationId, table.createdAt),
   ],
 );
@@ -1331,6 +1413,8 @@ export const deviceApplication = mysqlTable(
     name: shortText("name"),
     version: shortText("version"),
     shortVersion: shortText("short_version"),
+    /** Vendor name reported by Windows `Win32AppInventory` entries. */
+    publisher: shortText("publisher"),
     /** Byte counts can exceed a signed 32-bit integer (for example Xcode). */
     bundleSize: bigint("bundle_size", { mode: "number" }),
     dynamicSize: bigint("dynamic_size", { mode: "number" }),
@@ -2106,12 +2190,33 @@ export const scepChallenge = mysqlTable(
   ],
 );
 
-export const scepCa = mysqlTable("scep_ca", {
-  id: int("id").autoincrement().primaryKey(),
-  certPem: text("cert_pem").notNull(),
-  privateKeyJwk: json("private_key_jwk").notNull(),
-  createdAt: timestamp("created_at").notNull(),
-});
+/**
+ * One active SCEP CA per tenant.
+ *
+ * The organization column is the logical key: every read, bootstrap, rotation
+ * and import is scoped by it, so one tenant's CA can never sign another
+ * tenant's identity. `id` is kept as an internal autoincrement identity only.
+ * The private key column holds a sealed envelope (see `@mattrax/scep`).
+ */
+export const scepCa = mysqlTable(
+  "scep_ca",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    certPem: text("cert_pem").notNull(),
+    privateKeyJwk: json("private_key_jwk").notNull(),
+    /** Whether Mattrax generated the CA or an operator supplied it. */
+    source: varchar("source", { length: 16, enum: ["generated", "imported"] })
+      .notNull()
+      .default("generated"),
+    createdAt: timestamp("created_at").notNull(),
+    /** Set when the CA was rotated or replaced by an operator import. */
+    rotatedAt: timestamp("rotated_at"),
+  },
+  (table) => [uniqueIndex("scep_ca_organization_unique").on(table.organizationId)],
+);
 
 export const relations = defineRelations(
   {
@@ -2128,6 +2233,7 @@ export const relations = defineRelations(
     mcpOAuthToken,
     auditLog,
     backupRun,
+    tenantDeletion,
     webhookEndpoint,
     webhookDelivery,
     ssoConfig,

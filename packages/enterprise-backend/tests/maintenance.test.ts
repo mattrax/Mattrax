@@ -39,7 +39,10 @@ describe("maintenance enrollment-attempt retention", () => {
 
     const result = await run(db);
     expect(result.purgedEnrollmentAttempts).toBe(1);
-    expect(db.store.enrollment_attempt.map((row) => row.id).sort()).toEqual(["boundary", "fresh"]);
+    expect(db.store.enrollment_attempt.map((row: { id: string }) => row.id).sort()).toEqual([
+      "boundary",
+      "fresh",
+    ]);
 
     // Idempotent: a second run has nothing left to delete.
     expect((await run(db)).purgedEnrollmentAttempts).toBe(0);
@@ -187,7 +190,10 @@ describe("maintenance webhook deliveries", () => {
 
     const result = await run(db);
     expect(result.purgedWebhookDeliveries).toBe(1);
-    expect(db.store.webhook_delivery.map((item) => item.id).sort()).toEqual(["boundary", "fresh"]);
+    expect(db.store.webhook_delivery.map((item: { id: string }) => item.id).sort()).toEqual([
+      "boundary",
+      "fresh",
+    ]);
   });
 
   it("retries a recent failed delivery with the sealed secret", async () => {
@@ -235,5 +241,92 @@ describe("maintenance webhook deliveries", () => {
       responseStatus: 200,
       error: null,
     });
+  });
+});
+
+describe("maintenance Apple application inventory", () => {
+  const makeDevice = (
+    id: string,
+    overrides: {
+      proto?: "apple" | "win" | "android";
+      status?: "enrolling" | "enrolled" | "unenrolling" | "unenrolled";
+      applicationsUpdatedAt?: Date | null;
+    } = {},
+  ) => ({
+    id,
+    organizationId: "org-1",
+    proto: "apple",
+    status: "enrolled",
+    name: id,
+    enrolledAt: new Date(now.getTime() - 30 * DAY),
+    lastSeenAt: now,
+    applicationsUpdatedAt: null,
+    ...overrides,
+  });
+
+  it("queues one refresh for every Apple device whose inventory is missing or stale", async () => {
+    const db = makeDb();
+    db.store.device.push(
+      makeDevice("never-reported"),
+      makeDevice("stale", { applicationsUpdatedAt: new Date(now.getTime() - 2 * DAY) }),
+      makeDevice("fresh", { applicationsUpdatedAt: new Date(now.getTime() - 60_000) }),
+      makeDevice("windows", { proto: "win" }),
+      makeDevice("android", { proto: "android" }),
+      makeDevice("unenrolled", { status: "unenrolled" }),
+    );
+
+    const result = await run(db);
+
+    expect(result.applicationInventoryRefreshes).toBe(2);
+    expect(
+      db.store.device_command.map((row: { deviceId: string | null }) => row.deviceId).sort(),
+    ).toEqual(["never-reported", "stale"]);
+    expect(db.store.device_command[0]).toMatchObject({
+      organizationId: "org-1",
+      requestType: "InstalledApplicationList",
+      status: "queued",
+    });
+
+    // A second daily run must not queue a second refresh while one is pending.
+    expect((await run(db)).applicationInventoryRefreshes).toBe(0);
+    expect(db.store.device_command).toHaveLength(2);
+  });
+
+  it("re-queues once the previous refresh finished", async () => {
+    const db = makeDb();
+    db.store.device.push(
+      makeDevice("stale", { applicationsUpdatedAt: new Date(now.getTime() - 2 * DAY) }),
+    );
+    db.store.device_command.push({
+      id: "command-1",
+      organizationId: "org-1",
+      deviceId: "stale",
+      requestType: "InstalledApplicationList",
+      payload: null,
+      status: "succeeded",
+      createdAt: new Date(now.getTime() - 3 * DAY),
+      updatedAt: new Date(now.getTime() - 3 * DAY),
+    });
+
+    expect((await run(db)).applicationInventoryRefreshes).toBe(1);
+    expect(db.store.device_command).toHaveLength(2);
+  });
+
+  it("can be disabled", async () => {
+    const db = makeDb();
+    db.store.device.push(makeDevice("never-reported"));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        dynamicGroups: false,
+        applicationInventory: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.applicationInventoryRefreshes).toBe(0);
+    expect(db.store.device_command).toHaveLength(0);
   });
 });

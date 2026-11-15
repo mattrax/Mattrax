@@ -21,6 +21,9 @@ const context: DeclarationContext = {
   origin: "https://mdm.example.com",
   authSecret: "test-secret",
   deviceToken: "device-token-1",
+  deviceId: "device-1",
+  // Fixed clock keeps the expiring asset URL deterministic.
+  now: 1_700_000_000_000,
 };
 
 const row = (overrides: Partial<PolicyConfigurationRow> = {}): PolicyConfigurationRow => ({
@@ -109,11 +112,66 @@ describe("enterprise policy compiler", () => {
     expect(url.pathname).toBe("/mdm/apple/assets/policy-1.mttx.apple.certificate.root.asset");
     const token = url.searchParams.get("token")!;
     await expect(
-      verifyAppleAssetToken(context.authSecret, token, "policy-1", "mttx.apple.certificate.root"),
-    ).resolves.toBe(true);
+      verifyAppleAssetToken(
+        context.authSecret,
+        token,
+        { policyId: "policy-1", kind: "mttx.apple.certificate.root" },
+        context.now,
+      ),
+    ).resolves.toMatchObject({
+      policyId: "policy-1",
+      kind: "mttx.apple.certificate.root",
+      deviceId: "device-1",
+    });
     await expect(
-      verifyAppleAssetToken(context.authSecret, token, "policy-1", "mttx.apple.certificate.other"),
-    ).resolves.toBe(false);
+      verifyAppleAssetToken(
+        context.authSecret,
+        token,
+        { policyId: "policy-1", kind: "mttx.apple.certificate.other" },
+        context.now,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("expires asset links and refreshes their declaration token", async () => {
+    const certificate = row({
+      kind: "mttx.apple.certificate.root",
+      data: { pem: certificatePem },
+      hash: "cert-hash",
+    });
+
+    const declaration = await buildAssetDeclaration(certificate, context);
+    const reference = Schema.decodeUnknownSync(Schema.JsonObject)(declaration!.Payload.Reference);
+    const assetUrl = Schema.decodeUnknownSync(Schema.String)(reference.DataURL);
+    const token = new URL(assetUrl).searchParams.get("token")!;
+
+    const expiry = verifyAppleAssetToken(
+      context.authSecret,
+      token,
+      { policyId: "policy-1", kind: "mttx.apple.certificate.root" },
+      context.now!,
+    );
+
+    await expect(expiry).resolves.not.toBeNull();
+
+    // Two hours later the same link is rejected.
+    await expect(
+      verifyAppleAssetToken(
+        context.authSecret,
+        token,
+        { policyId: "policy-1", kind: "mttx.apple.certificate.root" },
+        context.now! + 2 * 60 * 60 * 1000,
+      ),
+    ).resolves.toBeNull();
+
+    // A later sync produces a different ServerToken (so the device re-fetches
+    // the declaration) and a token that is valid again.
+    const refreshed = await buildAssetDeclaration(certificate, {
+      ...context,
+      now: context.now! + 60 * 60 * 1000,
+    });
+
+    expect(refreshed!.ServerToken).not.toBe(declaration!.ServerToken);
   });
 
   it("passes through custom declarations with the supplied kind", async () => {

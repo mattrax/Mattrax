@@ -29,6 +29,11 @@ export default function EnrollmentSettingsPage() {
     queryFn: () => enterprise.getApns(params.tenantId),
   }));
 
+  const scepCa = useQuery(() => ({
+    queryKey: enterpriseKeys.scepCa(params.tenantId),
+    queryFn: () => enterprise.getTenantScepCa(params.tenantId),
+  }));
+
   const androidEnterprise = useQuery(() => ({
     queryKey: enterpriseKeys.android(params.tenantId),
     queryFn: () => enterprise.getTenantAndroid(params.tenantId),
@@ -48,6 +53,10 @@ export default function EnrollmentSettingsPage() {
   const [code, setCode] = createSignal("");
   const [maxDevices, setMaxDevices] = createSignal(100);
   const [confirmReset, setConfirmReset] = createSignal(false);
+  const [confirmRotateCa, setConfirmRotateCa] = createSignal(false);
+  const [showCaImport, setShowCaImport] = createSignal(false);
+  const [caCertificatePem, setCaCertificatePem] = createSignal("");
+  const [caPrivateKeyPem, setCaPrivateKeyPem] = createSignal("");
   const [apple, setApple] = createSignal(false);
   const [windows, setWindows] = createSignal(false);
   const [android, setAndroid] = createSignal(false);
@@ -104,14 +113,40 @@ export default function EnrollmentSettingsPage() {
     },
   }));
 
+  const invalidateScep = () =>
+    qc.invalidateQueries({ queryKey: enterpriseKeys.scepCa(params.tenantId) });
+
+  const rotateCa = useMutation(() => ({
+    mutationFn: () => enterprise.rotateTenantScepCa(params.tenantId),
+    onSuccess: async () => {
+      setConfirmRotateCa(false);
+      await invalidateScep();
+    },
+  }));
+
+  const importCa = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.importTenantScepCa(params.tenantId, {
+        certificatePem: caCertificatePem(),
+        privateKeyPem: caPrivateKeyPem(),
+      }),
+    onSuccess: async () => {
+      setShowCaImport(false);
+      setCaCertificatePem("");
+      setCaPrivateKeyPem("");
+      await invalidateScep();
+    },
+  }));
+
   return (
     <div class="grid gap-5 xl:grid-cols-2">
       <QueryError
         class="xl:col-span-2"
-        error={enrollment.error ?? apns.error ?? preRegistrations.error}
+        error={enrollment.error ?? apns.error ?? scepCa.error ?? preRegistrations.error}
         onRetry={() => {
           void enrollment.refetch();
           void apns.refetch();
+          void scepCa.refetch();
           void preRegistrations.refetch();
         }}
       />
@@ -247,8 +282,8 @@ export default function EnrollmentSettingsPage() {
           <p class="mt-4 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs leading-relaxed text-warning-foreground">
             <Info class="mt-px size-3.5 shrink-0" />
             <span>
-              Apple enrollment is on, but push notifications are not set up. Devices can enroll,
-              yet commands and policy updates will not reach them until APNs is connected.{" "}
+              Apple enrollment is on, but push notifications are not set up. Devices can enroll, yet
+              commands and policy updates will not reach them until APNs is connected.{" "}
               <a
                 class="font-medium underline underline-offset-2"
                 href={`/t/${params.tenantId}/settings/management`}
@@ -311,6 +346,154 @@ export default function EnrollmentSettingsPage() {
             >
               Reset enrollment URL
             </Button>
+          </Show>
+        </div>
+      </Panel>
+
+      <Panel
+        title="SCEP identity"
+        description="Each tenant has its own CA. Devices receive their management identity from it, and the enrollment profile is signed with it."
+      >
+        <div class="divide-y divide-white/[0.05]">
+          <ReadinessRow
+            label="Tenant CA"
+            value={scepCa.data?.configured ? "Created" : "Generated on first use"}
+            active={!!scepCa.data?.configured}
+          />
+          <ReadinessRow
+            label="Profile signature"
+            value={scepCa.data?.configured ? "Signed" : "Signs on first download"}
+            active={!!scepCa.data?.configured}
+          />
+        </div>
+
+        <Show when={scepCa.data?.configured}>
+          <dl class="mt-4 grid gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs sm:grid-cols-2">
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">CA certificate</dt>
+              <dd class="mt-0.5 truncate font-medium text-foreground">
+                {scepCa.data?.commonName ?? "Mattrax SCEP CA"}
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">Source</dt>
+              <dd class="mt-0.5 font-medium capitalize text-foreground">
+                {scepCa.data?.source ?? "generated"}
+              </dd>
+            </div>
+            <div class="min-w-0 sm:col-span-2">
+              <dt class="text-muted-foreground">SHA-256 fingerprint</dt>
+              <dd class="mt-0.5 break-all font-mono text-[11px] text-foreground">
+                {scepCa.data?.fingerprintSha256}
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">Expires</dt>
+              <dd class="mt-0.5 text-foreground">
+                {scepCa.data?.notAfter
+                  ? new Date(scepCa.data.notAfter).toLocaleString()
+                  : "Unknown"}
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">Last rotated</dt>
+              <dd class="mt-0.5 text-foreground">
+                {scepCa.data?.rotatedAt
+                  ? new Date(scepCa.data.rotatedAt).toLocaleString()
+                  : "Never"}
+              </dd>
+            </div>
+          </dl>
+        </Show>
+
+        <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Input
+            readonly
+            aria-label="Tenant SCEP URL"
+            value={scepCa.data?.scepUrl ?? ""}
+            onClick={(e) => e.currentTarget.select()}
+            class="min-w-0 flex-1"
+          />
+          <Button
+            variant="outline"
+            class="shrink-0"
+            onClick={() => navigator.clipboard.writeText(scepCa.data?.scepUrl ?? "")}
+            disabled={!scepCa.data?.scepUrl}
+          >
+            Copy
+          </Button>
+        </div>
+
+        <Show when={showCaImport()}>
+          <div class="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+            <Field
+              label="CA certificate"
+              hint="PEM encoded. The CA must permit certificate signing."
+            >
+              <textarea
+                class="min-h-24 w-full rounded-lg border border-input bg-white/[0.02] p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                aria-label="SCEP CA certificate PEM"
+                placeholder="-----BEGIN CERTIFICATE-----"
+                value={caCertificatePem()}
+                onInput={(event) => setCaCertificatePem(event.currentTarget.value)}
+              />
+            </Field>
+            <Field
+              label="CA private key"
+              hint="Unencrypted PKCS#8 PEM. It is sealed with the deployment secret before storage."
+            >
+              <textarea
+                class="min-h-24 w-full rounded-lg border border-input bg-white/[0.02] p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                aria-label="SCEP CA private key PEM"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                value={caPrivateKeyPem()}
+                onInput={(event) => setCaPrivateKeyPem(event.currentTarget.value)}
+              />
+            </Field>
+            <p class="text-xs leading-relaxed text-muted-foreground">
+              Importing a CA replaces the current one and revokes existing device identities.
+              Devices must enroll again.
+            </p>
+          </div>
+        </Show>
+
+        <ErrorText error={rotateCa.error || importCa.error} />
+
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
+          <Show
+            when={writable()}
+            fallback={
+              <ReadOnlyNotice>
+                Your role can view the SCEP identity but not rotate or import it.
+              </ReadOnlyNotice>
+            }
+          >
+            <Show when={showCaImport()}>
+              <Button onClick={() => importCa.mutate()} disabled={importCa.isPending}>
+                {importCa.isPending ? "Importing…" : "Import CA"}
+              </Button>
+              <Button variant="ghost" onClick={() => setShowCaImport(false)}>
+                Cancel
+              </Button>
+            </Show>
+            <Show when={!showCaImport()}>
+              <Button
+                variant="outline"
+                onClick={() => setShowCaImport(true)}
+                disabled={importCa.isPending}
+              >
+                {scepCa.data?.configured ? "Use a custom CA" : "Upload a CA"}
+              </Button>
+              <Show when={scepCa.data?.configured}>
+                <Button
+                  variant="destructive"
+                  onClick={() => setConfirmRotateCa(true)}
+                  disabled={rotateCa.isPending}
+                >
+                  Rotate CA
+                </Button>
+              </Show>
+            </Show>
           </Show>
         </div>
       </Panel>
@@ -460,6 +643,17 @@ export default function EnrollmentSettingsPage() {
           <ErrorText error={attempts.error} />
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={confirmRotateCa()}
+        onOpenChange={setConfirmRotateCa}
+        title="Rotate the tenant SCEP CA?"
+        description="Every identity certificate issued by the current CA stops working for renewal and check-in, and every managed Apple device must enroll again. Other tenants are not affected."
+        confirmLabel="Rotate CA"
+        destructive
+        pending={rotateCa.isPending}
+        onConfirm={() => rotateCa.mutate()}
+      />
 
       <ConfirmDialog
         open={confirmReset()}

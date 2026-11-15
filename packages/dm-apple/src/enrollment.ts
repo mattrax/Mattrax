@@ -19,6 +19,8 @@ export type AppleEnrollmentProfileOptions = {
   readonly supportEmail?: string;
   /** Per-enrollment SCEP challenge password. */
   readonly challenge: string;
+  /** Overrides the tenant-scoped SCEP URL (normally derived from organizationId). */
+  readonly scepUrl?: string;
   readonly displayName?: string;
   readonly identifier?: string;
   /** Stable ADE profile UUID; defaults to the shared enrollment profile UUID. */
@@ -53,6 +55,12 @@ export const buildAppleEnrollmentProfile = (
   const profileUuid = options.profileUuid ?? "F0E1D2C3-B4A5-4968-8776-655443322110";
   const displayName = options.displayName ?? `${options.organizationName} Enrollment`;
 
+  // SCEP is per tenant: the URL names the tenant so GetCACert and PKIOperation
+  // resolve that tenant's CA and nothing else. A path segment (not a query
+  // parameter) survives the `?operation=...` suffix SCEP clients append.
+  const scepUrl =
+    options.scepUrl ?? `${origin}/mdm/apple/scep/${encodeURIComponent(options.organizationId)}`;
+
   const profile: AppleEnrollmentProfile = {
     PayloadContent: [
       {
@@ -66,7 +74,7 @@ export const buildAppleEnrollmentProfile = (
             [["OU", options.organizationId]],
             [["CN", `${options.organizationName} Identity`]],
           ],
-          URL: `${origin}/mdm/apple/scep`,
+          URL: scepUrl,
         },
         PayloadIdentifier: "com.mattrax.scep",
         PayloadType: "com.apple.security.scep",

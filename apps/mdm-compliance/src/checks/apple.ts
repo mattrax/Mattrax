@@ -133,7 +133,7 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.ok(scep && mdm);
       assert.equal(scep.PayloadContent.Challenge, "challenge-compliance");
-      assert.equal(scep.PayloadContent.URL, `${origin}/mdm/apple/scep`);
+      assert.equal(scep.PayloadContent.URL, `${origin}/mdm/apple/scep/tenant-compliance`);
       assert.equal(scep.PayloadContent["Key Usage"], 5);
       assert.equal(mdm.IdentityCertificateUUID, scep.PayloadUUID);
       assert.equal(mdm.ServerURL, `${origin}/mdm/apple/mdm`);
@@ -143,9 +143,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.ok(
         mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.bootstraptoken"),
       );
-      assert.ok(
-        mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.token"),
-      );
+      assert.ok(mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.token"));
     },
   ),
   check(
@@ -317,8 +315,8 @@ export const appleChecks: ReadonlyArray<Check> = [
       const harness = createAppleHarness();
       harness.state.checkinQueue.push(
         ManagementManifest.members[1].make({
-        commandUUID: "command-1",
-        requestType: "DeviceInformation",
+          commandUUID: "command-1",
+          requestType: "DeviceInformation",
           payload: { Queries: ["DeviceName"] },
         }),
       );
@@ -357,8 +355,8 @@ export const appleChecks: ReadonlyArray<Check> = [
       const harness = createAppleHarness();
       harness.state.checkinQueue.push(
         ManagementManifest.members[1].make({
-        commandUUID: "command-2",
-        requestType: "SecurityInfo",
+          commandUUID: "command-2",
+          requestType: "SecurityInfo",
           payload: {},
         }),
       );
@@ -467,8 +465,8 @@ export const appleChecks: ReadonlyArray<Check> = [
       const harness = createAppleHarness();
       harness.state.checkinQueue.push(
         ManagementManifest.members[1].make({
-        commandUUID: "command-clear",
-        requestType: "ClearPasscode",
+          commandUUID: "command-clear",
+          requestType: "ClearPasscode",
           payload: { UnlockToken: btoa(String.fromCharCode(1, 2, 3, 4)) },
         }),
       );
@@ -652,7 +650,8 @@ export const appleChecks: ReadonlyArray<Check> = [
       const event = harness.state.events[0]!.event;
       assert.ok(Predicate.isTagged(event, "BootstrapToken"));
 
-      if (Predicate.isTagged(event, "BootstrapToken")) assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
+      if (Predicate.isTagged(event, "BootstrapToken"))
+        assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
     },
   ),
   check(
@@ -769,7 +768,7 @@ export const appleChecks: ReadonlyArray<Check> = [
     "When the host requires signed device messages, a request without Mdm-Signature must be rejected.",
     async () => {
       const harness = createAppleHarness({
-        trust: { requireSignature: true, caCertPems: Effect.succeed([]) },
+        trust: { requireSignature: true, caCertPems: () => Effect.succeed([]) },
       });
 
       const response = await harness.handler(await appleMdmRequest(authenticate()));

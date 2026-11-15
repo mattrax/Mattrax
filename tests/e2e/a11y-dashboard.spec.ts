@@ -38,7 +38,7 @@ const entityQueryContrast: Allow = (target, rule) =>
  * contrast fix is tracked there and allowlisted here.
  */
 const settingsSupportLink: Allow = (target, rule) =>
-  rule === "color-contrast" && target.includes('mailto:hello@mattrax.app');
+  rule === "color-contrast" && target.includes("mailto:hello@mattrax.app");
 
 const knownContrast: Allow = (target, rule) =>
   widgetContrast(target, rule) ||
@@ -288,7 +288,10 @@ test.describe("dashboard accessibility", () => {
     await expect(status).toHaveText(/No results/, { timeout: 10_000 });
     await expect(page.locator('input[role="combobox"]')).toHaveAttribute("aria-expanded", "false");
     await expect(
-      page.locator('[data-slot="command-palette"]').getByText("No results.", { exact: true }).first(),
+      page
+        .locator('[data-slot="command-palette"]')
+        .getByText("No results.", { exact: true })
+        .first(),
     ).toBeVisible();
 
     await input.fill("settings");
@@ -296,4 +299,3 @@ test.describe("dashboard accessibility", () => {
     await expect(page.locator('input[role="combobox"]')).toHaveAttribute("aria-expanded", "true");
   });
 });
-

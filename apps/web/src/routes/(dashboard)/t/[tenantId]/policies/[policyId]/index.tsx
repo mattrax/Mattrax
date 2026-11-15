@@ -33,7 +33,9 @@ import {
   SlidersHorizontal,
   Wifi,
 } from "~/components/ui/icons";
+import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import {
   parsePolicyDraft,
@@ -274,7 +276,14 @@ export default function PolicyDetailPage() {
         notes: notes() || null,
         priority: Number(priority()) || 0,
       }),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Policy saved");
+    },
+    onError: (error) =>
+      toast.error("Could not save the policy", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const addConfigurations = useMutation(() => ({

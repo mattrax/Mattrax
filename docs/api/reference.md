@@ -28,7 +28,7 @@ All paths are relative to `/api/v1` unless noted. Authentication and conventions
 | `POST`   | `/tenants`                          | Create a tenant                       |
 | `GET`    | `/tenants/:tenantId`                | Tenant detail and branding            |
 | `PATCH`  | `/tenants/:tenantId`                | Update name, slug, branding, metadata |
-| `DELETE` | `/tenants/:tenantId`                | Delete a tenant (owner + step-up)     |
+| `DELETE` | `/tenants/:tenantId`                | Full teardown (owner + step-up)       |
 
 ### Auth actions
 
@@ -47,13 +47,17 @@ Responses use `{ _tag: "Success", value }`, `{ _tag: "Failure", error }` or
 
 ## Tenants, export and backups
 
-| Method | Path                                      | Purpose                                     |
-| ------ | ----------------------------------------- | ------------------------------------------- |
-| `GET`  | `/tenants/:tenantId/export`               | Versioned JSON bundle; `?includeAudit=true` |
-| `POST` | `/tenants/import`                         | Import a bundle as a new tenant             |
-| `POST` | `/tenants/:tenantId/backups`              | Run a backup now                            |
-| `GET`  | `/tenants/:tenantId/backups`              | List backup runs                            |
-| `GET`  | `/tenants/:tenantId/backups/:id/download` | Download a bundle (step-up)                 |
+| Method   | Path                                      | Purpose                                     |
+| -------- | ----------------------------------------- | ------------------------------------------- |
+| `GET`    | `/tenants/:tenantId/export`               | Versioned JSON bundle; `?includeAudit=true` |
+| `POST`   | `/tenants/import`                         | Import a bundle as a new tenant             |
+| `POST`   | `/tenants/:tenantId/backups`              | Run a backup now                            |
+| `GET`    | `/tenants/:tenantId/backups`              | List backup runs                            |
+| `GET`    | `/tenants/:tenantId/backups/:id/download` | Download a bundle (step-up)                 |
+| `POST`   | `/tenants/:tenantId/backups/:id/pin`      | Keep a run past retention (step-up)         |
+| `POST`   | `/tenants/:tenantId/backups/:id/unpin`    | Return a run to retention (step-up)         |
+| `DELETE` | `/tenants/:tenantId/backups/:id`          | Delete a run and its object (step-up)       |
+| `POST`   | `/tenants/:tenantId/backups/:id/restore`  | Restore in place (step-up, slug confirm)    |
 
 ## SSO, directory and SCIM tokens
 
@@ -81,15 +85,18 @@ Responses use `{ _tag: "Success", value }`, `{ _tag: "Failure", error }` or
 
 ## Enrollment
 
-| Method  | Path                                     | Purpose                                      |
-| ------- | ---------------------------------------- | -------------------------------------------- |
-| `GET`   | `/enrollment/:id`                        | Public enrollment data; `code?`, `platform?` |
-| `GET`   | `/enrollment/:id/apple.mobileconfig`     | Signed Apple profile                         |
-| `GET`   | `/abm/ade/:token`                        | ADE profile from a signed token              |
-| `GET`   | `/tenants/:tenantId/enrollment`          | Settings and Windows discovery URL           |
-| `GET`   | `/tenants/:tenantId/enrollment/attempts` | Diagnostic attempts                          |
-| `PATCH` | `/tenants/:tenantId/enrollment`          | Toggle platforms, code, cap                  |
-| `POST`  | `/tenants/:tenantId/enrollment/reset`    | Replace the enrollment id                    |
+| Method  | Path                                      | Purpose                                      |
+| ------- | ----------------------------------------- | -------------------------------------------- |
+| `GET`   | `/enrollment/:id`                         | Public enrollment data; `code?`, `platform?` |
+| `GET`   | `/enrollment/:id/apple.mobileconfig`      | Signed Apple profile                         |
+| `GET`   | `/abm/ade/:token`                         | ADE profile from a signed token              |
+| `GET`   | `/tenants/:tenantId/enrollment`           | Settings and Windows discovery URL           |
+| `GET`   | `/tenants/:tenantId/enrollment/attempts`  | Diagnostic attempts                          |
+| `PATCH` | `/tenants/:tenantId/enrollment`           | Toggle platforms, code, cap                  |
+| `POST`  | `/tenants/:tenantId/enrollment/reset`     | Replace the enrollment id                    |
+| `GET`   | `/tenants/:tenantId/identity/scep`        | Tenant CA metadata and SCEP URL              |
+| `PUT`   | `/tenants/:tenantId/identity/scep`        | Import a tenant CA                           |
+| `POST`  | `/tenants/:tenantId/identity/scep/rotate` | Rotate the tenant CA                         |
 
 ## Apple push
 
@@ -266,8 +273,8 @@ Responses use `{ _tag: "Success", value }`, `{ _tag: "Failure", error }` or
 | Method | Path                                               | Purpose                     |
 | ------ | -------------------------------------------------- | --------------------------- |
 | `PUT`  | `/mdm/apple/mdm`                                   | Apple check-in and commands |
-| `GET`  | `/mdm/apple/scep`                                  | SCEP CA caps/cert           |
-| `POST` | `/mdm/apple/scep`                                  | SCEP PKIOperation           |
+| `GET`  | `/mdm/apple/scep/:organizationId`                  | SCEP CA caps/cert           |
+| `POST` | `/mdm/apple/scep/:organizationId`                  | SCEP PKIOperation           |
 | `GET`  | `/mdm/apple/assets/:identifier`                    | DDM asset                   |
 | `GET`  | `/mdm/apple/profiles/:deviceToken/:policyId/:kind` | Signed legacy profile       |
 | `POST` | `/mdm/windows/discovery`                           | Windows discovery           |

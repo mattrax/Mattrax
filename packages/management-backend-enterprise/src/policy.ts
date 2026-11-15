@@ -1,9 +1,12 @@
 import { Effect, Exit, Schema } from "effect";
 import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
+  appleAssetTokenEpoch,
+  appleAssetTokenExpiresAt,
   signAppleAssetToken,
   signAppleProfileToken,
   verifyAppleAssetToken,
+  type VerifiedAppleAssetToken,
 } from "@mattrax/dm-apple";
 import { isPlistObject, plistText, type PlistObject } from "./internal/plistValue.js";
 
@@ -33,6 +36,10 @@ export type DeclarationContext = {
   /** Empty string is allowed so local development still produces stable URLs. */
   readonly authSecret: string;
   readonly deviceToken: string;
+  /** Stable internal device id used to bind expiring asset links. */
+  readonly deviceId: string;
+  /** Injectable clock for deterministic URLs and tokens in tests. */
+  readonly now?: number;
 };
 
 export type CompiledDeclaration = {
@@ -407,13 +414,28 @@ export const configurationServerToken = async (
   return row.hash;
 };
 
+/**
+ * Asset declaration server token.
+ *
+ * It rotates on the same fixed window as the signed `DataURL`, so a device
+ * whose declaration is still cached is told to fetch the new declaration before
+ * its previous link expires. The window is part of the token, not the exact
+ * issuance time, so every device in a tenant converges on the same value.
+ */
 export const configurationAssetServerToken = async (
   row: PolicyConfigurationRow,
-  context: Pick<DeclarationContext, "origin" | "deviceToken">,
+  context: Pick<DeclarationContext, "origin" | "deviceToken" | "now">,
 ): Promise<string> =>
   (
     await sha256Hex(
-      [row.hash, context.origin, context.deviceToken, row.policyId, row.kind].join("\u0000"),
+      [
+        row.hash,
+        context.origin,
+        context.deviceToken,
+        row.policyId,
+        row.kind,
+        String(appleAssetTokenEpoch(context.now)),
+      ].join("\u0000"),
     )
   ).toUpperCase();
 
@@ -491,7 +513,14 @@ export const buildAssetDeclaration = async (
 
   const identifier = configurationAssetIdentifier(row.policyId, row.kind);
   const serverToken = await configurationAssetServerToken(row, context);
-  const assetToken = await signAppleAssetToken(context.authSecret, row.policyId, row.kind);
+
+  const assetToken = await signAppleAssetToken(context.authSecret, {
+    policyId: row.policyId,
+    kind: row.kind,
+    deviceId: context.deviceId,
+    expiresAt: appleAssetTokenExpiresAt(context.now),
+  });
+
   const pemBytes = encoder.encode(data.pem);
   const origin = trimTrailingSlash(context.origin);
 
@@ -616,12 +645,23 @@ export const certificateAllowsOrganization = (
   organizationId: string,
 ): boolean => certificateOrganizationalUnit(identityCertificate) === organizationId;
 
+/**
+ * Verify a DDM asset `DataURL` token.
+ *
+ * Returns the device token and expiry the link was issued for, or `null` when it
+ * is malformed, expired, tampered with or belongs to another policy/kind. The
+ * caller must resolve `deviceToken` and confirm the device is still enrolled for
+ * the policy's tenant, which is what makes the link revocable.
+ */
 export const verifyAssetRequestToken = (
   authSecret: string,
   token: string | undefined,
   row: Pick<PolicyConfigurationRow, "policyId" | "kind">,
-): Promise<boolean> =>
-  token ? verifyAppleAssetToken(authSecret, token, row.policyId, row.kind) : Promise.resolve(false);
+  now?: number,
+): Promise<VerifiedAppleAssetToken | null> =>
+  token
+    ? verifyAppleAssetToken(authSecret, token, { policyId: row.policyId, kind: row.kind }, now)
+    : Promise.resolve(null);
 
 export type WindowsPolicyNode = {
   omaUri: string;

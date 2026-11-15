@@ -6,18 +6,16 @@ import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
+import {
+  SITE_DEFAULT_ORIGIN,
+  SITE_DESCRIPTION,
+  SITE_SOCIAL_IMAGE,
+  SITE_TITLE,
+  SITE_TOUCH_ICON,
+} from "~/lib/site";
 import "./app.css";
 
 const Router = createRouter({ routes: fileRoutes(pageRoutes) });
-
-const SITE_TITLE = "Mattrax";
-
-const SITE_DESCRIPTION =
-  "Enrollment, policy, inventory and remote actions for Apple, Windows and Android fleets, with a clean API, a real audit trail and a deployment model that fits how you work.";
-
-const SOCIAL_IMAGE = "/assets/brand/og-image.jpg";
-
-const TOUCH_ICON = "/assets/brand/apple-touch-icon.png";
 
 /** Public origin for absolute social URLs; localhost and self-hosted deployments keep their own host. */
 function siteOrigin() {
@@ -27,7 +25,7 @@ function siteOrigin() {
     if (request) return new URL(request.url).origin;
   }
 
-  return typeof window === "undefined" ? "https://mattrax.app" : window.location.origin;
+  return typeof window === "undefined" ? SITE_DEFAULT_ORIGIN : window.location.origin;
 }
 
 function BootSplash() {
@@ -106,10 +104,10 @@ export default function App() {
           <Meta property="og:title" content={SITE_TITLE} />
           <Meta property="og:description" content={SITE_DESCRIPTION} />
           <Meta property="og:type" content="website" />
-          <Meta property="og:image" content={`${origin}${SOCIAL_IMAGE}`} />
+          <Meta property="og:image" content={`${origin}${SITE_SOCIAL_IMAGE}`} />
           <Meta name="twitter:card" content="summary_large_image" />
           <RouteUrl origin={origin} />
-          <Link rel="apple-touch-icon" sizes="180x180" href={TOUCH_ICON} />
+          <Link rel="apple-touch-icon" sizes="180x180" href={SITE_TOUCH_ICON} />
           <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
             <Loading fallback={<BootSplash />}>{props.children}</Loading>
           </Errored>

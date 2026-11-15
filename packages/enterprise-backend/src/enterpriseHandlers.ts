@@ -22,6 +22,7 @@ import {
   EnterpriseR2InternalError,
   EnterpriseStripeError,
   EnterpriseTenantHasMembers,
+  EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
   EnterpriseService,
   enterpriseApi,
@@ -40,15 +41,19 @@ import {
   dynamicGroupRulesProblem,
   defaultOverviewWidgets,
   defaultErrorCode,
+  applicationsInventoryStale,
+  deviceCommandStatusLabel,
   diagnoseError,
   errorDiagnostic,
   evaluateDeviceQuery,
+  normalizeDeviceCommandStatus,
   type DashboardQueryRequest,
   DashboardWidgetType,
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   DynamicGroupRules,
   type StepUpAction,
+  type TenantScepCaInfo,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
@@ -100,6 +105,16 @@ import {
   webhookEventForAuditAction,
   webhookSecretPrefix,
   windowsTenantTokenExpiresAt,
+  ACTIVE_COMMAND_STATUSES,
+  COMMAND_EXPIRED_DETAIL,
+  RECONCILED_RESULT_STATUS,
+  commandDeadline,
+  commandDedupeKey,
+  commandIsExpired,
+  commandStatusIsActive,
+  deviceCommandExpiresAt,
+  planCommandQueueing,
+  type CommandPayload,
 } from "@mattrax/management-backend-enterprise";
 import {
   AUTOPILOT_IMPORT_MAX_BYTES,
@@ -119,7 +134,11 @@ import {
   validateAutopilotProfileInput,
   type AutopilotProfileValues,
 } from "./autopilot.ts";
-import { issueScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
+import {
+  ScepRepositoryLive,
+  issueScepChallenge,
+  validateConfiguration,
+} from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.ts";
 import { tokenScopes } from "./enterpriseAuth.ts";
@@ -135,10 +154,15 @@ import {
   parseApnsCertificate,
   validateApnsCertificate,
 } from "@mattrax/apns";
-import { exportPrivateKeyJwk, importPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { applePushService } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
-import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
+import {
+  DEVICE_ACTIVITY_MAX_OFFSET,
+  deviceActivityPage,
+  normalizeDeviceActivityLimit,
+  normalizeDeviceActivityOffset,
+} from "./deviceActivity.ts";
 import {
   hasOwnerRole,
   isBuiltInOwnerMember,
@@ -235,7 +259,18 @@ import { loadCredentialHealth } from "./credentialHealth.ts";
 import {
   listTenantBackups as listTenantBackupRuns,
   runTenantBackup as runTenantBackupForTenant,
+  setBackupRetention,
+  deleteBackupRun,
+  BackupActionError,
 } from "./backup.ts";
+import {
+  teardownTenant,
+  TenantTeardownStepFailed,
+  type DeviceUnenrollSummary,
+  type UnreachableDevice,
+} from "./tenantTeardown.ts";
+import { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.ts";
+import { AndroidManagement } from "@mattrax/dm-android";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
@@ -243,7 +278,14 @@ import {
   signAppleProfilePlist,
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
-import { openCaPrivateKey } from "@mattrax/scep";
+import {
+  describeScepCa,
+  ensureScepCa,
+  generateScepCa,
+  importScepCa,
+  replaceScepCa,
+  type ScepCaDescription,
+} from "@mattrax/scep";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
@@ -336,8 +378,8 @@ export type EnterpriseHandlersConfig = {
   readonly planLimits?: PlanLimitsConfig;
   /**
    * Deployment identity used to CMS-sign Apple enrollment profile downloads.
-   * When no identity is configured the global SCEP CA is used; before the CA
-   * exists the download stays an unsigned plist.
+   * This is an explicit self-hosted override. When it is omitted, each tenant's
+   * own SCEP CA signs the download (bootstrapped on first use).
    */
   readonly appleProfileSigning?: AppleProfileSigningConfig;
   /** Optional static analytics sink; the API supplies a request-scoped one. */
@@ -2033,6 +2075,182 @@ export const createEnterpriseService = ({
     Options: { PurchaseMethod: 1 },
   });
 
+  /** Active commands for one device, newest first; the input to queue planning. */
+  const activeDeviceCommands = (deviceId: string) =>
+    db
+      .select()
+      .from(schema.deviceCommand)
+      .where(
+        and(
+          eq(schema.deviceCommand.deviceId, deviceId),
+          inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+        ),
+      )
+      .orderBy(desc(schema.deviceCommand.createdAt));
+
+  /**
+   * Queue an imperative command with its delivery budget, de-duplication and
+   * supersede rules applied.
+   *
+   * Identical work that is still queued or in flight is returned instead of
+   * inserted, so double-clicking "Erase" queues one erase. The unique index on
+   * `(deviceId, dedupeKey)` makes that safe across concurrent requests: the
+   * insert that loses the race reads back the winner.
+   */
+  const queueDeviceCommand = (input: {
+    readonly organizationId: string;
+    readonly deviceId: string;
+    readonly requestType: string;
+    readonly payload: CommandPayload;
+    readonly at: Date;
+  }): Effect.Effect<
+    { readonly id: string; readonly payload: CommandPayload; readonly deduplicated: boolean },
+    unknown,
+    never
+  > =>
+    Effect.gen(function* () {
+      const active = yield* activeDeviceCommands(input.deviceId);
+
+      // A command past its deadline can never run, so it must not block an
+      // identical new request either.
+      const expired = active.filter(
+        (row) => commandStatusIsActive(row.status) && commandIsExpired(row, input.at),
+      );
+
+      if (expired.length > 0)
+        yield* db
+          .update(schema.deviceCommand)
+          .set({
+            status: "expired",
+            dedupeKey: null,
+            resultStatus: RECONCILED_RESULT_STATUS,
+            resultDetail: COMMAND_EXPIRED_DETAIL,
+            updatedAt: input.at,
+          })
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, input.deviceId),
+              inArray(
+                schema.deviceCommand.id,
+                expired.map((row) => row.id),
+              ),
+            ),
+          );
+
+      const expiredIds = new Set(expired.map((row) => row.id));
+
+      const plan = planCommandQueueing(
+        active
+          .filter((row) => !expiredIds.has(row.id))
+          .map((row) => ({
+            id: row.id,
+            requestType: row.requestType,
+            payload: row.payload,
+            status: row.status,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            expiresAt: row.expiresAt,
+          })),
+        { requestType: input.requestType, payload: input.payload, now: input.at },
+      );
+
+      if (plan.duplicate)
+        return {
+          id: plan.duplicate.id,
+          payload: plan.duplicate.payload ?? null,
+          deduplicated: true,
+        };
+
+      if (plan.supersedeIds.length > 0)
+        yield* db
+          .update(schema.deviceCommand)
+          .set({
+            status: "superseded",
+            dedupeKey: null,
+            resultStatus: RECONCILED_RESULT_STATUS,
+            resultDetail: `Superseded by ${input.requestType}.`,
+            updatedAt: input.at,
+          })
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, input.deviceId),
+              inArray(schema.deviceCommand.id, [...plan.supersedeIds]),
+            ),
+          );
+
+      const id = crypto.randomUUID();
+
+      const dedupeKey = yield* Effect.promise(() =>
+        commandDedupeKey(input.requestType, input.payload),
+      );
+
+      const insertValues = {
+        id,
+        organizationId: input.organizationId,
+        deviceId: input.deviceId,
+        requestType: input.requestType,
+        payload: input.payload,
+        status: "queued",
+        dedupeKey,
+        expiresAt: deviceCommandExpiresAt(input.requestType, input.at),
+        resultStatus: null,
+        resultDetail: null,
+        createdAt: input.at,
+        updatedAt: input.at,
+      };
+
+      // A concurrent click may have inserted the same work first. The no-op
+      // update leaves that row untouched (bumping `updatedAt` would postpone
+      // its retry timer).
+      yield* db
+        .insert(schema.deviceCommand)
+        .values(insertValues)
+        .onDuplicateKeyUpdate({ set: { requestType: input.requestType } });
+
+      const winnerFor = () =>
+        db
+          .select({
+            id: schema.deviceCommand.id,
+            status: schema.deviceCommand.status,
+            payload: schema.deviceCommand.payload,
+          })
+          .from(schema.deviceCommand)
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, input.deviceId),
+              eq(schema.deviceCommand.dedupeKey, dedupeKey),
+            ),
+          )
+          .limit(1);
+
+      const [winner] = yield* winnerFor();
+
+      if (!winner) return { id, payload: input.payload, deduplicated: false };
+
+      if (commandStatusIsActive(winner.status))
+        return {
+          id: winner.id,
+          payload: winner.payload,
+          deduplicated: winner.id !== id,
+        };
+
+      // A terminal row can only still hold the key if it was closed by a path
+      // that predates the lifecycle. Release it and queue the work again.
+      yield* db
+        .update(schema.deviceCommand)
+        .set({ dedupeKey: null })
+        .where(
+          and(
+            eq(schema.deviceCommand.deviceId, input.deviceId),
+            eq(schema.deviceCommand.id, winner.id),
+          ),
+        );
+
+      yield* db.insert(schema.deviceCommand).values(insertValues);
+
+      return { id, payload: input.payload, deduplicated: false };
+    });
+
   const assertTenantGroup = (tenantId: string, groupId: string) =>
     Effect.gen(function* () {
       const group = yield* db.query.enterpriseGroup.findFirst({
@@ -2156,6 +2374,25 @@ export const createEnterpriseService = ({
     modelNumber: row.modelNumber,
     inventoryUpdatedAt: row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : null,
     applicationsUpdatedAt: row.applicationsUpdatedAt ? iso(row.applicationsUpdatedAt) : null,
+    // Staleness is derived rather than stored so a device that stops reporting
+    // becomes stale without any write: Apple refreshes daily, Windows daily and
+    // Android on every status notification.
+    applicationsStale: applicationsInventoryStale({ updatedAt: row.applicationsUpdatedAt }),
+  });
+
+  /** Android Management API fields shown on the device page. */
+  const rowAndroidDevice = (row: typeof schema.androidDevice.$inferSelect) => ({
+    managementMode: row.managementMode,
+    ownership: row.ownership,
+    state: row.state,
+    apiLevel: row.apiLevel,
+    securityPatchLevel: row.securityPatchLevel,
+    appliedPolicyName: row.appliedPolicyName,
+    appliedPolicyVersion: row.appliedPolicyVersion,
+    enrollmentTokenName: row.enrollmentTokenName,
+    disabledReason: row.disabledReason,
+    networkOperator: row.networkOperator,
+    totalRam: row.totalRam,
   });
 
   const rowDeviceApplication = (row: typeof schema.deviceApplication.$inferSelect) => ({
@@ -2163,6 +2400,7 @@ export const createEnterpriseService = ({
     name: row.name,
     version: row.version,
     shortVersion: row.shortVersion,
+    publisher: row.publisher,
     bundleSize: row.bundleSize,
     dynamicSize: row.dynamicSize,
     hasUpdateAvailable: row.hasUpdateAvailable,
@@ -2592,6 +2830,7 @@ export const createEnterpriseService = ({
 
         const condition = or(
           like(schema.device.name, pattern),
+          like(schema.device.physicalName, pattern),
           like(schema.device.serial, pattern),
           like(schema.device.model, pattern),
           like(schema.device.dmIdentifier, pattern),
@@ -2877,12 +3116,14 @@ export const createEnterpriseService = ({
   /**
    * Sign an enrollment profile download.
    *
-   * A dedicated deployment identity wins. Otherwise the deployment-global SCEP
-   * CA signs the download so devices get a CMS message as soon as the CA has
-   * bootstrapped (`scep_ca` id 1). Before that the plist is served unsigned and
-   * a warning is logged: the download handler never generates a CA.
+   * An explicit deployment signing identity (`APPLE_PROFILE_SIGNING_*`) is a
+   * self-hosted override and wins when configured. Otherwise the owning tenant's
+   * SCEP CA signs the download, bootstrapping that CA on first use exactly like
+   * the SCEP endpoints do. There is deliberately no unsigned fallback: a profile
+   * that cannot be signed fails the download, so a device never installs an
+   * unverified profile that could have been modified in transit.
    */
-  const signAppleEnrollmentProfile = (plist: string) =>
+  const signAppleEnrollmentProfile = (plist: string, organizationId: string) =>
     Effect.gen(function* () {
       if (appleProfileSigner) {
         return yield* Effect.tryPromise({
@@ -2891,52 +3132,41 @@ export const createEnterpriseService = ({
         }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
       }
 
-      const [caRow] = yield* db
-        .select()
-        .from(schema.scepCa)
-        .where(eq(schema.scepCa.id, 1))
-        .limit(1);
-
-      if (!caRow) {
-        yield* Effect.logWarning(
-          "Serving an unsigned Apple enrollment profile: no profile signing identity is configured and the SCEP CA has not been created yet.",
-        );
-
-        return new TextEncoder().encode(plist);
-      }
-
-      const storedCaKey = Schema.decodeUnknownOption(Schema.Json)(caRow.privateKeyJwk);
-
-      if (Option.isNone(storedCaKey)) {
-        return yield* appleProfileSigningFailed("The SCEP CA private key is not valid JSON");
-      }
-
-      // The SCEP CA is deployment-global: every tenant's profile downloads sign
-      // with the same CA, and no tenant-specific key is read here.
-      const opened = yield* Effect.tryPromise({
-        try: () => openCaPrivateKey(storedCaKey.value, authSecret),
-        catch: (cause) => cause,
+      const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
+        organizationId,
       }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
 
-      if (opened.migrated) {
-        yield* db
-          .update(schema.scepCa)
-          .set({ privateKeyJwk: opened.migrated })
-          .where(eq(schema.scepCa.id, 1));
-      }
-
       return yield* Effect.tryPromise({
-        try: async () => {
-          const privateKey = await importPrivateKeyJwk(opened.privateKeyJwk);
-
-          return await signAppleProfilePlist(plist, {
-            certificatePem: caRow.certPem,
-            privateKey,
-          });
-        },
+        try: () =>
+          signAppleProfilePlist(plist, {
+            certificatePem: ca.certPem,
+            privateKey: ca.privateKey,
+          }),
         catch: (cause) => cause,
       }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
     });
+
+  /**
+   * Public SCEP endpoint for a tenant. The tenant id is part of the path because
+   * SCEP clients append their own `?operation=...` query to the configured URL.
+   */
+  const scepUrlFor = (organizationId: string) =>
+    `${origin}/mdm/apple/scep/${encodeURIComponent(organizationId)}`;
+
+  const tenantScepCaInfo = (
+    organizationId: string,
+    row: typeof schema.scepCa.$inferSelect,
+    description: ScepCaDescription,
+  ): TenantScepCaInfo => ({
+    configured: true,
+    scepUrl: scepUrlFor(organizationId),
+    source: row.source,
+    commonName: description.commonName,
+    fingerprintSha256: description.fingerprintSha256,
+    notAfter: iso(description.notAfter),
+    createdAt: iso(row.createdAt),
+    rotatedAt: row.rotatedAt ? iso(row.rotatedAt) : null,
+  });
 
   /**
    * Assignment payloads accept either a bare id (legacy callers, defaults to
@@ -3258,6 +3488,237 @@ export const createEnterpriseService = ({
         },
         tenants,
       };
+    });
+
+  /**
+   * The Windows MDM provider id is fixed by the provisioning document issued
+   * by the management backend. The server-initiated unenroll Exec node must
+   * address the same provider, or the device ignores the command.
+   */
+  const WINDOWS_MDM_PROVIDER_ID = "Mattrax";
+
+  const backupActionFailure = (error: BackupActionError) => {
+    switch (error.reason) {
+      case "not_found":
+        return new EnterpriseNotFound({ message: error.message });
+      case "running":
+        return new EnterpriseConflict({ message: error.message });
+      case "not_restorable":
+        return new EnterpriseBadRequest({ message: error.message });
+      case "storage":
+        return new EnterpriseR2InternalError({ message: error.message });
+      case "database":
+        return new EnterpriseDbError({ message: error.message });
+    }
+  };
+
+  const restoreFailure = (error: TenantRestoreError) => {
+    switch (error.reason) {
+      case "invalid_bundle":
+        return new EnterpriseBadRequest({ message: error.message });
+      case "snapshot_failed":
+        return new EnterpriseInternal({ message: error.message });
+      case "write_failed":
+        return new EnterpriseInternal({ message: error.message });
+    }
+  };
+
+  /**
+   * Send every enrolled device its platform's unenroll signal before the rows
+   * disappear. Unreachable devices do not abort the teardown (an offline laptop
+   * must not pin a tenant forever); they are reported to the operator instead.
+   */
+  const teardownDevices = (organizationId: string) =>
+    Effect.gen(function* () {
+      const devices = yield* db
+        .select()
+        .from(schema.device)
+        .where(
+          and(
+            eq(schema.device.organizationId, organizationId),
+            inArray(schema.device.status, ["enrolled", "unenrolling"]),
+          ),
+        );
+
+      const unreachable: UnreachableDevice[] = [];
+      let contacted = 0;
+      const byId = new Map(devices.map((device) => [device.id, device]));
+      const apple = devices.filter((device) => device.proto === "apple");
+      const alreadyUnenrolling = apple.filter((device) => device.status === "unenrolling");
+
+      const toPush = apple
+        .filter((device) => device.status === "enrolled")
+        .map((device) => device.id);
+
+      contacted += alreadyUnenrolling.length;
+
+      if (toPush.length > 0) {
+        const pushed = yield* applePush.pushAppleDevices(toPush, { concurrency: 4 });
+
+        contacted += pushed.succeeded.length;
+
+        for (const deviceId of pushed.failed.map((failure) => failure.deviceId))
+          unreachable.push({
+            id: deviceId,
+            name: byId.get(deviceId)?.name ?? deviceId,
+            platform: "apple",
+            reason: "The APNs push failed, so the device did not receive its unenroll request.",
+          });
+
+        for (const deviceId of pushed.skipped)
+          unreachable.push({
+            id: deviceId,
+            name: byId.get(deviceId)?.name ?? deviceId,
+            platform: "apple",
+            reason: "No APNs push token or push certificate is available for this device.",
+          });
+
+        // While the row still exists, a check-in from any pushed device now
+        // receives the protocol's unenroll response (410) instead of Idle.
+        yield* db
+          .update(schema.device)
+          .set({ status: "unenrolling" })
+          .where(
+            and(
+              eq(schema.device.organizationId, organizationId),
+              inArray(schema.device.id, toPush),
+            ),
+          );
+      }
+
+      for (const device of devices.filter((candidate) => candidate.proto === "win")) {
+        const existing = yield* db.query.deviceCommand.findFirst({
+          where: {
+            deviceId: device.id,
+            requestType: "WindowsUnenroll",
+            status: "queued",
+          },
+        });
+
+        // Queue the real unenroll CSP command in case the device checks in
+        // during this request. Windows only applies it on a client-initiated
+        // session, so the tenant row is usually gone before it is delivered;
+        // the device is reported as needing manual retirement either way.
+        if (!existing) {
+          const timestamp = now();
+
+          yield* db.insert(schema.deviceCommand).values({
+            id: id(),
+            organizationId,
+            deviceId: device.id,
+            requestType: "WindowsUnenroll",
+            payload: {
+              locURI: `./Vendor/MSFT/DMClient/Provider/${WINDOWS_MDM_PROVIDER_ID}/Unenroll`,
+              data: WINDOWS_MDM_PROVIDER_ID,
+            },
+            status: "queued",
+            resultStatus: null,
+            resultDetail: null,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+        }
+
+        unreachable.push({
+          id: device.id,
+          name: device.name,
+          platform: "win",
+          reason:
+            "Windows only applies an unenroll command on its next check-in, which cannot happen once the tenant is removed. Retire the device from Windows Settings or wipe it.",
+        });
+      }
+
+      const androidDevices = devices.filter((device) => device.proto === "android");
+
+      if (androidDevices.length > 0) {
+        const android = yield* Effect.serviceOption(AndroidManagement);
+
+        const enterprise = yield* loadAndroidEnterprise(db, organizationId).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+        );
+
+        const canDeprovision =
+          Option.isSome(android) &&
+          isAndroidConfigured(androidConfig) &&
+          enterprise?.status === "active" &&
+          Boolean(enterprise.enterpriseName);
+
+        for (const device of androidDevices) {
+          const linked =
+            canDeprovision &&
+            enterprise?.enterpriseName &&
+            device.dmIdentifier?.startsWith(`${enterprise.enterpriseName}/devices/`);
+
+          if (!linked || !Option.isSome(android)) {
+            unreachable.push({
+              id: device.id,
+              name: device.name,
+              platform: "android",
+              reason:
+                "This device is not linked to an active Android enterprise, so it could not be deprovisioned.",
+            });
+            continue;
+          }
+
+          const removed = yield* android.value
+            .deleteDevice({ deviceName: device.dmIdentifier! })
+            .pipe(
+              Effect.match({
+                onFailure: () => false,
+                onSuccess: () => true,
+              }),
+            );
+
+          if (removed) contacted++;
+          else
+            unreachable.push({
+              id: device.id,
+              name: device.name,
+              platform: "android",
+              reason: "Google rejected the device removal request.",
+            });
+        }
+      }
+
+      return {
+        total: devices.length,
+        contacted,
+        unreachable,
+      } satisfies DeviceUnenrollSummary;
+    });
+
+  /**
+   * Cancel the tenant's Stripe subscription before the row disappears. A
+   * deployment without Stripe credentials cannot cancel a subscription that
+   * exists, so the teardown fails instead of silently billing a deleted tenant.
+   */
+  const teardownSubscription = (organization: EnterpriseOrganization) =>
+    Effect.gen(function* () {
+      const [row] = yield* db
+        .select()
+        .from(schema.subscription)
+        .where(eq(schema.subscription.referenceId, organization.id))
+        .limit(1);
+
+      if (!row?.stripeSubscriptionId) return "none" as const;
+
+      if (!stripe)
+        return yield* Effect.fail(
+          new Error(
+            "This tenant has a Stripe subscription but billing is not configured on this deployment.",
+          ),
+        );
+
+      const cancelled = yield* stripe.subscriptions.cancel(row.stripeSubscriptionId).pipe(
+        // Stripe keeps cancelled subscriptions readable; a missing one means a
+        // previous attempt already removed it.
+        Effect.catchIf(
+          (cause) => cause.statusCode === 404 || cause.code === "resource_missing",
+          () => Effect.succeed(null),
+        ),
+      );
+
+      return cancelled?.cancel_at_period_end ? ("at_period_end" as const) : ("cancelled" as const);
     });
 
   const service = {
@@ -3594,6 +4055,59 @@ export const createEnterpriseService = ({
           ).slice(0, 10)}.json`,
         };
       }).pipe(Effect.provide(r2Layer)),
+    pinTenantBackup: (request, tenantId, backupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "backup-pin");
+
+        const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "pinned", {
+          userId: ctx.user.id,
+          email: ctx.user.email,
+        }).pipe(Effect.mapError(backupActionFailure));
+
+        return backupRunInfo(run);
+      }),
+    unpinTenantBackup: (request, tenantId, backupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "backup-pin");
+
+        const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "default", {
+          userId: ctx.user.id,
+          email: ctx.user.email,
+        }).pipe(Effect.mapError(backupActionFailure));
+
+        return backupRunInfo(run);
+      }),
+    deleteTenantBackup: (request, tenantId, backupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "backup-delete");
+
+        yield* deleteBackupRun(db, storage, ctx.organization.id, backupId, {
+          userId: ctx.user.id,
+          email: ctx.user.email,
+        }).pipe(Effect.mapError(backupActionFailure));
+
+        return ok;
+      }),
+    restoreTenantBackup: (request, tenantId, backupId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "backup-restore");
+
+        const body: { confirm?: string } = payload ?? {};
+
+        return yield* restoreTenantFromBackup(db, storage, ctx.organization, {
+          backupId,
+          actor: { userId: ctx.user.id, email: ctx.user.email },
+          confirm: body.confirm ?? "",
+        }).pipe(
+          Effect.mapError((error) =>
+            error instanceof BackupActionError ? backupActionFailure(error) : restoreFailure(error),
+          ),
+        );
+      }),
     importTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
@@ -4233,7 +4747,7 @@ export const createEnterpriseService = ({
       }),
     deleteTenant: (request, tenantId) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId, "delete");
+        const ctx = yield* requireTenant(request, tenantId, "delete");
         yield* requireStepUp(auth, request, "tenant-delete");
         const count = yield* memberCount(tenantId);
 
@@ -4246,9 +4760,40 @@ export const createEnterpriseService = ({
               { code: "tenant_has_members" },
             ),
           );
-        yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
 
-        return ok;
+        // Teardown contacts devices, cancels billing and deletes every
+        // tenant-prefixed object before removing the row. A failed step keeps
+        // the tenant intact so repeating DELETE resumes; the `tenant_deletion`
+        // journal records each reclaimed resource for support.
+        const result = yield* teardownTenant(db, storage, {
+          organizationId: ctx.organization.id,
+          actor: { id: ctx.user.id, email: ctx.user.email },
+          deps: {
+            unenrollDevices: teardownDevices,
+            cancelSubscription: teardownSubscription,
+          },
+        }).pipe(
+          Effect.mapError((error: TenantTeardownStepFailed) =>
+            diagnoseError(
+              new EnterpriseTenantTeardownFailed({
+                message: `${error.message} The tenant was kept so the deletion can be retried.`,
+                step: error.step,
+              }),
+              { code: "teardown_failed", details: { step: error.step } },
+            ),
+          ),
+        );
+
+        return {
+          status: "ok" as const,
+          reclaimed: {
+            devices: result.devices.total,
+            contacted: result.devices.contacted,
+            unreachableDevices: [...result.devices.unreachable],
+            objects: result.objectsDeleted,
+            subscription: result.subscription,
+          },
+        };
       }),
     getEntraDirectorySync: (request, tenantId) =>
       Effect.gen(function* () {
@@ -6704,12 +7249,21 @@ export const createEnterpriseService = ({
           ? yield* db.query.organization.findFirst({ where: { id: enrollment.organizationId } })
           : undefined;
 
+        if (!enrollment)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found." }));
+
         const filename = `${safeFilename(
           organization?.slug ??
             resolveTenantBranding(organization ?? { name: "tenant" }).displayName,
         )}-enrollment.mobileconfig`;
 
-        return { profile: yield* signAppleEnrollmentProfile(result.apple.profile), filename };
+        return {
+          profile: yield* signAppleEnrollmentProfile(
+            result.apple.profile,
+            enrollment.organizationId,
+          ),
+          filename,
+        };
       }),
     getAdeEnrollmentProfile: (token: string) =>
       Effect.gen(function* () {
@@ -6807,9 +7361,134 @@ export const createEnterpriseService = ({
         );
 
         return {
-          profile: yield* signAppleEnrollmentProfile(plist),
+          profile: yield* signAppleEnrollmentProfile(plist, organization.id),
           filename: `${safeFilename(signed.serial)}.mobileconfig`,
         };
+      }),
+    getTenantScepCa: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const organizationId = ctx.organization.id;
+
+        const [row] = yield* db
+          .select()
+          .from(schema.scepCa)
+          .where(eq(schema.scepCa.organizationId, organizationId))
+          .limit(1);
+
+        if (!row)
+          return {
+            configured: false as const,
+            scepUrl: scepUrlFor(organizationId),
+            source: null,
+            commonName: null,
+            fingerprintSha256: null,
+            notAfter: null,
+            createdAt: null,
+            rotatedAt: null,
+          } satisfies TenantScepCaInfo;
+
+        const description = yield* describeScepCa(row.certPem).pipe(
+          Effect.mapError(
+            () => new EnterpriseDbError({ message: "The stored SCEP CA certificate is invalid." }),
+          ),
+        );
+
+        return tenantScepCaInfo(organizationId, row, description);
+      }),
+    rotateTenantScepCa: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const organizationId = ctx.organization.id;
+        const repository = ScepRepositoryLive.make(db, { authSecret });
+
+        // Rotation is deliberately explicit: every identity issued by the
+        // previous CA stops being usable for renewal or mTLS check-in once the
+        // tenant CA changes, so they are revoked and the devices must re-enroll.
+        yield* generateScepCa(organizationId).pipe(
+          Effect.flatMap((candidate) => replaceScepCa(repository, { organizationId }, candidate)),
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not rotate the tenant SCEP CA." }),
+          ),
+        );
+
+        yield* db
+          .update(schema.scepIssuedCertificate)
+          .set({ revokedAt: new Date() })
+          .where(
+            and(
+              eq(schema.scepIssuedCertificate.organizationId, organizationId),
+              isNull(schema.scepIssuedCertificate.revokedAt),
+            ),
+          )
+          .pipe(
+            Effect.mapError(
+              () => new EnterpriseDbError({ message: "Could not revoke the old identities." }),
+            ),
+          );
+
+        const [row] = yield* db
+          .select()
+          .from(schema.scepCa)
+          .where(eq(schema.scepCa.organizationId, organizationId))
+          .limit(1);
+
+        const description = yield* describeScepCa(row!.certPem).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not read the rotated SCEP CA." }),
+          ),
+        );
+
+        return tenantScepCaInfo(organizationId, row!, description);
+      }),
+    importTenantScepCa: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const organizationId = ctx.organization.id;
+        const repository = ScepRepositoryLive.make(db, { authSecret });
+
+        const material = yield* importScepCa({
+          certificatePem: payload.certificatePem,
+          privateKeyPem: payload.privateKeyPem,
+        }).pipe(Effect.mapError((cause) => new EnterpriseBadRequest({ message: cause.message })));
+
+        yield* replaceScepCa(repository, { organizationId }, material).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not store the supplied SCEP CA." }),
+          ),
+        );
+
+        // Importing a different CA invalidates every identity issued by the old
+        // one for renewal purposes. Revoke them so health and device views are
+        // truthful; devices must re-enroll against the new CA.
+        yield* db
+          .update(schema.scepIssuedCertificate)
+          .set({ revokedAt: new Date() })
+          .where(
+            and(
+              eq(schema.scepIssuedCertificate.organizationId, organizationId),
+              isNull(schema.scepIssuedCertificate.revokedAt),
+            ),
+          )
+          .pipe(
+            Effect.mapError(
+              () => new EnterpriseDbError({ message: "Could not revoke the old identities." }),
+            ),
+          );
+
+        const [row] = yield* db
+          .select()
+          .from(schema.scepCa)
+          .where(eq(schema.scepCa.organizationId, organizationId))
+          .limit(1);
+
+        const description = yield* describeScepCa(row!.certPem).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not read the supplied SCEP CA." }),
+          ),
+        );
+
+        return tenantScepCaInfo(organizationId, row!, description);
       }),
     getTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
@@ -7347,18 +8026,17 @@ export const createEnterpriseService = ({
         }
 
         if (queuedDevices.length > 0) {
-          yield* db.insert(schema.deviceCommand).values(
-            queuedDevices.map((device) => ({
-              id: id(),
+          const at = now();
+
+          for (const device of queuedDevices)
+            yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
               requestType: "InstallApplication",
               payload: vppInstallPayload(adamId),
-              status: "queued",
-              createdAt: now(),
-              updatedAt: now(),
-            })),
-          );
+              at,
+            });
+
           yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
         }
 
@@ -7996,6 +8674,7 @@ export const createEnterpriseService = ({
         if (!["sync", "collect-security-info", "refresh-applications"].includes(action))
           yield* requireStepUp(auth, request, "device-command");
         let lockPin: string | undefined;
+        let command: { commandId: string; deduplicated: boolean } | undefined;
 
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
           yield* mapAndroidFailure(
@@ -8053,11 +8732,10 @@ export const createEnterpriseService = ({
                       : "Remote commands are only supported for Apple and Windows devices",
                 }),
               );
-            const commandId = crypto.randomUUID();
             const timestamp = now();
             const randomPin = String(Math.floor(100000 + Math.random() * 900000));
 
-            const request = (() => {
+            const request = ((): { requestType: string; payload: CommandPayload } | null => {
               if (device.proto === "win") {
                 if (action === "wipe")
                   return {
@@ -8167,26 +8845,33 @@ export const createEnterpriseService = ({
               request.payload = { UnlockToken: apple.unlockToken };
             }
 
-            yield* db.insert(schema.deviceCommand).values({
-              id: commandId,
+            const queued = yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
               requestType: request.requestType,
               payload: request.payload,
-              status: "queued",
-              resultStatus: null,
-              resultDetail: null,
-              createdAt: timestamp,
-              updatedAt: timestamp,
+              at: timestamp,
             });
+
+            command = { commandId: queued.id, deduplicated: queued.deduplicated };
+
+            // A de-duplicated lock reuses the PIN of the command already in
+            // flight, otherwise the administrator would be shown a PIN the
+            // device never received.
+            if (action === "lock" && queued.deduplicated)
+              lockPin = Option.getOrUndefined(
+                Schema.decodeUnknownOption(Schema.Struct({ PIN: Schema.String }))(queued.payload),
+              )?.PIN;
           }
 
           yield* applePush.pushAppleDevice(device.id);
         }
 
-        yield* audit(ctx, "device.action", "device", deviceId, { action });
+        const auditMetadata = { action, deduplicated: command?.deduplicated ?? false };
 
-        return lockPin ? { ...ok, pin: lockPin } : ok;
+        yield* audit(ctx, "device.action", "device", deviceId, auditMetadata);
+
+        return lockPin ? { ...ok, pin: lockPin, ...command } : { ...ok, ...command };
       }),
     listDeviceCommands: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -8206,16 +8891,28 @@ export const createEnterpriseService = ({
           .orderBy(desc(schema.deviceCommand.createdAt))
           .limit(200);
 
+        const at = now();
+
         return {
-          commands: commands.map((command: any) => ({
-            id: command.id,
-            requestType: command.requestType,
-            status: command.status,
-            resultStatus: command.resultStatus,
-            resultDetail: command.resultDetail,
-            createdAt: iso(command.createdAt),
-            updatedAt: iso(command.updatedAt),
-          })),
+          commands: commands.map((command: any) => {
+            // A command past its deadline can no longer run, even if no
+            // check-in has persisted that transition yet.
+            const status = commandIsExpired(command, at)
+              ? ("expired" as const)
+              : normalizeDeviceCommandStatus(command.status);
+
+            return {
+              id: command.id,
+              requestType: command.requestType,
+              status,
+              statusLabel: deviceCommandStatusLabel(status),
+              resultStatus: command.resultStatus,
+              resultDetail: command.resultDetail,
+              createdAt: iso(command.createdAt),
+              updatedAt: iso(command.updatedAt),
+              expiresAt: iso(commandDeadline(command)),
+            };
+          }),
         };
       }),
     listDeviceDeclarations: (request, tenantId, deviceId) =>
@@ -8261,6 +8958,24 @@ export const createEnterpriseService = ({
                 eq(schema.device.status, "enrolled"),
               ),
             );
+
+        // A device on its way out of management will never run queued work
+        // (and a pending wipe or lock must not fire during unenrolment).
+        yield* db
+          .update(schema.deviceCommand)
+          .set({
+            status: "cancelled",
+            dedupeKey: null,
+            resultStatus: RECONCILED_RESULT_STATUS,
+            resultDetail: "The device was unenrolled before the command was delivered.",
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, device.id),
+              inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          );
 
         // mttx pushes both enrolled and already-unenrolling devices so repeated
         // requests still nudge the device.
@@ -8313,6 +9028,14 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const limit = normalizeDeviceActivityLimit(query?.limit);
+        const offset = normalizeDeviceActivityOffset(query?.offset);
+
+        // Past the deepest page there is nothing left to merge; skip the reads.
+        if (offset >= DEVICE_ACTIVITY_MAX_OFFSET) return { events: [], hasMore: false };
+
+        // Every source contributes at most one page window; the merge picks the
+        // newest `offset + limit` entries before slicing out this page.
+        const window = offset + limit + 1;
 
         const auditRows = yield* db
           .select()
@@ -8325,39 +9048,46 @@ export const createEnterpriseService = ({
             ),
           )
           .orderBy(desc(schema.auditLog.createdAt))
-          .limit(limit);
+          .limit(window);
 
         const audits = auditRows.map((row) => ({
           ...row,
           metadata: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.metadata)),
         }));
 
-        const commands = yield* db
+        const commandRows = yield* db
           .select()
           .from(schema.deviceCommand)
           .where(eq(schema.deviceCommand.deviceId, device.id))
           .orderBy(desc(schema.deviceCommand.updatedAt))
-          .limit(limit);
+          .limit(window);
+
+        const at = now();
+
+        // A command past its deadline can no longer run, even before a check-in
+        // persists the transition.
+        const commands = commandRows.map((row) => ({
+          ...row,
+          status: commandIsExpired(row, at) ? "expired" : row.status,
+        }));
 
         const declarations = yield* deviceDeclarationsFor(device.id);
         const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
 
-        return {
-          events: buildDeviceActivity(
-            {
-              audits,
-              commands,
-              declarations,
-              certificates,
-              device: {
-                enrolledAt: device.enrolledAt,
-                lastSeenAt: device.lastSeenAt,
-                inventoryUpdatedAt: device.inventoryUpdatedAt,
-              },
+        return deviceActivityPage(
+          {
+            audits,
+            commands,
+            declarations,
+            certificates,
+            device: {
+              enrolledAt: device.enrolledAt,
+              lastSeenAt: device.lastSeenAt,
+              inventoryUpdatedAt: device.inventoryUpdatedAt,
             },
-            limit,
-          ),
-        };
+          },
+          { limit, offset },
+        );
       }),
     getDeviceHealthSummary: (request, tenantId) =>
       Effect.gen(function* () {
@@ -10083,18 +10813,17 @@ export const createEnterpriseService = ({
             }
 
             if (queuedDevices.length > 0) {
-              yield* db.insert(schema.deviceCommand).values(
-                queuedDevices.map((device) => ({
-                  id: id(),
+              const at = now();
+
+              for (const device of queuedDevices)
+                yield* queueDeviceCommand({
                   organizationId: ctx.organization.id,
                   deviceId: device.id,
                   requestType: "InstallApplication",
                   payload: vppInstallPayload(storeId),
-                  status: "queued",
-                  createdAt: now(),
-                  updatedAt: now(),
-                })),
-              );
+                  at,
+                });
+
               yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
             }
 
@@ -10116,7 +10845,7 @@ export const createEnterpriseService = ({
           }
         }
 
-        const payload =
+        const payload: CommandPayload =
           app.source === "store"
             ? {
                 iTunesStoreID: Number(app.storeId),
@@ -10131,18 +10860,17 @@ export const createEnterpriseService = ({
                 Options: { PurchaseMethod: 1 },
               };
 
-        yield* db.insert(schema.deviceCommand).values(
-          appleDevices.map((device) => ({
-            id: id(),
+        const at = now();
+
+        for (const device of appleDevices)
+          yield* queueDeviceCommand({
             organizationId: ctx.organization.id,
             deviceId: device.id,
             requestType: "InstallApplication",
             payload,
-            status: "queued",
-            createdAt: now(),
-            updatedAt: now(),
-          })),
-        );
+            at,
+          });
+
         yield* applePush.pushAppleDevices(appleDevices.map((device) => device.id));
         yield* audit(ctx, "application.install_queued", "application", applicationId, {
           queued: appleDevices.length,
@@ -11029,6 +11757,20 @@ export const createEnterpriseService = ({
           )
           .limit(1);
 
+        const [android] =
+          row.proto === "android"
+            ? yield* db
+                .select()
+                .from(schema.androidDevice)
+                .where(
+                  and(
+                    eq(schema.androidDevice.deviceId, row.id),
+                    eq(schema.androidDevice.organizationId, ctx.organization.id),
+                  ),
+                )
+                .limit(1)
+            : [];
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
           ...rowDevice(row),
@@ -11037,6 +11779,7 @@ export const createEnterpriseService = ({
           recoveryKeyUpdatedAt: recoveryKey ? iso(recoveryKey.updatedAt) : null,
           recoveryKeyRotatedAt: recoveryKey?.rotatedAt ? iso(recoveryKey.rotatedAt) : null,
           bootstrapTokenUpdatedAt: bootstrapToken ? iso(bootstrapToken.updatedAt) : null,
+          android: android ? rowAndroidDevice(android) : null,
           autopilot: autopilot ? autopilotDeviceInfo(autopilot) : null,
         };
       }),
@@ -11161,6 +11904,7 @@ export const createEnterpriseService = ({
           name: string | null;
           version: string | null;
           shortVersion: string | null;
+          publisher: string | null;
           bundleSize: number | null;
           dynamicSize: number | null;
           hasUpdateAvailable: boolean;
@@ -11177,6 +11921,7 @@ export const createEnterpriseService = ({
             name: row.name,
             version: row.version,
             shortVersion: row.shortVersion,
+            publisher: row.publisher,
             bundleSize: row.bundleSize,
             dynamicSize: row.dynamicSize,
             hasUpdateAvailable: false,
@@ -11188,6 +11933,7 @@ export const createEnterpriseService = ({
           group.name ??= row.name;
           group.version ??= row.version;
           group.shortVersion ??= row.shortVersion;
+          group.publisher ??= row.publisher;
           group.bundleSize ??= row.bundleSize;
           group.dynamicSize ??= row.dynamicSize;
           group.hasUpdateAvailable ||= row.hasUpdateAvailable;
@@ -11224,6 +11970,7 @@ export const createEnterpriseService = ({
             name: group.name,
             version: group.version,
             shortVersion: group.shortVersion,
+            publisher: group.publisher,
             bundleSize: group.bundleSize,
             dynamicSize: group.dynamicSize,
             hasUpdateAvailable: group.hasUpdateAvailable,
@@ -11690,6 +12437,26 @@ export const enterpriseHandlers = (
         ),
       ),
     )
+    .handle("pinTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.pinTenantBackup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("unpinTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.unpinTenantBackup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("deleteTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteTenantBackup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("restoreTenantBackup", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.restoreTenantBackup(request, params.tenantId, params.id, payload),
+      ),
+    )
     .handle("patchTenant", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchTenant(request, params.tenantId, payload),
@@ -11960,6 +12727,21 @@ export const enterpriseHandlers = (
         Effect.map(service.getAdeEnrollmentProfile(params.token), (result) =>
           appleEnrollmentProfileResponse(result),
         ),
+      ),
+    )
+    .handle("getTenantScepCa", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantScepCa(request, params.tenantId),
+      ),
+    )
+    .handle("rotateTenantScepCa", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.rotateTenantScepCa(request, params.tenantId),
+      ),
+    )
+    .handle("importTenantScepCa", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.importTenantScepCa(request, params.tenantId, payload),
       ),
     )
     .handle("getTenantEnrollment", ({ request, params }) =>

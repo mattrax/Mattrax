@@ -73,17 +73,17 @@ after enrollment (see [Inventory](#inventory)).
 The first management check-in after enrollment asks the device for a snapshot with OMA-DM
 `Get` commands:
 
-| OMA-URI                                        | Stored in                              |
-| ---------------------------------------------- | -------------------------------------- |
-| `./DevDetail/SwV`                              | `osVersion`, `osBuild`                 |
-| `./DevInfo/Mod`                                | `model`                                |
-| `./DevDetail/DevTyp`                           | `model` fallback                       |
-| `./DevDetail/Ext/Microsoft/SystemSKU`          | `modelIdentifier`                      |
-| `./DevDetail/Ext/Microsoft/SMBIOSSerialNumber` | `serial`                               |
-| `./DevDetail/Ext/Microsoft/DeviceName`         | `name` (only when still a placeholder) |
-| `./DevDetail/Ext/Microsoft/OSPlatform`         | `osEdition`                            |
-| `./DevDetail/Ext/Microsoft/TotalStorage`       | `diskTotal`                            |
-| `./DevDetail/Ext/Microsoft/FreeStorage`        | `diskUsed`                             |
+| OMA-URI                                        | Stored in                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| `./DevDetail/SwV`                              | `osVersion`, `osBuild`                                       |
+| `./DevInfo/Mod`                                | `model`                                                      |
+| `./DevDetail/DevTyp`                           | `model` fallback                                             |
+| `./DevDetail/Ext/Microsoft/SystemSKU`          | `modelIdentifier`                                            |
+| `./DevDetail/Ext/Microsoft/SMBIOSSerialNumber` | `serial`                                                     |
+| `./DevDetail/Ext/Microsoft/DeviceName`         | `physicalName`, and `name` while that is still a placeholder |
+| `./DevDetail/Ext/Microsoft/OSPlatform`         | `osEdition`                                                  |
+| `./DevDetail/Ext/Microsoft/TotalStorage`       | `diskTotal`                                                  |
+| `./DevDetail/Ext/Microsoft/FreeStorage`        | `diskUsed`                                                   |
 
 The device returns the values in a SyncML `<Results>` block on a later session. They are
 written to the same `device` columns Apple inventory uses, so search, filters, dashboards
@@ -92,14 +92,47 @@ and the health rollup work unchanged.
 - **Cadence**: a snapshot is requested at most once every six hours, tracked separately
   from `inventoryUpdatedAt`. An unanswered request is retried after the same interval, so
   a device that rejects a node does not receive the `Get` set on every check-in.
-- **Name**: the reported device name only fills a blank name or the Windows DeviceID
-  placeholder used at enrollment. An administrator-edited name is never overwritten.
+- **Name**: the reported device name is always stored as the device's physical name. It
+  only becomes the management name while that is still blank or one of the auto-derived
+  placeholders (enrollment DeviceID, serial, model, or the previous reported name), so an
+  administrator-edited name is never overwritten and an OS-level rename still follows
+  through.
 - **Serial**: vendor placeholders (`To be filled by O.E.M.`, `Default string`, and similar)
   are ignored, and a serial already owned by another device in the tenant is not applied.
 - **Storage**: Windows reports both figures in MB and Mattrax stores bytes. If the free
   value exceeds the total, neither figure is written. `TotalStorage` is documented as
   mobile-only; desktop devices may report no total, in which case only the model, serial
   and OS fields are populated.
+
+## Installed applications
+
+A second `Get` set collects installed applications once a day, tracked by
+`applicationsRequestedAt` and `applicationsUpdatedAt` independent of the six-hour device
+inventory:
+
+| OMA-URI                                                                                  | Purpose                                   |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram/InstalledProgram?list=StructData` | Win32/MSI programs in Add/Remove Programs |
+| `./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI?list=StructData`                | MSI packages deployed by Mattrax          |
+
+`?list=StructData` returns one `Results` item per node, so the whole inventory arrives in
+a single response. Each application is normalised into `device_application`:
+
+- `bundleId` is the MSI product code when the CSP reports one, otherwise the registry key
+  of the Add/Remove Programs entry. MSI packages deployed through
+  `EnterpriseDesktopAppManagement` use their AMAPI-style product id.
+- `name`, `version` and `publisher` come from the CSP.
+- `isManaged` is true only for packages this server deployed, and a package whose
+  enforcement status is not `70` (completed) is not listed as installed.
+- `hasUpdateAvailable` is always false: OMA-DM reports no update metadata for Win32 apps.
+
+The full list replaces the previous rows and `applicationsUpdatedAt` is stamped in the
+same transaction. `Win32AppInventory` is available on Windows 10/11 Pro, Enterprise and
+Education; a device that rejects the node reports no applications and keeps its previous
+inventory. Store/modern apps are not inventoried because the `EnterpriseModernAppManagement`
+inventory is unbounded and expensive on fleets with many packages.
+
+The device page marks the list stale after seven days without a report.
 
 Autopilot metadata is separate and still available from the Autopilot pages.
 

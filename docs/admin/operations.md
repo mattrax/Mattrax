@@ -180,17 +180,51 @@ never deleted. See [Configuration](/operations/configuration).
 ### Scheduled tenant backups
 
 Daily maintenance writes a per-tenant JSON bundle to R2 and records a `backup_run`.
-Retention is `MAINTENANCE_BACKUP_RETENTION_DAYS` (default 30). `retention = pinned` rows
-are never pruned (SQL only; no API).
+Retention is `MAINTENANCE_BACKUP_RETENTION_DAYS` (default 30). `pinned` runs are kept
+until an owner unpins them.
 
 ```text
-POST /api/v1/tenants/:tenantId/backups
-GET  /api/v1/tenants/:tenantId/backups
-GET  /api/v1/tenants/:tenantId/backups/:id/download
+POST   /api/v1/tenants/:tenantId/backups
+GET    /api/v1/tenants/:tenantId/backups
+GET    /api/v1/tenants/:tenantId/backups/:id/download
+POST   /api/v1/tenants/:tenantId/backups/:id/pin
+POST   /api/v1/tenants/:tenantId/backups/:id/unpin
+DELETE /api/v1/tenants/:tenantId/backups/:id
+POST   /api/v1/tenants/:tenantId/backups/:id/restore
 ```
 
-Manual runs require owner. Download requires owner plus the `backup-download` step-up
-action.
+Manual runs, pin, unpin, delete and restore require owner. Every action is audited
+(`backup.pinned`, `backup.unpinned`, `backup.deleted`, `tenant.restored`). Download, pin,
+delete and restore each require a matching step-up action (`backup-download`,
+`backup-pin`, `backup-delete`, `backup-restore`).
+
+Deleting a run removes its R2 object first and then the row, so a storage failure keeps
+the row (and the pointer) for a retry. Runs still in progress cannot be pinned or
+deleted.
+
+### Restoring in place
+
+`POST /backups/:id/restore` recovers the **same** tenant rather than importing a
+duplicate:
+
+1. Takes a pinned `manual` backup first (the pre-restore snapshot).
+2. Replaces the tenant's policies, groups, group/policy links, application metadata,
+   pre-registrations and enrollment settings from the bundle.
+3. Keeps members, devices, SCEP certificates and audit history. Device group
+   memberships are re-linked by device id with a serial-number fallback; devices that no
+   longer exist are reported as skipped.
+4. Writes a `tenant.restored` audit entry containing the backup id and snapshot id.
+
+The caller must send `{ "confirm": "<tenant-slug>" }`. The restore is one transaction,
+so a failed write leaves the previous configuration untouched. Uploaded application
+files are reused because they live under the same tenant's `a/<tenant>/` prefix. If the
+wrong backup was restored, restore the pinned pre-restore snapshot; its id is in the
+response and the settings table.
+
+Limits of the bundle apply to restore too: dynamic group rules and direct device-policy
+assignments are not exported, so recreated groups are manual groups and direct
+assignments are dropped. Uploaded app bytes are re-linked only when the bundle carries
+the tenant's R2 key; otherwise the application is listed as needing a re-upload.
 
 ### Bundle contents
 
@@ -215,10 +249,62 @@ Excluded:
 ### Export and import
 
 `GET /v1/tenants/:tenantId/export` creates a versioned bundle. `POST /v1/tenants/import`
-creates a **new** tenant.
+creates a **new** tenant; `POST /v1/tenants/:tenantId/backups/:id/restore` restores in
+place (see above).
 
 Limits: version 1, 8 MB, 10,000 rows per class, one transaction. Slugs are sanitised and
-suffixed (`-2`, `-3`). Uploaded app files must be re-uploaded.
+suffixed (`-2`, `-3`). Uploaded app files must be re-uploaded after an import (not after
+an in-place restore).
+
+### Tenant deletion
+
+`DELETE /v1/tenants/:tenantId` performs a complete, retryable teardown instead of deleting
+one row. In order:
+
+1. Sends every enrolled device its platform's unenroll signal: Apple devices are marked
+   `unenrolling` and pushed through APNs (a check-in that arrives before the row is
+   removed receives the protocol's unenroll response), Windows devices get a queued
+   `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll` command, and Android devices are
+   deprovisioned through the Android Management API.
+2. Cancels the Stripe subscription immediately and clears `organization.stripe_customer_id`
+   together with the local `subscription` row.
+3. Deletes every object under `p/<tenant>/`, `a/<tenant>/` and `backups/<tenant>/`.
+4. Deletes the organization row (and everything that cascades from it).
+
+Devices that cannot be reached do not block deletion, because one offline laptop must not
+pin a tenant forever:
+
+- Apple devices whose APNs push fails (offline, no token or no push certificate) keep
+  their management profile and must be removed by hand.
+- Windows only applies an unenroll command on a client-initiated check-in, which cannot
+  happen after the tenant is removed. Windows devices are always reported as needing
+  manual retirement even though the command was queued for a check-in that races the
+  delete.
+- Android devices that are not linked to an active enterprise, or that Google rejects,
+  stay enrolled.
+
+The response lists every device that needs manual action so the operator can remove its
+management profile:
+
+```json
+{
+  "status": "ok",
+  "reclaimed": {
+    "devices": 12,
+    "unreachableDevices": [{ "id": "…", "name": "MacBook", "platform": "apple", "reason": "…" }],
+    "objects": 240,
+    "subscription": "cancelled"
+  }
+}
+```
+
+A failed reclamation step (Stripe error, R2 error, database error) returns
+`EnterpriseTenantTeardownFailed` with the failing `step`, keeps the tenant intact and
+leaves a `tenant_deletion` journal row. Repeating `DELETE` resumes from that journal;
+already-cancelled subscriptions, already-deleted objects and already-removed devices are
+idempotent. The journal has no foreign key to `organization`, so support can still read
+what was freed after the tenant row and its audit log are gone. Only a completed teardown
+removes the row; a second delete after completion returns `404 tenant not found`.
 
 ### Infrastructure backups
 

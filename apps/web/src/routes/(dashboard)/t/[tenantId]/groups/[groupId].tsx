@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { toast } from "~/components/toast";
 import {
   enterprise,
   enterpriseKeys,
@@ -33,6 +34,7 @@ import {
   type DynamicGroupRules,
   type PolicyRow,
 } from "~/lib/enterprise";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { useCan } from "~/lib/permissions";
 
 const decodeGroupNode = Schema.decodeUnknownOption(GroupNode);
@@ -214,7 +216,12 @@ export default function GroupDetailPage() {
     onSuccess: async () => {
       setEdit(false);
       await invalidate();
+      toast.success("Group saved");
     },
+    onError: (error) =>
+      toast.error("Could not save the group", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const sync = useMutation(() => ({

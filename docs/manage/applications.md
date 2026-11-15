@@ -50,6 +50,16 @@ The response is `{ queued, skipped }`. Only enrolled Apple devices are eligible.
 command is delivered on the next check-in and is not marked successful until the device
 reports the app.
 
+Installs converge without an operator re-running them. The command has a 24-hour deadline,
+and the device's installed-application inventory is reconciled against it: an app that
+appears in the inventory marks the command `succeeded`; an app that is still assigned but
+missing after the inventory settles marks it `failed` and queues a fresh install, up to
+three attempts per day. A repeated request for work that is already queued returns the
+existing command instead of queueing a second install.
+
+Reconciliation needs the catalogue entry to resolve to a bundle id; an install of an app
+that is not in the catalogue simply expires after its deadline instead.
+
 For a one-off install:
 
 ```bash
@@ -110,7 +120,18 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/inventory?q=chrome&man
 ```
 
 Filters: `q`, `managed=managed|unmanaged`, `updates=available`, `limit` (max 500),
-`offset`. Inventory is refreshed with the `refresh-applications` action.
+`offset`.
+
+Inventory is collected from every platform without an administrator pressing anything:
+
+- Apple reports its full list in response to an `InstalledApplicationList` command. The
+  daily maintenance run queues one for every enrolled device whose inventory is missing or
+  older than a day, and `refresh-applications` collects it immediately.
+- Windows reports `Win32AppInventory` and the MSI packages Mattrax deployed once a day.
+- Android reports `applicationReports` with every status notification.
+
+Each refresh replaces the device's rows, and the device page shows when the last report
+arrived and whether it is stale. `publisher` is reported by Windows inventory.
 
 ## Limitations
 
@@ -118,7 +139,7 @@ Filters: `q`, `managed=managed|unmanaged`, `updates=available`, `limit` (max 500
 - Uploaded packages are stored but not automatically installable.
 - Windows and Android app installation is not implemented.
 - Release a VPP licence does not uninstall the app.
-- Inventory is manual-refresh only and Apple-only.
+- Android and Windows inventory is collected, but only Apple app installation exists.
 - There is no uninstall, update or managed-app configuration flow.
 
 ## API endpoints

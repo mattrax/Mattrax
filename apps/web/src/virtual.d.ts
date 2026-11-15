@@ -21,3 +21,13 @@ declare module "virtual:solid-ssr-handler" {
 // Side-effect module: importing it loads every module containing server
 // functions so their registrations exist before requests are dispatched.
 declare module "virtual:solid-server-function-manifest" {}
+
+/**
+ * Documentation pages as clean `/docs/...` URLs, derived by the
+ * `mattraxe:docs-routes` Vite plugin from the rspress build output (or the
+ * markdown sources when a dev checkout has no `doc_build`).
+ */
+declare module "virtual:docs-routes" {
+  const routes: readonly string[];
+  export default routes;
+}

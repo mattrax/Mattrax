@@ -129,10 +129,10 @@ export const pushInvalidTokenTransition = (
 ) => nextCode === "invalid_token" && previousCode !== "invalid_token";
 
 /**
- * Commands move queued -> sent -> not-now/failed. Record the first time a
- * command reports a terminal/deferred state so check-in retries do not spam.
+ * Commands move queued -> sent -> deferred/failed. Record the first time a
+ * command reports a deferred/terminal state so check-in retries do not spam.
  */
 export const commandFailureTransition = (
   previousStatus: string | null | undefined,
   nextStatus: string | null | undefined,
-) => (nextStatus === "failed" || nextStatus === "not-now") && previousStatus !== nextStatus;
+) => (nextStatus === "failed" || nextStatus === "deferred") && previousStatus !== nextStatus;

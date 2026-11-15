@@ -17,6 +17,12 @@ export type StripePortalSession = {
   readonly url?: string | null;
 };
 
+export type StripeSubscription = {
+  readonly id: string;
+  readonly status?: string;
+  readonly cancel_at_period_end?: boolean;
+};
+
 export type StripeClientConfig = {
   readonly timeout?: number;
   readonly maxNetworkRetries?: number;
@@ -54,6 +60,18 @@ export interface StripeClientLike {
         readonly return_url: string;
       }) => Promise<StripePortalSession>;
     };
+  };
+  /**
+   * Subscription lifecycle used by tenant teardown. Kept minimal: cancel is
+   * idempotent at the Stripe API level and never bills again.
+   */
+  readonly subscriptions: {
+    readonly retrieve: (id: string) => Promise<StripeSubscription>;
+    readonly cancel: (id: string) => Promise<StripeSubscription>;
+    readonly update: (
+      id: string,
+      params: { readonly cancel_at_period_end?: boolean },
+    ) => Promise<StripeSubscription>;
   };
 }
 
@@ -136,8 +154,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /**
  * A very small Stripe REST client.
  *
- * The app calls four endpoints (customer create/search/list and a billing
- * portal session) and verifies webhooks. The official SDK brings its HTTP
+ * The app calls customer create/search/list, a billing portal session, and the
+ * subscription cancel used by tenant teardown, and verifies webhooks. The
+ * official SDK brings its HTTP
  * stack, form encoder, event types and retry machinery into the Worker bundle
  * (~530KB), which is most of the remaining removable code. This client keeps
  * the observable behaviour: bearer auth, form encoding, bounded retries for
@@ -164,7 +183,7 @@ export class HttpStripeClient implements StripeClientLike {
   }
 
   async #request<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "DELETE",
     path: string,
     params: URLSearchParams = new URLSearchParams(),
   ): Promise<T> {
@@ -245,10 +264,7 @@ export class HttpStripeClient implements StripeClientLike {
       this.#request<StripeCustomer>(
         "POST",
         "/v1/customers",
-        withMetadata(
-          paramPairs(["name", params.name], ["email", params.email]),
-          params.metadata,
-        ),
+        withMetadata(paramPairs(["name", params.name], ["email", params.email]), params.metadata),
       ),
     search: (params: Parameters<StripeClientLike["customers"]["search"]>[0]) =>
       this.#request<StripeList<StripeCustomer>>(
@@ -273,6 +289,28 @@ export class HttpStripeClient implements StripeClientLike {
           paramPairs(["customer", params.customer], ["return_url", params.return_url]),
         ),
     },
+  };
+
+  readonly subscriptions = {
+    retrieve: (id: string) =>
+      this.#request<StripeSubscription>("GET", `/v1/subscriptions/${encodeURIComponent(id)}`),
+    // `DELETE /v1/subscriptions/:id` cancels immediately. Stripe keeps the
+    // object readable with status `canceled`, so a retried teardown converges.
+    cancel: (id: string) =>
+      this.#request<StripeSubscription>("DELETE", `/v1/subscriptions/${encodeURIComponent(id)}`),
+    update: (id: string, params: Parameters<StripeClientLike["subscriptions"]["update"]>[1]) =>
+      this.#request<StripeSubscription>(
+        "POST",
+        `/v1/subscriptions/${encodeURIComponent(id)}`,
+        paramPairs([
+          "cancel_at_period_end",
+          params.cancel_at_period_end === undefined
+            ? undefined
+            : params.cancel_at_period_end
+              ? "true"
+              : "false",
+        ]),
+      ),
   };
 }
 

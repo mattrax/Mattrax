@@ -1,0 +1,14 @@
+ALTER TABLE `android_device` ADD `management_mode` varchar(32);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `ownership` varchar(32);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `api_level` int;--> statement-breakpoint
+ALTER TABLE `android_device` ADD `security_patch_level` varchar(255);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `applied_policy_name` varchar(255);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `applied_policy_version` varchar(255);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `enrollment_token_name` varchar(255);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `disabled_reason` text;--> statement-breakpoint
+ALTER TABLE `android_device` ADD `network_operator` varchar(255);--> statement-breakpoint
+ALTER TABLE `android_device` ADD `total_ram` bigint;--> statement-breakpoint
+ALTER TABLE `device_application` ADD `publisher` varchar(255);--> statement-breakpoint
+ALTER TABLE `device_command` ADD `dedupe_key` varchar(64);--> statement-breakpoint
+ALTER TABLE `device_command` ADD `expires_at` datetime(3);--> statement-breakpoint
+CREATE UNIQUE INDEX `device_command_device_dedupe_unique` ON `device_command` (`device_id`,`dedupe_key`);

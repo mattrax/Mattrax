@@ -15,8 +15,10 @@ import {
   verifyWindowsTenantTokenDetailed,
   windowsTenantTokenExpiresAt,
 } from "../windows.js";
-import {   dbRows, makeDb, tableName, type Store, dateValue } from "./fake-db.js";
+import { dbRows, makeDb, tableName, type Store, dateValue } from "./fake-db.js";
 import {
+  WINDOWS_APPLICATION_INVENTORY_REQUESTS,
+  WINDOWS_APPLICATION_INVENTORY_URI,
   WINDOWS_INVENTORY_REQUESTS,
   WINDOWS_INVENTORY_URI,
 } from "../windowsInventory.js";
@@ -107,7 +109,15 @@ const setup = async (
       organizationRow("org-early", new Date("2024-01-01T00:00:00Z")),
     ],
     [tableName(schema.scepCa)]: [
-      { id: 1, certPem: ca.certPem, privateKeyJwk: ca.privateKeyJwk, createdAt: new Date() },
+      {
+        id: 1,
+        organizationId: "org-early",
+        certPem: ca.certPem,
+        privateKeyJwk: ca.privateKeyJwk,
+        source: "generated",
+        createdAt: new Date(),
+        rotatedAt: null,
+      },
     ],
     [tableName(schema.enterpriseEnrollment)]: [
       enrollmentRow("org-late"),
@@ -115,8 +125,7 @@ const setup = async (
     ],
   };
 
-  if (overrides.subscription)
-    initial[tableName(schema.subscription)] = [overrides.subscription];
+  if (overrides.subscription) initial[tableName(schema.subscription)] = [overrides.subscription];
 
   if (overrides.devices) initial[tableName(schema.device)] = overrides.devices;
 
@@ -163,6 +172,8 @@ const suppressInventory = (db: ReturnType<typeof makeDb>) => {
   for (const row of db.store[tableName(schema.device)] ?? []) {
     row.inventoryRequestedAt = now;
     row.inventoryUpdatedAt = now;
+    row.applicationsRequestedAt = now;
+    row.applicationsUpdatedAt = now;
   }
 };
 
@@ -555,13 +566,21 @@ describe("Windows enterprise backend", () => {
     const first = await checkin();
     const gets = first.commands.filter((command) => command.kind === "Get");
 
-    expect(gets).toHaveLength(WINDOWS_INVENTORY_REQUESTS.length);
+    expect(gets).toHaveLength(
+      WINDOWS_INVENTORY_REQUESTS.length + WINDOWS_APPLICATION_INVENTORY_REQUESTS.length,
+    );
+    expect(gets.map((command) => command.locURI)).toContain(
+      WINDOWS_APPLICATION_INVENTORY_URI.win32,
+    );
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.osVersion);
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.serial);
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.model);
     expect(dateValue(db.store[tableName(schema.device)]![0]!.inventoryRequestedAt)).toBeInstanceOf(
       Date,
     );
+    expect(
+      dateValue(db.store[tableName(schema.device)]![0]!.applicationsRequestedAt),
+    ).toBeInstanceOf(Date);
 
     // The same check-in cycle must not re-ask. Only a report (or the refresh
     // interval) can make inventory due again.
@@ -608,9 +627,7 @@ describe("Windows enterprise backend", () => {
         cmdID: "7",
         msgRef: "1",
         cmdRef: "windows-inventory-system-sku",
-        items: [
-          { source: { locURI: WINDOWS_INVENTORY_URI.systemSKU }, data: "Surface_Laptop_5" },
-        ],
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.systemSKU }, data: "Surface_Laptop_5" }],
       },
       {
         cmdID: "8",
@@ -647,8 +664,11 @@ describe("Windows enterprise backend", () => {
       ),
     );
 
-    // A successful report satisfies the cadence guard for this session.
-    expect(response.commands).toEqual([]);
+    // The report satisfies the DevDetail cadence guard, but the installed
+    // application inventory is still due because this report carried none.
+    expect(response.commands.map((command) => command.cmdID)).toEqual(
+      WINDOWS_APPLICATION_INVENTORY_REQUESTS.map((request) => request.cmdID),
+    );
 
     const device = dbRows(db, tableName(schema.device))[0]!;
     expect(device).toMatchObject({
@@ -664,6 +684,92 @@ describe("Windows enterprise backend", () => {
     // Enrollment supplied a human name, so the inventory one must not replace it.
     expect(device.name).toBe("DESKTOP-TEST");
     expect(dateValue(device.inventoryUpdatedAt)).toBeInstanceOf(Date);
+  });
+
+  it("stores the installed-application inventory reported by a device", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const win32 = (key: string, field: string, value: string) => ({
+      source: {
+        locURI: `./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram/InstalledProgram/${key}/${field}`,
+      },
+      data: value,
+    });
+
+    const response = await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+          results: [
+            {
+              cmdID: "11",
+              msgRef: "1",
+              cmdRef: "windows-app-inventory-win32",
+              items: [
+                win32("Google Chrome", "Name", "Google Chrome"),
+                win32("Google Chrome", "Version", "131.0.6778.86"),
+                win32("Google Chrome", "Publisher", "Google LLC"),
+                win32("Google Chrome", "RegKey", "Google Chrome"),
+              ],
+            },
+            {
+              cmdID: "12",
+              msgRef: "1",
+              cmdRef: "windows-app-inventory-msi",
+              items: [
+                {
+                  source: {
+                    locURI:
+                      "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/COMPANY-APP/Name",
+                  },
+                  data: "Contoso Client",
+                },
+                {
+                  source: {
+                    locURI:
+                      "./Device/Vendor/MSFT/EnterpriseDesktopAppManagement/MSI/COMPANY-APP/Status",
+                  },
+                  data: "70",
+                },
+              ],
+            },
+          ],
+        },
+      ),
+    );
+
+    const applications = dbRows(db, tableName(schema.deviceApplication));
+    expect(applications).toHaveLength(2);
+    expect(
+      applications
+        .map((row) => row.bundleId)
+        .sort((left: any, right: any) => String(left).localeCompare(String(right))),
+    ).toEqual(["COMPANY-APP", "Google Chrome"]);
+    expect(applications.find((row) => row.bundleId === "Google Chrome")).toMatchObject({
+      name: "Google Chrome",
+      version: "131.0.6778.86",
+      publisher: "Google LLC",
+      isManaged: false,
+    });
+    expect(applications.find((row) => row.bundleId === "COMPANY-APP")).toMatchObject({
+      name: "Contoso Client",
+      isManaged: true,
+    });
+
+    const device = dbRows(db, tableName(schema.device))[0]!;
+    expect(dateValue(device.applicationsUpdatedAt)).toBeInstanceOf(Date);
+    // The app inventory was just reported, so it is not requested again.
+    expect(response.commands.filter((command) => command.locURI?.includes("AppInventory"))).toEqual(
+      [],
+    );
   });
 
   it("fills an enrollment placeholder name from inventory", async () => {

@@ -2,7 +2,13 @@ import path from "node:path";
 import { defineConfig } from "@rspress/core";
 import { pluginLlms } from "@rspress/plugin-llms";
 
-const origin = "https://mattrax.cloud";
+/**
+ * The docs are served by the same Worker as the app, so canonical URLs and the
+ * generated `sitemap.xml` must use that deployment's origin. `SITE_ORIGIN`
+ * lets a staging, preview or self-hosted docs build claim its own host instead
+ * of inheriting the cloud one.
+ */
+const origin = process.env.SITE_ORIGIN ?? "https://e.mattrax.app";
 
 export default defineConfig({
   root: "docs",
@@ -40,10 +46,8 @@ export default defineConfig({
     lastUpdated: true,
     enableContentAnimation: true,
     enableScrollToTop: true,
-    outline: true,
     editLink: {
       docRepoBaseUrl: "https://github.com/oscartbeaumont/mattraxe/tree/main/docs",
-      text: "Edit this page on GitHub",
     },
     footer: {
       message:

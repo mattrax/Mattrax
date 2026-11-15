@@ -13,6 +13,7 @@ import {
 } from "@mattrax/management-backend";
 import { mockManagementBackend } from "./helpers.js";
 import { parsePlist, PlistValue } from "@mattrax/plist";
+import { DeviceUnenrolled } from "../schema.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
 const TEST_MDM_ORIGIN = new MdmOrigin({ url: TEST_CONFIG.origin });
@@ -24,8 +25,6 @@ function expectScope(scope: CheckinScope | undefined): CheckinScope {
 
   return scope;
 }
-
-
 
 function runWithService<A, E>(
   backendLayer: Layer.Layer<ManagementBackend>,
@@ -408,7 +407,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleCheckin(
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       );
 
@@ -419,8 +420,7 @@ describe("AppleMdmService", () => {
 
     it("returns null when backend returns Idle", async () => {
       const backend = mockManagementBackend({
-        appleManagementCheckin: () =>
-          Effect.succeed(ManagementManifest.members[0].make({})),
+        appleManagementCheckin: () => Effect.succeed(ManagementManifest.members[0].make({})),
       });
 
       const result = await runWithService(
@@ -428,7 +428,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleCheckin(
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       );
 
@@ -450,7 +452,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleCheckin(
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       );
 
@@ -459,7 +463,7 @@ describe("AppleMdmService", () => {
       expect(result!.commandUUID).toBeDefined();
     });
 
-    it("handles UnknownDevice by returning Idle", async () => {
+    it("tells an unknown device to unenroll (410 Gone)", async () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () => Effect.fail(new UnknownDevice()),
       });
@@ -469,11 +473,15 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* Effect.flip(
+            service.handleCheckin(
+              DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }),
+            ),
+          );
         }),
       );
 
-      expect(result).toBeNull();
+      expect(result).toBeInstanceOf(DeviceUnenrolled);
     });
   });
 
@@ -495,7 +503,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarativeTokens(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleDeclarativeTokens(
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       );
 
@@ -513,7 +523,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarativeTokens(DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleDeclarativeTokens(
+            DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       )
         .then(() => "Success")
@@ -540,7 +552,9 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarationItems(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
+          return yield* service.handleDeclarationItems(
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
+          );
         }),
       );
 
@@ -658,7 +672,8 @@ describe("AppleMdmService", () => {
 
       const parsed = await Effect.runPromise(parsePlist(profile));
 
-      if (!Schema.is(PlistDictionary)(parsed)) throw new Error("profile must be a plist dictionary");
+      if (!Schema.is(PlistDictionary)(parsed))
+        throw new Error("profile must be a plist dictionary");
 
       expect(parsed["PayloadType"]).toBe("Configuration");
       expect(parsed["PayloadIdentifier"]).toBe("com.mattrax.enrollment");
@@ -681,7 +696,7 @@ describe("AppleMdmService", () => {
       if (!Schema.is(PlistDictionary)(scepContent))
         throw new Error("SCEP payload must have content");
 
-      expect(scepContent["URL"]).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep`);
+      expect(scepContent["URL"]).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep/tenant-123`);
       expect(scepContent["Challenge"]).toBe("enrollment-123.signature");
       expect(scepContent["Subject"]).toEqual([
         [["O", "Acme"]],
@@ -715,7 +730,7 @@ describe("AppleMdmService", () => {
           backend,
           config,
           topic: TEST_CONFIG.topic,
-          trust: { requireSignature, caCertPems: Effect.succeed([]) },
+          trust: { requireSignature, caCertPems: () => Effect.succeed([]) },
         });
       }).pipe(
         Effect.provide(

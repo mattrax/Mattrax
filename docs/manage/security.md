@@ -127,6 +127,19 @@ then the user registers a new passkey. The SQL is in
 [Troubleshooting](/operations/troubleshooting#mfa-and-passkey-lockout). Audit the operation
 and have the user enroll a new passkey immediately.
 
+## Device identity and profile integrity
+
+- Apple enrollment profiles are CMS-signed with the tenant's SCEP CA (or an explicit
+  deployment signing identity). A modified profile fails signature verification, and a
+  deployment without usable signing material refuses to serve the download rather than
+  serving an unsigned plist. See [Apple profile signing](/platforms/apple/#profile-signing).
+- Every tenant owns its SCEP CA. Rotating or importing one CA cannot affect another
+  tenant; rotation revokes the identities issued by the retired CA, so those devices must
+  enroll again. See [Tenant SCEP CA](/platforms/apple/#tenant-scep-ca).
+- DDM asset URLs are bound to one device and expire. Unenrolling or deleting the device
+  revokes its outstanding links. Profile URLs stay device-bound and are refreshed whenever
+  the profile content changes. See [DDM](/platforms/apple/ddm#signed-profile-and-asset-urls).
+
 ## Limitations
 
 - There is no conditional UI/passkey autofill yet.

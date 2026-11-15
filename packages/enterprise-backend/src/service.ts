@@ -32,9 +32,9 @@ export type EnterpriseServiceOptions = {
   /** Optional static analytics sink, used when the request has no sink. */
   readonly analytics?: EnterpriseAnalytics;
   /**
-   * Deployment identity used to CMS-sign Apple enrollment profiles. When it is
-   * omitted the global SCEP CA signs downloads (or they stay unsigned until the
-   * CA exists).
+   * Deployment identity used to CMS-sign Apple enrollment profiles. This is an
+   * explicit self-hosted override; when omitted, each tenant's SCEP CA signs the
+   * download.
    */
   readonly appleProfileSigning?: AppleProfileSigningConfig;
   readonly email?: {

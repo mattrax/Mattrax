@@ -2,9 +2,9 @@
   "name": "@mattrax/selfhost",
   "version": "0.0.0",
   "private": true,
+  "description": "Self-hosted Mattrax runtime: hosts the built API and web Workers on workerd via Miniflare.",
   "type": "module",
   "main": "src/server.mjs",
-  "description": "Self-hosted Mattrax runtime: hosts the built API and web Workers on workerd via Miniflare.",
   "scripts": {
     "start": "node src/server.mjs"
   },

@@ -169,9 +169,9 @@ export const summarizeDeviceCertificates = (
 };
 
 /**
- * Tenant-scoped credential summary. The SCEP CA is deployment-wide, so it is
- * reported on every tenant (it still affects every tenant's devices) while the
- * APNs certificate and issued identities are scoped to `organizationId`.
+ * Tenant-scoped credential summary. Each tenant has its own SCEP CA, APNs
+ * certificate and issued identities, so every value is read for
+ * `organizationId`.
  */
 export const loadCredentialHealth = (
   db: EnterpriseDb,
@@ -188,7 +188,7 @@ export const loadCredentialHealth = (
     const [caRow] = yield* db
       .select()
       .from(schema.scepCa)
-      .where(eq(schema.scepCa.id, 1))
+      .where(eq(schema.scepCa.organizationId, organizationId))
       .limit(1);
 
     const certificates = yield* db

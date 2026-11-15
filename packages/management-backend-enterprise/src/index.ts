@@ -1,12 +1,16 @@
 import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import {
   Db,
   deviceLimitForOrganization,
   schema as s,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { deriveDeviceHealth, resolveTenantBranding } from "@mattrax/enterprise-domain";
+import {
+  deriveDeviceHealth,
+  resolveTenantBranding,
+  shouldApplyReportedName,
+} from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
 import { PlistValue } from "@mattrax/plist";
@@ -27,7 +31,11 @@ import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import { isPlistObject, type PlistInput, type PlistObject } from "./internal/plistValue.js";
 import { parseDeviceInventory } from "./inventory.ts";
 import { parseSecurityInfo } from "./securityInfo.ts";
-import { parseInstalledApplications } from "./applications.ts";
+import {
+  APPLE_APPLICATION_INVENTORY_PAYLOAD,
+  APPLE_DEVICE_INFORMATION_PAYLOAD,
+  parseInstalledApplications,
+} from "./applications.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
 import { syncDynamicGroupsForDevice } from "./dynamicGroups.ts";
 import {
@@ -36,6 +44,21 @@ import {
   declarationFailedTransition,
   writeSystemAudit,
 } from "./audit.ts";
+import {
+  ACTIVE_COMMAND_STATUSES,
+  COMMAND_EXPIRED_DETAIL,
+  DEVICE_COMMAND_ACTIVE_LIMIT,
+  DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS,
+  RECONCILED_RESULT_STATUS,
+  commandDedupeKey,
+  commandStatusIsActive,
+  deviceCommandExpiresAt,
+  installApplicationTarget,
+  planCommandDelivery,
+  reconcileDeviceCommands,
+  shouldRetryInstall,
+  type CommandPayload,
+} from "./commands.ts";
 import {
   buildAssetContent,
   buildAssetDeclaration,
@@ -503,9 +526,7 @@ const updateInventoryFromStatus = (
       // (storage, battery, FileVault), so compare it before returning.
       if (deviceBefore)
         yield* auditComplianceChange(
-          deriveDeviceHealth(
-            healthInput({ ...deviceBefore, ...update }, declarationsBefore),
-          ),
+          deriveDeviceHealth(healthInput({ ...deviceBefore, ...update }, declarationsBefore)),
         );
 
       return;
@@ -598,9 +619,7 @@ const updateInventoryFromStatus = (
         .where(eq(s.deviceDeclaration.deviceId, deviceId));
 
       yield* auditComplianceChange(
-        deriveDeviceHealth(
-          healthInput({ ...deviceBefore, ...update }, declarationsAfter),
-        ),
+        deriveDeviceHealth(healthInput({ ...deviceBefore, ...update }, declarationsAfter)),
       );
     }
   });
@@ -898,6 +917,255 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         Effect.catch(() => Effect.void),
       );
 
+    /** Whether an application is still assigned to the device, directly or by group. */
+    const applicationAssignedToDevice = (deviceId: string, applicationId: string) =>
+      Effect.gen(function* () {
+        const [direct] = yield* db
+          .select({ deviceId: s.applicationDevice.deviceId })
+          .from(s.applicationDevice)
+          .where(
+            and(
+              eq(s.applicationDevice.deviceId, deviceId),
+              eq(s.applicationDevice.applicationId, applicationId),
+            ),
+          )
+          .limit(1);
+
+        if (direct) return true;
+
+        const groups = yield* db
+          .select({ groupId: s.applicationGroup.groupId })
+          .from(s.applicationGroup)
+          .where(eq(s.applicationGroup.applicationId, applicationId));
+
+        if (groups.length === 0) return false;
+
+        const [member] = yield* db
+          .select({ deviceId: s.groupDevice.deviceId })
+          .from(s.groupDevice)
+          .where(
+            and(
+              eq(s.groupDevice.deviceId, deviceId),
+              inArray(
+                s.groupDevice.groupId,
+                groups.map((group) => group.groupId),
+              ),
+            ),
+          )
+          .limit(1);
+
+        return Boolean(member);
+      });
+
+    /**
+     * Re-queue an app install that is still assigned to the device after the
+     * device proved it missing, so legacy (non-declarative) app delivery
+     * converges instead of waiting for an operator. `shouldRetryInstall` bounds
+     * it to three attempts a day, so a broken manifest cannot loop.
+     */
+    const requeueMissingInstalls = (
+      device: DeviceRow,
+      installs: ReadonlyArray<{ readonly requestType: string; readonly payload: CommandPayload }>,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        if (installs.length === 0 || device.status !== "enrolled") return;
+
+        const applications = yield* db
+          .select({
+            id: s.application.id,
+            manifestUrl: s.application.manifestUrl,
+            storeId: s.application.storeId,
+            bundleId: s.application.bundleId,
+          })
+          .from(s.application)
+          .where(eq(s.application.organizationId, device.organizationId));
+
+        const history = yield* db
+          .select({
+            requestType: s.deviceCommand.requestType,
+            payload: s.deviceCommand.payload,
+            createdAt: s.deviceCommand.createdAt,
+          })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.requestType, "InstallApplication"),
+              gte(
+                s.deviceCommand.createdAt,
+                new Date(at.getTime() - DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS),
+              ),
+            ),
+          )
+          .orderBy(desc(s.deviceCommand.createdAt))
+          .limit(20);
+
+        let requeued = false;
+
+        for (const install of installs) {
+          const target = installApplicationTarget(install.payload);
+
+          const application = applications.find(
+            (candidate) =>
+              (target.manifestUrl != null && candidate.manifestUrl === target.manifestUrl) ||
+              (target.storeId != null && candidate.storeId === target.storeId),
+          );
+
+          if (!application?.bundleId) continue;
+
+          if (!(yield* applicationAssignedToDevice(device.id, application.id))) continue;
+
+          if (!shouldRetryInstall(history, { ...install, now: at })) continue;
+
+          const dedupeKey = yield* Effect.promise(() =>
+            commandDedupeKey(install.requestType, install.payload),
+          );
+
+          yield* db
+            .insert(s.deviceCommand)
+            .values({
+              id: crypto.randomUUID(),
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              requestType: install.requestType,
+              payload: install.payload,
+              status: "queued",
+              dedupeKey,
+              expiresAt: deviceCommandExpiresAt(install.requestType, at),
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: at,
+              updatedAt: at,
+            })
+            // A concurrent check-in may have queued the same install first.
+            // The no-op update leaves its retry timer alone.
+            .onDuplicateKeyUpdate({ set: { requestType: install.requestType } });
+
+          requeued = true;
+        }
+
+        if (requeued) yield* pushEnrolledDevice(device.id, device.organizationId);
+      });
+
+    /**
+     * Reconcile a device's active commands against the state it reports.
+     *
+     * Apple only sends a result for a command it processed, so a command whose
+     * result was lost - or that a re-enrolment overtook - would stay `sent`
+     * forever. The rules themselves live in `commands.ts` so they stay pure and
+     * unit tested; this only resolves the inventory evidence they need.
+     */
+    const reconcileCommands = (device: DeviceRow): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        const at = now();
+
+        const [lifecycle] = yield* db
+          .select({ applicationsUpdatedAt: s.device.applicationsUpdatedAt })
+          .from(s.device)
+          .where(eq(s.device.id, device.id))
+          .limit(1);
+
+        const applicationsUpdatedAt = lifecycle?.applicationsUpdatedAt ?? null;
+
+        const active = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .orderBy(asc(s.deviceCommand.createdAt))
+          .limit(DEVICE_COMMAND_ACTIVE_LIMIT);
+
+        if (active.length === 0) return;
+
+        const installCommands = active.filter((row) => row.requestType === "InstallApplication");
+
+        const applications =
+          installCommands.length > 0
+            ? yield* db
+                .select({
+                  id: s.application.id,
+                  manifestUrl: s.application.manifestUrl,
+                  storeId: s.application.storeId,
+                  bundleId: s.application.bundleId,
+                })
+                .from(s.application)
+                .where(eq(s.application.organizationId, device.organizationId))
+            : [];
+
+        const targetBundleIds = (payload: CommandPayload) => {
+          const target = installApplicationTarget(payload);
+
+          return applications
+            .filter(
+              (application) =>
+                (target.manifestUrl != null && application.manifestUrl === target.manifestUrl) ||
+                (target.storeId != null && application.storeId === target.storeId),
+            )
+            .flatMap((application) => (application.bundleId ? [application.bundleId] : []));
+        };
+
+        const installed =
+          applicationsUpdatedAt && installCommands.length > 0
+            ? yield* db
+                .select({ bundleId: s.deviceApplication.bundleId })
+                .from(s.deviceApplication)
+                .where(eq(s.deviceApplication.deviceId, device.id))
+            : [];
+
+        const reconciled = reconcileDeviceCommands(
+          active.map((row) => ({
+            id: row.id,
+            requestType: row.requestType,
+            status: row.status,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            expiresAt: row.expiresAt,
+            targetBundleIds: targetBundleIds(row.payload),
+          })),
+          {
+            status: device.status,
+            applicationsUpdatedAt,
+            installedBundleIds: new Set(installed.map((row) => row.bundleId)),
+          },
+          at,
+        );
+
+        for (const command of reconciled)
+          yield* db
+            .update(s.deviceCommand)
+            .set({
+              status: command.status,
+              dedupeKey: null,
+              resultStatus: command.resultStatus,
+              resultDetail: command.resultDetail,
+              updatedAt: at,
+            })
+            .where(
+              and(eq(s.deviceCommand.id, command.id), eq(s.deviceCommand.deviceId, device.id)),
+            );
+
+        const failed = new Set(
+          reconciled.filter((command) => command.status === "failed").map((command) => command.id),
+        );
+
+        yield* requeueMissingInstalls(
+          device,
+          active.filter((row) => failed.has(row.id) && row.requestType === "InstallApplication"),
+          at,
+        );
+      }).pipe(
+        // Reconciliation is best effort: a failure must never fail the
+        // device's check-in. The next inventory report reconciles again.
+        Effect.catch((error) =>
+          Effect.logWarning(`Failed to reconcile device commands: ${String(error)}`),
+        ),
+      );
+
     const windowsBackendOptions: Parameters<typeof createWindowsBackend>[0] = {
       db,
       origin,
@@ -1035,6 +1303,24 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
                 if (existing) {
                   yield* db.update(s.device).set(common).where(eq(s.device.id, deviceId));
+                  // A re-enrolment starts a new MDM session and Apple discards
+                  // the previous command queue, so anything still active was
+                  // queued for an enrolment that no longer exists.
+                  yield* db
+                    .update(s.deviceCommand)
+                    .set({
+                      status: "expired",
+                      dedupeKey: null,
+                      resultStatus: RECONCILED_RESULT_STATUS,
+                      resultDetail: "The device re-enrolled before the command was delivered.",
+                      updatedAt: now(),
+                    })
+                    .where(
+                      and(
+                        eq(s.deviceCommand.deviceId, deviceId),
+                        inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                      ),
+                    );
                 } else {
                   yield* db.insert(s.device).values({ id: deviceId, enrolledAt: now(), ...common });
                 }
@@ -1098,6 +1384,58 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   scope,
                 );
                 yield* syncDeviceGroups(organizationId, deviceId);
+
+                // Collect the identity and the installed-application list on
+                // the first check-in. Apple only reports either in response to
+                // a command, so without this a brand-new Mac stays a serial
+                // number with no software inventory until an admin clicks
+                // Refresh. Both are idempotent queries with bounded budgets.
+                yield* Effect.forEach(
+                  [
+                    {
+                      requestType: "DeviceInformation",
+                      payload: APPLE_DEVICE_INFORMATION_PAYLOAD,
+                    },
+                    {
+                      requestType: "InstalledApplicationList",
+                      payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
+                    },
+                  ],
+                  ({ requestType, payload }) =>
+                    Effect.gen(function* () {
+                      const [active] = yield* db
+                        .select({ id: s.deviceCommand.id })
+                        .from(s.deviceCommand)
+                        .where(
+                          and(
+                            eq(s.deviceCommand.deviceId, deviceId),
+                            eq(s.deviceCommand.requestType, requestType),
+                            inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                          ),
+                        )
+                        .limit(1);
+
+                      if (active) return;
+
+                      const at = now();
+
+                      yield* db.insert(s.deviceCommand).values({
+                        id: id(),
+                        organizationId,
+                        deviceId,
+                        requestType,
+                        payload,
+                        status: "queued",
+                        dedupeKey: yield* Effect.promise(() =>
+                          commandDedupeKey(requestType, payload),
+                        ),
+                        expiresAt: deviceCommandExpiresAt(requestType, at),
+                        createdAt: at,
+                        updatedAt: at,
+                      });
+                    }),
+                  { concurrency: 1, discard: true },
+                );
 
                 return;
               }
@@ -1221,6 +1559,23 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .update(s.device)
                   .set({ status: "unenrolled", lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
+                // Nothing queued for a device that left management can ever be
+                // delivered, so close it out instead of expiring it later.
+                yield* db
+                  .update(s.deviceCommand)
+                  .set({
+                    status: "cancelled",
+                    dedupeKey: null,
+                    resultStatus: RECONCILED_RESULT_STATUS,
+                    resultDetail: "The device unenrolled before the command was delivered.",
+                    updatedAt: now(),
+                  })
+                  .where(
+                    and(
+                      eq(s.deviceCommand.deviceId, device.id),
+                      inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                    ),
+                  );
 
                 if (device.status !== "unenrolled")
                   yield* writeSystemAudit(
@@ -1276,7 +1631,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
                 const nextStatus = Match.value(event.status).pipe(
                   Match.when("Acknowledged", () => "succeeded"),
-                  Match.when("NotNow", () => "not-now"),
+                  Match.when("NotNow", () => "deferred"),
                   Match.when("Idle", () => "sent"),
                   Match.orElse(() => "failed"),
                 );
@@ -1285,6 +1640,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .update(s.deviceCommand)
                   .set({
                     status: nextStatus,
+                    // Terminal commands release their de-duplication key so
+                    // the same action can be queued again later.
+                    dedupeKey: commandStatusIsActive(nextStatus) ? undefined : null,
                     resultStatus: event.status,
                     resultDetail: event.errorDetail ?? null,
                     updatedAt: now(),
@@ -1297,7 +1655,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   );
 
                 // A device can repeat the same result on retries. Only the
-                // first transition into failed/not-now is audited, and the
+                // first transition into failed/deferred is audited, and the
                 // detail text (which may echo device data) is not stored.
                 if (command && commandFailureTransition(command.status, nextStatus))
                   yield* writeSystemAudit(
@@ -1328,11 +1686,60 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
                 yield* applySecurityInfo(device, queryResponses, { authSecret });
                 yield* applyInstalledApplications(device, queryResponses);
+
+                // `DeviceInformation` answers carry the name Apple reports for
+                // itself. An administrator's rename always wins; otherwise the
+                // name follows the device while it is still an auto-derived
+                // placeholder.
+                const reportedName = record(queryResponses)?.DeviceName;
+
+                if (Schema.is(Schema.String)(reportedName) && reportedName.trim()) {
+                  const name = reportedName.trim();
+
+                  const nameUpdate: Partial<typeof s.device.$inferInsert> = {
+                    physicalName: name,
+                  };
+
+                  if (
+                    shouldApplyReportedName({
+                      currentName: device.name,
+                      reportedName: name,
+                      placeholders: [
+                        device.dmIdentifier,
+                        device.serial,
+                        device.model,
+                        device.physicalName,
+                      ],
+                    })
+                  )
+                    nameUpdate.name = name;
+
+                  yield* db.update(s.device).set(nameUpdate).where(eq(s.device.id, device.id));
+                }
+
                 yield* db
                   .update(s.device)
                   .set({ lastSeenAt: now() })
                   .where(eq(s.device.id, device.id));
                 yield* syncDeviceGroups(device.organizationId, device.id);
+
+                // A device-reported install failure is drift too: re-queue it
+                // while the app is still assigned and the retry budget allows.
+                if (command?.requestType === "InstallApplication" && nextStatus === "failed")
+                  yield* requeueMissingInstalls(
+                    device,
+                    [{ requestType: command.requestType, payload: command.payload }],
+                    now(),
+                  ).pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning(
+                        `Failed to re-queue install ${command.id}: ${String(error)}`,
+                      ),
+                    ),
+                  );
+                // A fresh inventory is evidence about every other command the
+                // device has in flight, not just the one it is answering.
+                yield* reconcileCommands(device);
 
                 return;
               }
@@ -1341,9 +1748,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 yield* updateInventoryFromStatus(
                   device.id,
                   device.organizationId,
-                  Option.getOrUndefined(
-                    Schema.decodeUnknownOption(PlistValue)(event.statusItems),
-                  ),
+                  Option.getOrUndefined(Schema.decodeUnknownOption(PlistValue)(event.statusItems)),
                   { authSecret },
                 );
                 yield* syncDeviceGroups(device.organizationId, device.id);
@@ -1357,9 +1762,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 .where(eq(s.device.id, device.id));
               yield* syncDeviceGroups(device.organizationId, device.id);
             }).pipe(
-              Effect.mapError((cause) =>
-                cause instanceof UnknownDevice ? cause : internal(),
-              ),
+              Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
             );
           }),
         ),
@@ -1379,45 +1782,64 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
 
             if (device.status !== "enrolled") return { _tag: "Idle" as const };
-            // Retry commands the device deferred for a while, and commands
-            // that were handed out but never acknowledged. Re-sending the same
-            // command UUID is idempotent for the device; leaving them "sent"
-            // forever would silently drop the action.
-            yield* db
-              .update(s.deviceCommand)
-              .set({ status: "queued", updatedAt: now() })
-              .where(
-                and(
-                  eq(s.deviceCommand.deviceId, device.id),
-                  eq(s.deviceCommand.status, "not-now"),
-                  lt(s.deviceCommand.updatedAt, new Date(Date.now() - 10 * 60 * 1000)),
-                ),
-              );
-            yield* db
-              .update(s.deviceCommand)
-              .set({ status: "queued", updatedAt: now() })
-              .where(
-                and(
-                  eq(s.deviceCommand.deviceId, device.id),
-                  eq(s.deviceCommand.status, "sent"),
-                  lt(s.deviceCommand.updatedAt, new Date(Date.now() - 30 * 60 * 1000)),
-                ),
-              );
+            // Commands are only meaningful inside their delivery budget. Expire
+            // the ones that ran out of time instead of handing a three-week-old
+            // lock to a device that just came back online, then retry the ones
+            // the device deferred or never acknowledged. Re-sending the same
+            // command UUID is idempotent for the device.
+            const at = now();
 
-            const [command] = yield* db
+            const activeCommands = yield* db
               .select()
               .from(s.deviceCommand)
               .where(
-                and(eq(s.deviceCommand.deviceId, device.id), eq(s.deviceCommand.status, "queued")),
+                and(
+                  eq(s.deviceCommand.deviceId, device.id),
+                  inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                ),
               )
-              .orderBy(s.deviceCommand.createdAt)
-              .limit(1);
+              .orderBy(asc(s.deviceCommand.createdAt))
+              .limit(DEVICE_COMMAND_ACTIVE_LIMIT);
+
+            const delivery = planCommandDelivery(activeCommands, at);
+
+            if (delivery.expire.length > 0)
+              yield* db
+                .update(s.deviceCommand)
+                .set({
+                  status: "expired",
+                  dedupeKey: null,
+                  resultStatus: RECONCILED_RESULT_STATUS,
+                  resultDetail: COMMAND_EXPIRED_DETAIL,
+                  updatedAt: at,
+                })
+                .where(
+                  and(
+                    eq(s.deviceCommand.deviceId, device.id),
+                    inArray(s.deviceCommand.id, [...delivery.expire]),
+                  ),
+                );
+
+            if (delivery.requeue.length > 0)
+              yield* db
+                .update(s.deviceCommand)
+                .set({ status: "queued", updatedAt: at })
+                .where(
+                  and(
+                    eq(s.deviceCommand.deviceId, device.id),
+                    inArray(s.deviceCommand.id, [...delivery.requeue]),
+                  ),
+                );
+
+            const command = delivery.deliver;
 
             if (command) {
               yield* db
                 .update(s.deviceCommand)
-                .set({ status: "sent", updatedAt: now() })
-                .where(eq(s.deviceCommand.id, command.id));
+                .set({ status: "sent", updatedAt: at })
+                .where(
+                  and(eq(s.deviceCommand.id, command.id), eq(s.deviceCommand.deviceId, device.id)),
+                );
 
               return {
                 _tag: "Command" as const,
@@ -1594,6 +2016,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               origin,
               authSecret: authSecret ?? "",
               deviceToken,
+              deviceId: device.id,
             };
 
             if (type === "activation" && identifier === DEVICE_INFORMATION_ACTIVATION_ID) {
@@ -1732,15 +2155,32 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             // Tenant-scoped: either the device presents an identity
             // certificate from the owning tenant, or the DDM asset URL carries
-            // a valid signature.
+            // a valid, unexpired token bound to a device that still belongs to
+            // that tenant and is enrolled.
             const tenantAllowed =
               identityCertificate !== undefined &&
               certificateAllowsOrganization(identityCertificate, row.policy.organizationId);
 
-            const tokenAllowed = yield* Effect.tryPromise({
+            const assetToken = yield* Effect.tryPromise({
               try: () => verifyAssetRequestToken(authSecret ?? "", token, configRow),
               catch: internal,
             });
+
+            const tokenAllowed = assetToken
+              ? yield* Effect.gen(function* () {
+                  const [device] = yield* db
+                    .select({ organizationId: s.device.organizationId, status: s.device.status })
+                    .from(s.device)
+                    .where(eq(s.device.id, assetToken.deviceId))
+                    .limit(1)
+                    .pipe(Effect.mapError(internal));
+
+                  return (
+                    device?.organizationId === row.policy.organizationId &&
+                    device.status === "enrolled"
+                  );
+                })
+              : false;
 
             if (!tenantAllowed && !tokenAllowed) return null;
 
@@ -1879,6 +2319,10 @@ export {
 
 export * from "./policy.ts";
 
+export * from "./commands.ts";
+
+export * from "./commandMaintenance.ts";
+
 export * from "./policyResolution.ts";
 
 export { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
@@ -1902,7 +2346,12 @@ export {
   type SecurityInfoReport,
 } from "./securityInfo.ts";
 
-export { parseInstalledApplications, type InstalledApplicationReport } from "./applications.ts";
+export {
+  APPLE_APPLICATION_INVENTORY_PAYLOAD,
+  APPLE_DEVICE_INFORMATION_PAYLOAD,
+  parseInstalledApplications,
+  type InstalledApplicationReport,
+} from "./applications.ts";
 
 export {
   syncDynamicGroup,

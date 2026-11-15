@@ -107,22 +107,18 @@ describe("SCEP E2E", () => {
     const { certToPem } = await import("../pkcs7.js");
     const caCertPem = certToPem(caCert);
 
-    const caPrivateKeyJwk = (await crypto.subtle.exportKey(
-      "jwk",
-      caKeyPair.privateKey,
-    ));
+    const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey);
 
     const repo = mockScepRepository({
       getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
-      saveCa: () => Effect.void,
-      authenticatePkcsReq: () => Effect.void,
+      authenticatePkcsReq: () => Effect.succeed({ organizationalUnit: "tenant-e2e" }),
     });
 
     const handler = await makeScepHandler(repo);
 
     // ── Step 1: Get CA Caps ───────────────────────────────────────────
     const capsRes = await handler(
-      new Request("http://localhost/mdm/apple/scep?operation=GetCACaps"),
+      new Request("http://localhost/mdm/apple/scep/tenant-e2e?operation=GetCACaps"),
     );
 
     expect(capsRes.status).toBe(200);
@@ -132,7 +128,7 @@ describe("SCEP E2E", () => {
 
     // ── Step 2: Get CA Cert ───────────────────────────────────────────
     const certRes = await handler(
-      new Request("http://localhost/mdm/apple/scep?operation=GetCACert"),
+      new Request("http://localhost/mdm/apple/scep/tenant-e2e?operation=GetCACert"),
     );
 
     expect(certRes.status).toBe(200);
@@ -158,7 +154,7 @@ describe("SCEP E2E", () => {
 
     // ── Step 4: POST PKIOperation ─────────────────────────────────────
     const pkiRes = await handler(
-      new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+      new Request("http://localhost/mdm/apple/scep/tenant-e2e?operation=PKIOperation", {
         method: "POST",
         body: pkcsReq,
       }),
@@ -201,10 +197,7 @@ describe("SCEP E2E", () => {
 
     const envelopedDer = eContentNode.getValue();
 
-    const deviceJwk = (await crypto.subtle.exportKey(
-      "jwk",
-      deviceKeyPair.privateKey,
-    ));
+    const deviceJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey);
 
     const decryptedDer = await decryptEnvelopedData(envelopedDer, deviceJwk);
 

@@ -161,7 +161,8 @@ export async function androidPolicyHash(policy: Schema.JsonObject): Promise<stri
 }
 
 /** True for tenant configuration kinds that contribute to an AMAPI policy. */
-export const isAndroidPolicyKind = (kind: string): boolean => kind.startsWith('mttx.android.policy.');
+export const isAndroidPolicyKind = (kind: string): boolean =>
+  kind.startsWith("mttx.android.policy.");
 
 export type AndroidPolicyConfiguration = {
   readonly kind: string;

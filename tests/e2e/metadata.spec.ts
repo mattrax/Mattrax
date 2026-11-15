@@ -79,9 +79,19 @@ test.describe("social metadata", () => {
     const touchIcon = /<link\b[^>]*rel="apple-touch-icon"[^>]*>/i.exec(html);
     expect(touchIcon?.[0]).toContain("/assets/brand/apple-touch-icon.png");
 
+    // The landing page is server-rendered and readable without JavaScript, so
+    // it must not carry the dashboard's JavaScript notice.
+    expect(html).not.toContain('id="no-js-notice"');
+    expect(html).not.toContain("Mattrax needs JavaScript");
+
     // The dashboard is client-rendered; static HTML must explain that.
-    expect(html).toContain("<noscript>");
-    expect(html).toContain("Mattrax needs JavaScript");
+    const dashboard = await request.get("/dashboard");
+
+    expect(dashboard.ok()).toBe(true);
+    const dashboardHtml = await dashboard.text();
+
+    expect(dashboardHtml).toContain('id="no-js-notice"');
+    expect(dashboardHtml).toContain("Mattrax needs JavaScript");
   });
 
   test("gives public pages exactly one main landmark", async ({ request }) => {
@@ -107,6 +117,37 @@ test.describe("social metadata", () => {
     expect(body).toMatch(/^Disallow: \//m);
     expect(body).not.toContain("<html");
     expect(body).not.toContain("Cloudflare Managed");
+
+    const origin = new URL(response.url()).origin;
+    expect(body).toContain(`Sitemap: ${origin}/sitemap.xml`);
+  });
+
+  test("serves a sitemap of public URLs only", async ({ request }) => {
+    const response = await request.get("/sitemap.xml");
+
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toMatch(/^application\/xml\b/);
+    const body = await response.text();
+
+    expect(body).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
+    expect(body).not.toContain("<html");
+
+    const origin = new URL(response.url()).origin;
+    const urls = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]!);
+
+    expect(urls.length).toBeGreaterThan(3);
+
+    for (const url of urls) {
+      const parsed = new URL(url);
+
+      expect(parsed.origin).toBe(origin);
+      expect(parsed.pathname).not.toMatch(/^\/(dashboard|account|t\/|api\/|mdm\/|scim\/|mcp|sso)/);
+    }
+
+    expect(urls).toContain(`${origin}/`);
+    expect(urls).toContain(`${origin}/privacy`);
+    expect(urls).toContain(`${origin}/terms`);
+    expect(urls).toContain(`${origin}/docs/`);
   });
 
   test("serves an llms.txt with a heading and links", async ({ request }) => {
@@ -161,6 +202,31 @@ test.describe("social metadata", () => {
       expect(entry.representativeQueries.length).toBeGreaterThanOrEqual(2);
       // ARD requires exactly one of url or data.
       expect("url" in entry).toBe(!("data" in entry));
+    }
+  });
+
+  test("the public pages render without JavaScript", async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+
+    try {
+      for (const path of ["/", "/privacy", "/terms"]) {
+        const response = await page.goto(path);
+
+        expect(response?.ok(), path).toBe(true);
+        await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      }
+
+      // The dashboard cannot work without the client, so it explains that
+      // instead of painting a half-rendered shell.
+      await page.goto("/dashboard");
+      await expect(page.getByRole("heading", { name: "Mattrax needs JavaScript" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "documentation" })).toHaveAttribute(
+        "href",
+        "/docs/",
+      );
+    } finally {
+      await context.close();
     }
   });
 });

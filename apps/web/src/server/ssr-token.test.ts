@@ -14,9 +14,7 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("=", "");
 
 /** Mirrors the API's HMAC encoding so the edge verifier is exercised for real. */
-type SignedPayload =
-  | SsrTokenPayload
-  | { purpose: string; sub: string; email: string; exp: number };
+type SignedPayload = SsrTokenPayload | { purpose: string; sub: string; email: string; exp: number };
 
 const sign = async (payload: SignedPayload, key = secret) => {
   const cryptoKey = await crypto.subtle.importKey(
@@ -127,11 +125,7 @@ describe("edge SSR token verification", () => {
 
     expect(await verifySsrToken(secret, tamperedSignature, sessionCookie)).toBeUndefined();
     expect(
-      await verifySsrToken(
-        secret,
-        `${tamperedPayload.split(".")[0]}.${signature}`,
-        sessionCookie,
-      ),
+      await verifySsrToken(secret, `${tamperedPayload.split(".")[0]}.${signature}`, sessionCookie),
     ).toBeUndefined();
     expect(await verifySsrToken(secret, body!, sessionCookie)).toBeUndefined();
   });

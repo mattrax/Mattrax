@@ -3,12 +3,11 @@
 import "virtual:solid-server-function-manifest";
 import { handleRequest } from "virtual:solid-ssr-handler";
 import routes from "virtual:file-routes";
-import {
-  compilePagePatterns,
-  guardPath,
-  isKnownPagePath,
-  withSecurityHeaders,
-} from "./security";
+import docsRoutes from "virtual:docs-routes";
+import { compilePagePatterns, guardPath, isKnownPagePath, withSecurityHeaders } from "./security";
+import { createSeoHandler } from "./seo";
+
+const seoResponse = createSeoHandler(docsRoutes);
 
 /**
  * Page patterns from the filesystem manifest. The catch-all 404 route is
@@ -52,6 +51,12 @@ export default {
     const url = new URL(request.url);
 
     if (guardPath(url.pathname) === "not-found") return withSecurityHeaders(request, notFound());
+
+    // `robots.txt` and `sitemap.xml` need the request origin, so the asset
+    // layer sends exactly those two paths here (`assets.runWorkerFirst`).
+    const seo = seoResponse(request);
+
+    if (seo) return withSecurityHeaders(request, seo);
 
     const response = await handleRequest(request);
 

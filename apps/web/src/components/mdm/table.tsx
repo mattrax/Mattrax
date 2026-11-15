@@ -5,11 +5,15 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuPortal,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
-import { ChevronsUpDown, Search as SearchIcon } from "~/components/ui/icons";
+import { ChevronsUpDown, RefreshCw, Search as SearchIcon } from "~/components/ui/icons";
+import { announce } from "~/components/toast";
+import { sequence, useCommands } from "~/lib/commands";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 
@@ -44,7 +48,15 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   rows: readonly T[] | undefined;
   columns: MdmColumn<T>[];
   empty: JSX.Element;
-  actions?: (selected: T[], clear: () => void) => JSX.Element;
+  /**
+   * Bulk action bar contents. `select` replaces the current selection with the
+   * given row ids, which lets an action keep the rows that failed selected.
+   */
+  actions?: (
+    selected: T[],
+    clear: () => void,
+    select: (ids: readonly string[]) => void,
+  ) => JSX.Element;
   /**
    * Whether the table offers bulk selection. Read-only roles still see every
    * row but get no checkboxes or selection action bar.
@@ -59,6 +71,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
    */
   rowHref?: (row: T) => string;
   loading?: boolean;
+  /**
+   * A background refetch is in flight while the previous rows stay visible.
+   * The body dims, the toolbar shows a "Refreshing…" pill and the table reports
+   * `aria-busy`, so a filter change never looks like a settled empty result.
+   */
+  isFetching?: boolean;
+  /** Reloads the current page; adds a Refresh button and an `R` shortcut. */
+  onRefresh?: () => void;
   error?: unknown;
   searchPlaceholder?: string;
   /**
@@ -106,7 +126,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const isColumnVisible = (column: MdmColumn<T>) =>
     hidden()[column.id] === false || (!hidden()[column.id] && !column.defaultHidden);
 
+  /** Visibility for a candidate map, used before the map is committed. */
+  const visibleIn = (state: Record<string, boolean>, column: MdmColumn<T>) =>
+    state[column.id] === false || (!state[column.id] && !column.defaultHidden);
+
   const visibleColumns = createMemo(() => props.columns.filter(isColumnVisible));
+
+  const sortColumnId = (column: MdmColumn<T>) => column.sortId ?? column.id;
 
   const rows = createMemo(() => {
     if (serverMode()) return [...(props.rows ?? [])];
@@ -123,7 +149,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     const current = sort();
 
     if (current) {
-      const col = props.columns.find((item) => item.id === current.id);
+      const col = props.columns.find((item) => sortColumnId(item) === current.id);
       result.sort(
         (a, b) =>
           String(col?.sort?.(a) ?? "").localeCompare(String(col?.sort?.(b) ?? ""), undefined, {
@@ -171,6 +197,38 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   );
   const clear = () => setSelected({});
 
+  /**
+   * Replace the selection with rows that are still on screen. Ids that are no
+   * longer in the current page are dropped so the action bar can never count a
+   * row the operator cannot see.
+   */
+  const select = (ids: readonly string[]) => {
+    const available = new Set(rows().map((row) => row.id));
+    const next: Record<string, true> = {};
+
+    for (const id of ids) if (available.has(id)) next[id] = true;
+
+    setSelected(next);
+  };
+
+  // `R` refreshes the list, matching the legacy dashboard and the Refresh
+  // button rendered next to the column picker.
+  useCommands(() =>
+    props.onRefresh
+      ? [
+          {
+            id: "table-refresh",
+            title: "Refresh list",
+            subtitle: "Reload the rows from the server",
+            group: "This page",
+            shortcut: sequence("r"),
+            enabled: () => !props.loading && !props.isFetching,
+            run: () => props.onRefresh?.(),
+          },
+        ]
+      : [],
+  );
+
   const toggleAll = () => {
     if (allSelected()) {
       setSelected({});
@@ -206,15 +264,38 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     setSelected(next);
   };
 
-  const toggleColumn = (id: string, visible: boolean) => {
-    setHidden((value) => {
-      const next = { ...value, [id]: !visible };
+  /** Persist a visibility map and drop any sort whose column just disappeared. */
+  const applyVisibility = (next: Record<string, boolean>) => {
+    setHidden(next);
 
-      if (props.storageKey && typeof localStorage !== "undefined")
-        localStorage.setItem(`mattrax:table:${props.storageKey}:columns`, JSON.stringify(next));
+    if (props.storageKey && typeof localStorage !== "undefined")
+      localStorage.setItem(`mattrax:table:${props.storageKey}:columns`, JSON.stringify(next));
 
-      return next;
-    });
+    const current = sort();
+
+    if (!current) return;
+    const column = props.columns.find((item) => sortColumnId(item) === current.id);
+
+    // An ordering whose column is hidden has no visible cause, so clear it.
+    if (!column || !visibleIn(next, column)) setSort(null);
+  };
+
+  const showAllColumns = () =>
+    applyVisibility(Object.fromEntries(props.columns.map((column) => [column.id, false])));
+
+  /** Back to the columns' declared defaults (`defaultHidden` stays hidden). */
+  const resetColumns = () => applyVisibility({});
+
+  const toggleColumn = (column: MdmColumn<T>, visible: boolean) => {
+    // The checkbox is disabled in this state; the guard also covers keyboard
+    // activation and a stale picker after another tab changed the storage.
+    if (!visible && visibleColumns().length === 1 && isColumnVisible(column)) {
+      announce("Keep at least one column visible.");
+
+      return;
+    }
+
+    applyVisibility({ ...hidden(), [column.id]: !visible });
   };
 
   const selectedCount = () => Object.keys(selected()).length;
@@ -260,7 +341,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const sortIndicator = (column: MdmColumn<T>) => {
     const value = sort();
 
-    if (value?.id !== (column.sortId ?? column.id)) return "";
+    if (value?.id !== sortColumnId(column)) return "";
 
     return value.dir === "asc" ? " ↑" : " ↓";
   };
@@ -286,6 +367,15 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           </Show>
         </div>
         <div class="flex items-center gap-2">
+          <Show when={props.isFetching && !props.loading}>
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+              <RefreshCw
+                class="size-3 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              Refreshing…
+            </span>
+          </Show>
           <span class="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
             {props.total !== undefined
               ? `${props.rows?.length ?? 0} of ${props.total}`
@@ -293,6 +383,25 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 ? `${rows().length} ${rows().length === 1 ? "row" : "rows"}`
                 : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
+          <Show when={props.onRefresh}>
+            <Button
+              variant="outline"
+              size="sm"
+              class="gap-1.5"
+              aria-label="Refresh list"
+              disabled={props.loading || props.isFetching}
+              onClick={() => props.onRefresh?.()}
+            >
+              <RefreshCw
+                class={cn(
+                  "size-3.5",
+                  props.isFetching && "animate-spin motion-reduce:animate-none",
+                )}
+                aria-hidden="true"
+              />
+              <span class="hidden sm:inline">Refresh</span>
+            </Button>
+          </Show>
           <DropdownMenu>
             <DropdownMenuTrigger
               class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
@@ -304,17 +413,37 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             <DropdownMenuPortal>
               <DropdownMenuContent class="w-52 rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
                 <For each={props.columns}>
-                  {(column) => (
-                    <DropdownMenuCheckboxItem
-                      class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-white/[0.06]"
-                      checked={isColumnVisible(column)}
-                      closeOnSelect={false}
-                      onChange={(checked) => toggleColumn(column.id, checked)}
-                    >
-                      {column.header}
-                    </DropdownMenuCheckboxItem>
-                  )}
+                  {(column) => {
+                    const lastVisible = () =>
+                      isColumnVisible(column) && visibleColumns().length === 1;
+
+                    return (
+                      <DropdownMenuCheckboxItem
+                        class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-white/[0.06]"
+                        checked={isColumnVisible(column)}
+                        closeOnSelect={false}
+                        disabled={lastVisible()}
+                        title={lastVisible() ? "At least one column must stay visible" : undefined}
+                        onChange={(checked) => toggleColumn(column, checked)}
+                      >
+                        {column.header}
+                      </DropdownMenuCheckboxItem>
+                    );
+                  }}
                 </For>
+                <DropdownMenuSeparator class="mx-1 my-1 h-px bg-white/[0.07]" />
+                <DropdownMenuItem
+                  class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-white/[0.06]"
+                  onSelect={resetColumns}
+                >
+                  Reset columns
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-white/[0.06]"
+                  onSelect={showAllColumns}
+                >
+                  Show all
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenuPortal>
           </DropdownMenu>
@@ -361,7 +490,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           ) : undefined
         }
       >
-        <div class="relative" aria-busy={props.loading ? "true" : undefined}>
+        <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
           <div class="page-enter overflow-x-auto rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
             <p class="border-b border-white/[0.06] px-3 py-2 text-[11px] text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
@@ -387,7 +516,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       <th
                         scope="col"
                         aria-sort={
-                          sort()?.id === (col.sortId ?? col.id)
+                          sort()?.id === sortColumnId(col)
                             ? sort()!.dir === "asc"
                               ? "ascending"
                               : "descending"
@@ -399,7 +528,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                           <button
                             type="button"
                             class="min-h-6 uppercase tracking-[0.12em] transition-colors hover:text-foreground"
-                            onClick={() => toggleSort(col.sortId ?? col.id)}
+                            onClick={() => toggleSort(sortColumnId(col))}
                           >
                             {col.header}
                             <span aria-hidden="true">{sortIndicator(col)}</span>
@@ -410,7 +539,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   </For>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-white/[0.055]">
+              <tbody
+                class={cn(
+                  "divide-y divide-white/[0.055] transition-[opacity,filter] duration-150 ease-swift",
+                  props.isFetching && "opacity-60 saturate-0",
+                )}
+              >
                 <For each={rows()}>
                   {(row) => {
                     return (
@@ -462,7 +596,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           class="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-lg border border-white/[0.1] bg-popover/95 px-4 py-2.5 shadow-2xl shadow-black/60 backdrop-blur-xl"
         >
           <span class="text-[12.5px] font-medium">{selectedCount()} selected</span>
-          {props.actions?.(selectedRows(), clear)}
+          {props.actions?.(selectedRows(), clear, select)}
           <Button variant="ghost" size="sm" onClick={clear}>
             Clear
           </Button>

@@ -65,4 +65,85 @@ describe("readiness probe", () => {
 
     expect(result.body.deploymentId).toBeNull();
   });
+
+  it("reports storage and mailer as ok when both probes pass", async () => {
+    const result = await checkReadiness({
+      ...base,
+      checkDatabase: async () => {},
+      checkStorage: async () => "ok",
+      checkMailer: async () => "ok",
+    });
+
+    expect(result.httpStatus).toBe(200);
+    expect(result.body).toMatchObject({
+      status: "ok",
+      checks: { database: "ok", storage: "ok", mailer: "ok" },
+    });
+  });
+
+  it("stays ready but degraded when email is intentionally disabled", async () => {
+    const result = await checkReadiness({
+      ...base,
+      checkDatabase: async () => {},
+      checkStorage: async () => "ok",
+      checkMailer: async () => "skipped",
+    });
+
+    expect(result.httpStatus).toBe(200);
+    expect(result.body).toMatchObject({
+      status: "degraded",
+      checks: { database: "ok", storage: "ok", mailer: "skipped" },
+    });
+    expect(result.body.reason).toBeUndefined();
+  });
+
+  it("returns 503 when object storage fails", async () => {
+    const result = await checkReadiness({
+      ...base,
+      checkDatabase: async () => {},
+      checkStorage: async () => {
+        throw new Error("R2 put failed for token secret");
+      },
+      checkMailer: async () => "ok",
+    });
+
+    expect(result.httpStatus).toBe(503);
+    expect(result.body).toMatchObject({
+      status: "unavailable",
+      checks: { database: "ok", storage: "error", mailer: "ok" },
+      reason: "check_failed",
+    });
+    expect(JSON.stringify(result.body)).not.toContain("secret");
+  });
+
+  it("returns 503 when the mailer is missing rather than silently skipping", async () => {
+    const result = await checkReadiness({
+      ...base,
+      checkDatabase: async () => {},
+      checkStorage: async () => "ok",
+      checkMailer: async () => {
+        throw new Error("no outbound email binding is configured");
+      },
+    });
+
+    expect(result.httpStatus).toBe(503);
+    expect(result.body.checks.mailer).toBe("error");
+  });
+
+  it("bounds each check independently", async () => {
+    const started = Date.now();
+
+    const result = await checkReadiness({
+      ...base,
+      timeoutMs: 10,
+      checkDatabase: async () => {},
+      checkStorage: async () => "ok",
+      checkMailer: () => new Promise<"ok">(() => {}),
+    });
+
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result.httpStatus).toBe(503);
+    expect(result.body.reason).toBe("timeout");
+    expect(result.body.checks).toMatchObject({ database: "ok", storage: "ok", mailer: "error" });
+  });
 });

@@ -21,6 +21,7 @@ export const ENTERPRISE_ERROR_CODES = [
   "database_error",
   "internal_error",
   "tenant_has_members",
+  "teardown_failed",
   "last_tenant_user",
   "step_up_required",
   "step_up_unavailable",

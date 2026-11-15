@@ -36,9 +36,19 @@ test.describe("command palette", () => {
     await page.waitForTimeout(1000);
     const input = await openPalette(page);
 
+    // Set a marker that only survives an in-document navigation.
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-spa-navigation", "pending"),
+    );
+
     await input.fill("settings");
     await page.getByRole("option", { name: /^Settings/ }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/settings`));
+
+    // The palette must stay inside the document: the marker survives only when
+    // the router navigated instead of reloading the page.
+    await expect(page.locator("html")).toHaveAttribute("data-spa-navigation", "pending");
+    expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(1);
 
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
