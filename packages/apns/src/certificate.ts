@@ -1,11 +1,12 @@
 import * as pkijs from "pkijs";
+import { Option, Schema } from "effect";
 import { pemDecode } from "@mattrax/crypto";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -24,14 +25,21 @@ export type ParsedApnsCertificate = {
   readonly certificate: pkijs.Certificate;
 };
 
+const AttributeValueBlock = Schema.Struct({
+  valueBlock: Schema.optional(
+    Schema.Struct({
+      value: Schema.optional(Schema.String),
+      valueHexView: Schema.optional(Schema.instanceOf(Uint8Array)),
+    }),
+  ),
+});
+
 const attributeValue = (attribute: pkijs.AttributeTypeAndValue): string => {
-  const value = attribute.value as unknown as {
-    valueBlock?: { value?: unknown; valueHexView?: Uint8Array };
-  };
+  const value = Option.getOrUndefined(
+    Schema.decodeUnknownOption(AttributeValueBlock)(attribute.value),
+  );
 
-  const raw = value.valueBlock?.value ?? value.valueBlock?.valueHexView;
-
-  return typeof raw === "string" ? raw : "";
+  return value?.valueBlock?.value ?? "";
 };
 
 const findAttribute = (certificate: pkijs.Certificate, oid: string): string | null => {

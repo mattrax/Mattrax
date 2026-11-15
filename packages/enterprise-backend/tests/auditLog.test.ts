@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type AuditExportEntry,
   AUDIT_EXPORT_MAX_ROWS,
   AUDIT_SEARCH_DEFAULT_LIMIT,
   AUDIT_SEARCH_MAX_LIMIT,
@@ -125,7 +126,7 @@ describe("escapeLike", () => {
 });
 
 describe("audit export", () => {
-  const entry = (overrides: Record<string, unknown> = {}) => ({
+  const entry = (overrides: Partial<AuditExportEntry> = {}): AuditExportEntry => ({
     id: "audit-1",
     action: "device.enrolled",
     targetType: "device",

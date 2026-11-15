@@ -1,9 +1,13 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { Layer } from "effect";
+import { Layer, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
-import { StripeClient } from "@mattrax/effect-stripe";
-import { billingWebhookRoutes, processStripeWebhook } from "../src/billingWebhook.js";
+import {
+  BillingWebhookError,
+  billingWebhookRoutes,
+  processStripeWebhook,
+} from "../src/billingWebhook.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
@@ -27,7 +31,7 @@ const seedOrganization = (
   });
 };
 
-const subscription = (overrides: Record<string, unknown> = {}) => ({
+const subscription = (overrides: Schema.JsonObject = {}) => ({
   id: "sub_1",
   object: "subscription",
   customer: "cus_1",
@@ -48,7 +52,7 @@ const subscription = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const event = (type: string, object: unknown) => ({
+const event = (type: string, object: Schema.Json) => ({
   id: `evt_${type.replaceAll(".", "_")}`,
   object: "event",
   api_version: "2026-01-01",
@@ -57,9 +61,16 @@ const event = (type: string, object: unknown) => ({
   data: { object },
 });
 
+const signatureFor = (payload: string, secret: string) => {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const digest = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+
+  return `t=${timestamp},v1=${digest}`;
+};
+
 const signed = (payload: string, secret = webhookSecret) => ({
   payload,
-  signature: StripeClient.webhooks.generateTestHeaderString({ payload, secret }),
+  signature: signatureFor(payload, secret),
 });
 
 const deliver = (
@@ -71,7 +82,7 @@ const deliver = (
 
   return runEffect(
     processStripeWebhook({
-      db: db as any,
+      db,
       payload,
       signature,
       webhookSecret,
@@ -85,9 +96,20 @@ const deliver = (
 const deliverEvent = (
   db: ReturnType<typeof makeDb>,
   type: string,
-  object: unknown,
+  object: Schema.Json,
   overrides: Partial<Parameters<typeof processStripeWebhook>[0]> = {},
 ) => deliver(db, JSON.stringify(event(type, object)), overrides);
+
+/**
+ * Assert that a webhook run rejected with the billing error for `statusCode`,
+ * matching both the tagged class and the HTTP status it maps to.
+ */
+const expectWebhookFailure = async (run: Promise<unknown>, statusCode: number) => {
+  const failure = await run.catch((cause: unknown) => cause);
+
+  expect(failure).toBeInstanceOf(BillingWebhookError);
+  expect(failure).toMatchObject({ statusCode });
+};
 
 describe("Stripe webhook signature verification", () => {
   it("accepts a valid signature and applies the event", async () => {
@@ -105,10 +127,10 @@ describe("Stripe webhook signature verification", () => {
     seedOrganization(db, "org-1", "cus_1");
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
 
-    await expect(
+    await expectWebhookFailure(
       runEffect(
         processStripeWebhook({
-          db: db as any,
+          db,
           payload,
           signature: null,
           webhookSecret,
@@ -116,7 +138,8 @@ describe("Stripe webhook signature verification", () => {
           now,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
@@ -125,10 +148,10 @@ describe("Stripe webhook signature verification", () => {
     seedOrganization(db, "org-1", "cus_1");
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
 
-    await expect(
+    await expectWebhookFailure(
       runEffect(
         processStripeWebhook({
-          db: db as any,
+          db,
           payload,
           signature: "t=1,v1=deadbeef",
           webhookSecret,
@@ -136,7 +159,8 @@ describe("Stripe webhook signature verification", () => {
           now,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
@@ -147,10 +171,10 @@ describe("Stripe webhook signature verification", () => {
     const signature = signed(payload).signature;
     const tampered = payload.replace('"status":"active"', '"status":"canceled"');
 
-    await expect(
+    await expectWebhookFailure(
       runEffect(
         processStripeWebhook({
-          db: db as any,
+          db,
           payload: tampered,
           signature,
           webhookSecret,
@@ -158,7 +182,8 @@ describe("Stripe webhook signature verification", () => {
           now,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
@@ -167,10 +192,10 @@ describe("Stripe webhook signature verification", () => {
     seedOrganization(db, "org-1", "cus_1");
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
 
-    await expect(
+    await expectWebhookFailure(
       runEffect(
         processStripeWebhook({
-          db: db as any,
+          db,
           payload,
           signature: signed(payload, "whsec_other").signature,
           webhookSecret: undefined,
@@ -178,7 +203,8 @@ describe("Stripe webhook signature verification", () => {
           now,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 503 });
+      503,
+    );
   });
 });
 
@@ -326,26 +352,28 @@ describe("Stripe webhook tenant resolution", () => {
   it("rejects an unknown organization metadata id", async () => {
     const db = makeDb();
 
-    await expect(
+    await expectWebhookFailure(
       deliverEvent(
         db,
         "customer.subscription.created",
         subscription({ metadata: { organizationId: "missing-org" } }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
   it("rejects an unknown Stripe customer", async () => {
     const db = makeDb();
 
-    await expect(
+    await expectWebhookFailure(
       deliverEvent(
         db,
         "customer.subscription.created",
         subscription({ metadata: {}, customer: "cus_unknown" }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
@@ -354,13 +382,14 @@ describe("Stripe webhook tenant resolution", () => {
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
 
-    await expect(
+    await expectWebhookFailure(
       deliverEvent(
         db,
         "customer.subscription.created",
         subscription({ metadata: { organizationId: "org-1" }, customer: "cus_2" }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(0);
   });
 
@@ -380,7 +409,7 @@ describe("Stripe webhook tenant resolution", () => {
       updatedAt: now,
     });
 
-    await expect(
+    await expectWebhookFailure(
       deliverEvent(
         db,
         "customer.subscription.updated",
@@ -390,10 +419,46 @@ describe("Stripe webhook tenant resolution", () => {
           metadata: { organizationId: "org-1" },
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 400 });
+      400,
+    );
     expect(db.store.subscription).toHaveLength(1);
     expect(db.store.subscription[0]).toMatchObject({
       referenceId: "org-2",
+      status: "active",
+    });
+  });
+
+  it("rejects an invoice whose subscription belongs to another tenant", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    seedOrganization(db, "org-2", "cus_2");
+    db.store.subscription.push({
+      id: "local-org-2",
+      plan: "device",
+      referenceId: "org-2",
+      stripeCustomerId: "cus_2",
+      stripeSubscriptionId: "sub_2",
+      status: "active",
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "invoice.paid", {
+        id: "in_cross_tenant",
+        object: "invoice",
+        customer: "cus_1",
+        subscription: "sub_2",
+        status: "paid",
+      }),
+      400,
+    );
+
+    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.subscription[0]).toMatchObject({
+      referenceId: "org-2",
+      stripeSubscriptionId: "sub_2",
       status: "active",
     });
   });
@@ -445,7 +510,7 @@ describe("POST /api/v1/billing/webhook", () => {
     },
   ) =>
     HttpRouter.toWebHandler(
-      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(Db, db as any))),
+      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(Db, db))),
     ).handler;
 
   it("accepts a signed event and returns 200", async () => {

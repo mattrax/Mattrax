@@ -13,20 +13,25 @@ import {
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { LayoutDashboard, Plus, Star } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
+import { useCan } from "~/lib/permissions";
 
 export default function DashboardsPage() {
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("dashboards.write");
   const dashboards = useQuery(() => enterpriseQueries.dashboards(params.tenantId));
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
   const [removeError, setRemoveError] = createSignal<unknown>(null);
+  const [removeTarget, setRemoveTarget] = createSignal<{ id: string; name: string } | null>(null);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
@@ -66,6 +71,7 @@ export default function DashboardsPage() {
     onMutate: () => setRemoveError(null),
     onSuccess: async () => {
       setRemoveError(null);
+      setRemoveTarget(null);
       await invalidate();
     },
     onError: (cause) => setRemoveError(cause),
@@ -90,38 +96,40 @@ export default function DashboardsPage() {
 
       <QueryError error={dashboards.error} onRetry={() => void dashboards.refetch()} />
 
-      <Panel
-        title="Create a dashboard"
-        description="Start empty, then add tables, charts, counts and markdown notes."
-      >
-        <form
-          class="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (!create.isPending) create.mutate();
-          }}
+      <Show when={writable()}>
+        <Panel
+          title="Create a dashboard"
+          description="Start empty, then add tables, charts, counts and markdown notes."
         >
-          <label class="min-w-0 flex-1">
-            <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-            <Input
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              placeholder="Fleet operations"
-              class="h-8"
-            />
-          </label>
-          <Button type="submit" size="sm" disabled={create.isPending || !name().trim()}>
-            <Plus class="size-3.5" />
-            {create.isPending ? "Creating…" : "Create dashboard"}
-          </Button>
-        </form>
-        <Show when={error()}>
-          <p role="alert" class="mt-2 text-[12px] text-destructive">
-            {error()}
-          </p>
-        </Show>
-      </Panel>
+          <form
+            class="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (!create.isPending) create.mutate();
+            }}
+          >
+            <label class="min-w-0 flex-1">
+              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
+              <Input
+                value={name()}
+                onInput={(event) => setName(event.currentTarget.value)}
+                placeholder="Fleet operations"
+                class="h-8"
+              />
+            </label>
+            <Button type="submit" size="sm" disabled={create.isPending || !name().trim()}>
+              <Plus class="size-3.5" />
+              {create.isPending ? "Creating…" : "Create dashboard"}
+            </Button>
+          </form>
+          <Show when={error()}>
+            <p role="alert" class="mt-2 text-[12px] text-destructive">
+              {error()}
+            </p>
+          </Show>
+        </Panel>
+      </Show>
 
       <Show when={makeDefaultError() || removeError()}>
         <div class="space-y-2">
@@ -181,15 +189,17 @@ export default function DashboardsPage() {
                   >
                     Open
                   </Button>
-                  <Button
-                    as="a"
-                    href={`/t/${params.tenantId}/dashboards/${dashboard.id}?edit=1`}
-                    size="xs"
-                    variant="ghost"
-                  >
-                    Edit
-                  </Button>
-                  <Show when={!dashboard.isDefault}>
+                  <Show when={writable()}>
+                    <Button
+                      as="a"
+                      href={`/t/${params.tenantId}/dashboards/${dashboard.id}?edit=1`}
+                      size="xs"
+                      variant="ghost"
+                    >
+                      Edit
+                    </Button>
+                  </Show>
+                  <Show when={writable() && !dashboard.isDefault}>
                     <Button
                       size="xs"
                       variant="ghost"
@@ -199,24 +209,40 @@ export default function DashboardsPage() {
                       Set as Overview
                     </Button>
                   </Show>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    class="ml-auto text-muted-foreground hover:text-destructive"
-                    disabled={remove.isPending}
-                    onClick={() => {
-                      if (window.confirm(`Delete “${dashboard.name}”? This cannot be undone.`))
-                        remove.mutate(dashboard.id);
-                    }}
-                  >
-                    Delete
-                  </Button>
+                  <Show when={writable()}>
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      class="ml-auto"
+                      disabled={remove.isPending}
+                      onClick={() => setRemoveTarget({ id: dashboard.id, name: dashboard.name })}
+                    >
+                      Delete
+                    </Button>
+                  </Show>
                 </div>
               </article>
             )}
           </For>
         </div>
       </Show>
+
+      <ConfirmDialog
+        open={removeTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+        title={`Delete “${removeTarget()?.name ?? "this dashboard"}”?`}
+        description="This removes the dashboard and its layout. This cannot be undone."
+        confirmLabel="Delete dashboard"
+        destructive
+        pending={remove.isPending}
+        onConfirm={() => {
+          const target = removeTarget();
+
+          if (target) remove.mutate(target.id);
+        }}
+      />
     </Page>
   );
 }

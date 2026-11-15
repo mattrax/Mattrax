@@ -1,9 +1,18 @@
-import { createSignal, onSettled } from "solid-js";
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from "@simplewebauthn/browser";
+import { MeResponse } from "@mattrax/enterprise-domain/client";
+import { Option, Schema } from "effect";
+import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, errorTag, raisedFailure } from "~/lib/errors";
 import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
-import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
+import {
+  getPreloadedSession,
+  type PreloadedSession as Session,
+} from "~/lib/session-store";
 import { capturePostHog } from "~/lib/posthog";
 import { clearMeCache } from "~/lib/me-cache";
 import { clearSessionPresence } from "~/lib/session-presence";
@@ -16,33 +25,31 @@ type AuthUser = {
   image?: string | null;
 };
 
-type Session = {
-  sessionId: string;
-  subjectId: string;
-  claims: {
-    name: string;
-    email: string;
-    emailVerified: boolean;
-  };
-};
-
 type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } }>;
 
-type PrivateReveal = {
-  kind: "totp-enrollment" | "recovery-codes";
-  revealId: string;
-  expiresAtMillis: number;
-  payload: unknown;
-};
+const PrivateReveal = Schema.Struct({
+  kind: Schema.Literals(["totp-enrollment", "recovery-codes"]),
+  revealId: Schema.String,
+  expiresAtMillis: Schema.Number,
+  payload: Schema.Json,
+});
+
+type PrivateReveal = typeof PrivateReveal.Type;
 
 type AuthEnvelope<T> = {
   value: T;
   private?: PrivateReveal[];
 };
 
-const resetFlowKey = "mattrax:password-reset";
-const body = (value: unknown) => JSON.stringify(value);
-const authBody = (value: unknown) => body({ payload: value });
+const TotpEnrollmentReveal = Schema.Struct({ manualKey: Schema.String, uri: Schema.String });
+const body = (value: Schema.Json) => JSON.stringify(value);
+const authBody = (value: Schema.Json) => body({ payload: value });
+
+const withStepUpHeaders = (init: RequestInit, grant: string | undefined) => {
+  if (grant) init.headers = { "x-mattrax-step-up": grant };
+
+  return init;
+};
 
 const userFromSession = (session: Session | null | undefined): AuthUser | undefined =>
   session
@@ -77,6 +84,8 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
     response = await fetch(url, { ...init, credentials: "include", headers });
   }
 
+  // SAFETY: the auth API always sends JSON; `T` is the caller-declared
+  // response contract for the endpoint path it passes to `requestEnvelope`.
   const data = (await response.json().catch(() => undefined)) as
     | {
         _tag?: string;
@@ -98,14 +107,14 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
     const message = data?.error?.message ?? data?.message;
     const reason = data?.error?.reason ?? data?.reason;
 
-    const error = new Error(
+    const error = new AuthRequestError(
       errorMessage(
-        { _tag: tag, message, reason },
+        raisedFailure({ _tag: tag, message, reason }),
         response.status === 429
           ? "Too many attempts. Wait a minute and try again."
           : "We couldn't complete that request. Try again.",
       ),
-    ) as Error & { _tag?: string; reason?: string; action?: string; methods?: string[] };
+    );
 
     if (tag) error._tag = tag;
 
@@ -117,10 +126,19 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
     throw error;
   }
 
+  // SAFETY: `T` is the response contract declared by this call site; a
+  // `Success` envelope carries that same value under `value`.
   return {
-    value: (data && "_tag" in data && data._tag === "Success" ? data.value : data) as T,
+    value: (data !== undefined && isSuccessEnvelope(data) ? data.value : data) as T,
     private: data?.private,
   };
+}
+
+class AuthRequestError extends Error {
+  _tag?: string;
+  reason?: string;
+  action?: string;
+  methods?: string[];
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -131,19 +149,55 @@ const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
   try {
     return { data: await fn() };
   } catch (error) {
-    return { error: { message: errorMessage(error) } };
+    return { error: { message: errorMessage(raisedFailure(error)) } };
   }
 };
 
 type CompletionState = { user?: AuthUser; session?: Session; pending?: boolean };
 
-const completionState = (completion: unknown): CompletionState => {
-  const value = completion as { _tag?: string; session?: Session } | undefined;
+const SessionPayload = Schema.Struct({
+  sessionId: Schema.String,
+  subjectId: Schema.String,
+  claims: Schema.Struct({
+    name: Schema.String,
+    email: Schema.String,
+    emailVerified: Schema.Boolean,
+  }),
+  /** The SSR shell snapshot; absent on a plain `getSession` answer. */
+  me: Schema.optional(MeResponse),
+});
 
-  if (value?._tag === "Authenticated")
-    return { user: userFromSession(value.session), session: value.session };
+const AuthenticatedCompletion = Schema.Struct({
+  _tag: Schema.Literal("Authenticated"),
+  session: SessionPayload,
+});
 
-  if (value?._tag === "PendingAuthentication") return { pending: true };
+const PendingCompletion = Schema.Struct({
+  _tag: Schema.Literal("PendingAuthentication"),
+});
+
+const decodeAuthenticated = Schema.decodeUnknownOption(AuthenticatedCompletion);
+const decodePending = Schema.decodeUnknownOption(PendingCompletion);
+
+const ClientSessionGlobal = Schema.Struct({
+  __MATTRAX_SESSION__: Schema.optional(Schema.NullOr(SessionPayload)),
+});
+
+const SuccessEnvelope = Schema.Struct({ _tag: Schema.Literal("Success") });
+
+const isSuccessEnvelope = Schema.is(SuccessEnvelope);
+
+const completionState = (completion: Schema.Json): CompletionState => {
+  const authenticated = Option.getOrUndefined(decodeAuthenticated(completion));
+
+  if (authenticated !== undefined) {
+    return {
+      user: userFromSession(authenticated.session),
+      session: authenticated.session,
+    };
+  }
+
+  if (Option.isSome(decodePending(completion))) return { pending: true };
   throw new Error("Authentication did not complete");
 };
 
@@ -161,21 +215,45 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
   let started = false;
 
   const load = async () => {
+    // The server renders this store's initial (pending) state. `/getSession`
+    // can answer while the client is still claiming the document, and
+    // publishing it mid-pass flips every session-dependent branch. That
+    // changes the owner tree, so later hydration ids no longer match the
+    // server markup. Hold the answer until the pass finishes; after hydration
+    // this resolves immediately and behaves like a normal fetch.
+    const hydrating = isHydrating();
+
     if (data() === undefined) setPending(true);
 
+    let next: Session | null = null;
+    let failed = false;
+
     try {
-      const next = await request<Session | null>("/getSession", { method: "POST", body: "{}" });
+      next = await request<Session | null>("/getSession", { method: "POST", body: "{}" });
+    } catch {
+      failed = true;
+    }
+
+    const settle = () => {
+      if (failed) {
+        if (data() === undefined) setData(null);
+
+        setPending(false);
+
+        return;
+      }
+
       setData(next);
+      setPending(false);
 
       if (next === null) {
         clearMeCache();
         clearSessionPresence();
       }
-    } catch {
-      if (data() === undefined) setData(null);
-    } finally {
-      setPending(false);
-    }
+    };
+
+    if (hydrating) onHydrationEnd(settle);
+    else settle();
   };
 
   return {
@@ -199,49 +277,85 @@ let clientSessionStore: SessionStore | undefined;
 
 function sessionStore(): SessionStore {
   if (isServer) {
-    return createSessionStore(
-      getPreloadedSession(getRequestEvent()!.request) as Session | null | undefined,
-    );
+    return createSessionStore(getPreloadedSession(getRequestEvent()!.request));
   }
 
   if (!clientSessionStore) {
-    const initial = (globalThis as { __MATTRAX_SESSION__?: Session | null }).__MATTRAX_SESSION__;
-    clientSessionStore = createSessionStore(initial);
+    const stored = Option.getOrUndefined(
+      Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis),
+    );
+
+    clientSessionStore = createSessionStore(stored?.__MATTRAX_SESSION__);
   }
 
   return clientSessionStore;
 }
-
-/**
- * Some deployments briefly serve a stale credential record immediately after
- * registration. Remember the fresh address so the first password sign-in can
- * retry that specific race instead of telling the user their new password is
- * wrong.
- */
-let recentRegistration: { email: string; at: number } | undefined;
-
-const isRecentRegistration = (email: string) =>
-  Boolean(
-    recentRegistration &&
-    recentRegistration.email === email &&
-    Date.now() - recentRegistration.at < 20_000,
-  );
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Keep every hook in this tab in sync after a sign-in, MFA or sign-out. */
 function commitSession(session: Session | null): void {
   if (isServer) return;
   sessionStore().set(session);
 
-  if (session === null) {
-    clearMeCache();
-    clearSessionPresence();
-  }
+  // A rotated or cleared session invalidates the per-account `me` cache; the
+  // next render must not show another identity. The SSR token is bound to the
+  // session cookie and expires server-side when that cookie goes away.
+  clearMeCache();
+
+  if (session === null) clearSessionPresence();
 }
 
-const revealOf = <T>(envelope: AuthEnvelope<unknown>, kind: PrivateReveal["kind"]): T | undefined =>
-  envelope.private?.find((item) => item.kind === kind)?.payload as T | undefined;
+const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  envelope: AuthEnvelope<unknown>,
+  kind: PrivateReveal["kind"],
+): S["Type"] | undefined => {
+  const payload = envelope.private?.find((item) => item.kind === kind)?.payload;
+
+  return payload === undefined
+    ? undefined
+    : Option.getOrUndefined(Schema.decodeUnknownOption(schema)(payload));
+};
+
+/** Discoverable-credential sign-in shared by the login page and registration. */
+const passkeySignInFlow = async (): Promise<CompletionState> => {
+  const started = await request<{
+    flowId: string;
+    expiresAtMillis: number;
+    options: PublicKeyCredentialRequestOptionsJSON;
+  }>("/beginPasskeySignIn", {
+    method: "POST",
+    body: authBody({
+      flowId: crypto.randomUUID(),
+      commandId: crypto.randomUUID(),
+      profileId: "default",
+    }),
+  });
+
+  let response: unknown;
+
+  try {
+    const { startAuthentication } = await import("@simplewebauthn/browser");
+    response = await startAuthentication({
+      optionsJSON: started.options,
+      useBrowserAutofill: false,
+    });
+  } catch {
+    throw new Error("That passkey wasn't confirmed. Try again.");
+  }
+
+  const completion = await request<Schema.Json>("/completePasskeySignIn", {
+    method: "POST",
+    body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+  });
+
+  const state = completionState(completion);
+
+  if (!state.user && !state.pending) throw new Error("Authentication did not complete");
+
+  if (state.session) commitSession(state.session);
+
+  return state;
+};
 
 export const authClient = {
   useSession: () => {
@@ -256,164 +370,61 @@ export const authClient = {
 
     return accessor;
   },
-  signIn: {
-    email: (payload: { email: string; password: string }) =>
-      result(async () => {
-        const attempt = async () => {
-          const completion = await request<unknown>("/signIn", {
-            method: "POST",
-            body: authBody(payload),
-          });
+  /**
+   * Create an account with its first passkey, then sign in with it. The
+   * registration and credential are committed together; the account cannot
+   * exist without a passkey.
+   */
+  register: (payload: { name: string; email: string }) =>
+    result(async () => {
+      const started = await request<{
+        flowId: string;
+        expiresAtMillis: number;
+        options: PublicKeyCredentialCreationOptionsJSON;
+      }>("/beginPasskeyRegistration", {
+        method: "POST",
+        body: authBody({
+          flowId: crypto.randomUUID(),
+          commandId: crypto.randomUUID(),
+          profileId: "default",
+          registration: { name: payload.name, email: payload.email },
+        }),
+      });
 
-          const state = completionState(completion);
+      let response: unknown;
 
-          if (!state.user && !state.pending)
-            throw new Error("Additional authentication is required");
+      try {
+        const { startRegistration } = await import("@simplewebauthn/browser");
+        response = await startRegistration({ optionsJSON: started.options });
+      } catch {
+        throw new Error("That passkey wasn't created. Try again.");
+      }
 
-          if (state.session) commitSession(state.session);
+      await request("/completePasskeyRegistration", {
+        method: "POST",
+        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+      });
 
-          return state;
-        };
+      capturePostHog("auth_registered", { method: "passkey" });
 
+      // Some authenticators need a moment before the freshly created
+      // discoverable credential is offered again. Retry only the transient
+      // rejection so a real ceremony failure still surfaces.
+      for (let attempt = 0; attempt < 4; attempt++) {
         try {
-          return await attempt();
+          return await passkeySignInFlow();
         } catch (error) {
-          if (
-            (error as { _tag?: string })._tag !== "PasswordRejected" ||
-            !isRecentRegistration(payload.email)
-          )
-            throw error;
+          if (errorTag(raisedFailure(error)) !== "PasskeyRejected" || attempt === 3) throw error;
 
-          // Registration just succeeded; retry the first sign-in until the
-          // credential write is visible to this read.
-          for (let retry = 0; retry < 5; retry++) {
-            await sleep(400 * (retry + 1));
-
-            try {
-              return await attempt();
-            } catch (retryError) {
-              if ((retryError as { _tag?: string })._tag !== "PasswordRejected") throw retryError;
-            }
-          }
-
-          throw error;
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
         }
-      }),
-  },
-  emailCode: {
-    /** Start a passwordless browser flow and ask the server to email a code. */
-    request: (payload: { email: string; returnTo?: string }) =>
-      result(async () => {
-        const flowId = crypto.randomUUID();
-        await request("/beginEmailSignIn", {
-          method: "POST",
-          body: authBody({ flowId }),
-        });
+      }
 
-        const receipt = await request<{
-          requestId: string;
-          reference: { proofId: string; purpose: string; keyId: string };
-        }>("/requestEmailCode", {
-          method: "POST",
-          body: authBody({
-            flowId,
-            email: payload.email,
-            returnTarget: payload.returnTo ?? "/dashboard",
-            requestId: crypto.randomUUID(),
-            locale: "en",
-          }),
-        });
-
-        return { flowId, email: payload.email, reference: receipt.reference };
-      }),
-    complete: (payload: {
-      flowId: string;
-      email: string;
-      returnTarget?: string;
-      reference: { proofId: string; purpose: string; keyId: string };
-      code: string;
-    }) =>
-      result(async () => {
-        const response = await request<{ completion: unknown }>("/completeEmailCode", {
-          method: "POST",
-          body: authBody({
-            flowId: payload.flowId,
-            email: payload.email,
-            returnTarget: payload.returnTarget ?? "/dashboard",
-            reference: payload.reference,
-            secret: payload.code,
-          }),
-        });
-
-        const state = completionState(response.completion);
-
-        if (!state.user && !state.pending) throw new Error("Additional authentication is required");
-
-        if (state.session) commitSession(state.session);
-
-        return state;
-      }),
-  },
-  signUp: {
-    /**
-     * Registration deliberately reports success for an identifier that already
-     * exists so the endpoint cannot be used to enumerate accounts. Nothing is
-     * written in that case, so the follow-up sign-in is where the conflict
-     * surfaces: the new password is not attached to the existing account. That
-     * is reported as `existingAccount` rather than a credential failure, which
-     * would wrongly tell the user their password is wrong.
-     */
-    email: (payload: { name: string; email: string; password: string }) =>
-      result(
-        async (): Promise<
-          { status: "signed-in" } | { status: "existing-account"; email: string }
-        > => {
-          await request("/register", {
-            method: "POST",
-            body: authBody({
-              requestId: crypto.randomUUID(),
-              email: payload.email,
-              newPassword: payload.password,
-              registration: { name: payload.name },
-            }),
-          });
-
-          // Registration and password writes can be briefly invisible to the
-          // sign-in read (the API uses a pool). Retry a fresh credential once or
-          // twice before concluding the address already belonged to someone.
-          for (let attempt = 0; attempt < 5; attempt++) {
-            try {
-              const completion = await request<unknown>("/signIn", {
-                method: "POST",
-                body: authBody({ email: payload.email, password: payload.password }),
-              });
-
-              const state = completionState(completion);
-
-              if (!state.user && !state.pending)
-                throw new Error("Additional authentication is required");
-
-              if (state.session) commitSession(state.session);
-              capturePostHog("auth_registered", { method: "password" });
-
-              return { status: "signed-in" };
-            } catch (error) {
-              const tag = (error as { _tag?: string })._tag;
-
-              if (tag !== "PasswordRejected") throw error;
-
-              if (attempt === 4) return { status: "existing-account", email: payload.email };
-              await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
-            }
-          }
-
-          return { status: "existing-account", email: payload.email };
-        },
-      ),
-  },
+      throw new Error("Could not sign in with the new passkey");
+    }),
   ssoSignIn: (token: string) =>
     result(async () => {
-      const completion = await request<unknown>("/ssoSignIn", {
+      const completion = await request<Schema.Json>("/ssoSignIn", {
         method: "POST",
         body: authBody({ token }),
       });
@@ -426,7 +437,7 @@ export const authClient = {
 
       return state;
     }),
-  signOut: (_options?: unknown) =>
+  signOut: () =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });
       commitSession(null);
@@ -435,7 +446,7 @@ export const authClient = {
     }),
   verifyTotpPending: (code: string) =>
     result(async () => {
-      const completion = await request<unknown>("/verifyTotpPending", {
+      const completion = await request<Schema.Json>("/verifyTotpPending", {
         method: "POST",
         body: authBody({ code }),
       });
@@ -450,53 +461,14 @@ export const authClient = {
    * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
    * request-binding cookie; only the WebAuthn response travels back.
    */
-  passkeySignIn: () =>
-    result(async () => {
-      const started = await request<{
-        flowId: string;
-        expiresAtMillis: number;
-        options: unknown;
-      }>("/beginPasskeySignIn", {
-        method: "POST",
-        body: authBody({
-          flowId: crypto.randomUUID(),
-          commandId: crypto.randomUUID(),
-          profileId: "default",
-        }),
-      });
-
-      let response: unknown;
-
-      try {
-        const { startAuthentication } = await import("@simplewebauthn/browser");
-        response = await startAuthentication({
-          optionsJSON: started.options as never,
-          useBrowserAutofill: false,
-        });
-      } catch {
-        throw new Error("That passkey wasn't confirmed. Try again or use another method.");
-      }
-
-      const completion = await request<unknown>("/completePasskeySignIn", {
-        method: "POST",
-        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
-      });
-
-      const state = completionState(completion);
-
-      if (!state.user && !state.pending) throw new Error("Authentication did not complete");
-
-      if (state.session) commitSession(state.session);
-
-      return state;
-    }),
-  /** Complete a pending password/email/SSO sign-in with a passkey. */
+  passkeySignIn: () => result(passkeySignInFlow),
+  /** Complete a pending SSO sign-in with a passkey. */
   passkeyPending: () =>
     result(async () => {
       const started = await request<{
         flowId: string;
         expiresAtMillis: number;
-        options: unknown;
+        options: PublicKeyCredentialRequestOptionsJSON;
       }>("/beginPasskeyPending", {
         method: "POST",
         body: authBody({
@@ -511,14 +483,14 @@ export const authClient = {
       try {
         const { startAuthentication } = await import("@simplewebauthn/browser");
         response = await startAuthentication({
-          optionsJSON: started.options as never,
+          optionsJSON: started.options,
           useBrowserAutofill: false,
         });
       } catch {
         throw new Error("That passkey wasn't confirmed. Try again or use a code.");
       }
 
-      const completion = await request<unknown>("/completePasskeyPending", {
+      const completion = await request<Schema.Json>("/completePasskeyPending", {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
@@ -553,7 +525,7 @@ export const authClient = {
       const started = await request<{
         flowId: string;
         expiresAtMillis: number;
-        options: unknown;
+        options: PublicKeyCredentialCreationOptionsJSON;
       }>("/beginPasskeyEnrollment", {
         method: "POST",
         body: authBody({
@@ -569,7 +541,7 @@ export const authClient = {
 
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
-        response = await startRegistration({ optionsJSON: started.options as never });
+        response = await startRegistration({ optionsJSON: started.options });
       } catch {
         throw new Error("That passkey wasn't created. Try again.");
       }
@@ -597,15 +569,15 @@ export const authClient = {
   removePasskey: (credentialId: string) =>
     result(() =>
       withStepUp("passkey-remove", (grant) =>
-        request<{ status: "ok" }>(`/v1/account/passkeys/${encodeURIComponent(credentialId)}`, {
-          method: "DELETE",
-          ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
-        }),
+        request<{ status: "ok" }>(
+          `/v1/account/passkeys/${encodeURIComponent(credentialId)}`,
+          withStepUpHeaders({ method: "DELETE" }, grant),
+        ),
       ),
     ),
   recoverTotpPending: (code: string) =>
     result(async () => {
-      const completion = await request<unknown>("/recoverTotpPending", {
+      const completion = await request<Schema.Json>("/recoverTotpPending", {
         method: "POST",
         body: authBody({ code }),
       });
@@ -618,15 +590,17 @@ export const authClient = {
     }),
   beginTotpEnrollment: (accountName: string) =>
     result(async () => {
+      const actionProof = await requireStepUpGrant("mfa-enroll");
+
       const envelope = await requestEnvelope<{ enrollmentId: string; expiresAtMillis: number }>(
         "/beginTotpEnrollment",
         {
           method: "POST",
-          body: authBody({ commandId: crypto.randomUUID(), accountName }),
+          body: authBody({ commandId: crypto.randomUUID(), accountName, actionProof }),
         },
       );
 
-      const reveal = revealOf<{ manualKey: string; uri: string }>(envelope, "totp-enrollment");
+      const reveal = revealOf(TotpEnrollmentReveal, envelope, "totp-enrollment");
 
       if (!reveal) throw new Error("The authenticator enrollment details were not returned");
 
@@ -634,38 +608,50 @@ export const authClient = {
     }),
   confirmTotpEnrollment: (payload: { enrollmentId: string; code: string }) =>
     result(async () => {
+      const actionProof = await requireStepUpGrant("mfa-enroll");
+
       const envelope = await requestEnvelope<{
         enabled: boolean;
-        invalidation: unknown;
+        invalidation: Schema.Json;
       }>("/confirmTotpEnrollment", {
         method: "POST",
-        body: authBody({ commandId: crypto.randomUUID(), ...payload }),
+        body: authBody({ commandId: crypto.randomUUID(), ...payload, actionProof }),
       });
 
       return {
         ...envelope.value,
-        recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
+        recoveryCodes: revealOf(Schema.Array(Schema.String), envelope, "recovery-codes") ?? [],
       };
     }),
-  regenerateTotpRecoveryCodes: (proof: { password: string; code: string }) =>
+  regenerateTotpRecoveryCodes: (proof: { code: string }) =>
     result(async () => {
+      const grant = await requireStepUpGrant("mfa-regenerate");
+
       const envelope = await requestEnvelope<{ enabled: true }>("/regenerateTotpRecoveryCodes", {
         method: "POST",
-        body: authBody({ commandId: crypto.randomUUID(), actionProof: JSON.stringify(proof) }),
+        body: authBody({
+          commandId: crypto.randomUUID(),
+          actionProof: JSON.stringify({ grant, code: proof.code }),
+        }),
       });
 
       return {
         ...envelope.value,
-        recoveryCodes: revealOf<string[]>(envelope, "recovery-codes") ?? [],
+        recoveryCodes: revealOf(Schema.Array(Schema.String), envelope, "recovery-codes") ?? [],
       };
     }),
-  disableTotp: (proof: { password: string; code: string }) =>
-    result(() =>
-      request<{ enabled: boolean; invalidation: unknown }>("/disableTotp", {
+  disableTotp: (proof: { code: string }) =>
+    result(async () => {
+      const grant = await requireStepUpGrant("mfa-disable");
+
+      return request<{ enabled: boolean; invalidation: unknown }>("/disableTotp", {
         method: "POST",
-        body: authBody({ commandId: crypto.randomUUID(), actionProof: JSON.stringify(proof) }),
-      }),
-    ),
+        body: authBody({
+          commandId: crypto.randomUUID(),
+          actionProof: JSON.stringify({ grant, code: proof.code }),
+        }),
+      });
+    }),
   updateUser: (payload: { name?: string; image?: string | null }) =>
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>
@@ -676,12 +662,15 @@ export const authClient = {
       }),
     ),
   verifyEmail: (payload: { token?: string; code?: string; challenge?: string }) =>
-    result(() =>
-      request<{ status: "ok" }>("/v1/verify-email", {
+    result(async () => {
+      await request<{ status: "ok" }>("/v1/verify-email", {
         method: "POST",
         body: body(payload),
-      }),
-    ),
+      });
+      clearMeCache();
+
+      return { status: "ok" as const };
+    }),
   changeEmail: (payload: { newEmail: string; callbackURL?: string }) =>
     result(() =>
       request<{ status: "ok" }>("/v1/account/email-change", {
@@ -690,80 +679,15 @@ export const authClient = {
       }),
     ),
   verifyEmailChange: (payload: { token: string }) =>
-    result(() =>
-      request<{ status: "ok" }>("/v1/account/email-change/verify", {
+    result(async () => {
+      await request<{ status: "ok" }>("/v1/account/email-change/verify", {
         method: "POST",
         body: body(payload),
-      }),
-    ),
-  changePassword: (payload: {
-    currentPassword: string;
-    newPassword: string;
-    revokeOtherSessions?: boolean;
-  }) =>
-    result(() =>
-      request<{ status: "ok" }>("/changePassword", {
-        method: "POST",
-        body: authBody({
-          commandId: crypto.randomUUID(),
-          currentPassword: payload.currentPassword,
-          newPassword: payload.newPassword,
-        }),
-      }),
-    ),
-  requestPasswordReset: (payload: { email: string; redirectTo?: string }) =>
-    result(async () => {
-      const flowId = crypto.randomUUID();
-      await request("/requestReset", {
-        method: "POST",
-        body: authBody({
-          flowId,
-          email: payload.email,
-          requestId: crypto.randomUUID(),
-          locale: "en",
-        }),
       });
-
-      if (!isServer && typeof localStorage !== "undefined")
-        localStorage.setItem(resetFlowKey, JSON.stringify({ flowId, email: payload.email }));
+      clearMeCache();
 
       return { status: "ok" as const };
     }),
-  resetPassword: (payload: {
-    newPassword: string;
-    flowId: string;
-    email: string;
-    reference: unknown;
-    secret: string;
-  }) =>
-    result(() =>
-      request<{ status: "ok" }>("/completeReset", {
-        method: "POST",
-        body: authBody({
-          flowId: payload.flowId,
-          email: payload.email,
-          commandId: crypto.randomUUID(),
-          newPassword: payload.newPassword,
-          reference: payload.reference,
-          secret: payload.secret,
-        }),
-      }),
-    ),
-  resetFlow: () => {
-    if (isServer || typeof localStorage === "undefined") return undefined;
-    const value = localStorage.getItem(resetFlowKey);
-
-    if (!value) return undefined;
-
-    try {
-      return JSON.parse(value) as { flowId: string; email: string };
-    } catch {
-      return undefined;
-    }
-  },
-  clearResetFlow: () => {
-    if (!isServer && typeof localStorage !== "undefined") localStorage.removeItem(resetFlowKey);
-  },
   listApiTokens: () =>
     request<{
       tokens: Array<{
@@ -800,17 +724,16 @@ export const authClient = {
           expiresAt?: string | null;
           revokedAt?: string | null;
         };
-      }>("/v1/account/api-tokens", {
-        method: "POST",
-        body: body(payload),
-        ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
-      }),
+      }>(
+        "/v1/account/api-tokens",
+        withStepUpHeaders({ method: "POST", body: body(payload) }, grant),
+      ),
     ),
   revokeApiToken: (tokenId: string) =>
     withStepUp("api-token-revoke", (grant) =>
-      request<{ status: "ok" }>(`/v1/account/api-tokens/${tokenId}`, {
-        method: "DELETE",
-        ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
-      }),
+      request<{ status: "ok" }>(
+        `/v1/account/api-tokens/${tokenId}`,
+        withStepUpHeaders({ method: "DELETE" }, grant),
+      ),
     ),
 };

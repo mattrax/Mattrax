@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
-import { parsePlist, PlistParseError, serializePlist } from "../index.js";
+import { Effect, Exit, Schema } from "effect";
+import { parsePlist, PlistParseError, PlistValue, serializePlist } from "../index.js";
+
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
 describe("plist", () => {
   describe("parsePlist", () => {
@@ -29,7 +31,10 @@ describe("plist", () => {
 </dict>
 </plist>`;
 
-      const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
+      const result = Schema.decodeUnknownSync(PlistDictionary)(
+        await parsePlist(xml).pipe(Effect.runPromise),
+      );
+
       expect(result.name).toBe("Test");
       expect(result.count).toBe(42);
       expect(result.active).toBe(true);
@@ -38,9 +43,9 @@ describe("plist", () => {
 
     it("fails on invalid XML", async () => {
       const result = await parsePlist("not xml").pipe(Effect.runPromiseExit);
-      expect(result._tag).toBe("Failure");
+      expect(Exit.isFailure(result)).toBe(true);
 
-      if (result._tag === "Failure") {
+      if (Exit.isFailure(result)) {
         expect(String(result.cause)).toContain("PlistParseError");
       }
     });
@@ -74,7 +79,11 @@ describe("plist", () => {
       };
 
       const plist = await serializePlist(original).pipe(Effect.runPromise);
-      const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
+
+      const parsed = Schema.decodeUnknownSync(PlistDictionary)(
+        await parsePlist(plist).pipe(Effect.runPromise),
+      );
+
       expect(parsed.MessageType).toBe("Authenticate");
       expect(parsed.UDID).toBe("abc-123");
       expect(parsed.Tokens).toEqual(["one", "two"]);

@@ -74,7 +74,20 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
   return keys;
 };
 
-const latestSnapshot = () => {
+type SnapshotDdlEntry = {
+  readonly entityType: string;
+  readonly name: string;
+  readonly table: string;
+  readonly tableTo: string;
+  readonly columns: ReadonlyArray<string>;
+  readonly onDelete: string;
+};
+
+type MigrationSnapshot = {
+  readonly ddl: ReadonlyArray<SnapshotDdlEntry>;
+};
+
+const latestSnapshot = (): MigrationSnapshot => {
   const directories = readdirSync(migrationsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -82,16 +95,7 @@ const latestSnapshot = () => {
 
   const latest = directories.at(-1)!;
 
-  return JSON.parse(readFileSync(join(migrationsDir, latest, "snapshot.json"), "utf8")) as {
-    ddl: Array<{
-      entityType: string;
-      name: string;
-      table: string;
-      tableTo: string;
-      columns: string[];
-      onDelete: string;
-    }>;
-  };
+  return JSON.parse(readFileSync(join(migrationsDir, latest, "snapshot.json"), "utf8"));
 };
 
 describe("migration foreign-key delete rules", () => {

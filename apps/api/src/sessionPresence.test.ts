@@ -9,8 +9,7 @@ const responseWithCookies = (cookies: ReadonlyArray<string>) => {
   return new Response("{}", { headers });
 };
 
-const setCookies = (response: Response) =>
-  (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+const setCookies = (response: Response) => response.headers.getSetCookie();
 
 describe("session presence cookie", () => {
   it("mirrors an issued session cookie without making it HttpOnly", () => {

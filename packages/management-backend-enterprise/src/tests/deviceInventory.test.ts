@@ -4,7 +4,7 @@ import { openSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import {   dbRows, makeDb, tableName, type Row, stringValue } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "device-inventory-test-secret";
@@ -47,6 +47,7 @@ const setup = () => {
     ],
   });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
   return { db, backend };
@@ -60,8 +61,8 @@ const scope = {
   mdmOrigin,
 };
 
-const commandResult = (queryResponses: Record<string, unknown>, commandUUID = "cmd-1"): any => ({
-  _tag: "CommandResult",
+const commandResult = (queryResponses: Row, commandUUID = "cmd-1"): any => ({
+  _tag: "CommandResult" as const,
   commandUUID,
   status: "Acknowledged",
   queryResponses,
@@ -98,7 +99,7 @@ describe("SecurityInfo command results", () => {
     });
     // The plaintext key must never be persisted.
     expect(JSON.stringify(rows[0])).not.toContain(key);
-    expect(await openSecret(authSecret, rows[0]!.sealedValue)).toBe(key);
+    expect(await openSecret(authSecret, stringValue(rows[0]!.sealedValue))).toBe(key);
     expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
       fileVaultEnabled: true,
     });
@@ -143,7 +144,7 @@ describe("SecurityInfo command results", () => {
     );
     const after = secretRows(db);
     expect(after).toHaveLength(1);
-    expect(await openSecret(authSecret, after[0]!.sealedValue)).toBe("KEY-TWO");
+    expect(await openSecret(authSecret, stringValue(after[0]!.sealedValue))).toBe("KEY-TWO");
     expect(after[0]!.rotatedAt).not.toBeNull();
     expect(before.createdAt).toBeDefined();
   });
@@ -151,6 +152,7 @@ describe("SecurityInfo command results", () => {
   it("does not write a plaintext secret when AUTH_SECRET is absent", async () => {
     const { db } = setup();
 
+    // SAFETY: The fake store implements only the query chains these tests exercise.
     const backend = ManagementBackendEnterpriseLive.make({
       db: db as any,
       origin,
@@ -206,7 +208,7 @@ describe("InstalledApplicationList command results", () => {
 
     const rows = applicationRows(db);
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.bundleId).sort()).toEqual([
+    expect(rows.map((row) => stringValue(row.bundleId)).sort((left, right) => left.localeCompare(right))).toEqual([
       "com.apple.Safari",
       "com.example.Slack",
     ]);

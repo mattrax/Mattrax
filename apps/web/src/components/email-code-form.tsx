@@ -1,7 +1,5 @@
-import { useQueryClient } from "@tanstack/solid-query";
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
-import { enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 
 /**
@@ -22,7 +20,6 @@ export function EmailCodeForm(props: {
   onBack?: () => void;
   backLabel?: string;
 }) {
-  const queryClient = useQueryClient();
   const [challenge, setChallenge] = createSignal(props.initialChallenge ?? "");
   const [code, setCode] = createSignal("");
   const [pending, setPending] = createSignal(false);
@@ -105,7 +102,6 @@ export function EmailCodeForm(props: {
       return;
     }
 
-    await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     await props.onVerified();
   };
 
@@ -134,15 +130,27 @@ export function EmailCodeForm(props: {
             required
             autofocus
             placeholder="000000"
+            aria-invalid={error() ? "true" : undefined}
+            aria-describedby={error() ? "verification-code-error" : undefined}
             value={code()}
             onInput={(event) => setCode(event.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
             class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-center text-2xl tracking-[0.4em] text-stone-900 placeholder:tracking-[0.4em] placeholder:text-stone-300 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
           />
         </div>
 
-        <Show when={error()}>{(message) => <p class="text-sm text-red-600">{message()}</p>}</Show>
+        <Show when={error()}>
+          {(message) => (
+            <p id="verification-code-error" role="alert" class="text-sm text-red-600">
+              {message()}
+            </p>
+          )}
+        </Show>
         <Show when={notice()}>
-          {(message) => <p class="text-sm text-emerald-600">{message()}</p>}
+          {(message) => (
+            <p role="status" class="text-sm text-emerald-600">
+              {message()}
+            </p>
+          )}
         </Show>
 
         <button
@@ -161,11 +169,16 @@ export function EmailCodeForm(props: {
           disabled={sending() || cooldown() > 0}
           class="font-medium text-stone-700 underline underline-offset-2 hover:text-stone-900 disabled:no-underline disabled:opacity-60"
         >
-          {sending()
-            ? "Sending…"
-            : cooldown() > 0
-              ? `Resend code in ${cooldown()}s`
-              : "Resend code"}
+          <span>
+            {sending()
+              ? "Sending…"
+              : cooldown() > 0
+                ? `Resend code in ${cooldown()}s`
+                : "Resend code"}
+          </span>
+          <span class="sr-only" aria-live="polite">
+            {sending() ? "Sending a new code" : ""}
+          </span>
         </button>
         <Show when={props.onBack}>
           <button

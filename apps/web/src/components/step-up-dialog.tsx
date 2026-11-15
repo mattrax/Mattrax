@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { performStepUp } from "~/lib/step-up";
 import {
   cancelStepUp,
@@ -21,7 +21,6 @@ const secondaryButton =
   "rounded-lg border border-white/[0.09] px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-white/[0.05] disabled:opacity-50";
 
 const labels: Record<StepUpMethod, string> = {
-  password: "Password",
   totp: "Authenticator code",
   passkey: "Passkey",
 };
@@ -35,14 +34,18 @@ const labels: Record<StepUpMethod, string> = {
  * (for example the API-token dialog) and participates in focus management.
  */
 export function StepUpDialog() {
-  const [method, setMethod] = createSignal<StepUpMethod>("password");
-  const [password, setPassword] = createSignal("");
+  const [method, setMethod] = createSignal<StepUpMethod>("passkey");
   const [code, setCode] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
 
   const request = pendingStepUp;
   const available = createMemo(() => request()?.methods ?? []);
+
+  // The account may not have the preferred factor (for example an SSO-only
+  // account with TOTP). Fall back to the first method the server offered.
+  const activeMethod = () =>
+    available().includes(method()) ? method() : (available()[0] ?? method());
 
   const choose = (next: StepUpMethod) => {
     setMethod(next);
@@ -58,24 +61,21 @@ export function StepUpDialog() {
     setPending(true);
 
     try {
-      const grant = await performStepUp(current.action, method(), {
-        password: password(),
+      const grant = await performStepUp(current.action, activeMethod(), {
         code: code(),
       });
 
       rememberStepUpGrant(current.action, grant.grant, grant.expiresAtMillis);
       completeStepUp(grant.grant);
-      setPassword("");
       setCode("");
     } catch (cause) {
-      setError(errorMessage(cause, "We couldn't confirm that action. Try again."));
+      setError(errorMessage(raisedFailure(cause), "We couldn't confirm that action. Try again."));
     } finally {
       setPending(false);
     }
   };
 
   const close = () => {
-    setPassword("");
     setCode("");
     setError(null);
     cancelStepUp();
@@ -99,13 +99,18 @@ export function StepUpDialog() {
                 For your security, confirm your identity to {stepUpActionLabel(current().action)}.
               </DialogDescription>
 
-              <div class="mt-4 flex flex-wrap gap-2 text-xs">
+              <div
+                role="group"
+                aria-label="Confirmation method"
+                class="mt-4 flex flex-wrap gap-2 text-xs"
+              >
                 <For each={available()}>
                   {(item) => (
                     <button
                       type="button"
+                      aria-pressed={activeMethod() === item ? "true" : "false"}
                       class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-                        method() === item
+                        activeMethod() === item
                           ? "bg-brand text-brand-foreground"
                           : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
                       }`}
@@ -117,27 +122,12 @@ export function StepUpDialog() {
                 </For>
               </div>
 
-              <form onSubmit={submit} class="mt-4 space-y-3">
-                <Show when={method() === "password"}>
-                  <div class="space-y-1.5">
-                    <label for="step-up-password" class="text-xs font-medium text-foreground/90">
-                      Current password
-                    </label>
-                    <input
-                      id="step-up-password"
-                      type="password"
-                      required
-                      autocomplete="current-password"
-                      aria-invalid={error() ? "true" : undefined}
-                      aria-describedby={error() ? "step-up-error" : undefined}
-                      value={password()}
-                      onInput={(event) => setPassword(event.currentTarget.value)}
-                      class={inputClass}
-                    />
-                  </div>
-                </Show>
+              <p role="status" aria-live="polite" class="sr-only">
+                Confirming with {labels[activeMethod()].toLowerCase()}.
+              </p>
 
-                <Show when={method() === "totp"}>
+              <form onSubmit={submit} class="mt-4 space-y-3">
+                <Show when={activeMethod() === "totp"}>
                   <div class="space-y-1.5">
                     <label for="step-up-code" class="text-xs font-medium text-foreground/90">
                       6-digit authenticator code
@@ -157,7 +147,7 @@ export function StepUpDialog() {
                   </div>
                 </Show>
 
-                <Show when={method() === "passkey"}>
+                <Show when={activeMethod() === "passkey"}>
                   <p class="text-sm text-muted-foreground">
                     Use the passkey saved on this device or a nearby device.
                   </p>
@@ -173,7 +163,7 @@ export function StepUpDialog() {
 
                 <div class="flex gap-2">
                   <button type="submit" class={primaryButton} disabled={pending()}>
-                    {pending() ? "Confirming…" : method() === "passkey" ? "Use passkey" : "Confirm"}
+                    {pending() ? "Confirming…" : activeMethod() === "passkey" ? "Use passkey" : "Confirm"}
                   </button>
                   <button
                     type="button"

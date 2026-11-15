@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import { ApnsError, ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
@@ -34,18 +34,20 @@ const INVALID_TOKEN_MARKERS = [
   "invalid device token",
 ];
 
-const apnsErrorText = (error: unknown): string => {
+/** The plain-object shape transports and tests use for failures. */
+export type ApplePushFailureDetail = {
+  readonly message?: string;
+  readonly cause?: string;
+};
+
+export type ApplePushFailure = Error | ApplePushFailureDetail | null | undefined;
+
+const apnsErrorText = (error: ApplePushFailure): string => {
   if (error == null) return "";
 
-  if (typeof error === "string") return error;
-
   if (error instanceof Error) return `${error.message} ${String(error.cause ?? "")}`;
-  const record = error as { readonly message?: unknown; readonly cause?: unknown };
 
-  return [record.message, record.cause]
-    .filter((part) => part != null)
-    .map((part) => String(part))
-    .join(" ");
+  return [error.message, error.cause].flatMap((part) => (part == null ? [] : [part])).join(" ");
 };
 
 /**
@@ -54,7 +56,7 @@ const apnsErrorText = (error: unknown): string => {
  * string inspection is the only signal available without changing the
  * transport contract.
  */
-export const classifyApplePushFailure = (error: unknown): ApplePushFailureCode => {
+export const classifyApplePushFailure = (error: ApplePushFailure): ApplePushFailureCode => {
   const text = apnsErrorText(error).toLowerCase();
 
   if (/http\s*410\b/.test(text)) return "invalid_token";
@@ -66,7 +68,7 @@ export const classifyApplePushFailure = (error: unknown): ApplePushFailureCode =
 };
 
 /** Condense an error into the short, secret-free string stored on the device. */
-export const describeApplePushFailure = (error: unknown, limit = 255) => {
+export const describeApplePushFailure = (error: ApplePushFailure, limit = 255) => {
   const text = apnsErrorText(error).replace(/\s+/g, " ").trim();
 
   return (text || "APNs push failed").slice(0, limit);
@@ -126,6 +128,13 @@ export type ApplePushOptions = {
   readonly webhookFetch?: typeof globalThis.fetch;
 };
 
+type MutableApplePushBatchResult = {
+  requested: number;
+  succeeded: string[];
+  failed: Array<{ deviceId: string; error: string }>;
+  skipped: string[];
+};
+
 /** Per-device outcome of a fan-out. `skipped` means nothing was pushable. */
 export type ApplePushBatchResult = {
   readonly requested: number;
@@ -147,7 +156,7 @@ type PushOutcome =
  * Every failure is swallowed and logged: pushes are a best-effort optimisation
  * and must never fail the surrounding HTTP request (devices still poll).
  */
-export const makeApplePush = ({
+export const applePushService = ({
   db,
   schema,
   apns,
@@ -165,7 +174,7 @@ export const makeApplePush = ({
     Effect.tryPromise({
       try: async () => {
         if (!authSecret) throw new Error("APNs key encryption is not configured");
-        const jwk = JSON.parse(await openSecret(authSecret, encryptedKey)) as JsonWebKey;
+        const jwk: JsonWebKey = JSON.parse(await openSecret(authSecret, encryptedKey));
         const key = await importPrivateKeyJwk(jwk);
         const der = await crypto.subtle.exportKey("pkcs8", key);
 
@@ -182,7 +191,7 @@ export const makeApplePush = ({
   const recordPushOutcome = (
     deviceId: string,
     organizationId: string,
-    outcome: { readonly ok: true } | { readonly ok: false; readonly error: unknown },
+    outcome: { readonly ok: true } | { readonly ok: false; readonly error: ApplePushFailure },
   ) =>
     Effect.gen(function* () {
       const apple = yield* db.query.deviceApple.findFirst({ where: { deviceId } });
@@ -301,7 +310,7 @@ export const makeApplePush = ({
       // A DB/decrypt failure is per-device: report it to the batch instead of
       // aborting every other device.
       Effect.catchCause((cause) => {
-        const error = describeApplePushFailure(cause);
+        const error = Cause.pretty(cause).slice(0, 255);
 
         return Effect.logWarning(`Failed to send APNs push for device ${deviceId}: ${error}`).pipe(
           Effect.as({ status: "failed" as const, error }),
@@ -318,7 +327,7 @@ export const makeApplePush = ({
   ): Effect.Effect<ApplePushBatchResult> =>
     Effect.gen(function* () {
       const ids = [...new Set(deviceIds)];
-      const outcomes = new Array<PushOutcome | undefined>(ids.length);
+      const outcomes: Array<PushOutcome | undefined> = [];
       yield* forEachBounded(
         ids,
         {
@@ -333,12 +342,12 @@ export const makeApplePush = ({
           ),
       );
 
-      const result: {
-        requested: number;
-        succeeded: string[];
-        failed: Array<{ deviceId: string; error: string }>;
-        skipped: string[];
-      } = { requested: ids.length, succeeded: [], failed: [], skipped: [] };
+      const result: MutableApplePushBatchResult = {
+        requested: ids.length,
+        succeeded: [],
+        failed: [],
+        skipped: [],
+      };
 
       ids.forEach((deviceId, index) => {
         const outcome = outcomes[index];
@@ -393,10 +402,56 @@ export const makeApplePush = ({
         associations.map((row: { groupId: string }) => row.groupId),
       );
 
-      return [...new Set([...grouped, ...direct.map((row: { deviceId: string }) => row.deviceId)])];
+      // User-scoped assignments reach the device channel through linked
+      // users, so editing or deleting such a policy must wake those devices.
+      const userAssignments = yield* db
+        .select({ userId: schema.userPolicy.userId })
+        .from(schema.userPolicy)
+        .where(inArray(schema.userPolicy.policyId, [...policyIds]));
+
+      const userGroupAssignments = yield* db
+        .select({ groupId: schema.userGroupPolicy.groupId })
+        .from(schema.userGroupPolicy)
+        .where(inArray(schema.userGroupPolicy.policyId, [...policyIds]));
+
+      const groupMembers = userGroupAssignments.length
+        ? yield* db
+            .select({ userId: schema.userGroupMember.userId })
+            .from(schema.userGroupMember)
+            .where(
+              inArray(
+                schema.userGroupMember.groupId,
+                userGroupAssignments.map((row: { groupId: string }) => row.groupId),
+              ),
+            )
+        : [];
+
+      const userIds = [
+        ...new Set([
+          ...userAssignments.map((row: { userId: string }) => row.userId),
+          ...groupMembers.map((row: { userId: string }) => row.userId),
+        ]),
+      ];
+
+      const userDevices = userIds.length
+        ? yield* db
+            .select({ deviceId: schema.deviceUser.deviceId })
+            .from(schema.deviceUser)
+            .where(inArray(schema.deviceUser.userId, userIds))
+        : [];
+
+      return [
+        ...new Set([
+          ...grouped,
+          ...direct.map((row: { deviceId: string }) => row.deviceId),
+          ...userDevices.map((row: { deviceId: string }) => row.deviceId),
+        ]),
+      ];
     });
 
   return { pushAppleDevice, pushAppleDevices, deviceIdsInGroups, deviceIdsInPolicies };
 };
 
-export type ApplePush = ReturnType<typeof makeApplePush>;
+export const makeApplePush = applePushService;
+
+export type ApplePush = ReturnType<typeof applePushService>;

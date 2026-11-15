@@ -5,6 +5,8 @@ import { mergeProps, splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 
 const Tooltip = (props: TooltipPrimitive.TooltipRootProps) => {
+  // SAFETY: the default props object is described by the tooltip root props
+  // type; `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps(
     {
       openDelay: 0,
@@ -32,6 +34,9 @@ type TooltipContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class" | "children">;
 
 const TooltipContent = <T extends ValidComponent = "div">(props: TooltipContentProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as TooltipContentProps, ["class", "children"]);
 
   return (

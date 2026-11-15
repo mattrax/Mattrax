@@ -1,5 +1,7 @@
 import { pemDecode } from "@mattrax/crypto";
 
+type ParsedAsn1Node = { node: Asn1Node; nextOffset: number };
+
 interface Asn1Node {
   tag: number;
   bytes: Uint8Array;
@@ -25,7 +27,7 @@ function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
   return [length, headerLen];
 }
 
-function parseNode(der: Uint8Array, offset: number): { node: Asn1Node; nextOffset: number } {
+function parseNode(der: Uint8Array, offset: number): ParsedAsn1Node {
   const tag = der[offset]!;
   const [length, headerLen] = readAsn1Length(der, offset + 1);
   const contentStart = offset + 1 + headerLen;

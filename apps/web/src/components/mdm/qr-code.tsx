@@ -19,7 +19,7 @@ export function QrCode(props: { value: string; label?: string; class?: string; s
           height={props.size ?? 176}
           role="img"
           aria-label={props.label ?? "Enrollment QR code"}
-          shape-rendering="crispEdges"
+          {...{ "shape-rendering": "crispEdges" }}
           class={props.class ?? "rounded-lg bg-white p-2"}
         >
           <rect width={code().size} height={code().size} fill="#ffffff" />

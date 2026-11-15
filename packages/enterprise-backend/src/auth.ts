@@ -1,11 +1,7 @@
 import {
   Auth,
-  Email,
-  EmailDelivery,
   Hooks,
   Passkey,
-  Password,
-  Proofs,
   Sessions,
   Totp,
 } from "@yielded/auth";
@@ -17,21 +13,24 @@ import {
   TOTP_MODULE_ID,
   type AuthClaims,
 } from "@mattrax/enterprise-domain";
-import { Database, makeTotpPersistenceServices } from "@yielded/auth-persistence-drizzle/Mysql2";
+import {
+  Database,
+  makePasskeyRegistrationServices,
+  makeTotpPersistenceServices,
+} from "@yielded/auth-persistence-drizzle/Mysql2";
 import {
   Db,
   authRequirement,
   authStorage,
   AuthPersistenceConfig,
+  passkeyRegistrationMapping,
   schema,
   totpMapping,
 } from "@mattrax/enterprise-core";
 import { DateTime } from "effect";
-import { Effect, Layer, Redacted } from "effect";
-import { SecureRandom } from "effect/crypto";
+import { Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { and, eq } from "drizzle-orm";
-import { provisionEmailCredential } from "./emailCredential.ts";
-import { makeStepUpServiceLive, verifyStepUpGrant } from "./stepUp.ts";
+import { readStepUpGrant, stepUpServiceLayer, verifyStepUpGrant } from "./stepUp.ts";
 
 export const sessionCookie = "__Host-mattrax_session";
 
@@ -123,27 +122,16 @@ export const deriveTotpSecretKey = async (authSecret: string) =>
     ),
   );
 
-type EmailBinding = {
-  send(message: {
-    to: string;
-    from: { name: string; email: string };
-    subject: string;
-    text?: string;
-    html?: string;
-  }): Promise<unknown>;
-};
+type TotpActionProof = { code?: string; grant?: string };
 
 export type AppAuthService = ReturnType<typeof makeAppAuth>;
 
 export type AuthLiveOptions = {
   readonly appAuth: AppAuthService;
   readonly cryptoLayer: Layer.Layer<any, any, any>;
-  readonly proofSchedulerLayer?: Layer.Layer<any, any, any>;
-  readonly email?: EmailBinding;
-  readonly emailFrom?: string;
-  /** Application secret used to sign passwordless request bindings and email proofs. */
+  /** Application secret used to sign step-up grants and derive TOTP keys. */
   readonly authSecret?: string;
-  /** Canonical public origin used in verification links. */
+  /** Canonical public origin used for the WebAuthn relying party. */
   readonly origin?: string;
   /** Extra browser origins that may share the WebAuthn relying party. */
   readonly trustedOrigins?: ReadonlyArray<string>;
@@ -152,100 +140,20 @@ export type AuthLiveOptions = {
 export const makeAuthLive = ({
   appAuth,
   cryptoLayer,
-  proofSchedulerLayer,
-  email,
-  emailFrom,
   authSecret,
   origin,
   trustedOrigins,
 }: AuthLiveOptions) => {
-  const ClaimsLive = Layer.effect(
-    appAuth.strategies.password.SessionClaims,
-    Effect.gen(function* () {
-      const db = yield* Db;
-
-      return {
-        resolve: ({ subjectId }: { subjectId: string }) =>
-          Effect.gen(function* () {
-            const user = yield* db.query.user
-              .findFirst({ where: { id: subjectId } })
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
-
-            if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
-
-            return {
-              name: user.name,
-              email: user.email,
-              emailVerified: user.emailVerified,
-            } satisfies AuthClaims;
-          }),
-      };
-    }),
-  );
-
-  const ProvisioningLive = Layer.effect(
-    AuthPersistenceConfig.Provisioning,
-    Effect.gen(function* () {
-      const random = yield* SecureRandom.SecureRandom;
-
-      return {
-        password: {
-          values: ({ identifier, registration }: any) =>
-            Effect.gen(function* () {
-              const id = yield* random.uuidV4();
-              const revision = yield* random.uuidV4();
-              const now = new Date();
-
-              return {
-                id,
-                name: registration.name,
-                email: identifier.value,
-                emailVerified: false,
-                image: null,
-                stripeCustomerId: null,
-                disabled: false,
-                authRevision: revision,
-                createdAt: now,
-                updatedAt: now,
-              };
-            }),
-        },
-      };
-    }),
-  );
-
-  const EmailDeliveryLive = Layer.succeed(EmailDelivery.EmailDelivery, {
-    send: (message) =>
-      Effect.tryPromise({
-        try: async () => {
-          if (!email) {
-            console.log("EMAIL", message.to, message.subject, Redacted.value(message.text));
-
-            return;
-          }
-
-          await email.send({
-            to: message.to,
-            from: { name: "Mattrax", email: emailFrom ?? "hello@mattrax.cloud" },
-            subject: message.subject,
-            text: Redacted.value(message.text),
-            ...(message.html ? { html: Redacted.value(message.html) } : {}),
-          });
-        },
-        catch: () => EmailDelivery.EmailNotAccepted.make({}),
-      }),
-  });
-
   const LifecycleHooksLive = Layer.effect(
     Hooks.LifecycleHooks,
     Effect.gen(function* () {
       const db = yield* Db;
 
       /**
-       * Mirror passkey ownership onto `user.passkey_enabled` so the sign-in
-       * requirement (which only sees the subject row) accepts a passkey as an
-       * MFA factor. The credential row is committed before this hook runs; a
-       * database trigger keeps the column correct even if this update fails.
+       * Mirror passkey ownership onto `user.passkey_enabled` so session reads
+       * and account UI decide whether a usable sign-in method remains. The
+       * credential row is committed before this hook runs; a database trigger
+       * keeps the column correct even if this update fails.
        */
       const syncPasskeyFactor = (subjectId: string) =>
         Effect.gen(function* () {
@@ -282,78 +190,11 @@ export const makeAuthLive = ({
                 yield* syncPasskeyFactor(event.snapshot.subjectId);
             }
 
-            if (
-              (event.snapshot.action === "registration" || event.snapshot.action === "sign-in") &&
-              event.snapshot.subjectId
-            ) {
-              yield* provisionEmailCredential(
-                db,
-                appAuth.strategies.email.persistence.moduleId as string,
-                event.snapshot.subjectId,
-              );
-              // Registration verification is initiated by the web flow as a
-              // six-digit code (see enterpriseAuth.requestEmailVerification),
-              // so the auth runtime does not send a second link email here.
-            }
-
             return [];
           }),
       });
     }),
   );
-
-  const CompromisedPasswordsLive = Layer.succeed(Password.CompromisedPasswords, {
-    check: () => Effect.succeed({ _tag: "Allowed" as const }),
-  });
-
-  const NewPasswordCheckLive = Password.NewPasswordCheck.layer(Password.defaultPasswordPolicy).pipe(
-    Layer.provide(CompromisedPasswordsLive),
-  );
-
-  const ActionEvidenceLive = Layer.succeed(Password.PasswordActionEvidence, {
-    verify: ({ challenge, currentPasswordEvidence, recovery }) =>
-      Effect.gen(function* () {
-        if (currentPasswordEvidence) {
-          return {
-            evidence: {
-              ...currentPasswordEvidence,
-              flowId: Sessions.AuthenticationFlowId.make(challenge.commandId),
-              bindingDigest: challenge.bindingDigest,
-              revision: challenge.revision,
-            },
-            requirement: authRequirement,
-          };
-        }
-
-        if (recovery) {
-          const credentialId =
-            challenge.targetCredentialId ?? challenge.revision.credentials[0]?.credentialId;
-
-          if (!credentialId) return yield* Password.PasswordActionRequired.make({});
-
-          return {
-            evidence: {
-              revision: challenge.revision,
-              flowId: Sessions.AuthenticationFlowId.make(challenge.commandId),
-              bindingDigest: challenge.bindingDigest,
-              proofs: [
-                {
-                  method: "password-reset",
-                  credentialId,
-                  factors: ["knowledge"] as Array<"knowledge" | "possession" | "inherence">,
-                  userVerified: false,
-                  phishingResistant: false,
-                  verifiedAt: DateTime.nowUnsafe(),
-                },
-              ],
-            },
-            requirement: authRequirement,
-          };
-        }
-
-        return yield* Password.PasswordActionRequired.make({});
-      }),
-  });
 
   const resolveClaims = (subjectId: string) =>
     Effect.gen(function* () {
@@ -363,7 +204,7 @@ export const makeAuthLive = ({
         .findFirst({ where: { id: subjectId } })
         .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-      if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
+      if (!user || user.disabled) return yield* Passkey.PasskeyUnavailable.make({});
 
       return {
         name: user.name,
@@ -372,9 +213,22 @@ export const makeAuthLive = ({
       } satisfies AuthClaims;
     });
 
-  const EmailClaimsLive = Layer.effect(
-    appAuth.strategies.email.SessionClaims,
-    Effect.succeed({ resolve: ({ subjectId }: { subjectId: string }) => resolveClaims(subjectId) }),
+  /**
+   * Registration is a guest ceremony. It provisions the subject and first
+   * credential in the same commit, using the application mapping above.
+   */
+  const PasskeyRegistrationLive = Layer.effect(
+    appAuth.strategies.registration.RegistrationAuthority,
+    Effect.map(
+      makePasskeyRegistrationServices(passkeyRegistrationMapping),
+      (services) => services.passkeyRegistrationAuthority,
+    ),
+  ).pipe(
+    // SAFETY: `Db` is the same Effect MySQL Drizzle database the persistence
+    // adapter exposes under its own `Database` service tag.
+    Layer.provide(Layer.effect(Database, Effect.map(Db, (db) => db as any))),
+    Layer.provide(cryptoLayer),
+    Layer.provide(LifecycleHooksLive),
   );
 
   /**
@@ -406,7 +260,7 @@ export const makeAuthLive = ({
       return Passkey.PasskeyActionEvidence.of({
         verify: ({ invocation, challenge, proof }) =>
           Effect.gen(function* () {
-            if (invocation._tag !== "Authenticated")
+            if (!Predicate.isTagged(invocation, "Authenticated"))
               return yield* Passkey.PasskeyActionRequired.make({});
 
             if (invocation.subjectId !== challenge.revision.subjectId)
@@ -433,10 +287,11 @@ export const makeAuthLive = ({
                     subjectId: invocation.subjectId,
                     sessionId: invocation.sessionId,
                     action,
+                    method: "passkey",
                   })
                 : false;
 
-            const verifiedAt = steppedUp ? yield* DateTime.now : undefined;
+            const verifiedAt = steppedUp ? DateTime.toEpochMillis(yield* DateTime.now) : undefined;
 
             const assurance = invocation.assurance;
 
@@ -462,11 +317,11 @@ export const makeAuthLive = ({
               });
 
             return {
-              evidence: Sessions.AuthenticationEvidence.make({
+              evidence: Schema.decodeUnknownSync(Sessions.AuthenticationEvidence)({
                 revision: challenge.revision,
                 flowId: Sessions.AuthenticationFlowId.make(challenge.flowId),
                 bindingDigest: challenge.bindingDigest,
-                proofs: proofs as any,
+                proofs,
               }),
               // Re-assess against the baseline assurance, not the current
               // account requirement: adding a passkey flips the account to
@@ -478,13 +333,6 @@ export const makeAuthLive = ({
       });
     }),
   );
-
-  const EmailReturnTargetsLive = Email.EmailReturnTargets.exactRoutes([
-    "/",
-    "/dashboard",
-    "/account",
-    "/login",
-  ]);
 
   /**
    * Encrypts TOTP secrets with a stable key derived from AUTH_SECRET. Key IDs are
@@ -508,11 +356,11 @@ export const makeAuthLive = ({
     Totp.TotpPersistence,
     Effect.gen(function* () {
       const db = yield* Db;
-      const hooks = yield* Hooks.LifecycleHooks;
 
+      // `Hooks.LifecycleHooks` stays in this layer's requirements; the layer
+      // below provides its implementation once at composition time.
       const services = yield* makeTotpPersistenceServices(totpMapping).pipe(
-        Effect.provideService(Database, db as any),
-        Effect.provideService(Hooks.LifecycleHooks, hooks),
+        Effect.provideService(Database, db),
       );
 
       return services.totpPersistence;
@@ -525,43 +373,93 @@ export const makeAuthLive = ({
   );
 
   /**
-   * Management actions require a fresh password and authenticator code once a
-   * factor is active. The single `actionProof` field carries
-   * `{"password":"…","code":"…"}`; the raw legacy form is treated as a code and
-   * only works when the session itself carries fresh knowledge evidence. A
-   * replayed code is rejected by the factor commit's accepted-step guard.
+   * TOTP management is authorized by a fresh passkey step-up plus, once the
+   * authenticator is active, a current code. The single `actionProof` field
+   * carries `{"grant":"…","code":"…"}`. The passkey step-up is what keeps TOTP
+   * from being enrolled, replaced or removed with only a bearer session.
    */
   const TotpActionEvidenceLive = Layer.effect(
     Totp.TotpActionEvidence,
     Effect.gen(function* () {
       const persistence = yield* Totp.TotpPersistence;
       const cryptography = yield* Totp.TotpCryptography;
-      const passwords = yield* Password.PasswordPersistence;
-      const passwordHashing = yield* Password.PasswordHashing;
-      const passwordModuleId = appAuth.strategies.password.persistence.moduleId as string;
 
-      const parseProof = (raw: string): { password?: string; code?: string } => {
+      const stepUpActionFor = (action: "enroll" | "confirm" | "disable" | "regenerate") => {
+        if (action === "disable") return "mfa-disable" as const;
+
+        if (action === "regenerate") return "mfa-regenerate" as const;
+
+        return "mfa-enroll" as const;
+      };
+
+      const parseProof = (raw: string): TotpActionProof => {
         try {
-          const parsed = JSON.parse(raw) as { password?: unknown; code?: unknown };
+          const parsed = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
+              JSON.parse(raw),
+            ),
+          );
 
-          if (parsed && typeof parsed === "object")
-            return {
-              ...(typeof parsed.password === "string" ? { password: parsed.password } : {}),
-              ...(typeof parsed.code === "string" ? { code: parsed.code } : {}),
-            };
+          if (parsed) {
+            const code = Option.getOrUndefined(
+              Schema.decodeUnknownOption(Schema.String)(parsed.code),
+            );
+
+            const grant = Option.getOrUndefined(
+              Schema.decodeUnknownOption(Schema.String)(parsed.grant),
+            );
+
+            const proof: TotpActionProof = {};
+
+            if (code !== undefined) proof.code = code;
+
+            if (grant !== undefined) proof.grant = grant;
+
+            return proof;
+          }
         } catch {
-          // Not JSON: keep compatibility with a code-only proof.
+          // Enrollment and confirmation send the step-up grant directly; the
+          // management forms send JSON with a code as well.
         }
 
-        return { code: raw };
+        return { grant: raw };
       };
 
       return Totp.TotpActionEvidence.of({
         verify: ({ invocation, challenge, proof }) =>
           Effect.gen(function* () {
-            if (invocation._tag !== "Authenticated") return yield* Totp.TotpActionRequired.make({});
+            if (!Predicate.isTagged(invocation, "Authenticated"))
+              return yield* Totp.TotpActionRequired.make({});
 
             if (invocation.subjectId !== challenge.revision.subjectId)
+              return yield* Totp.TotpActionRequired.make({});
+
+            if (invocation.sessionId === undefined || authSecret === undefined)
+              return yield* Totp.TotpActionRequired.make({});
+
+            if (proof === undefined) return yield* Totp.TotpActionRequired.make({});
+
+            const parsed = parseProof(Redacted.value(proof));
+
+            if (parsed.grant === undefined || parsed.grant.length === 0)
+              return yield* Totp.TotpActionRequired.make({});
+
+            const stepUp = yield* readStepUpGrant(authSecret, parsed.grant, {
+              subjectId: invocation.subjectId,
+              sessionId: invocation.sessionId,
+              action: stepUpActionFor(challenge.action),
+            });
+
+            if (stepUp?.method !== "passkey" || stepUp.credentialId === undefined)
+              return yield* Totp.TotpActionRequired.make({});
+
+            const passkeyCredentialId = stepUp.credentialId;
+
+            if (
+              !challenge.revision.credentials.some(
+                (credential) => credential.credentialId === passkeyCredentialId,
+              )
+            )
               return yield* Totp.TotpActionRequired.make({});
 
             const snapshot = yield* persistence
@@ -570,78 +468,25 @@ export const makeAuthLive = ({
 
             if (snapshot === undefined) return yield* Totp.TotpActionRequired.make({});
 
-            const firstCredential = challenge.revision.credentials[0]?.credentialId;
+            const verifiedAt = DateTime.toEpochMillis(yield* DateTime.now);
 
-            if (firstCredential === undefined) return yield* Totp.TotpActionRequired.make({});
-
-            const assuranceProofs = (invocation.assurance.evidence ?? []).map((item) => ({
-              method: item.method,
-              credentialId:
-                challenge.revision.credentials[item.credentialOrdinal ?? 0]?.credentialId ??
-                firstCredential,
-              factors: [...item.factors],
-              userVerified: item.userVerified,
-              phishingResistant: item.phishingResistant,
-              verifiedAt: item.verifiedAt,
-            }));
-
-            const proofs: Array<{
-              method: string;
-              credentialId: string;
-              factors: Array<"knowledge" | "possession" | "inherence">;
-              userVerified: boolean;
-              phishingResistant: boolean;
-              verifiedAt: unknown;
-            }> =
-              assuranceProofs.length > 0
-                ? assuranceProofs
-                : [
-                    {
-                      method: invocation.assurance.method,
-                      credentialId: firstCredential,
-                      factors: [...invocation.assurance.factors],
-                      userVerified: false,
-                      phishingResistant: false,
-                      verifiedAt: invocation.assurance.authenticatedAt,
-                    },
-                  ];
+            const proofs = [
+              {
+                method: "passkey",
+                credentialId: passkeyCredentialId,
+                factors: ["possession"],
+                userVerified: true,
+                phishingResistant: true,
+                verifiedAt,
+              },
+            ];
 
             const record = snapshot.record;
 
-            if (!record?.secret) {
-              // MFA requires a knowledge factor. Passwordless/SSO-only
-              // accounts can never satisfy password + authenticator, so refuse
-              // enrollment instead of creating an unrecoverable account.
-              const candidate = yield* passwords
-                .readForSubject({
-                  moduleId: passwordModuleId,
-                  subjectId: invocation.subjectId,
-                })
-                .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
+            if (challenge.action === "disable" || challenge.action === "regenerate") {
+              if (!record?.secret) return yield* Totp.TotpActionRequired.make({});
 
-              if (candidate._tag === "None") return yield* Totp.TotpActionRequired.make({});
-            }
-
-            if (record?.secret) {
-              if (proof === undefined) return yield* Totp.TotpActionRequired.make({});
-              const parsed = parseProof(Redacted.value(proof));
-
-              if (!parsed.password || !parsed.code) return yield* Totp.TotpActionRequired.make({});
-
-              const candidate = yield* passwords
-                .readForSubject({
-                  moduleId: passwordModuleId,
-                  subjectId: invocation.subjectId,
-                })
-                .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
-
-              if (candidate._tag === "None") return yield* Totp.TotpActionRequired.make({});
-
-              const verified = yield* passwordHashing
-                .verify(Redacted.make(parsed.password), candidate.value.verifier)
-                .pipe(Effect.catchCause(() => Effect.fail(Totp.TotpActionRequired.make({}))));
-
-              if (!verified.matches) return yield* Totp.TotpActionRequired.make({});
+              if (!parsed.code) return yield* Totp.TotpActionRequired.make({});
 
               const nowMillis = DateTime.toEpochMillis(yield* DateTime.now);
 
@@ -660,33 +505,22 @@ export const makeAuthLive = ({
               );
 
               if (step === null) return yield* Totp.TotpActionRequired.make({});
-              proofs.push(
-                {
-                  method: "password",
-                  credentialId: candidate.value.credentialId,
-                  factors: ["knowledge"],
-                  userVerified: false,
-                  phishingResistant: false,
-                  verifiedAt: yield* DateTime.now,
-                },
-                {
-                  method: "totp",
-                  credentialId: record.credentialId,
-                  factors: ["possession"],
-                  userVerified: false,
-                  phishingResistant: false,
-                  verifiedAt: yield* DateTime.now,
-                },
-              );
+
+              proofs.push({
+                method: "totp",
+                credentialId: record.credentialId,
+                factors: ["possession"],
+                userVerified: false,
+                phishingResistant: false,
+                verifiedAt: DateTime.toEpochMillis(yield* DateTime.now),
+              });
             }
 
-            if (proofs.length === 0) return yield* Totp.TotpActionRequired.make({});
-
-            return Sessions.AuthenticationEvidence.make({
+            return Schema.decodeUnknownSync(Sessions.AuthenticationEvidence)({
               revision: challenge.revision,
               flowId: challenge.flowId,
               bindingDigest: challenge.bindingDigest,
-              proofs: proofs as any,
+              proofs,
             });
           }),
       });
@@ -710,9 +544,9 @@ export const makeAuthLive = ({
       requirement: {
         alternatives: [
           {
-            factors: ["knowledge", "possession"],
-            userVerified: false,
-            phishingResistant: false,
+            factors: ["possession"],
+            userVerified: true,
+            phishingResistant: true,
             minimumCredentials: 2,
           },
         ],
@@ -730,7 +564,6 @@ export const makeAuthLive = ({
 
   const PersistenceLive = AuthPersistenceConfig.layer.pipe(
     Layer.provide(AuthPersistenceConfig.Config.layer(authStorage)),
-    Layer.provide(ProvisioningLive),
   );
 
   const layer = appAuth.layer.pipe(
@@ -739,18 +572,12 @@ export const makeAuthLive = ({
     Layer.provide(SessionStrategyLive),
     Layer.provide(TotpLive),
     Layer.provide(PersistenceLive),
-    Layer.provide(ClaimsLive),
-    Layer.provide(EmailDeliveryLive),
-    Layer.provide(NewPasswordCheckLive),
-    Layer.provide(ActionEvidenceLive),
     Layer.provide(LifecycleHooksLive),
-    Layer.provide(Password.PasswordAttemptLimiter.layer),
-    Layer.provide(EmailClaimsLive),
-    Layer.provide(EmailReturnTargetsLive),
     Layer.provide(PasskeyConfigLive),
     Layer.provide(PasskeyProtocolLive),
     Layer.provide(PasskeyClaimsLive),
     Layer.provide(PasskeyActionEvidenceLive),
+    Layer.provide(PasskeyRegistrationLive),
     Layer.provide(cryptoLayer),
   );
 
@@ -780,7 +607,6 @@ export const makeAuthLive = ({
                 generation: 1,
                 keyring,
               }),
-              Proofs.ProofKeys.layer(keyring),
             ),
           ),
         );
@@ -790,7 +616,7 @@ export const makeAuthLive = ({
    * services. It is merged into this layer's output so tenant/account handlers
    * can require recent proof without reaching into auth internals.
    */
-  const stepUpLayer = makeStepUpServiceLive({ appAuth, authSecret }).pipe(
+  const stepUpLayer = stepUpServiceLayer().pipe(
     Layer.provide(TotpLive),
     Layer.provide(PersistenceLive),
     Layer.provide(PasskeyConfigLive),
@@ -799,7 +625,5 @@ export const makeAuthLive = ({
     Layer.provide(cryptoLayer),
   );
 
-  const combined = Layer.merge(withRequestBinding, stepUpLayer);
-
-  return proofSchedulerLayer ? combined.pipe(Layer.provide(proofSchedulerLayer)) : combined;
+  return Layer.merge(withRequestBinding, stepUpLayer);
 };

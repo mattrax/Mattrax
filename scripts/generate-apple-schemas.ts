@@ -30,7 +30,7 @@ interface ApplePayloadKey {
   content?: string;
   format?: string;
   range?: { min?: number; max?: number };
-  rangelist?: unknown[];
+  rangelist?: Array<string | number | boolean>;
   subkeys?: ApplePayloadKey[];
   anyof?: ApplePayloadKey[];
   subkeytype?: string;
@@ -44,12 +44,6 @@ function toPascalCase(str: string): string {
     .map((w) => (w[0]?.toUpperCase() ?? "") + w.slice(1).toLowerCase())
     .join("")
     .replace(/[^a-zA-Z0-9]/g, "");
-}
-
-function toCamelCase(str: string): string {
-  const pascal = toPascalCase(str);
-
-  return pascal[0]?.toLowerCase() + pascal.slice(1);
 }
 
 function makeSchemaName(identifier: string): string {
@@ -66,6 +60,14 @@ function escapeRegexForCode(regex: string): string {
 
 function escapeStringForJs(str: string): string {
   return JSON.stringify(str);
+}
+
+function isString(value: string | number | boolean): value is string {
+  return typeof value === "string";
+}
+
+function literalForJs(value: string | number | boolean): string {
+  return isString(value) ? escapeStringForJs(value) : String(value);
 }
 
 function buildChecks(filters: string[]): string {
@@ -128,9 +130,7 @@ function generateTypeSchema(key: ApplePayloadKey, keyPath: string, ctx: GenConte
 
     case "<string>": {
       if (key.rangelist && key.rangelist.length > 0) {
-        const values = key.rangelist.map((v) =>
-          typeof v === "string" ? escapeStringForJs(v) : String(v),
-        );
+        const values = key.rangelist.map(literalForJs);
 
         if (values.length === 1) {
           return `Schema.Literal(${values[0]})`;
@@ -157,9 +157,7 @@ function generateTypeSchema(key: ApplePayloadKey, keyPath: string, ctx: GenConte
 
     case "<integer>": {
       if (key.rangelist && key.rangelist.length > 0) {
-        const values = key.rangelist.map((v) =>
-          typeof v === "string" ? escapeStringForJs(v) : String(v),
-        );
+        const values = key.rangelist.map(literalForJs);
 
         if (values.length === 1) {
           return `Schema.Literal(${values[0]})`;
@@ -297,7 +295,7 @@ function generateSchemaFromFile(
   category: "declaration" | "profile" | "command" | "checkin",
 ): SchemaResult | null {
   const content = fs.readFileSync(filePath, "utf-8");
-  const data = parse(content) as AppleSchemaFile;
+  const data: AppleSchemaFile = parse(content);
 
   if (!data.payloadkeys || data.payloadkeys.length === 0) {
     return null;
@@ -367,66 +365,6 @@ function escapeJsDoc(str: string): string {
   return str.replace(/\*\//g, "* /").replace(/\n/g, "\n * ");
 }
 
-function generateCategoryFile(
-  category: "declaration" | "profile" | "command" | "checkin",
-  sourceDir: string,
-  outFileName: string,
-  allNamesAcrossCategories: Set<string>,
-) {
-  const files = fs.readdirSync(sourceDir).filter((f) => f.endsWith(".yaml"));
-  const results: SchemaResult[] = [];
-  const usedNames = new Set<string>();
-
-  for (const file of files) {
-    try {
-      const result = generateSchemaFromFile(path.join(sourceDir, file), category);
-
-      if (result) {
-        // Handle duplicate names within this file
-        let uniqueName = result.name;
-        let suffix = 1;
-
-        while (usedNames.has(uniqueName)) {
-          uniqueName = result.name + suffix;
-          suffix++;
-        }
-
-        if (uniqueName !== result.name) {
-          result.code = result.code.replace(new RegExp(`\\b${result.name}\\b`, "g"), uniqueName);
-          result.name = uniqueName;
-        }
-
-        usedNames.add(result.name);
-        results.push(result);
-      }
-    } catch (e) {
-      console.error(`Error processing ${file}:`, (e as Error).message);
-    }
-  }
-
-  // Sort by name for deterministic output
-  results.sort((a, b) => a.name.localeCompare(b.name));
-
-  const header = `// Auto-generated from https://github.com/apple/device-management
-// Do not edit manually.
-
-import { Schema } from "effect";
-
-`;
-
-  const body = results.map((r) => r.code).join("\n");
-  fs.writeFileSync(path.join(OUT_DIR, outFileName), header + body, "utf-8");
-  console.log(`Generated ${outFileName} with ${results.length} schemas`);
-
-  // Register names for cross-category deduplication
-  for (const r of results) {
-    allNamesAcrossCategories.add(r.name);
-  }
-}
-
-// First pass: collect all names to detect cross-category conflicts
-const allNames = new Set<string>();
-
 // Generate in order: declarations, profiles, commands, checkin
 // If a later category has conflicts with earlier ones, we rename them.
 // But we need to know conflicts ahead of time. Let's do two passes.
@@ -440,7 +378,7 @@ function collectNames(
 
   for (const file of files) {
     const content = fs.readFileSync(path.join(sourceDir, file), "utf-8");
-    const data = parse(content) as AppleSchemaFile;
+    const data: AppleSchemaFile = parse(content);
 
     if (!data.payloadkeys || data.payloadkeys.length === 0) continue;
     let identifier: string;
@@ -507,7 +445,6 @@ function generateCategoryFileWithRenames(
   category: "declaration" | "profile" | "command" | "checkin",
   sourceDir: string,
   outFileName: string,
-  renamePrefix: string,
 ) {
   const files = fs.readdirSync(sourceDir).filter((f) => f.endsWith(".yaml"));
   const results: SchemaResult[] = [];
@@ -545,8 +482,11 @@ function generateCategoryFileWithRenames(
         usedNames.add(result.name);
         results.push(result);
       }
-    } catch (e) {
-      console.error(`Error processing ${file}:`, (e as Error).message);
+    } catch (cause) {
+      console.error(
+        `Error processing ${file}:`,
+        cause instanceof Error ? cause.message : String(cause),
+      );
     }
   }
 
@@ -569,28 +509,24 @@ generateCategoryFileWithRenames(
   "declaration",
   path.join(APPLE_REPO, "declarative/declarations/configurations"),
   "declarations.ts",
-  "Declaration",
 );
 
 generateCategoryFileWithRenames(
   "profile",
   path.join(APPLE_REPO, "mdm/profiles"),
   "profiles.ts",
-  "Profile",
 );
 
 generateCategoryFileWithRenames(
   "command",
   path.join(APPLE_REPO, "mdm/commands"),
   "commands.ts",
-  "Command",
 );
 
 generateCategoryFileWithRenames(
   "checkin",
   path.join(APPLE_REPO, "mdm/checkin"),
   "checkin.ts",
-  "Checkin",
 );
 
 console.log("Done!");

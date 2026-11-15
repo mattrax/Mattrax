@@ -1,5 +1,6 @@
 import { useLocation, useParams } from "@solidjs/router";
 import { For, type ParentProps } from "solid-js";
+import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
 const tabs = [
@@ -11,7 +12,9 @@ const tabs = [
 export default function IdentitySettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
+  const { can } = useCan();
   const base = () => `/t/${params.tenantId}/settings/identity`;
+  const visibleTabs = () => tabs.filter(() => can("identity.read"));
 
   const active = () => {
     const rest = location.pathname.slice(base().length).replace(/^\//, "");
@@ -25,7 +28,7 @@ export default function IdentitySettingsLayout(props: ParentProps) {
         class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-white/[0.07] sm:bg-white/[0.02] sm:p-1"
         aria-label="Identity sections"
       >
-        <For each={tabs}>
+        <For each={visibleTabs()}>
           {(tab) => {
             const href = tab.id ? `${base()}/${tab.id}` : base();
             const isActive = () => active() === tab.id;

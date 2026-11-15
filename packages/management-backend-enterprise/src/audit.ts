@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
 
@@ -27,7 +27,7 @@ export type SystemAuditEvent = {
   readonly targetType: string;
   readonly targetId?: string | null;
   /** Small, secret-free context. Never include tokens, keys or passwords. */
-  readonly metadata?: unknown;
+  readonly metadata?: Schema.Json;
 };
 
 /**
@@ -65,7 +65,7 @@ export const writeSystemAudit = (
       action: event.action,
       targetType: event.targetType,
       targetId: event.targetId ?? null,
-      metadata: event.metadata === undefined ? null : (event.metadata as object),
+      metadata: event.metadata === undefined ? null : event.metadata,
       createdAt: new Date(),
     });
 
@@ -77,23 +77,21 @@ export const writeSystemAudit = (
 
     if (!webhookEvent || !options.authSecret || options.webhooks === false) return;
 
-    const metadata =
-      typeof event.metadata === "object" && event.metadata !== null
-        ? (event.metadata as Record<string, unknown>)
-        : event.metadata === undefined
-          ? {}
-          : { metadata: event.metadata };
+    const metadata: Schema.JsonObject = Schema.is(Schema.JsonObject)(event.metadata)
+      ? event.metadata
+      : event.metadata === undefined
+        ? {}
+        : { metadata: event.metadata };
 
     yield* dispatchWebhookEvent(
       db,
       {
         organizationId: event.organizationId,
         type: webhookEvent,
-        data: {
-          ...metadata,
-          targetType: event.targetType,
-          targetId: event.targetId ?? null,
-        },
+        data: Object.assign(
+          { targetType: event.targetType, targetId: event.targetId ?? null },
+          metadata,
+        ),
       },
       { authSecret: options.authSecret, fetch: options.webhookFetch },
     );

@@ -1,5 +1,7 @@
 export { createEnterpriseService, enterpriseHandlers } from "./enterpriseHandlers.js";
 
+export { EnterpriseAnalyticsService } from "./enterpriseHandlers.js";
+
 export type {
   EnterpriseAnalytics,
   EnterpriseAnalyticsIdentity,
@@ -161,7 +163,50 @@ export { makeSsoStrategy } from "./sso.js";
 
 export { signToken, verifyToken } from "./tokens.js";
 
-export { provisionEmailCredential } from "./emailCredential.js";
+export {
+  signSsrToken,
+  verifySsrToken,
+  SSR_TOKEN_COOKIE,
+  SSR_TOKEN_TTL_MILLIS,
+  type SignedSsrToken,
+  type SignSsrTokenInput,
+} from "./ssrToken.js";
+
+export { invitationEmail } from "./invitationEmail.js";
+
+export type { InvitationEmail, InvitationEmailInput } from "./invitationEmail.js";
+
+export { onboardingFollowUpEmail, welcomeEmail } from "./onboardingEmail.js";
+
+export type {
+  OnboardingEmail,
+  OnboardingFollowUpEmailInput,
+  WelcomeEmailInput,
+} from "./onboardingEmail.js";
+
+export {
+  DEFAULT_ONBOARDING_REPLY_TO,
+  ONBOARDING_EMAIL_FROM,
+  ONBOARDING_FOLLOW_UP_AUDIT_ACTION,
+  ONBOARDING_SUPPORT_EMAIL,
+  runOnboardingEmails,
+  runWelcomeEmailSweep,
+  sendWelcomeEmailOnce,
+} from "./onboardingEmails.js";
+
+export type {
+  OnboardingEmailRunResult,
+  OnboardingEmailTransport,
+  RunOnboardingEmailsOptions,
+  SendWelcomeEmailOptions,
+  WelcomeEmailOutcome,
+  WelcomeEmailSweepOptions,
+  WelcomeEmailSweepResult,
+} from "./onboardingEmails.js";
+
+export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "./email.js";
+
+export { settlePendingInvitations } from "./invitations.js";
 
 export { makeAuthLive, sessionCookie } from "./auth.js";
 
@@ -186,7 +231,11 @@ export type {
   EnrollmentAttemptPlatform,
 } from "./enrollmentAttempts.js";
 
-export { runMaintenance, loadCredentialAlertRecipients } from "./maintenance.js";
+export {
+  runMaintenance,
+  loadCredentialAlertRecipients,
+  loadTenantAdminRecipients,
+} from "./maintenance.js";
 
 export type {
   CredentialAlertRecipient,
@@ -229,6 +278,7 @@ export {
   ENTRA_SYNC_STALE_MS,
   acquireEntraSyncLock,
   isEntraSyncDue,
+  linkedDeviceIdsForUsers,
   runEntraDirectorySyncForTenant,
   runScheduledEntraSync,
   syncEntraDirectory,
@@ -242,6 +292,10 @@ export type {
   EntraSyncTrigger,
   ScheduledEntraSyncResult,
 } from "./entraSync.js";
+
+export { ScimMembershipNotifier } from "./scim.ts";
+
+export type { ScimMembershipNotifierHandler } from "./scim.ts";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,

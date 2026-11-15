@@ -34,9 +34,13 @@ export class AppleMdmConfig extends Context.Service<AppleMdmConfig, AppleMdmConf
     Layer.succeed(AppleMdmConfig, AppleMdmConfig.of(config));
 }
 
-const processEnv = (): Record<string, string | undefined> =>
-  ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ??
-    {}) as Record<string, string | undefined>;
+type ProcessGlobal = {
+  readonly process?: { readonly env?: Record<string, string | undefined> };
+};
+
+const globalWithProcess: ProcessGlobal = globalThis;
+
+const processEnv = (): Record<string, string | undefined> => globalWithProcess.process?.env ?? {};
 
 /**
  * Compatibility fallback for hosts that have not wired `AppleMdmConfig` yet

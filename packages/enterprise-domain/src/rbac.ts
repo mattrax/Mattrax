@@ -275,8 +275,13 @@ export const BUILT_IN_ROLE_PERMISSIONS: Record<BuiltInTenantRole, ReadonlyArray<
       !permission.startsWith("backups."),
   ),
   // Webhook secrets and delivery history are operational admin surfaces.
-  member: READ_PERMISSIONS.filter((permission) => permission !== "webhooks.read"),
-  auditor: READ_PERMISSIONS.filter((permission) => permission !== "webhooks.read"),
+  // Backups contain full tenant data and stay with owners.
+  member: READ_PERMISSIONS.filter(
+    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+  ),
+  auditor: READ_PERMISSIONS.filter(
+    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+  ),
 };
 
 export const BUILT_IN_ROLE_LABELS: Record<BuiltInTenantRole, string> = {
@@ -286,8 +291,10 @@ export const BUILT_IN_ROLE_LABELS: Record<BuiltInTenantRole, string> = {
   auditor: "Auditor",
 };
 
+const BUILT_IN_TENANT_ROLE_SCHEMA = Schema.Literals(BUILT_IN_TENANT_ROLES);
+
 export const isBuiltInTenantRole = (value: string): value is BuiltInTenantRole =>
-  (BUILT_IN_TENANT_ROLES as readonly string[]).includes(value);
+  Schema.is(BUILT_IN_TENANT_ROLE_SCHEMA)(value);
 
 export const isPermission = (value: string): value is Permission => PERMISSION_SET.has(value);
 

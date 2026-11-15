@@ -13,6 +13,32 @@ This page lists the runtime configuration for the Cloud API Worker. Secrets are 
 Back up `AUTH_SECRET`. Rotating it makes existing sealed values unreadable. There is no
 online re-wrap; export and re-seal with the old secret before rotating.
 
+### Web Worker
+
+`AUTH_SECRET` is also a runtime secret on the dashboard Worker (`mattrax`), not just the
+API Worker (`mattrax-api`). It verifies the short-lived `__Host-mattrax_ssr` bootstrap
+token at the edge. Both Workers must use exactly the same value:
+
+```bash
+cf workers secrets update AUTH_SECRET --worker mattrax-api --type secret_text --text '...'
+cf workers secrets update AUTH_SECRET --worker mattrax --type secret_text --text '...'
+```
+
+Self-hosted deployments get it from the same `AUTH_SECRET` environment variable in
+`apps/selfhost`. If the dashboard Worker has no secret, or the two values differ, pages
+still render correctly: the Worker falls back to `GET /api/v1/bootstrap` on every
+authenticated navigation. That costs one membership/role query per tenant, turns every
+warm token into a miss, and logs a one-time `console.error` per isolate (grouped by
+Workers Issues). It never logs the secret and is not an authorisation bypass: bootstrap
+remains the authority.
+
+Blast radius: the web Worker only verifies HMACs, but the value it holds is the platform
+root secret. Anyone who can read that Worker's bindings or ship code to it can forge
+sessions, unseal stored vendor credentials and sign SSR tokens for any account. Keep the
+web Worker's environment as restricted as the API Worker's while the key is shared.
+Long term the plan is a dedicated `SSR_TOKEN_SECRET` minted by the API and verified by the
+edge, so the web Worker never holds `AUTH_SECRET`; this is not implemented yet.
+
 ## Hyperdrive
 
 The API Worker reaches MySQL through Hyperdrive. Query caching must stay disabled:
@@ -31,7 +57,6 @@ with the write and avoids similar stale reads on policy and membership changes.
 
 | Variable          | Default  | Purpose                                    |
 | ----------------- | -------- | ------------------------------------------ |
-| `AUTH_RESET_URL`  | `ORIGIN` | Password-reset landing page; must be HTTPS |
 | `TRUSTED_ORIGINS` | —        | Comma-separated extra same-site origins    |
 
 ## Billing
@@ -57,15 +82,22 @@ All are optional. Without them billing reports `configured: false`.
 
 ## Apple
 
-| Variable                  | Purpose                                    |
-| ------------------------- | ------------------------------------------ |
-| `CLOUD_APPLE_VENDOR_CERT` | Vendor certificate for APNs CSR signing    |
-| `CLOUD_APPLE_VENDOR_KEY`  | Vendor private key                         |
-| `APNS_RELAY_URL`          | Multi-tenant APNs relay base URL           |
-| `APNS_RELAY_SECRET`       | Relay HMAC secret (at least 32 characters) |
+| Variable                      | Purpose                                          |
+| ----------------------------- | ------------------------------------------------ |
+| `CLOUD_APPLE_VENDOR_CERT`     | Vendor certificate for APNs CSR signing          |
+| `CLOUD_APPLE_VENDOR_KEY`      | Vendor private key                               |
+| `APPLE_PROFILE_SIGNING_CERT`  | Leaf certificate used to CMS-sign Apple profiles |
+| `APPLE_PROFILE_SIGNING_KEY`   | RSA PKCS#8 PEM private key for profile signing   |
+| `APPLE_PROFILE_SIGNING_CHAIN` | Optional intermediate/root PEM bundle            |
+| `APNS_RELAY_URL`              | Multi-tenant APNs relay base URL                 |
+| `APNS_RELAY_SECRET`           | Relay HMAC secret (at least 32 characters)       |
 
 Without the vendor key, tenants upload a manually signed APNs certificate. Without the
 relay, hosted multi-tenant Cloud has no push transport and devices poll.
+
+When the profile signing identity is absent, the deployment-global SCEP CA signs profile
+downloads once it exists. Until then the plist is served unsigned. A configured identity
+that cannot be loaded fails the download rather than serving an unsigned profile.
 
 ## Windows and Entra
 
@@ -98,6 +130,49 @@ Without the service account, Android endpoints return `EnterpriseNotConfigured`.
 | `MAINTENANCE_BACKUP_RETENTION_DAYS`  | `30`    | `0` keeps forever         |
 | `MAINTENANCE_BACKUP_CONCURRENCY`     | `4`     | Tenants backed up at once |
 | `MAINTENANCE_ENTRA_SYNC_CONCURRENCY` | `2`     | Tenants synced at once    |
+
+## Onboarding email
+
+Two one-time emails are sent from `hello@mattrax.cloud` with the display name
+**"Oscar from Mattrax"**. They never use a `no-reply` address; replies go to the
+configured mailbox.
+
+- **Welcome** — sent once per manual account immediately after email
+  verification. SCIM/Graph accounts are never emailed. A bounded daily backstop
+  retries recent verified accounts whose marker is still empty.
+- **One-week follow-up** — one private message per verified tenant owner/admin,
+  sent once per tenant by the daily cron when the tenant is at least seven days
+  old, is still inside the window (by default up to fourteen days old), and has
+  no enrolled device, no recently created enrolling device and no successful
+  enrollment attempt.
+
+| Variable                                | Default               | Purpose                                                        |
+| --------------------------------------- | --------------------- | -------------------------------------------------------------- |
+| `MATTRAX_ONBOARDING_REPLY_TO`           | `oscar@otbeaumont.me` | Reply-To for both emails; use a monitored mailbox              |
+| `MATTRAX_ONBOARDING_SUPPORT_EMAIL`      | `hello@mattrax.cloud` | Footer support address                                         |
+| `MATTRAX_ONBOARDING_SINCE`              | —                     | ISO date; tenants created earlier are never follow-up eligible |
+| `MAINTENANCE_ONBOARDING_EMAILS`         | `true`                | Set `false`, `0` or `off` to disable the follow-up sweep       |
+| `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` | `7`                   | Days after tenant creation before the follow-up is eligible    |
+| `MAINTENANCE_ONBOARDING_WINDOW_DAYS`    | `7`                   | Extra days after the threshold that remain eligible            |
+| `MAINTENANCE_ONBOARDING_COOLDOWN_DAYS`  | `7`                   | Per-recipient cooldown across tenants; `0` disables it         |
+
+An invalid `MATTRAX_ONBOARDING_REPLY_TO` or `MATTRAX_ONBOARDING_SUPPORT_EMAIL`
+is reported once per isolate and the built-in default is used instead, so a typo
+cannot fail every send.
+
+Set `MATTRAX_ONBOARDING_SINCE` to the deploy date when enabling the follow-up on
+an existing deployment. Without it, tenants created in the trailing
+`FOLLOW_UP_DAYS + WINDOW_DAYS` window are eligible, which may include customers
+who predate the feature. The welcome email is transactional and is not affected
+by `MAINTENANCE_ONBOARDING_EMAILS`.
+
+The follow-up eligibility window is therefore 7–14 days after tenant creation
+with the defaults. The cooldown is derived from onboarding audit rows, so
+`MAINTENANCE_AUDIT_RETENTION_DAYS` must stay well above
+`MAINTENANCE_ONBOARDING_COOLDOWN_DAYS` (365 versus 7 by default); trimming audit
+retention below the cooldown would let the same owner receive another tenant's
+follow-up. Both emails claim their one-time marker before calling the provider:
+if an isolate dies in that gap the message is lost rather than sent twice.
 
 ## Rate limits
 
@@ -137,6 +212,11 @@ Bodies, cookies, query strings, emails and tokens are excluded.
 | `DEV_MAILBOX`              | Enable `/api/debug/emails` on loopback |
 | `DEV_MAILBOX_ALLOW_REMOTE` | Allow a non-loopback dev origin        |
 | `DEV_MAILBOX_SECRET`       | Required header for remote exposure    |
+
+`POST /api/debug/onboarding-emails` runs the welcome backstop and follow-up
+sweeps in the current isolate so browser tests can prove once-only delivery.
+It is gated by the same loopback/secret rules as `/api/debug/emails` and is
+excluded from analytics.
 
 Never enable the debug mailbox in production.
 

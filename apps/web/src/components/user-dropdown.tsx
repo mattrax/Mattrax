@@ -3,7 +3,9 @@ import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { LogOut } from "~/components/ui/icons";
@@ -67,14 +69,12 @@ export function UserDropdown(props: UserDropdownProps) {
                 props.triggerClass ??
                 "flex size-7 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[10px] font-semibold text-foreground ring-1 ring-inset ring-white/[0.1] transition-shadow hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               }
-              aria-label="Account menu"
+              aria-label={
+                user().image ? "Account menu" : `${getInitials(user().name ?? "?")}, account menu`
+              }
             >
-              <Show when={user().image} fallback={<span>{getInitials(user().name ?? "?")}</span>}>
-                <img
-                  src={user().image!}
-                  alt={user().name ?? ""}
-                  class="h-full w-full object-cover"
-                />
+              <Show when={user().image} fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}>
+                <img src={user().image!} alt="" class="h-full w-full object-cover" />
               </Show>
             </DropdownMenuTrigger>
 
@@ -84,10 +84,14 @@ export function UserDropdown(props: UserDropdownProps) {
                 "w-[248px] overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]"
               }
             >
-              <div class="px-2 py-2">
-                <p class="truncate text-[13px] font-medium text-foreground">{user().name}</p>
-                <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
-              </div>
+              <DropdownMenuGroup>
+                <div class="px-2 py-2">
+                  <DropdownMenuLabel class="block truncate text-[13px] font-medium text-foreground">
+                    {user().name}
+                  </DropdownMenuLabel>
+                  <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
+                </div>
+              </DropdownMenuGroup>
 
               <div class="pt-1">
                 <Show when={props.showDashboardLink}>

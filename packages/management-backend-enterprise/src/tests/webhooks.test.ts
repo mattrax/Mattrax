@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
@@ -55,6 +55,10 @@ const deliveries = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schem
 
 const endpoints = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schema.webhookEndpoint));
 
+// SAFETY: The fake store implements only the Drizzle query chains these webhook
+// tests exercise; it is not assignable to the full `Db["Service"]` surface.
+const webhookDb = (db: ReturnType<typeof makeDb>) => db as never;
+
 describe("webhook signatures", () => {
   it("signs timestamp + body and verifies constant-time", async () => {
     const body = JSON.stringify({ id: "evt_1", type: "device.enrolled" });
@@ -109,6 +113,102 @@ describe("webhook signatures", () => {
       }),
     ).toBe(false);
   });
+
+  describe("header and clock matrix", () => {
+    const secret = "whsec_test_secret";
+    const body = JSON.stringify({ id: "evt_matrix", type: "device.enrolled" });
+    const baseTimestamp = Math.floor(now.getTime() / 1000);
+
+    type Case = {
+      readonly name: string;
+      readonly header: (signature: string, timestamp: number) => string;
+      /** Seconds added to the signing timestamp when verifying. */
+      readonly nowOffsetSeconds?: number;
+      readonly expected: boolean;
+    };
+
+    const cases: Case[] = [
+      {
+        name: "accepts a valid header",
+        header: (signature, timestamp) => `t=${timestamp},v1=${signature}`,
+        expected: true,
+      },
+      {
+        name: "accepts when one of several v1 values matches",
+        header: (signature, timestamp) =>
+          `t=${timestamp},v1=${"0".repeat(64)},v1=${signature}`,
+        expected: true,
+      },
+      {
+        name: "ignores unknown scheme parts",
+        header: (signature, timestamp) =>
+          `t=${timestamp},v2=${"0".repeat(64)},v1=${signature}`,
+        expected: true,
+      },
+      {
+        name: "accepts a timestamp exactly 300 seconds old",
+        header: (signature, timestamp) => `t=${timestamp},v1=${signature}`,
+        nowOffsetSeconds: 300,
+        expected: true,
+      },
+      {
+        name: "accepts a timestamp exactly 300 seconds in the future",
+        header: (signature, timestamp) => `t=${timestamp},v1=${signature}`,
+        nowOffsetSeconds: -300,
+        expected: true,
+      },
+      {
+        name: "rejects a timestamp 301 seconds old",
+        header: (signature, timestamp) => `t=${timestamp},v1=${signature}`,
+        nowOffsetSeconds: 301,
+        expected: false,
+      },
+      {
+        name: "rejects a timestamp 301 seconds in the future",
+        header: (signature, timestamp) => `t=${timestamp},v1=${signature}`,
+        nowOffsetSeconds: -301,
+        expected: false,
+      },
+      {
+        name: "rejects the epoch timestamp (t=0)",
+        header: (signature) => `t=0,v1=${signature}`,
+        expected: false,
+      },
+      {
+        name: "rejects a non-numeric timestamp",
+        header: (signature) => `t=not-a-number,v1=${signature}`,
+        expected: false,
+      },
+      {
+        name: "rejects a header with t but no v1",
+        header: (_signature, timestamp) => `t=${timestamp}`,
+        expected: false,
+      },
+      {
+        name: "rejects an empty signature",
+        header: (_signature, timestamp) => `t=${timestamp},v1=`,
+        expected: false,
+      },
+      {
+        name: "rejects an unknown scheme with no v1",
+        header: (signature, timestamp) => `t=${timestamp},v2=${signature}`,
+        expected: false,
+      },
+    ];
+
+    it.each(cases)("$name", async ({ header, nowOffsetSeconds = 0, expected }) => {
+      const signature = await signWebhookDelivery(secret, baseTimestamp, body);
+
+      await expect(
+        verifyWebhookSignature({
+          secret,
+          body,
+          signatureHeader: header(signature, baseTimestamp),
+          nowSeconds: baseTimestamp + nowOffsetSeconds,
+        }),
+      ).resolves.toBe(expected);
+    });
+  });
 });
 
 describe("webhook URL guard", () => {
@@ -138,11 +238,14 @@ describe("webhook URL guard", () => {
 describe("webhook delivery", () => {
   it("filters by event and records a successful delivery", async () => {
     const { db, secret } = await setup({ eventFilters: ["device.enrolled"] });
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      new Response("ok", { status: 200 }),
+    );
 
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         {
           organizationId: "org-1",
           type: "device.enrolled",
@@ -155,14 +258,16 @@ describe("webhook delivery", () => {
     );
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    const [, request] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    const timestamp = Number((request.headers as Record<string, string>)[WEBHOOK_TIMESTAMP_HEADER]);
-    const header = (request.headers as Record<string, string>)[WEBHOOK_SIGNATURE_HEADER]!;
+    const [, request] = fetch.mock.calls[0]!;
+    const headers = new Headers(request?.headers);
+    const timestamp = Number(headers.get(WEBHOOK_TIMESTAMP_HEADER));
+    const header = headers.get(WEBHOOK_SIGNATURE_HEADER);
+    const body = Schema.decodeUnknownSync(Schema.String)(request?.body);
     expect(
       await verifyWebhookSignature({
         secret,
-        body: request.body as string,
-        signatureHeader: header,
+        body,
+        signatureHeader: header ?? "",
         nowSeconds: timestamp,
       }),
     ).toBe(true);
@@ -187,7 +292,7 @@ describe("webhook delivery", () => {
     // A different event is filtered out and produces no extra delivery.
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         { organizationId: "org-1", type: "device.unenrolled" },
         { authSecret, fetch, now },
       ),
@@ -198,10 +303,10 @@ describe("webhook delivery", () => {
 
   it("treats an empty filter as all events", async () => {
     const { db } = await setup({ eventFilters: [] });
-    const fetch = vi.fn(async () => new Response("ok", { status: 204 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 204 }));
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         { organizationId: "org-1", type: "device.unenrolled" },
         { authSecret, fetch, now },
       ),
@@ -211,10 +316,10 @@ describe("webhook delivery", () => {
 
   it("never delivers to a different tenant's endpoint", async () => {
     const { db } = await setup();
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         { organizationId: "org-2", type: "device.enrolled" },
         { authSecret, fetch, now },
       ),
@@ -225,10 +330,10 @@ describe("webhook delivery", () => {
 
   it("records a failed delivery and increments the failure counter", async () => {
     const { db } = await setup({ consecutiveFailures: 2 });
-    const fetch = vi.fn(async () => new Response("nope", { status: 503 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("nope", { status: 503 }));
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         { organizationId: "org-1", type: "device.enrolled", id: "evt_fail" },
         { authSecret, fetch, now },
       ),
@@ -251,14 +356,14 @@ describe("webhook delivery", () => {
   it("swallows network errors instead of failing the caller", async () => {
     const { db } = await setup();
 
-    const fetch = vi.fn(async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
       throw new Error("connection refused");
     });
 
     await expect(
       run(
         dispatchWebhookEvent(
-          db as never,
+          webhookDb(db),
           { organizationId: "org-1", type: "device.enrolled" },
           { authSecret, fetch, now },
         ),
@@ -273,10 +378,10 @@ describe("webhook delivery", () => {
 
   it("does not deliver when no signing secret is configured", async () => {
     const { db } = await setup();
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
     await run(
       dispatchWebhookEvent(
-        db as never,
+        webhookDb(db),
         { organizationId: "org-1", type: "device.enrolled" },
         { fetch, now },
       ),
@@ -286,15 +391,16 @@ describe("webhook delivery", () => {
 
   it("sends a test event regardless of filters", async () => {
     const { db } = await setup({ eventFilters: ["device.enrolled"] });
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
-    const [row] = endpoints(db) as unknown as WebhookEndpointRow[];
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+
+    const stored = endpoints(db)[0]!;
+
+    const testEndpoint = endpoint({
+      secret: Schema.decodeUnknownSync(Schema.String)(stored.secret),
+    });
 
     const outcome = await run(
-      sendTestWebhook(
-        db as never,
-        { ...row, secret: (row as any).secret },
-        { authSecret, fetch, now },
-      ),
+      sendTestWebhook(webhookDb(db), testEndpoint, { authSecret, fetch, now }),
     );
 
     expect(outcome.status).toBe("succeeded");
@@ -328,10 +434,10 @@ describe("webhook retries", () => {
         createdAt: now,
       },
     ];
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
 
     const result = await run(
-      retryFailedWebhookDeliveries(db as never, {
+      retryFailedWebhookDeliveries(webhookDb(db), {
         authSecret,
         fetch,
         now: new Date(now.getTime() + 60_000),
@@ -368,10 +474,10 @@ describe("webhook retries", () => {
         createdAt: now,
       },
     ];
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
 
     const result = await run(
-      retryFailedWebhookDeliveries(db as never, {
+      retryFailedWebhookDeliveries(webhookDb(db), {
         authSecret,
         fetch,
         now,

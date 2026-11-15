@@ -82,3 +82,37 @@ diff --git a/src/internal/passkey-managed.ts b/src/internal/passkey-managed.ts
 +          // a trigger. Exclude it from the "policy unchanged" postcondition so
 +          // the credential write is not mistaken for an external policy change.
 +          subjectColumns: subject.keys.filter((key) => key !== "passkey_enabled" && key !== "passkeyEnabled"),
+--- a/dist/internal/passkey-native-registration.mjs
++++ b/dist/internal/passkey-native-registration.mjs
+@@ -102,9 +102,9 @@
+ 				registration,
+ 				subjectId: nativeId
+ 			}));
+-			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
++			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
+ 			const inserted = yield* insertCredential(nativeId, ceremony, verified, revision, value.displayName, nowMillis, subjectRow);
+-			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
++			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
+ 			return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);
+ 		}))
+ 	} };
+--- a/src/internal/passkey-native-registration.ts
++++ b/src/internal/passkey-native-registration.ts
+@@ -193,7 +193,7 @@
+             flow.consume(
+               access,
+               ceremony,
+-              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
++              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
+             ),
+             1,
+           );
+@@ -210,7 +210,7 @@
+ 
+           yield* postcondition(
+             "passkey-registration-subject",
+-            sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
++            sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
+           );
+ 
+           return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);

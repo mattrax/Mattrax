@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect";
 import type { DeviceActivityEntry } from "@mattrax/enterprise-domain";
 
 export const DEVICE_ACTIVITY_DEFAULT_LIMIT = 50;
@@ -7,17 +8,15 @@ export const DEVICE_ACTIVITY_MAX_LIMIT = 200;
  * Coerce the `limit` query parameter. The HTTP layer forwards query strings
  * verbatim in some clients, so accept numeric strings as well as numbers.
  */
-export const normalizeDeviceActivityLimit = (value: unknown) => {
-  let parsed: number | undefined;
+const NumericLimit = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
 
-  if (typeof value === "number" && Number.isFinite(value)) parsed = Math.trunc(value);
-  else if (typeof value === "string" && value.trim() !== "") {
-    const candidate = Number(value);
+export const normalizeDeviceActivityLimit = (value: number | string | undefined) => {
+  const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(NumericLimit)(value));
 
-    if (Number.isFinite(candidate)) parsed = Math.trunc(candidate);
-  }
-
-  return Math.min(Math.max(parsed ?? DEVICE_ACTIVITY_DEFAULT_LIMIT, 1), DEVICE_ACTIVITY_MAX_LIMIT);
+  return Math.min(
+    Math.max(parsed === undefined ? DEVICE_ACTIVITY_DEFAULT_LIMIT : Math.trunc(parsed), 1),
+    DEVICE_ACTIVITY_MAX_LIMIT,
+  );
 };
 
 const iso = (value: Date | string | null | undefined) => {
@@ -31,7 +30,7 @@ type AuditRow = {
   readonly id: string;
   readonly action: string;
   readonly actorEmail?: string | null;
-  readonly metadata?: unknown;
+  readonly metadata?: Schema.Json;
   readonly createdAt: Date | string;
 };
 
@@ -74,7 +73,7 @@ export type DeviceActivityInputs = {
   readonly device: DeviceLifecycle;
 };
 
-const AUDIT_TITLES: Record<string, string> = {
+const AUDIT_TITLES = {
   "device.updated": "Device details updated",
   "device.action": "Remote action requested",
   "device.unenrolled": "Device unenrolled",
@@ -82,13 +81,19 @@ const AUDIT_TITLES: Record<string, string> = {
   "device.deleted": "Device deleted",
   "device_pre_registration.imported": "Enrollment pre-registration imported",
   "device_pre_registration.updated": "Enrollment pre-registration updated",
-};
+} satisfies Record<string, string>;
 
-const trimmed = (value: unknown, limit = 200) => {
-  if (typeof value !== "string") return null;
-  const text = value.replace(/\s+/g, " ").trim();
+const AUDIT_TITLE_BY_ACTION = new Map(Object.entries(AUDIT_TITLES));
 
-  return text ? text.slice(0, limit) : null;
+const AuditMetadata = Schema.Record(Schema.String, Schema.Json);
+
+const trimmed = (value: Schema.Json | null | undefined, limit = 200) => {
+  const text = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
+  if (text === undefined) return null;
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  return normalized ? normalized.slice(0, limit) : null;
 };
 
 /**
@@ -97,26 +102,34 @@ const trimmed = (value: unknown, limit = 200) => {
  * into the device timeline.
  */
 const auditDetail = (row: AuditRow) => {
-  const metadata =
-    row.metadata && typeof row.metadata === "object"
-      ? (row.metadata as Record<string, unknown>)
-      : {};
+  const metadata: Schema.Schema.Type<typeof AuditMetadata> = Option.getOrElse(
+    Schema.decodeUnknownOption(AuditMetadata)(row.metadata),
+    () => ({}),
+  );
 
   const parts: string[] = [];
   const action = trimmed(metadata.action, 40);
 
   if (action) parts.push(`Action: ${action}`);
 
-  if (Array.isArray(metadata.fields)) {
-    const fields = metadata.fields
-      .filter((field): field is string => typeof field === "string")
-      .slice(0, 8);
+  const rawFields = metadata.fields;
 
-    if (fields.length > 0) parts.push(`Fields: ${fields.join(", ")}`);
+  if (Array.isArray(rawFields)) {
+    const fields = rawFields.flatMap((field) => {
+      const text = Schema.decodeUnknownOption(Schema.String)(field);
+
+      return Option.isSome(text) ? [text.value] : [];
+    });
+
+    if (fields.length > 0) parts.push(`Fields: ${fields.slice(0, 8).join(", ")}`);
   }
 
-  if (typeof metadata.revokedCertificates === "number")
-    parts.push(`${metadata.revokedCertificates} certificate(s) revoked`);
+  const revokedCertificates = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.Number)(metadata.revokedCertificates),
+  );
+
+  if (revokedCertificates !== undefined)
+    parts.push(`${revokedCertificates} certificate(s) revoked`);
   const actor = trimmed(row.actorEmail, 120);
 
   if (actor) parts.push(`by ${actor}`);
@@ -141,7 +154,7 @@ export const buildDeviceActivity = (
     events.push({
       id: `audit:${row.id}`,
       kind: "audit",
-      title: AUDIT_TITLES[row.action] ?? row.action,
+      title: AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action,
       detail: auditDetail(row),
       status: null,
       at,

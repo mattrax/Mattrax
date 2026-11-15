@@ -1,8 +1,19 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { EnterpriseForbidden, EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { parsePlanLimits, planLimitsFor } from "@mattrax/enterprise-core";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+
+/** Assert a service call rejected with the forbidden tag and message fragment. */
+const expectForbidden = async (run: Promise<unknown>, message?: string) => {
+  const failure = await run.catch((cause: unknown) => cause);
+
+  expect(failure).toBeInstanceOf(EnterpriseForbidden);
+
+  if (message !== undefined)
+    expect(failure).toMatchObject({ message: expect.stringContaining(message) });
+};
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -37,7 +48,7 @@ const makeContext = (planLimits = planConfig()) => {
 
       return headers.cookie
         ? Effect.succeed({ user })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -48,11 +59,13 @@ const makeContext = (planLimits = planConfig()) => {
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
     stripeClient: makeStripeClient(),
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
     planLimits,
@@ -150,12 +163,10 @@ describe("enterprise service plan limits", () => {
   it("enforces the tenant creation limit for the default plan", async () => {
     const { service, headers } = makeContext();
     await runEffect(service.createTenant(request(headers), { name: "Acme", slug: "acme" }));
-    await expect(
+    await expectForbidden(
       runEffect(service.createTenant(request(headers), { name: "Second", slug: "second" })),
-    ).rejects.toMatchObject({
-      _tag: "EnterpriseForbidden",
-      message: expect.stringContaining("allows 1 tenant"),
-    });
+      "allows 1 tenant",
+    );
   });
 
   it("uses the most permissive owned plan for tenant creation", async () => {
@@ -197,9 +208,9 @@ describe("enterprise service plan limits", () => {
       updatedAt: now,
     });
 
-    await expect(
+    await expectForbidden(
       runEffect(service.createTenant(request(headers), { name: "Second", slug: "second" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    );
   });
 
   it("blocks new enrollments once the device limit is reached", async () => {
@@ -368,7 +379,7 @@ describe("enterprise service plan limits", () => {
     );
     // Simulate AAA enrolling: the pre-registration is consumed and its device
     // row occupies one of the two plan seats.
-    (db.store.device_pre_registration[0] as any).consumedDeviceId = "device-1";
+    db.store.device_pre_registration[0].consumedDeviceId = "device-1";
     addDevice(db, tenant.id, "device-1");
 
     const result = await runEffect(

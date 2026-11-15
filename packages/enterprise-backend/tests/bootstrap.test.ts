@@ -1,0 +1,214 @@
+import { Effect } from "effect";
+import { ssrSessionFingerprint, ssrTenantPermissions } from "@mattrax/enterprise-domain";
+import { describe, expect, it } from "vitest";
+import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { isAccountMethod, permissionForMethod } from "../src/rbac.js";
+import { verifySsrToken } from "../src/ssrToken.js";
+import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+
+const origin = "https://enterprise.test";
+const authSecret = "bootstrap-test-secret-that-is-long-enough";
+
+const now = new Date();
+
+const user = {
+  id: "user-1",
+  name: "Owner",
+  email: "owner@example.com",
+  emailVerified: true,
+  image: null,
+  disabled: false,
+  source: "manual",
+  totpEnabled: false,
+  passkeyEnabled: false,
+  authRevision: "revision-1",
+  createdAt: now,
+  updatedAt: now,
+};
+
+const organization = (id: string, name: string) => ({
+  id,
+  name,
+  slug: id,
+  logo: null,
+  displayName: null,
+  supportEmail: null,
+  brandColor: null,
+  createdAt: now,
+  updatedAt: now,
+});
+
+const member = (id: string, organizationId: string, role: string) => ({
+  id,
+  organizationId,
+  userId: user.id,
+  role,
+  customRoleId: null,
+  createdAt: now,
+  updatedAt: now,
+});
+
+const makeContext = () => {
+  const db = makeDb();
+
+  db.store.user.push(user);
+  db.store.organization.push(organization("tenant-a", "Acme"), organization("tenant-b", "Beta"));
+  db.store.member.push(member("member-a", "tenant-a", "owner"), member("member-b", "tenant-b", "member"));
+
+  const session = {
+    sessionId: "session-1",
+    subjectId: user.id,
+    claims: { name: user.name, email: user.email, emailVerified: true },
+  };
+
+  let requireUserCalls = 0;
+
+  const auth = {
+    requireUser: () => {
+      requireUserCalls++;
+
+      return Effect.succeed({ user, session });
+    },
+    listApiTokens: () => Effect.succeed({ tokens: [] }),
+    createApiToken: () => Effect.die("not used"),
+    revokeApiToken: () => Effect.succeed({ status: "ok" }),
+    requestEmailChange: () => Effect.succeed({ status: "ok" }),
+    verifyEmailChange: () => Effect.succeed({ status: "ok" }),
+    requireStepUp: () => Effect.void,
+  };
+
+  const service = createEnterpriseService({
+    db,
+    schema,
+    origin,
+    stripeClient: makeStripeClient(),
+    // SAFETY: these tests never reach R2; the service only stores the binding.
+    storage: {} as any,
+    // SAFETY: the fake implements only the auth methods bootstrap and `me` use.
+    auth: auth as any,
+    authSecret,
+  });
+
+  return {
+    service,
+    requireUserCalls: () => requireUserCalls,
+    headers: { cookie: "__Host-mattrax_session=test", "cf-connecting-ip": "203.0.113.7" },
+  };
+};
+
+describe("GET /api/v1/bootstrap", () => {
+  it("is mapped account-scoped rather than to a tenant permission", () => {
+    expect(isAccountMethod("bootstrap")).toBe(true);
+    expect(permissionForMethod("bootstrap")).toBeUndefined();
+    // The tenant endpoints keep their existing mappings.
+    expect(permissionForMethod("listDevices")).toBe("devices.read");
+    expect(permissionForMethod("patchTenant")).toBe("tenant.write");
+  });
+
+  it("returns the session, me shell and a verifiable token after one requireUser", async () => {
+    const context = makeContext();
+    const result = await runEffect(context.service.bootstrap(request(context.headers)));
+
+    expect(context.requireUserCalls()).toBe(1);
+    expect(result.session).toEqual({
+      sessionId: "session-1",
+      subjectId: "user-1",
+      claims: {
+        name: "Owner",
+        email: "owner@example.com",
+        emailVerified: true,
+      },
+    });
+    expect(result.me.user).toMatchObject({
+      id: "user-1",
+      email: "owner@example.com",
+      emailVerified: true,
+      mfaEnabled: false,
+    });
+    expect(result.me.tenants.map((tenant) => tenant.id)).toEqual(["tenant-a", "tenant-b"]);
+
+    expect(result.ssrToken).toEqual(expect.any(String));
+    expect(result.ssrTokenExpiresAt).toBeGreaterThan(Date.now());
+
+    const payload = await runEffect(verifySsrToken(authSecret, result.ssrToken!));
+
+    expect(payload.sub).toBe("user-1");
+    expect(payload.sid).toBe("session-1");
+    expect(payload.ver).toBe("revision-1");
+    expect(payload.ch).toBe(await ssrSessionFingerprint(authSecret, "test"));
+    expect(payload.tenants?.map((tenant) => tenant.id)).toEqual(["tenant-a", "tenant-b"]);
+  });
+
+  it("keeps each tenant's permissions scoped to that membership", async () => {
+    const context = makeContext();
+    const result = await runEffect(context.service.bootstrap(request(context.headers)));
+    const payload = await runEffect(verifySsrToken(authSecret, result.ssrToken!));
+
+    const owner = payload.tenants?.find((tenant) => tenant.id === "tenant-a");
+    const member = payload.tenants?.find((tenant) => tenant.id === "tenant-b");
+
+    // The owner holds write authority in Acme...
+    expect(owner?.roleKind).toBe("built-in");
+    expect(owner?.permissions).toBeUndefined();
+    expect([...ssrTenantPermissions(owner!)]).toContain("devices.write");
+
+    // ...but Beta's read-only membership neither inherits it nor the owner role.
+    expect(member?.roleName).toBe("Member");
+    expect(member?.permissions).toBeUndefined();
+    expect([...ssrTenantPermissions(member!)]).toContain("devices.read");
+    expect([...ssrTenantPermissions(member!)]).not.toContain("devices.write");
+    expect([...ssrTenantPermissions(member!)]).not.toContain("tenant.delete");
+
+    // The token mirrors the `/me` shell without redundant contact fields; no
+    // extra tenant data leaks into it. Built-in permissions are derived from
+    // the role key instead of being repeated in the cookie.
+    expect(
+      payload.tenants?.map((tenant) => ({
+        id: tenant.id,
+        role: tenant.role,
+        permissions: [...ssrTenantPermissions(tenant)],
+        roleName: tenant.roleName,
+        roleKind: tenant.roleKind,
+      })),
+    ).toEqual(
+      result.me.tenants.map(({ id, role, permissions, roleName, roleKind }) => ({
+        id,
+        role,
+        permissions,
+        roleName,
+        roleKind,
+      })),
+    );
+  });
+
+  it("has no token or session for a caller without a browser session", async () => {
+    const context = makeContext();
+
+    // SAFETY: the fake auth resolves a user from headers; this override models
+    // a bearer caller by returning no session snapshot.
+    const service = createEnterpriseService({
+      db: makeDb(),
+      schema,
+      origin,
+      stripeClient: makeStripeClient(),
+      storage: {} as any,
+      auth: {
+        requireUser: () => Effect.succeed({ user, session: undefined }),
+        listApiTokens: () => Effect.succeed({ tokens: [] }),
+        createApiToken: () => Effect.die("not used"),
+        revokeApiToken: () => Effect.succeed({ status: "ok" }),
+        requestEmailChange: () => Effect.succeed({ status: "ok" }),
+        verifyEmailChange: () => Effect.succeed({ status: "ok" }),
+        requireStepUp: () => Effect.void,
+      } as any,
+      authSecret,
+    });
+
+    const result = await runEffect(service.bootstrap(request(context.headers)));
+
+    expect(result.session).toBeNull();
+    expect(result.ssrToken).toBeNull();
+    expect(result.ssrTokenExpiresAt).toBeNull();
+    expect(result.me.user.id).toBe("user-1");
+  });
+});

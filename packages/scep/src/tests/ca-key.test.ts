@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair } from "@mattrax/crypto";
 import {
   ScepCaKeyError,
@@ -6,6 +7,7 @@ import {
   isSealedCaPrivateKey,
   openCaPrivateKey,
   sealCaPrivateKey,
+  type StoredCaPrivateKey,
 } from "../ca-key.js";
 
 const secret = "scep-ca-test-secret";
@@ -37,7 +39,7 @@ describe("SCEP CA private key sealing", () => {
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     expect(sealed.v).toBe(1);
-    expect(typeof sealed.sealed).toBe("string");
+    expect(Schema.is(Schema.String)(sealed.sealed)).toBe(true);
     expect(isSealedCaPrivateKey(sealed)).toBe(true);
 
     const opened = await openCaPrivateKey(sealed, secret);
@@ -63,6 +65,9 @@ describe("SCEP CA private key sealing", () => {
 
     expect(opened.privateKeyJwk).toEqual(jwk);
     expect(opened.migrated).toBeDefined();
+
+    if (!opened.migrated) throw new Error("legacy JWK should be sealed on read");
+
     expect(isSealedCaPrivateKey(opened.migrated)).toBe(true);
 
     // The envelope it asks the caller to persist opens back to the same key.
@@ -83,8 +88,8 @@ describe("SCEP CA private key sealing", () => {
     const sealed = await sealCaPrivateKey(secret, jwk);
     const corrupted = { v: 1 as const, sealed: tamper(sealed.sealed) };
 
+    await expect(openCaPrivateKey(corrupted, secret)).rejects.toBeInstanceOf(ScepCaKeyError);
     await expect(openCaPrivateKey(corrupted, secret)).rejects.toMatchObject({
-      _tag: "ScepCaKeyError",
       reason: "decrypt_failed",
     });
   });
@@ -93,8 +98,8 @@ describe("SCEP CA private key sealing", () => {
     const jwk = await makeJwk();
     const sealed = await sealCaPrivateKey("another-secret", jwk);
 
+    await expect(openCaPrivateKey(sealed, secret)).rejects.toBeInstanceOf(ScepCaKeyError);
     await expect(openCaPrivateKey(sealed, secret)).rejects.toMatchObject({
-      _tag: "ScepCaKeyError",
       reason: "decrypt_failed",
     });
   });
@@ -104,15 +109,15 @@ describe("SCEP CA private key sealing", () => {
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     for (const stored of [sealed, jwk]) {
+      await expect(openCaPrivateKey(stored, undefined)).rejects.toBeInstanceOf(ScepCaKeyError);
       await expect(openCaPrivateKey(stored, undefined)).rejects.toMatchObject({
-        _tag: "ScepCaKeyError",
         reason: "missing_secret",
         message: expect.stringContaining("AUTH_SECRET"),
       });
     }
 
+    await expect(sealCaPrivateKey(undefined, jwk)).rejects.toBeInstanceOf(ScepCaKeyError);
     await expect(sealCaPrivateKey(undefined, jwk)).rejects.toMatchObject({
-      _tag: "ScepCaKeyError",
       reason: "missing_secret",
     });
   });
@@ -120,7 +125,7 @@ describe("SCEP CA private key sealing", () => {
   it("rejects malformed stored values without leaking them", async () => {
     const jwk = await makeJwk();
 
-    const cases: unknown[] = [
+    const cases: StoredCaPrivateKey[] = [
       {},
       { v: 2, sealed: "abc" },
       { v: 1 },
@@ -133,8 +138,11 @@ describe("SCEP CA private key sealing", () => {
     for (const stored of cases) {
       const error = await openCaPrivateKey(stored, secret).catch((cause: unknown) => cause);
       expect(error).toBeInstanceOf(ScepCaKeyError);
-      expect((error as ScepCaKeyError).reason).toBe("invalid");
-      expect((error as ScepCaKeyError).message).not.toContain(jwk.d!);
+
+      if (!(error instanceof ScepCaKeyError)) throw new Error("expected ScepCaKeyError");
+
+      expect(error.reason).toBe("invalid");
+      expect(error.message).not.toContain(jwk.d!);
     }
   });
 
@@ -142,12 +150,16 @@ describe("SCEP CA private key sealing", () => {
     const jwk = await makeJwk();
     const sealed = await sealCaPrivateKey(secret, jwk);
 
-    const error = (await openCaPrivateKey({ v: 1, sealed: tamper(sealed.sealed) }, secret).catch(
+    const error = await openCaPrivateKey({ v: 1, sealed: tamper(sealed.sealed) }, secret).catch(
       (cause: unknown) => cause,
-    )) as ScepCaKeyError;
+    );
+
+    expect(error).toBeInstanceOf(ScepCaKeyError);
+
+    if (!(error instanceof ScepCaKeyError)) throw new Error("expected ScepCaKeyError");
 
     expect(JSON.stringify(error)).not.toContain(sealed.sealed);
-    expect((error as { cause?: unknown }).cause).toBeUndefined();
+    expect("cause" in error).toBe(false);
   });
 
   it("validates RSA private JWK shape", async () => {

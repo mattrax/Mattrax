@@ -2,10 +2,20 @@
  * `SecurityInfo` command-result parsing.
  *
  * Apple returns the payload under `QueryResponses.SecurityInfo`; some protocol
- * shims flatten it onto the response root. Both shapes are accepted. Only the
+ * shims flatten it onto the response root. Both parents are accepted. Only the
  * fields Mattrax escrows are normalised here — persistence (and sealing) lives
  * in `index.ts`.
  */
+
+import { Schema } from "effect";
+import {
+  isPlistArray,
+  isPlistObject,
+  plistStatusBoolean,
+  plistText,
+  type PlistInput,
+  type PlistObject,
+} from "./internal/plistValue.js";
 
 export type FileVaultStatus = "enabled" | "disabled" | "unknown";
 
@@ -16,59 +26,15 @@ export type SecurityInfoReport = {
   readonly bootstrapTokenEscrowed?: boolean;
 };
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-
-const text = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    return trimmed === "" ? undefined : trimmed;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-
-  return undefined;
-};
-
-const BOOLEAN_TRUE = new Set(["enabled", "true", "yes", "on", "1"]);
-const BOOLEAN_FALSE = new Set(["disabled", "false", "no", "off", "0"]);
-
-const booleanValue = (value: unknown): boolean | undefined => {
-  if (typeof value === "boolean") return value;
-
-  if (typeof value === "number") {
-    if (value === 1) return true;
-
-    if (value === 0) return false;
-
-    return undefined;
-  }
-
-  if (typeof value === "string") {
-    const normalised = value.trim().toLowerCase();
-
-    if (BOOLEAN_TRUE.has(normalised)) return true;
-
-    if (BOOLEAN_FALSE.has(normalised)) return false;
-  }
-
-  return undefined;
-};
-
-const fileVaultStatus = (value: unknown): FileVaultStatus | undefined => {
-  const enabled = booleanValue(value);
+const fileVaultStatus = (value: PlistInput): FileVaultStatus | undefined => {
+  const enabled = plistStatusBoolean(value);
 
   if (enabled !== undefined) return enabled ? "enabled" : "disabled";
 
-  if (typeof value !== "string") return undefined;
+  if (!Schema.is(Schema.String)(value)) return undefined;
   const normalised = value.trim().toLowerCase();
 
   if (normalised === "") return undefined;
-
-  if (normalised.includes("unknown") || normalised.includes("not supported")) return "unknown";
 
   return "unknown";
 };
@@ -78,14 +44,17 @@ const fileVaultStatus = (value: unknown): FileVaultStatus | undefined => {
  * (`data` in the plist) and may decode to `Uint8Array`, `ArrayBuffer` or a
  * number array depending on the plist parser.
  */
-const binaryText = (value: unknown): string | undefined => {
-  if (typeof value === "string") return text(value);
+const binaryText = (value: PlistInput): string | undefined => {
+  if (Schema.is(Schema.String)(value)) return plistText(value);
   let bytes: Uint8Array | undefined;
 
   if (value instanceof Uint8Array) bytes = value;
   else if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
-  else if (Array.isArray(value) && value.every((entry) => typeof entry === "number"))
-    bytes = Uint8Array.from(value as number[]);
+  else if (isPlistArray(value)) {
+    const numbers = value.filter((entry): entry is number => Schema.is(Schema.Number)(entry));
+
+    if (numbers.length === value.length) bytes = Uint8Array.from(numbers);
+  }
 
   if (!bytes || bytes.byteLength === 0) return undefined;
   let binary = "";
@@ -95,12 +64,14 @@ const binaryText = (value: unknown): string | undefined => {
   return btoa(binary);
 };
 
-const SECURITY_INFO_CONTAINER = (queryResponses: unknown) => {
-  const root = record(queryResponses);
+const securityInfoContainer = (
+  queryResponses: PlistInput,
+): PlistObject | undefined => {
+  if (!isPlistObject(queryResponses)) return undefined;
 
-  if (!root) return undefined;
+  const nested = queryResponses.SecurityInfo;
 
-  return record(root.SecurityInfo) ?? root;
+  return isPlistObject(nested) ? nested : queryResponses;
 };
 
 /**
@@ -108,8 +79,10 @@ const SECURITY_INFO_CONTAINER = (queryResponses: unknown) => {
  * Returns `undefined` when the response contains no `SecurityInfo` payload so
  * unrelated command results are ignored.
  */
-export const parseSecurityInfo = (queryResponses: unknown): SecurityInfoReport | undefined => {
-  const info = SECURITY_INFO_CONTAINER(queryResponses);
+export const parseSecurityInfo = (
+  queryResponses: PlistInput,
+): SecurityInfoReport | undefined => {
+  const info = securityInfoContainer(queryResponses);
 
   if (!info) return undefined;
 
@@ -136,7 +109,7 @@ export const parseSecurityInfo = (queryResponses: unknown): SecurityInfoReport |
     recognised = true;
   }
 
-  const bootstrap = booleanValue(info.BootstrapTokenEscrowed);
+  const bootstrap = plistStatusBoolean(info.BootstrapTokenEscrowed);
 
   if (bootstrap !== undefined) {
     report.bootstrapTokenEscrowed = bootstrap;

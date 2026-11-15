@@ -8,7 +8,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "deploy": "cf deploy --prebuilt",
-    "deploy:prod": "pnpm build && cf deploy --prebuilt",
+    "deploy:prod": "pnpm build && node ../../scripts/bundle-budget.mjs api && cf deploy --prebuilt",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "cf:types": "cf workers types",
@@ -39,12 +39,12 @@
     "fast-plist": "catalog:",
     "mysql2": "catalog:",
     "pkijs": "catalog:",
-    "posthog-node": "catalog:",
     "reflect-metadata": "catalog:",
     "stripe": "^23.1.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:",
+    "@rolldown/perf-kit": "catalog:",
     "@types/node": "catalog:",
     "cf": "catalog:",
     "drizzle-kit": "catalog:",

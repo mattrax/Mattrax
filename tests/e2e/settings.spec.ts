@@ -40,7 +40,7 @@ test.describe("tenant settings", () => {
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
 
     for (const [tab, text] of [
-      ["Members", /Invite an administrator/],
+      ["Members", /Invite a member/],
       ["Identity", /Single sign-on/],
       ["Enrollment", /Enrollment link/],
       ["Management", /Apple push notifications/],
@@ -68,8 +68,8 @@ test.describe("tenant settings", () => {
   test("shows the auditor role in administrator settings", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
-    await expect(page.getByText("Invite an administrator")).toBeVisible();
-    const inviteRole = page.locator("select").first();
+    await expect(page.getByText("Invite a member")).toBeVisible();
+    const inviteRole = page.getByLabel("Invitation role");
     await expect(inviteRole.locator('option[value="builtin:auditor"]')).toHaveText("Auditor");
     await expect(inviteRole.locator('option[value="builtin:member"]')).toHaveText("Member");
   });
@@ -147,6 +147,6 @@ test.describe("tenant settings", () => {
     await page.getByRole("button", { name: /download csr/i }).click();
     await download;
     // The endpoint may not be deployed in every environment; the UI must not crash.
-    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Management", exact: true })).toBeVisible();
   });
 });

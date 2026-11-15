@@ -16,6 +16,10 @@ import {
 
 const tenantToken = "mttxw-compliance";
 
+
+const withDayN = (result: Check, dayN: boolean): Check =>
+  dayN ? { ...result, dayN: true } : result;
+
 const check = (
   id: string,
   category: Check["category"],
@@ -23,15 +27,18 @@ const check = (
   description: string,
   run: Check["run"],
   dayN = false,
-): Check => ({
-  id: `windows.${id}`,
-  platform: "windows",
-  category,
-  name,
-  description,
-  ...(dayN ? { dayN: true } : {}),
-  run,
-});
+): Check =>
+  withDayN(
+    {
+      id: `windows.${id}`,
+      platform: "windows",
+      category,
+      name,
+      description,
+      run,
+    },
+    dayN,
+  );
 
 const provisioningXml = (content: string): string =>
   new TextDecoder().decode(

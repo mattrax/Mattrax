@@ -1,11 +1,24 @@
 import { useIsRouting, useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, Errored, For, onSettled, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  Errored,
+  For,
+  onSettled,
+  Show,
+  untrack,
+} from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
@@ -13,9 +26,7 @@ import {
   Activity,
   BookOpen,
   Building2,
-  Check,
   ChevronsUpDown,
-  CircleAlert,
   HelpCircle,
   LogOut,
   Plus,
@@ -23,8 +34,16 @@ import {
   User,
 } from "~/components/ui/icons";
 import { meQueryOptions } from "~/lib/enterprise";
+import {
+  SETTINGS_READ_PERMISSIONS,
+  tenantRoleName,
+  tenantSectionPermission,
+  useCan,
+} from "~/lib/permissions";
 import { cn } from "~/lib/utils";
-import { errorPresentation } from "~/lib/errors";
+import { isHydrated } from "~/lib/query-client";
+import { isServer } from "@solidjs/web";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
 
 type NavItem = {
   id: string;
@@ -71,6 +90,17 @@ export function rememberTenant(id: string | undefined) {
   localStorage.setItem(LAST_TENANT_KEY, id);
 }
 
+/**
+ * The shell owns one polite status region. Actions elsewhere in the dashboard
+ * (bulk delete, sync, unenroll, …) report their result through it so the
+ * confirmation is spoken without adding another live region per page.
+ */
+let announceToStatusRegion: ((message: string) => void) | undefined;
+
+export function announce(message: string) {
+  announceToStatusRegion?.(message);
+}
+
 function TenantSwitcher(props: { activeId: string | undefined; userId: string | undefined }) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const navigate = useNavigate();
@@ -82,22 +112,18 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
         class="group flex h-7 min-w-0 max-w-[14rem] items-center gap-2 rounded-md px-1.5 pr-2 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-white/[0.08] motion-safe:active:scale-[0.985]"
-        aria-label="Switch tenant"
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
-        <Show
-          when={active()}
-          fallback={
-            <span class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-white/10 bg-white/[0.04] text-muted-foreground">
-              <Building2 class="size-2.5" />
-            </span>
-          }
-        >
-          {(tenant) => (
-            <span class="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.09] text-[8px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.08]">
-              {tenantInitials(tenant().name)}
-            </span>
-          )}
+        {/* The name is composed from the visible content so assistive tech and
+            the visible label stay in sync; the leading text states the action. */}
+        <span class="sr-only">Switch tenant: </span>
+        <Show when={!active()}>
+          <span
+            aria-hidden="true"
+            class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-white/10 bg-white/[0.04] text-muted-foreground"
+          >
+            <Building2 class="size-2.5" />
+          </span>
         </Show>
         <span class="min-w-0 truncate text-[13px] font-[450] text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
           <Show
@@ -109,58 +135,65 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             </Show>
           </Show>
         </span>
-        <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
+        <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent class="w-[288px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
-        <div class="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-          Tenants
-        </div>
-        <Show
-          when={tenants().length > 0}
-          fallback={
-            <div class="px-2.5 py-3 text-[12px] text-muted-foreground">
-              You don't belong to a tenant yet.
-            </div>
-          }
-        >
-          <For each={tenants()}>
-            {(tenant) => (
-              <DropdownMenuItem
-                as="a"
-                href={`/t/${tenant.id}`}
-                role="menuitem"
-                onClick={(event) => {
-                  event.preventDefault();
-                  rememberTenant(tenant.id);
-                  navigate(`/t/${tenant.id}`);
-                }}
-                class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-sm outline-none focus:bg-white/[0.07] data-highlighted:bg-white/[0.07]"
-              >
-                <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.08] text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.06]">
-                  {tenantInitials(tenant.name)}
-                </span>
-                <span class="min-w-0 flex-1 leading-none">
-                  <span class="block truncate text-[13px] font-[450] text-foreground">
-                    {tenant.name}
-                  </span>
-                  <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
-                    <span class="capitalize">{tenant.role}</span>
-                    <span class="px-1 text-muted-foreground/40">·</span>
-                    <span class="normal-case">{tenant.slug}</span>
-                  </span>
-                </span>
-                <Show when={props.activeId === tenant.id}>
-                  <Check class="size-3.5 shrink-0 text-foreground" />
-                </Show>
-              </DropdownMenuItem>
-            )}
-          </For>
-        </Show>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel class="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Tenants
+          </DropdownMenuLabel>
+          <Show
+            when={tenants().length > 0}
+            fallback={
+              <div class="px-2.5 py-3 text-[12px] text-muted-foreground">
+                You don't belong to a tenant yet.
+              </div>
+            }
+          >
+            <DropdownMenuRadioGroup
+              value={props.activeId}
+              onChange={(id) => {
+                rememberTenant(id);
+                navigate(`/t/${id}`);
+              }}
+            >
+              <For each={tenants()}>
+                {(tenant) => (
+                  <DropdownMenuRadioItem
+                    value={tenant.id}
+                    // RadioGroup onChange can be skipped when the group has no
+                    // current value (unscoped pages), so navigate on select too.
+                    onSelect={() => {
+                      rememberTenant(tenant.id);
+                      navigate(`/t/${tenant.id}`);
+                    }}
+                    aria-current={props.activeId === tenant.id ? "true" : undefined}
+                    class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-white/[0.07]"
+                  >
+                    <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-white/[0.08] text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-white/[0.06]">
+                      {tenantInitials(tenant.name)}
+                    </span>
+                    <span class="min-w-0 flex-1 leading-none">
+                      <span class="block truncate text-[13px] font-[450] text-foreground">
+                        {tenant.name}
+                      </span>
+                      <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
+                        <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
+                        <span class="px-1 text-muted-foreground/40">·</span>
+                        <span class="normal-case">{tenant.slug}</span>
+                      </span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                )}
+              </For>
+            </DropdownMenuRadioGroup>
+          </Show>
+        </DropdownMenuGroup>
         <div class="mx-1 my-1 h-px bg-white/[0.07]" />
         <DropdownMenuItem
           onSelect={() => navigate("/tenants/new")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-white/[0.07] focus:text-foreground"
+          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none data-highlighted:bg-white/[0.07] data-highlighted:text-foreground"
         >
           <span class="flex size-5 items-center justify-center text-muted-foreground">
             <Plus class="size-3.5" />
@@ -179,14 +212,18 @@ function SearchButton(props: { compact?: boolean }) {
     <button
       type="button"
       onClick={open}
-      aria-label="Search"
+      aria-keyshortcuts="Meta+K Control+K"
       class={cn(
         "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-white/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
         props.compact ? "w-7 justify-center px-0 sm:w-auto sm:justify-start sm:px-2" : "px-2",
       )}
     >
-      <SearchIcon class="size-3.5" />
-      <kbd class="hidden rounded border border-white/[0.08] bg-white/[0.03] px-1 py-px font-sans text-[9.5px] text-muted-foreground/80 sm:inline">
+      <SearchIcon class="size-3.5" aria-hidden="true" />
+      <span class="sr-only">Search</span>
+      <kbd
+        aria-hidden="true"
+        class="hidden rounded border border-white/[0.08] bg-white/[0.03] px-1 py-px font-sans text-[9.5px] text-muted-foreground sm:inline"
+      >
         ⌘K
       </kbd>
     </button>
@@ -209,22 +246,30 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
         class="flex size-6 items-center justify-center overflow-hidden rounded-full bg-white/[0.08] text-[9.5px] font-semibold text-foreground outline-none ring-1 ring-inset ring-white/[0.1] transition-[box-shadow,scale] duration-150 ease-swift hover:ring-white/20 focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
-        aria-label="Account menu"
+        title={user()?.name ?? "Account"}
+        aria-label={user()?.image ? "Account menu" : `${initials(user()?.name)}, account menu`}
       >
-        <Show when={user()?.image} fallback={<span>{initials(user()?.name)}</span>}>
-          {(image) => <img src={image()} alt={user()?.name ?? ""} class="size-full object-cover" />}
+        <Show
+          when={user()?.image}
+          fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}
+        >
+          {(image) => <img src={image()} alt="" class="size-full object-cover" />}
         </Show>
       </DropdownMenuTrigger>
       <DropdownMenuContent class="w-[248px] rounded-lg border border-white/[0.09] bg-[#232326] p-0.5 text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,.45),0_2px_6px_rgba(0,0,0,.3),inset_0_0_0_1px_rgba(255,255,255,.02)]">
-        <div class="flex items-center gap-2.5 px-2 py-2">
-          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9.5px] font-semibold ring-1 ring-inset ring-white/[0.08]">
-            {initials(user()?.name)}
-          </span>
-          <span class="min-w-0">
-            <span class="block truncate text-[13px] font-medium">{user()?.name}</span>
-            <span class="block truncate text-[11px] text-muted-foreground">{user()?.email}</span>
-          </span>
-        </div>
+        <DropdownMenuGroup>
+          <div class="flex items-center gap-2.5 px-2 py-2">
+            <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[9.5px] font-semibold ring-1 ring-inset ring-white/[0.08]">
+              <span aria-hidden="true">{initials(user()?.name)}</span>
+            </span>
+            <span class="min-w-0">
+              <DropdownMenuLabel class="block truncate text-[13px] font-medium">
+                {user()?.name}
+              </DropdownMenuLabel>
+              <span class="block truncate text-[11px] text-muted-foreground">{user()?.email}</span>
+            </span>
+          </div>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator class="my-1 h-px bg-border" />
         <DropdownMenuItem
           onSelect={() => navigate("/account")}
@@ -327,7 +372,6 @@ export function AppShell(props: {
   onSignOut: () => void | Promise<void>;
 }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => meQueryOptions(props.user?.id));
@@ -368,7 +412,29 @@ export function AppShell(props: {
   );
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
-  const navItems = createMemo(() => navFor(scopedTenant()));
+  const { can, canAny } = useCan();
+
+  const navItems = createMemo(() =>
+    navFor(scopedTenant()).filter((item) => {
+      if (item.id === "settings") return canAny(SETTINGS_READ_PERMISSIONS);
+
+      const required = tenantSectionPermission(item.id);
+
+      return !required || can(required);
+    }),
+  );
+
+  const settingsLabels = new Map([
+    ["", "General"],
+    ["administrators", "Members"],
+    ["identity", "Identity"],
+    ["enrollment", "Enrollment"],
+    ["management", "Management"],
+    ["delivery", "Delivery"],
+    ["integrations", "Integrations"],
+    ["audit", "Audit log"],
+    ["billing", "Billing"],
+  ]);
 
   const pageLabel = createMemo(() => {
     const path = location.pathname;
@@ -381,13 +447,79 @@ export function AppShell(props: {
 
     if (path.startsWith("/docs")) return "Documentation";
 
+    // Settings sections share one navigation entry; naming the section keeps
+    // tabs, history and screen-reader announcements distinguishable.
+    const settingsSection = /\/settings(?:\/([^/]+))?/.exec(path)?.[1] ?? "";
+
+    if (path.includes("/settings")) {
+      const section = settingsLabels.get(settingsSection);
+
+      if (section) return `Settings · ${section}`;
+    }
+
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";
   });
 
+  const tenantName = createMemo(() => {
+    const id = scopedTenant();
+
+    if (!id) return undefined;
+
+    return me.data?.tenants.find((tenant) => tenant.id === id)?.name;
+  });
+
+  /** Section plus tenant, so tabs and bookmarks distinguish their origin. */
+  const pageTitle = createMemo(() => {
+    const label = pageLabel();
+    const tenant = tenantName();
+
+    return tenant ? `${label} · ${tenant}` : label;
+  });
+
+  const [announcement, setAnnouncement] = createSignal("");
+
+  onSettled(() => {
+    announceToStatusRegion = (message) => setAnnouncement(message);
+
+    return () => {
+      announceToStatusRegion = undefined;
+    };
+  });
+
   createEffect(
-    () => pageLabel(),
-    (label) => {
-      if (typeof document !== "undefined") document.title = `${label} · Mattrax`;
+    () => pageTitle(),
+    (title) => {
+      if (typeof document === "undefined") return;
+      document.title = `${title} · Mattrax`;
+    },
+  );
+
+  /**
+   * After a route change, move focus to the main landmark so keyboard and
+   * screen-reader users land on the new page instead of the link they followed.
+   * Modals keep focus while they are open, and query-string-only navigations
+   * (filters, pagination) never trigger this because only the pathname is
+   * tracked.
+   */
+  let initialRoute = true;
+  createEffect(
+    () => location.pathname,
+    () => {
+      if (initialRoute) {
+        initialRoute = false;
+
+        return;
+      }
+
+      if (typeof document === "undefined") return;
+
+      // A dialog owns focus while it is open; moving focus into the inert
+      // background would strand it.
+      if (document.querySelector('[data-slot="dialog-content"], [data-slot="command-palette"]'))
+        return;
+
+      document.getElementById("main")?.focus({ preventScroll: true });
+      setAnnouncement(untrack(pageTitle));
     },
   );
 
@@ -439,16 +571,14 @@ export function AppShell(props: {
   });
 
   createEffect(
-    () => {
-      location.pathname;
-      navItems();
-    },
+    () => navItems(),
     () => queueMeasure(),
   );
 
   createEffect(
     () => location.pathname,
     () => {
+      queueMeasure();
       queueMicrotask(() => {
         navRef?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({
           inline: "nearest",
@@ -495,7 +625,9 @@ export function AppShell(props: {
         <div class="mx-auto flex max-w-[1600px] items-center gap-3 px-3 sm:px-5 lg:px-6">
           <div class="relative min-w-0 flex-1">
             <nav
-              ref={navRef}
+              ref={(element) => {
+                navRef = element;
+              }}
               aria-label="Primary"
               class="no-scrollbar relative -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
             >
@@ -566,9 +698,11 @@ export function AppShell(props: {
       >
         <Errored
           fallback={(error, reset) => {
-            const value = typeof error === "function" ? (error as () => unknown)() : error;
+            const value = error instanceof Function ? error() : error;
+
             console.error("Mattrax page render error", value);
-            const presentation = errorPresentation(value);
+
+            const presentation = errorPresentation(raisedFailure(value));
 
             return (
               <div class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 py-16">
@@ -598,12 +732,17 @@ export function AppShell(props: {
             );
           }}
         >
-          {props.children}
+          {/* Page content mounts after the shell is hydrated. Server-rendered
+              page markup is data-independent, but the client resolves queries
+              before claiming it, so hydration would silently detach controls
+              (column pickers, filters, sort buttons). Rendering the page once
+              hydration finishes keeps every control live on cold loads. */}
+          <Show when={!isServer && isHydrated()}>{props.children}</Show>
         </Errored>
-        <div aria-live="polite" class="sr-only">
-          {pageLabel()}
-        </div>
       </main>
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+        {announcement()}
+      </div>
     </div>
   );
 }

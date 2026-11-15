@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import {
   AndroidManagement,
   compileAndroidPolicyWithHash,
@@ -16,6 +16,15 @@ import {
   type EnterpriseDb,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
+
+/** Command notification statuses mapped to the device command lifecycle. */
+const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
+  ["COMPLETED", "succeeded"],
+  ["FAILED", "failed"],
+  ["CANCELLED", "failed"],
+  ["PENDING", "sent"],
+]);
+
 import {
   resolveEffectivePolicyForDevice,
   syncDynamicGroupsForDevice,
@@ -78,6 +87,8 @@ export class AndroidDeliveryError extends Data.TaggedError("AndroidDeliveryError
   cause?: unknown;
 }> {}
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
@@ -89,7 +100,7 @@ export const describeAndroidError = (cause: unknown): string => {
   const text =
     cause instanceof Error
       ? cause.message
-      : typeof cause === "string"
+      : Schema.is(Schema.String)(cause)
         ? cause
         : (() => {
             try {
@@ -140,22 +151,18 @@ export const loadAndroidEnterprise = (
   db: EnterpriseDb,
   organizationId: string,
 ): Effect.Effect<AndroidEnterpriseRow | undefined, unknown> =>
-  db.query.androidEnterprise.findFirst({
-    where: { organizationId },
-  }) as Effect.Effect<AndroidEnterpriseRow | undefined, unknown>;
+  db.query.androidEnterprise.findFirst({ where: { organizationId } });
 
 const findAndroidEnterpriseByName = (
   db: EnterpriseDb,
   enterpriseName: string,
 ): Effect.Effect<AndroidEnterpriseRow | undefined, unknown> =>
-  db.query.androidEnterprise.findFirst({
-    where: { enterpriseName },
-  }) as Effect.Effect<AndroidEnterpriseRow | undefined, unknown>;
+  db.query.androidEnterprise.findFirst({ where: { enterpriseName } });
 
 const insertAndroidEnterprise = (
   db: EnterpriseDb,
   row: typeof schema.androidEnterprise.$inferInsert,
-) => db.insert(schema.androidEnterprise).values(row) as Effect.Effect<unknown, unknown>;
+) => db.insert(schema.androidEnterprise).values(row);
 
 const updateAndroidEnterprise = (
   db: EnterpriseDb,
@@ -165,13 +172,10 @@ const updateAndroidEnterprise = (
   db
     .update(schema.androidEnterprise)
     .set({ ...patch, updatedAt: now() })
-    .where(eq(schema.androidEnterprise.organizationId, organizationId)) as Effect.Effect<
-    unknown,
-    unknown
-  >;
+    .where(eq(schema.androidEnterprise.organizationId, organizationId));
 
 const insertAndroidDevice = (db: EnterpriseDb, row: typeof schema.androidDevice.$inferInsert) =>
-  db.insert(schema.androidDevice).values(row) as Effect.Effect<unknown, unknown>;
+  db.insert(schema.androidDevice).values(row);
 
 const updateAndroidDevice = (
   db: EnterpriseDb,
@@ -181,7 +185,7 @@ const updateAndroidDevice = (
   db
     .update(schema.androidDevice)
     .set({ ...patch, updatedAt: now() })
-    .where(eq(schema.androidDevice.deviceId, deviceId)) as Effect.Effect<unknown, unknown>;
+    .where(eq(schema.androidDevice.deviceId, deviceId));
 
 export type AndroidEnterpriseInfoResult = {
   readonly configured: boolean;
@@ -226,7 +230,7 @@ export const androidEnterpriseInfo = (
       serviceAccountEmail: row?.serviceAccountEmail ?? config?.serviceAccount.clientEmail ?? null,
       lastError: row?.lastError ?? null,
       lastSyncedAt: iso(row?.lastSyncedAt ?? null),
-      deviceCount: (mappings as ReadonlyArray<unknown>).length,
+      deviceCount: mappings.length,
       available: configured && status === "active" && Boolean(row?.enterpriseName),
       createdAt: iso(row?.createdAt ?? null),
       updatedAt: iso(row?.updatedAt ?? null),
@@ -640,25 +644,28 @@ export const createAndroidEnrollmentToken = (input: {
         ),
       );
 
-    return {
-      value: token.value,
-      ...(token.qrCode ? { qrCode: token.qrCode } : {}),
-      ...(token.policyName ? { policyName: token.policyName } : {}),
-      ...(token.expirationTimestamp ? { expiresAt: token.expirationTimestamp } : {}),
-    };
+    const result: Mutable<AndroidEnrollmentTokenResult> = { value: token.value };
+
+    if (token.qrCode) result.qrCode = token.qrCode;
+
+    if (token.policyName) result.policyName = token.policyName;
+
+    if (token.expirationTimestamp) result.expiresAt = token.expirationTimestamp;
+
+    return result;
   }).pipe(mapAndroidError);
 
-function recordOf(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+const AndroidRecord = Schema.Record(Schema.String, Schema.Json);
+
+function recordOf(value: Schema.Json | undefined): Record<string, Schema.Json> | undefined {
+  return Option.getOrUndefined(Schema.decodeUnknownOption(AndroidRecord)(value));
 }
 
-function stringOf(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+function stringOf(value: Schema.Json | undefined): string | undefined {
+  return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
 }
 
-function dateOf(value: unknown): Date | undefined {
+function dateOf(value: Schema.Json | undefined): Date | undefined {
   const text = stringOf(value);
 
   if (!text) return undefined;
@@ -693,7 +700,7 @@ type AndroidDeviceResource = {
 };
 
 function parseDeviceResource(
-  data: unknown,
+  data: Schema.Json | undefined,
   fallbackEnterpriseName: string,
 ): AndroidDeviceResource | undefined {
   const record = recordOf(data);
@@ -724,7 +731,7 @@ function parseDeviceResource(
 const deviceNameBelongs = (enterpriseName: string, deviceName: string) =>
   deviceName.startsWith(`${enterpriseName}/devices/`);
 
-const enterpriseNameFromResource = (data: unknown): string | undefined => {
+const enterpriseNameFromResource = (data: Schema.Json | undefined): string | undefined => {
   const record = recordOf(data);
 
   if (!record) return undefined;
@@ -891,7 +898,7 @@ const upsertAndroidDevice = (input: {
     return {
       deviceId,
       created: !existingDevice,
-      ...(existingDevice ? { previousStatus: existingDevice.status } : {}),
+      previousStatus: existingDevice?.status,
     };
   });
 
@@ -1050,7 +1057,7 @@ export const syncAndroidPoliciesForTenant = (input: {
     if (scopedIds && scopedIds.length === 0)
       return { devices: 0, updated: 0, skipped: 0, failed: 0 };
 
-    const devices = (yield* input.db
+    const devices = yield* input.db
       .select()
       .from(schema.device)
       .where(
@@ -1064,7 +1071,7 @@ export const syncAndroidPoliciesForTenant = (input: {
               eq(schema.device.organizationId, input.organizationId),
               eq(schema.device.proto, "android"),
             ),
-      )) as Array<typeof schema.device.$inferSelect>;
+      );
 
     let updated = 0;
     let skipped = 0;
@@ -1146,7 +1153,7 @@ type ApplyNotificationInput = {
   readonly authSecret?: string;
   readonly enterprise: AndroidEnterpriseRow;
   readonly notificationType: string;
-  readonly data: unknown;
+  readonly data: Schema.Json;
   readonly planLimits?: PlanLimitsConfig;
 };
 
@@ -1265,17 +1272,10 @@ const applyCommandNotification = (
 
     const status = commandStatus({ data: input.data });
 
-    const nextStatus =
-      status === "COMPLETED"
-        ? "succeeded"
-        : status === "FAILED" || status === "CANCELLED"
-          ? "failed"
-          : status === "PENDING"
-            ? "sent"
-            : undefined;
+    const nextStatus = COMMAND_STATUS_OUTCOME.get(status);
 
     if (nextStatus) {
-      const candidates = (yield* input.db
+      const candidates = yield* input.db
         .select()
         .from(schema.deviceCommand)
         .where(
@@ -1285,23 +1285,24 @@ const applyCommandNotification = (
           ),
         )
         .orderBy(desc(schema.deviceCommand.createdAt))
-        .limit(20)) as Array<typeof schema.deviceCommand.$inferSelect>;
+        .limit(20);
 
       // Match the AMAPI operation stored when the command was queued. Falling
       // back to the newest sent command is only safe when the payload has no
       // operation (legacy rows); otherwise two in-flight commands could swap
       // their results.
+      const commandPayloadSchema = Schema.Struct({
+        operationName: Schema.optional(Schema.String),
+      });
+
+      const commandPayload = (candidate: (typeof candidates)[number]) =>
+        Option.getOrUndefined(Schema.decodeUnknownOption(commandPayloadSchema)(candidate.payload));
+
       const command = operationName
-        ? (candidates.find((candidate) => {
-            const payload = candidate.payload as { operationName?: unknown } | null;
-
-            return payload?.operationName === operationName;
-          }) ??
-          candidates.find((candidate) => {
-            const payload = candidate.payload as { operationName?: unknown } | null;
-
-            return payload?.operationName === undefined;
-          }))
+        ? (candidates.find(
+            (candidate) => commandPayload(candidate)?.operationName === operationName,
+          ) ??
+          candidates.find((candidate) => commandPayload(candidate)?.operationName === undefined))
         : candidates[0];
 
       if (command) {
@@ -1350,7 +1351,7 @@ export const handleAndroidPubSub = (input: {
   readonly authSecret?: string;
   readonly origin: string;
   readonly authorization?: string;
-  readonly body: unknown;
+  readonly body: Schema.Json;
   readonly fetch?: typeof globalThis.fetch;
   readonly now?: () => number;
   readonly planLimits?: PlanLimitsConfig;
@@ -1372,9 +1373,9 @@ export const handleAndroidPubSub = (input: {
       audience:
         config.pubsubAudience ?? `${input.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
       serviceAccountEmail: config.serviceAccount.clientEmail,
-      ...(config.jwksUri ? { jwksUri: config.jwksUri } : {}),
-      ...(input.fetch ? { fetch: input.fetch } : {}),
-      ...(input.now ? { now: input.now } : {}),
+      jwksUri: config.jwksUri,
+      fetch: input.fetch,
+      now: input.now,
     }).pipe(
       Effect.mapError(
         (cause) =>
@@ -1425,11 +1426,11 @@ export const handleAndroidPubSub = (input: {
     const context: ApplyNotificationInput = {
       db: input.db,
       config,
-      ...(input.authSecret ? { authSecret: input.authSecret } : {}),
+      authSecret: input.authSecret,
       enterprise,
       notificationType,
       data: push.data,
-      ...(input.planLimits ? { planLimits: input.planLimits } : {}),
+      planLimits: input.planLimits,
     };
 
     const result: ApplyNotificationResult =
@@ -1461,7 +1462,7 @@ export const handleAndroidPubSub = (input: {
     return {
       status: result.status,
       type: notificationType,
-      ...(result.reason ? { reason: result.reason } : {}),
+      reason: result.reason,
     } satisfies AndroidPubSubResult;
   }).pipe(mapAndroidError);
 
@@ -1558,6 +1559,4 @@ export const issueAndroidCommand = (input: {
 
 /** Prune the Pub/Sub idempotency ledger during daily maintenance. */
 export const pruneAndroidPubSubMessages = (db: EnterpriseDb, before: Date) =>
-  db
-    .delete(schema.androidPubSubMessage)
-    .where(lt(schema.androidPubSubMessage.receivedAt, before)) as Effect.Effect<unknown, unknown>;
+  db.delete(schema.androidPubSubMessage).where(lt(schema.androidPubSubMessage.receivedAt, before));

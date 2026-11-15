@@ -23,7 +23,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   }
 }
 
-const ALGORITHM = {
+const ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
@@ -31,10 +31,48 @@ const ALGORITHM = {
 };
 
 async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM as any, true, [
-    "sign",
-    "verify",
-  ]) as Promise<CryptoKeyPair>;
+  return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"] as const);
+}
+
+function hasHexValue(
+  node: unknown,
+): node is { valueBlock: { valueHexView: Uint8Array<ArrayBuffer> } } {
+  if (typeof node !== "object" || node === null || !("valueBlock" in node)) return false;
+  const block = node.valueBlock;
+
+  if (typeof block !== "object" || block === null || !("valueHexView" in block)) return false;
+
+  return block.valueHexView instanceof Uint8Array;
+}
+
+function octetString(node: asn1js.AsnType | undefined): asn1js.OctetString {
+  if (!(node instanceof asn1js.OctetString)) throw new Error("Expected an OCTET STRING");
+
+  return node;
+}
+
+function utf8Value(attribute: pkijs.AttributeTypeAndValue | undefined): string | undefined {
+  if (!attribute || !(attribute.value instanceof asn1js.Utf8String)) return undefined;
+
+  return attribute.value.valueBlock.value;
+}
+
+function printableValue(attribute: pkijs.Attribute | undefined): string {
+  if (!attribute) throw new Error("Missing SCEP attribute");
+
+  const value = attribute.values[0];
+
+  if (!(value instanceof asn1js.PrintableString))
+    throw new Error("SCEP attribute is not a PrintableString");
+
+  return value.valueBlock.value;
+}
+
+function basicConstraints(extension: pkijs.Extension | undefined): pkijs.BasicConstraints {
+  if (!(extension?.parsedValue instanceof pkijs.BasicConstraints))
+    throw new Error("Expected a BasicConstraints extension");
+
+  return extension.parsedValue;
 }
 
 // ─── Test Helpers ─────────────────────────────────────────────────
@@ -104,10 +142,7 @@ async function encryptTestEnvelopedData(
       algorithmParams: new asn1js.Null(),
     }),
     encryptedKey: new asn1js.OctetString({
-      valueHex: encryptedSessionKey.buffer.slice(
-        encryptedSessionKey.byteOffset,
-        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
-      ) as ArrayBuffer,
+      valueHex: new Uint8Array(encryptedSessionKey).buffer,
     }),
   });
 
@@ -118,7 +153,7 @@ async function encryptTestEnvelopedData(
       contentType: pkijs.ContentInfo.DATA,
       contentEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
         algorithmId: "2.16.840.1.101.3.4.1.2", // AES-128-CBC
-        algorithmParams: new asn1js.OctetString({ valueHex: iv.buffer as ArrayBuffer }),
+        algorithmParams: new asn1js.OctetString({ valueHex: new Uint8Array(iv).buffer }),
       }),
       encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
     }),
@@ -140,8 +175,13 @@ async function decryptTestEnvelopedData(
   const contentInfo = pkijs.ContentInfo.fromBER(envelopedDataDer);
   const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
 
-  const recipientInfo = envelopedData.recipientInfos[0]!.value as pkijs.KeyTransRecipientInfo;
-  const encryptedKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+  const recipient = envelopedData.recipientInfos[0]?.value;
+
+  if (!recipient || !("encryptedKey" in recipient)) throw new Error("No key transport recipient");
+
+  if (!hasHexValue(recipient.encryptedKey)) throw new Error("Recipient key has no bytes");
+
+  const encryptedKey = Buffer.from(recipient.encryptedKey.valueBlock.valueHexView);
 
   const signingKey = await crypto.subtle.importKey(
     "jwk",
@@ -151,7 +191,7 @@ async function decryptTestEnvelopedData(
     ["sign"],
   );
 
-  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
+  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey);
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
   const sessionKeyBytes = privateDecrypt(
@@ -159,11 +199,12 @@ async function decryptTestEnvelopedData(
     encryptedKey,
   );
 
-  const ivHex = (
-    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
-  )?.valueBlock?.valueHex as ArrayBuffer;
+  const algorithmParams =
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams;
 
-  const iv = Buffer.from(ivHex);
+  if (!hasHexValue(algorithmParams)) throw new Error("Missing IV in algorithm params");
+
+  const iv = Buffer.from(algorithmParams.valueBlock.valueHexView);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
@@ -188,7 +229,7 @@ async function buildFullPkcsReq(
   const envelopedCsrDer = await encryptTestEnvelopedData(csrDer, caCert);
 
   const envelopedDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", envelopedCsrDer as ArrayBuffer),
+    await crypto.subtle.digest("SHA-256", envelopedCsrDer),
   );
 
   const signedData = new pkijs.SignedData({
@@ -239,7 +280,7 @@ async function buildFullPkcsReq(
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5", // senderNonce
-          values: [new asn1js.OctetString({ valueHex: senderNonce.buffer as ArrayBuffer })],
+          values: [new asn1js.OctetString({ valueHex: new Uint8Array(senderNonce).buffer })],
         }),
       ],
     }),
@@ -271,7 +312,7 @@ async function buildRawCsrPkcsReq(
 ): Promise<ArrayBuffer> {
   const csrDer = csr.toSchema().toBER(false);
 
-  const csrDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", csrDer as ArrayBuffer));
+  const csrDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", csrDer));
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -320,7 +361,7 @@ async function buildRawCsrPkcsReq(
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5",
-          values: [new asn1js.OctetString({ valueHex: senderNonce.buffer as ArrayBuffer })],
+          values: [new asn1js.OctetString({ valueHex: new Uint8Array(senderNonce).buffer })],
         }),
       ],
     }),
@@ -369,7 +410,7 @@ describe("SCEP PKCS#7", () => {
       const bcExt = caCert.extensions?.find((e) => e.extnID === "2.5.29.19");
       expect(bcExt).toBeDefined();
       expect(bcExt?.parsedValue).toBeInstanceOf(pkijs.BasicConstraints);
-      expect((bcExt?.parsedValue as pkijs.BasicConstraints).cA).toBe(true);
+      expect(basicConstraints(bcExt).cA).toBe(true);
     });
 
     it("has keyCertSign key usage", () => {
@@ -423,7 +464,7 @@ describe("SCEP PKCS#7", () => {
 
       const bcExt = deviceCert.extensions?.find((e) => e.extnID === "2.5.29.19");
       expect(bcExt).toBeDefined();
-      expect((bcExt?.parsedValue as pkijs.BasicConstraints).cA).toBe(false);
+      expect(basicConstraints(bcExt).cA).toBe(false);
     });
   });
 
@@ -476,7 +517,7 @@ describe("SCEP PKCS#7", () => {
         senderNonce,
       );
 
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -511,7 +552,7 @@ describe("SCEP PKCS#7", () => {
         senderNonce,
       );
 
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -524,7 +565,7 @@ describe("SCEP PKCS#7", () => {
         (a: pkijs.AttributeTypeAndValue) => a.type === "2.5.4.3",
       );
 
-      expect((cnAttr?.value as asn1js.Utf8String).valueBlock.value).toBe("TestDevice");
+      expect(utf8Value(cnAttr)).toBe("TestDevice");
     });
 
     it("parses the generated PKCSReq.der outer structure", async () => {
@@ -560,7 +601,7 @@ describe("SCEP PKCS#7", () => {
   describe("Full SCEP roundtrip with EnvelopedData", () => {
     it("issues a cert and builds a CertRep that the device can decrypt", async () => {
       const signerCert = await createScepSignerCert(deviceKeyPair, "MyDevice");
-      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey));
 
       // Build CSR
       const csr = new pkijs.CertificationRequest();
@@ -631,22 +672,22 @@ describe("SCEP PKCS#7", () => {
       // messageType = CertRep (3)
       const msgTypeAttr = attrMap.get("2.16.840.1.113733.1.9.2");
       expect(msgTypeAttr).toBeDefined();
-      expect((msgTypeAttr!.values[0] as asn1js.PrintableString).valueBlock.value).toBe("3");
+      expect(printableValue(msgTypeAttr)).toBe("3");
 
       // pkiStatus = SUCCESS (0)
       const pkiStatusAttr = attrMap.get("2.16.840.1.113733.1.9.3");
       expect(pkiStatusAttr).toBeDefined();
-      expect((pkiStatusAttr!.values[0] as asn1js.PrintableString).valueBlock.value).toBe("0");
+      expect(printableValue(pkiStatusAttr)).toBe("0");
 
       // transactionID matches
       const txnAttr = attrMap.get("2.16.840.1.113733.1.9.7");
-      expect((txnAttr!.values[0] as asn1js.PrintableString).valueBlock.value).toBe(txnId);
+      expect(printableValue(txnAttr)).toBe(txnId);
 
       // recipientNonce = senderNonce (verbatim copy)
       const recipNonceAttr = attrMap.get("2.16.840.1.113733.1.9.6");
 
       const recipNonce = new Uint8Array(
-        (recipNonceAttr!.values[0] as asn1js.OctetString).valueBlock.valueHexView,
+        octetString(recipNonceAttr?.values[0]).valueBlock.valueHexView,
       );
 
       expect(recipNonce).toEqual(senderNonce);
@@ -659,12 +700,12 @@ describe("SCEP PKCS#7", () => {
       const eContentNode = sd.encapContentInfo.eContent!;
       // pkijs stores eContent as a CONSTRUCTED OctetString (chunked BER), so
       // valueHexView is empty on the outer node. getValue() reassembles the chunks.
-      const envelopedDer = (eContentNode as asn1js.OctetString).getValue() as ArrayBuffer;
+      const envelopedDer = octetString(eContentNode).getValue();
 
       const deviceJwk = (await crypto.subtle.exportKey(
         "jwk",
         deviceKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const decryptedDer = await decryptTestEnvelopedData(envelopedDer, deviceJwk);
 
@@ -675,7 +716,11 @@ describe("SCEP PKCS#7", () => {
       const degSD = new pkijs.SignedData({ schema: degCI.content });
       expect(degSD.certificates).toHaveLength(1);
 
-      const issuedCert = degSD.certificates![0] as pkijs.Certificate;
+      const issuedCert = degSD.certificates?.[0];
+
+      if (!(issuedCert instanceof pkijs.Certificate))
+        throw new Error("Degenerate PKCS#7 has no device certificate");
+
       const issuedCertDer = issuedCert.toSchema().toBER(false);
       const expectedDer = deviceCert.toSchema().toBER(false);
       expect(new Uint8Array(issuedCertDer)).toEqual(new Uint8Array(expectedDer));
@@ -704,7 +749,7 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         "txn-123",
-        senderNonce.buffer as ArrayBuffer,
+        new Uint8Array(senderNonce).buffer,
         [signerCert],
       );
 
@@ -736,7 +781,7 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         "txn-456",
-        senderNonce.buffer as ArrayBuffer,
+        new Uint8Array(senderNonce).buffer,
         [signerCert],
       );
 
@@ -767,7 +812,7 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         "txn-789",
-        senderNonce.buffer as ArrayBuffer,
+        new Uint8Array(senderNonce).buffer,
         [signerCert],
       );
 

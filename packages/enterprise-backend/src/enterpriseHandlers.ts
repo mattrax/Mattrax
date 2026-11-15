@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import {
@@ -28,9 +28,9 @@ import {
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
-  type DevicePreRegistrationImportRow,
   type DevicePreRegistrationImportResponse,
   type EnterpriseAuth,
+  type DevicePreRegistrationImportRow,
   type TenantImportRequest,
   type TenantImportResponse,
   policyApplicationKey,
@@ -44,16 +44,20 @@ import {
   errorDiagnostic,
   evaluateDeviceQuery,
   type DashboardQueryRequest,
-  type DashboardWidgetType,
+  DashboardWidgetType,
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
-  type DynamicGroupRules,
+  DynamicGroupRules,
   type StepUpAction,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
-import type { Stripe } from "@mattrax/effect-stripe";
+import type { StripeClientLike, StripeCustomer } from "@mattrax/effect-stripe";
 import {
+  authCredentials,
+  authIdentifiers,
+  authPending,
+  authSessions,
   countOrganizationDevices,
   deviceLimitForOrganization,
   hasMfaFactor,
@@ -96,7 +100,6 @@ import {
   webhookEventForAuditAction,
   webhookSecretPrefix,
   windowsTenantTokenExpiresAt,
-  type WebhookEndpointRow,
 } from "@mattrax/management-backend-enterprise";
 import {
   AUTOPILOT_IMPORT_MAX_BYTES,
@@ -116,10 +119,12 @@ import {
   validateAutopilotProfileInput,
   type AutopilotProfileValues,
 } from "./autopilot.ts";
-import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
+import { issueScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.ts";
 import { tokenScopes } from "./enterpriseAuth.ts";
+import { sessionCookie } from "./auth.ts";
+import { cookieValue, signSsrToken } from "./ssrToken.ts";
 import {
   ApnsService,
   NoopPushTransport,
@@ -130,16 +135,19 @@ import {
   parseApnsCertificate,
   validateApnsCertificate,
 } from "@mattrax/apns";
-import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
-import { makeApplePush } from "./push.ts";
+import { exportPrivateKeyJwk, importPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import { applePushService } from "./push.ts";
 import { summarizeApplePushHealth } from "./push.ts";
 import { buildDeviceActivity, normalizeDeviceActivityLimit } from "./deviceActivity.ts";
 import {
+  hasOwnerRole,
+  isBuiltInOwnerMember,
   normalizePermissions,
   permissionForMethod,
   RequiredPermission,
   resolveTenantRole,
 } from "./rbac.ts";
+import { invitationEmail } from "./invitationEmail.ts";
 import {
   deviceBucket,
   normalizeWidgetConfig,
@@ -199,7 +207,7 @@ import {
   clearAppleBusinessManagerToken,
   createAdeProfileToken,
   loadAppleBusinessManager,
-  makeAbmClient,
+  createAbmClient,
   openAbmCredential,
   readAdeProfileToken,
   saveAppleBusinessManagerToken,
@@ -230,6 +238,12 @@ import {
 } from "./backup.ts";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { AzureGraphService } from "@mattrax/azure-graph";
+import {
+  createAppleProfileSigner,
+  signAppleProfilePlist,
+  type AppleProfileSigningConfig,
+} from "@mattrax/dm-apple";
+import { openCaPrivateKey } from "@mattrax/scep";
 import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
@@ -252,6 +266,9 @@ import type {
   EnterprisePolicy,
   EnterpriseSchema,
 } from "./schema.ts";
+import type { EmailReplyTo } from "./email.ts";
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 export type EnterpriseAnalyticsIdentity = {
   readonly userId: string;
@@ -266,8 +283,18 @@ export type EnterpriseAnalyticsIdentity = {
 /** Request-scoped product analytics sink supplied by the host Worker. */
 export type EnterpriseAnalytics = {
   identify(identity: EnterpriseAnalyticsIdentity): void;
-  capture(event: string, properties?: Record<string, unknown>): void;
+  capture(event: string, properties?: Record<string, Schema.Json>): void;
 };
+
+/**
+ * Request-scoped analytics sink. The API layer is built once per isolate, so
+ * the per-request sink is supplied through the handler context instead of the
+ * service constructor.
+ */
+export class EnterpriseAnalyticsService extends Context.Service<
+  EnterpriseAnalyticsService,
+  EnterpriseAnalytics
+>()("@mattrax/enterprise-backend/EnterpriseAnalytics") {}
 
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
@@ -307,25 +334,52 @@ export type EnterpriseHandlersConfig = {
    * leave it unconfigured) to keep every plan unlimited.
    */
   readonly planLimits?: PlanLimitsConfig;
-  /** Optional product analytics sink for successful API operations. */
+  /**
+   * Deployment identity used to CMS-sign Apple enrollment profile downloads.
+   * When no identity is configured the global SCEP CA is used; before the CA
+   * exists the download stays an unsigned plist.
+   */
+  readonly appleProfileSigning?: AppleProfileSigningConfig;
+  /** Optional static analytics sink; the API supplies a request-scoped one. */
   readonly analytics?: EnterpriseAnalytics;
-  /** Transactional email binding. Invitations are logged when omitted. */
+  /** Transactional email binding. Invitations are returned without email when omitted. */
   readonly email?: {
     send(message: {
       to: string;
       from: { name: string; email: string };
+      replyTo?: EmailReplyTo;
       subject: string;
       text?: string;
       html?: string;
-    }): Promise<unknown>;
+    }): Promise<void>;
   };
+  /**
+   * Verified sender address for invitation email. Must remain an allowed
+   * Cloudflare Email sender; defaults to `hello@mattrax.cloud`.
+   */
+  readonly invitationFromEmail?: string;
 };
 
-const isModelledError = (error: unknown): boolean => {
-  if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
-  const tag = (error as { _tag?: unknown })._tag;
+type ServiceFailure = Error | Schema.Json | null | undefined;
 
-  return typeof tag === "string" && (tag.startsWith("Enterprise") || tag.startsWith("StepUp"));
+type AnalyticsOperationProperties = {
+  method: string;
+  tenant_id?: string;
+  permission?: string;
+  target_id?: string;
+  duration_ms: number;
+  status: string;
+};
+
+const ErrorTag = Schema.Struct({ _tag: Schema.String });
+
+const errorTag = (error: ServiceFailure): string | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(ErrorTag)(error))?._tag;
+
+const isModelledError = (error: ServiceFailure): boolean => {
+  const tag = errorTag(error);
+
+  return tag !== undefined && (tag.startsWith("Enterprise") || tag.startsWith("StepUp"));
 };
 
 const expectedClientTags = new Set([
@@ -340,18 +394,16 @@ const expectedClientTags = new Set([
   "StepUpUnavailable",
 ]);
 
-const logServiceFailure = (error: unknown, causeText?: string) => {
-  const tag =
-    typeof error === "object" && error !== null && "_tag" in error
-      ? String((error as { _tag?: unknown })._tag)
-      : undefined;
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+
+const logServiceFailure = (error: ServiceFailure, causeText?: string) => {
+  const tag = errorTag(error);
 
   const message =
     error instanceof Error
       ? error.message
-      : typeof error === "object" && error !== null && "message" in error
-        ? String((error as { message?: unknown }).message ?? "")
-        : String(error);
+      : (Option.getOrUndefined(Schema.decodeUnknownOption(ErrorMessage)(error))?.message ??
+        String(error));
 
   return Effect.logError(
     "Enterprise service failure",
@@ -374,18 +426,19 @@ const logServiceFailure = (error: unknown, causeText?: string) => {
 const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.catchCause((cause) => {
-      const error = Cause.squash(cause);
+      // SAFETY: Cause.squash always yields the captured Error, tagged data
+      // error, primitive, or null/undefined that caused the Effect to fail.
+      const error = Cause.squash(cause) as ServiceFailure;
 
       if (isModelledError(error)) {
-        const tag =
-          typeof error === "object" && error !== null && "_tag" in error
-            ? String((error as { _tag?: unknown })._tag)
-            : "";
+        const tag = errorTag(error) ?? "";
 
         const log = expectedClientTags.has(tag)
           ? Effect.void
           : logServiceFailure(error, Cause.pretty(cause));
 
+        // SAFETY: isModelledError checks the runtime `_tag`; Cause.squash erases
+        // the typed error union, so the failure is re-asserted as the channel E.
         return Effect.flatMap(log, () => Effect.fail(error as E));
       }
 
@@ -402,13 +455,15 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         },
       );
 
+      // SAFETY: diagnoseError's internal error is the caller's declared failure
+      // channel; CatchCause must not widen it to the raw defect.
       return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
         Effect.fail(internal as E),
       );
     }),
   );
 
-const PRODUCT_EVENTS: Record<string, string> = {
+const PRODUCT_EVENTS = {
   createTenant: "tenant_created",
   importTenant: "tenant_imported",
   exportTenant: "tenant_exported",
@@ -436,71 +491,76 @@ const PRODUCT_EVENTS: Record<string, string> = {
   billingPortal: "billing_portal_opened",
   patchTenant: "tenant_updated",
   updateMe: "account_updated",
-};
+} satisfies Record<string, string>;
 
-const wrapServiceErrors = <S extends Record<string, any>>(
+const PRODUCT_EVENT_BY_METHOD = new Map(Object.entries(PRODUCT_EVENTS));
+
+const wrapServiceErrors = <S extends object>(
   service: S,
   permissions = false,
-  analytics?: EnterpriseAnalytics,
+  fallbackAnalytics?: EnterpriseAnalytics,
 ): S =>
   new Proxy(service, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
+    get(_target, property) {
+      const value = Object.getOwnPropertyDescriptor(service, property)?.value;
 
-      if (typeof value !== "function") return value;
+      if (!(value instanceof Function)) return value;
 
       return (...args: Array<unknown>) => {
-        const fn = value as unknown as (...args: Array<unknown>) => unknown;
-        const result = fn.apply(target, args);
+        const fn = value;
+        const result = fn.apply(service, args);
 
         if (!Effect.isEffect(result)) return result;
         const method = String(property);
         const permission = permissions ? permissionForMethod(method) : undefined;
-        const tenantId = typeof args[1] === "string" ? args[1] : undefined;
+        const tenantId = Schema.is(Schema.String)(args[1]) ? args[1] : undefined;
         const startedAt = Date.now();
 
         const mapped =
           permission && tenantId
-            ? Effect.provideService(result as any, RequiredPermission, {
+            ? Effect.provideService(result, RequiredPermission, {
                 permission,
                 method,
               })
             : result;
 
-        const withAnalytics = analytics
-          ? (mapped as Effect.Effect<unknown, unknown, unknown>).pipe(
-              Effect.tap((value) =>
-                Effect.sync(() => {
-                  const targetId =
-                    value &&
-                    typeof value === "object" &&
-                    typeof (value as { id?: unknown }).id === "string"
-                      ? (value as { id: string }).id
-                      : undefined;
+        const withAnalytics = mapped.pipe(
+          Effect.tap((value) =>
+            Effect.gen(function* () {
+              const provided = yield* Effect.serviceOption(EnterpriseAnalyticsService);
+              const analytics = Option.isSome(provided) ? provided.value : fallbackAnalytics;
 
-                  const properties = {
-                    method,
-                    ...(tenantId ? { tenant_id: tenantId } : {}),
-                    ...(permission ? { permission } : {}),
-                    ...(targetId ? { target_id: targetId } : {}),
-                    duration_ms: Date.now() - startedAt,
-                    status: "ok",
-                  };
+              if (!analytics) return;
 
-                  try {
-                    analytics.capture("api_operation", properties);
-                    const event = PRODUCT_EVENTS[method];
+              const targetId = Option.getOrUndefined(
+                Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String }))(value),
+              )?.id;
 
-                    if (event) analytics.capture(event, properties);
-                  } catch {
-                    // Analytics must never fail a successful API operation.
-                  }
-                }),
-              ),
-            )
-          : mapped;
+              const properties: AnalyticsOperationProperties = {
+                method,
+                duration_ms: Date.now() - startedAt,
+                status: "ok",
+              };
 
-        return mapServiceErrors(withAnalytics as any);
+              if (tenantId) properties.tenant_id = tenantId;
+
+              if (permission) properties.permission = permission;
+
+              if (targetId) properties.target_id = targetId;
+
+              try {
+                analytics.capture("api_operation", properties);
+                const event = PRODUCT_EVENT_BY_METHOD.get(method);
+
+                if (event) analytics.capture(event, properties);
+              } catch {
+                // Analytics must never fail a successful API operation.
+              }
+            }),
+          ),
+        );
+
+        return mapServiceErrors(withAnalytics);
       };
     },
   });
@@ -511,27 +571,23 @@ type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
   readonly auth?: EnterpriseAuth["Service"];
 };
 
-type StripeClientLike = Parameters<typeof makeEffectStripeClient>[0];
-
-type RawStripeClientLike = object;
+type RawStripeClientLike = StripeClientLike;
 
 type Dynamic = ReturnType<typeof JSON.parse>;
 
+const StripeEffectProperty = Schema.Struct({ effect: Schema.optional(Schema.Json) });
+
 const isEffectStripeClient = (
   client: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>,
-): client is ReturnType<typeof makeEffectStripeClient> =>
-  typeof (client as { readonly effect?: unknown }).effect === "function";
+): client is ReturnType<typeof makeEffectStripeClient> => {
+  const effect = Option.getOrUndefined(
+    Schema.decodeUnknownOption(StripeEffectProperty)(client),
+  )?.effect;
+
+  return effect instanceof Function;
+};
 
 const now = () => new Date();
-
-/** Tenant-controlled text is interpolated into invitation HTML. */
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 
 const optionalText = (value: string | null | undefined): string | null | undefined => {
   if (value === undefined) return undefined;
@@ -551,13 +607,20 @@ type BrandingPayload = {
  * Validate and normalise the write payload for tenant branding. Returns the
  * fields to persist, omitting anything the caller did not send.
  */
-const brandingUpdate = (body: BrandingPayload): Record<string, string | null> => {
+type BrandingUpdate = {
+  displayName?: string | null;
+  logo?: string | null;
+  supportEmail?: string | null;
+  brandColor?: string | null;
+};
+
+const brandingUpdate = (body: BrandingPayload): BrandingUpdate => {
   const errors = validateTenantBranding(body);
   const firstError = Object.values(errors)[0];
 
   if (firstError) throw new EnterpriseBadRequest({ message: firstError });
 
-  const update: Record<string, string | null> = {};
+  const update: BrandingUpdate = {};
   const displayName = optionalText(body.displayName);
 
   if (displayName !== undefined) update.displayName = displayName;
@@ -637,23 +700,26 @@ const slugBase = (value: string) =>
     .slice(0, 240);
 
 /** Compact bundle validation helper; mirrors the limits used by write handlers. */
-const importString = (value: unknown, max: number): string | null => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
+const importString = (value: Schema.Json | undefined, max: number): string | null => {
+  const text = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
+  if (text === undefined) return null;
+  const trimmed = text.trim();
 
   return trimmed ? trimmed.slice(0, max) : null;
 };
 
 /**
- * Build the download response for an Apple enrollment profile. Exported so the
- * content type, attachment filename and cache policy can be asserted without
- * standing up the whole HTTP API.
+ * Build the download response for an Apple enrollment profile. The body is
+ * either a CMS-signed profile or a plain plist when no signing identity is
+ * available yet. Exported so the content type, attachment filename and cache
+ * policy can be asserted without standing up the whole HTTP API.
  */
 export const appleEnrollmentProfileResponse = (result: {
-  readonly plist: string;
+  readonly profile: Uint8Array;
   readonly filename: string;
 }) =>
-  HttpServerResponse.text(result.plist, {
+  HttpServerResponse.uint8Array(result.profile, {
     contentType: "application/x-apple-aspen-config",
     headers: {
       "Content-Disposition": `attachment; filename="${result.filename}"`,
@@ -662,12 +728,12 @@ export const appleEnrollmentProfileResponse = (result: {
   });
 
 /** Render the stored capability JSON for CSV export without losing entries. */
-const capabilityText = (value: unknown): string => {
+const capabilityText = (value: Schema.Json | undefined): string => {
   if (value == null) return "";
 
   if (Array.isArray(value)) return value.map((entry) => String(entry)).join("; ");
 
-  if (typeof value === "string") return value;
+  if (Schema.is(Schema.String)(value)) return value;
 
   return JSON.stringify(value);
 };
@@ -680,7 +746,7 @@ const auditEntry = (entry: {
   targetId: string | null;
   actorUserId?: string | null;
   actorEmail?: string | null;
-  metadata?: unknown;
+  metadata?: Schema.Json;
   createdAt: Date;
 }): AuditExportEntry => ({
   id: entry.id,
@@ -740,13 +806,35 @@ const requireStepUp = (
   action: StepUpAction,
 ) => auth.requireStepUp(request, action);
 
+const exportHeaders = (
+  filename: string,
+  result: { readonly truncated: boolean; readonly rowCount: number },
+) => {
+  const headers = new Map<string, string>([
+    ["Content-Disposition", `attachment; filename="${filename}"`],
+    ["X-Export-Rows", String(result.rowCount)],
+  ]);
+
+  if (result.truncated) headers.set("X-Export-Truncated", "true");
+
+  return Object.fromEntries(headers);
+};
+
 const iso = (date: Date | number | null | undefined) => {
   if (date == null) return new Date(0).toISOString();
 
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
-const hashJson = (value: unknown) =>
+/** Copy bytes into a plain ArrayBuffer so WebCrypto never sees a shared buffer. */
+const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+
+  return copy.buffer;
+};
+
+const hashJson = (value: Schema.Json) =>
   Effect.promise(() =>
     crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value))),
   ).pipe(
@@ -756,6 +844,8 @@ const hashJson = (value: unknown) =>
   );
 
 const TENANT_ROLES = new Set(["owner", "admin", "member", "auditor"]);
+
+const BUILT_IN_ROLE_LABEL_BY_ROLE = new Map(Object.entries(BUILT_IN_ROLE_LABELS));
 
 const rolesOf = (role: string) =>
   role
@@ -769,7 +859,87 @@ const validRoles = (role: string) => {
   return roles.length > 0 && roles.every((item) => TENANT_ROLES.has(item));
 };
 
-const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_PENDING_INVITATIONS_PER_TENANT = 50;
+const INVITATION_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEFAULT_INVITATION_FROM = "hello@mattrax.cloud";
+
+/** Normalise an invitation target at the transport boundary. */
+const normalizeInvitationEmail = (value: string | null | undefined) =>
+  (value ?? "").trim().toLowerCase();
+
+const validInvitationEmail = (email: string) =>
+  email.length > 0 && email.length <= 320 && INVITATION_EMAIL_PATTERN.test(email);
+
+/** Mask an address without ever returning the full local part or domain. */
+const maskInvitationEmail = (email: string) => {
+  const at = email.lastIndexOf("@");
+
+  if (at <= 0) return "***";
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf(".");
+  const suffix = dot > 0 ? domain.slice(dot) : "";
+  const localMask = `${local[0]}***`;
+  const domainMask = domain ? `${domain[0]}***${suffix}` : "";
+
+  return domainMask ? `${localMask}@${domainMask}` : localMask;
+};
+
+const invitationIsExpired = (invitation: { status: string; expiresAt: Date }) =>
+  invitation.status === "pending" && invitation.expiresAt <= now();
+
+const invitationRoleName = (
+  invitation: { role: string | null; customRoleId?: string | null },
+  customRoles: ReadonlyMap<string, string>,
+) => {
+  if (invitation.customRoleId) return customRoles.get(invitation.customRoleId) ?? "Member";
+
+  return invitation.role
+    ? (BUILT_IN_ROLE_LABEL_BY_ROLE.get(invitation.role) ?? invitation.role)
+    : "Member";
+};
+
+const newInvitationToken = () =>
+  bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+
+const invitationTokenHash = (token: string) =>
+  sha256Hex(bytesToArrayBuffer(new TextEncoder().encode(token)));
+
+const invitationUrl = (origin: string, token: string) =>
+  `${origin.replace(/\/+$/, "")}/accept-invitation?token=${encodeURIComponent(token)}`;
+
+type InvitationAuditMetadata = {
+  email: string;
+  role: string;
+  emailSent: boolean;
+  roleId?: string;
+  roleName?: string;
+  permissionCeiling?: string;
+};
+
+type MemberJoinedAuditMetadata = {
+  invitationId: string;
+  role: string;
+  roleId: string | null;
+  roleFallback?: string;
+};
+
+/**
+ * Permissions that stay with owners even when delegated. Custom roles may hold
+ * them, but only an owner can create, edit or assign such a role. Every other
+ * permission is itself a ceiling: an actor can only grant what their own
+ * resolved role already holds.
+ */
+const OWNER_ONLY_PERMISSIONS: ReadonlySet<string> = new Set([
+  "tenant.delete",
+  "tenant.export",
+  "backups.read",
+  "backups.write",
+]);
 
 /**
  * Role matrix:
@@ -800,19 +970,19 @@ export const createEnterpriseService = ({
   android: androidConfig,
   appleApi,
   email,
+  invitationFromEmail,
   azureGraph,
   azureClientId,
   windowsFederated,
   webhookFetch,
   webhookTimeoutMs,
   planLimits,
+  appleProfileSigning,
   analytics,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
 
-  const auth = wrapServiceErrors(
-    authService as unknown as Record<string, any>,
-  ) as unknown as typeof authService;
+  const auth = wrapServiceErrors(authService);
 
   const identifyUser = (
     user: { readonly id: string; readonly email: string; readonly name?: string | null },
@@ -823,50 +993,59 @@ export const createEnterpriseService = ({
       readonly roleName?: string;
       readonly roleKind?: "built-in" | "custom";
     },
-  ) => {
-    if (!analytics) return;
+  ) =>
+    Effect.gen(function* () {
+      const provided = yield* Effect.serviceOption(EnterpriseAnalyticsService);
+      const sink = Option.isSome(provided) ? provided.value : analytics;
 
-    try {
-      analytics.identify({
-        userId: user.id,
-        email: user.email,
-        ...(user.name ? { name: user.name } : {}),
-        ...(tenant
-          ? {
-              tenantId: tenant.id,
-              ...(tenant.displayName || tenant.name
-                ? { tenantName: tenant.displayName ?? tenant.name }
-                : {}),
-              ...(tenant.roleName ? { roleName: tenant.roleName } : {}),
-              ...(tenant.roleKind ? { roleKind: tenant.roleKind } : {}),
-            }
-          : {}),
-      });
-    } catch {
-      // Analytics must never fail an authenticated request.
-    }
-  };
+      if (!sink) return;
+
+      try {
+        const identity: Mutable<EnterpriseAnalyticsIdentity> = {
+          userId: user.id,
+          email: user.email,
+        };
+
+        if (user.name) identity.name = user.name;
+
+        if (tenant) {
+          identity.tenantId = tenant.id;
+
+          const tenantName = tenant.displayName ?? tenant.name;
+
+          if (tenantName) identity.tenantName = tenantName;
+
+          if (tenant.roleName) identity.roleName = tenant.roleName;
+
+          if (tenant.roleKind) identity.roleKind = tenant.roleKind;
+        }
+
+        sink.identify(identity);
+      } catch {
+        // Analytics must never fail an authenticated request.
+      }
+    });
 
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
 
-  const applePush = makeApplePush({
+  const applePush = applePushService({
     db,
     schema,
     apns,
     authSecret,
-    ...(webhookFetch ? { webhookFetch } : {}),
+    webhookFetch: webhookFetch ? webhookFetch : undefined,
   });
 
   const webhookOptions = {
-    ...(authSecret ? { authSecret } : {}),
-    ...(webhookFetch ? { fetch: webhookFetch } : {}),
-    ...(webhookTimeoutMs !== undefined ? { timeoutMs: webhookTimeoutMs } : {}),
+    authSecret: authSecret ? authSecret : undefined,
+    fetch: webhookFetch ? webhookFetch : undefined,
+    timeoutMs: webhookTimeoutMs !== undefined ? webhookTimeoutMs : undefined,
   };
 
   const stripe = stripeClient
     ? isEffectStripeClient(stripeClient)
       ? stripeClient
-      : makeEffectStripeClient(stripeClient as StripeClientLike)
+      : makeEffectStripeClient(stripeClient)
     : undefined;
 
   const billingConfigured = Boolean(stripe);
@@ -960,7 +1139,7 @@ export const createEnterpriseService = ({
       db,
       config: androidConfig,
       organizationId,
-      ...(deviceIds ? { deviceIds } : {}),
+      deviceIds: deviceIds ? deviceIds : undefined,
     }).pipe(Effect.catch(() => Effect.void));
 
   const r2Layer = R2StorageLive(storage);
@@ -1046,12 +1225,10 @@ export const createEnterpriseService = ({
       // safe fallback. Custom roles use their explicit permissions.
       if (!requiredPermission) {
         if (role.roleKind === "custom") {
-          const fallback =
-            access === "delete"
-              ? "tenant.delete"
-              : access === "write"
-                ? "tenant.write"
-                : "tenant.read";
+          let fallback: "tenant.delete" | "tenant.write" | "tenant.read" = "tenant.read";
+
+          if (access === "delete") fallback = "tenant.delete";
+          else if (access === "write") fallback = "tenant.write";
 
           if (!hasPermission(role.permissions, fallback)) return yield* Effect.fail(deny(fallback));
         } else {
@@ -1097,7 +1274,7 @@ export const createEnterpriseService = ({
             }
           : undefined;
 
-      identifyUser(user, {
+      yield* identifyUser(user, {
         id: organization.id,
         name: organization.name,
         displayName: organization.displayName,
@@ -1124,6 +1301,85 @@ export const createEnterpriseService = ({
               roleId: role.roleId,
             },
       };
+    });
+
+  /**
+   * A custom role is a delegation, never a privilege escalation. The actor's
+   * resolved permissions are the ceiling, and owner-only permissions need an
+   * owner regardless of what the actor's custom role happens to contain.
+   */
+  const assertPermissionsWithinActor = (
+    ctx: {
+      readonly member: { readonly role: string };
+      readonly role: { readonly permissions: ReadonlySet<string> };
+    },
+    permissions: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const notHeld = permissions.filter(
+        (permission) => !hasPermission(ctx.role.permissions, permission),
+      );
+
+      if (notHeld.length)
+        return yield* Effect.fail(
+          new EnterpriseForbidden({
+            message: `You cannot grant permissions your own role does not hold: ${notHeld.join(", ")}.`,
+          }),
+        );
+
+      if (!isBuiltInOwnerMember(ctx.member)) {
+        const ownerOnly = permissions.filter((permission) =>
+          OWNER_ONLY_PERMISSIONS.has(permission),
+        );
+
+        if (ownerOnly.length)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: `Only an owner can grant owner-only permissions: ${ownerOnly.join(", ")}.`,
+            }),
+          );
+      }
+    });
+
+  /**
+   * Assigning a built-in role is a delegation too. `admin`, `member` and
+   * `auditor` cannot exceed the actor's own permissions, and the built-in owner
+   * role stays behind the owner-only gate. Legacy comma-separated roles are
+   * checked part by part.
+   */
+  const assertBuiltInRoleAssignable = (
+    ctx: {
+      readonly member: { readonly role: string; readonly customRoleId?: string | null };
+      readonly role: { readonly permissions: ReadonlySet<string> };
+    },
+    role: string,
+  ) =>
+    Effect.gen(function* () {
+      for (const item of rolesOf(role)) {
+        if (!isBuiltInTenantRole(item)) continue;
+
+        if (item === "owner") {
+          if (!isBuiltInOwnerMember(ctx.member))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({ message: "Only an owner can assign the owner role" }),
+            );
+
+          continue;
+        }
+
+        yield* assertPermissionsWithinActor(
+          ctx,
+          // A non-owner delegating a built-in role cannot hand out owner-only
+          // permissions, but the built-in role's own definition of those stays
+          // authoritative. Compare the rest against the actor's ceiling so an
+          // administrator can still assign `member`/`auditor`/`admin`.
+          isBuiltInOwnerMember(ctx.member)
+            ? BUILT_IN_ROLE_PERMISSIONS[item]
+            : BUILT_IN_ROLE_PERMISSIONS[item].filter(
+                (permission) => !OWNER_ONLY_PERMISSIONS.has(permission),
+              ),
+        );
+      }
     });
 
   const snapshotPolicy = (
@@ -1198,21 +1454,20 @@ export const createEnterpriseService = ({
     action: string,
     targetType: string,
     targetId: string | null = null,
-    metadata?: unknown,
+    metadata?: Schema.Json,
   ) =>
     Effect.gen(function* () {
-      const metadataObject =
-        metadata === undefined
+      const metadataObject = Schema.is(Schema.JsonObject)(metadata)
+        ? metadata
+        : metadata === undefined
           ? {}
-          : typeof metadata === "object" && metadata !== null
-            ? (metadata as Record<string, unknown>)
-            : { value: metadata };
+          : { value: metadata };
 
-      const enrichedMetadata = {
-        ...metadataObject,
-        ...(ctx.credential ? { credential: ctx.credential } : {}),
-        ...(ctx.rbac ? { rbac: ctx.rbac } : {}),
-      };
+      const enrichedMetadata = { ...metadataObject };
+
+      if (ctx.credential) Object.assign(enrichedMetadata, { credential: ctx.credential });
+
+      if (ctx.rbac) Object.assign(enrichedMetadata, { rbac: ctx.rbac });
 
       yield* db.insert(schema.auditLog).values({
         id: id(),
@@ -1242,12 +1497,11 @@ export const createEnterpriseService = ({
 
       if (!webhookEvent) return;
 
-      const context =
-        typeof metadata === "object" && metadata !== null
-          ? (metadata as Record<string, unknown>)
-          : metadata === undefined
-            ? {}
-            : { metadata };
+      const context = Schema.is(Schema.JsonObject)(metadata)
+        ? metadata
+        : metadata === undefined
+          ? {}
+          : { metadata };
 
       yield* dispatchWebhookEvent(
         db,
@@ -1261,6 +1515,76 @@ export const createEnterpriseService = ({
     });
 
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
+
+  /**
+   * Compose and send the branded invitation. Returns whether a provider
+   * accepted the message; failures never expose the token or full address.
+   */
+  const sendInvitationEmail = (
+    organization: {
+      readonly name: string;
+      readonly displayName?: string | null;
+      readonly logo?: string | null;
+      readonly supportEmail?: string | null;
+      readonly brandColor?: string | null;
+    },
+    inviterName: string,
+    input: {
+      readonly email: string;
+      readonly roleName: string;
+      readonly inviteUrl: string;
+      readonly expiresAt: Date;
+    },
+  ) =>
+    Effect.gen(function* () {
+      if (!email) {
+        yield* Effect.logWarning("Invitation email skipped: the deployment has no email binding");
+
+        return false;
+      }
+
+      const branding = resolveTenantBranding(organization);
+
+      const message = invitationEmail({
+        tenantName: branding.displayName,
+        logoUrl: branding.logo,
+        brandColor: branding.brandColor,
+        roleLabel: input.roleName,
+        inviterName,
+        invitedEmail: input.email,
+        inviteUrl: input.inviteUrl,
+        expiresAt: input.expiresAt,
+        supportEmail: branding.supportEmail,
+      });
+
+      const configuredSupport = organization.supportEmail?.trim();
+
+      const replyTo =
+        configuredSupport && INVITATION_EMAIL_PATTERN.test(configuredSupport)
+          ? { name: branding.displayName, email: configuredSupport }
+          : undefined;
+
+      return yield* Effect.tryPromise({
+        try: () =>
+          email.send({
+            to: input.email,
+            from: {
+              name: branding.displayName,
+              email: invitationFromEmail ?? DEFAULT_INVITATION_FROM,
+            },
+            replyTo,
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+          }),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.as(true),
+        Effect.catch(() =>
+          Effect.logWarning("Invitation email could not be sent").pipe(Effect.as(false)),
+        ),
+      );
+    });
 
   const normalizeWebhookEvents = (events: ReadonlyArray<string>): string[] => [
     ...new Set(events.filter((event) => WEBHOOK_EVENTS.has(event))),
@@ -1296,9 +1620,9 @@ export const createEnterpriseService = ({
 
   const loadWebhookEndpoint = (organizationId: string, webhookId: string) =>
     Effect.gen(function* () {
-      const endpoint = (yield* db.query.webhookEndpoint.findFirst({
+      const endpoint = yield* db.query.webhookEndpoint.findFirst({
         where: { id: webhookId, organizationId },
-      })) as WebhookEndpointRow | undefined;
+      });
 
       if (!endpoint)
         return yield* Effect.fail(
@@ -1350,9 +1674,14 @@ export const createEnterpriseService = ({
         updatedAt: timestamp,
       });
 
-      const endpoint = (yield* db.query.webhookEndpoint.findFirst({
+      const endpoint = yield* db.query.webhookEndpoint.findFirst({
         where: { id: webhookId, organizationId: input.organizationId },
-      })) as WebhookEndpointRow;
+      });
+
+      if (!endpoint)
+        return yield* Effect.fail(
+          new EnterpriseInternal({ message: "Webhook endpoint write did not persist" }),
+        );
 
       return { endpoint, secret };
     });
@@ -1364,7 +1693,7 @@ export const createEnterpriseService = ({
    */
   const reportPolicyDeliveryFailure = (
     organizationId: string,
-    context: Record<string, unknown>,
+    context: Record<string, Schema.Json>,
     result: {
       readonly requested: number;
       readonly failed: ReadonlyArray<{ readonly deviceId: string }>;
@@ -1391,14 +1720,65 @@ export const createEnterpriseService = ({
 
   const pushPolicyDevices = (
     organizationId: string,
-    policyId: string,
+    context: Record<string, Schema.Json>,
     deviceIds: ReadonlyArray<string>,
   ) =>
     Effect.gen(function* () {
       const result = yield* applePush.pushAppleDevices(deviceIds);
-      yield* reportPolicyDeliveryFailure(organizationId, { policyId }, result);
+      yield* reportPolicyDeliveryFailure(organizationId, context, result);
 
       return result;
+    });
+
+  /**
+   * Wake Apple devices and resync Android after a membership change.
+   *
+   * Delivery failures are reported through the same webhook as direct policy
+   * assignment instead of being swallowed; Windows has no push transport and
+   * converges on its next scheduled OMA-DM check-in.
+   */
+  const refreshDevicePolicies = (
+    organizationId: string,
+    deviceIds: ReadonlyArray<string>,
+    policyId?: string,
+  ) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return;
+
+      yield* pushPolicyDevices(
+        organizationId,
+        policyId ? { policyId } : { reason: "user-assignment" },
+        deviceIds,
+      );
+      yield* syncAndroidDevices(organizationId, deviceIds);
+    });
+
+  /**
+   * Directory sync reports membership and enabled-state changes by user; map
+   * them to linked devices so their policy is recomputed and pushed.
+   */
+  const refreshDevicesForDirectoryUsers = (
+    organizationId: string,
+    userIds: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const ids = [...new Set(userIds)];
+
+      if (ids.length === 0) return;
+
+      const links = yield* db
+        .select({ deviceId: schema.deviceUser.deviceId })
+        .from(schema.deviceUser)
+        .where(
+          and(
+            eq(schema.deviceUser.organizationId, organizationId),
+            inArray(schema.deviceUser.userId, ids),
+          ),
+        );
+
+      yield* refreshDevicePolicies(organizationId, [
+        ...new Set(links.map((link) => link.deviceId)),
+      ]);
     });
 
   const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
@@ -1414,31 +1794,31 @@ export const createEnterpriseService = ({
         stripe.customers.search({
           query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
           limit: 1,
-        }) as Effect.Effect<{ data: Array<Stripe.Customer> }, unknown>,
+        }),
       );
 
-      let stripeCustomer: Stripe.Customer | undefined = Exit.isSuccess(search)
+      let stripeCustomer: StripeCustomer | undefined = Exit.isSuccess(search)
         ? search.value.data[0]
         : undefined;
 
       if (!stripeCustomer && Exit.isFailure(search)) {
         const page = yield* stripe
-          .effect((client: Stripe) => client.customers.list({ limit: 100 }))
+          .effect((client: StripeClientLike) => client.customers.list({ limit: 100 }))
           .pipe(Effect.mapError(() => billingUnavailable()));
 
         stripeCustomer = page.data.find(
-          (customer: Stripe.Customer) =>
+          (customer: StripeCustomer) =>
             customer.metadata?.organizationId === organization.id &&
             customer.metadata?.customerType === "organization",
         );
       }
 
-      stripeCustomer ??= (yield* stripe.customers
+      stripeCustomer ??= yield* stripe.customers
         .create({
           name: organization.name,
           metadata: { organizationId: organization.id, customerType: "organization" },
         })
-        .pipe(Effect.mapError(() => billingUnavailable()))) as Stripe.Customer;
+        .pipe(Effect.mapError(() => billingUnavailable()));
 
       yield* db
         .update(schema.organization)
@@ -1460,18 +1840,36 @@ export const createEnterpriseService = ({
           supportEmail: schema.organization.supportEmail,
           brandColor: schema.organization.brandColor,
           role: schema.member.role,
+          customRoleId: schema.member.customRoleId,
         })
         .from(schema.member)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
         .where(eq(schema.member.userId, userId));
 
-      return rows.map((row: any) => ({
-        ...row,
-        logo: row.logo ?? null,
-        displayName: row.displayName ?? null,
-        supportEmail: row.supportEmail ?? null,
-        brandColor: row.brandColor ?? null,
-      }));
+      return yield* Effect.forEach(rows, (row: any) =>
+        Effect.gen(function* () {
+          const role = yield* resolveTenantRole(db, {
+            role: row.role,
+            organizationId: row.id,
+            customRoleId: row.customRoleId ?? null,
+          });
+
+          return {
+            id: row.id,
+            name: row.name,
+            slug: row.slug,
+            logo: row.logo ?? null,
+            displayName: row.displayName ?? null,
+            supportEmail: row.supportEmail ?? null,
+            brandColor: row.brandColor ?? null,
+            role: row.role,
+            roleId: role.roleId,
+            roleName: role.roleName,
+            roleKind: role.roleKind,
+            permissions: [...role.permissions],
+          };
+        }),
+      );
     });
 
   const memberCount = (tenantId: string) =>
@@ -1487,11 +1885,11 @@ export const createEnterpriseService = ({
   const ownerCount = (tenantId: string) =>
     Effect.gen(function* () {
       const members = yield* db
-        .select({ role: schema.member.role })
+        .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
         .from(schema.member)
         .where(eq(schema.member.organizationId, tenantId));
 
-      return members.filter((member) => member.role.split(",").includes("owner")).length;
+      return members.filter((member) => isBuiltInOwnerMember(member)).length;
     });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) =>
@@ -1524,6 +1922,47 @@ export const createEnterpriseService = ({
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
     });
 
+  const assertTenantUsers = (tenantId: string, ids: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (ids.length === 0) return;
+
+      const rows = yield* db
+        .select({ id: schema.member.userId })
+        .from(schema.member)
+        .where(
+          and(eq(schema.member.organizationId, tenantId), inArray(schema.member.userId, [...ids])),
+        );
+
+      if (rows.length !== new Set(ids).size)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "One or more users are not members of this tenant.",
+          }),
+        );
+    });
+
+  const assertTenantUserGroups = (tenantId: string, ids: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (ids.length === 0) return;
+
+      const rows = yield* db
+        .select({ id: schema.userGroup.id })
+        .from(schema.userGroup)
+        .where(
+          and(
+            eq(schema.userGroup.organizationId, tenantId),
+            inArray(schema.userGroup.id, [...ids]),
+          ),
+        );
+
+      if (rows.length !== new Set(ids).size)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "One or more directory groups are not part of this tenant.",
+          }),
+        );
+    });
+
   const assertTenantApplications = (tenantId: string, ids: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       if (ids.length === 0) return;
@@ -1544,22 +1983,18 @@ export const createEnterpriseService = ({
 
   const applicationAssignedDeviceIds = (organizationId: string, applicationId: string) =>
     Effect.gen(function* () {
-      const groups = (yield* db
+      const groups = yield* db
         .select()
         .from(schema.applicationGroup)
-        .where(eq(schema.applicationGroup.applicationId, applicationId))) as Array<{
-        groupId: string;
-      }>;
+        .where(eq(schema.applicationGroup.applicationId, applicationId));
 
-      const direct = (yield* db
+      const direct = yield* db
         .select()
         .from(schema.applicationDevice)
-        .where(eq(schema.applicationDevice.applicationId, applicationId))) as Array<{
-        deviceId: string;
-      }>;
+        .where(eq(schema.applicationDevice.applicationId, applicationId));
 
       const groupDevices = groups.length
-        ? ((yield* db
+        ? yield* db
             .select()
             .from(schema.groupDevice)
             .where(
@@ -1567,15 +2002,15 @@ export const createEnterpriseService = ({
                 schema.groupDevice.groupId,
                 groups.map((group) => group.groupId),
               ),
-            )) as Array<{ deviceId: string }>)
+            )
         : [];
 
       const ids = new Set<string>([
-        ...direct.map((row: { deviceId: string }) => row.deviceId),
-        ...groupDevices.map((row: { deviceId: string }) => row.deviceId),
+        ...direct.map((row) => row.deviceId),
+        ...groupDevices.map((row) => row.deviceId),
       ]);
 
-      if (ids.size === 0) return [] as Array<EnterpriseDevice>;
+      if (ids.size === 0) return [];
 
       const devices = yield* db
         .select()
@@ -1587,7 +2022,7 @@ export const createEnterpriseService = ({
           ),
         );
 
-      return devices as Array<EnterpriseDevice>;
+      return devices;
     });
 
   /** InstallApplication payload for a device-assigned VPP licence. */
@@ -1930,7 +2365,10 @@ export const createEnterpriseService = ({
     name: row.name,
     notes: row.notes,
     kind: row.kind ?? ("manual" as const),
-    rules: (row.rules as DynamicGroupRules | null | undefined) ?? null,
+    rules:
+      Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.NullOr(DynamicGroupRules))(row.rules),
+      ) ?? null,
     lastEvaluatedAt: row.lastEvaluatedAt ? iso(row.lastEvaluatedAt) : null,
     devicesCount,
     policiesCount,
@@ -1940,7 +2378,7 @@ export const createEnterpriseService = ({
 
   const rowPolicy = (row: EnterprisePolicy, withConfigurations = false) =>
     Effect.gen(function* () {
-      const base: Record<string, unknown> = {
+      const base = {
         id: row.id,
         name: row.name,
         notes: row.notes,
@@ -1955,9 +2393,9 @@ export const createEnterpriseService = ({
           .from(schema.configuration)
           .where(eq(schema.configuration.policyId, row.id));
 
-        base.configurations = Object.fromEntries(
-          configurations.map((item: EnterpriseConfiguration) => [item.kind, item.data]),
-        );
+        Object.assign(base, {
+          configurations: Object.fromEntries(configurations.map((item) => [item.kind, item.data])),
+        });
       }
 
       return base;
@@ -2060,18 +2498,13 @@ export const createEnterpriseService = ({
         // address-derived value at all.
         if (input.ip && authSecret) {
           const bytes = new TextEncoder().encode(`${authSecret}:${input.ip}`);
-          ipHash = (yield* sha256Hex(
-            bytes.buffer.slice(
-              bytes.byteOffset,
-              bytes.byteOffset + bytes.byteLength,
-            ) as ArrayBuffer,
-          )).slice(0, 32);
+          ipHash = (yield* sha256Hex(bytesToArrayBuffer(bytes))).slice(0, 32);
         }
 
         const timestamp = now();
         const cutoff = new Date(timestamp.getTime() - ENROLLMENT_ATTEMPT_DEDUPE_MS);
 
-        const recent = (yield* db
+        const recent = yield* db
           .select()
           .from(schema.enrollmentAttempt)
           .where(
@@ -2080,7 +2513,7 @@ export const createEnterpriseService = ({
               eq(schema.enrollmentAttempt.enrollmentId, input.enrollmentId),
               gte(schema.enrollmentAttempt.createdAt, cutoff),
             ),
-          )) as Array<{ ipHash: string | null; outcome: string; createdAt: Date }>;
+          );
 
         const duplicate = recent.some((row) => {
           const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
@@ -2156,15 +2589,16 @@ export const createEnterpriseService = ({
 
       if (filters.q) {
         const pattern = `%${escapeLike(filters.q)}%`;
-        conditions.push(
-          or(
-            like(schema.device.name, pattern),
-            like(schema.device.serial, pattern),
-            like(schema.device.model, pattern),
-            like(schema.device.dmIdentifier, pattern),
-            like(schema.device.assetTag, pattern),
-          ) as SQL,
+
+        const condition = or(
+          like(schema.device.name, pattern),
+          like(schema.device.serial, pattern),
+          like(schema.device.model, pattern),
+          like(schema.device.dmIdentifier, pattern),
+          like(schema.device.assetTag, pattern),
         );
+
+        if (condition) conditions.push(condition);
       }
 
       if (filters.status) conditions.push(eq(schema.device.status, filters.status));
@@ -2262,15 +2696,21 @@ export const createEnterpriseService = ({
       return and(...conditions);
     });
 
+  const deviceOrderColumn = (sort: DeviceSearchFilters["sort"]) => {
+    switch (sort) {
+      case "lastSeenAt":
+        return schema.device.lastSeenAt;
+      case "enrolledAt":
+        return schema.device.enrolledAt;
+      case "status":
+        return schema.device.status;
+      default:
+        return schema.device.name;
+    }
+  };
+
   const deviceOrder = (filters: DeviceSearchFilters) => {
-    const column =
-      filters.sort === "lastSeenAt"
-        ? schema.device.lastSeenAt
-        : filters.sort === "enrolledAt"
-          ? schema.device.enrolledAt
-          : filters.sort === "status"
-            ? schema.device.status
-            : schema.device.name;
+    const column = deviceOrderColumn(filters.sort);
 
     const primary = filters.direction === "desc" ? desc(column) : asc(column);
 
@@ -2352,13 +2792,13 @@ export const createEnterpriseService = ({
       });
 
       if (pending) {
-        const jwk = JSON.parse(
+        const jwk: JsonWebKey = JSON.parse(
           yield* Effect.tryPromise({
             try: () => openSecret(secret, pending.encryptedPrivateKeyJwk),
-            catch: (cause) =>
+            catch: () =>
               new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
           }),
-        ) as JsonWebKey;
+        );
 
         return { jwk, pending: true };
       }
@@ -2368,31 +2808,30 @@ export const createEnterpriseService = ({
       });
 
       if (certificate?.encryptedKey) {
-        const jwk = JSON.parse(
+        const jwk: JsonWebKey = JSON.parse(
           yield* Effect.tryPromise({
             try: () => openSecret(secret, certificate.encryptedKey!),
-            catch: (cause) =>
+            catch: () =>
               new EnterpriseBadRequest({ message: "Could not read the existing APNs key" }),
           }),
-        ) as JsonWebKey;
+        );
 
         return { jwk, pending: false };
       }
 
       const keyPair = yield* Effect.tryPromise({
         try: () => generateApnsKeyPair(),
-        catch: (cause) =>
-          new EnterpriseBadRequest({ message: "Could not generate an APNs key pair" }),
+        catch: () => new EnterpriseBadRequest({ message: "Could not generate an APNs key pair" }),
       });
 
       const jwk = yield* Effect.tryPromise({
         try: () => exportPrivateKeyJwk(keyPair.privateKey),
-        catch: (cause) => new EnterpriseBadRequest({ message: "Could not export the APNs key" }),
+        catch: () => new EnterpriseBadRequest({ message: "Could not export the APNs key" }),
       });
 
       const encryptedPrivateKeyJwk = yield* Effect.tryPromise({
         try: () => sealSecret(secret, JSON.stringify(jwk)),
-        catch: (cause) => new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
+        catch: () => new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
       });
 
       const timestamp = now();
@@ -2416,6 +2855,89 @@ export const createEnterpriseService = ({
       ? { certificatePem: cloudAppleVendorCert, privateKeyPem: cloudAppleVendorKey }
       : undefined;
 
+  const appleProfileSigner = appleProfileSigning
+    ? createAppleProfileSigner(appleProfileSigning)
+    : undefined;
+
+  const appleProfileSigningFailed = (cause: unknown) =>
+    Effect.logError(
+      "Apple enrollment profile signing failed",
+      cause instanceof Error ? cause.message : String(cause),
+    ).pipe(
+      Effect.flatMap(() =>
+        Effect.fail(
+          new EnterpriseInternal({
+            message:
+              "The Apple enrollment profile could not be signed. Contact your administrator.",
+          }),
+        ),
+      ),
+    );
+
+  /**
+   * Sign an enrollment profile download.
+   *
+   * A dedicated deployment identity wins. Otherwise the deployment-global SCEP
+   * CA signs the download so devices get a CMS message as soon as the CA has
+   * bootstrapped (`scep_ca` id 1). Before that the plist is served unsigned and
+   * a warning is logged: the download handler never generates a CA.
+   */
+  const signAppleEnrollmentProfile = (plist: string) =>
+    Effect.gen(function* () {
+      if (appleProfileSigner) {
+        return yield* Effect.tryPromise({
+          try: () => appleProfileSigner.sign(plist),
+          catch: (cause) => cause,
+        }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+      }
+
+      const [caRow] = yield* db
+        .select()
+        .from(schema.scepCa)
+        .where(eq(schema.scepCa.id, 1))
+        .limit(1);
+
+      if (!caRow) {
+        yield* Effect.logWarning(
+          "Serving an unsigned Apple enrollment profile: no profile signing identity is configured and the SCEP CA has not been created yet.",
+        );
+
+        return new TextEncoder().encode(plist);
+      }
+
+      const storedCaKey = Schema.decodeUnknownOption(Schema.Json)(caRow.privateKeyJwk);
+
+      if (Option.isNone(storedCaKey)) {
+        return yield* appleProfileSigningFailed("The SCEP CA private key is not valid JSON");
+      }
+
+      // The SCEP CA is deployment-global: every tenant's profile downloads sign
+      // with the same CA, and no tenant-specific key is read here.
+      const opened = yield* Effect.tryPromise({
+        try: () => openCaPrivateKey(storedCaKey.value, authSecret),
+        catch: (cause) => cause,
+      }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+
+      if (opened.migrated) {
+        yield* db
+          .update(schema.scepCa)
+          .set({ privateKeyJwk: opened.migrated })
+          .where(eq(schema.scepCa.id, 1));
+      }
+
+      return yield* Effect.tryPromise({
+        try: async () => {
+          const privateKey = await importPrivateKeyJwk(opened.privateKeyJwk);
+
+          return await signAppleProfilePlist(plist, {
+            certificatePem: caRow.certPem,
+            privateKey,
+          });
+        },
+        catch: (cause) => cause,
+      }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+    });
+
   /**
    * Assignment payloads accept either a bare id (legacy callers, defaults to
    * include) or `{ id, mode }`. Unassign ignores the mode.
@@ -2424,14 +2946,14 @@ export const createEnterpriseService = ({
     values: ReadonlyArray<string | { id: string; mode?: "include" | "exclude" }> | undefined,
   ) =>
     (values ?? []).map((value) =>
-      typeof value === "string"
+      Schema.is(Schema.String)(value)
         ? { id: value, mode: "include" as const }
         : { id: value.id, mode: value.mode ?? "include" },
     );
 
   const dashboardWidgetRow = (row: typeof schema.dashboardWidget.$inferSelect) => ({
     id: row.id,
-    type: row.type as DashboardWidgetType,
+    type: Schema.decodeUnknownSync(DashboardWidgetType)(row.type),
     title: row.title,
     config: row.config,
     x: row.x,
@@ -2547,6 +3069,28 @@ export const createEnterpriseService = ({
       }));
     });
 
+  const builtInRoleDescription = (role: string) => {
+    switch (role) {
+      case "owner":
+        return "Full control including deleting the tenant.";
+      case "admin":
+        return "Runs the tenant but cannot delete it.";
+      default:
+        return "Read-only access to tenant data.";
+    }
+  };
+
+  const groupBucketOrder = (groupBy: string | undefined): ReadonlyArray<string> | undefined => {
+    switch (groupBy) {
+      case "health":
+        return ["Healthy", "Attention", "Critical", "Unknown"];
+      case "platform":
+        return ["Apple", "Windows", "Android", "Unknown"];
+      default:
+        return undefined;
+    }
+  };
+
   const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
     Effect.gen(function* () {
       const timestamp = now();
@@ -2570,11 +3114,7 @@ export const createEnterpriseService = ({
               snapshots.map((snapshot) =>
                 deviceBucket(snapshot.row, payload.groupBy!, snapshot.health, timestamp),
               ),
-              payload.groupBy === "health"
-                ? ["Healthy", "Attention", "Critical", "Unknown"]
-                : payload.groupBy === "platform"
-                  ? ["Apple", "Windows", "Android", "Unknown"]
-                  : undefined,
+              groupBucketOrder(payload.groupBy),
             )
           : [];
 
@@ -2672,64 +3212,116 @@ export const createEnterpriseService = ({
       };
     });
 
-  const service: Record<
-    string,
-    (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>
-  > = {
+  const mePayload = (user: {
+    readonly id: string;
+    readonly name: string;
+    readonly email: string;
+    readonly emailVerified: boolean;
+    readonly image?: string | null;
+    readonly totpEnabled?: boolean | null;
+    readonly passkeyEnabled?: boolean | null;
+  }) =>
+    Effect.gen(function* () {
+      // Do not disclose tenant membership to an unverified account. The
+      // verification screen only needs the user record.
+      const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
+
+      const memberships = yield* db.query.member.findMany({
+        where: { userId: user.id },
+      });
+
+      const mfaRequired = yield* Effect.gen(function* () {
+        for (const membership of memberships) {
+          if (!canWriteTenant(membership.role)) continue;
+
+          const sso = yield* db.query.ssoConfig.findFirst({
+            where: { organizationId: membership.organizationId },
+          });
+
+          if (sso?.requireMfa) return true;
+        }
+
+        return false;
+      });
+
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          image: user.image,
+          mfaEnabled: hasMfaFactor(user),
+          totpEnabled: user.totpEnabled === true,
+          passkeyEnabled: user.passkeyEnabled === true,
+          mfaRequired,
+        },
+        tenants,
+      };
+    });
+
+  const service = {
+    /**
+     * The account and tenant shell. Kept as one helper so bootstrap reuses the
+     * exact `me` payload (and its database work) instead of issuing a second
+     * query set behind a `getSession` call.
+     */
     me: (request) =>
       Effect.gen(function* () {
-        const resolved = yield* auth.requireUser({ headers: request.headers });
-        const { user } = resolved;
-        identifyUser(user);
-        // Do not disclose tenant membership to an unverified account. The
-        // verification screen only needs the user record.
-        const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
 
-        const memberships = yield* db.query.member.findMany({
-          where: { userId: user.id },
-        });
+        return yield* mePayload(user);
+      }),
+    bootstrap: (request) =>
+      Effect.gen(function* () {
+        const { user, session } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
 
-        const mfaRequired = yield* Effect.gen(function* () {
-          for (const membership of memberships) {
-            if (!canWriteTenant(membership.role)) continue;
+        const me = yield* mePayload(user);
 
-            const sso = yield* db.query.ssoConfig.findFirst({
-              where: { organizationId: membership.organizationId },
-            });
+        // A bearer-token caller has no browser session to snapshot. The web
+        // Worker only calls bootstrap with the session cookie, so this is a
+        // defensive answer rather than a supported sign-in path.
+        if (!session) return { session: null, me, ssrToken: null, ssrTokenExpiresAt: null };
 
-            if (sso?.requireMfa) return true;
-          }
+        const boundCookie = cookieValue(request.headers.cookie, sessionCookie);
 
-          return false;
-        });
-
-        const passwordCredential = yield* db
-          .select({ credentialId: schema.authPasswords.credentialId })
-          .from(schema.authPasswords)
-          .where(eq(schema.authPasswords.subjectId, user.id))
-          .limit(1);
+        const signed =
+          authSecret && boundCookie
+            ? yield* signSsrToken(authSecret, {
+                subjectId: user.id,
+                sessionId: session.sessionId,
+                sessionCookie: boundCookie,
+                name: user.name,
+                email: user.email,
+                emailVerified: user.emailVerified,
+                authRevision: user.authRevision,
+                user: me.user,
+                tenants: me.tenants,
+              }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined;
 
         return {
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            emailVerified: user.emailVerified,
-            image: user.image,
-            mfaEnabled: hasMfaFactor(user),
-            totpEnabled: user.totpEnabled === true,
-            passkeyEnabled: user.passkeyEnabled === true,
-            mfaRequired,
-            hasPassword: passwordCredential.length > 0,
+          session: {
+            sessionId: session.sessionId,
+            subjectId: session.subjectId,
+            claims: {
+              name: session.claims.name,
+              email: session.claims.email,
+              emailVerified: session.claims.emailVerified,
+            },
           },
-          tenants,
+          me,
+          ssrToken: signed?.token ?? null,
+          ssrTokenExpiresAt: signed?.expiresAt ?? null,
         };
       }),
     updateMe: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
-        const body = payload as { name?: string; image?: string | null };
+        yield* identifyUser(user);
+        const body: { name?: string; image?: string | null } = payload;
         yield* db
           .update(schema.user)
           .set({
@@ -2744,7 +3336,7 @@ export const createEnterpriseService = ({
     deleteMe: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
+        yield* identifyUser(user);
 
         // Remove solo tenants with the account; keep shared tenants for the
         // remaining administrators.
@@ -2764,7 +3356,7 @@ export const createEnterpriseService = ({
               .where(eq(schema.organization.id, membership.organizationId));
           } else {
             if (
-              hasOwnerRole(membership.role) &&
+              isBuiltInOwnerMember(membership) &&
               (yield* ownerCount(membership.organizationId)) <= 1
             )
               return yield* Effect.fail(
@@ -2776,25 +3368,28 @@ export const createEnterpriseService = ({
           }
         }
 
+        yield* db.delete(schema.deviceUser).where(eq(schema.deviceUser.userId, user.id));
         yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
         yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
 
         // Yielded Auth owns these tables; remove the subject's auth state.
-        // `authProofs` has no subject column (its binding is JSON), so those
-        // short-lived rows are left to expire naturally.
-        const authTables = [
-          (schema as any).authPending,
-          (schema as any).authSessions,
-          (schema as any).authPasswords,
-          (schema as any).authEmailCredentials,
-          (schema as any).authCredentials,
-          (schema as any).authIdentifiers,
-        ];
+        // In-flight passkey ceremonies carry no subject column and expire on
+        // their own.
+        const authTables = [authPending, authSessions, authCredentials, authIdentifiers];
 
         for (const table of authTables) {
-          if (table) yield* db.delete(table).where(eq((table as any).subjectId, user.id));
+          if (table) yield* db.delete(table).where(eq(table.subjectId, user.id));
         }
+
+        yield* db
+          .delete(schema.authPasskeyCredentials)
+          .where(eq(schema.authPasskeyCredentials.subjectId, user.id));
+        yield* db
+          .delete(schema.authTotpFactors)
+          .where(
+            sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
+          );
 
         yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
 
@@ -2803,20 +3398,16 @@ export const createEnterpriseService = ({
     listAccountSessions: (request) =>
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(resolved.user);
+        yield* identifyUser(resolved.user);
 
         return {
-          sessions: yield* listUserSessions(
-            db,
-            resolved.user.id,
-            resolved.session?.sessionId as string | undefined,
-          ),
+          sessions: yield* listUserSessions(db, resolved.user.id, resolved.session?.sessionId),
         };
       }),
     revokeAccountSession: (request, sessionId) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
+        yield* identifyUser(user);
         const revoked = yield* revokeUserSession(db, user.id, sessionId);
 
         if (!revoked)
@@ -2827,7 +3418,7 @@ export const createEnterpriseService = ({
     listTenants: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
+        yield* identifyUser(user);
 
         if (!user.emailVerified)
           return yield* Effect.fail(
@@ -2842,7 +3433,7 @@ export const createEnterpriseService = ({
     createTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
+        yield* identifyUser(user);
 
         if (!user.emailVerified)
           return yield* Effect.fail(
@@ -2851,15 +3442,15 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const body = payload as {
+        const body: {
           name: string;
           slug: string;
           logo?: string | null;
           displayName?: string | null;
           supportEmail?: string | null;
           brandColor?: string | null;
-          metadata?: Record<string, unknown>;
-        };
+          metadata?: Record<string, Schema.Json>;
+        } = payload;
 
         yield* assertTenantCreationAllowed(user.id);
 
@@ -2928,6 +3519,10 @@ export const createEnterpriseService = ({
           supportEmail: ctx.organization.supportEmail ?? null,
           brandColor: ctx.organization.brandColor ?? null,
           role: ctx.member.role,
+          roleId: ctx.role.roleId,
+          roleName: ctx.role.roleName,
+          roleKind: ctx.role.roleKind,
+          permissions: [...ctx.role.permissions],
           createdAt: iso(ctx.organization.createdAt),
         };
       }),
@@ -3002,8 +3597,8 @@ export const createEnterpriseService = ({
     importTenant: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
-        const bundle = payload as TenantImportRequest;
+        yield* identifyUser(user);
+        const bundle: TenantImportRequest = payload;
 
         // The payload has already been decoded, so this bounds what a caller
         // can make us hold in memory (and what could be written in one go).
@@ -3125,7 +3720,7 @@ export const createEnterpriseService = ({
         }
 
         const policyKeys = new Set<string>();
-        const policyConfigurations = new Map<string, Array<[string, unknown]>>();
+        const policyConfigurations = new Map<string, Array<[string, Schema.Json]>>();
 
         for (const policy of policies) {
           const key = importString(policy.key, 255);
@@ -3155,13 +3750,13 @@ export const createEnterpriseService = ({
             );
           const configurations = policy.configurations ?? {};
 
-          if (typeof configurations !== "object" || Array.isArray(configurations))
+          if (!Schema.is(Schema.JsonObject)(configurations))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Policy "${policyName}" has invalid configuration data`,
               }),
             );
-          const entries: Array<[string, unknown]> = [];
+          const entries: Array<[string, Schema.Json]> = [];
 
           for (const [kind, data] of Object.entries(configurations)) {
             if (data === null || data === undefined)
@@ -3170,7 +3765,18 @@ export const createEnterpriseService = ({
                   message: `Policy "${policyName}" has an empty "${kind}" configuration`,
                 }),
               );
-            yield* validateConfiguration(kind, data).pipe(
+
+            const configuration = Option.getOrUndefined(
+              Schema.decodeUnknownOption(Schema.Json)(data),
+            );
+
+            if (configuration === undefined)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: `Policy "${policyName}" has invalid configuration data`,
+                }),
+              );
+            yield* validateConfiguration(kind, configuration).pipe(
               Effect.mapError(
                 (message) =>
                   new EnterpriseBadRequest({
@@ -3178,7 +3784,7 @@ export const createEnterpriseService = ({
                   }),
               ),
             );
-            entries.push([kind, data]);
+            entries.push([kind, configuration]);
           }
 
           policyConfigurations.set(key, entries);
@@ -3340,7 +3946,7 @@ export const createEnterpriseService = ({
           if (
             enrollment.code !== null &&
             enrollment.code !== undefined &&
-            (typeof enrollment.code !== "string" || enrollment.code.length > 255)
+            enrollment.code.length > 255
           )
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -3395,16 +4001,12 @@ export const createEnterpriseService = ({
             yield* tx.insert(schema.enterpriseEnrollment).values({
               id: tenantId,
               organizationId: tenantId,
-              ...(enrollment
-                ? {
-                    code: enrollment.code?.trim() || null,
-                    enabledApple: enrollment.enabledApple,
-                    enabledWindows: enrollment.enabledWindows,
-                    enabledAndroid: enrollment.enabledAndroid,
-                    enabledAssetTag: enrollment.enabledAssetTag,
-                    maxDevices: enrollment.maxDevices,
-                  }
-                : {}),
+              code: enrollment?.code?.trim() || null,
+              enabledApple: enrollment?.enabledApple,
+              enabledWindows: enrollment?.enabledWindows,
+              enabledAndroid: enrollment?.enabledAndroid,
+              enabledAssetTag: enrollment?.enabledAssetTag,
+              maxDevices: enrollment?.maxDevices,
               createdAt: timestamp,
               updatedAt: timestamp,
             });
@@ -3579,15 +4181,15 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           name?: string;
           slug?: string;
           logo?: string | null;
           displayName?: string | null;
           supportEmail?: string | null;
           brandColor?: string | null;
-          metadata?: Record<string, unknown> | null;
-        };
+          metadata?: Record<string, Schema.Json> | null;
+        } = payload;
 
         if (body.slug) {
           const claimed = yield* db.query.organization.findFirst({
@@ -3613,8 +4215,8 @@ export const createEnterpriseService = ({
         yield* db
           .update(schema.organization)
           .set({
-            ...(name !== undefined && name !== null ? { name } : {}),
-            ...(body.slug !== undefined ? { slug: body.slug } : {}),
+            name: name !== undefined && name !== null ? name : undefined,
+            slug: body.slug !== undefined ? body.slug : undefined,
             ...branding,
             metadata:
               body.metadata === undefined
@@ -3681,7 +4283,7 @@ export const createEnterpriseService = ({
     patchEntraDirectorySync: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { enabled?: boolean; syncIntervalMinutes?: number };
+        const body: { enabled?: boolean; syncIntervalMinutes?: number } = payload;
 
         if (body.syncIntervalMinutes !== undefined) {
           if (
@@ -3764,6 +4366,8 @@ export const createEnterpriseService = ({
           graph: azureGraph,
           organizationId: ctx.organization.id,
           trigger: "manual",
+          onMembershipsChanged: (organizationId, userIds) =>
+            refreshDevicesForDirectoryUsers(organizationId, userIds),
         });
 
         if (outcome.status === "not_configured")
@@ -3947,7 +4551,10 @@ export const createEnterpriseService = ({
 
         const authServiceUrl = federatedEnabled
           ? (windowsFederated?.authServiceUrl?.(azureTenantId!) ??
-            federatedAuthServiceUrl(azureTenantId!, (azureClientId ? { clientId: azureClientId } : {})))
+            federatedAuthServiceUrl(
+              azureTenantId!,
+              azureClientId ? { clientId: azureClientId } : {},
+            ))
           : null;
 
         return {
@@ -3977,11 +4584,11 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           content?: string;
           format?: "csv" | "text";
           maxRows?: number;
-        };
+        } = payload;
 
         const content = body.content ?? "";
 
@@ -4083,9 +4690,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const validation = validateAutopilotProfileInput(
-          payload as Partial<Record<keyof AutopilotProfileValues, unknown>>,
-        );
+        const validation = validateAutopilotProfileInput(payload);
 
         if (!validation.ok)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: validation.message }));
@@ -4125,7 +4730,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Autopilot profile not found" }),
           );
-        const body = payload as Partial<Record<keyof AutopilotProfileValues, unknown>>;
+        const body: Partial<Record<keyof AutopilotProfileValues, Schema.Json>> = payload;
 
         const merged = {
           name: body.name ?? existing.name,
@@ -4171,7 +4776,7 @@ export const createEnterpriseService = ({
     assignAutopilotProfile: (request, tenantId, profileId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { groupId?: string };
+        const body: { groupId?: string } = payload;
 
         if (!body.groupId?.trim())
           return yield* Effect.fail(
@@ -4246,12 +4851,12 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "sso-policy");
 
-        const body = payload as {
+        const body: {
           enabled?: boolean;
           azureTenantId?: string | null;
           autoProvision?: boolean;
           requireMfa?: boolean;
-        };
+        } = payload;
 
         const existing = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
@@ -4333,10 +4938,10 @@ export const createEnterpriseService = ({
           yield* db
             .update(schema.ssoConfig)
             .set({
-              ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-              ...(body.azureTenantId !== undefined ? { azureTenantId: body.azureTenantId } : {}),
-              ...(body.autoProvision !== undefined ? { autoProvision: body.autoProvision } : {}),
-              ...(body.requireMfa !== undefined ? { requireMfa: body.requireMfa } : {}),
+              enabled: body.enabled !== undefined ? body.enabled : undefined,
+              azureTenantId: body.azureTenantId !== undefined ? body.azureTenantId : undefined,
+              autoProvision: body.autoProvision !== undefined ? body.autoProvision : undefined,
+              requireMfa: body.requireMfa !== undefined ? body.requireMfa : undefined,
               updatedAt: timestamp,
             })
             .where(eq(schema.ssoConfig.organizationId, ctx.organization.id));
@@ -4374,7 +4979,12 @@ export const createEnterpriseService = ({
         const rows = yield* db
           .select()
           .from(schema.scimToken)
-          .where(eq(schema.scimToken.organizationId, ctx.organization.id));
+          .where(
+            and(
+              eq(schema.scimToken.organizationId, ctx.organization.id),
+              isNull(schema.scimToken.revokedAt),
+            ),
+          );
 
         return {
           tokens: rows.map((row: any) => ({
@@ -4388,14 +4998,14 @@ export const createEnterpriseService = ({
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name: string };
+        const body: { name: string } = payload;
 
         const raw = `scim_${bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
           .replaceAll("+", "-")
           .replaceAll("/", "_")
           .replace(/=+$/, "")}`;
 
-        const tokenHash = yield* sha256Hex(new TextEncoder().encode(raw).buffer as ArrayBuffer);
+        const tokenHash = yield* sha256Hex(bytesToArrayBuffer(new TextEncoder().encode(raw)));
         const scimId = id();
         const timestamp = now();
         yield* db.insert(schema.scimToken).values({
@@ -4439,11 +5049,11 @@ export const createEnterpriseService = ({
         // owner/admin-only rather than available to read-only members.
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const rows = (yield* db
+        const rows = yield* db
           .select()
           .from(schema.webhookEndpoint)
           .where(eq(schema.webhookEndpoint.organizationId, ctx.organization.id))
-          .orderBy(asc(schema.webhookEndpoint.createdAt))) as WebhookEndpointRow[];
+          .orderBy(asc(schema.webhookEndpoint.createdAt));
 
         return { endpoints: rows.map(toWebhookEndpointInfo) };
       }),
@@ -4451,12 +5061,12 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           url: string;
           description?: string | null;
           events: ReadonlyArray<string>;
           enabled?: boolean;
-        };
+        } = payload;
 
         const validated = yield* Effect.try({
           try: () => ({
@@ -4488,12 +5098,12 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           url?: string;
           description?: string | null;
           events?: ReadonlyArray<string>;
           enabled?: boolean;
-        };
+        } = payload;
 
         const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
 
@@ -4509,7 +5119,9 @@ export const createEnterpriseService = ({
               : new EnterpriseBadRequest({ message: "Invalid webhook endpoint" }),
         });
 
-        const update: Record<string, unknown> = { updatedAt: now() };
+        const update: Partial<typeof schema.webhookEndpoint.$inferInsert> = {
+          updatedAt: now(),
+        };
 
         if (validated.url !== undefined) update.url = validated.url;
 
@@ -4594,7 +5206,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const existing = yield* loadWebhookEndpoint(ctx.organization.id, webhookId);
-        const outcome = yield* sendTestWebhook(db as never, existing, webhookOptions);
+        const outcome = yield* sendTestWebhook(db, existing, webhookOptions);
         yield* audit(ctx, "webhook.tested", "webhook_endpoint", existing.id, {
           status: outcome.status,
           responseStatus: outcome.responseStatus,
@@ -4698,12 +5310,7 @@ export const createEnterpriseService = ({
         const builtIns = BUILT_IN_TENANT_ROLES.map((key) => ({
           id: `builtin:${key}`,
           name: BUILT_IN_ROLE_LABELS[key],
-          description:
-            key === "owner"
-              ? "Full control including deleting the tenant."
-              : key === "admin"
-                ? "Runs the tenant but cannot delete it."
-                : "Read-only access to tenant data.",
+          description: builtInRoleDescription(key),
           permissions: [...BUILT_IN_ROLE_PERMISSIONS[key]],
           memberCount: members.filter(
             (member) => !member.customRoleId && member.role.split(",").includes(key),
@@ -4735,11 +5342,11 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const body = payload as {
+        const body: {
           name?: string;
           description?: string | null;
           permissions?: ReadonlyArray<string>;
-        };
+        } = payload;
 
         const name = body.name?.trim();
 
@@ -4756,6 +5363,9 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose at least one permission" }),
           );
+
+        // A role can never be created above the creating member's own ceiling.
+        yield* assertPermissionsWithinActor(ctx, permissions);
 
         const existing = yield* db.query.tenantRole.findFirst({
           where: { organizationId: tenantId, name },
@@ -4780,6 +5390,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "role.created", "role", roleId, {
           name,
           permissions,
+          permissionCeiling: "actor",
         });
 
         return { id: roleId };
@@ -4794,11 +5405,11 @@ export const createEnterpriseService = ({
 
         if (!role) return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
 
-        const body = payload as {
+        const body: {
           name?: string;
           description?: string | null;
           permissions?: ReadonlyArray<string>;
-        };
+        } = payload;
 
         const name = body.name?.trim();
 
@@ -4828,22 +5439,31 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose at least one permission" }),
           );
+
+        // Editing a role is another delegation point: the new permission set
+        // cannot exceed the editing member's own resolved permissions.
+        if (permissions) yield* assertPermissionsWithinActor(ctx, permissions);
+
         yield* db
           .update(schema.tenantRole)
           .set({
-            ...(name !== undefined ? { name: name.slice(0, 80) } : {}),
-            ...(body.description !== undefined
-              ? { description: body.description?.trim().slice(0, 500) || null }
-              : {}),
-            ...(permissions !== undefined ? { permissions } : {}),
+            name: name !== undefined ? name.slice(0, 80) : undefined,
+            description:
+              body.description !== undefined
+                ? body.description?.trim().slice(0, 500) || null
+                : undefined,
+            permissions: permissions !== undefined ? permissions : undefined,
             updatedAt: now(),
           })
           .where(eq(schema.tenantRole.id, role.id));
-        yield* audit(ctx, "role.updated", "role", role.id, {
-          fields: Object.keys(body),
-          ...(name !== undefined ? { name } : {}),
-          ...(permissions !== undefined ? { permissions } : {}),
-        });
+        const roleAudit = { fields: Object.keys(body) };
+
+        if (name !== undefined) Object.assign(roleAudit, { name });
+
+        if (permissions !== undefined)
+          Object.assign(roleAudit, { permissions, permissionCeiling: "actor" });
+
+        yield* audit(ctx, "role.updated", "role", role.id, roleAudit);
 
         return ok;
       }),
@@ -4873,6 +5493,25 @@ export const createEnterpriseService = ({
               message: "Reassign the members using this role before deleting it",
             }),
           );
+
+        const [invited] = yield* db
+          .select({ value: count() })
+          .from(schema.invitation)
+          .where(
+            and(
+              eq(schema.invitation.organizationId, tenantId),
+              eq(schema.invitation.customRoleId, role.id),
+              eq(schema.invitation.status, "pending"),
+            ),
+          );
+
+        if (Number(invited?.value ?? 0) > 0)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "Cancel pending invitations using this role before deleting it",
+            }),
+          );
+
         yield* db.delete(schema.tenantRole).where(eq(schema.tenantRole.id, role.id));
         yield* audit(ctx, "role.deleted", "role", role.id, { name: role.name });
 
@@ -4935,171 +5574,408 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const { user } = ctx;
 
-        const body = payload as {
+        const body: {
           email: string;
           role?: string;
           roleId?: string | null;
-          resend?: boolean;
-        };
+        } = payload;
 
-        const role = body.role ?? "member";
+        const email = normalizeInvitationEmail(body.email);
 
-        const customRole = body.roleId
+        if (!validInvitationEmail(email))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Enter a valid email address" }),
+          );
+
+        const roleId = body.roleId ?? null;
+
+        const customRole = roleId
           ? yield* db.query.tenantRole.findFirst({
-              where: { id: body.roleId, organizationId: tenantId },
+              where: { id: roleId, organizationId: tenantId },
             })
           : undefined;
 
-        if (body.roleId && !customRole)
+        if (roleId && !customRole)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
 
-        if (!customRole && !validRoles(role))
+        const requestedRole = body.role?.trim();
+
+        if (customRole && requestedRole && requestedRole !== "member")
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
+            new EnterpriseBadRequest({
+              message: "When a custom role is selected, the built-in fallback must be member",
+            }),
           );
 
-        if (!customRole && hasOwnerRole(role) && !hasOwnerRole(ctx.member.role))
+        // With a custom role the legacy built-in column is only a fallback and
+        // is always `member`. The custom role's permissions stay authoritative.
+        const role = customRole ? "member" : (requestedRole ?? "member");
+
+        if (!validRoles(role))
           return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Only an owner can invite another owner" }),
+            new EnterpriseBadRequest({
+              message: customRole ? "Choose a valid fallback role" : "Choose a valid tenant role",
+            }),
           );
-        const invitationId = id();
-        const timestamp = now();
 
-        const rawToken = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
-          .replaceAll("+", "-")
-          .replaceAll("/", "_")
-          .replace(/=+$/, "");
+        // Owner authority is never delegable unless the actor is a built-in
+        // owner themselves.
+        if (hasOwnerRole(role) && !isBuiltInOwnerMember(ctx.member))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only an owner can assign the owner role" }),
+          );
 
-        const tokenHash = yield* sha256Hex(
-          new TextEncoder().encode(rawToken).buffer as ArrayBuffer,
-        );
-
-        yield* db.insert(schema.invitation).values({
-          id: invitationId,
-          organizationId: tenantId,
-          inviterId: user.id,
-          email: body.email,
-          role: customRole ? role : role,
-          customRoleId: customRole?.id ?? null,
-          status: "pending",
-          tokenHash,
-          expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        const inviteUrl = `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`;
-        const branding = resolveTenantBranding(ctx.organization);
-        const organization = branding.displayName;
-
-        const roleLabel =
-          customRole?.name ??
-          BUILT_IN_ROLE_LABELS[role as keyof typeof BUILT_IN_ROLE_LABELS] ??
-          role;
-
-        if (email) {
-          yield* Effect.tryPromise({
-            try: () =>
-              email.send({
-                to: body.email,
-                from: { name: branding.displayName, email: "hello@mattrax.cloud" },
-                subject: `You have been invited to ${organization}`,
-                text: `You have been invited to join ${organization} as ${roleLabel}.\n\nAccept the invitation by opening this link:\n\n${inviteUrl}\n\nThis link expires in 7 days.\n\nNeed help? Contact ${branding.supportEmail}.`,
-                html: `<p>You have been invited to join <strong>${escapeHtml(organization)}</strong> as ${escapeHtml(roleLabel)}.</p><p><a href="${inviteUrl}">Accept the invitation</a></p><p>This link expires in 7 days.</p><p>Need help? Contact <a href="mailto:${escapeHtml(branding.supportEmail)}">${escapeHtml(branding.supportEmail)}</a>.</p>`,
-              }),
-            catch: () =>
-              new EnterpriseBadRequest({ message: "Could not send the invitation email" }),
-          }).pipe(
-            Effect.catch((failure) =>
-              Effect.logWarning(`Invitation email failed: ${failure.message}; link: ${inviteUrl}`),
+        // Inviting someone to a custom role delegates that role's permissions.
+        // The inviter cannot hand out more than they hold themselves.
+        if (customRole)
+          yield* assertPermissionsWithinActor(
+            ctx,
+            normalizePermissions(
+              Array.isArray(customRole.permissions) ? customRole.permissions : [],
             ),
           );
-        } else {
-          console.log("INVITATION", body.email, inviteUrl);
-        }
+        else yield* assertBuiltInRoleAssignable(ctx, role);
 
-        yield* audit(ctx, "member.invited", "invitation", invitationId, {
-          email: body.email,
-          role,
-          ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
+        // A tenant email address can only have one membership. Compare
+        // case-insensitively because older rows were not normalised at write.
+        const tenantMembers = yield* db
+          .select({ email: schema.user.email })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, tenantId));
+
+        if (
+          tenantMembers.some(
+            (member: { email: string }) => member.email.trim().toLowerCase() === email,
+          )
+        )
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "That person is already a member of this tenant" }),
+          );
+
+        const pending = yield* db
+          .select({ id: schema.invitation.id, email: schema.invitation.email })
+          .from(schema.invitation)
+          .where(
+            and(
+              eq(schema.invitation.organizationId, tenantId),
+              eq(schema.invitation.status, "pending"),
+            ),
+          );
+
+        const sameEmailPending = pending.filter(
+          (item: { email: string }) => item.email.trim().toLowerCase() === email,
+        );
+
+        if (pending.length >= MAX_PENDING_INVITATIONS_PER_TENANT && sameEmailPending.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: `This tenant already has ${MAX_PENDING_INVITATIONS_PER_TENANT} pending invitations. Cancel one before sending another.`,
+            }),
+          );
+
+        const invitationId = id();
+        const timestamp = now();
+        const expiresAt = new Date(timestamp.getTime() + INVITATION_TTL_MS);
+        const rawToken = newInvitationToken();
+        const tokenHash = yield* invitationTokenHash(rawToken);
+        const inviteUrl = invitationUrl(origin, rawToken);
+        const roleLabel = customRole?.name ?? BUILT_IN_ROLE_LABEL_BY_ROLE.get(role) ?? role;
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            // Re-inviting the same address invalidates every live link for it.
+            for (const previous of sameEmailPending)
+              yield* tx
+                .update(schema.invitation)
+                .set({ status: "superseded", tokenHash: null, updatedAt: timestamp })
+                .where(eq(schema.invitation.id, previous.id));
+
+            yield* tx.insert(schema.invitation).values({
+              id: invitationId,
+              organizationId: tenantId,
+              inviterId: user.id,
+              email,
+              role,
+              customRoleId: customRole?.id ?? null,
+              status: "pending",
+              tokenHash,
+              expiresAt,
+              lastSentAt: timestamp,
+              sendCount: 1,
+              acceptedAt: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+          }),
+        );
+
+        const emailSent = yield* sendInvitationEmail(ctx.organization, user.name, {
+          email,
+          roleName: roleLabel,
+          inviteUrl,
+          expiresAt,
         });
 
-        return { id: invitationId, inviteUrl };
+        const invitationAudit: InvitationAuditMetadata = { email, role, emailSent };
+
+        if (customRole)
+          Object.assign(invitationAudit, {
+            roleId: customRole.id,
+            roleName: customRole.name,
+            permissionCeiling: "actor",
+          });
+
+        yield* audit(ctx, "member.invited", "invitation", invitationId, invitationAudit);
+
+        return { id: invitationId, inviteUrl, expiresAt: iso(expiresAt), emailSent };
       }),
     acceptInvitation: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        identifyUser(user);
-        const body = payload as { token: string };
+        yield* identifyUser(user);
+        const body: { token: string } = payload;
 
-        const tokenHash = yield* sha256Hex(
-          new TextEncoder().encode(body.token).buffer as ArrayBuffer,
-        );
+        // Accepting grants tenant access, so the address must be proven first.
+        // The token is deliberately not consumed by an unverified account.
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before accepting this invitation.",
+            }),
+          );
+
+        const tokenHash = yield* invitationTokenHash(body.token);
 
         const invitation = yield* db.query.invitation.findFirst({
           where: { tokenHash },
         });
 
-        if (!invitation || invitation.status !== "pending")
+        if (!invitation)
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Invitation not found or already used" }),
           );
 
-        if (invitation.expiresAt <= now())
+        if (invitation.status === "accepted") {
+          const member = yield* db.query.member.findFirst({
+            where: { userId: user.id, organizationId: invitation.organizationId },
+          });
+
+          if (member) return { tenantId: invitation.organizationId, alreadyMember: true };
+
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This invitation was already accepted but the membership no longer exists",
+            }),
+          );
+        }
+
+        if (invitation.status === "canceled" || invitation.status === "superseded")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                invitation.status === "canceled"
+                  ? "This invitation was canceled"
+                  : "This invitation was replaced by a newer invitation",
+            }),
+          );
+
+        if (invitation.status === "expired")
           return yield* Effect.fail(
             diagnoseError(new EnterpriseBadRequest({ message: "Invitation expired" }), {
               code: "invitation_expired",
             }),
           );
 
-        if (invitation.email.toLowerCase() !== user.email.toLowerCase())
+        if (invitation.status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "This invitation can no longer be accepted" }),
+          );
+
+        if (invitation.expiresAt <= now()) {
+          yield* db
+            .update(schema.invitation)
+            .set({ status: "expired", updatedAt: now() })
+            .where(
+              and(eq(schema.invitation.id, invitation.id), eq(schema.invitation.status, "pending")),
+            );
+
+          return yield* Effect.fail(
+            diagnoseError(new EnterpriseBadRequest({ message: "Invitation expired" }), {
+              code: "invitation_expired",
+            }),
+          );
+        }
+
+        if (invitation.email.trim().toLowerCase() !== user.email.trim().toLowerCase())
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Sign in with the email address this invitation was sent to",
             }),
           );
 
+        // Re-validate the delegated role at accept time. A deleted custom role
+        // falls back to the least-privileged built-in role instead of failing
+        // the invitation or granting stale permissions.
+        const customRole = invitation.customRoleId
+          ? yield* db.query.tenantRole.findFirst({
+              where: { id: invitation.customRoleId, organizationId: invitation.organizationId },
+            })
+          : undefined;
+
+        const roleFallback = Boolean(invitation.customRoleId) && !customRole;
+
+        // A custom role's built-in fallback is never authoritative. Store
+        // `member` so deleting the role later cannot promote the member.
+        const role = invitation.customRoleId
+          ? "member"
+          : invitation.role && validRoles(invitation.role)
+            ? invitation.role
+            : "member";
+
+        const assignedCustomRoleId = roleFallback ? null : (customRole?.id ?? null);
+
         const existing = yield* db.query.member.findFirst({
           where: { userId: user.id, organizationId: invitation.organizationId },
         });
 
-        if (!existing) {
-          yield* db.insert(schema.member).values({
-            id: id(),
-            organizationId: invitation.organizationId,
-            userId: user.id,
-            role: invitation.role ?? "member",
-            customRoleId: invitation.customRoleId ?? null,
-            createdAt: now(),
-            updatedAt: now(),
-          });
-        }
+        const siblings = yield* db
+          .select({ id: schema.invitation.id })
+          .from(schema.invitation)
+          .where(
+            and(
+              eq(schema.invitation.organizationId, invitation.organizationId),
+              eq(schema.invitation.email, invitation.email),
+              eq(schema.invitation.status, "pending"),
+            ),
+          );
 
-        yield* db
-          .update(schema.invitation)
-          .set({ status: "accepted", updatedAt: now() })
-          .where(eq(schema.invitation.id, invitation.id));
+        const siblingIds = siblings
+          .map((item: { id: string }) => item.id)
+          .filter((id: string) => id !== invitation.id);
+
+        const acceptedAt = now();
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            // Conditional update keeps a concurrent accept from reviving a row
+            // that another request already moved out of `pending`.
+            yield* tx
+              .update(schema.invitation)
+              .set({ status: "accepted", acceptedAt, updatedAt: acceptedAt })
+              .where(
+                and(
+                  eq(schema.invitation.id, invitation.id),
+                  eq(schema.invitation.status, "pending"),
+                ),
+              );
+
+            if (!existing)
+              yield* tx.insert(schema.member).ignore().values({
+                id: id(),
+                organizationId: invitation.organizationId,
+                userId: user.id,
+                role,
+                customRoleId: assignedCustomRoleId,
+                createdAt: acceptedAt,
+                updatedAt: acceptedAt,
+              });
+
+            for (const siblingId of siblingIds)
+              yield* tx
+                .update(schema.invitation)
+                .set({ status: "superseded", tokenHash: null, updatedAt: acceptedAt })
+                .where(eq(schema.invitation.id, siblingId));
+          }),
+        );
+
+        const joinedAudit: MemberJoinedAuditMetadata = {
+          invitationId: invitation.id,
+          role,
+          roleId: assignedCustomRoleId,
+        };
+
+        if (roleFallback) Object.assign(joinedAudit, { roleFallback: "member" });
+
         yield* audit(
           { user, organization: { id: invitation.organizationId } },
           "member.joined",
           "user",
           user.id,
-          {
-            invitationId: invitation.id,
-            role: invitation.role ?? "member",
-            ...(invitation.customRoleId ? { roleId: invitation.customRoleId } : {}),
-          },
+          joinedAudit,
         );
 
-        return { tenantId: invitation.organizationId };
+        return { tenantId: invitation.organizationId, alreadyMember: Boolean(existing) };
       }),
-    listTenantInvitations: (request, tenantId) =>
+    previewInvitation: (_request, query) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId, "write");
+        const invitation = yield* db.query.invitation.findFirst({
+          where: { tokenHash: yield* invitationTokenHash(query.token) },
+        });
+
+        if (!invitation) return { state: "unknown" as const };
+
+        const state: "valid" | "expired" | "accepted" | "canceled" | "superseded" = Match.value(
+          invitation.status,
+        ).pipe(
+          Match.when("pending", () =>
+            invitation.expiresAt <= now() ? ("expired" as const) : ("valid" as const),
+          ),
+          Match.when("accepted", () => "accepted" as const),
+          Match.when("canceled", () => "canceled" as const),
+          Match.when("expired", () => "expired" as const),
+          Match.orElse(() => "superseded" as const),
+        );
+
+        // A canceled or superseded token reveals nothing beyond its state.
+        if (state === "canceled" || state === "superseded") return { state };
+
+        const organization = yield* db.query.organization.findFirst({
+          where: { id: invitation.organizationId },
+        });
+
+        if (!organization) return { state: "unknown" as const };
+
+        const customRoles = yield* db
+          .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
+          .from(schema.tenantRole)
+          .where(eq(schema.tenantRole.organizationId, invitation.organizationId));
+
+        const custom = new Map(customRoles.map((role) => [role.id, role.name]));
+
+        return {
+          state,
+          tenant: {
+            name: organization.name,
+            displayName: organization.displayName ?? null,
+            logo: organization.logo ?? null,
+            brandColor: organization.brandColor ?? null,
+          },
+          roleName: invitationRoleName(invitation, custom),
+          invitedEmailMasked: maskInvitationEmail(invitation.email),
+          expiresAt: iso(invitation.expiresAt),
+        };
+      }),
+    listTenantInvitations: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        yield* requireTenant(request, tenantId, "read");
+
+        const status = query?.status;
+        const limit = Math.min(Math.max(Math.floor(query?.limit ?? 100), 1), 200);
 
         const invitations = yield* db
           .select()
           .from(schema.invitation)
-          .where(eq(schema.invitation.organizationId, tenantId));
+          .where(
+            status
+              ? and(
+                  eq(schema.invitation.organizationId, tenantId),
+                  eq(schema.invitation.status, status),
+                )
+              : eq(schema.invitation.organizationId, tenantId),
+          )
+          .orderBy(desc(schema.invitation.createdAt))
+          .limit(limit);
 
         const customRoles = yield* db
           .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
@@ -5108,37 +5984,123 @@ export const createEnterpriseService = ({
 
         const custom = new Map(customRoles.map((role) => [role.id, role.name]));
 
+        const inviterIds = [...new Set(invitations.map((item: any) => item.inviterId))];
+
+        const inviters = inviterIds.length
+          ? yield* db
+              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+              .from(schema.user)
+              .where(inArray(schema.user.id, inviterIds))
+          : [];
+
+        const inviterById = new Map(inviters.map((inviter) => [inviter.id, inviter]));
+
         return {
-          invitations: invitations.map(
-            (item: {
-              id: string;
-              email: string;
-              role: string | null;
-              customRoleId?: string | null;
-              status: string;
-              expiresAt: Date;
-              createdAt: Date;
-            }) => ({
+          invitations: invitations.map((item: any) => {
+            const inviter = inviterById.get(item.inviterId);
+
+            return {
               id: item.id,
               email: item.email,
-              role: item.role,
+              role: item.role ?? null,
               roleId: item.customRoleId ?? null,
-              roleName: item.customRoleId
-                ? (custom.get(item.customRoleId) ?? "Custom role")
-                : item.role
-                  ? (BUILT_IN_ROLE_LABELS[item.role as keyof typeof BUILT_IN_ROLE_LABELS] ??
-                    item.role)
-                  : null,
+              customRoleId: item.customRoleId ?? null,
+              roleName: invitationRoleName(item, custom),
               status: item.status,
-              expiresAt: iso(item.expiresAt),
+              isExpired: invitationIsExpired(item),
+              invitedBy: inviter
+                ? { id: inviter.id, name: inviter.name, email: inviter.email }
+                : undefined,
               createdAt: iso(item.createdAt),
-            }),
-          ),
+              expiresAt: iso(item.expiresAt),
+              lastSentAt: iso(item.lastSentAt ?? item.createdAt),
+              sendCount: item.sendCount ?? 1,
+              acceptedAt: item.acceptedAt ? iso(item.acceptedAt) : null,
+            };
+          }),
+        };
+      }),
+    getTenantInvitationOptions: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+        const actorIsOwner = isBuiltInOwnerMember(ctx.member);
+
+        const builtIn = BUILT_IN_TENANT_ROLES.map((role) => {
+          const required = actorIsOwner
+            ? BUILT_IN_ROLE_PERMISSIONS[role]
+            : BUILT_IN_ROLE_PERMISSIONS[role].filter(
+                (permission) => !OWNER_ONLY_PERMISSIONS.has(permission),
+              );
+
+          const missing = role === "owner" && !actorIsOwner ? ["owner authority"] : [];
+
+          const unheld = required.filter(
+            (permission) => !hasPermission(ctx.role.permissions, permission),
+          );
+
+          return {
+            role,
+            roleId: null,
+            label: BUILT_IN_ROLE_LABELS[role],
+            assignable: missing.length === 0 && unheld.length === 0,
+            blockedReason:
+              missing.length > 0
+                ? "Only an owner can assign the owner role"
+                : unheld.length > 0
+                  ? `Your role does not include: ${unheld.join(", ")}`
+                  : null,
+          };
+        });
+
+        const customRoles = yield* db
+          .select({
+            id: schema.tenantRole.id,
+            name: schema.tenantRole.name,
+            permissions: schema.tenantRole.permissions,
+          })
+          .from(schema.tenantRole)
+          .where(eq(schema.tenantRole.organizationId, tenantId));
+
+        const custom = customRoles.map((role: any) => {
+          const permissions = normalizePermissions(
+            Array.isArray(role.permissions) ? role.permissions : [],
+          );
+
+          const unheld = permissions.filter(
+            (permission) => !hasPermission(ctx.role.permissions, permission),
+          );
+
+          const ownerOnly = permissions.filter((permission) =>
+            OWNER_ONLY_PERMISSIONS.has(permission),
+          );
+
+          const blockedReason =
+            unheld.length > 0
+              ? "You cannot grant permissions your own role does not hold"
+              : ownerOnly.length > 0 && !actorIsOwner
+                ? "Only an owner can grant owner-only permissions"
+                : null;
+
+          return {
+            roleId: role.id,
+            label: role.name,
+            assignable: blockedReason === null,
+            blockedReason,
+          };
+        });
+
+        return {
+          roles: [
+            ...builtIn,
+            ...custom.sort((left: { label: string }, right: { label: string }) =>
+              left.label.localeCompare(right.label),
+            ),
+          ],
         };
       }),
     cancelTenantInvitation: (request, tenantId, invitationId) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId, "write");
+        const ctx = yield* requireTenant(request, tenantId, "write");
 
         const invitation = yield* db.query.invitation.findFirst({
           where: { id: invitationId, organizationId: tenantId },
@@ -5146,12 +6108,101 @@ export const createEnterpriseService = ({
 
         if (!invitation)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Invitation not found" }));
+
+        if (invitation.status !== "pending" && invitation.status !== "expired")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "Only pending or expired invitations can be canceled",
+            }),
+          );
+
         yield* db
           .update(schema.invitation)
-          .set({ status: "canceled", updatedAt: now() })
+          .set({ status: "canceled", tokenHash: null, updatedAt: now() })
           .where(eq(schema.invitation.id, invitationId));
 
+        yield* audit(ctx, "member.invitation_canceled", "invitation", invitation.id, {
+          email: invitation.email,
+          role: invitation.role,
+          roleId: invitation.customRoleId ?? null,
+        });
+
         return ok;
+      }),
+    resendTenantInvitation: (request, tenantId, invitationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const invitation = yield* db.query.invitation.findFirst({
+          where: { id: invitationId, organizationId: tenantId },
+        });
+
+        if (!invitation)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Invitation not found" }));
+
+        if (
+          invitation.status !== "pending" &&
+          invitation.status !== "expired" &&
+          invitation.status !== "superseded"
+        )
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "Only pending, expired or superseded invitations can be resent",
+            }),
+          );
+
+        const customRole = invitation.customRoleId
+          ? yield* db.query.tenantRole.findFirst({
+              where: { id: invitation.customRoleId, organizationId: tenantId },
+            })
+          : undefined;
+
+        const rawToken = newInvitationToken();
+        const tokenHash = yield* invitationTokenHash(rawToken);
+        const timestamp = now();
+        const expiresAt = new Date(timestamp.getTime() + INVITATION_TTL_MS);
+        const sendCount = (invitation.sendCount ?? 1) + 1;
+        const inviteUrl = invitationUrl(origin, rawToken);
+
+        const roleLabel = invitationRoleName(
+          invitation,
+          new Map(customRole ? [[customRole.id, customRole.name]] : []),
+        );
+
+        yield* db
+          .update(schema.invitation)
+          .set({
+            status: "pending",
+            tokenHash,
+            expiresAt,
+            lastSentAt: timestamp,
+            sendCount,
+            acceptedAt: null,
+            updatedAt: timestamp,
+          })
+          .where(eq(schema.invitation.id, invitation.id));
+
+        const emailSent = yield* sendInvitationEmail(ctx.organization, ctx.user.name, {
+          email: invitation.email,
+          roleName: roleLabel,
+          inviteUrl,
+          expiresAt,
+        });
+
+        yield* audit(ctx, "member.invitation_resent", "invitation", invitation.id, {
+          email: invitation.email,
+          role: invitation.role,
+          roleId: invitation.customRoleId ?? null,
+          sendCount,
+          emailSent,
+        });
+
+        return {
+          id: invitation.id,
+          inviteUrl,
+          expiresAt: iso(expiresAt),
+          emailSent,
+        };
       }),
     patchTenantUser: (request, tenantId, memberId, payload) =>
       Effect.gen(function* () {
@@ -5163,43 +6214,65 @@ export const createEnterpriseService = ({
 
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
-        const body = payload as { role?: string; roleId?: string | null };
+        const body: { role?: string; roleId?: string | null } = payload;
+        const selectingCustomRole = body.roleId !== undefined && body.roleId !== null;
 
-        const customRole =
-          body.roleId === undefined || body.roleId === null
-            ? undefined
-            : yield* db.query.tenantRole.findFirst({
-                where: { id: body.roleId, organizationId: tenantId },
-              });
+        // A custom role's built-in fallback is always `member`; otherwise a
+        // later role deletion (ON DELETE SET NULL) would promote the member to
+        // a privileged built-in role.
+        if (selectingCustomRole && body.role !== undefined && body.role !== "member")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "When a custom role is selected, the built-in fallback must be member",
+            }),
+          );
+
+        const customRole = selectingCustomRole
+          ? yield* db.query.tenantRole.findFirst({
+              where: { id: body.roleId!, organizationId: tenantId },
+            })
+          : undefined;
 
         if (body.roleId && !customRole)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
+        // Assigning a custom role is the same delegation boundary as inviting:
+        // the assigned permissions cannot exceed the actor's own permissions.
+        if (customRole)
+          yield* assertPermissionsWithinActor(
+            ctx,
+            normalizePermissions(
+              Array.isArray(customRole.permissions) ? customRole.permissions : [],
+            ),
+          );
 
         if (body.role === undefined && body.roleId === undefined)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a role for this member" }),
           );
-        const role = body.role ?? member.role;
 
-        if (!customRole && !validRoles(role))
+        // The built-in fallback role is validated on every write. Assigning a
+        // custom role forces `member`; clearing one keeps the current built-in.
+        const role = selectingCustomRole ? "member" : (body.role ?? member.role);
+
+        if (!validRoles(role))
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Choose a valid tenant role" }),
+            new EnterpriseBadRequest({
+              message: customRole ? "Choose a valid fallback role" : "Choose a valid tenant role",
+            }),
           );
 
-        if (customRole && body.role !== undefined && !validRoles(role))
+        if (!customRole) yield* assertBuiltInRoleAssignable(ctx, role);
+
+        const targetIsOwner = isBuiltInOwnerMember(member);
+        const assignsOwner = !customRole && hasOwnerRole(role);
+
+        if ((targetIsOwner || assignsOwner) && !isBuiltInOwnerMember(ctx.member))
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Choose a valid fallback role" }),
+            new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
           );
 
-        if ((!customRole && hasOwnerRole(role)) || hasOwnerRole(member.role)) {
-          if (!hasOwnerRole(ctx.member.role))
-            return yield* Effect.fail(
-              new EnterpriseForbidden({ message: "Only an owner can change owner roles" }),
-            );
-        }
-
-        const removingOwner =
-          hasOwnerRole(member.role) && (Boolean(customRole) || !hasOwnerRole(role));
+        const removingOwner = targetIsOwner && !assignsOwner;
 
         if (removingOwner && (yield* ownerCount(tenantId)) <= 1)
           return yield* Effect.fail(
@@ -5213,11 +6286,16 @@ export const createEnterpriseService = ({
             updatedAt: now(),
           })
           .where(eq(schema.member.id, memberId));
-        yield* audit(ctx, "member.role_changed", "user", member.userId, {
-          memberId,
-          role,
-          ...(customRole ? { roleId: customRole.id, roleName: customRole.name } : {}),
-        });
+        const roleAudit = { memberId, role };
+
+        if (customRole)
+          Object.assign(roleAudit, {
+            roleId: customRole.id,
+            roleName: customRole.name,
+            permissionCeiling: "actor",
+          });
+
+        yield* audit(ctx, "member.role_changed", "user", member.userId, roleAudit);
 
         return ok;
       }),
@@ -5243,12 +6321,66 @@ export const createEnterpriseService = ({
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
 
-        if (member.role.split(",").includes("owner") && (yield* ownerCount(tenantId)) <= 1)
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
+        if (isBuiltInOwnerMember(member)) {
+          // Removing an owner is an owner-level action even when other owners
+          // remain; an administrator can never remove their superior.
+          if (!isBuiltInOwnerMember(ctx.member))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({ message: "Only an owner can remove an owner" }),
+            );
+
+          if ((yield* ownerCount(tenantId)) <= 1)
+            return yield* Effect.fail(
+              new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
+            );
+        }
+
+        const linkedDevices = yield* db
+          .select({ deviceId: schema.deviceUser.deviceId })
+          .from(schema.deviceUser)
+          .where(
+            and(
+              eq(schema.deviceUser.organizationId, tenantId),
+              eq(schema.deviceUser.userId, member.userId),
+            ),
           );
+
+        const targetUser = yield* db.query.user.findFirst({ where: { id: member.userId } });
+        const targetEmail = targetUser?.email.trim().toLowerCase();
+
+        const pendingInvitations = targetEmail
+          ? yield* db
+              .select({ id: schema.invitation.id, email: schema.invitation.email })
+              .from(schema.invitation)
+              .where(
+                and(
+                  eq(schema.invitation.organizationId, tenantId),
+                  eq(schema.invitation.status, "pending"),
+                ),
+              )
+          : [];
+
+        for (const invitation of pendingInvitations)
+          if (invitation.email.trim().toLowerCase() === targetEmail)
+            yield* db
+              .update(schema.invitation)
+              .set({ status: "canceled", tokenHash: null, updatedAt: now() })
+              .where(eq(schema.invitation.id, invitation.id));
+
         yield* db.delete(schema.member).where(eq(schema.member.id, memberId));
+        // A removed member must not keep granting user-assigned policies.
+        yield* db
+          .delete(schema.deviceUser)
+          .where(
+            and(
+              eq(schema.deviceUser.organizationId, tenantId),
+              eq(schema.deviceUser.userId, member.userId),
+            ),
+          );
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
+        yield* refreshDevicePolicies(tenantId, [
+          ...new Set(linkedDevices.map((device) => device.deviceId)),
+        ]);
 
         return ok;
       }),
@@ -5348,7 +6480,10 @@ export const createEnterpriseService = ({
 
         const federatedAuthUrl = federatedEnabled
           ? (windowsFederated?.authServiceUrl?.(sso!.azureTenantId!) ??
-            federatedAuthServiceUrl(sso!.azureTenantId!, (azureClientId ? { clientId: azureClientId } : {})))
+            federatedAuthServiceUrl(
+              sso!.azureTenantId!,
+              azureClientId ? { clientId: azureClientId } : {},
+            ))
           : null;
 
         // Only create a SCEP challenge when the Apple branch is actually
@@ -5358,15 +6493,13 @@ export const createEnterpriseService = ({
         let appleScepFailed = false;
 
         if (enabled && enrollment.enabledApple && apns?.topic) {
-          challenge = yield* Effect.tryPromise({
-            try: () =>
-              createScepChallenge(enrollment.id, authSecret ?? "", {
-                // Enrollment profiles are shareable links; allow a week before
-                // the challenge goes stale, without a schema migration.
-                ttlSeconds: 7 * 24 * 60 * 60,
-              }),
-            catch: (cause) =>
-              new EnterpriseBadRequest({ message: "Could not create the SCEP challenge" }),
+          challenge = yield* issueScepChallenge(db, {
+            enrollmentId: enrollment.id,
+            organizationId: enrollment.organizationId,
+            authSecret: authSecret ?? "",
+            // Enrollment profiles are shareable links; allow a week before the
+            // challenge goes stale. The persisted row makes it one-time.
+            ttlSeconds: 7 * 24 * 60 * 60,
           }).pipe(
             Effect.match({
               onFailure: () => {
@@ -5374,7 +6507,7 @@ export const createEnterpriseService = ({
 
                 return null;
               },
-              onSuccess: (value: string) => value,
+              onSuccess: (value) => value.challenge,
             }),
           );
         }
@@ -5409,6 +6542,96 @@ export const createEnterpriseService = ({
 
         const windowsExpiry = windowsToken ? windowsTenantTokenExpiresAt(windowsToken) : null;
 
+        const apple = yield* Effect.gen(function* () {
+          if (planLimitReached) return { error: PLAN_DEVICE_LIMIT_MESSAGE };
+
+          if (!enabled || !enrollment.enabledApple)
+            return { error: "Apple enrollment is disabled! Contact your administrator." };
+
+          if (!apns?.topic)
+            return { error: "Apple management is not configured! Contact your administrator." };
+
+          if (appleScepFailed || !challenge)
+            return {
+              error: "Apple enrollment is temporarily unavailable! Contact your administrator.",
+            };
+
+          return {
+            profile: yield* serializePlist(
+              enterpriseEnrollmentProfile({
+                origin,
+                topic: apns.topic,
+                organizationId: organization.id,
+                organizationName: branding.displayName,
+                supportEmail: branding.supportEmail,
+                challenge,
+              }),
+            ),
+          };
+        });
+
+        const windows = (() => {
+          if (planLimitReached) return { error: PLAN_DEVICE_LIMIT_MESSAGE };
+
+          if (!enabled || !enrollment.enabledWindows)
+            return { error: "Windows enrollment is disabled! Contact your administrator." };
+
+          if (!windowsToken)
+            return {
+              error: "Windows enrollment is temporarily unavailable! Contact your administrator.",
+            };
+
+          return {
+            discoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
+            tenantScoped: true as const,
+            expiresAt: windowsExpiry ? windowsExpiry.toISOString() : undefined,
+            autopilot: {
+              configured: autopilotConfigured,
+              federated: federatedEnabled,
+              authServiceUrl: federatedAuthUrl,
+              realm: federatedEnabled ? federatedRealm(sso!.azureTenantId!) : null,
+            },
+          };
+        })();
+
+        const android = yield* Effect.gen(function* () {
+          if (planLimitReached) return { error: PLAN_DEVICE_LIMIT_MESSAGE };
+
+          if (!enabled || !enrollment.enabledAndroid)
+            return { error: "Android enrollment is disabled! Contact your administrator." };
+
+          if (!androidConfigured())
+            return {
+              error: "Android Enterprise is not configured! Contact your administrator.",
+            };
+
+          if (!androidReady)
+            return { error: "Android Enterprise is not connected! Contact your administrator." };
+
+          return yield* createAndroidEnrollmentToken({
+            db,
+            config: androidConfig,
+            organizationId: organization.id,
+          }).pipe(
+            Effect.map((token) => ({
+              qrCode: token.qrCode ? token.qrCode : undefined,
+              enrollmentToken: token.value,
+              policyName: token.policyName ? token.policyName : undefined,
+              expiresAt: token.expiresAt ? token.expiresAt : undefined,
+            })),
+            Effect.catch(() =>
+              Effect.gen(function* () {
+                yield* record("other", "Android enrollment token could not be created");
+
+                return {
+                  error:
+                    "Android enrollment is temporarily unavailable! Contact your administrator.",
+                };
+              }),
+            ),
+          );
+        });
+
         return {
           name: organization.name,
           branding,
@@ -5416,86 +6639,12 @@ export const createEnterpriseService = ({
           deviceLimit: {
             reached: planLimitReached,
             plan: planStatus.plan,
-            ...(planStatus.limit !== null ? { limit: planStatus.limit } : {}),
-            ...(planStatus.used !== null ? { used: planStatus.used } : {}),
+            limit: planStatus.limit !== null ? planStatus.limit : undefined,
+            used: planStatus.used !== null ? planStatus.used : undefined,
           },
-          apple: planLimitReached
-            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
-            : !enabled || !enrollment.enabledApple
-              ? { error: "Apple enrollment is disabled! Contact your administrator." }
-              : !apns?.topic
-                ? { error: "Apple management is not configured! Contact your administrator." }
-                : appleScepFailed || !challenge
-                  ? {
-                      error:
-                        "Apple enrollment is temporarily unavailable! Contact your administrator.",
-                    }
-                  : {
-                      profile: yield* serializePlist(
-                        enterpriseEnrollmentProfile({
-                          origin,
-                          topic: apns.topic,
-                          organizationId: organization.id,
-                          organizationName: branding.displayName,
-                          supportEmail: branding.supportEmail,
-                          challenge,
-                        }),
-                      ),
-                    },
-          windows: planLimitReached
-            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
-            : !enabled || !enrollment.enabledWindows
-              ? { error: "Windows enrollment is disabled! Contact your administrator." }
-              : !windowsToken
-                ? {
-                    error:
-                      "Windows enrollment is temporarily unavailable! Contact your administrator.",
-                  }
-                : {
-                    discoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
-                    tenantScoped: true as const,
-                    ...(windowsExpiry ? { expiresAt: windowsExpiry.toISOString() } : {}),
-                    autopilot: {
-                      configured: autopilotConfigured,
-                      federated: federatedEnabled,
-                      authServiceUrl: federatedAuthUrl,
-                      realm: federatedEnabled ? federatedRealm(sso!.azureTenantId!) : null,
-                    },
-                  },
-          android: planLimitReached
-            ? { error: PLAN_DEVICE_LIMIT_MESSAGE }
-            : !enabled || !enrollment.enabledAndroid
-              ? { error: "Android enrollment is disabled! Contact your administrator." }
-              : !androidConfigured()
-                ? {
-                    error: "Android Enterprise is not configured! Contact your administrator.",
-                  }
-                : !androidReady
-                  ? {
-                      error: "Android Enterprise is not connected! Contact your administrator.",
-                    }
-                  : yield* createAndroidEnrollmentToken({
-                      db,
-                      config: androidConfig,
-                      organizationId: organization.id,
-                    }).pipe(
-                      Effect.map((token) => ({
-                        ...(token.qrCode ? { qrCode: token.qrCode } : {}),
-                        enrollmentToken: token.value,
-                        ...(token.policyName ? { policyName: token.policyName } : {}),
-                        ...(token.expiresAt ? { expiresAt: token.expiresAt } : {}),
-                      })),
-                      Effect.catch(() =>
-                        Effect.gen(function* () {
-                          yield* record("other", "Android enrollment token could not be created");
-
-                          return {
-                            error:
-                              "Android enrollment is temporarily unavailable! Contact your administrator.",
-                          };
-                        }),
-                      ),
-                    ),
+          apple,
+          windows,
+          android,
           assetTag: enabled && enrollment.enabledAssetTag,
         };
       }),
@@ -5507,7 +6656,7 @@ export const createEnterpriseService = ({
         readonly ip?: string | null;
         readonly userAgent?: string | null;
       },
-    ) =>
+    ): Effect.Effect<{ profile: Uint8Array; filename: string }, Dynamic, Dynamic> =>
       Effect.gen(function* () {
         if (!allowAppleProfileRequest(options?.ip))
           return yield* Effect.fail(
@@ -5516,25 +6665,27 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const result = (yield* service.getEnrollment(enrollmentId, code, {
+        const result: {
+          name: string;
+          authenticated: boolean;
+          apple?: { error: string } | { profile: string };
+        } = yield* service.getEnrollment(enrollmentId, code, {
           platform: options?.platform ?? "apple",
           ip: options?.ip ?? null,
           userAgent: options?.userAgent ?? null,
-        })) as
-          | { name: string; authenticated: false }
-          | {
-              name: string;
-              authenticated: true;
-              apple: { error: string } | { profile: string };
-            };
+        });
 
         if (!result.authenticated)
           return yield* Effect.fail(
             new EnterpriseForbidden({ message: "The enrollment password is invalid." }),
           );
 
-        if ("error" in result.apple)
-          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.apple.error }));
+        if (!result.apple || "error" in result.apple)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: result.apple?.error ?? "Apple enrollment profile is unavailable.",
+            }),
+          );
 
         if (!("profile" in result.apple))
           return yield* Effect.fail(
@@ -5558,7 +6709,7 @@ export const createEnterpriseService = ({
             resolveTenantBranding(organization ?? { name: "tenant" }).displayName,
         )}-enrollment.mobileconfig`;
 
-        return { plist: result.apple.profile, filename };
+        return { profile: yield* signAppleEnrollmentProfile(result.apple.profile), filename };
       }),
     getAdeEnrollmentProfile: (token: string) =>
       Effect.gen(function* () {
@@ -5578,9 +6729,9 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const device = (yield* db.query.abmDevice.findFirst({
+        const device = yield* db.query.abmDevice.findFirst({
           where: { organizationId: signed.organizationId, serial: signed.serial },
-        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        });
 
         if (!device || device.enrollmentState === "REMOVED")
           return yield* Effect.fail(
@@ -5627,16 +6778,19 @@ export const createEnterpriseService = ({
         // enrollment id (not an ADE-specific string) so ADE identities resolve.
         const enrollment = yield* getOrCreateEnrollment(signed.organizationId);
 
-        const challenge = yield* Effect.tryPromise({
-          try: () =>
-            createScepChallenge(enrollment.id, authSecret!, {
-              ttlSeconds: 7 * 24 * 60 * 60,
-            }),
-          catch: () =>
-            new EnterpriseBadRequest({
-              message: "Could not create the SCEP challenge for the ADE profile.",
-            }),
-        });
+        const { challenge } = yield* issueScepChallenge(db, {
+          enrollmentId: enrollment.id,
+          organizationId: enrollment.organizationId,
+          authSecret: authSecret!,
+          ttlSeconds: 7 * 24 * 60 * 60,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseBadRequest({
+                message: "Could not create the SCEP challenge for the ADE profile.",
+              }),
+          ),
+        );
 
         const plist = yield* serializePlist(
           enterpriseEnrollmentProfile({
@@ -5652,7 +6806,10 @@ export const createEnterpriseService = ({
           }),
         );
 
-        return { plist, filename: `${safeFilename(signed.serial)}.mobileconfig` };
+        return {
+          profile: yield* signAppleEnrollmentProfile(plist),
+          filename: `${safeFilename(signed.serial)}.mobileconfig`,
+        };
       }),
     getTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
@@ -5685,20 +6842,17 @@ export const createEnterpriseService = ({
           ...rowEnrollment(enrollment),
           androidAvailable,
           androidEnterpriseName: androidRow?.enterpriseName ?? null,
-          ...(windowsToken
-            ? {
-                windowsDiscoveryUrl: `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`,
-                ...(windowsExpiry
-                  ? { windowsDiscoveryExpiresAt: windowsExpiry.toISOString() }
-                  : {}),
-              }
-            : {}),
+          windowsDiscoveryUrl: windowsToken
+            ? `${origin}/mdm/windows/discovery?tenant=${encodeURIComponent(windowsToken)}`
+            : undefined,
+          windowsDiscoveryExpiresAt:
+            windowsToken && windowsExpiry ? windowsExpiry.toISOString() : undefined,
         };
       }),
     listEnrollmentAttempts: (request, tenantId, query = {}) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
-        const requested = Number((query as { limit?: unknown }).limit ?? 50);
+        const requested = Number(query.limit ?? 50);
         const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 50, 1), 200);
 
         const attempts = yield* db
@@ -5724,26 +6878,24 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* getOrCreateEnrollment(ctx.organization.id);
 
-        const body = payload as {
+        const body: {
           code?: string | null;
           enabledApple?: boolean;
           enabledWindows?: boolean;
           enabledAndroid?: boolean;
           enabledAssetTag?: boolean;
           maxDevices?: number;
-        };
+        } = payload;
 
         yield* db
           .update(schema.enterpriseEnrollment)
           .set({
-            ...(body.code !== undefined ? { code: body.code } : {}),
-            ...(body.enabledApple !== undefined ? { enabledApple: body.enabledApple } : {}),
-            ...(body.enabledWindows !== undefined ? { enabledWindows: body.enabledWindows } : {}),
-            ...(body.enabledAndroid !== undefined ? { enabledAndroid: body.enabledAndroid } : {}),
-            ...(body.enabledAssetTag !== undefined
-              ? { enabledAssetTag: body.enabledAssetTag }
-              : {}),
-            ...(body.maxDevices !== undefined ? { maxDevices: body.maxDevices } : {}),
+            code: body.code !== undefined ? body.code : undefined,
+            enabledApple: body.enabledApple !== undefined ? body.enabledApple : undefined,
+            enabledWindows: body.enabledWindows !== undefined ? body.enabledWindows : undefined,
+            enabledAndroid: body.enabledAndroid !== undefined ? body.enabledAndroid : undefined,
+            enabledAssetTag: body.enabledAssetTag !== undefined ? body.enabledAssetTag : undefined,
+            maxDevices: body.maxDevices !== undefined ? body.maxDevices : undefined,
             updatedAt: now(),
           })
           .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
@@ -5776,7 +6928,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           content: string;
           encoding?: "text" | "base64";
           fileName?: string;
@@ -5786,7 +6938,7 @@ export const createEnterpriseService = ({
           orgId?: string;
           orgName?: string;
           scope?: "business.api" | "school.api";
-        };
+        } = payload;
 
         const info = yield* mapAppleFailure(
           saveAppleBusinessManagerToken({
@@ -5794,13 +6946,13 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
             authSecret,
             upload: body,
-            ...(appleApi ? { config: appleApi } : {}),
+            config: appleApi ? appleApi : undefined,
           }),
         );
 
         yield* audit(ctx, "abm.token_uploaded", "apple_business_manager", ctx.organization.id, {
           credentialType: info.credentialType,
-          fileName: body.fileName,
+          fileName: body.fileName ?? null,
         });
 
         return info;
@@ -5824,7 +6976,7 @@ export const createEnterpriseService = ({
             db,
             organizationId: ctx.organization.id,
             authSecret,
-            ...(appleApi ? { config: appleApi } : {}),
+            config: appleApi ? appleApi : undefined,
           }),
         );
 
@@ -5860,9 +7012,9 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const device = (yield* db.query.abmDevice.findFirst({
+        const device = yield* db.query.abmDevice.findFirst({
           where: { organizationId: ctx.organization.id, serial },
-        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        });
 
         if (!device)
           return yield* Effect.fail(
@@ -5897,14 +7049,14 @@ export const createEnterpriseService = ({
             serial,
             authSecret,
             serverName: appleServerName(ctx.organization),
-            ...(apnsRow?.certPem ? { certificatePem: apnsRow.certPem } : {}),
-            ...(appleApi ? { config: appleApi } : {}),
+            certificatePem: apnsRow?.certPem ? apnsRow.certPem : undefined,
+            config: appleApi ? appleApi : undefined,
           }),
         );
 
         yield* audit(ctx, "abm.device_assigned", "abm_device", serial, {
           mdmServerId: result.mdmServerId,
-          activityId: result.activityId,
+          activityId: result.activityId ?? null,
         });
 
         return { status: "ok" as const, ...result };
@@ -5928,9 +7080,9 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const device = (yield* db.query.abmDevice.findFirst({
+        const device = yield* db.query.abmDevice.findFirst({
           where: { organizationId: ctx.organization.id, serial },
-        })) as typeof schema.abmDevice.$inferSelect | undefined;
+        });
 
         if (!device)
           return yield* Effect.fail(
@@ -5983,11 +7135,11 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           content: string;
           encoding?: "text" | "base64";
           fileName?: string;
-        };
+        } = payload;
 
         const info = yield* mapVppFailure(
           saveVppToken({
@@ -5995,12 +7147,12 @@ export const createEnterpriseService = ({
             organizationId: ctx.organization.id,
             authSecret,
             upload: body,
-            ...(appleApi ? { config: appleApi } : {}),
+            config: appleApi ? appleApi : undefined,
           }),
         );
 
         yield* audit(ctx, "vpp.token_uploaded", "vpp_token", ctx.organization.id, {
-          fileName: body.fileName,
+          fileName: body.fileName ?? null,
         });
 
         return info;
@@ -6032,7 +7184,7 @@ export const createEnterpriseService = ({
           });
 
           if (credential.kind !== "abm_api") return undefined;
-          const client = makeAbmClient(appleApi, credential.scope);
+          const client = createAbmClient(appleApi, credential.scope);
           const token = yield* Effect.tryPromise(() => client.exchangeAccessToken(credential));
           const apps = yield* Effect.tryPromise(() => client.listApps(token.accessToken));
 
@@ -6040,8 +7192,8 @@ export const createEnterpriseService = ({
             apps.map((app) => [
               app.id,
               {
-                ...(app.name ? { name: app.name } : {}),
-                ...(app.bundleId ? { bundleId: app.bundleId } : {}),
+                name: app.name ? app.name : undefined,
+                bundleId: app.bundleId ? app.bundleId : undefined,
               },
             ]),
           );
@@ -6052,8 +7204,8 @@ export const createEnterpriseService = ({
             db,
             organizationId: ctx.organization.id,
             authSecret,
-            ...(appleApi ? { config: appleApi } : {}),
-            ...(appMetadata ? { appMetadata } : {}),
+            config: appleApi ? appleApi : undefined,
+            appMetadata: appMetadata ? appMetadata : undefined,
           }),
         );
 
@@ -6084,7 +7236,7 @@ export const createEnterpriseService = ({
             revocable: asset.revocable,
             productType: asset.productType,
             supportedPlatforms: Array.isArray(asset.supportedPlatforms)
-              ? (asset.supportedPlatforms as string[])
+              ? asset.supportedPlatforms
               : undefined,
             lastSyncedAt: iso(asset.lastSyncedAt),
           })),
@@ -6119,11 +7271,9 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "A VPP adamId must be numeric." }),
           );
-        const body = payload as { devices?: string[]; groups?: string[] };
+        const body: { devices?: string[]; groups?: string[] } = payload;
 
-        const asset = (yield* findVppAsset(db, ctx.organization.id, adamId)) as
-          | typeof schema.vppAsset.$inferSelect
-          | undefined;
+        const asset = yield* findVppAsset(db, ctx.organization.id, adamId);
 
         if (!asset)
           return yield* Effect.fail(
@@ -6156,7 +7306,7 @@ export const createEnterpriseService = ({
             message: "Select at least one device or group.",
           };
 
-        const devices = (yield* db
+        const devices = yield* db
           .select()
           .from(schema.device)
           .where(
@@ -6164,7 +7314,7 @@ export const createEnterpriseService = ({
               eq(schema.device.organizationId, ctx.organization.id),
               inArray(schema.device.id, [...ids]),
             ),
-          )) as Array<EnterpriseDevice>;
+          );
 
         const appleDevices = devices.filter(
           (device) => device.proto === "apple" && device.status === "enrolled",
@@ -6183,11 +7333,11 @@ export const createEnterpriseService = ({
               deviceId: device.id,
               adamId,
               authSecret,
-              ...(appleApi ? { config: appleApi } : {}),
+              config: appleApi ? appleApi : undefined,
             }),
           ).pipe(Effect.result);
 
-          if (outcome._tag === "Failure") {
+          if (Predicate.isTagged(outcome, "Failure")) {
             failed++;
             continue;
           }
@@ -6225,15 +7375,14 @@ export const createEnterpriseService = ({
           queued: queuedDevices.length,
           skipped,
           failed,
-          ...(failed > 0
-            ? { message: `${failed} device(s) could not be assigned a VPP licence.` }
-            : {}),
+          message:
+            failed > 0 ? `${failed} device(s) could not be assigned a VPP licence.` : undefined,
         };
       }),
     releaseVppAsset: (request, tenantId, adamId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { devices: string[] };
+        const body: { devices: string[] } = payload;
         yield* assertTenantDevices(ctx.organization.id, body.devices);
         let released = 0;
         let failed = 0;
@@ -6246,11 +7395,11 @@ export const createEnterpriseService = ({
               deviceId,
               adamId,
               authSecret,
-              ...(appleApi ? { config: appleApi } : {}),
+              config: appleApi ? appleApi : undefined,
             }),
           ).pipe(Effect.result);
 
-          if (outcome._tag === "Failure") failed++;
+          if (Predicate.isTagged(outcome, "Failure")) failed++;
           else released++;
         }
 
@@ -6260,7 +7409,7 @@ export const createEnterpriseService = ({
           status: "ok" as const,
           released,
           failed,
-          ...(failed > 0 ? { message: `${failed} licence(s) could not be returned.` } : {}),
+          message: failed > 0 ? `${failed} licence(s) could not be returned.` : undefined,
         };
       }),
     getTenantAndroid: (request, tenantId) =>
@@ -6274,7 +7423,7 @@ export const createEnterpriseService = ({
     patchTenantAndroid: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { enabled?: boolean };
+        const body: { enabled?: boolean } = payload;
 
         if (body.enabled !== undefined) {
           yield* mapAndroidFailure(
@@ -6393,10 +7542,9 @@ export const createEnterpriseService = ({
               ["verify"],
             );
 
-            return { privateKey, publicKey } as CryptoKeyPair;
+            return { privateKey, publicKey };
           },
-          catch: (cause) =>
-            new EnterpriseBadRequest({ message: "Could not load the pending APNs key" }),
+          catch: () => new EnterpriseBadRequest({ message: "Could not load the pending APNs key" }),
         });
 
         const result = yield* Effect.tryPromise({
@@ -6409,8 +7557,7 @@ export const createEnterpriseService = ({
               },
               vendor: remoteApnsVendor(),
             }),
-          catch: (cause) =>
-            new EnterpriseBadRequest({ message: "Could not generate the APNs CSR" }),
+          catch: () => new EnterpriseBadRequest({ message: "Could not generate the APNs CSR" }),
         });
 
         return { plist: result.plist };
@@ -6418,7 +7565,7 @@ export const createEnterpriseService = ({
     uploadApns: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { email: string; cert: string };
+        const body: { email: string; cert: string } = payload;
 
         // Find the private key this certificate should correspond to. A pending
         // CSR key is the normal case; an existing certificate key covers renewals.
@@ -6436,17 +7583,17 @@ export const createEnterpriseService = ({
           const encrypted = pending?.encryptedPrivateKeyJwk ?? existing?.encryptedKey;
 
           if (encrypted) {
-            const jwk = JSON.parse(
+            const jwk: JsonWebKey = JSON.parse(
               yield* Effect.tryPromise({
                 try: () => openSecret(authSecret, encrypted),
-                catch: (cause) =>
+                catch: () =>
                   new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
               }),
-            ) as JsonWebKey;
+            );
 
             const privateKey = yield* Effect.tryPromise({
               try: () => importApnsKeyJwk(jwk),
-              catch: (cause) =>
+              catch: () =>
                 new EnterpriseBadRequest({ message: "Could not import the pending APNs key" }),
             });
 
@@ -6460,8 +7607,7 @@ export const createEnterpriseService = ({
             // Re-seal at rest even though the underlying key is unchanged.
             encryptedKey = yield* Effect.tryPromise({
               try: () => sealSecret(authSecret, JSON.stringify(jwk)),
-              catch: (cause) =>
-                new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
+              catch: () => new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
             });
           }
         }
@@ -6491,7 +7637,7 @@ export const createEnterpriseService = ({
               certPem: value.certPem,
               topic: value.topic,
               updatedAt: value.updatedAt,
-              ...(encryptedKey ? { encryptedKey } : {}),
+              encryptedKey: encryptedKey ? encryptedKey : undefined,
             },
           });
 
@@ -6512,7 +7658,7 @@ export const createEnterpriseService = ({
         // Resolve the rows first: revocation also has to match certificates
         // recorded against the legacy `dmIdentifier`, not just the row id.
         const devices = ids.length
-          ? ((yield* db
+          ? yield* db
               .select()
               .from(schema.device)
               .where(
@@ -6520,7 +7666,7 @@ export const createEnterpriseService = ({
                   eq(schema.device.organizationId, ctx.organization.id),
                   inArray(schema.device.id, [...ids]),
                 ),
-              )) as Array<EnterpriseDevice>)
+              )
           : [];
 
         const revoked = yield* revokeDeviceCertificates(ctx.organization.id, devices);
@@ -6545,20 +7691,16 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const rows = (yield* db
+        const rows = yield* db
           .select()
           .from(schema.devicePreRegistration)
           .where(eq(schema.devicePreRegistration.organizationId, ctx.organization.id))
-          .orderBy(desc(schema.devicePreRegistration.createdAt))) as Array<
-          typeof schema.devicePreRegistration.$inferSelect
-        >;
+          .orderBy(desc(schema.devicePreRegistration.createdAt));
 
-        const groups = (yield* db
+        const groups = yield* db
           .select()
           .from(schema.enterpriseGroup)
-          .where(
-            eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-          )) as Array<EnterpriseGroup>;
+          .where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
 
         const groupNames = new Map(groups.map((group) => [group.id, group.name]));
 
@@ -6571,7 +7713,7 @@ export const createEnterpriseService = ({
     importDevicePreRegistrations: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { rows?: ReadonlyArray<DevicePreRegistrationImportRow> };
+        const body: { rows?: ReadonlyArray<DevicePreRegistrationImportRow> } = payload;
         const rows = Array.isArray(body.rows) ? body.rows : [];
 
         if (rows.length === 0)
@@ -6613,12 +7755,10 @@ export const createEnterpriseService = ({
             ? Number.POSITIVE_INFINITY
             : Math.max(0, planStatus.limit - (planStatus.used ?? 0) - existingPreRegistrations);
 
-        const groups = (yield* db
+        const groups = yield* db
           .select()
           .from(schema.enterpriseGroup)
-          .where(
-            eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-          )) as Array<EnterpriseGroup>;
+          .where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
 
         const groupsById = new Map(groups.map((group) => [group.id, group]));
         const groupsByName = new Map<string, Array<EnterpriseGroup>>();
@@ -6642,18 +7782,18 @@ export const createEnterpriseService = ({
 
         for (const row of rows) {
           const result = yield* Effect.gen(function* () {
-            const serial = typeof row.serial === "string" ? row.serial.trim().slice(0, 255) : "";
+            const serial = row.serial.trim().slice(0, 255);
 
             if (!serial)
               return {
-                serial: typeof row.serial === "string" ? row.serial : "",
+                serial: row.serial,
                 status: "error" as const,
                 error: "Serial is required.",
               };
 
-            const existing = (yield* db.query.devicePreRegistration.findFirst({
+            const existing = yield* db.query.devicePreRegistration.findFirst({
               where: { organizationId: ctx.organization.id, serial },
-            })) as typeof schema.devicePreRegistration.$inferSelect | undefined;
+            });
 
             let groupId = existing?.groupId ?? null;
             const wantsGroup = row.groupId !== undefined || row.groupName !== undefined;
@@ -6740,13 +7880,12 @@ export const createEnterpriseService = ({
           }).pipe(
             Effect.catch((error) =>
               Effect.succeed({
-                serial:
-                  typeof row.serial === "string" && row.serial.trim() ? row.serial : "(missing)",
+                serial: row.serial.trim() ? row.serial : "(missing)",
                 status: "error" as const,
                 error:
-                  typeof error === "object" && error !== null && "message" in error
-                    ? String((error as { message: unknown }).message)
-                    : "Could not import this row.",
+                  Option.getOrUndefined(
+                    Schema.decodeUnknownOption(Schema.Struct({ message: Schema.String }))(error),
+                  )?.message ?? "Could not import this row.",
               }),
             ),
           );
@@ -6820,7 +7959,7 @@ export const createEnterpriseService = ({
     patchDevice: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name?: string; notes?: string | null; assetTag?: string | null };
+        const body: { name?: string; notes?: string | null; assetTag?: string | null } = payload;
         yield* db
           .update(schema.device)
           .set({ name: body.name, notes: body.notes, assetTag: body.assetTag })
@@ -6846,11 +7985,11 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        const body = (payload ?? {}) as {
+        const body: {
           action?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
-        };
+        } = payload ?? {};
 
         const action = body.action ?? "sync";
 
@@ -7175,7 +8314,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
         const limit = normalizeDeviceActivityLimit(query?.limit);
 
-        const audits = yield* db
+        const auditRows = yield* db
           .select()
           .from(schema.auditLog)
           .where(
@@ -7187,6 +8326,11 @@ export const createEnterpriseService = ({
           )
           .orderBy(desc(schema.auditLog.createdAt))
           .limit(limit);
+
+        const audits = auditRows.map((row) => ({
+          ...row,
+          metadata: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.metadata)),
+        }));
 
         const commands = yield* db
           .select()
@@ -7201,10 +8345,10 @@ export const createEnterpriseService = ({
         return {
           events: buildDeviceActivity(
             {
-              audits: audits as any,
-              commands: commands as any,
-              declarations: declarations as any,
-              certificates: certificates as any,
+              audits,
+              commands,
+              declarations,
+              certificates,
               device: {
                 enrolledAt: device.enrolledAt,
                 lastSeenAt: device.lastSeenAt,
@@ -7355,14 +8499,14 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           name: string;
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
           devices?: Array<string>;
           policies?: Array<string>;
-        };
+        } = payload;
 
         const kind = body.kind ?? "manual";
         const rules = kind === "dynamic" ? (body.rules ?? null) : null;
@@ -7435,7 +8579,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const results = yield* Effect.forEach(
-          [...(ids as ReadonlyArray<string>)],
+          [...ids],
           (groupId) =>
             Effect.gen(function* () {
               // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped
@@ -7479,12 +8623,12 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const existing = yield* assertTenantGroup(ctx.organization.id, groupId);
 
-        const body = payload as {
+        const body: {
           name?: string;
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
-        };
+        } = payload;
 
         const kind = body.kind ?? existing.kind ?? "manual";
 
@@ -7492,7 +8636,9 @@ export const createEnterpriseService = ({
           kind === "dynamic"
             ? body.rules !== undefined
               ? body.rules
-              : ((existing.rules as DynamicGroupRules | null | undefined) ?? null)
+              : (Option.getOrUndefined(
+                  Schema.decodeUnknownOption(Schema.NullOr(DynamicGroupRules))(existing.rules),
+                ) ?? null)
             : null;
 
         if (kind === "dynamic") {
@@ -7543,7 +8689,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const group = yield* assertTenantGroup(ctx.organization.id, groupId);
 
-        const body = payload as {
+        const body: {
           assign?: {
             devices?: Array<string>;
             policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
@@ -7552,7 +8698,7 @@ export const createEnterpriseService = ({
             devices?: Array<string>;
             policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
           };
-        };
+        } = payload;
 
         if (
           group.kind === "dynamic" &&
@@ -7657,7 +8803,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const affected = yield* Effect.forEach(
-          [...(ids as ReadonlyArray<string>)],
+          [...ids],
           (groupId) =>
             Effect.gen(function* () {
               const group = yield* db.query.enterpriseGroup.findFirst({
@@ -7682,7 +8828,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const source = yield* assertTenantGroup(ctx.organization.id, groupId);
-        const body = payload as { name?: string };
+        const body: { name?: string } = payload;
         const newId = id();
         const kind = source.kind ?? "manual";
         yield* db.insert(schema.enterpriseGroup).values({
@@ -7691,7 +8837,12 @@ export const createEnterpriseService = ({
           name: body.name ?? `${source.name} [duplicated]`,
           notes: source.notes,
           kind,
-          rules: kind === "dynamic" ? (source.rules as DynamicGroupRules | null) : null,
+          rules:
+            kind === "dynamic"
+              ? (Option.getOrUndefined(
+                  Schema.decodeUnknownOption(Schema.NullOr(DynamicGroupRules))(source.rules),
+                ) ?? null)
+              : null,
           lastEvaluatedAt: null,
           createdAt: now(),
           updatedAt: now(),
@@ -7737,7 +8888,7 @@ export const createEnterpriseService = ({
     createPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name: string; notes?: string | null; priority?: number };
+        const body: { name: string; notes?: string | null; priority?: number } = payload;
 
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
           return yield* Effect.fail(
@@ -7763,7 +8914,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const results = yield* Effect.forEach(
-          [...(ids as ReadonlyArray<string>)],
+          [...ids],
           (policyId) =>
             Effect.gen(function* () {
               // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped
@@ -7806,12 +8957,12 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           name?: string;
           notes?: string | null;
           priority?: number;
-          configurations?: Record<string, unknown>;
-        };
+          configurations?: Record<string, Schema.Json>;
+        } = payload;
 
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
           return yield* Effect.fail(
@@ -7830,7 +8981,13 @@ export const createEnterpriseService = ({
         // configuration cannot leave the policy half-updated.
         for (const [kind, data] of configurations) {
           if (data === null) continue;
-          yield* validateConfiguration(kind, data).pipe(
+
+          const configuration = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Json)(data),
+          );
+
+          if (configuration === undefined) continue;
+          yield* validateConfiguration(kind, configuration).pipe(
             Effect.mapError((message) => new EnterpriseBadRequest({ message })),
           );
         }
@@ -7860,7 +9017,7 @@ export const createEnterpriseService = ({
         }
 
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
-        yield* pushPolicyDevices(ctx.organization.id, policyId, affectedDevices);
+        yield* pushPolicyDevices(ctx.organization.id, { policyId }, affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body),
@@ -7909,7 +9066,12 @@ export const createEnterpriseService = ({
             new EnterpriseNotFound({ message: "Policy deployment not found" }),
           );
         yield* db.delete(schema.configuration).where(eq(schema.configuration.policyId, policyId));
-        const snapshot = deployment.snapshot as Record<string, unknown>;
+
+        const snapshot = Option.getOrElse(
+          Schema.decodeUnknownOption(Schema.JsonObject)(deployment.snapshot),
+          () => ({}),
+        );
+
         const entries = Object.entries(snapshot ?? {});
 
         if (entries.length > 0)
@@ -7936,12 +9098,10 @@ export const createEnterpriseService = ({
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
-        const body = payload as { fileName: string; contentType?: string; content: string };
+        const body: { fileName: string; contentType?: string; content: string } = payload;
         const bytes = base64ToBytes(body.content);
 
-        const sha256 = yield* sha256Hex(
-          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-        );
+        const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
         const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
         yield* r2.put(key, bytes, {
@@ -8035,6 +9195,81 @@ export const createEnterpriseService = ({
           deviceLinks.map((link) => [link.deviceId, link.mode ?? ("include" as const)]),
         );
 
+        const userLinks = yield* db
+          .select({ userId: schema.userPolicy.userId, mode: schema.userPolicy.mode })
+          .from(schema.userPolicy)
+          .where(
+            and(
+              eq(schema.userPolicy.organizationId, ctx.organization.id),
+              eq(schema.userPolicy.policyId, policyId),
+            ),
+          );
+
+        const users = userLinks.length
+          ? yield* db
+              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+              .from(schema.user)
+              .where(
+                inArray(
+                  schema.user.id,
+                  userLinks.map((link) => link.userId),
+                ),
+              )
+          : [];
+
+        const userModes = new Map(
+          userLinks.map((link) => [link.userId, link.mode ?? ("include" as const)]),
+        );
+
+        const userGroupLinks = yield* db
+          .select({
+            groupId: schema.userGroupPolicy.groupId,
+            mode: schema.userGroupPolicy.mode,
+          })
+          .from(schema.userGroupPolicy)
+          .where(
+            and(
+              eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+              eq(schema.userGroupPolicy.policyId, policyId),
+            ),
+          );
+
+        const userGroups = userGroupLinks.length
+          ? yield* db
+              .select({ id: schema.userGroup.id, name: schema.userGroup.name })
+              .from(schema.userGroup)
+              .where(
+                and(
+                  eq(schema.userGroup.organizationId, ctx.organization.id),
+                  inArray(
+                    schema.userGroup.id,
+                    userGroupLinks.map((link) => link.groupId),
+                  ),
+                ),
+              )
+          : [];
+
+        const memberCounts = userGroups.length
+          ? yield* db
+              .select({ groupId: schema.userGroupMember.groupId, value: count() })
+              .from(schema.userGroupMember)
+              .where(
+                inArray(
+                  schema.userGroupMember.groupId,
+                  userGroups.map((group) => group.id),
+                ),
+              )
+              .groupBy(schema.userGroupMember.groupId)
+          : [];
+
+        const memberCountsByGroup = new Map(
+          memberCounts.map((row) => [row.groupId, Number(row.value)]),
+        );
+
+        const userGroupModes = new Map(
+          userGroupLinks.map((link) => [link.groupId, link.mode ?? ("include" as const)]),
+        );
+
         return {
           groups: groups
             .map((group) => ({
@@ -8050,6 +9285,21 @@ export const createEnterpriseService = ({
               priority,
             }))
             .sort((left, right) => left.name.localeCompare(right.name)),
+          users: users
+            .map((user) => ({
+              ...user,
+              mode: userModes.get(user.id) ?? "include",
+              priority,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+          userGroups: userGroups
+            .map((group) => ({
+              ...group,
+              mode: userGroupModes.get(group.id) ?? "include",
+              priority,
+              memberCount: memberCountsByGroup.get(group.id) ?? 0,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
         };
       }),
     patchPolicyAssignments: (request, tenantId, policyId, payload) =>
@@ -8057,52 +9307,193 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
 
-        const body = payload as {
+        const body: {
           assign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
           unassign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
-        };
+          assignUsers?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          unassignUsers?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          assignUserGroups?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+          unassignUserGroups?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+        } = payload;
 
         const assign = assignmentRefs(body.assign);
         const unassign = assignmentRefs(body.unassign);
-        yield* assertTenantDevices(ctx.organization.id, [
-          ...assign.map((assignment) => assignment.id),
-          ...unassign.map((assignment) => assignment.id),
-        ]);
+        const assignUsers = assignmentRefs(body.assignUsers);
+        const unassignUsers = assignmentRefs(body.unassignUsers);
+        const assignUserGroups = assignmentRefs(body.assignUserGroups);
+        const unassignUserGroups = assignmentRefs(body.unassignUserGroups);
 
-        if (assign.length) {
-          const unique = [
-            ...new Map(assign.map((assignment) => [assignment.id, assignment])).values(),
-          ];
+        // Only additions are validated. A user or group that already left the
+        // tenant must still be removable from an assignment.
+        yield* assertTenantDevices(
+          ctx.organization.id,
+          assign.map((assignment) => assignment.id),
+        );
+        yield* assertTenantUsers(
+          ctx.organization.id,
+          assignUsers.map((assignment) => assignment.id),
+        );
+        yield* assertTenantUserGroups(
+          ctx.organization.id,
+          assignUserGroups.map((assignment) => assignment.id),
+        );
 
-          yield* db.delete(schema.devicePolicy).where(
-            and(
-              eq(schema.devicePolicy.policyId, policyId),
-              inArray(
-                schema.devicePolicy.deviceId,
-                unique.map((assignment) => assignment.id),
-              ),
-            ),
-          );
-          yield* db.insert(schema.devicePolicy).values(
-            unique.map((assignment) => ({
-              policyId,
-              deviceId: assignment.id,
-              mode: assignment.mode,
-            })),
-          );
-        }
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            if (assign.length) {
+              const unique = [
+                ...new Map(assign.map((assignment) => [assignment.id, assignment])).values(),
+              ];
 
-        if (unassign.length)
-          yield* db.delete(schema.devicePolicy).where(
-            and(
-              eq(schema.devicePolicy.policyId, policyId),
-              inArray(
-                schema.devicePolicy.deviceId,
-                unassign.map((assignment) => assignment.id),
-              ),
-            ),
-          );
-        yield* pushPolicyDevices(ctx.organization.id, policyId, [
+              yield* tx.delete(schema.devicePolicy).where(
+                and(
+                  eq(schema.devicePolicy.policyId, policyId),
+                  inArray(
+                    schema.devicePolicy.deviceId,
+                    unique.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+              yield* tx.insert(schema.devicePolicy).values(
+                unique.map((assignment) => ({
+                  policyId,
+                  deviceId: assignment.id,
+                  mode: assignment.mode,
+                })),
+              );
+            }
+
+            if (unassign.length)
+              yield* tx.delete(schema.devicePolicy).where(
+                and(
+                  eq(schema.devicePolicy.policyId, policyId),
+                  inArray(
+                    schema.devicePolicy.deviceId,
+                    unassign.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+
+            if (assignUsers.length) {
+              const unique = [
+                ...new Map(assignUsers.map((assignment) => [assignment.id, assignment])).values(),
+              ];
+
+              yield* tx.delete(schema.userPolicy).where(
+                and(
+                  eq(schema.userPolicy.organizationId, ctx.organization.id),
+                  eq(schema.userPolicy.policyId, policyId),
+                  inArray(
+                    schema.userPolicy.userId,
+                    unique.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+              yield* tx.insert(schema.userPolicy).values(
+                unique.map((assignment) => ({
+                  organizationId: ctx.organization.id,
+                  userId: assignment.id,
+                  policyId,
+                  mode: assignment.mode,
+                  createdAt: now(),
+                })),
+              );
+            }
+
+            if (unassignUsers.length)
+              yield* tx.delete(schema.userPolicy).where(
+                and(
+                  eq(schema.userPolicy.organizationId, ctx.organization.id),
+                  eq(schema.userPolicy.policyId, policyId),
+                  inArray(
+                    schema.userPolicy.userId,
+                    unassignUsers.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+
+            if (assignUserGroups.length) {
+              const unique = [
+                ...new Map(
+                  assignUserGroups.map((assignment) => [assignment.id, assignment]),
+                ).values(),
+              ];
+
+              yield* tx.delete(schema.userGroupPolicy).where(
+                and(
+                  eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                  eq(schema.userGroupPolicy.policyId, policyId),
+                  inArray(
+                    schema.userGroupPolicy.groupId,
+                    unique.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+              yield* tx.insert(schema.userGroupPolicy).values(
+                unique.map((assignment) => ({
+                  organizationId: ctx.organization.id,
+                  groupId: assignment.id,
+                  policyId,
+                  mode: assignment.mode,
+                  createdAt: now(),
+                })),
+              );
+            }
+
+            if (unassignUserGroups.length)
+              yield* tx.delete(schema.userGroupPolicy).where(
+                and(
+                  eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                  eq(schema.userGroupPolicy.policyId, policyId),
+                  inArray(
+                    schema.userGroupPolicy.groupId,
+                    unassignUserGroups.map((assignment) => assignment.id),
+                  ),
+                ),
+              );
+          }),
+        );
+
+        const affectedUserIds = [
+          ...new Set([
+            ...assignUsers.map((assignment) => assignment.id),
+            ...unassignUsers.map((assignment) => assignment.id),
+          ]),
+        ];
+
+        const affectedGroupIds = [
+          ...new Set([
+            ...assignUserGroups.map((assignment) => assignment.id),
+            ...unassignUserGroups.map((assignment) => assignment.id),
+          ]),
+        ];
+
+        const groupMemberIds = affectedGroupIds.length
+          ? yield* db
+              .select({ userId: schema.userGroupMember.userId })
+              .from(schema.userGroupMember)
+              .where(inArray(schema.userGroupMember.groupId, affectedGroupIds))
+          : [];
+
+        const linkedUserIds = [
+          ...new Set([...affectedUserIds, ...groupMemberIds.map((row) => row.userId)]),
+        ];
+
+        const userDevices = linkedUserIds.length
+          ? yield* db
+              .select({ deviceId: schema.deviceUser.deviceId })
+              .from(schema.deviceUser)
+              .where(
+                and(
+                  eq(schema.deviceUser.organizationId, ctx.organization.id),
+                  inArray(schema.deviceUser.userId, linkedUserIds),
+                ),
+              )
+          : [];
+
+        const userDeviceIds = [...new Set(userDevices.map((row) => row.deviceId))];
+
+        yield* pushPolicyDevices(ctx.organization.id, { policyId }, [
           ...assign.map((assignment) => assignment.id),
           ...unassign.map((assignment) => assignment.id),
         ]);
@@ -8110,24 +9501,176 @@ export const createEnterpriseService = ({
           ...assign.map((assignment) => assignment.id),
           ...unassign.map((assignment) => assignment.id),
         ]);
+        yield* refreshDevicePolicies(ctx.organization.id, userDeviceIds, policyId);
         yield* audit(ctx, "policy.assignments_changed", "policy", policyId, {
           assign: assign.length,
           unassign: unassign.length,
           exclude: assign.filter((assignment) => assignment.mode === "exclude").length,
+          assignUsers: assignUsers.length,
+          unassignUsers: unassignUsers.length,
+          assignUserGroups: assignUserGroups.length,
+          unassignUserGroups: unassignUserGroups.length,
         });
 
         return ok;
+      }),
+    listDirectory: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const userRows = yield* db
+          .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+            emailVerified: schema.user.emailVerified,
+            disabled: schema.user.disabled,
+            source: schema.user.source,
+            role: schema.member.role,
+          })
+          .from(schema.member)
+          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .where(eq(schema.member.organizationId, ctx.organization.id));
+
+        const groups = yield* db
+          .select({
+            id: schema.userGroup.id,
+            name: schema.userGroup.name,
+            source: schema.userGroup.source,
+          })
+          .from(schema.userGroup)
+          .where(eq(schema.userGroup.organizationId, ctx.organization.id));
+
+        const counts = groups.length
+          ? yield* db
+              .select({ groupId: schema.userGroupMember.groupId, value: count() })
+              .from(schema.userGroupMember)
+              .where(
+                inArray(
+                  schema.userGroupMember.groupId,
+                  groups.map((group) => group.id),
+                ),
+              )
+              .groupBy(schema.userGroupMember.groupId)
+          : [];
+
+        const countsByGroup = new Map(counts.map((row) => [row.groupId, Number(row.value)]));
+
+        return {
+          users: userRows
+            .map((row) => ({
+              id: row.id,
+              name: row.name,
+              email: row.email,
+              emailVerified: row.emailVerified,
+              disabled: row.disabled,
+              role: row.role,
+              source: row.source === "graph" ? ("entra" as const) : row.source,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+          groups: groups
+            .map((group) => ({
+              ...group,
+              memberCount: countsByGroup.get(group.id) ?? 0,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+        };
+      }),
+    getDeviceUsers: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        yield* assertTenantDevices(ctx.organization.id, [deviceId]);
+
+        const users = yield* db
+          .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+          .from(schema.deviceUser)
+          .innerJoin(schema.user, eq(schema.user.id, schema.deviceUser.userId))
+          .innerJoin(
+            schema.member,
+            and(
+              eq(schema.member.userId, schema.deviceUser.userId),
+              eq(schema.member.organizationId, ctx.organization.id),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.deviceUser.organizationId, ctx.organization.id),
+              eq(schema.deviceUser.deviceId, deviceId),
+              eq(schema.user.disabled, false),
+            ),
+          )
+          .orderBy(asc(schema.user.name));
+
+        return { users };
+      }),
+    setDeviceUsers: (request, tenantId, deviceId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantDevices(ctx.organization.id, [deviceId]);
+
+        const body: { readonly userIds: ReadonlyArray<string> } = payload;
+        const userIds = [...new Set(body.userIds)];
+        yield* assertTenantUsers(ctx.organization.id, userIds);
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx
+              .delete(schema.deviceUser)
+              .where(
+                and(
+                  eq(schema.deviceUser.organizationId, ctx.organization.id),
+                  eq(schema.deviceUser.deviceId, deviceId),
+                ),
+              );
+
+            if (userIds.length)
+              yield* tx.insert(schema.deviceUser).values(
+                userIds.map((userId) => ({
+                  organizationId: ctx.organization.id,
+                  deviceId,
+                  userId,
+                  source: "manual" as const,
+                  createdAt: now(),
+                })),
+              );
+          }),
+        );
+
+        yield* refreshDevicePolicies(ctx.organization.id, [deviceId]);
+        yield* audit(ctx, "device.users_changed", "device", deviceId, {
+          users: userIds.length,
+        });
+
+        const users = yield* db
+          .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+          .from(schema.deviceUser)
+          .innerJoin(schema.user, eq(schema.user.id, schema.deviceUser.userId))
+          .innerJoin(
+            schema.member,
+            and(
+              eq(schema.member.userId, schema.deviceUser.userId),
+              eq(schema.member.organizationId, ctx.organization.id),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.deviceUser.organizationId, ctx.organization.id),
+              eq(schema.deviceUser.deviceId, deviceId),
+              eq(schema.user.disabled, false),
+            ),
+          )
+          .orderBy(asc(schema.user.name));
+
+        return { users };
       }),
     listApplications: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const apps = (yield* db
+        const apps = yield* db
           .select()
           .from(schema.application)
-          .where(
-            eq(schema.application.organizationId, ctx.organization.id),
-          )) as Array<EnterpriseApplication>;
+          .where(eq(schema.application.organizationId, ctx.organization.id));
 
         if (apps.length === 0) return { applications: [] };
         const ids = apps.map((app) => app.id);
@@ -8158,9 +9701,9 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const app = (yield* db.query.application.findFirst({
+        const app = yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
-        })) as EnterpriseApplication | undefined;
+        });
 
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
@@ -8198,7 +9741,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const body = payload as {
+        const body: {
           name: string;
           platform: "apple" | "win" | "android";
           bundleId?: string | null;
@@ -8207,7 +9750,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
-        };
+        } = payload;
 
         if (!body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
@@ -8257,14 +9800,14 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const existing = (yield* db.query.application.findFirst({
+        const existing = yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
-        })) as EnterpriseApplication | undefined;
+        });
 
         if (!existing)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        const body = payload as {
+        const body: {
           name?: string;
           bundleId?: string | null;
           version?: string | null;
@@ -8272,7 +9815,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
-        };
+        } = payload;
 
         const source = body.source ?? existing.source;
 
@@ -8332,12 +9875,12 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const results = yield* Effect.forEach(
-          [...(ids as ReadonlyArray<string>)],
+          [...ids],
           (applicationId) =>
             Effect.gen(function* () {
-              const existing = (yield* db.query.application.findFirst({
+              const existing = yield* db.query.application.findFirst({
                 where: { id: applicationId, organizationId: ctx.organization.id },
-              })) as EnterpriseApplication | undefined;
+              });
 
               if (!existing)
                 return { id: applicationId, deleted: false as const, reason: "notFound" };
@@ -8384,10 +9927,10 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
-        const body = payload as {
+        const body: {
           assign?: { groups?: Array<string>; devices?: Array<string> };
           unassign?: { groups?: Array<string>; devices?: Array<string> };
-        };
+        } = payload;
 
         const groupIds = [...(body.assign?.groups ?? []), ...(body.unassign?.groups ?? [])];
 
@@ -8443,9 +9986,9 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
-        const app = (yield* db.query.application.findFirst({
+        const app = yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
-        })) as EnterpriseApplication | undefined;
+        });
 
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
@@ -8504,9 +10047,7 @@ export const createEnterpriseService = ({
                 }),
               );
 
-            const asset = (yield* findVppAssetByStoreId(db, ctx.organization.id, storeId)) as
-              | typeof schema.vppAsset.$inferSelect
-              | undefined;
+            const asset = yield* findVppAssetByStoreId(db, ctx.organization.id, storeId);
 
             if (!asset)
               return {
@@ -8528,11 +10069,11 @@ export const createEnterpriseService = ({
                   deviceId: device.id,
                   adamId: storeId,
                   authSecret,
-                  ...(appleApi ? { config: appleApi } : {}),
+                  config: appleApi ? appleApi : undefined,
                 }),
               ).pipe(Effect.result);
 
-              if (outcome._tag === "Failure") {
+              if (Predicate.isTagged(outcome, "Failure")) {
                 failed++;
                 continue;
               }
@@ -8567,11 +10108,10 @@ export const createEnterpriseService = ({
               status: "ok" as const,
               queued: queuedDevices.length,
               skipped: skipped + failed,
-              ...(failed > 0
-                ? {
-                    message: `${failed} device(s) had no available VPP licence and were skipped.`,
-                  }
-                : {}),
+              message:
+                failed > 0
+                  ? `${failed} device(s) had no available VPP licence and were skipped.`
+                  : undefined,
             };
           }
         }
@@ -8617,16 +10157,14 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
-        const existing = (yield* db.query.application.findFirst({
+        const existing = yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
-        })) as EnterpriseApplication | undefined;
+        });
 
-        const body = payload as { fileName: string; contentType?: string; content: string };
+        const body: { fileName: string; contentType?: string; content: string } = payload;
         const bytes = base64ToBytes(body.content);
 
-        const sha256 = yield* sha256Hex(
-          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-        );
+        const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
         const key = applicationKey(ctx.organization.id, applicationId, sha256);
         yield* r2.put(key, bytes, {
@@ -8669,9 +10207,9 @@ export const createEnterpriseService = ({
         const r2 = yield* R2Storage;
         const ctx = yield* requireTenant(request, tenantId);
 
-        const app = (yield* db.query.application.findFirst({
+        const app = yield* db.query.application.findFirst({
           where: { id: applicationId, organizationId: ctx.organization.id },
-        })) as EnterpriseApplication | undefined;
+        });
 
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
@@ -8704,7 +10242,7 @@ export const createEnterpriseService = ({
         yield* requireTenant(request, tenantId, "write");
 
         const affected = yield* Effect.forEach(
-          [...(ids as ReadonlyArray<string>)],
+          [...ids],
           (policyId) =>
             Effect.gen(function* () {
               const policy = yield* db.query.policy.findFirst({
@@ -8717,11 +10255,7 @@ export const createEnterpriseService = ({
         );
 
         const pushed = yield* applePush.pushAppleDevices(affected.flat());
-        yield* reportPolicyDeliveryFailure(
-          tenantId,
-          { policyIds: [...(ids as ReadonlyArray<string>)] },
-          pushed,
-        );
+        yield* reportPolicyDeliveryFailure(tenantId, { policyIds: [...ids] }, pushed);
 
         return ok;
       }),
@@ -8735,7 +10269,7 @@ export const createEnterpriseService = ({
 
         if (!source)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
-        const body = payload as { name?: string };
+        const body: { name?: string } = payload;
         const newId = id();
         yield* db.insert(schema.policy).values({
           id: newId,
@@ -8768,7 +10302,7 @@ export const createEnterpriseService = ({
       }),
     extractMobileconfig: (payload) =>
       Effect.gen(function* () {
-        const body = payload as { mobileconfig: string };
+        const body: { mobileconfig: string } = payload;
 
         return yield* Effect.tryPromise({
           try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
@@ -8780,7 +10314,7 @@ export const createEnterpriseService = ({
       }),
     previewMobileconfig: (payload) =>
       Effect.gen(function* () {
-        const body = payload as { mobileconfig: string };
+        const body: { mobileconfig: string } = payload;
 
         return yield* Effect.tryPromise({
           try: () => parseMobileconfigPreview(body.mobileconfig),
@@ -8901,21 +10435,25 @@ export const createEnterpriseService = ({
 
           const direction = filters.direction === "desc" ? -1 : 1;
 
-          const sortValue = (snapshot: (typeof matches)[number]) =>
-            filters.sort === "lastSeenAt"
-              ? snapshot.row.lastSeenAt.getTime()
-              : filters.sort === "enrolledAt"
-                ? snapshot.row.enrolledAt.getTime()
-                : filters.sort === "status"
-                  ? snapshot.row.status
-                  : snapshot.row.name;
+          const sortValue = (snapshot: (typeof matches)[number]) => {
+            switch (filters.sort) {
+              case "lastSeenAt":
+                return snapshot.row.lastSeenAt.getTime();
+              case "enrolledAt":
+                return snapshot.row.enrolledAt.getTime();
+              case "status":
+                return snapshot.row.status;
+              default:
+                return snapshot.row.name;
+            }
+          };
 
           matches.sort((left, right) => {
             const a = sortValue(left);
             const b = sortValue(right);
 
             const comparison =
-              typeof a === "number" && typeof b === "number"
+              Schema.is(Schema.Number)(a) && Schema.is(Schema.Number)(b)
                 ? a - b
                 : String(a).localeCompare(String(b), undefined, { numeric: true });
 
@@ -8989,7 +10527,7 @@ export const createEnterpriseService = ({
     createDashboard: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body = payload as { name?: string; description?: string | null; template?: string };
+        const body: { name?: string; description?: string | null; template?: string } = payload;
         const name = body.name?.trim();
 
         if (!name)
@@ -9030,7 +10568,10 @@ export const createEnterpriseService = ({
                   dashboardId,
                   type: widget.type,
                   title: widget.title,
-                  config: normalizeWidgetConfig(widget.type, widget.config),
+                  config: normalizeWidgetConfig(
+                    widget.type,
+                    Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(widget.config)),
+                  ),
                   ...layout,
                   createdAt: timestamp,
                   updatedAt: timestamp,
@@ -9061,11 +10602,11 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const row = yield* requireDashboard(ctx.organization.id, dashboardId);
 
-        const body = payload as {
+        const body: {
           name?: string;
           description?: string | null;
           isDefault?: boolean;
-        };
+        } = payload;
 
         if (body.name !== undefined && !body.name.trim())
           return yield* Effect.fail(
@@ -9087,11 +10628,12 @@ export const createEnterpriseService = ({
         yield* db
           .update(schema.dashboard)
           .set({
-            ...(body.name !== undefined ? { name: body.name.trim().slice(0, 120) } : {}),
-            ...(body.description !== undefined
-              ? { description: body.description?.trim().slice(0, 2000) || null }
-              : {}),
-            ...(body.isDefault === true ? { isDefault: true } : {}),
+            name: body.name !== undefined ? body.name.trim().slice(0, 120) : undefined,
+            description:
+              body.description !== undefined
+                ? body.description?.trim().slice(0, 2000) || null
+                : undefined,
+            isDefault: body.isDefault === true ? true : undefined,
             updatedAt: now(),
           })
           .where(eq(schema.dashboard.id, row.id));
@@ -9131,15 +10673,15 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
 
-        const body = payload as {
+        const body: {
           type?: string;
           title?: string;
-          config?: unknown;
+          config?: Schema.Json;
           x?: number;
           y?: number;
           w?: number;
           h?: number;
-        };
+        } = payload;
 
         const title = body.title?.trim();
 
@@ -9147,7 +10689,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Widget title is required" }),
           );
-        const type = body.type as DashboardWidgetType;
+        const type = Schema.decodeUnknownSync(DashboardWidgetType)(body.type);
         const layout = normalizeWidgetLayout(body);
         const widgetId = id();
         const timestamp = now();
@@ -9191,17 +10733,20 @@ export const createEnterpriseService = ({
         if (!existing)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Widget not found" }));
 
-        const body = payload as {
+        const body: {
           type?: DashboardWidgetType;
           title?: string;
-          config?: unknown;
+          config?: Schema.Json;
           x?: number;
           y?: number;
           w?: number;
           h?: number;
-        };
+        } = payload;
 
-        const type = body.type ?? (existing.type as DashboardWidgetType);
+        const type = body.type
+          ? Schema.decodeUnknownSync(DashboardWidgetType)(body.type)
+          : Schema.decodeUnknownSync(DashboardWidgetType)(existing.type);
+
         const title = body.title?.trim();
 
         if (body.title !== undefined && !title)
@@ -9223,15 +10768,18 @@ export const createEnterpriseService = ({
           body.config !== undefined
             ? normalizeWidgetConfig(type, body.config)
             : body.type !== undefined
-              ? normalizeWidgetConfig(type, existing.config)
+              ? normalizeWidgetConfig(
+                  type,
+                  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(existing.config)),
+                )
               : undefined;
 
         yield* db
           .update(schema.dashboardWidget)
           .set({
-            ...(body.type !== undefined ? { type } : {}),
-            ...(title !== undefined ? { title: title.slice(0, 120) } : {}),
-            ...(config !== undefined ? { config } : {}),
+            type: body.type !== undefined ? type : undefined,
+            title: title !== undefined ? title.slice(0, 120) : undefined,
+            config: config !== undefined ? config : undefined,
             ...layout,
             updatedAt: now(),
           })
@@ -9277,9 +10825,9 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
 
-        const body = payload as {
+        const body: {
           widgets?: ReadonlyArray<{ id: string; x?: number; y?: number; w?: number; h?: number }>;
-        };
+        } = payload;
 
         const current = yield* loadDashboardWidgets(dashboardRow.id);
         const byId = new Map(current.map((widget) => [widget.id, widget]));
@@ -9313,7 +10861,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        return yield* runDashboardQuery(ctx.organization.id, payload as DashboardQueryRequest);
+        return yield* runDashboardQuery(ctx.organization.id, payload);
       }),
     exportDevices: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -9342,21 +10890,25 @@ export const createEnterpriseService = ({
 
           const direction = filters.direction === "desc" ? -1 : 1;
 
-          const sortValue = (snapshot: (typeof matches)[number]) =>
-            filters.sort === "lastSeenAt"
-              ? snapshot.row.lastSeenAt.getTime()
-              : filters.sort === "enrolledAt"
-                ? snapshot.row.enrolledAt.getTime()
-                : filters.sort === "status"
-                  ? snapshot.row.status
-                  : snapshot.row.name;
+          const sortValue = (snapshot: (typeof matches)[number]) => {
+            switch (filters.sort) {
+              case "lastSeenAt":
+                return snapshot.row.lastSeenAt.getTime();
+              case "enrolledAt":
+                return snapshot.row.enrolledAt.getTime();
+              case "status":
+                return snapshot.row.status;
+              default:
+                return snapshot.row.name;
+            }
+          };
 
           matches.sort((left, right) => {
             const a = sortValue(left);
             const b = sortValue(right);
 
             const comparison =
-              typeof a === "number" && typeof b === "number"
+              Schema.is(Schema.Number)(a) && Schema.is(Schema.Number)(b)
                 ? a - b
                 : String(a).localeCompare(String(b), undefined, { numeric: true });
 
@@ -9417,7 +10969,9 @@ export const createEnterpriseService = ({
                 ? "Enabled"
                 : "Disabled",
             row.batteryHealth,
-            capabilityText(row.capabilities),
+            capabilityText(
+              Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.capabilities)),
+            ),
             row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : "",
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
           ]),
@@ -9578,22 +11132,20 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const filters = (query ?? {}) as {
+        const filters: {
           q?: string;
           managed?: string;
           updates?: string;
           limit?: number;
           offset?: number;
-        };
+        } = query ?? {};
 
         const term = filters.q?.trim().toLowerCase() ?? "";
 
-        const managed =
-          filters.managed === "managed"
-            ? true
-            : filters.managed === "unmanaged"
-              ? false
-              : undefined;
+        let managed: boolean | undefined;
+
+        if (filters.managed === "managed") managed = true;
+        else if (filters.managed === "unmanaged") managed = false;
 
         const updatesOnly = filters.updates === "available";
         const limit = Math.min(Math.max(Math.trunc(Number(filters.limit ?? 100)) || 100, 1), 500);
@@ -9706,7 +11258,35 @@ export const createEnterpriseService = ({
           .from(schema.enterpriseGroup)
           .where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
 
-        return { rows: rows.map((row: EnterpriseGroup) => rowGroup(row)) };
+        const ids = rows.map((row) => row.id);
+
+        const [deviceCounts, policyCounts] = ids.length
+          ? yield* Effect.all([
+              db
+                .select({ groupId: schema.groupDevice.groupId, value: count() })
+                .from(schema.groupDevice)
+                .where(inArray(schema.groupDevice.groupId, ids))
+                .groupBy(schema.groupDevice.groupId),
+              db
+                .select({ groupId: schema.groupPolicy.groupId, value: count() })
+                .from(schema.groupPolicy)
+                .where(inArray(schema.groupPolicy.groupId, ids))
+                .groupBy(schema.groupPolicy.groupId),
+            ])
+          : [[], []];
+
+        const deviceMap = new Map(deviceCounts.map((row) => [row.groupId, row.value]));
+        const policyMap = new Map(policyCounts.map((row) => [row.groupId, row.value]));
+
+        return {
+          rows: rows.map((row: EnterpriseGroup) =>
+            rowGroup(
+              row,
+              (row.kind ?? "manual") === "dynamic" ? -1 : (deviceMap.get(row.id) ?? 0),
+              policyMap.get(row.id) ?? 0,
+            ),
+          ),
+        };
       }),
     getGroup: (request, tenantId, groupId) =>
       Effect.gen(function* () {
@@ -9833,7 +11413,7 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "billing-portal");
 
         if (!stripe) return yield* Effect.fail(billingNotConfigured());
-        const body = payload as { returnUrl: string };
+        const body: { returnUrl: string } = payload;
         const customer = yield* ensureStripeCustomer(ctx.organization);
 
         const result = yield* stripe.billingPortal.sessions
@@ -9861,18 +11441,18 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const body = payload as {
+        const body: {
           tool?: string;
           method?: string;
           path?: string;
           status?: number;
-        };
+        } = payload;
 
         yield* audit(ctx, "mcp.tool_called", "mcp", null, {
-          tool: body.tool,
-          method: body.method,
-          path: body.path,
-          status: body.status,
+          tool: body.tool ?? null,
+          method: body.method ?? null,
+          path: body.path ?? null,
+          status: body.status ?? null,
         });
 
         return ok;
@@ -9909,8 +11489,8 @@ export const createEnterpriseService = ({
         if (credential.length === 0)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Passkey not found" }));
 
-        // Never strand the account: another passkey, or a password with an
-        // active email identifier (which also enables email-code sign-in).
+        // Passkeys are the only sign-in method, so removing the last one would
+        // make the account unreachable.
         const otherPasskey = yield* db
           .select({ credentialId: schema.authPasskeyCredentials.credentialId })
           .from(schema.authPasskeyCredentials)
@@ -9923,30 +11503,10 @@ export const createEnterpriseService = ({
           )
           .limit(1);
 
-        const password = yield* db
-          .select({ credentialId: schema.authPasswords.credentialId })
-          .from(schema.authPasswords)
-          .where(eq(schema.authPasswords.subjectId, user.id))
-          .limit(1);
-
-        const identifier = yield* db
-          .select({ value: schema.authIdentifiers.value })
-          .from(schema.authIdentifiers)
-          .where(
-            and(
-              eq(schema.authIdentifiers.subjectId, user.id),
-              eq(schema.authIdentifiers.namespace, "email"),
-              eq(schema.authIdentifiers.active, true),
-            ),
-          )
-          .limit(1);
-
-        // A password, another passkey or an active email identifier (which
-        // enables email-code sign-in) keeps the account reachable.
-        if (otherPasskey.length === 0 && password.length === 0 && identifier.length === 0)
+        if (otherPasskey.length === 0)
           return yield* Effect.fail(
             new EnterpriseBadRequest({
-              message: "Add another sign-in method before removing this passkey.",
+              message: "Add another passkey before removing this one.",
             }),
           );
 
@@ -9987,17 +11547,15 @@ export const createEnterpriseService = ({
         return ok;
       }),
     stepUpMethods: (request) => auth.stepUpMethods(webRequestFromRequest(request, origin)),
-    stepUpPassword: (request, payload) =>
-      auth.stepUpPassword(webRequestFromRequest(request, origin), payload),
     stepUpTotp: (request, payload) =>
       auth.stepUpTotp(webRequestFromRequest(request, origin), payload),
     beginStepUpPasskey: (request, payload) =>
       auth.beginStepUpPasskey(webRequestFromRequest(request, origin), payload),
     completeStepUpPasskey: (request, payload) =>
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
-  };
+  } satisfies Record<string, (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>>;
 
-  return wrapServiceErrors(service, true, analytics) as typeof service;
+  return wrapServiceErrors(service, true, analytics);
 };
 
 export const enterpriseHandlers = (
@@ -10048,9 +11606,6 @@ export const enterpriseHandlers = (
     .handle("stepUpMethods", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.stepUpMethods(request)),
     )
-    .handle("stepUpPassword", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.stepUpPassword(request, payload)),
-    )
     .handle("stepUpTotp", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.stepUpTotp(request, payload)),
     )
@@ -10072,6 +11627,9 @@ export const enterpriseHandlers = (
     )
     .handle("me", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.me(request)),
+    )
+    .handle("bootstrap", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.bootstrap(request)),
     )
     .handle("updateMe", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.updateMe(request, payload)),
@@ -10294,11 +11852,10 @@ export const enterpriseHandlers = (
                 result.format === "json"
                   ? "application/json; charset=utf-8"
                   : "text/csv; charset=utf-8",
-              headers: {
-                "Content-Disposition": `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.${extension}"`,
-                ...(result.truncated ? { "X-Export-Truncated": "true" } : {}),
-                "X-Export-Rows": String(result.rowCount),
-              },
+              headers: exportHeaders(
+                `audit-log-${new Date().toISOString().slice(0, 10)}.${extension}`,
+                result,
+              ),
             });
           },
         ),
@@ -10337,9 +11894,22 @@ export const enterpriseHandlers = (
     .handle("acceptInvitation", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.acceptInvitation(request, payload)),
     )
-    .handle("listTenantInvitations", ({ request, params }) =>
+    .handle("previewInvitation", ({ request, query }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.previewInvitation(request, query)),
+    )
+    .handle("listTenantInvitations", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.listTenantInvitations(request, params.tenantId),
+        service.listTenantInvitations(request, params.tenantId, query),
+      ),
+    )
+    .handle("getTenantInvitationOptions", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantInvitationOptions(request, params.tenantId),
+      ),
+    )
+    .handle("resendTenantInvitation", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.resendTenantInvitation(request, params.tenantId, params.invitationId),
       ),
     )
     .handle("cancelTenantInvitation", ({ request, params }) =>
@@ -10359,7 +11929,7 @@ export const enterpriseHandlers = (
     )
     .handle("getEnrollment", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) => {
-        const headers = request.headers as Record<string, string | undefined>;
+        const headers = Object.fromEntries(headersFromRequest(request));
         const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
 
         return service.getEnrollment(params.id, query.code, {
@@ -10371,7 +11941,7 @@ export const enterpriseHandlers = (
     )
     .handleRaw("getAppleEnrollmentProfile", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) => {
-        const headers = request.headers as Record<string, string | undefined>;
+        const headers = Object.fromEntries(headersFromRequest(request));
         const forwarded = headers["x-forwarded-for"]?.split(",")[0]?.trim();
 
         return Effect.map(
@@ -10380,15 +11950,15 @@ export const enterpriseHandlers = (
             ip: headers["cf-connecting-ip"] ?? forwarded,
             userAgent: headers["user-agent"],
           }),
-          (result: { plist: string; filename: string }) => appleEnrollmentProfileResponse(result),
+          (result: { profile: Uint8Array; filename: string }) =>
+            appleEnrollmentProfileResponse(result),
         );
       }),
     )
     .handleRaw("getAdeEnrollmentProfile", ({ params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        Effect.map(
-          service.getAdeEnrollmentProfile(params.token),
-          (result: { plist: string; filename: string }) => appleEnrollmentProfileResponse(result),
+        Effect.map(service.getAdeEnrollmentProfile(params.token), (result) =>
+          appleEnrollmentProfileResponse(result),
         ),
       ),
     )
@@ -10600,11 +12170,10 @@ export const enterpriseHandlers = (
           (result: { csv: string; truncated: boolean; rowCount: number }) =>
             HttpServerResponse.text(result.csv, {
               contentType: "text/csv; charset=utf-8",
-              headers: {
-                "Content-Disposition": `attachment; filename="devices-${new Date().toISOString().slice(0, 10)}.csv"`,
-                ...(result.truncated ? { "X-Export-Truncated": "true" } : {}),
-                "X-Export-Rows": String(result.rowCount),
-              },
+              headers: exportHeaders(
+                `devices-${new Date().toISOString().slice(0, 10)}.csv`,
+                result,
+              ),
             }),
         ),
       ),
@@ -10627,6 +12196,21 @@ export const enterpriseHandlers = (
     .handle("getDeviceEffectivePolicy", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getDeviceEffectivePolicy(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceUsers", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceUsers(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("setDeviceUsers", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.setDeviceUsers(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("listDirectory", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDirectory(request, params.tenantId),
       ),
     )
     .handle("deleteDevices", ({ request, params, payload }) =>

@@ -17,6 +17,8 @@ export function splitProps<T extends Record<string, any>, K extends keyof T>(
   props: T,
   keys: readonly K[],
 ): [Pick<T, K>, Omit<T, K>] {
+  // SAFETY: every key in `keys` is defined as a reactive getter on `picked`
+  // before the object is returned.
   const picked = {} as Pick<T, K>;
 
   for (const key of keys) {
@@ -27,5 +29,9 @@ export function splitProps<T extends Record<string, any>, K extends keyof T>(
     });
   }
 
-  return [picked, omit(props, ...keys) as unknown as Omit<T, K>];
+  const rest: unknown = omit(props, ...keys);
+
+  // SAFETY: `omit` returns the props without `keys`; only its generic signature
+  // names the key array (`K[]`) rather than the union of those keys.
+  return [picked, rest as Omit<T, K>];
 }

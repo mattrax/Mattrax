@@ -18,7 +18,7 @@ test.describe("tenant export and import", () => {
     );
 
     expect(withAudit.ok()).toBe(true);
-    const withAuditBody = (await withAudit.json()) as { auditLog?: unknown[] };
+    const withAuditBody: { auditLog?: Array<unknown> } = await withAudit.json();
     expect(Array.isArray(withAuditBody.auditLog)).toBe(true);
 
     const downloadPromise = page.waitForEvent("download");
@@ -29,10 +29,10 @@ test.describe("tenant export and import", () => {
     const path = await download.path();
     expect(path).not.toBeNull();
 
-    const bundle = JSON.parse(await readFile(path!, "utf8")) as {
+    const bundle: {
       version: number;
       tenant: { name: string; slug: string };
-    };
+    } = JSON.parse(await readFile(path!, "utf8"));
 
     expect(bundle.version).toBe(1);
     expect(bundle.tenant.slug).toBe(tenant.slug);
@@ -83,9 +83,9 @@ test.describe("tenant backups", () => {
 
           if (!response.ok()) return undefined;
 
-          const body = (await response.json()) as {
+          const body: {
             backups: Array<{ id: string; status: string; trigger: string }>;
-          };
+          } = await response.json();
 
           succeeded = body.backups.find(
             (run) => run.status === "succeeded" && run.trigger === "manual",
@@ -107,7 +107,7 @@ test.describe("tenant backups", () => {
     expect(download.ok()).toBe(true);
     expect(download.headers()["cache-control"]).toBe("no-store");
     expect(download.headers()["content-disposition"]).toContain("attachment");
-    const bundle = (await download.json()) as { version: number; tenant: { slug: string } };
+    const bundle: { version: number; tenant: { slug: string } } = await download.json();
     expect(bundle.version).toBe(1);
     expect(bundle.tenant.slug).toBe(tenant.slug);
   });

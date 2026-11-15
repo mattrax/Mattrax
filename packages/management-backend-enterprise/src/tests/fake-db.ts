@@ -1,16 +1,45 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 
-type Row = Record<string, any>;
+type RowValue =
+  | null
+  | undefined
+  | string
+  | number
+  | boolean
+  | Date
+  | Uint8Array
+  | ArrayBuffer
+  | JsonWebKey
+  | ReadonlyArray<RowValue>
+  | Row;
 
-type Store = Record<string, Row[]>;
+export type Row = { [key: string]: RowValue };
 
-const tableSymbol = (description: string) => (value: object) =>
+export type Store = { [key: string]: Row[] };
+
+/** Read a row value that the test seeded as a string. */
+export const stringValue = (value: RowValue): string =>
+  Schema.decodeUnknownSync(Schema.String)(value);
+
+/** Read a row value that the test seeded as JSON. */
+export const jsonValue = (value: RowValue): Schema.Json =>
+  Schema.decodeUnknownSync(Schema.Json)(value);
+
+/** Read a row value that the test seeded as a date. */
+export const dateValue = (value: RowValue): Date =>
+  Schema.decodeUnknownSync(Schema.instanceOf(Date))(value);
+
+type QueryColumn = { readonly name?: string };
+
+type Fields = { readonly [key: string]: QueryColumn };
+
+const tableSymbol = (description: string) => (value: {}) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
 
 const nameSymbol = tableSymbol("drizzle:Name");
 
-export const tableName = (table: any) => table?.[nameSymbol(table)] as string;
+export const tableName = (table: any): string => table?.[nameSymbol(table)];
 
 const flattenChunks = (value: any): any[] => {
   if (!value?.queryChunks) return [value];
@@ -26,10 +55,10 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
   for (let index = 0; index < chunks.length; index++) {
     const chunk = chunks[index];
 
-    if (chunk?.table && typeof chunk.name === "string") {
+    if (chunk?.table && Schema.is(Schema.String)(chunk.name)) {
       const op = chunks[index + 1]?.value?.join?.("") ?? "";
       const param = chunks[index + 2];
-      const key = chunk.name as string;
+      const key = chunk.name;
 
       if (op.includes(" = ") && "value" in param)
         predicates.push((row) => (row[key] ?? row[camel(key)]) === param.value);
@@ -53,16 +82,20 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
-const comparable = (value: unknown): any => {
+const comparable = (value: RowValue): number | string => {
   if (value instanceof Date) return value.getTime();
 
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+  if (Schema.is(Schema.String)(value) && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     const parsed = Date.parse(value.replace(" ", "T") + "Z");
 
     if (Number.isFinite(parsed)) return parsed;
   }
 
-  return value;
+  if (Schema.is(Schema.Number)(value)) return value;
+
+  if (Schema.is(Schema.Boolean)(value)) return String(value);
+
+  return "";
 };
 
 const matchesQuery = (condition: any, row: Row) => {
@@ -121,7 +154,7 @@ const matches = (condition: any, row: Row) => {
 class SelectBuilder {
   constructor(
     private readonly rows: () => Row[],
-    private readonly fields?: Record<string, any>,
+    private readonly fields?: Fields,
   ) {}
 
   private table = "";
@@ -146,12 +179,7 @@ class SelectBuilder {
 
   orderBy(...columns: any[]) {
     this.order = columns
-      .map(
-        (column) =>
-          column?.queryChunks?.find((chunk: any) => chunk?.table && chunk?.name)?.name as
-            | string
-            | undefined,
-      )
+      .map((column) => column?.queryChunks?.find((chunk: any) => chunk?.table && chunk?.name)?.name)
       .filter((column): column is string => Boolean(column));
 
     return this;
@@ -159,14 +187,6 @@ class SelectBuilder {
 
   limit(count: number) {
     return Effect.succeed(this.execute().slice(0, count));
-  }
-
-  then(resolve: (value: Row[]) => void, reject: (reason?: unknown) => void) {
-    try {
-      resolve(this.execute());
-    } catch (error) {
-      reject(error);
-    }
   }
 
   [Symbol.iterator]() {
@@ -183,8 +203,8 @@ class SelectBuilder {
     for (let index = this.order.length - 1; index >= 0; index--) {
       const column = this.order[index]!;
       matched.sort((left, right) => {
-        const a = left[column] ?? left[camel(column)];
-        const b = right[column] ?? right[camel(column)];
+        const a = comparable(left[column] ?? left[camel(column)] ?? null);
+        const b = comparable(right[column] ?? right[camel(column)] ?? null);
 
         return a < b ? -1 : a > b ? 1 : 0;
       });
@@ -242,10 +262,6 @@ class InsertBuilder {
     return this;
   }
 
-  then(resolve: (value: Row[]) => void) {
-    resolve(this.inserted);
-  }
-
   [Symbol.iterator]() {
     return Effect.succeed(this.inserted)[Symbol.iterator]();
   }
@@ -266,17 +282,21 @@ class UpdateBuilder {
   }
 
   where(condition: any) {
+    let affectedRows = 0;
+
     for (const row of this.rows()) {
       if (row.__table !== this.table) continue;
 
       if (!matches(condition, row)) continue;
+
+      affectedRows++;
 
       for (const [key, value] of Object.entries(this.patch)) {
         if (value !== undefined) row[key] = value;
       }
     }
 
-    return Effect.succeed([]);
+    return Effect.succeed({ affectedRows });
   }
 }
 
@@ -298,10 +318,6 @@ class DeleteBuilder {
     return Effect.succeed([]);
   }
 
-  then(resolve: (value: Row[]) => void) {
-    resolve([]);
-  }
-
   [Symbol.iterator]() {
     return Effect.succeed([])[Symbol.iterator]();
   }
@@ -318,13 +334,14 @@ export const makeDb = (initial: Partial<Store> = {}) => {
   ensure(tableName(schema.organization));
   ensure(tableName(schema.device));
   ensure(tableName(schema.scepCa));
+  ensure(tableName(schema.scepChallenge));
 
   return {
     store,
     insert: (table: any) => new InsertBuilder(() => ensure(tableName(table)), tableName(table)),
     update: (table: any) => new UpdateBuilder(() => ensure(tableName(table)), tableName(table)),
     delete: (table: any) => new DeleteBuilder(() => ensure(tableName(table)), tableName(table)),
-    select: (fields?: Record<string, any>) =>
+    select: (fields?: Fields) =>
       new SelectBuilder(() => Object.values(store).flat(), fields),
   };
 };

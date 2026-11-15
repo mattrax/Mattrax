@@ -1,4 +1,4 @@
-import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer, type Element } from "@xmldom/xmldom";
 import { escapeXml, escapeAttr } from "./serializer.js";
 
 export interface SoapHeader {
@@ -101,12 +101,12 @@ function findChildByLocalName(element: Element, localName: string): Element | un
 }
 
 function serializeNode(node: Element): string {
-  return new XMLSerializer().serializeToString(node as any);
+  return new XMLSerializer().serializeToString(node);
 }
 
 export function extractSoapBody(xml: string): string {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, "application/xml") as unknown as Document;
+  const doc = parser.parseFromString(xml, "application/xml");
   const envelope = doc.documentElement;
 
   if (!envelope || envelope.localName !== "Envelope") {
@@ -130,7 +130,7 @@ export function extractSoapBody(xml: string): string {
 
 export function extractSoapHeader(xml: string): SoapHeader {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, "application/xml") as unknown as Document;
+  const doc = parser.parseFromString(xml, "application/xml");
   const envelope = doc.documentElement;
 
   if (!envelope) {

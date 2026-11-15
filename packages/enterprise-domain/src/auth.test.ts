@@ -13,58 +13,64 @@ const evidence = (
     userVerified?: boolean;
     phishingResistant?: boolean;
   }>,
-) => ({
-  revision: {
-    subjectId: "subject-1",
-    securityRevision: "revision-1",
-    credentials: proofs.map((proof) => ({ credentialId: proof.credentialId, revision: "1" })),
-  },
-  flowId: "flow-1",
-  bindingDigest: "digest-1",
-  proofs: proofs.map((proof) => ({
-    method: proof.method,
-    credentialId: proof.credentialId,
-    factors: [...proof.factors],
-    userVerified: proof.userVerified ?? false,
-    phishingResistant: proof.phishingResistant ?? false,
-    verifiedAt: at,
-  })),
-});
+): Sessions.AuthenticationEvidence =>
+  Schema.decodeUnknownSync(Sessions.AuthenticationEvidence)({
+    revision: {
+      subjectId: "subject-1",
+      securityRevision: "revision-1",
+      credentials: proofs.map((proof) => ({ credentialId: proof.credentialId, revision: "1" })),
+    },
+    flowId: "flow-1",
+    bindingDigest: "digest-1",
+    proofs: proofs.map((proof) => ({
+      method: proof.method,
+      credentialId: proof.credentialId,
+      factors: [...proof.factors],
+      userVerified: proof.userVerified ?? false,
+      phishingResistant: proof.phishingResistant ?? false,
+      verifiedAt: DateTime.toEpochMillis(at),
+    })),
+  });
 
-const assess = (proofs: Parameters<typeof evidence>[0], mfa: boolean) =>
+const assess = (proofs: Parameters<typeof evidence>[0], totp: boolean) =>
   Effect.runPromise(
-    Sessions.assessAuthentication(evidence(proofs) as any, authenticationRequirement(mfa)),
+    Sessions.assessAuthentication(evidence(proofs), authenticationRequirement(totp)),
   );
 
 describe("sign-in assurance", () => {
-  it("keeps single-factor sign-in for accounts without an authenticator", () => {
+  it("requires a user-verified phishing-resistant passkey", () => {
     const requirement = authenticationRequirement(false);
+
     expect(
       requirement.alternatives.some(
-        (item) => item.minimumCredentials === 1 && item.factors.includes("knowledge"),
+        (item) =>
+          item.minimumCredentials === 1 &&
+          item.factors.length === 1 &&
+          item.factors[0] === "possession" &&
+          item.userVerified &&
+          item.phishingResistant,
       ),
     ).toBe(true);
     expect(
-      requirement.alternatives.some(
-        (item) => item.minimumCredentials === 1 && item.factors.includes("possession"),
-      ),
-    ).toBe(true);
+      requirement.alternatives.some((item) => item.factors.includes("knowledge")),
+    ).toBe(false);
   });
 
-  it("requires password and authenticator together when MFA is enabled", () => {
+  it("adds an authenticator code as a second credential", () => {
     const requirement = authenticationRequirement(true);
+
     expect(requirement.alternatives).toHaveLength(2);
-    const [passwordAlternative, passkeyAlternative] = requirement.alternatives;
-    expect(passwordAlternative!.factors).toEqual(
-      expect.arrayContaining(["knowledge", "possession"]),
-    );
-    expect(passwordAlternative!.minimumCredentials).toBe(2);
-    expect(passwordAlternative!.phishingResistant).toBe(false);
-    expect(passkeyAlternative).toMatchObject({
+    expect(requirement.alternatives[0]).toMatchObject({
       factors: ["possession"],
-      minimumCredentials: 1,
+      minimumCredentials: 2,
       userVerified: true,
       phishingResistant: true,
+    });
+    expect(requirement.alternatives[1]).toMatchObject({
+      factors: ["possession"],
+      minimumCredentials: 2,
+      userVerified: true,
+      phishingResistant: false,
     });
   });
 });
@@ -78,12 +84,6 @@ describe("TOTP policy", () => {
     expect(policy.allowRecoveryCodeForPending).toBe(true);
   });
 });
-
-const password = {
-  credentialId: "password-1",
-  method: "password",
-  factors: ["knowledge"] as const,
-};
 
 const totp = {
   credentialId: "totp-1",
@@ -99,40 +99,34 @@ const passkey = {
   phishingResistant: true,
 };
 
-const emailCode = {
-  credentialId: "email-1",
-  method: "email",
+const sso = {
+  credentialId: "sso-1",
+  method: "sso-oidc",
   factors: ["possession"] as const,
+  userVerified: true,
+  phishingResistant: false,
 };
 
 describe("MFA assessment", () => {
-  it("accepts password plus authenticator code", async () => {
-    const result = await assess([password, totp], true);
-    expect(result.satisfied).toBe(true);
-  });
-
   it("accepts a user-verified phishing-resistant passkey on its own", async () => {
-    const result = await assess([passkey], true);
+    const result = await assess([passkey], false);
     expect(result.satisfied).toBe(true);
     expect(result.assurance.factors).toEqual(["possession"]);
   });
 
-  it("does not accept a password, authenticator code or email code alone", async () => {
-    expect((await assess([password], true)).satisfied).toBe(false);
+  it("does not accept an authenticator code alone", async () => {
+    expect((await assess([totp], false)).satisfied).toBe(false);
     expect((await assess([totp], true)).satisfied).toBe(false);
-    // Possession without user verification is not a phishing-resistant passkey.
-    expect((await assess([emailCode], true)).satisfied).toBe(false);
   });
 
-  it("keeps single-factor sign-in for accounts without MFA", async () => {
-    expect((await assess([password], false)).satisfied).toBe(true);
-    expect((await assess([emailCode], false)).satisfied).toBe(true);
-    expect((await assess([passkey], false)).satisfied).toBe(true);
+  it("requires the authenticator code when TOTP is enabled", async () => {
+    expect((await assess([passkey], true)).satisfied).toBe(false);
+    expect((await assess([passkey, totp], true)).satisfied).toBe(true);
   });
 
-  it("accepts a passkey for a passwordless account that requires MFA", async () => {
-    // `passkeyEnabled` alone puts the account on the MFA requirement; a
-    // passwordless account therefore signs in with its passkey.
-    expect((await assess([passkey], true)).satisfied).toBe(true);
+  it("keeps SSO as an enterprise alternative", async () => {
+    expect((await assess([sso], false)).satisfied).toBe(true);
+    expect((await assess([sso], true)).satisfied).toBe(false);
+    expect((await assess([sso, totp], true)).satisfied).toBe(true);
   });
 });

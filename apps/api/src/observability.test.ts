@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import {
   REQUEST_ID_HEADER,
   errorTagFromBody,
@@ -98,9 +99,15 @@ describe("request logging", () => {
   });
 });
 
+const EnterpriseBadRequest = Schema.TaggedStruct("EnterpriseBadRequest", {
+  message: Schema.String,
+});
+
+const EnterpriseNotFound = Schema.TaggedStruct("EnterpriseNotFound", {});
+
 describe("error tags", () => {
   it("reads only the Effect error tag", () => {
-    expect(errorTagFromBody({ _tag: "EnterpriseBadRequest", message: "no" })).toBe(
+    expect(errorTagFromBody(EnterpriseBadRequest.make({ message: "no" }))).toBe(
       "EnterpriseBadRequest",
     );
     expect(errorTagFromBody({ message: "no tag" })).toBeUndefined();
@@ -112,7 +119,7 @@ describe("error tags", () => {
     expect(await readErrorTag(new Response("bad", { status: 400 }))).toBeUndefined();
     expect(
       await readErrorTag(
-        new Response(JSON.stringify({ _tag: "EnterpriseNotFound" }), {
+        new Response(JSON.stringify(EnterpriseNotFound.make({})), {
           status: 404,
           headers: { "content-type": "application/json" },
         }),

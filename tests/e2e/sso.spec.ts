@@ -10,7 +10,15 @@ const base64url = (value: Buffer | string) =>
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 
-const sign = (secret: string, payload: Record<string, unknown>) => {
+type SsoAssertionClaims = {
+  readonly sub: string;
+  readonly email: string;
+  readonly exp: number;
+  readonly purpose: string;
+  readonly tenantId: string;
+};
+
+const sign = (secret: string, payload: SsoAssertionClaims) => {
   const body = base64url(JSON.stringify(payload));
   const signature = createHmac("sha256", secret).update(body).digest();
 
@@ -32,9 +40,9 @@ test.describe("single sign-on", () => {
     const tenant = await bootstrapTenant(page, "SSO Tenant");
     const origin = new URL(page.url()).origin;
 
-    const me = (await (await page.request.get(`${origin}/api/v1/me`)).json()) as {
+    const me: {
       user: { id: string; email: string };
-    };
+    } = await (await page.request.get(`${origin}/api/v1/me`)).json();
 
     await page.context().clearCookies();
 
@@ -53,9 +61,9 @@ test.describe("single sign-on", () => {
 
     expect(response.ok(), await response.text()).toBe(true);
 
-    const after = (await (await page.request.get(`${origin}/api/v1/me`)).json()) as {
+    const after: {
       user: { id: string };
-    };
+    } = await (await page.request.get(`${origin}/api/v1/me`)).json();
 
     expect(after.user.id).toBe(me.user.id);
   });

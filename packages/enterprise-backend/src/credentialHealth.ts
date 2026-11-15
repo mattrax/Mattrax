@@ -13,7 +13,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -179,27 +179,22 @@ export const loadCredentialHealth = (
   now: Date = new Date(),
 ): Effect.Effect<CredentialHealth, unknown> =>
   Effect.gen(function* () {
-    const [apnsRow] = (yield* db
+    const [apnsRow] = yield* db
       .select()
       .from(schema.applePushCertificate)
       .where(eq(schema.applePushCertificate.organizationId, organizationId))
-      .limit(1)) as Array<{ certPem: string }>;
+      .limit(1);
 
-    const [caRow] = (yield* db
+    const [caRow] = yield* db
       .select()
       .from(schema.scepCa)
       .where(eq(schema.scepCa.id, 1))
-      .limit(1)) as Array<{ certPem: string }>;
+      .limit(1);
 
-    const certificates = (yield* db
+    const certificates = yield* db
       .select()
       .from(schema.scepIssuedCertificate)
-      .where(eq(schema.scepIssuedCertificate.organizationId, organizationId))) as Array<{
-      notAfter: Date;
-      revokedAt: Date | null;
-      deviceId: string | null;
-      createdAt: Date;
-    }>;
+      .where(eq(schema.scepIssuedCertificate.organizationId, organizationId));
 
     return {
       apns: credentialInfo(Boolean(apnsRow), parseCertificateNotAfter(apnsRow?.certPem), now),

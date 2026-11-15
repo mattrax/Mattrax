@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 
 const platforms = [
@@ -81,7 +81,7 @@ const faqs = [
 
 export default function Page() {
   return (
-    <>
+    <main id="main-content" tabindex="-1">
       <Hero />
       <Platforms />
       <FeatureGrid />
@@ -91,7 +91,7 @@ export default function Page() {
       <Pricing />
       <Faq />
       <FinalCta />
-    </>
+    </main>
   );
 }
 
@@ -113,7 +113,7 @@ function Hero() {
           <h1 class="mt-7 text-[2.7rem] font-[540] leading-[0.98] tracking-[-0.045em] text-foreground sm:text-5xl lg:text-[3.4rem] xl:text-[3.6rem]">
             Device management
             <br />
-            <span class="text-muted-foreground/80 xl:whitespace-nowrap">without the legacy.</span>
+            <span class="text-muted-foreground xl:whitespace-nowrap">without the legacy.</span>
           </h1>
 
           <p class="mt-7 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
@@ -142,18 +142,17 @@ function Hero() {
             </a>
           </div>
 
-          <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium tracking-normal text-muted-foreground/80">
-            <span>APNs</span>
-            <Dot />
-            <span>ABM</span>
-            <Dot />
-            <span>VPP</span>
-            <Dot />
-            <span>Entra ID</span>
-            <Dot />
-            <span>Autopilot</span>
-            <Dot />
-            <span>Android Enterprise</span>
+          <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-medium tracking-normal text-muted-foreground">
+            <For each={["APNs", "ABM", "VPP", "Entra ID", "Autopilot", "Android Enterprise"]}>
+              {(label, index) => (
+                <span class="inline-flex items-center gap-3">
+                  <Show when={index() > 0}>
+                    <span aria-hidden="true">·</span>
+                  </Show>
+                  {label}
+                </span>
+              )}
+            </For>
           </div>
         </div>
 
@@ -187,7 +186,7 @@ function FleetPreview() {
               <span class="size-2 rounded-full bg-white/[0.07]" />
               <span class="size-2 rounded-full bg-white/[0.07]" />
             </div>
-            <div class="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/80">
+            <div class="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
               <span class="size-1.5 rounded-full bg-success" />
               All systems operational
             </div>
@@ -196,7 +195,7 @@ function FleetPreview() {
           <div class="p-5">
             <div class="flex items-start justify-between">
               <div>
-                <p class="text-[11px] font-medium tracking-normal text-muted-foreground/80">
+                <p class="text-[11px] font-medium tracking-normal text-muted-foreground">
                   Fleet overview
                 </p>
                 <p class="mt-1 text-2xl font-medium tracking-tight text-foreground">
@@ -223,7 +222,7 @@ function FleetPreview() {
                     </span>
                     <div class="min-w-0 flex-1">
                       <p class="truncate text-xs font-medium text-foreground/90">{device.name}</p>
-                      <p class="truncate text-[10px] text-muted-foreground/80">{device.detail}</p>
+                      <p class="truncate text-[10px] text-muted-foreground">{device.detail}</p>
                     </div>
                     <span
                       class={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium ${
@@ -245,7 +244,7 @@ function FleetPreview() {
                 Policy sync
               </div>
               <div class="flex items-center gap-2">
-                <span class="text-[10px] text-muted-foreground/80">1,278 delivered</span>
+                <span class="text-[10px] text-muted-foreground">1,278 delivered</span>
                 <span class="rounded-md bg-card px-2 py-0.5 text-[10px] font-medium text-foreground">
                   100%
                 </span>
@@ -262,7 +261,7 @@ function PreviewStat(props: { value: string; label: string }) {
   return (
     <div class="rounded-lg border border-white/[0.07] bg-card p-3">
       <p class="text-lg font-medium tracking-tight text-foreground">{props.value}</p>
-      <p class="mt-0.5 text-[10px] text-muted-foreground/80">{props.label}</p>
+      <p class="mt-0.5 text-[10px] text-muted-foreground">{props.label}</p>
     </div>
   );
 }
@@ -285,7 +284,7 @@ function Platforms() {
             <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
               One control plane.
               <br />
-              <span class="text-muted-foreground/80">Every operating system.</span>
+              <span class="text-muted-foreground">Every operating system.</span>
             </h2>
           </div>
           <p class="max-w-md text-sm leading-6 text-muted-foreground">
@@ -305,12 +304,12 @@ function Platforms() {
                   <span class="flex size-11 items-center justify-center rounded-lg border border-white/[0.07] bg-card text-foreground/80">
                     <platform.icon class="size-5" />
                   </span>
-                  <ArrowIcon class="size-4 -translate-x-1 text-muted-foreground/60 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
+                  <ArrowIcon class="size-4 -translate-x-1 text-muted-foreground opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
                 </div>
                 <h3 class="mt-6 text-xl font-medium tracking-tight text-foreground">
                   {platform.name}
                 </h3>
-                <p class="mt-1 text-[11px] font-medium tracking-normal text-muted-foreground/80">
+                <p class="mt-1 text-[11px] font-medium tracking-normal text-muted-foreground">
                   {platform.tag}
                 </p>
                 <p class="mt-4 text-sm leading-6 text-muted-foreground">{platform.body}</p>
@@ -375,7 +374,7 @@ function Developer() {
           <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             An API, not an afterthought.
           </h2>
-          <p class="mt-5 max-w-lg text-sm leading-6 text-muted-foreground/80 sm:text-base">
+          <p class="mt-5 max-w-lg text-sm leading-6 text-muted-foreground sm:text-base">
             Everything the dashboard does is available over a typed REST API. Build a provisioning
             pipeline, sync inventory into your SIEM, or embed the protocol gateway in your own
             product.
@@ -419,7 +418,7 @@ function Developer() {
                 TypeScript
               </span>
             </div>
-            <pre class="max-w-full overflow-x-auto p-5 text-[12.5px] leading-6 text-muted-foreground/60 sm:p-6">
+            <pre class="max-w-full whitespace-pre-wrap break-words p-5 text-[12.5px] leading-6 text-muted-foreground/90 sm:p-6">
               <code>
                 <span class="text-muted-foreground">
                   {"// Implement one contract, own the product."}
@@ -457,7 +456,7 @@ function Developer() {
 function DeveloperPoint(props: { title: string; body: string }) {
   return (
     <div class="flex gap-3">
-      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.1] text-muted-foreground/80">
+      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.1] text-muted-foreground">
         <CheckIcon class="size-3" />
       </span>
       <div>
@@ -478,7 +477,7 @@ function Migration() {
             <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
               Moving from
               <br />
-              <span class="text-muted-foreground/80">another MDM?</span>
+              <span class="text-muted-foreground">another MDM?</span>
             </h2>
             <p class="mt-5 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
               A migration is a re-enrollment project. We give you the primitives — CSV
@@ -532,9 +531,7 @@ function Migration() {
 function MigrationStep(props: { number: string; title: string; body: string }) {
   return (
     <div class="rounded-lg border border-white/[0.07] bg-white/[0.015] p-5">
-      <p class="text-[10px] font-medium tracking-[0.18em] text-muted-foreground/80">
-        {props.number}
-      </p>
+      <p class="text-[10px] font-medium tracking-[0.18em] text-muted-foreground">{props.number}</p>
       <p class="mt-6 text-sm font-medium text-foreground">{props.title}</p>
       <p class="mt-2 text-xs leading-5 text-muted-foreground">{props.body}</p>
     </div>
@@ -558,7 +555,7 @@ function Enterprise() {
           <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             Built for teams
             <br />
-            <span class="text-muted-foreground/80">that answer audits.</span>
+            <span class="text-muted-foreground">that answer audits.</span>
           </h2>
           <p class="mt-5 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
             Multi-tenant from the database up, with the controls security teams ask for: step-up
@@ -618,7 +615,7 @@ function Pricing() {
           </p>
         </div>
 
-        <div class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="mx-auto mt-12 grid max-w-4xl gap-4 sm:grid-cols-2">
           <PriceCard
             name="Cloud"
             price="Free"
@@ -672,7 +669,7 @@ function PriceCard(props: {
           {props.name}
         </p>
         {props.highlighted && (
-          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground/60">
+          <span class="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             Recommended
           </span>
         )}
@@ -685,19 +682,9 @@ function PriceCard(props: {
         >
           {props.price}
         </span>
-        {props.suffix && (
-          <span
-            class={`text-xs ${props.highlighted ? "text-muted-foreground" : "text-muted-foreground/80"}`}
-          >
-            {props.suffix}
-          </span>
-        )}
+        {props.suffix && <span class="text-xs text-muted-foreground">{props.suffix}</span>}
       </div>
-      <p
-        class={`mt-3 text-xs leading-5 ${props.highlighted ? "text-muted-foreground/80" : "text-muted-foreground"}`}
-      >
-        {props.body}
-      </p>
+      <p class="mt-3 text-xs leading-5 text-muted-foreground">{props.body}</p>
       <a href={props.href} class="mt-6">
         <Button class="w-full rounded-md bg-foreground text-background hover:bg-foreground/90">
           {props.cta}
@@ -706,14 +693,8 @@ function PriceCard(props: {
       <ul class="mt-7 space-y-3 border-t pt-6">
         <For each={props.features}>
           {(feature) => (
-            <li
-              class={`flex items-center gap-2 text-xs ${
-                props.highlighted ? "text-muted-foreground/80" : "text-muted-foreground"
-              }`}
-            >
-              <CheckIcon
-                class={props.highlighted ? "text-muted-foreground" : "text-muted-foreground/80"}
-              />
+            <li class="flex items-center gap-2 text-xs text-muted-foreground">
+              <CheckIcon />
               {feature}
             </li>
           )}
@@ -732,7 +713,7 @@ function Faq() {
           <h2 class="mt-4 text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             The honest
             <br />
-            <span class="text-muted-foreground/80">answers.</span>
+            <span class="text-muted-foreground">answers.</span>
           </h2>
           <p class="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">
             If something is preview or not implemented, the docs say so. The same applies here.
@@ -744,7 +725,7 @@ function Faq() {
               <details class="group py-5">
                 <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-sm font-medium text-foreground/90">
                   {faq.q}
-                  <span class="text-muted-foreground/60 transition group-open:rotate-45">
+                  <span class="text-muted-foreground transition group-open:rotate-45">
                     <PlusIcon />
                   </span>
                 </summary>
@@ -767,7 +748,7 @@ function FinalCta() {
           <h2 class="mx-auto mt-4 max-w-2xl text-[2rem] font-[540] tracking-[-0.035em] text-foreground sm:text-[2.5rem]">
             Your fleet, finally in one place.
           </h2>
-          <p class="mx-auto mt-4 max-w-lg text-sm leading-6 text-muted-foreground/80">
+          <p class="mx-auto mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
             Create a tenant, enroll a device and deploy a policy in under five minutes. Free during
             alpha.
           </p>
@@ -781,7 +762,7 @@ function FinalCta() {
             <a href="/docs/getting-started/quick-start" target="_self">
               <Button
                 variant="outline"
-                class="h-10 rounded-md border-white/[0.1] bg-transparent px-6 text-muted-foreground/70 hover:bg-white/[0.04] hover:text-foreground"
+                class="h-10 rounded-md border-white/[0.1] bg-transparent px-6 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
               >
                 Quick start
               </Button>
@@ -795,7 +776,7 @@ function FinalCta() {
 
 function SectionLabel(props: { children: JSX.Element }) {
   return (
-    <p class="text-[11px] font-medium tracking-normal text-muted-foreground/80">{props.children}</p>
+    <p class="text-[11px] font-medium tracking-normal text-muted-foreground">{props.children}</p>
   );
 }
 
@@ -836,7 +817,7 @@ function CheckIcon(props: { class?: string }) {
       stroke-width="2.5"
       stroke-linecap="round"
       stroke-linejoin="round"
-      class={`${props.class ?? "text-muted-foreground/80"} shrink-0`}
+      class={`${props.class ?? "text-muted-foreground"} shrink-0`}
       aria-hidden="true"
     >
       <polyline points="20 6 9 17 4 12" />

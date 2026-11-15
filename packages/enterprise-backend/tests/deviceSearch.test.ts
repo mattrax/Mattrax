@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   DEVICE_SEARCH_DEFAULT_LIMIT,
@@ -9,6 +10,23 @@ import {
   toCsv,
 } from "../src/deviceSearch.js";
 import { canEnrollDevice } from "../src/enrollmentLimit.js";
+
+/** Query parameters as a URL delivers them, before the helper coerces them. */
+type RawSearchParams = {
+  readonly limit?: number | string;
+  readonly offset?: number | string;
+};
+
+/**
+ * Run the normaliser over uncoerced query-string values. The helper accepts
+ * numeric strings at runtime (`NumericQueryValue`) even though the declared
+ * query type says `number`.
+ */
+const normalizeRaw = (query: RawSearchParams, now: Date) =>
+  // SAFETY: the only fields passed are `limit`/`offset`, which the helper parses
+  // through `NumericQueryValue`; the cast widens the declared numeric fields to
+  // the string form the HTTP layer can deliver.
+  normalizeDeviceSearchQuery(query as DeviceSearchQuery, now);
 
 describe("normalizeDeviceSearchQuery", () => {
   const now = new Date("2026-11-10T12:00:00.000Z");
@@ -33,10 +51,7 @@ describe("normalizeDeviceSearchQuery", () => {
   });
 
   it("coerces query-string numbers", () => {
-    const filters = normalizeDeviceSearchQuery(
-      { limit: "25" as unknown as number, offset: "50" as unknown as number },
-      now,
-    );
+    const filters = normalizeRaw({ limit: "25", offset: "50" }, now);
 
     expect(filters.limit).toBe(25);
     expect(filters.offset).toBe(50);

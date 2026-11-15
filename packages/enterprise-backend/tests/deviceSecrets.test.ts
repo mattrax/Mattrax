@@ -1,6 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { sealSecret } from "@mattrax/crypto";
+import {
+  EnterpriseNotFound,
+  EnterprisePermissionDenied,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
@@ -8,7 +13,7 @@ const origin = "https://enterprise.test";
 const authSecret = "device-secret-test-secret";
 const key = "AAAA-BBBB-CCCC-DDDD-EEEE";
 
-const deviceRow = (id: string, organizationId: string, overrides: Record<string, unknown> = {}) => {
+const deviceRow = (id: string, organizationId: string, overrides: Schema.JsonObject = {}) => {
   const now = new Date();
 
   return {
@@ -46,7 +51,8 @@ const makeContext = async () => {
     requireUser: (input: any) => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
-      if (!headers.cookie) return Effect.fail({ _tag: "EnterpriseUnauthorized" });
+      if (!headers.cookie)
+        return Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
       const member = headers.cookie.includes("member") ? db.store.user[1] : user;
 
       return Effect.succeed({ user: member, apiToken: undefined });
@@ -60,11 +66,13 @@ const makeContext = async () => {
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
     stripeClient: makeStripeClient(),
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
   });
@@ -162,7 +170,7 @@ describe("device recovery key reveal", () => {
           "device-1",
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
     expect(
       db.store.audit_log.some((entry: any) => entry.action === "device.recovery_key_viewed"),
     ).toBe(false);
@@ -184,7 +192,7 @@ describe("device recovery key reveal", () => {
 
     await expect(
       runEffect(service.getDeviceRecoveryKey(request(headers), first.id, "device-2")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 });
 
@@ -323,7 +331,7 @@ describe("installed application inventory", () => {
     // Device-scoped lookups cannot cross the tenant boundary.
     await expect(
       runEffect(service.listDeviceApplications(request(headers), first.id, "device-3")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("supports search, managed and update filters", async () => {

@@ -1,6 +1,6 @@
-import { Cause, Effect, Layer } from "effect";
+import { Cause, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { WindowsMdmService, type WindowsMdmRequestContext } from "./service.js";
+import { WindowsMdmError, WindowsMdmService, type WindowsMdmRequestContext } from "./service.js";
 
 function textRequest(request: HttpServerRequest.HttpServerRequest) {
   return request.arrayBuffer.pipe(Effect.map((buf) => new TextDecoder().decode(buf)));
@@ -14,14 +14,8 @@ function textRequest(request: HttpServerRequest.HttpServerRequest) {
 function describeFailure(cause: Cause.Cause<unknown>, fallback: string) {
   try {
     const error = Cause.squash(cause);
-    const candidate = error as { readonly _tag?: unknown; readonly message?: unknown } | null;
 
-    if (
-      candidate?._tag === "WindowsMdmError" &&
-      typeof candidate.message === "string" &&
-      candidate.message.trim()
-    )
-      return candidate.message;
+    if (error instanceof WindowsMdmError && error.message.trim()) return error.message;
   } catch {
     // An empty/interrupted cause has nothing to describe.
   }
@@ -45,7 +39,7 @@ function encodeFault(service: WindowsMdmService.Service, message: string) {
   try {
     const encoded = Effect.runSync(service.fault(message));
 
-    if (typeof encoded === "string" && encoded.trim()) return encoded;
+    if (encoded.trim()) return encoded;
   } catch {
     // Fall through to a minimal, fixed envelope.
   }
@@ -58,23 +52,19 @@ function encodeFault(service: WindowsMdmService.Service, message: string) {
  * (`?tenant=<signed token>`); device identity comes from the edge-verified mTLS
  * headers, which the API Worker only sets after checking the certificate.
  */
+const headerString = (value: string | string[] | undefined): string | undefined =>
+  Schema.is(Schema.String)(value) ? value : undefined;
+
 function requestContext(request: HttpServerRequest.HttpServerRequest): WindowsMdmRequestContext {
   const url = new URL(request.url, "http://localhost");
   const tenantToken = url.searchParams.get("tenant") ?? undefined;
+  const identityCertificate = headerString(request.headers["x-device-identity-certificate"]);
 
-  const identityCertificate = request.headers["x-device-identity-certificate"] as
-    | string
-    | undefined;
+  const identityCertificateSerial = headerString(
+    request.headers["x-device-identity-certificate-serial"],
+  );
 
-  const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"] as
-    | string
-    | undefined;
-
-  return {
-    ...(tenantToken ? { tenantToken } : {}),
-    ...(identityCertificate ? { identityCertificate } : {}),
-    ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
-  };
+  return { tenantToken, identityCertificate, identityCertificateSerial };
 }
 
 function soapHandler(

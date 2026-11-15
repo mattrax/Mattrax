@@ -19,9 +19,33 @@ import type { InferEnv, UnwrapConfig } from "cf/config";
  */
 const rateLimitNamespace = (name: string) => process.env[`MATTRAX_RATE_LIMIT_${name}_NAMESPACE`];
 
+const rateLimitBinding = (name: string, limit: number) => {
+  const namespace = rateLimitNamespace(name);
+
+  return namespace ? bindings.rateLimit({ namespace, simple: { limit, period: 60 } }) : undefined;
+};
+
+const configuredRateLimitBindings = () => {
+  const candidates = {
+    RATE_LIMITER_AUTH: rateLimitBinding("AUTH", 120),
+    RATE_LIMITER_ENROLLMENT: rateLimitBinding("ENROLLMENT", 600),
+    RATE_LIMITER_MDM: rateLimitBinding("MDM", 600),
+    RATE_LIMITER_SCIM: rateLimitBinding("SCIM", 600),
+    RATE_LIMITER_BILLING: rateLimitBinding("BILLING", 600),
+    RATE_LIMITER_SCEP: rateLimitBinding("SCEP", 300),
+  };
+
+  return Object.fromEntries(Object.entries(candidates).filter((entry) => entry[1] !== undefined));
+};
+
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
+ *
+ * The API Worker stays internal: no `domains` and no zone routes. The web
+ * Worker owns the public hostname and proxies /api, /mdm and /scim to this
+ * Worker over the `API` service binding. A route or custom domain here would
+ * bypass that proxy and expose the API (and its OpenAPI document) directly.
  */
 export const apiWorker = {
   name: "mattrax-api",
@@ -30,8 +54,20 @@ export const apiWorker = {
   entrypoint: new URL("./src/index.ts", import.meta.url).pathname,
   workersDev: false,
   previewUrls: false,
-  observability: { enabled: true },
-  placement: { mode: "smart" as const },
+  // Workers Logs + real-time Issues: uncaught exceptions, failed invocations,
+  // 5xx responses and error-level logs are grouped into issues in the
+  // dashboard without any SDK.
+  observability: { enabled: true, issues: { enabled: true } },
+  // The database is a DigitalOcean MySQL instance in New York. Smart Placement
+  // does not see Hyperdrive's socket traffic, and a TCP `host` hint is not
+  // picked up while the origin's firewall blocks placement probes, so the
+  // isolate stayed in the request colo (Perth in the worst case) and every
+  // query crossed the Pacific (~550ms for SELECT 1). Pin it to the nearest
+  // Cloudflare region instead: Ashburn is ~5-10ms from the origin.
+  placement: {
+    mode: "targeted" as const,
+    region: "aws:us-east-1",
+  },
   // Daily maintenance: expired invitations, stale devices, expired auth
   // proofs/sessions and audit retention. Keep the off-peak UTC schedule.
   triggers: [
@@ -45,7 +81,6 @@ export const apiWorker = {
     // their own canonical origin. Production sets the hosted Mattrax domain.
     ORIGIN: bindings.secret(),
     TRUSTED_ORIGINS: bindings.secret(),
-    AUTH_RESET_URL: bindings.secret(),
     AUTH_SECRET: bindings.secret(),
     STRIPE_SECRET_KEY: bindings.secret(),
     STRIPE_WEBHOOK_SECRET: bindings.secret(),
@@ -54,6 +89,7 @@ export const apiWorker = {
     MATTRAX_PLAN_LIMITS: bindings.secret(),
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
+    // Apple profile signing is optional (see `useAppleProfileSigning` below).
     APNS_RELAY_URL: bindings.secret(),
     APNS_RELAY_SECRET: bindings.secret(),
     AZURE_CLIENT_ID: bindings.secret(),
@@ -79,6 +115,20 @@ export const apiWorker = {
     MAINTENANCE_BACKUP_CONCURRENCY: bindings.text("4"),
     /** Tenants synced concurrently by the scheduled Entra directory sync. */
     MAINTENANCE_ENTRA_SYNC_CONCURRENCY: bindings.text("2"),
+    /** Disable the scheduled one-week onboarding follow-up with `false`. */
+    MAINTENANCE_ONBOARDING_EMAILS: bindings.text("true"),
+    /** Days after tenant creation before the onboarding follow-up is eligible. */
+    MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: bindings.text("7"),
+    /** Extra days after the threshold that remain eligible. */
+    MAINTENANCE_ONBOARDING_WINDOW_DAYS: bindings.text("7"),
+    /** Per-recipient cooldown across tenants; `0` disables it. */
+    MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: bindings.text("7"),
+    /** ISO date floor so enabling the follow-up does not mail old tenants. */
+    MATTRAX_ONBOARDING_SINCE: bindings.secret(),
+    /** Reply-To for onboarding mail; defaults to `oscar@otbeaumont.me`. */
+    MATTRAX_ONBOARDING_REPLY_TO: bindings.secret(),
+    /** Support address in the onboarding footer; defaults to the sender. */
+    MATTRAX_ONBOARDING_SUPPORT_EMAIL: bindings.secret(),
     /** PostHog project API key, ingestion host and error sampling. */
     POSTHOG_KEY: bindings.secret(),
     POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),
@@ -89,54 +139,7 @@ export const apiWorker = {
     CF_VERSION_METADATA: bindings.versionMetadata(),
     // Shared edge limiters, only present when the deployment supplies a
     // namespace id. Without them the API keeps its per-isolate fallback.
-    ...(rateLimitNamespace("AUTH")
-      ? {
-          RATE_LIMITER_AUTH: bindings.rateLimit({
-            namespace: rateLimitNamespace("AUTH")!,
-            simple: { limit: 120, period: 60 },
-          }),
-        }
-      : {}),
-    ...(rateLimitNamespace("ENROLLMENT")
-      ? {
-          RATE_LIMITER_ENROLLMENT: bindings.rateLimit({
-            namespace: rateLimitNamespace("ENROLLMENT")!,
-            simple: { limit: 600, period: 60 },
-          }),
-        }
-      : {}),
-    ...(rateLimitNamespace("MDM")
-      ? {
-          RATE_LIMITER_MDM: bindings.rateLimit({
-            namespace: rateLimitNamespace("MDM")!,
-            simple: { limit: 600, period: 60 },
-          }),
-        }
-      : {}),
-    ...(rateLimitNamespace("SCIM")
-      ? {
-          RATE_LIMITER_SCIM: bindings.rateLimit({
-            namespace: rateLimitNamespace("SCIM")!,
-            simple: { limit: 600, period: 60 },
-          }),
-        }
-      : {}),
-    ...(rateLimitNamespace("BILLING")
-      ? {
-          RATE_LIMITER_BILLING: bindings.rateLimit({
-            namespace: rateLimitNamespace("BILLING")!,
-            simple: { limit: 600, period: 60 },
-          }),
-        }
-      : {}),
-    ...(rateLimitNamespace("SCEP")
-      ? {
-          RATE_LIMITER_SCEP: bindings.rateLimit({
-            namespace: rateLimitNamespace("SCEP")!,
-            simple: { limit: 300, period: 60 },
-          }),
-        }
-      : {}),
+    ...configuredRateLimitBindings(),
     HYPERDRIVE: bindings.hyperdrive({
       id: "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/
@@ -156,4 +159,24 @@ export type ApiConfig = UnwrapConfig<typeof apiWorker>;
 
 export type ApiEnv = InferEnv<ApiConfig>;
 
-export default defineConfig({ worker: apiWorker });
+/**
+ * Apple profile signing is optional: without an identity the tenant SCEP CA
+ * signs profile downloads (or the plist is served unsigned). `cf deploy`
+ * refuses to ship a declared secret that has no value, so the three bindings
+ * are only part of the deployed Worker when the deploy supplies the identity.
+ */
+const useAppleProfileSigning = Boolean(process.env.APPLE_PROFILE_SIGNING_CERT);
+
+export default defineConfig({
+  worker: useAppleProfileSigning
+    ? {
+        ...apiWorker,
+        env: {
+          ...apiWorker.env,
+          APPLE_PROFILE_SIGNING_CERT: bindings.secret(),
+          APPLE_PROFILE_SIGNING_KEY: bindings.secret(),
+          APPLE_PROFILE_SIGNING_CHAIN: bindings.secret(),
+        },
+      }
+    : apiWorker,
+});

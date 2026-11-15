@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { chord, matchesChord, shortcutLabel } from "./commands";
+import { chord, matchesChord, shortcutLabel, type ShortcutEvent } from "./commands";
 
-const event = (
-  overrides: Partial<
-    Record<"key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean | string>
-  > = {},
-) => ({
+const event = (overrides: Partial<ShortcutEvent> = {}): ShortcutEvent => ({
   key: "s",
   metaKey: false,
   ctrlKey: false,
@@ -17,11 +13,11 @@ const event = (
 describe("command shortcuts", () => {
   it("matches mod on meta or control and respects the other modifiers", () => {
     const save = chord("s", { mod: true });
-    expect(matchesChord(save, event({ metaKey: true }) as any)).toBe(true);
-    expect(matchesChord(save, event({ ctrlKey: true }) as any)).toBe(true);
-    expect(matchesChord(save, event({ metaKey: true, shiftKey: true }) as any)).toBe(false);
-    expect(matchesChord(save, event({ metaKey: true, altKey: true }) as any)).toBe(false);
-    expect(matchesChord(save, event({}) as any)).toBe(false);
+    expect(matchesChord(save, event({ metaKey: true }))).toBe(true);
+    expect(matchesChord(save, event({ ctrlKey: true }))).toBe(true);
+    expect(matchesChord(save, event({ metaKey: true, shiftKey: true }))).toBe(false);
+    expect(matchesChord(save, event({ metaKey: true, altKey: true }))).toBe(false);
+    expect(matchesChord(save, event({}))).toBe(false);
   });
 
   it("formats chords and sequences for the palette", () => {

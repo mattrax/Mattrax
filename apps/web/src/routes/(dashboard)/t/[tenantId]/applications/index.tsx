@@ -1,4 +1,5 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import { Match } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
 import {
@@ -22,9 +23,14 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Package } from "~/components/ui/icons";
 import { enterpriseQueries, type ApplicationRow } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 
 const sourceLabel = (source: ApplicationRow["source"]) =>
-  source === "manifest" ? "Manifest" : source === "store" ? "App Store" : "Uploaded";
+  Match.value(source).pipe(
+    Match.when("manifest", () => "Manifest"),
+    Match.when("store", () => "App Store"),
+    Match.orElse(() => "Uploaded"),
+  );
 
 const fields: ReadonlyArray<EntityField<ApplicationRow>> = [
   { id: "name", label: "Name", kind: "text", get: (row) => row.name },
@@ -57,7 +63,7 @@ const fields: ReadonlyArray<EntityField<ApplicationRow>> = [
 
 export default function ApplicationsPage() {
   const params = useParams();
-  const navigate = useNavigate();
+  const { can } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -97,10 +103,11 @@ export default function ApplicationsPage() {
         }
         actions={
           <div class="flex flex-wrap items-center gap-2">
-            <LinkButton variant="outline" href={`/t/${params.tenantId}/dashboards`}>
-              Dashboards
-            </LinkButton>
-            <LinkButton href={`/t/${params.tenantId}/applications/new`}>Add application</LinkButton>
+            <Show when={can("applications.write")}>
+              <LinkButton href={`/t/${params.tenantId}/applications/new`}>
+                Add application
+              </LinkButton>
+            </Show>
           </div>
         }
       />
@@ -112,7 +119,7 @@ export default function ApplicationsPage() {
         toolbar={
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
-        onRowClick={(row) => navigate(`/t/${params.tenantId}/applications/${row.id}`)}
+        rowHref={(row) => `/t/${params.tenantId}/applications/${row.id}`}
         empty={
           conditions().length > 0 ? (
             <EmptyState
@@ -126,9 +133,11 @@ export default function ApplicationsPage() {
               title="No applications"
               description="Add an Apple manifest or App Store app, or catalogue a Windows/Android package."
               action={
-                <LinkButton href={`/t/${params.tenantId}/applications/new`}>
-                  Add application
-                </LinkButton>
+                <Show when={can("applications.write")}>
+                  <LinkButton href={`/t/${params.tenantId}/applications/new`}>
+                    Add application
+                  </LinkButton>
+                </Show>
               }
             />
           )
@@ -190,7 +199,7 @@ export default function ApplicationsPage() {
               return (
                 <Show
                   when={groups + devices > 0}
-                  fallback={<span class="text-[12px] text-muted-foreground/70">Unassigned</span>}
+                  fallback={<span class="text-[12px] text-muted-foreground">Unassigned</span>}
                 >
                   <span class="flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary" class="tabular-nums">

@@ -40,6 +40,9 @@ type ButtonProps<T extends ValidComponent = "button"> = PolymorphicProps<T, Butt
   Pick<ComponentProps<T>, "class">;
 
 const Button = <T extends ValidComponent = "button">(props: ButtonProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as ButtonProps, ["variant", "size", "class"]);
 
   return (

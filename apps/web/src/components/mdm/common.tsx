@@ -1,4 +1,5 @@
-import { For, Show } from "solid-js";
+import { Match } from "effect";
+import { createUniqueId, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -10,7 +11,7 @@ import {
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
-import { errorPresentation } from "~/lib/errors";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
 /** The standard page frame: comfortable gutters, a compact masthead and a
@@ -70,8 +71,14 @@ export function Panel(props: {
   actions?: JSX.Element;
   flush?: boolean;
 }) {
+  // A `section` only becomes a landmark when it has an accessible name. The
+  // generated id keeps that name attached to *this* panel's heading.
+  const headingId = createUniqueId();
+  const titleId = () => (props.title ? `${headingId}-title` : undefined);
+
   return (
     <section
+      aria-labelledby={titleId()}
       class={cn(
         "relative overflow-hidden rounded-lg border border-white/[0.07] bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-24px_rgba(0,0,0,0.9)] transition-[border-color,translate] duration-200 ease-swift hover:border-white/[0.11] motion-safe:hover:-translate-y-px",
         props.class,
@@ -83,7 +90,10 @@ export function Panel(props: {
             when={props.header}
             fallback={
               <div class="min-w-0 flex-1 basis-0">
-                <h2 class="text-[15px] font-[540] leading-5 tracking-[-0.01em] text-foreground">
+                <h2
+                  id={titleId()}
+                  class="text-[15px] font-[540] leading-5 tracking-[-0.01em] text-foreground"
+                >
                   {props.title}
                 </h2>
                 <Show when={props.description}>
@@ -130,7 +140,7 @@ export function StatCard(props: {
       <div class="flex items-center justify-between gap-2">
         <p class="truncate text-[11.5px] font-[450] text-muted-foreground">{props.label}</p>
         <Show when={props.icon}>
-          {(icon) => <span class="text-muted-foreground/60">{icon()({ class: "size-3.5" })}</span>}
+          {(icon) => <span class="text-muted-foreground">{icon()({ class: "size-3.5" })}</span>}
         </Show>
       </div>
       <p class={cn("mt-2 text-[24px] font-[540] leading-none tracking-[-0.035em]", toneClass())}>
@@ -195,15 +205,25 @@ export function DataTable<T>(props: {
   rows: T[] | undefined;
   columns: Array<{ header: string; class?: string; cell: (row: T) => JSX.Element }>;
   empty: JSX.Element;
+  /** Names the table for screen readers; defaults to the visible column headers. */
+  caption?: string;
 }) {
+  const caption = () =>
+    props.caption ?? `Table: ${props.columns.map((column) => column.header).join(", ")}`;
+
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
       <div class="page-enter overflow-hidden rounded-lg border border-white/[0.07] bg-card">
         <table class="w-full text-[13px]">
+          <caption class="sr-only">{caption()}</caption>
           <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <tr>
               <For each={props.columns}>
-                {(col) => <th class={cn("px-4 py-2.5 font-medium", col.class)}>{col.header}</th>}
+                {(col) => (
+                  <th scope="col" class={cn("px-4 py-2.5 font-medium", col.class)}>
+                    {col.header}
+                  </th>
+                )}
               </For>
             </tr>
           </thead>
@@ -239,7 +259,7 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 }
 
 export function ErrorText(props: { error: unknown }) {
-  const presentation = () => errorPresentation(props.error);
+  const presentation = () => errorPresentation(raisedFailure(props.error));
   const showTitle = () => !["validation", "server"].includes(presentation().variant);
 
   return (
@@ -256,7 +276,7 @@ export function ErrorText(props: { error: unknown }) {
 
 /** A query failure with an optional retry, used by list and detail pages. */
 export function QueryError(props: { error: unknown; onRetry?: () => void; class?: string }) {
-  const presentation = () => errorPresentation(props.error);
+  const presentation = () => errorPresentation(raisedFailure(props.error));
 
   return (
     <Show when={props.error}>
@@ -304,19 +324,22 @@ export function LinkButton(props: {
   );
 }
 
-const statusStyles: Record<string, string> = {
-  enrolled: "border-success/25 bg-success/10 text-success-foreground",
-  enrolling: "border-brand/30 bg-brand/10 text-brand",
-  unenrolling: "border-warning/25 bg-warning/10 text-warning-foreground",
-  unenrolled: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
-};
+const statusStyles = new Map<string, string>([
+  ["enrolled", "border-success/25 bg-success/10 text-success-foreground"],
+  ["enrolling", "border-brand/30 bg-brand/10 text-brand"],
+  ["unenrolling", "border-warning/25 bg-warning/10 text-warning-foreground"],
+  ["unenrolled", "border-white/[0.08] bg-white/[0.03] text-muted-foreground"],
+]);
+
+const statusStyle = (status: string) =>
+  statusStyles.get(status) ?? statusStyles.get("unenrolled") ?? "";
 
 export function DeviceStatusBadge(props: { status: string }) {
   return (
     <span
       class={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-        statusStyles[props.status] ?? statusStyles.unenrolled,
+        statusStyle(props.status),
       )}
     >
       <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
@@ -325,25 +348,31 @@ export function DeviceStatusBadge(props: { status: string }) {
   );
 }
 
-const healthStyles: Record<string, { class: string; label: string }> = {
-  healthy: { class: "border-success/25 bg-success/10 text-success-foreground", label: "Healthy" },
-  attention: {
-    class: "border-warning/25 bg-warning/10 text-warning-foreground",
-    label: "Attention",
-  },
-  critical: {
-    class: "border-destructive/25 bg-destructive/10 text-destructive",
-    label: "Critical",
-  },
-  unknown: {
-    class: "border-white/[0.08] bg-white/[0.03] text-muted-foreground",
-    label: "Unknown",
-  },
-};
+const healthStyles = new Map<string, { class: string; label: string }>([
+  [
+    "healthy",
+    { class: "border-success/25 bg-success/10 text-success-foreground", label: "Healthy" },
+  ],
+  [
+    "attention",
+    { class: "border-warning/25 bg-warning/10 text-warning-foreground", label: "Attention" },
+  ],
+  [
+    "critical",
+    { class: "border-destructive/25 bg-destructive/10 text-destructive", label: "Critical" },
+  ],
+  [
+    "unknown",
+    { class: "border-white/[0.08] bg-white/[0.03] text-muted-foreground", label: "Unknown" },
+  ],
+]);
+
+const healthStyle = (level: string) =>
+  healthStyles.get(level) ?? healthStyles.get("unknown") ?? { class: "", label: level };
 
 /** Health/compliance rollup derived by the backend. */
 export function DeviceHealthBadge(props: { level: string }) {
-  const style = () => healthStyles[props.level] ?? healthStyles.unknown!;
+  const style = () => healthStyle(props.level);
 
   return (
     <span
@@ -365,24 +394,20 @@ export function DeviceHealthBadge(props: { level: string }) {
 
 export function PlatformBadge(props: { proto: string }) {
   const icon = () =>
-    props.proto === "apple" ? (
-      <Laptop class="size-3" />
-    ) : props.proto === "win" ? (
-      <MonitorSmartphone class="size-3" />
-    ) : props.proto === "android" ? (
-      <Smartphone class="size-3" />
-    ) : (
-      <TabletSmartphone class="size-3" />
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => <Laptop class="size-3" />),
+      Match.when("win", () => <MonitorSmartphone class="size-3" />),
+      Match.when("android", () => <Smartphone class="size-3" />),
+      Match.orElse(() => <TabletSmartphone class="size-3" />),
     );
 
   const label = () =>
-    props.proto === "apple"
-      ? "Apple"
-      : props.proto === "win"
-        ? "Windows"
-        : props.proto === "android"
-          ? "Android"
-          : props.proto;
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => "Apple"),
+      Match.when("win", () => "Windows"),
+      Match.when("android", () => "Android"),
+      Match.orElse((proto) => proto),
+    );
 
   return (
     <Badge variant="outline" class="gap-1.5 text-muted-foreground">

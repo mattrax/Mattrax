@@ -84,6 +84,8 @@ describe("APNs fan-out", () => {
       update: () => ({ set: () => ({ where: () => Effect.void }) }),
     };
 
+    // SAFETY: the fan-out only calls `name`, `available` and `push`; the
+    // remaining APNs service members are credentials/registration flows.
     const apns = {
       name: "fake",
       available: true,
@@ -99,7 +101,11 @@ describe("APNs fan-out", () => {
     } as never;
 
     const apple = makeApplePush({
+      // SAFETY: the fake exposes only the query/insert/update methods the
+      // fan-out calls, not the full Drizzle `EnterpriseDb` surface.
       db: db as never,
+      // SAFETY: the core schema and the backend's generated schema are distinct
+      // nominal objects over the same tables.
       schema: schema as never,
       apns,
       authSecret,

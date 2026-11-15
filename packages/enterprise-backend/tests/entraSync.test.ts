@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Predicate } from "effect";
 import { syncEntraDirectory } from "../src/entraSync.js";
 import { makeDb } from "./helpers.js";
 
@@ -10,15 +10,27 @@ const user = (id: string, email: string) => ({
   accountEnabled: true,
 });
 
+const group = (id: string, displayName: string, members: string[] = []) => ({
+  id,
+  displayName,
+  members,
+});
+
 const page = <T>(items: T[], next?: string, delta?: string) => ({
   items,
   nextLink: next,
   deltaLink: delta,
 });
 
+type EntraUser = ReturnType<typeof user>;
+
+type EntraGroup = ReturnType<typeof group>;
+
+// SAFETY: the double implements only the Graph calls `syncEntraDirectory` makes;
+// the remaining members are unused by this path.
 const makeGraph = (options: {
-  users: Array<unknown>;
-  groups: Array<unknown> | (() => Effect.Effect<never, Error>);
+  users: Array<EntraUser>;
+  groups: Array<EntraGroup> | (() => Effect.Effect<never, Error>);
 }) =>
   ({
     domains: () =>
@@ -33,7 +45,7 @@ const makeGraph = (options: {
           : page(options.users, "users-next"),
       ),
     groupsDelta: () =>
-      typeof options.groups === "function"
+      Predicate.isFunction(options.groups)
         ? options.groups()
         : Effect.succeed(page(options.groups, undefined, "groups-delta")),
   }) as never;
@@ -58,7 +70,7 @@ describe("syncEntraDirectory pagination", () => {
 
     let transactions = 0;
     const transaction = db.transaction;
-    db.transaction = (work: (tx: any) => unknown) => {
+    db.transaction = <Result>(work: (tx: any) => Result): Result => {
       transactions++;
 
       return transaction(work);
@@ -67,7 +79,7 @@ describe("syncEntraDirectory pagination", () => {
     const result = await Effect.runPromise(
       syncEntraDirectory({
         ...baseOptions,
-        db: db as never,
+        db,
         graph: makeGraph({
           users: [user("u1", "one@acme.com")],
           groups: [{ id: "g1", displayName: "Group", members: [] }],
@@ -97,7 +109,7 @@ describe("syncEntraDirectory pagination", () => {
       Effect.runPromise(
         syncEntraDirectory({
           ...baseOptions,
-          db: db as never,
+          db,
           graph: makeGraph({
             users: [user("u1", "one@acme.com")],
             groups: () => Effect.fail(new Error("graph down")),
@@ -119,6 +131,7 @@ describe("syncEntraDirectory pagination", () => {
     const db = makeDb();
     let called = false;
 
+    // SAFETY: the fake implements only the three Graph reads this refresh uses.
     const graph = {
       domains: () => Effect.succeed([{ id: "acme.com", isVerified: true, isInitial: false }]),
       usersDelta: () => {
@@ -137,7 +150,7 @@ describe("syncEntraDirectory pagination", () => {
       syncEntraDirectory({
         ...baseOptions,
         syncUsersAndGroups: false,
-        db: db as never,
+        db,
         graph,
       }),
     );

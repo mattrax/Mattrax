@@ -4,7 +4,6 @@ import { bootstrapTenant, gotoHydrated } from "./helpers";
 test.describe("application catalogue", () => {
   test("creates, edits and deletes an Apple application", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Apps Tenant");
-    page.on("dialog", (dialog) => dialog.accept());
     await gotoHydrated(page, `/t/${tenant.id}/applications`);
     await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
     await page
@@ -32,7 +31,8 @@ test.describe("application catalogue", () => {
     await page.getByRole("link", { name: "Back to applications" }).click();
     await expect(page.getByRole("link", { name: "Example app renamed" })).toBeVisible();
     await page.getByRole("link", { name: "Example app renamed" }).click();
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: "Delete application" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete application" }).click();
     await expect(page).toHaveURL(/\/applications$/);
     await expect(page.getByText("No applications")).toBeVisible();
   });

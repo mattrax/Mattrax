@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { count, eq } from "drizzle-orm";
 import type { EnterpriseDb } from "./db.ts";
 import { device, subscription } from "./schema.ts";
@@ -45,13 +45,13 @@ export const UNLIMITED_PLAN_LIMITS: PlanLimits = Object.freeze({
 /** Subscription states that no longer grant their stored plan. */
 const DOWNGRADED_SUBSCRIPTION_STATUSES = new Set(["canceled", "incomplete_expired", "unpaid"]);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isRecord = (value: Schema.Json): value is Schema.JsonObject =>
+  Schema.is(Schema.JsonObject)(value);
 
-const normalizeLimit = (value: unknown, path: string, warnings: string[]): PlanLimit => {
+const normalizeLimit = (value: Schema.Json, path: string, warnings: string[]): PlanLimit => {
   if (value === null || value === undefined) return null;
 
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  if (Schema.is(Schema.Number)(value) && Number.isSafeInteger(value) && value >= 0) return value;
   warnings.push(
     `MATTRAX_PLAN_LIMITS: "${path}" must be a non-negative whole number or null; treating it as unlimited.`,
   );
@@ -77,10 +77,10 @@ export const parsePlanLimits = (raw?: string | null): PlanLimitsConfig => {
 
   if (!text) return absent();
 
-  let decoded: unknown;
+  let decoded: Schema.Json;
 
   try {
-    decoded = JSON.parse(text);
+    decoded = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
   } catch {
     warnings.push(
       "MATTRAX_PLAN_LIMITS: the value is not valid JSON; plan limits are disabled (unlimited).",
@@ -101,7 +101,7 @@ export const parsePlanLimits = (raw?: string | null): PlanLimitsConfig => {
   const rawDefault = decoded.defaultPlan ?? decoded.$defaultPlan;
 
   if (rawDefault !== undefined) {
-    if (typeof rawDefault === "string" && rawDefault.trim()) defaultPlan = rawDefault.trim();
+    if (Schema.is(Schema.String)(rawDefault) && rawDefault.trim()) defaultPlan = rawDefault.trim();
     else
       warnings.push(
         `MATTRAX_PLAN_LIMITS: "defaultPlan" must be a non-empty string; using "${DEFAULT_PLAN_NAME}".`,
@@ -275,7 +275,9 @@ export const ownedTenantIds = (db: EnterpriseDb, userId: string) =>
 
     return [
       ...new Set(
-        memberships.filter((row) => hasOwnerRole(row.role)).map((row) => row.organizationId),
+        memberships
+          .filter((row) => row.customRoleId == null && hasOwnerRole(row.role))
+          .map((row) => row.organizationId),
       ),
     ];
   });

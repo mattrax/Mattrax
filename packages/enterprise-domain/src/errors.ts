@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 /**
  * Internal diagnostics for backend errors.
  *
@@ -48,7 +50,7 @@ export type EnterpriseErrorDiagnostic = {
   readonly resourceId?: string;
   readonly retryable?: boolean;
   /** JSON-serializable context for backend logs; never sent to clients. */
-  readonly details?: Record<string, unknown>;
+  readonly details?: Schema.JsonObject;
 };
 
 const diagnostics = new WeakMap<object, EnterpriseErrorDiagnostic>();
@@ -63,8 +65,12 @@ export const diagnoseError = <E extends object>(
   return error;
 };
 
-export const errorDiagnostic = (error: unknown): EnterpriseErrorDiagnostic | undefined =>
-  typeof error === "object" && error !== null ? diagnostics.get(error) : undefined;
+/** Only object values can key the diagnostics WeakMap; primitives never carry one. */
+const isDiagnosticCarrier = <Value>(value: Value): value is Value & object =>
+  typeof value === "object" && value !== null;
+
+export const errorDiagnostic = <Value>(error: Value): EnterpriseErrorDiagnostic | undefined =>
+  isDiagnosticCarrier(error) ? diagnostics.get(error) : undefined;
 
 export const defaultErrorCode = (tag: string): EnterpriseErrorCode | undefined => {
   switch (tag) {

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
+import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
 import { ScepRepository, type ScepIssuedCertificate } from "./repository.js";
 import {
@@ -17,6 +18,20 @@ import {
   certToPem,
   pemToCert,
 } from "./pkcs7.js";
+
+type AttributeValueBlock = { readonly value?: unknown };
+
+function hasAttributeValue(node: unknown): node is AttributeValueBlock {
+  return typeof node === "object" && node !== null && "value" in node;
+}
+
+function attributeValue(attribute: pkijs.AttributeTypeAndValue): string | undefined {
+  const block: unknown = attribute.value.valueBlock;
+
+  if (!hasAttributeValue(block)) return undefined;
+
+  return Schema.is(Schema.String)(block.value) ? block.value : undefined;
+}
 
 const SCEP_CAPS = "Renewal\nSCEPStandard\nSHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
 
@@ -138,11 +153,7 @@ export const ScepService = Layer.effect(
             return yield* failureCertRep("4");
           const ou = signer.subject.typesAndValues.find((item) => item.type === "2.5.4.11");
 
-          const value = issued?.organizationId
-            ? issued.organizationId
-            : ou
-              ? ((ou.value.valueBlock as { value?: string }).value ?? undefined)
-              : undefined;
+          const value = issued?.organizationId ?? (ou ? attributeValue(ou) : undefined);
 
           authentication = value
             ? { organizationalUnit: value, enrollmentId: issued?.enrollmentId }
@@ -172,11 +183,9 @@ export const ScepService = Layer.effect(
         const subject: Array<{ type: string; value: string }> = [];
 
         for (const rdn of req.csr.subject.typesAndValues) {
-          const val = rdn.value.valueBlock as any;
+          const value = attributeValue(rdn);
 
-          if (typeof val.value === "string") {
-            subject.push({ type: rdn.type, value: val.value });
-          }
+          if (value !== undefined) subject.push({ type: rdn.type, value });
         }
 
         if (!subject.some((item) => item.type === "2.5.4.3"))
@@ -185,10 +194,7 @@ export const ScepService = Layer.effect(
         // Pin the certificate to the authenticated tenant. This mirrors mttx's
         // SCEP challenge middleware, which overwrites the CSR subject OU with the
         // tenant id resolved from the challenge.
-        const organizationalUnit =
-          authentication && typeof authentication === "object"
-            ? authentication.organizationalUnit
-            : undefined;
+        const organizationalUnit = authentication?.organizationalUnit;
 
         if (organizationalUnit) {
           const filtered = subject.filter((item) => item.type !== "2.5.4.11");

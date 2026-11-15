@@ -66,7 +66,11 @@
   --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-:root {
+:root,
+/* Public enrollment paints light cards inside a dark document. Declaring the
+   light tokens on a wrapper (rather than relying on :root) lets that subtree
+   keep light surfaces, borders and text without fighting the dark remaps. */
+.theme-light {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -109,6 +113,17 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
+
+/* Every route renders inside a dark shell, so native controls and scrollbars
+   are dark from the first paint. A `.theme-light` island opts back out. */
+:root {
+  color-scheme: dark;
+}
+
+.theme-light {
+  color-scheme: light;
+}
+
 
 .dark {
   --background: #08080a;
@@ -154,12 +169,27 @@
   color-scheme: dark;
 }
 
+/* Users who ask for more contrast get stronger separation between surfaces and
+   hints; the palette, not individual components, carries the change. */
+@media (prefers-contrast: more) {
+  .dark {
+    --border: #3f3f46;
+    --input: #52525b;
+    --muted-foreground: #b4b4bc;
+    --sidebar-border: #4a4a52;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    /* `svh` matches the smallest visible viewport; the extra height below it
+       must still be painted by the document so iOS Safari's overscroll and
+       home-indicator area never reveal a white canvas. */
+    min-height: 100svh;
   }
   html {
     @apply font-sans;
@@ -412,10 +442,11 @@
 
 html {
   scrollbar-gutter: stable;
-}
-
-html:has(.dark) {
-  background-color: #08080a;
+  /* The `html` element is the canvas Safari paints behind the layout viewport,
+     including rubber-band overscroll and the home-indicator safe area. Keep it
+     on the same dark value as the app shell so no white strip can appear. */
+  min-height: 100%;
+  background-color: var(--background);
   color-scheme: dark;
 }
 
@@ -498,6 +529,34 @@ html:has(.dark) {
 
 .dark .border-stone-300 {
   border-color: var(--input);
+}
+
+/* Stone utilities are remapped for the dark shell; undo that inside a light
+   island so the enrollment page keeps its own palette. */
+.theme-light .text-stone-950,
+.theme-light .text-stone-900,
+.theme-light .text-stone-800 {
+  color: oklch(0.147 0.004 49.25);
+}
+
+.theme-light .text-stone-700,
+.theme-light .text-stone-600 {
+  color: oklch(0.374 0.01 67.558);
+}
+
+.theme-light .text-stone-500,
+.theme-light .text-stone-400 {
+  color: oklch(0.553 0.013 58.071);
+}
+
+.theme-light .bg-white {
+  background-color: oklch(1 0 0);
+}
+
+.theme-light .border-stone-100,
+.theme-light .border-stone-200,
+.theme-light .border-stone-300 {
+  border-color: oklch(0.923 0.003 48.717);
 }
 
 .dark .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
@@ -594,6 +653,89 @@ html:has(.dark) {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent);
 }
 
+/* Forced-colors mode strips background images, so the custom chevron above
+   disappears and the extra inline-end padding reads as an empty gap. Hand the
+   control back to the platform, which draws an arrow that follows the user's
+   palette. */
+@media (forced-colors: active) {
+  .dark select:not([multiple]) {
+    appearance: auto;
+    background-image: none;
+    padding-right: 0.5rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Touch targets
+ *
+ * Coarse pointers need a 44px hit area (WCAG 2.5.8). These rules add an
+ * invisible hit area around icon-only controls and keep the painted control at
+ * its authored size, so the dense console looks the same on a desktop and is
+ * still comfortable on a phone. Text fields are the exception: their visible
+ * box is the hit area, so they get taller on touch rather than wider.
+ * ------------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  /* Icon-only controls: the account avatar, icon buttons and dropdown
+     triggers. */
+  :is(
+    .touch-target,
+    [data-slot="button"]:is(
+      .z-button-size-icon,
+      .z-button-size-icon-xs,
+      .z-button-size-icon-sm,
+      .z-button-size-icon-lg
+    ),
+    button[aria-haspopup],
+    button[aria-label="Choose visible columns"]
+  ) {
+    position: relative;
+  }
+
+  /* `overflow-hidden` on the avatar trigger would clip the expanded area, so
+     round the image directly and let the button overflow. */
+  button[aria-haspopup]:has(> img) {
+    overflow: visible;
+  }
+
+  button[aria-haspopup]:has(> img) > img {
+    border-radius: 9999px;
+  }
+
+  :is(
+    .touch-target,
+    [data-slot="button"]:is(
+      .z-button-size-icon,
+      .z-button-size-icon-xs,
+      .z-button-size-icon-sm,
+      .z-button-size-icon-lg
+    ),
+    button[aria-haspopup],
+    button[aria-label="Choose visible columns"]
+  )::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* A checkbox is a replaced element and cannot carry a hit-area
+     pseudo-element. Its label is the real target, so grow the row instead. */
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]) {
+    min-height: 44px;
+  }
+
+  /* Search fields cannot carry a pseudo-element either, so the control itself
+     grows on touch. */
+  input[aria-label="Search table"] {
+    min-height: 44px;
+  }
+}
+
 .dark .z-button-variant-outline {
   color: var(--foreground);
 }
@@ -619,6 +761,14 @@ html:has(.dark) {
 
 @media (prefers-reduced-motion: reduce) {
   .page-enter {
+    animation: none;
+  }
+
+  /* Decorative loops: the hero status ping and skeleton pulses do not carry
+     information on their own, so they stop entirely. Placeholder shapes still
+     communicate "loading". */
+  .animate-ping,
+  .animate-pulse {
     animation: none;
   }
 
@@ -689,6 +839,16 @@ html:has(.dark) {
     grid-column: 1 / -1 !important;
     grid-row: auto !important;
     min-height: 220px;
+  }
+
+  /* KPI and note widgets are short by design. A fixed 220px minimum made four
+     numbers consume nearly a full mobile viewport and left large empty cards. */
+  .dashboard-widget-stat {
+    min-height: 96px;
+  }
+
+  .dashboard-widget-markdown {
+    min-height: 140px;
   }
 
   .dashboard-drag-handle,

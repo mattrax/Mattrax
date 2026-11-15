@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
-import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
+import {
+  AuthCredentialCommandCollector,
+  type AuthInvocation,
+} from "@yielded/auth/Operations";
 import type { StrategyDefinition } from "@yielded/auth/Auth";
 import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
 import { SsoRejected, type AuthClaims } from "@mattrax/enterprise-domain";
@@ -38,7 +41,7 @@ const digest = (value: string) =>
  */
 export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> => ({
   namespace: undefined,
-  bind: ({ claims, namespace, sessions }) => {
+  bind: ({ sessions }) => {
     const layer = Layer.effect(
       SsoServicesTag,
       Effect.gen(function* () {
@@ -56,7 +59,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
 
     const strategy = Auth.makeStrategy(
       {
-        signIn: (_invocation: unknown, input: { token: string }) =>
+        signIn: (_invocation: AuthInvocation, input: { token: string }) =>
           Effect.gen(function* () {
             const services = yield* SsoServicesTag;
 
@@ -66,7 +69,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
 
             if (payload.exp <= Date.now() || payload.purpose !== "sso-assertion")
               return yield* Effect.fail(new SsoRejected({ message: "SSO assertion expired" }));
-            const tenantId = (payload as { tenantId?: string }).tenantId;
+            const tenantId = payload.tenantId;
 
             if (!tenantId)
               return yield* Effect.fail(

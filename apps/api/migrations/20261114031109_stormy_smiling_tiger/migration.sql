@@ -1,0 +1,1 @@
+ALTER TABLE `device` ADD `inventory_requested_at` datetime(3);

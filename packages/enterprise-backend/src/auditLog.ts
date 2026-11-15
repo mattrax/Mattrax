@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect";
 import { EnterpriseBadRequest, type AuditSearchQuery } from "@mattrax/enterprise-domain";
 import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
 import type { EnterpriseSchema } from "./schema.ts";
@@ -36,16 +37,12 @@ export type AuditSearchFilters = {
   readonly offsetPaging: boolean;
 };
 
-const integer = (value: unknown, fallback: number) => {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+const NumericQueryValue = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
 
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
+const integer = (value: number | string | undefined, fallback: number) => {
+  const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(NumericQueryValue)(value));
 
-    if (Number.isFinite(parsed)) return Math.trunc(parsed);
-  }
-
-  return fallback;
+  return parsed === undefined ? fallback : Math.trunc(parsed);
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -99,18 +96,22 @@ export const encodeAuditCursor = (cursor: AuditCursor) =>
 export const encodeAuditOffsetCursor = (offset: number) =>
   base64UrlEncode(JSON.stringify({ o: Math.max(Math.trunc(offset), 0) }));
 
+const AuditCursorPayload = Schema.Struct({
+  c: Schema.optional(Schema.String),
+  i: Schema.optional(Schema.String),
+  o: Schema.optional(Schema.Number),
+});
+
 export const decodeAuditCursor = (raw: string): DecodedAuditCursor => {
   try {
-    const parsed = JSON.parse(base64UrlDecode(raw)) as {
-      c?: unknown;
-      i?: unknown;
-      o?: unknown;
-    };
+    const parsed = Option.getOrUndefined(
+      Schema.decodeUnknownOption(AuditCursorPayload)(JSON.parse(base64UrlDecode(raw))),
+    );
 
-    if (typeof parsed.o === "number" && Number.isInteger(parsed.o) && parsed.o >= 0)
+    if (parsed?.o !== undefined && Number.isInteger(parsed.o) && parsed.o >= 0)
       return { kind: "offset", offset: parsed.o };
 
-    if (typeof parsed.c === "string" && typeof parsed.i === "string") {
+    if (parsed?.c !== undefined && parsed.i !== undefined) {
       const createdAt = new Date(parsed.c);
 
       if (!Number.isNaN(createdAt.getTime())) return { kind: "keyset", createdAt, id: parsed.i };
@@ -173,18 +174,19 @@ export const auditWhere = (
   organizationId: string,
   filters: AuditSearchFilters,
 ): SQL => {
-  const conditions: SQL[] = [eq(schema.auditLog.organizationId, organizationId)];
+  const conditions: [SQL, ...Array<SQL>] = [eq(schema.auditLog.organizationId, organizationId)];
 
   if (filters.action) conditions.push(eq(schema.auditLog.action, filters.action));
 
   if (filters.actor) {
     const pattern = `%${escapeLike(filters.actor)}%`;
-    conditions.push(
-      or(
-        like(schema.auditLog.actorEmail, pattern),
-        like(schema.auditLog.actorUserId, pattern),
-      ) as SQL,
+
+    const condition = or(
+      like(schema.auditLog.actorEmail, pattern),
+      like(schema.auditLog.actorUserId, pattern),
     );
+
+    if (condition) conditions.push(condition);
   }
 
   if (filters.targetType) conditions.push(eq(schema.auditLog.targetType, filters.targetType));
@@ -200,18 +202,18 @@ export const auditWhere = (
   if (filters.cursor) {
     // Keyset pagination is stable even when rows share a millisecond: order by
     // (createdAt desc, id desc), so the next page starts strictly after both.
-    conditions.push(
-      or(
-        lt(schema.auditLog.createdAt, filters.cursor.createdAt),
-        and(
-          eq(schema.auditLog.createdAt, filters.cursor.createdAt),
-          lt(schema.auditLog.id, filters.cursor.id),
-        ),
-      ) as SQL,
+    const condition = or(
+      lt(schema.auditLog.createdAt, filters.cursor.createdAt),
+      and(
+        eq(schema.auditLog.createdAt, filters.cursor.createdAt),
+        lt(schema.auditLog.id, filters.cursor.id),
+      ),
     );
+
+    if (condition) conditions.push(condition);
   }
 
-  return and(...conditions) as SQL;
+  return and(...conditions) ?? conditions[0];
 };
 
 /** Newest first, with the primary key as a deterministic tiebreaker. */
@@ -227,11 +229,11 @@ export type AuditExportEntry = {
   readonly targetId: string | null;
   readonly actorUserId: string | null;
   readonly actorEmail: string | null;
-  readonly metadata: unknown;
+  readonly metadata: Schema.Json;
   readonly createdAt: string;
 };
 
-const metadataCell = (metadata: unknown) =>
+const metadataCell = (metadata: Schema.Json | null | undefined) =>
   metadata === null || metadata === undefined ? "" : JSON.stringify(metadata);
 
 /** RFC 4180 CSV with spreadsheet-formula neutralisation applied by `toCsv`. */

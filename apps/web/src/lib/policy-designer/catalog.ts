@@ -1,118 +1,200 @@
-export type PlatformId = "apple" | "android" | "windows";
+import { Schema } from "effect";
 
-export type PropertyType =
-  | "string"
-  | "integer"
-  | "real"
-  | "boolean"
-  | "date"
-  | "data"
-  | "array"
-  | "dictionary"
-  | "enum"
-  | "unknown";
+export const PlatformId = Schema.Literals(["apple", "android", "windows"]);
+
+export type PlatformId = typeof PlatformId.Type;
+
+export const PropertyType = Schema.Literals([
+  "string",
+  "integer",
+  "real",
+  "boolean",
+  "date",
+  "data",
+  "array",
+  "dictionary",
+  "enum",
+  "unknown",
+]);
+
+export type PropertyType = typeof PropertyType.Type;
+
+export const Property: Schema.Codec<Property, unknown> = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  type: PropertyType,
+  description: Schema.String,
+  defaultValue: Schema.optional(Schema.Json),
+  required: Schema.optional(Schema.Boolean),
+  enum: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        value: Schema.String,
+        description: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+  deprecated: Schema.optional(Schema.Boolean),
+  minOs: Schema.optional(Schema.String),
+  introducedIn: Schema.optional(Schema.String),
+  children: Schema.optional(Schema.Array(Schema.suspend(() => Property))),
+  address: Schema.optional(Schema.String),
+  scope: Schema.optional(Schema.Literals(["device", "user", "system"])),
+  category: Schema.optional(Schema.String),
+  pattern: Schema.optional(Schema.String),
+  min: Schema.optional(Schema.Number),
+  max: Schema.optional(Schema.Number),
+  source: Schema.optional(Schema.String),
+});
 
 export type Property = {
-  key: string;
-  name: string;
-  type: PropertyType;
-  description: string;
-  defaultValue?: unknown;
-  required?: boolean;
-  enum?: Array<{ value: string; description?: string }>;
-  deprecated?: boolean;
-  minOs?: string;
-  introducedIn?: string;
-  children?: Property[];
-  address?: string;
-  scope?: "device" | "user" | "system";
-  category?: string;
-  pattern?: string;
-  min?: number;
-  max?: number;
-  source?: string;
+  readonly key: string;
+  readonly name: string;
+  readonly type: PropertyType;
+  readonly description: string;
+  readonly defaultValue?: Schema.Json;
+  readonly required?: boolean;
+  readonly enum?: ReadonlyArray<{ readonly value: string; readonly description?: string }>;
+  readonly deprecated?: boolean;
+  readonly minOs?: string;
+  readonly introducedIn?: string;
+  readonly children?: ReadonlyArray<Property>;
+  readonly address?: string;
+  readonly scope?: "device" | "user" | "system";
+  readonly category?: string;
+  readonly pattern?: string;
+  readonly min?: number;
+  readonly max?: number;
+  readonly source?: string;
 };
+
+export const Collection: Schema.Codec<Collection, unknown> = Schema.Struct({
+  id: Schema.String,
+  platform: PlatformId,
+  kind: Schema.Literals(["profile", "declaration", "policy", "csp"]),
+  surface: Schema.String,
+  identifier: Schema.String,
+  name: Schema.String,
+  description: Schema.String,
+  group: Schema.optional(Schema.String),
+  deprecated: Schema.optional(Schema.Boolean),
+  minOs: Schema.optional(Schema.String),
+  osVersions: Schema.optional(Schema.Array(Schema.String)),
+  properties: Schema.Array(Property),
+  source: Schema.optional(Schema.String),
+});
 
 export type Collection = {
-  id: string;
-  platform: PlatformId;
-  kind: "profile" | "declaration" | "policy" | "csp";
-  surface: string;
-  identifier: string;
-  name: string;
-  description: string;
-  group?: string;
-  deprecated?: boolean;
-  minOs?: string;
-  osVersions?: string[];
-  properties: Property[];
-  source?: string;
+  readonly id: string;
+  readonly platform: PlatformId;
+  readonly kind: "profile" | "declaration" | "policy" | "csp";
+  readonly surface: string;
+  readonly identifier: string;
+  readonly name: string;
+  readonly description: string;
+  readonly group?: string;
+  readonly deprecated?: boolean;
+  readonly minOs?: string;
+  readonly osVersions?: ReadonlyArray<string>;
+  readonly properties: ReadonlyArray<Property>;
+  readonly source?: string;
 };
 
-export type CollectionSummary = {
-  id: string;
-  platform: PlatformId;
-  kind: Collection["kind"];
-  surface: string;
-  identifier: string;
-  name: string;
-  group?: string;
-  deprecated?: boolean;
-  minOs?: string;
-  propertyCount: number;
+export const CollectionSummary = Schema.Struct({
+  id: Schema.String,
+  platform: PlatformId,
+  kind: Schema.Literals(["profile", "declaration", "policy", "csp"]),
+  surface: Schema.String,
+  identifier: Schema.String,
+  name: Schema.String,
+  group: Schema.optional(Schema.String),
+  deprecated: Schema.optional(Schema.Boolean),
+  minOs: Schema.optional(Schema.String),
+  propertyCount: Schema.Number,
   /** File key when a platform ships one file per collection (Windows). */
-  key?: string;
-};
+  key: Schema.optional(Schema.String),
+});
 
-export type CatalogManifest = {
-  generatedAt: string;
-  sources: Array<{
-    platform: PlatformId;
-    name: string;
-    url: string;
-    license?: string;
-    revision?: string;
-  }>;
-  platforms: Array<{
-    id: PlatformId;
-    name: string;
-    short: string;
-    description: string;
-    docUrl: string;
-  }>;
-  stats: Record<PlatformId, { collections: number; properties: number }>;
-  collections: CollectionSummary[];
-};
+export type CollectionSummary = typeof CollectionSummary.Type;
 
-export type PlatformData = { id: PlatformId; collections: Collection[] };
+export const CatalogManifest = Schema.Struct({
+  generatedAt: Schema.String,
+  sources: Schema.Array(
+    Schema.Struct({
+      platform: PlatformId,
+      name: Schema.String,
+      url: Schema.String,
+      license: Schema.optional(Schema.String),
+      revision: Schema.optional(Schema.String),
+    }),
+  ),
+  platforms: Schema.Array(
+    Schema.Struct({
+      id: PlatformId,
+      name: Schema.String,
+      short: Schema.String,
+      description: Schema.String,
+      docUrl: Schema.String,
+    }),
+  ),
+  stats: Schema.Record(
+    Schema.Literals(["apple", "android", "windows"]),
+    Schema.Struct({ collections: Schema.Number, properties: Schema.Number }),
+  ),
+  collections: Schema.Array(CollectionSummary),
+});
+
+export type CatalogManifest = typeof CatalogManifest.Type;
+
+export const PlatformData: Schema.Codec<PlatformData, unknown> = Schema.Struct({
+  id: PlatformId,
+  collections: Schema.Array(Collection),
+});
+
+export type PlatformData = {
+  readonly id: PlatformId;
+  readonly collections: ReadonlyArray<Collection>;
+};
 
 /**
  * Everything browse and collection-name search need for a platform. Windows
  * serves this as `/catalog/windows/index.json`; Apple and Android derive it from
  * their single-file catalogues so both paths behave the same.
  */
-export type PlatformIndex = {
-  platform: PlatformId;
-  stats: { collections: number; properties: number };
-  collections: CollectionSummary[];
-};
+export const PlatformIndex = Schema.Struct({
+  platform: PlatformId,
+  stats: Schema.Struct({ collections: Schema.Number, properties: Schema.Number }),
+  collections: Schema.Array(CollectionSummary),
+});
+
+export type PlatformIndex = typeof PlatformIndex.Type;
 
 /**
  * Per-property search text, keyed by collection id and then by the value key the
  * designer stores (`address` for Windows, `key` elsewhere). Windows fetches this
  * on the first query; other platforms build it from the loaded catalogue.
  */
-export type SearchIndex = {
-  platform: PlatformId;
-  collections: Record<string, Array<[key: string, text: string]>>;
+export const SearchIndex = Schema.Struct({
+  platform: PlatformId,
+  collections: Schema.Record(
+    Schema.String,
+    Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
+  ),
+});
+
+export type SearchIndex = typeof SearchIndex.Type;
+
+const fetchJson = async <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  url: string,
+  label: string,
+): Promise<S["Type"]> => {
+  const response = await fetch(url);
+
+  if (!response.ok) throw new Error(`Could not load ${label} (${response.status})`);
+
+  return Schema.decodeUnknownSync(schema)(await response.json());
 };
-
-const fetchJson = <T>(url: string, label: string): Promise<T> =>
-  fetch(url).then((response) => {
-    if (!response.ok) throw new Error(`Could not load ${label} (${response.status})`);
-
-    return response.json() as Promise<T>;
-  });
 
 let manifestPromise: Promise<CatalogManifest> | undefined;
 const platformPromises = new Map<PlatformId, Promise<PlatformData>>();
@@ -121,7 +203,8 @@ const searchIndexPromises = new Map<PlatformId, Promise<SearchIndex>>();
 const collectionPromises = new Map<string, Promise<Collection>>();
 
 export const loadManifest = () => {
-  manifestPromise ??= fetchJson<CatalogManifest>(
+  manifestPromise ??= fetchJson(
+    CatalogManifest,
     "/catalog/manifest.json",
     "the settings catalogue",
   ).catch((error) => {
@@ -145,7 +228,7 @@ export const loadPlatform = (platform: PlatformId) => {
   let promise = platformPromises.get(platform);
 
   if (!promise) {
-    promise = fetchJson<PlatformData>(`/catalog/${platform}.json`, `${platform} settings`).catch(
+    promise = fetchJson(PlatformData, `/catalog/${platform}.json`, `${platform} settings`).catch(
       (error) => {
         platformPromises.delete(platform);
         throw error;
@@ -177,13 +260,34 @@ const summarizePlatform = (data: PlatformData): PlatformIndex => ({
   })),
 });
 
+export const WindowsCollectionSummary = Schema.Struct({
+  id: Schema.String,
+  platform: Schema.optional(PlatformId),
+  kind: Schema.Literals(["profile", "declaration", "policy", "csp"]),
+  surface: Schema.String,
+  identifier: Schema.String,
+  name: Schema.String,
+  group: Schema.optional(Schema.String),
+  deprecated: Schema.optional(Schema.Boolean),
+  minOs: Schema.optional(Schema.String),
+  propertyCount: Schema.Number,
+  key: Schema.optional(Schema.String),
+});
+
+export const WindowsPlatformIndex = Schema.Struct({
+  platform: PlatformId,
+  stats: Schema.Struct({ collections: Schema.Number, properties: Schema.Number }),
+  collections: Schema.Array(WindowsCollectionSummary),
+});
+
 export const loadPlatformIndex = (platform: PlatformId) => {
   let promise = indexPromises.get(platform);
 
   if (!promise) {
     promise = (
       platform === "windows"
-        ? fetchJson<Omit<PlatformIndex, "platform">>(
+        ? fetchJson(
+            WindowsPlatformIndex,
             "/catalog/windows/index.json",
             "the Windows settings index",
           ).then((file) => ({
@@ -217,7 +321,8 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
   if (!promise) {
     promise = (
       platform === "windows"
-        ? fetchJson<Collection>(
+        ? fetchJson(
+            Collection,
             `/catalog/windows/${collectionFileKey(collectionId)}.json`,
             `${collectionId} settings`,
           )
@@ -261,7 +366,7 @@ export const loadSearchIndex = (platform: PlatformId) => {
   if (!promise) {
     promise = (
       platform === "windows"
-        ? fetchJson<SearchIndex>("/catalog/windows/search.json", "the settings search index")
+        ? fetchJson(SearchIndex, "/catalog/windows/search.json", "the settings search index")
         : loadPlatform(platform).then(buildSearchIndex)
     ).catch((error) => {
       searchIndexPromises.delete(platform);
@@ -283,7 +388,7 @@ export const searchCollections = (
   const tokens = term.split(/\s+/).filter(Boolean);
 
   return collections
-    .map((collection) => {
+    .flatMap((collection) => {
       const text =
         `${collection.name} ${collection.identifier} ${collection.group ?? ""}`.toLowerCase();
 
@@ -292,13 +397,12 @@ export const searchCollections = (
       for (const token of tokens) {
         const index = text.indexOf(token);
 
-        if (index === -1) return null;
+        if (index === -1) return [];
         score += index === 0 ? 3 : 1;
       }
 
-      return { collection, score };
+      return [{ collection, score }];
     })
-    .filter((value): value is { collection: CollectionSummary; score: number } => Boolean(value))
     .sort((a, b) => b.score - a.score || a.collection.name.localeCompare(b.collection.name))
     .map((value) => value.collection);
 };
@@ -343,7 +447,9 @@ export const resetPlatformCache = (platform: PlatformId) => {
  * repeats identical keys in a few CSPs. Keep one usable property per address or
  * key so a value maps to one SyncML command.
  */
-export const collectionProperties = (collection: { properties: Property[] }): Property[] => {
+export const collectionProperties = (collection: {
+  properties: ReadonlyArray<Property>;
+}): Property[] => {
   const seen = new Set<string>();
 
   return collection.properties.filter((property) => {

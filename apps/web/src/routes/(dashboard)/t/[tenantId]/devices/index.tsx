@@ -1,6 +1,7 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { Option, Schema } from "effect";
 import {
   DeviceStatusBadge,
   EmptyState,
@@ -39,7 +40,8 @@ import {
   toDeviceImportPayload,
   type DeviceImportParseResult,
 } from "~/lib/device-import";
-import { errorPresentation } from "~/lib/errors";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { useCan } from "~/lib/permissions";
 
 const PAGE_SIZE = 50;
 
@@ -50,15 +52,17 @@ const PAGE_SIZE = 50;
  */
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
-  let body: unknown = text;
+  let body: Schema.Json | undefined = text;
 
   try {
-    body = text ? (JSON.parse(text) as unknown) : undefined;
+    body = text
+      ? Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(text)))
+      : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
 
-  const presentation = errorPresentation(body, fallback);
+  const presentation = errorPresentation(raisedFailure(body), fallback);
 
   return new Error(presentation.tag ? presentation.message : fallback);
 };
@@ -77,8 +81,7 @@ const FILTER_PARAM_KEYS = [
 ] as const;
 
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
-const emptyFilterParams = () =>
-  Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""])) as Record<string, string>;
+const emptyFilterParams = () => Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""]));
 
 const selectClass =
   "h-8 w-full min-w-0 rounded-lg px-2.5 pr-8 text-[12.5px] text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60 sm:w-auto";
@@ -114,7 +117,7 @@ function FleetSummary(props: {
             >
               {item.value}
             </p>
-            <p class="mt-1.5 truncate text-[11px] text-muted-foreground/80">{item.hint}</p>
+            <p class="mt-1.5 truncate text-[11px] text-muted-foreground">{item.hint}</p>
           </div>
         )}
       </For>
@@ -122,13 +125,18 @@ function FleetSummary(props: {
   );
 }
 
+const RowGroups = Schema.Struct({
+  groups: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String }))),
+});
+
+const decodeRowGroups = Schema.decodeUnknownOption(RowGroups);
+
 /** Search rows carry group names; the base `DeviceRow` type does not. */
-const rowGroups = (row: DeviceRow) =>
-  (row as DeviceRow & { groups?: ReadonlyArray<{ name: string }> }).groups ?? [];
+const rowGroups = (row: DeviceRow) => Option.getOrUndefined(decodeRowGroups(row))?.groups ?? [];
 
 export default function DevicesPage() {
   const params = useParams();
-  const navigate = useNavigate();
+  const { can, canAny } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -205,7 +213,7 @@ export default function DevicesPage() {
   const [exportTruncated, setExportTruncated] = createSignal(false);
 
   const queryClient = useQueryClient();
-  const [importOpen, setImportOpen] = createSignal(param(searchParams.import) === "1");
+  const [importOpen, setImportOpen] = createSignal(false);
   const [importFileName, setImportFileName] = createSignal("");
   const [importParsed, setImportParsed] = createSignal<DeviceImportParseResult | null>(null);
 
@@ -241,6 +249,21 @@ export default function DevicesPage() {
   };
 
   const chooseImportFile = () => importFileInput?.click();
+
+  // `?import=1` is a convenience link from enrollment settings. Honour it only
+  // for roles that may import; otherwise leave the read surface untouched.
+  createEffect(
+    () => ({ requested: param(searchParams.import) === "1", writable: can("devices.write") }),
+    ({ requested, writable }) => {
+      if (!writable) {
+        setImportOpen(false);
+
+        return;
+      }
+
+      if (requested) setImportOpen(true);
+    },
+  );
 
   const readImportFile = async (file: File | undefined) => {
     resetImport();
@@ -427,6 +450,12 @@ export default function DevicesPage() {
     { defer: true },
   );
 
+  const sortField = (): "name" | "lastSeenAt" | "enrolledAt" | "status" => {
+    const id = sort()?.id;
+
+    return id === "lastSeenAt" || id === "enrolledAt" || id === "status" ? id : "name";
+  };
+
   const filters = () => ({
     q: debouncedQ() || undefined,
     status: status() || undefined,
@@ -436,8 +465,8 @@ export default function DevicesPage() {
     health: health() || undefined,
     push: push() || undefined,
     query: formatDeviceQueryText(deviceQuery()) || undefined,
-    sort: (sort()?.id ?? "name") as "name" | "lastSeenAt" | "enrolledAt" | "status",
-    direction: sort()?.dir ?? ("asc" as const),
+    sort: sortField(),
+    direction: sort()?.dir ?? "asc",
   });
 
   const devices = useQuery(() => ({
@@ -586,14 +615,16 @@ export default function DevicesPage() {
         actions={
           <>
             <div class="flex items-center divide-x divide-white/[0.07] overflow-hidden rounded-lg border border-white/[0.09]">
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-8 rounded-none px-3 text-[12.5px]"
-                onClick={openImport}
-              >
-                Import CSV
-              </Button>
+              <Show when={can("devices.write")}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-8 rounded-none px-3 text-[12.5px]"
+                  onClick={openImport}
+                >
+                  Import CSV
+                </Button>
+              </Show>
               <Button
                 variant="ghost"
                 size="sm"
@@ -604,14 +635,18 @@ export default function DevicesPage() {
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Button
-              as="a"
-              href={`/t/${params.tenantId}/settings/enrollment`}
-              size="sm"
-              class="h-8 text-[12px]"
+            <Show
+              when={can("enrollment.write") && (total() > 0 || hasFilters())}
             >
-              Enroll device
-            </Button>
+              <Button
+                as="a"
+                href={`/t/${params.tenantId}/settings/enrollment`}
+                size="sm"
+                class="h-8 text-[12px]"
+              >
+                Enroll device
+              </Button>
+            </Show>
           </>
         }
       />
@@ -645,11 +680,12 @@ export default function DevicesPage() {
       <MdmTable<DeviceRow>
         mode="server"
         rows={devices.data?.devices}
+        selectable={canAny(["devices.command", "devices.write", "groups.write"])}
         total={devices.data?.total}
         loading={devices.isPending}
         error={devices.error}
         storageKey="devices"
-        onRowClick={(row) => navigate(`/t/${params.tenantId}/devices/${row.id}`)}
+        rowHref={(row) => `/t/${params.tenantId}/devices/${row.id}`}
         searchValue={q()}
         onSearchChange={setQ}
         sortValue={sort()}
@@ -667,7 +703,15 @@ export default function DevicesPage() {
                   aria-label="Filter by status"
                   value={status()}
                   onChange={(event) => {
-                    setStatus(event.currentTarget.value as DeviceRow["status"] | "");
+                    const value = event.currentTarget.value;
+
+                    const status = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(
+                        Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]),
+                      )(value),
+                    );
+
+                    setStatus(status ?? "");
                     setPage(0);
                   }}
                 >
@@ -682,7 +726,15 @@ export default function DevicesPage() {
                   aria-label="Filter by platform"
                   value={proto()}
                   onChange={(event) => {
-                    setProto(event.currentTarget.value as DeviceRow["proto"] | "");
+                    const value = event.currentTarget.value;
+
+                    const proto = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(Schema.Literals(["apple", "win", "android"]))(
+                        value,
+                      ),
+                    );
+
+                    setProto(proto ?? "");
                     setPage(0);
                   }}
                 >
@@ -714,7 +766,15 @@ export default function DevicesPage() {
                   aria-label="Filter by health"
                   value={health()}
                   onChange={(event) => {
-                    setHealth(event.currentTarget.value as DeviceHealthFilter | "");
+                    const value = event.currentTarget.value;
+
+                    const health = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(
+                        Schema.Literals(["healthy", "attention", "critical", "unknown", "stale"]),
+                      )(value),
+                    );
+
+                    setHealth(health ?? "");
                     setPage(0);
                   }}
                 >
@@ -730,7 +790,13 @@ export default function DevicesPage() {
                   aria-label="Filter by push delivery"
                   value={push()}
                   onChange={(event) => {
-                    setPush(event.currentTarget.value as "failing" | "invalid" | "");
+                    const value = event.currentTarget.value;
+
+                    const push = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
+                    );
+
+                    setPush(push ?? "");
                     setPage(0);
                   }}
                 >
@@ -743,7 +809,13 @@ export default function DevicesPage() {
                   aria-label="Filter by last seen"
                   value={staleDays()}
                   onChange={(event) => {
-                    setStaleDays(event.currentTarget.value as "" | "7" | "30" | "90");
+                    const value = event.currentTarget.value;
+
+                    const staleDays = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(Schema.Literals(["7", "30", "90"]))(value),
+                    );
+
+                    setStaleDays(staleDays ?? "");
                     setPage(0);
                   }}
                 >
@@ -814,7 +886,7 @@ export default function DevicesPage() {
                     Clear query
                   </Button>
                 </Show>
-                <span class="ml-auto hidden text-[10.5px] text-muted-foreground/70 sm:inline">
+                <span class="ml-auto hidden text-[10.5px] text-muted-foreground sm:inline">
                   The URL reproduces this filtered view.
                 </span>
               </div>
@@ -834,11 +906,14 @@ export default function DevicesPage() {
           </div>
         }
         footer={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5">
-            <span class="text-[12px] tabular-nums text-muted-foreground">
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5"
+            aria-busy={devices.isFetching ? "true" : undefined}
+          >
+            <span role="status" aria-live="polite" class="text-[12px] tabular-nums text-muted-foreground">
               Page {page() + 1} of {pageCount()}
               <Show when={total() > 0}>
-                <span class="text-muted-foreground/60">
+                <span class="text-muted-foreground">
                   {" "}
                   · {total().toLocaleString()} device{total() === 1 ? "" : "s"}
                 </span>
@@ -881,13 +956,15 @@ export default function DevicesPage() {
                   Clear filters
                 </Button>
               ) : (
-                <LinkButton
-                  href={`/t/${params.tenantId}/settings/enrollment`}
-                  variant="outline"
-                  size="sm"
-                >
-                  Enroll device
-                </LinkButton>
+                <Show when={can("enrollment.write")}>
+                  <LinkButton
+                    href={`/t/${params.tenantId}/settings/enrollment`}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Enroll device
+                  </LinkButton>
+                </Show>
               )
             }
           />
@@ -958,7 +1035,9 @@ export default function DevicesPage() {
       />
 
       <input
-        ref={importFileInput}
+        ref={(element) => {
+          importFileInput = element;
+        }}
         type="file"
         accept=".csv,text/csv"
         class="hidden"

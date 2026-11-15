@@ -22,7 +22,12 @@ import {
   StepUpRequired,
   StepUpUnavailable,
 } from "./stepUp.ts";
-import { CreateTenantRoleRequest, PatchTenantRoleRequest, TenantRolesResponse } from "./rbac.ts";
+import {
+  CreateTenantRoleRequest,
+  PatchTenantRoleRequest,
+  Permission,
+  TenantRolesResponse,
+} from "./rbac.ts";
 import {
   CreateWebhookEndpointRequest,
   CreateWebhookEndpointResponse,
@@ -353,12 +358,6 @@ export const UserInfo = Schema.Struct({
   passkeyEnabled: Schema.Boolean,
   /** Whether one of the user's owner/admin tenants requires MFA. */
   mfaRequired: Schema.Boolean,
-  /**
-   * Whether the account has a password credential. Passwordless/SSO-only
-   * accounts cannot satisfy the knowledge factor MFA requires, so enrollment
-   * must be blocked until they set a password.
-   */
-  hasPassword: Schema.Boolean,
 });
 
 export type UserInfo = typeof UserInfo.Type;
@@ -374,7 +373,13 @@ export const TenantInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   slug: Schema.String,
+  /** Built-in role key retained for backwards compatibility. */
   role: Schema.String,
+  roleId: Schema.optional(NullableString),
+  roleName: Schema.String,
+  roleKind: Schema.Literals(["built-in", "custom"]),
+  /** Effective permissions from the member's built-in or custom role. */
+  permissions: Schema.Array(Permission),
   logo: Schema.optional(NullableString),
   displayName: Schema.optional(NullableString),
   supportEmail: Schema.optional(NullableString),
@@ -387,7 +392,13 @@ export const TenantDetail = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   slug: Schema.String,
+  /** Built-in role key retained for backwards compatibility. */
   role: Schema.String,
+  roleId: Schema.optional(NullableString),
+  roleName: Schema.String,
+  roleKind: Schema.Literals(["built-in", "custom"]),
+  /** Effective permissions from the member's built-in or custom role. */
+  permissions: Schema.Array(Permission),
   logo: Schema.optional(NullableString),
   displayName: Schema.optional(NullableString),
   supportEmail: Schema.optional(NullableString),
@@ -443,6 +454,47 @@ export const MeResponse = Schema.Struct({
 
 export type MeResponse = typeof MeResponse.Type;
 
+/**
+ * Session summary returned by bootstrap. It has the same public shape as the
+ * auth `getSession` value, without the assurance timing fields the shell does
+ * not read.
+ */
+export const BootstrapSession = Schema.Struct({
+  sessionId: Schema.String,
+  subjectId: Schema.String,
+  claims: Schema.Struct({
+    name: Schema.String,
+    email: Schema.String,
+    emailVerified: Schema.Boolean,
+  }),
+});
+
+export type BootstrapSession = typeof BootstrapSession.Type;
+
+/**
+ * One-shot bootstrap for the web Worker's server render: the session, the
+ * account/tenant shell and a short-lived SSR token, all after one
+ * `requireUser`. Tokens are signed with the deployment `AUTH_SECRET` and are
+ * only useful to the web Worker over its service binding.
+ *
+ * Bootstrap is not a free cache fill: it resolves memberships and per-tenant
+ * roles. The token is display-only, so only a warm token avoids that cost.
+ */
+export const BootstrapResponse = Schema.Struct({
+  session: Schema.NullOr(BootstrapSession),
+  me: MeResponse,
+  /**
+   * Null when the caller has no browser session, the deployment has no shared
+   * secret, the account is unverified, or the tenant-bearing token would exceed
+   * the cookie budget. A tenant-less token is never issued: it would be a miss
+   * on every navigation.
+   */
+  ssrToken: Schema.NullOr(Schema.String),
+  ssrTokenExpiresAt: Schema.NullOr(Schema.Number),
+});
+
+export type BootstrapResponse = typeof BootstrapResponse.Type;
+
 export const CreateTenantRequest = Schema.Struct({
   name: Schema.String,
   slug: Schema.String,
@@ -482,22 +534,51 @@ export type TenantUser = typeof TenantUser.Type;
 
 export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUser) });
 
+const InvitationEmail = Schema.Trim.pipe(
+  Schema.check(Schema.isMaxLength(320), Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)),
+);
+
 export const InviteTenantUserRequest = Schema.Struct({
-  email: Schema.String,
+  email: InvitationEmail,
   role: Schema.optional(Schema.String),
   roleId: Schema.optional(NullableString),
-  resend: Schema.optional(Schema.Boolean),
 });
+
+export const InvitationStatus = Schema.Literals([
+  "pending",
+  "accepted",
+  "canceled",
+  "expired",
+  "superseded",
+]);
+
+export type InvitationStatus = typeof InvitationStatus.Type;
+
+export const InvitationActor = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+});
+
+export type InvitationActor = typeof InvitationActor.Type;
 
 export const TenantInvitation = Schema.Struct({
   id: Schema.String,
   email: Schema.String,
+  /** Built-in role key; retained even when a custom role is assigned. */
   role: Schema.optional(NullableString),
   roleId: Schema.optional(NullableString),
-  roleName: Schema.optional(NullableString),
-  status: Schema.String,
-  expiresAt: Schema.String,
+  customRoleId: Schema.optional(NullableString),
+  roleName: Schema.String,
+  status: InvitationStatus,
+  /** True when a pending invitation is past its expiry. */
+  isExpired: Schema.Boolean,
+  invitedBy: Schema.optional(InvitationActor),
   createdAt: Schema.String,
+  expiresAt: Schema.String,
+  lastSentAt: Schema.String,
+  sendCount: Schema.Number,
+  acceptedAt: Schema.optional(NullableString),
 });
 
 export type TenantInvitation = typeof TenantInvitation.Type;
@@ -505,6 +586,72 @@ export type TenantInvitation = typeof TenantInvitation.Type;
 export const TenantInvitationsResponse = Schema.Struct({
   invitations: Schema.Array(TenantInvitation),
 });
+
+export const ListTenantInvitationsQuery = Schema.Struct({
+  status: Schema.optional(InvitationStatus),
+  limit: Schema.optional(Schema.Number),
+});
+
+export type ListTenantInvitationsQuery = typeof ListTenantInvitationsQuery.Type;
+
+export const InvitationPreviewState = Schema.Literals([
+  "valid",
+  "expired",
+  "accepted",
+  "canceled",
+  "superseded",
+  "unknown",
+]);
+
+export type InvitationPreviewState = typeof InvitationPreviewState.Type;
+
+export const InvitationPreviewQuery = Schema.Struct({ token: Schema.String });
+
+export const InvitationPreviewTenant = Schema.Struct({
+  name: Schema.String,
+  displayName: Schema.optional(NullableString),
+  logo: Schema.optional(NullableString),
+  brandColor: Schema.optional(NullableString),
+});
+
+export type InvitationPreviewTenant = typeof InvitationPreviewTenant.Type;
+
+export const InvitationPreviewResponse = Schema.Struct({
+  state: InvitationPreviewState,
+  tenant: Schema.optional(InvitationPreviewTenant),
+  roleName: Schema.optional(Schema.String),
+  invitedEmailMasked: Schema.optional(Schema.String),
+  expiresAt: Schema.optional(Schema.String),
+});
+
+export type InvitationPreviewResponse = typeof InvitationPreviewResponse.Type;
+
+export const InvitationRoleOption = Schema.Struct({
+  /** Present for a built-in role. */
+  role: Schema.optional(Schema.String),
+  /** Present for a custom role. */
+  roleId: Schema.optional(NullableString),
+  label: Schema.String,
+  assignable: Schema.Boolean,
+  blockedReason: Schema.optional(NullableString),
+});
+
+export type InvitationRoleOption = typeof InvitationRoleOption.Type;
+
+export const InvitationOptionsResponse = Schema.Struct({
+  roles: Schema.Array(InvitationRoleOption),
+});
+
+export type InvitationOptionsResponse = typeof InvitationOptionsResponse.Type;
+
+export const ResendTenantInvitationResponse = Schema.Struct({
+  id: Schema.String,
+  inviteUrl: Schema.String,
+  expiresAt: Schema.String,
+  emailSent: Schema.Boolean,
+});
+
+export type ResendTenantInvitationResponse = typeof ResendTenantInvitationResponse.Type;
 
 export const PatchTenantUserRequest = Schema.Struct({
   role: Schema.optional(Schema.String),
@@ -802,12 +949,18 @@ export type AuditExportQuery = typeof AuditExportQuery.Type;
 
 export const CreateInvitationResponse = Schema.Struct({
   id: Schema.String,
-  /** Present when the server can build an invite link (always in this build). */
-  inviteUrl: Schema.optional(NullableString),
+  /** The one-time acceptance link. Returned once and never persisted in clear. */
+  inviteUrl: Schema.String,
+  expiresAt: Schema.String,
+  emailSent: Schema.Boolean,
 });
 
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
-export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String });
+
+export const AcceptInvitationResponse = Schema.Struct({
+  tenantId: Schema.String,
+  alreadyMember: Schema.Boolean,
+});
 
 export const VerifyEmailRequest = Schema.Struct({
   /** Link-based verification from an email. */
@@ -825,7 +978,8 @@ export const EmailVerificationResponse = Schema.Struct({
 });
 
 export const UpdateMeRequest = Schema.Struct({
-  name: Schema.optional(Schema.String),
+  /** Same 120-character ceiling as registration. */
+  name: Schema.optional(Schema.String.check(Schema.isMaxLength(120))),
   image: Schema.optional(NullableString),
 });
 
@@ -1689,6 +1843,26 @@ export const ApplicationInstallResult = Schema.Struct({
 
 export type ApplicationInstallResult = typeof ApplicationInstallResult.Type;
 
+export const PolicyAssignmentUser = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  mode: PolicyAssignmentMode,
+  priority: Schema.Number,
+});
+
+export type PolicyAssignmentUser = typeof PolicyAssignmentUser.Type;
+
+export const PolicyAssignmentUserGroup = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  mode: PolicyAssignmentMode,
+  priority: Schema.Number,
+  memberCount: Schema.Number,
+});
+
+export type PolicyAssignmentUserGroup = typeof PolicyAssignmentUserGroup.Type;
+
 export const PolicyAssignmentsResponse = Schema.Struct({
   groups: Schema.Array(GroupPolicyRelation),
   devices: Schema.Array(
@@ -1699,17 +1873,72 @@ export const PolicyAssignmentsResponse = Schema.Struct({
       priority: Schema.Number,
     }),
   ),
+  users: Schema.Array(PolicyAssignmentUser),
+  userGroups: Schema.Array(PolicyAssignmentUserGroup),
 });
 
 export type PolicyAssignmentsResponse = typeof PolicyAssignmentsResponse.Type;
 
 export const PatchPolicyAssignmentsRequest = Schema.Struct({
+  /** Direct device assignments. */
   assign: Schema.optional(Schema.Array(PolicyAssignmentRef)),
   unassign: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+  /** Directory users linked to devices. */
+  assignUsers: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+  unassignUsers: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+  /** Directory user groups. */
+  assignUserGroups: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+  unassignUserGroups: Schema.optional(Schema.Array(PolicyAssignmentRef)),
+});
+
+export const DirectoryUser = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  emailVerified: Schema.Boolean,
+  disabled: Schema.Boolean,
+  role: Schema.String,
+  source: Schema.Literals(["entra", "scim", "manual"]),
+});
+
+export type DirectoryUser = typeof DirectoryUser.Type;
+
+export const DirectoryGroup = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  source: Schema.Literals(["graph", "scim", "manual"]),
+  memberCount: Schema.Number,
+});
+
+export type DirectoryGroup = typeof DirectoryGroup.Type;
+
+export const DirectoryResponse = Schema.Struct({
+  users: Schema.Array(DirectoryUser),
+  groups: Schema.Array(DirectoryGroup),
+});
+
+export type DirectoryResponse = typeof DirectoryResponse.Type;
+
+export const DeviceUser = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+});
+
+export type DeviceUser = typeof DeviceUser.Type;
+
+export const DeviceUsersResponse = Schema.Struct({
+  users: Schema.Array(DeviceUser),
+});
+
+export type DeviceUsersResponse = typeof DeviceUsersResponse.Type;
+
+export const SetDeviceUsersRequest = Schema.Struct({
+  userIds: Schema.Array(Schema.String),
 });
 
 /** Scope of an assignment that contributed to the effective policy. */
-export const EffectivePolicyScope = Schema.Literals(["direct", "group"]);
+export const EffectivePolicyScope = Schema.Literals(["direct", "group", "user", "user-group"]);
 
 export type EffectivePolicyScope = typeof EffectivePolicyScope.Type;
 
@@ -1721,6 +1950,10 @@ export const EffectivePolicyConfiguration = Schema.Struct({
   scope: EffectivePolicyScope,
   groupIds: Schema.Array(Schema.String),
   groupNames: Schema.Array(Schema.String),
+  userIds: Schema.optional(Schema.Array(Schema.String)),
+  userNames: Schema.optional(Schema.Array(Schema.String)),
+  userGroupIds: Schema.optional(Schema.Array(Schema.String)),
+  userGroupNames: Schema.optional(Schema.Array(Schema.String)),
   hash: Schema.String,
 });
 
@@ -1733,6 +1966,10 @@ export const EffectivePolicyContributor = Schema.Struct({
   scope: EffectivePolicyScope,
   groupIds: Schema.Array(Schema.String),
   groupNames: Schema.Array(Schema.String),
+  userIds: Schema.optional(Schema.Array(Schema.String)),
+  userNames: Schema.optional(Schema.Array(Schema.String)),
+  userGroupIds: Schema.optional(Schema.Array(Schema.String)),
+  userGroupNames: Schema.optional(Schema.Array(Schema.String)),
   kinds: Schema.Array(Schema.String),
 });
 
@@ -1740,6 +1977,8 @@ export type EffectivePolicyContributor = typeof EffectivePolicyContributor.Type;
 
 export const EffectivePolicyOverrideReason = Schema.Literals([
   "direct-device-include",
+  "direct-user-include",
+  "device-scope",
   "lower-priority",
   "older-updated-at",
   "lexicographic-id",
@@ -1755,12 +1994,21 @@ export const EffectivePolicyOverride = Schema.Struct({
   scope: EffectivePolicyScope,
   groupIds: Schema.Array(Schema.String),
   groupNames: Schema.Array(Schema.String),
+  userIds: Schema.optional(Schema.Array(Schema.String)),
+  userNames: Schema.optional(Schema.Array(Schema.String)),
+  userGroupIds: Schema.optional(Schema.Array(Schema.String)),
+  userGroupNames: Schema.optional(Schema.Array(Schema.String)),
   reason: EffectivePolicyOverrideReason,
 });
 
 export type EffectivePolicyOverride = typeof EffectivePolicyOverride.Type;
 
-export const EffectivePolicyExclusionReason = Schema.Literals(["device-exclude", "group-exclude"]);
+export const EffectivePolicyExclusionReason = Schema.Literals([
+  "device-exclude",
+  "group-exclude",
+  "user-exclude",
+  "user-group-exclude",
+]);
 
 export type EffectivePolicyExclusionReason = typeof EffectivePolicyExclusionReason.Type;
 
@@ -1770,6 +2018,10 @@ export const EffectivePolicyExclusion = Schema.Struct({
   scope: EffectivePolicyScope,
   groupId: Schema.NullOr(Schema.String),
   groupName: Schema.NullOr(Schema.String),
+  userIds: Schema.optional(Schema.Array(Schema.String)),
+  userNames: Schema.optional(Schema.Array(Schema.String)),
+  userGroupId: Schema.optional(Schema.NullOr(Schema.String)),
+  userGroupName: Schema.optional(Schema.NullOr(Schema.String)),
   kinds: Schema.Array(Schema.String),
   effective: Schema.Boolean,
   reason: EffectivePolicyExclusionReason,
@@ -2363,9 +2615,9 @@ export const EnrollmentQuery = {
   platform: Schema.optional(Schema.Literals(["apple", "win", "android"])),
 };
 
-/** Public mobileconfig download. The body is a signed Apple property list. */
-export const AppleEnrollmentProfileResponse = Schema.String.pipe(
-  HttpApiSchema.asText({ contentType: "application/x-apple-aspen-config" }),
+/** Public mobileconfig download. The body is a CMS-signed Apple property list. */
+export const AppleEnrollmentProfileResponse = Schema.Uint8Array.pipe(
+  HttpApiSchema.asUint8Array({ contentType: "application/x-apple-aspen-config" }),
 );
 
 export const EnrollmentAttemptPlatform = Schema.Literals(["apple", "win", "android", "unknown"]);
@@ -2432,7 +2684,9 @@ export const PatchTenantEnrollmentRequest = Schema.Struct({
   enabledWindows: Schema.optional(Schema.Boolean),
   enabledAndroid: Schema.optional(Schema.Boolean),
   enabledAssetTag: Schema.optional(Schema.Boolean),
-  maxDevices: Schema.optional(Schema.Number),
+  maxDevices: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })),
+  ),
 });
 
 export const ApnsInfo = Schema.Struct({
@@ -2597,13 +2851,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("stepUpPassword", "/v1/account/step-up/password", {
-      error: EnterpriseStepUpErrors,
-      payload: Schema.Struct({ password: Schema.String, action: StepUpActionSchema }),
-      success: StepUpGrantResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("stepUpTotp", "/v1/account/step-up/totp", {
       error: EnterpriseStepUpErrors,
       payload: Schema.Struct({ code: Schema.String, action: StepUpActionSchema }),
@@ -2669,6 +2916,12 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.get("me", "/v1/me", {
       error: EnterpriseAccountErrors,
       success: MeResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("bootstrap", "/v1/bootstrap", {
+      error: EnterpriseAccountErrors,
+      success: BootstrapResponse,
     }),
   )
   .add(
@@ -3042,17 +3295,44 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
         EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
         EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
       ],
       payload: AcceptInvitationRequest,
       success: AcceptInvitationResponse,
     }),
   )
   .add(
+    HttpApiEndpoint.get("previewInvitation", "/v1/invitations/preview", {
+      error: EnterpriseNoDomainErrors,
+      query: InvitationPreviewQuery,
+      success: InvitationPreviewResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("listTenantInvitations", "/v1/tenants/:tenantId/invitations", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantParam,
+      query: ListTenantInvitationsQuery,
       success: TenantInvitationsResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantInvitationOptions", "/v1/tenants/:tenantId/invitation-options", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: InvitationOptionsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "resendTenantInvitation",
+      "/v1/tenants/:tenantId/invitations/:invitationId/resend",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantInvitationParam,
+        success: ResendTenantInvitationResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.delete(
@@ -3682,6 +3962,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantIdParam,
       payload: DuplicateRequest,
       success: IdResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listDirectory", "/v1/tenants/:tenantId/directory", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: DirectoryResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getDeviceUsers", "/v1/tenants/:tenantId/devices/:id/users", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: DeviceUsersResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("setDeviceUsers", "/v1/tenants/:tenantId/devices/:id/users", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantIdParam,
+      payload: SetDeviceUsersRequest,
+      success: DeviceUsersResponse,
     }),
   )
   .add(

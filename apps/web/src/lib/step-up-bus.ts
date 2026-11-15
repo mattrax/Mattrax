@@ -1,26 +1,37 @@
+import { Schema } from "effect";
 import { createSignal } from "solid-js";
 
-export type StepUpMethod = "password" | "totp" | "passkey";
+export const STEP_UP_METHODS = ["totp", "passkey"] as const;
 
-export type StepUpAction =
-  | "tenant-delete"
-  | "api-token-create"
-  | "api-token-revoke"
-  | "mfa-disable"
-  | "mfa-regenerate"
-  | "recovery-key-reveal"
-  | "backup-download"
-  | "device-command"
-  | "billing-portal"
-  | "sso-policy"
-  | "passkey-enroll"
-  | "passkey-remove";
+export type StepUpMethod = (typeof STEP_UP_METHODS)[number];
+
+export const StepUpMethodSchema = Schema.Literals(STEP_UP_METHODS);
+
+export const STEP_UP_ACTIONS = [
+  "tenant-delete",
+  "api-token-create",
+  "api-token-revoke",
+  "mfa-enroll",
+  "mfa-disable",
+  "mfa-regenerate",
+  "recovery-key-reveal",
+  "backup-download",
+  "device-command",
+  "billing-portal",
+  "sso-policy",
+  "passkey-enroll",
+  "passkey-remove",
+] as const;
+
+export type StepUpAction = (typeof STEP_UP_ACTIONS)[number];
+
+export const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 
 export type StepUpRequest = {
   readonly action: StepUpAction;
   readonly methods: ReadonlyArray<StepUpMethod>;
   readonly resolve: (grant: string) => void;
-  readonly reject: (error: unknown) => void;
+  readonly reject: (error: Error) => void;
 };
 
 /**
@@ -56,7 +67,7 @@ export const forgetStepUpGrants = () => grants.clear();
 
 const [pending, setPending] = createSignal<StepUpRequest | null>(null);
 let pendingAction: StepUpAction | null = null;
-let waiters: Array<{ resolve: (grant: string) => void; reject: (error: unknown) => void }> = [];
+let waiters: Array<{ resolve: (grant: string) => void; reject: (error: Error) => void }> = [];
 
 export const pendingStepUp = pending;
 
@@ -68,7 +79,7 @@ export const pendingStepUp = pending;
  */
 export const requestStepUp = (
   action: StepUpAction,
-  methods: ReadonlyArray<StepUpMethod> = ["password", "totp", "passkey"],
+  methods: ReadonlyArray<StepUpMethod> = ["passkey", "totp"],
 ) =>
   new Promise<string>((resolve, reject) => {
     const existing = stepUpGrant(action);
@@ -108,7 +119,7 @@ export const completeStepUp = (grant: string) => {
   for (const waiter of pendingWaiters) waiter.resolve(grant);
 };
 
-export const cancelStepUp = (error: unknown = new Error("Confirmation cancelled")) => {
+export const cancelStepUp = (error: Error = new Error("Confirmation cancelled")) => {
   const current = pending();
 
   if (!current) return;
@@ -128,6 +139,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "create an API token";
     case "api-token-revoke":
       return "revoke this API token";
+    case "mfa-enroll":
+      return "set up an authenticator app";
     case "mfa-disable":
       return "turn off multi-factor authentication";
     case "mfa-regenerate":

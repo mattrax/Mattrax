@@ -1,6 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
-import { useInfiniteQuery } from "@tanstack/solid-query";
+import { useInfiniteQuery, type InfiniteData } from "@tanstack/solid-query";
+import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
@@ -9,6 +10,7 @@ import {
   enterprise,
   enterpriseKeys,
   type AuditLogEntry,
+  type AuditSearchResponse,
   type AuditSearchQuery,
 } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
@@ -21,12 +23,18 @@ const SYSTEM_ACTOR = "system";
  * normalised by `errorPresentation`; anything else keeps the status fallback
  * instead of surfacing a raw response body.
  */
+const decodeJson = Schema.decodeUnknownOption(Schema.Json);
+
+const isString = Schema.is(Schema.String);
+
+const isJsonObject = Schema.is(Schema.JsonObject);
+
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
-  let body: unknown = text;
+  let body: Schema.Json | undefined = text;
 
   try {
-    body = text ? (JSON.parse(text) as unknown) : undefined;
+    body = text ? Option.getOrUndefined(decodeJson(JSON.parse(text))) : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
@@ -89,62 +97,63 @@ const actorLabel = (entry: AuditLogEntry) => {
   return entry.actorEmail;
 };
 
-const credentialOf = (entry: AuditLogEntry) => {
-  const metadata = entry.metadata;
+const AuditMetadata = Schema.Struct({
+  credential: Schema.optional(
+    Schema.Struct({
+      type: Schema.Literals(["api_token", "oauth"]),
+      name: Schema.optional(Schema.String),
+    }),
+  ),
+  rbac: Schema.optional(
+    Schema.Struct({
+      roleName: Schema.optional(Schema.String),
+      permission: Schema.optional(Schema.String),
+      roleKind: Schema.optional(Schema.String),
+    }),
+  ),
+});
 
-  if (!metadata || typeof metadata !== "object") return undefined;
-  const credential = (metadata as Record<string, unknown>).credential;
+type AuditMetadata = typeof AuditMetadata.Type;
 
-  if (!credential || typeof credential !== "object") return undefined;
-  const value = credential as { type?: unknown; name?: unknown };
+const decodeAuditMetadata = Schema.decodeUnknownOption(AuditMetadata);
 
-  if (value.type !== "api_token" && value.type !== "oauth") return undefined;
+const metadataOf = (entry: AuditLogEntry): AuditMetadata | undefined =>
+  Option.getOrUndefined(decodeAuditMetadata(entry.metadata));
 
-  return {
-    type: value.type,
-    name: typeof value.name === "string" ? value.name : undefined,
-  };
-};
+const credentialOf = (entry: AuditLogEntry) => metadataOf(entry)?.credential;
 
 const rbacOf = (entry: AuditLogEntry) => {
-  const metadata = entry.metadata;
+  const rbac = metadataOf(entry)?.rbac;
 
-  if (!metadata || typeof metadata !== "object") return undefined;
-  const rbac = (metadata as Record<string, unknown>).rbac;
-
-  if (!rbac || typeof rbac !== "object") return undefined;
-  const value = rbac as { roleName?: unknown; permission?: unknown; roleKind?: unknown };
+  if (rbac === undefined) return undefined;
 
   return {
-    roleName: typeof value.roleName === "string" ? value.roleName : undefined,
-    permission: typeof value.permission === "string" ? value.permission : undefined,
-    roleKind: value.roleKind === "custom" ? "custom" : "built-in",
+    roleName: rbac.roleName,
+    permission: rbac.permission,
+    roleKind: rbac.roleKind === "custom" ? "custom" : "built-in",
   };
 };
 
 /** Compact one-line metadata preview; the full JSON is in the export. */
-const summarizeMetadata = (metadata: unknown) => {
+const summarizeMetadata = (metadata: Schema.Json | undefined) => {
   if (metadata === null || metadata === undefined) return "";
 
-  if (typeof metadata === "string") return metadata;
+  if (isString(metadata)) return metadata;
 
-  if (typeof metadata !== "object") return JSON.stringify(metadata);
+  if (!isJsonObject(metadata)) return JSON.stringify(metadata);
 
-  const rows = Object.entries(metadata as Record<string, unknown>).filter(
-    ([key]) => key !== "credential" && key !== "rbac",
-  );
+  const rows = Object.entries(metadata).filter(([key]) => key !== "credential" && key !== "rbac");
 
   if (rows.length === 0) return "";
 
   return rows
     .slice(0, 3)
     .map(([key, value]) => {
-      const text =
-        typeof value === "string"
-          ? value
-          : value === null || value === undefined
-            ? "—"
-            : JSON.stringify(value);
+      const text = isString(value)
+        ? value
+        : value === null || value === undefined
+          ? "—"
+          : JSON.stringify(value);
 
       return `${key}: ${text}`;
     })
@@ -177,6 +186,7 @@ export default function AuditSettingsPage() {
   const [exporting, setExporting] = createSignal<"csv" | "json" | null>(null);
   const [exportError, setExportError] = createSignal<unknown>();
   const [exportTruncated, setExportTruncated] = createSignal(false);
+  const [expandedEntry, setExpandedEntry] = createSignal<string | null>(null);
 
   // Free-text filters are debounced so typing does not hit the API per key.
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -221,14 +231,20 @@ export default function AuditSettingsPage() {
     limit: PAGE_SIZE,
   }));
 
-  const log = useInfiniteQuery(() => ({
+  const log = useInfiniteQuery<
+    AuditSearchResponse,
+    Error,
+    InfiniteData<AuditSearchResponse>,
+    readonly unknown[],
+    string | undefined
+  >(() => ({
     queryKey: enterpriseKeys.auditSearch(params.tenantId, filters()),
-    queryFn: ({ pageParam }) =>
+    queryFn: async ({ pageParam }) =>
       enterprise.searchAuditLog(params.tenantId, {
         ...filters(),
         cursor: pageParam,
       }),
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     // Infinite queries are client-driven; running the first page during SSR
     // loses the request cookie and surfaces as an unauthenticated error.
@@ -399,8 +415,12 @@ export default function AuditSettingsPage() {
         <Show when={rangeError()}>{(error) => <ErrorText error={error()} />}</Show>
 
         <div class="mt-4 flex flex-wrap items-center gap-2">
+          <p id="audit-export-hint" class="sr-only">
+            Exports the audit events that match the active filters, newest first.
+          </p>
           <Button
             variant="outline"
+            aria-describedby="audit-export-hint"
             onClick={() => void exportAudit("csv")}
             disabled={exporting() !== null || Boolean(rangeError())}
           >
@@ -408,6 +428,7 @@ export default function AuditSettingsPage() {
           </Button>
           <Button
             variant="outline"
+            aria-describedby="audit-export-hint"
             onClick={() => void exportAudit("json")}
             disabled={exporting() !== null || Boolean(rangeError())}
           >
@@ -418,10 +439,16 @@ export default function AuditSettingsPage() {
               Clear filters
             </Button>
           </Show>
-          <span class="text-xs text-muted-foreground" aria-live="polite">
+          <span role="status" aria-live="polite" class="text-xs text-muted-foreground">
             <Show
               when={entries().length > 0}
-              fallback={log.isPending ? "Loading audit events…" : "No matching events"}
+              fallback={
+                rangeError()
+                  ? "Fix the date range to see events"
+                  : log.isPending
+                    ? "Loading audit events…"
+                    : "No matching events"
+              }
             >
               {entries().length} event{entries().length === 1 ? "" : "s"} loaded · newest first
             </Show>
@@ -454,83 +481,128 @@ export default function AuditSettingsPage() {
             </p>
           }
         >
-          <div class="mt-4 overflow-x-auto rounded-lg border border-white/[0.07]">
+          <p class="mt-3 text-[11px] text-muted-foreground sm:hidden">
+            Swipe the table sideways to see action and target details.
+          </p>
+          <div
+            class="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-white/[0.07]"
+            aria-busy={log.isFetching ? "true" : undefined}
+          >
             <table class="w-full min-w-[720px] text-left text-[13px]">
+              <caption class="sr-only">Audit events, newest first</caption>
               <thead class="border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th class="px-3 py-2.5 font-medium">When</th>
-                  <th class="px-3 py-2.5 font-medium">Actor</th>
-                  <th class="px-3 py-2.5 font-medium">Action</th>
-                  <th class="px-3 py-2.5 font-medium">Target</th>
-                  <th class="hidden px-3 py-2.5 font-medium lg:table-cell">Details</th>
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                    When
+                  </th>
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                    Actor
+                  </th>
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                    Action
+                  </th>
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                    Target
+                  </th>
+                  <th
+                    scope="col"
+                    class="sticky top-0 z-10 hidden bg-popover px-3 py-2.5 font-medium lg:table-cell"
+                  >
+                    Details
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/[0.05]">
                 <For each={entries()}>
                   {(entry) => {
-                    const summary = () => summarizeMetadata(entry.metadata);
+                    const summary = () =>
+                      summarizeMetadata(Option.getOrUndefined(decodeJson(entry.metadata)));
 
                     return (
-                      <tr class="transition-colors hover:bg-white/[0.02]">
-                        <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">
-                          {formatDate(entry.createdAt)}
-                        </td>
-                        <td
-                          class="max-w-[14rem] truncate px-3 py-3 align-top text-muted-foreground"
-                          title={actorLabel(entry)}
-                        >
-                          {actorLabel(entry)}
-                          <Show when={credentialOf(entry)}>
-                            {(credential) => (
-                              <span class="mt-1 block truncate text-[10.5px] text-muted-foreground/80">
-                                via {credential().type === "oauth" ? "MCP" : "API token"}
-                                {credential().name ? ` · ${credential().name}` : ""}
-                              </span>
-                            )}
-                          </Show>
-                          <Show when={rbacOf(entry)}>
-                            {(rbac) => (
-                              <span class="mt-1 block truncate text-[10.5px] text-muted-foreground/80">
-                                {rbac().roleKind === "custom" ? "Custom role" : "Built-in role"}
-                                {rbac().roleName ? ` · ${rbac().roleName}` : ""}
-                                {rbac().permission ? ` · ${rbac().permission}` : ""}
-                              </span>
-                            )}
-                          </Show>
-                        </td>
-                        <td class="px-3 py-3 align-top">
-                          <Badge variant="secondary">{formatAction(entry.action)}</Badge>
-                          <code class="mt-1 block break-all text-[11px] text-muted-foreground">
-                            {entry.action}
-                          </code>
-                        </td>
-                        <td class="px-3 py-3 align-top text-xs text-muted-foreground">
-                          <span class="block">{entry.targetType}</span>
-                          <Show when={entry.targetId}>
-                            <code class="break-all text-xs">{entry.targetId}</code>
-                          </Show>
-                          {/* Details column is hidden on small screens; keep a
-                              compact metadata line visible here instead. */}
-                          <Show when={summary()}>
-                            <span class="mt-1 block break-words text-xs lg:hidden">
-                              {summary()}
-                            </span>
-                          </Show>
-                        </td>
-                        <td class="hidden max-w-[22rem] px-3 py-3 align-top lg:table-cell">
-                          <Show
-                            when={summary()}
-                            fallback={<span class="text-xs text-muted-foreground">—</span>}
+                      <>
+                        <tr class="transition-colors hover:bg-white/[0.02]">
+                          <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">
+                            {formatDate(entry.createdAt)}
+                          </td>
+                          <td
+                            class="max-w-[14rem] truncate px-3 py-3 align-top text-muted-foreground"
+                            title={actorLabel(entry)}
                           >
-                            <span
-                              class="block truncate text-xs text-muted-foreground"
-                              title={summary()}
+                            {actorLabel(entry)}
+                            <Show when={credentialOf(entry)}>
+                              {(credential) => (
+                                <span class="mt-1 block truncate text-[10.5px] text-muted-foreground">
+                                  via {credential().type === "oauth" ? "MCP" : "API token"}
+                                  {credential().name ? ` · ${credential().name}` : ""}
+                                </span>
+                              )}
+                            </Show>
+                            <Show when={rbacOf(entry)}>
+                              {(rbac) => (
+                                <span class="mt-1 block truncate text-[10.5px] text-muted-foreground">
+                                  {rbac().roleKind === "custom" ? "Custom role" : "Built-in role"}
+                                  {rbac().roleName ? ` · ${rbac().roleName}` : ""}
+                                  {rbac().permission ? ` · ${rbac().permission}` : ""}
+                                </span>
+                              )}
+                            </Show>
+                          </td>
+                          <td class="px-3 py-3 align-top">
+                            <Badge variant="secondary">{formatAction(entry.action)}</Badge>
+                            <code class="mt-1 block break-all text-[11px] text-muted-foreground">
+                              {entry.action}
+                            </code>
+                          </td>
+                          <td class="px-3 py-3 align-top text-xs text-muted-foreground">
+                            <span class="block">{entry.targetType}</span>
+                            <Show when={entry.targetId}>
+                              <code class="break-all text-xs">{entry.targetId}</code>
+                            </Show>
+                            {/* Details column is hidden on small screens; keep a
+                              compact metadata line visible here instead. */}
+                            <Show when={summary()}>
+                              <span class="mt-1 block break-words text-xs lg:hidden">
+                                {summary()}
+                              </span>
+                            </Show>
+                            <button
+                              type="button"
+                              class="mt-1.5 block w-fit rounded text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                              aria-expanded={expandedEntry() === entry.id ? "true" : "false"}
+                              aria-controls={`audit-metadata-${entry.id}`}
+                              onClick={() =>
+                                setExpandedEntry((current) =>
+                                  current === entry.id ? null : entry.id,
+                                )
+                              }
                             >
-                              {summary()}
-                            </span>
-                          </Show>
-                        </td>
-                      </tr>
+                              {expandedEntry() === entry.id ? "Hide details" : "Details"}
+                            </button>
+                          </td>
+                          <td class="hidden max-w-[22rem] px-3 py-3 align-top lg:table-cell">
+                            <Show
+                              when={summary()}
+                              fallback={<span class="text-xs text-muted-foreground">—</span>}
+                            >
+                              <span
+                                class="block truncate text-xs text-muted-foreground"
+                                title={summary()}
+                              >
+                                {summary()}
+                              </span>
+                            </Show>
+                          </td>
+                        </tr>
+                        <Show when={expandedEntry() === entry.id}>
+                          <tr id={`audit-metadata-${entry.id}`}>
+                            <td colspan="5" class="bg-white/[0.02] px-3 py-3">
+                              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-white/[0.07] bg-black/20 p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+                                {JSON.stringify(entry.metadata ?? {}, null, 2)}
+                              </pre>
+                            </td>
+                          </tr>
+                        </Show>
+                      </>
                     );
                   }}
                 </For>

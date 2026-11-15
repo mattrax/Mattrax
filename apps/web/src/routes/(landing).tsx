@@ -1,4 +1,5 @@
 import { useLocation } from "@solidjs/router";
+import { raisedFailure } from "~/lib/errors";
 import { type ParentProps, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { UserDropdown } from "~/components/user-dropdown";
@@ -14,6 +15,12 @@ export default function Layout(props: ParentProps) {
         location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
       }`}
     >
+      {/* Keyboard users land here first; the landing header repeats five links
+          before the content starts. Other (landing) routes need their own
+          `#main-content` target before this can apply to them. */}
+      <Show when={location.pathname === "/"}>
+        <SkipLink />
+      </Show>
       <TopNavigation />
       {props.children}
       {/* The designer is a full-height tenant; a footer would create a
@@ -22,6 +29,31 @@ export default function Layout(props: ParentProps) {
         <Footer />
       </Show>
     </div>
+  );
+}
+
+function SkipLink() {
+  // Fragment navigation scrolls but does not move keyboard focus through the
+  // client router, so focus the target explicitly.
+  const focusMain = (event: MouseEvent) => {
+    const target = document.getElementById("main-content");
+
+    if (!target) return;
+
+    event.preventDefault();
+    target.focus({ preventScroll: true });
+    target.scrollIntoView();
+    history.replaceState(null, "", "#main-content");
+  };
+
+  return (
+    <a
+      href="#main-content"
+      onClick={focusMain}
+      class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+    >
+      Skip to content
+    </a>
   );
 }
 
@@ -70,7 +102,7 @@ function TopNavigation() {
         return;
       }
     } catch (error) {
-      reportGlobalError(error);
+      reportGlobalError(raisedFailure(error));
 
       return;
     }
@@ -83,15 +115,16 @@ function TopNavigation() {
       <div class="mx-auto flex h-12 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <a href="/" class="flex shrink-0 items-center gap-2.5" aria-label="Mattrax home">
           <img
-            src="/assets/brand/mattrax-white.png"
+            src="/assets/brand/mattrax-white-208.png"
             alt="Mattrax"
             class="h-4 w-auto"
-            width="922"
-            height="142"
+            width="208"
+            height="32"
+            decoding="async"
           />
         </a>
 
-        <nav class="hidden items-center gap-6 text-[12.5px] md:flex">
+        <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
           {navigation.map((item) => (
             <NavigationLink
               href={item.href}
@@ -122,34 +155,53 @@ function TopNavigation() {
             onSignOut={handleLogout}
           />
 
-          <details class="relative md:hidden">
-            <summary class="flex size-8 cursor-pointer list-none items-center justify-center rounded-md border border-white/[0.12] text-muted-foreground [&::-webkit-details-marker]:hidden">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                aria-hidden="true"
-              >
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </summary>
-            <div class="absolute right-0 top-10 w-56 overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-1 shadow-xl shadow-black/40">
+          {/* Native popover: light-dismiss (outside click) and Escape come from
+              the platform, with no JS listener to keep in sync. */}
+          <button
+            type="button"
+            popovertarget="landing-site-menu"
+            aria-label="Open navigation menu"
+            class="touch-target flex size-8 cursor-pointer items-center justify-center rounded-md border border-white/[0.12] text-muted-foreground md:hidden"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div
+            id="landing-site-menu"
+            popover="auto"
+            class="fixed inset-auto top-14 right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-white/[0.09] bg-[#232326] p-1 text-popover-foreground shadow-xl shadow-black/40 md:hidden"
+          >
+            <nav aria-label="Site">
               {navigation.map((item) => (
                 <a
                   href={item.href}
                   target={item.target}
-                  class="block rounded-md px-3 py-2 text-[13px] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
                 >
                   {item.label}
                 </a>
               ))}
+            </nav>
+            <div class="mt-1 border-t border-white/[0.07] p-1">
+              <a
+                href={session().data?.user ? "/dashboard" : "/register"}
+                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground"
+              >
+                {session().data?.user ? "Open dashboard" : "Create an account"}
+              </a>
             </div>
-          </details>
+          </div>
         </div>
       </div>
     </header>
@@ -164,19 +216,23 @@ function Footer() {
           <div>
             <a href="/" class="flex items-center gap-2.5" aria-label="Mattrax home">
               <img
-                src="/assets/brand/mattrax-white.png"
+                src="/assets/brand/mattrax-white-208.png"
                 alt="Mattrax"
                 class="h-4 w-auto"
-                width="922"
-                height="142"
+                width="208"
+                height="32"
+                decoding="async"
               />
             </a>
             <p class="mt-4 max-w-xs text-[12px] leading-5 text-muted-foreground">
               Device management infrastructure for Apple, Windows and Android fleets.
             </p>
-            <p class="mt-5 flex items-center gap-2 text-[11px] text-muted-foreground/80">
+            <p class="mt-5 flex items-center gap-2 text-[11px] text-muted-foreground">
               <span class="size-1.5 rounded-full bg-success" />
               All systems operational
+            </p>
+            <p class="mt-6 text-[11px] text-muted-foreground">
+              © {new Date().getFullYear()} Mattrax Technologies Inc.
             </p>
           </div>
 
@@ -211,11 +267,6 @@ function Footer() {
             ]}
           />
         </div>
-
-        <div class="mt-12 flex flex-col gap-3 border-t border-white/[0.07] pt-6 text-[11px] text-muted-foreground/80 sm:flex-row sm:items-center sm:justify-between">
-          <span>© 2020 Mattrax Technologies Inc.</span>
-          <span>Built with Effect, Cloudflare and SolidJS.</span>
-        </div>
       </div>
     </footer>
   );
@@ -227,7 +278,7 @@ function FooterColumn(props: {
 }) {
   return (
     <div>
-      <p class="text-[11px] font-medium text-muted-foreground/80">{props.title}</p>
+      <p class="text-[11px] font-medium text-muted-foreground">{props.title}</p>
       <ul class="mt-4 space-y-2.5 text-[12px] text-muted-foreground">
         {props.links.map((link) => (
           <li>

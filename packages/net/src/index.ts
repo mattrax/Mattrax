@@ -39,12 +39,14 @@ export class OutboundTimeoutError extends Error {
 export const outboundTimeoutSignal = (timeoutMs = DEFAULT_OUTBOUND_TIMEOUT_MS): AbortSignal =>
   AbortSignal.timeout(timeoutMs);
 
+type ErrorWithName = { readonly name?: string };
+
+const isErrorWithName = (cause: unknown): cause is ErrorWithName =>
+  typeof cause === "object" && cause !== null;
+
 /** Whether an error came from an aborted/timed-out request rather than the peer. */
-export const isAbortError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  ((error as { name?: unknown }).name === "AbortError" ||
-    (error as { name?: unknown }).name === "TimeoutError");
+export const isAbortError = (cause: unknown): boolean =>
+  isErrorWithName(cause) && (cause.name === "AbortError" || cause.name === "TimeoutError");
 
 const combineSignals = (timeout: AbortSignal, signal?: AbortSignal | null): AbortSignal =>
   signal ? AbortSignal.any([signal, timeout]) : timeout;

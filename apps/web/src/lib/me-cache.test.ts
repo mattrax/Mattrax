@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MeResponse } from "@mattrax/enterprise-domain";
+import type { MeResponse } from "@mattrax/enterprise-domain/client";
 import { clearMeCache, readMeCache, writeMeCache } from "./me-cache";
 
-const data = {
+const data: MeResponse = {
   user: {
     id: "user-1",
     name: "Owner",
@@ -12,10 +12,19 @@ const data = {
     totpEnabled: false,
     passkeyEnabled: false,
     mfaRequired: false,
-    hasPassword: true,
   },
-  tenants: [{ id: "tenant-1", name: "Acme", slug: "acme", role: "owner" }],
-} as MeResponse;
+  tenants: [
+    {
+      id: "tenant-1",
+      name: "Acme",
+      slug: "acme",
+      role: "owner",
+      roleName: "Owner",
+      roleKind: "built-in" as const,
+      permissions: ["tenant.read"],
+    },
+  ],
+};
 
 const fakeStorage = () => {
   const values = new Map<string, string>();

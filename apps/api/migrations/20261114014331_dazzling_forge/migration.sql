@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `source` varchar(16) DEFAULT 'manual' NOT NULL;

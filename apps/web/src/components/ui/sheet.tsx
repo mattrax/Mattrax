@@ -30,10 +30,6 @@ const SheetClose = <T extends ValidComponent = "button">(props: SheetCloseProps<
   return <SheetPrimitive.CloseButton data-slot="sheet-close" {...props} />;
 };
 
-const SheetPortal = (props: SheetPrimitive.DialogPortalProps) => {
-  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
-};
-
 type SheetOverlayProps<T extends ValidComponent = "div"> = PolymorphicProps<
   T,
   SheetPrimitive.DialogOverlayProps<T>
@@ -41,6 +37,9 @@ type SheetOverlayProps<T extends ValidComponent = "div"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const SheetOverlay = <T extends ValidComponent = "div">(props: SheetOverlayProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as SheetOverlayProps, ["class"]);
 
   return (
@@ -62,6 +61,8 @@ type SheetContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
   };
 
 const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps<T>) => {
+  // SAFETY: the default props object is described by the sheet content props
+  // type; `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps(
     { side: "right", showCloseButton: true } as SheetContentProps,
     props,
@@ -83,7 +84,16 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          opener?.focus({ preventScroll: true });
+
+          // The trigger may have unmounted while the sheet was open; only
+          // restore focus to a connected node, otherwise use the main landmark
+          // or the body.
+          const fallback = document.getElementById("main");
+
+          if (fallback && !fallback.hasAttribute("tabindex")) fallback.tabIndex = -1;
+          const target = opener?.isConnected ? opener : (fallback ?? document.body);
+
+          target.focus({ preventScroll: true });
         }}
         {...others}
       >
@@ -140,6 +150,9 @@ type SheetTitleProps<T extends ValidComponent = "h2"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const SheetTitle = <T extends ValidComponent = "h2">(props: SheetTitleProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as SheetTitleProps, ["class"]);
 
   return (
@@ -158,6 +171,9 @@ type SheetDescriptionProps<T extends ValidComponent = "p"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const SheetDescription = <T extends ValidComponent = "p">(props: SheetDescriptionProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as SheetDescriptionProps, ["class"]);
 
   return (

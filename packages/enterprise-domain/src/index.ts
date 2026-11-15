@@ -44,3 +44,7 @@ export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
 export * from "./auth.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./stepUpServer.ts";
+
+export * from "./ssr.ts";

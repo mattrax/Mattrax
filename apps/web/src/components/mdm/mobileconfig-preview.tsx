@@ -1,39 +1,55 @@
 import { useMutation } from "@tanstack/solid-query";
+import { Option, Schema } from "effect";
 import { createEffect, For, Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { CircleAlert } from "~/components/ui/icons";
 import { enterprise } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 
-type Preview = {
-  payloadDisplayName?: string;
-  payload_description?: string;
-  payloadDescription?: string;
-  payloadOrganization?: string;
-  payload_organization?: string;
-  payloads?: Array<{
-    type?: string;
-    payloadType?: string;
-    identifier?: string;
-    payloadIdentifier?: string;
-    displayName?: string;
-    payloadDisplayName?: string;
-    description?: string;
-    payloadDescription?: string;
-    category?: string;
-  }>;
-  payload_categories?: Array<{
-    category: string;
-    payload_display_name?: string;
-    payload_description?: string;
-    payload_type?: string;
-    payload_identifier?: string;
-  }>;
-};
+const Preview = Schema.Struct({
+  payloadDisplayName: Schema.optional(Schema.String),
+  payload_description: Schema.optional(Schema.String),
+  payloadDescription: Schema.optional(Schema.String),
+  payloadOrganization: Schema.optional(Schema.String),
+  payload_organization: Schema.optional(Schema.String),
+  payloads: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        type: Schema.optional(Schema.String),
+        payloadType: Schema.optional(Schema.String),
+        identifier: Schema.optional(Schema.String),
+        payloadIdentifier: Schema.optional(Schema.String),
+        displayName: Schema.optional(Schema.String),
+        payloadDisplayName: Schema.optional(Schema.String),
+        description: Schema.optional(Schema.String),
+        payloadDescription: Schema.optional(Schema.String),
+        category: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+  payload_categories: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        category: Schema.String,
+        payload_display_name: Schema.optional(Schema.String),
+        payload_description: Schema.optional(Schema.String),
+        payload_type: Schema.optional(Schema.String),
+        payload_identifier: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+});
+
+type Preview = typeof Preview.Type;
+
+const decodePreview = Schema.decodeUnknownOption(Preview);
 
 export function MobileconfigPreview(props: { content: string }) {
   const preview = useMutation(() => ({
-    mutationFn: () => enterprise.previewMobileconfig(props.content) as unknown as Promise<Preview>,
+    mutationFn: async () =>
+      Option.getOrUndefined(
+        decodePreview(await enterprise.previewMobileconfig(props.content)),
+      ) ?? {},
   }));
 
   createEffect(
@@ -141,7 +157,7 @@ export function MobileconfigPreview(props: { content: string }) {
       <Show when={preview.isError}>
         <p class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-[12.5px] text-destructive">
           <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
-          <span>{errorMessage(preview.error, "Failed to parse configuration.")}</span>
+          <span>{errorMessage(raisedFailure(preview.error), "Failed to parse configuration.")}</span>
         </p>
       </Show>
     </div>

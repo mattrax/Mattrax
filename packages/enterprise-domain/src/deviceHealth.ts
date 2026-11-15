@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect";
 import type {
   DeviceHealth,
   DeviceHealthCounts,
@@ -9,6 +10,13 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Default age after which a device is considered stale. */
 export const DEVICE_STALE_AFTER_DAYS = 7;
+
+/**
+ * One decoded entry of the opaque `Reasons` payload Apple attaches to a
+ * declaration status report: either a rendered string or an object carrying
+ * `code` and `description` alongside arbitrary JSON context.
+ */
+export type DeviceHealthDeclarationReason = string | Schema.JsonObject;
 
 /** A declaration as ingested from Apple's DDM status report. */
 export type DeviceHealthDeclaration = {
@@ -63,38 +71,40 @@ const parseDate = (value: Date | string | null | undefined): Date | null => {
   return date;
 };
 
-const labelFor = (value: unknown): string => {
-  if (typeof value === "string") return value;
+const labelFor = (value: DeviceHealthDeclarationReason): string => {
+  if (Schema.is(Schema.String)(value)) return value;
 
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
+  const parts = [value.code, value.description].flatMap((part) =>
+    Schema.is(Schema.String)(part) && part.trim() !== "" ? [part.trim()] : [],
+  );
 
-    const parts = [record.code, record.description]
-      .filter((part): part is string => typeof part === "string" && part.trim() !== "")
-      .map((part) => part.trim());
-
-    if (parts.length > 0) return parts.join(": ");
-  }
+  if (parts.length > 0) return parts.join(": ");
 
   return "";
 };
 
-/** Human-readable strings for the opaque `Reasons` payload Apple sends. */
-export const declarationReasonLabels = (reasons: unknown): string[] => {
-  if (reasons == null) return [];
-  const values = Array.isArray(reasons) ? reasons : [reasons];
+/** The decoded shape of one entry in the opaque `Reasons` payload. */
+const DeclarationReason = Schema.Union([Schema.String, Schema.JsonObject]);
 
-  return values
-    .map(labelFor)
-    .map((label) => label.trim())
-    .filter((label) => label.length > 0);
-};
+/** Apple sends either one reason or a list of them. */
+const DeclarationReasons = Schema.Union([DeclarationReason, Schema.Array(DeclarationReason)]);
+
+/** Human-readable strings for the opaque `Reasons` payload Apple sends. */
+export const declarationReasonLabels = <Reasons>(reasons: Reasons | null): string[] =>
+  Option.match(Schema.decodeUnknownOption(DeclarationReasons)(reasons), {
+    onNone: () => [],
+    onSome: (decoded) => {
+      const values = Schema.is(Schema.Array(DeclarationReason))(decoded) ? decoded : [decoded];
+
+      return values.map((value) => labelFor(value).trim()).filter((label) => label.length > 0);
+    },
+  });
 
 /** Parse the byte counts stored in `device.diskTotal` / `device.diskUsed`. */
 export const parseStorageBytes = (value: string | number | null | undefined): number | null => {
   if (value == null) return null;
 
-  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+  if (Schema.is(Schema.Number)(value)) return Number.isFinite(value) && value >= 0 ? value : null;
   const text = value.trim();
 
   if (!/^\d+$/.test(text)) return null;
@@ -263,16 +273,21 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     );
   }
 
-  const level: DeviceHealthLevel =
-    !status || !KNOWN_STATUSES.has(status)
-      ? "unknown"
-      : reasons.some((item) => item.severity === "critical")
-        ? "critical"
-        : reasons.some((item) => item.severity === "warning")
-          ? "attention"
-          : "healthy";
+  return { level: healthLevel(status, reasons), reasons, lastSeenAt, stale };
+};
 
-  return { level, reasons, lastSeenAt, stale };
+/** Severity of the worst reason, with unknown device status dominating. */
+const healthLevel = (
+  status: string | undefined,
+  reasons: ReadonlyArray<DeviceHealthReason>,
+): DeviceHealthLevel => {
+  if (!status || !KNOWN_STATUSES.has(status)) return "unknown";
+
+  if (reasons.some((item) => item.severity === "critical")) return "critical";
+
+  if (reasons.some((item) => item.severity === "warning")) return "attention";
+
+  return "healthy";
 };
 
 /** Aggregate tenant counts from already-derived summaries. */
@@ -298,20 +313,20 @@ export const countDeviceHealth = (
 };
 
 /** Stable, human wording for a reason code, so grouped attention stays high level. */
-const REASON_GROUP_LABELS: Record<string, string> = {
-  status_unknown: "Enrollment status unknown",
-  enrollment_unenrolled: "Unenrolled",
-  enrollment_unenrolling: "Unenrolling",
-  enrollment_enrolling: "Enrollment incomplete",
-  never_seen: "Never checked in",
-  stale: "Not checking in",
-  declaration_invalid: "Policy not applied",
-  declaration_inactive: "Policy inactive",
-  disk_critical: "Storage full",
-  disk_low: "Storage low",
-  filevault_disabled: "FileVault off",
-  battery_service: "Battery service",
-};
+const REASON_GROUP_LABELS = new Map<string, string>([
+  ["status_unknown", "Enrollment status unknown"],
+  ["enrollment_unenrolled", "Unenrolled"],
+  ["enrollment_unenrolling", "Unenrolling"],
+  ["enrollment_enrolling", "Enrollment incomplete"],
+  ["never_seen", "Never checked in"],
+  ["stale", "Not checking in"],
+  ["declaration_invalid", "Policy not applied"],
+  ["declaration_inactive", "Policy inactive"],
+  ["disk_critical", "Storage full"],
+  ["disk_low", "Storage low"],
+  ["filevault_disabled", "FileVault off"],
+  ["battery_service", "Battery service"],
+]);
 
 const SEVERITY_RANK: Record<DeviceHealthReason["severity"], number> = {
   critical: 0,
@@ -345,7 +360,7 @@ export const groupDeviceHealthReasons = (
 
       if (!existing) {
         groups.set(item.code, {
-          label: REASON_GROUP_LABELS[item.code] ?? item.label,
+          label: REASON_GROUP_LABELS.get(item.code) ?? item.label,
           severity: item.severity,
           count: 1,
         });

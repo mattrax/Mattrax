@@ -1,5 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { type EnterpriseDb, authSessions } from "@mattrax/enterprise-core";
 
 export type AccountSession = {
@@ -10,12 +10,27 @@ export type AccountSession = {
   readonly method?: string;
 };
 
-type SessionRow = {
-  sessionId: string;
-  issuedAt: bigint | number;
-  expiresAt: bigint | number;
-  record?: string;
-};
+const SessionRow = Schema.Struct({
+  sessionId: Schema.String,
+  issuedAt: Schema.Union([Schema.BigInt, Schema.Number]),
+  expiresAt: Schema.Union([Schema.BigInt, Schema.Number]),
+  record: Schema.optional(Schema.String),
+});
+
+const SessionRecord = Schema.Struct({
+  assurance: Schema.optional(Schema.Struct({ method: Schema.optional(Schema.String) })),
+  provenance: Schema.optional(
+    Schema.Struct({
+      evidence: Schema.optional(
+        Schema.Struct({
+          proofs: Schema.optional(
+            Schema.Array(Schema.Struct({ method: Schema.optional(Schema.String) })),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
 
 const asMillis = (value: bigint | number) => Number(value);
 
@@ -23,14 +38,14 @@ const methodFromRecord = (record: string | undefined) => {
   if (!record) return undefined;
 
   try {
-    const parsed = JSON.parse(record) as {
-      assurance?: { method?: unknown };
-      provenance?: { evidence?: { proofs?: Array<{ method?: unknown }> } };
-    };
+    const parsed = Schema.decodeUnknownOption(SessionRecord)(JSON.parse(record));
 
-    const method = parsed.assurance?.method ?? parsed.provenance?.evidence?.proofs?.[0]?.method;
+    if (Option.isNone(parsed)) return undefined;
 
-    return typeof method === "string" ? method.replaceAll("-", " ") : undefined;
+    const method =
+      parsed.value.assurance?.method ?? parsed.value.provenance?.evidence?.proofs?.[0]?.method;
+
+    return method?.replaceAll("-", " ");
   } catch {
     return undefined;
   }
@@ -46,14 +61,15 @@ export const listUserSessions = (
   currentSessionId?: string,
 ): Effect.Effect<Array<AccountSession>> =>
   Effect.gen(function* () {
-    const rows = (yield* db
+    const rows = yield* db
       .select()
       .from(authSessions)
       .where(
         and(eq(authSessions.subjectId, userId), gt(authSessions.expiresAt, Date.now())),
-      )) as SessionRow[];
+      );
 
     return rows
+      .map((row) => Schema.decodeUnknownSync(SessionRow)(row))
       .map((row) => ({
         id: row.sessionId,
         current: row.sessionId === currentSessionId,
@@ -71,11 +87,11 @@ export const revokeUserSession = (
   sessionId: string,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    const [existing] = (yield* db
+    const [existing]: ReadonlyArray<{ readonly id: string }> = yield* db
       .select({ id: authSessions.sessionId })
       .from(authSessions)
       .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, userId)))
-      .limit(1)) as Array<{ id: string }>;
+      .limit(1);
 
     if (!existing) return false;
     yield* db

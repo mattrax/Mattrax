@@ -1,0 +1,223 @@
+# Threat model
+
+This is the recorded security review for Mattrax's multi-tenant MDM and identity
+surfaces. It is a code-level threat model backed by the adversarial tests in this
+repository, not a penetration test or a claim that the system is bug-free.
+
+## Scope and method
+
+In scope: the web dashboard, the API Worker and service binding, tenant
+authorisation and RBAC, sessions and step-up, API/SCIM tokens, Apple, Windows and
+Android management protocols, SCEP issuance, mTLS device identity, SSO/SCIM,
+outbound and billing webhooks, backups/exports and `AUTH_SECRET` handling.
+
+Out of scope: Cloudflare, MySQL, R2, Stripe, Entra and Apple/Google infrastructure;
+the customer's IdP, network and managed devices; social engineering; physical
+access; denial of service beyond the rate-limit boundary.
+
+Method: read the request pipeline, authorisation checks and trust-boundary code;
+trace tenant-scoped queries; enumerate attacker-controlled inputs; and add
+adversarial tests for each boundary. A finding is only closed when a test
+demonstrates the mitigation on the current code.
+
+## Assets
+
+| Asset             | Why it matters                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| Tenant data       | Devices, policies, applications, groups, audit logs and compliance state.                   |
+| Escrowed secrets  | FileVault recovery keys, device secrets, enrollment passwords.                              |
+| Identity material | Sessions, TOTP secrets, passkey credentials, API and SCIM tokens.                          |
+| Device trust      | SCEP CA key, issued identity certificates and their tenant/device bindings.                 |
+| Vendor access     | APNs key/certificate, ABM/VPP tokens, Autopilot/Entra credentials, Android service account. |
+| Billing state     | Stripe customer/subscription mapping and plan limits.                                       |
+| Platform root     | `AUTH_SECRET`, which seals sessions and stored secrets.                                     |
+
+## Trust boundaries
+
+| Boundary                    | Control                                                                                                                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser → web Worker        | `__Host-` session cookie, origin/CSRF checks, CSP and security headers, WebAuthn relying party derived from `ORIGIN`.                                                                                                     |
+| Web Worker SSR snapshot     | `__Host-mattrax_ssr` is HMAC-signed with `AUTH_SECRET`, bound to the session cookie, capped at five minutes and display-only; bootstrap remains authoritative. See `apps/web/src/server/preload.ts`.                     |
+| Web Worker → API Worker     | Service binding only; the API has no public route, and caller-supplied identity headers are stripped before routing. See `apps/api/src/index.ts`.                                                                         |
+| Edge mTLS → device identity | Identity comes only from Cloudflare `request.cf.tlsClientAuth` (or the self-hosted proxy equivalent), never from a client header.                                                                                         |
+| SCEP CA                     | Stateless HMAC challenge bound to the enrollment, tenant OU in the subject, serial-collision checks and revocation checks. See `packages/scep/src/challenge.ts` and `packages/management-backend-enterprise/src/scep.ts`. |
+| Enrollment                  | Short-lived enrollment id/password, tenant-scoped profile, bounded attempts and rate limiting.                                                                                                                            |
+| Protocol endpoints          | Apple MDM uses mTLS identity; Windows uses WSTEP/tenant tokens; Android uses managed Google Play tokens and Pub/Sub assertions.                                                                                           |
+| Stripe webhook              | Stripe signature over the raw body before any database write. See `packages/enterprise-backend/src/billingWebhook.ts`.                                                                                                    |
+| Outbound webhooks           | HTTPS-only URL validation, HMAC-SHA256 signature, secret returned once, bounded retries. See `packages/enterprise-domain/src/webhooks.ts`.                                                                                |
+| SSO / SCIM                  | OIDC state/nonce and issuer/audience validation; SCIM bearer tokens are hashed at rest and tenant-scoped.                                                                                                                 |
+| `AUTH_SECRET`               | AES-GCM sealing for sessions and stored secrets, HMACs for SCEP challenges and signing material.                                                                                                                          |
+
+## Assumptions
+
+- TLS terminates at Cloudflare or at a reverse proxy that is configured to pass
+  only verified mTLS fields.
+- `AUTH_SECRET` and vendor credentials live in the platform secret store, not in
+  source, logs or tenant-visible configuration.
+- The database account used by the API cannot be reached from the public internet.
+- Stripe, Entra, Apple and Google correctly sign their own responses.
+- A tenant owner is trusted to administer that tenant, including exporting it.
+
+## Authorisation invariants
+
+1. Authentication identifies a user; authorisation always resolves a membership
+   for the requested tenant before any tenant-scoped read or write.
+2. A non-member is indistinguishable from a missing tenant (`EnterpriseNotFound`).
+3. Every tenant query carries the organisation id; ids from another tenant are
+   rejected at the boundary (`assertTenantUsers`, `assertTenantUserGroups`,
+   `assertTenantDevices`, `assertTenantPolicies`).
+4. A custom role is a subset of the permissions its creator held at creation
+   time. Assigning any role — built-in or custom — is a subset of the
+   assigner's resolved permissions.
+5. Owner status comes only from the built-in `owner` role on a membership with
+   no custom role. A custom role never confers owner authority, even when the
+   legacy `member.role` column still contains `owner`.
+6. Owner-only permissions (`tenant.delete`, `tenant.export`, `backups.*`) require a
+   built-in owner even when a custom role lists them.
+7. A token cannot exceed its owner's role, its read/write scope or its tenant
+   binding.
+8. A tenant MFA requirement gates every role with write capability; read-only
+   roles keep read access so members can enroll a factor.
+9. Device identity comes from the handshake, not from application headers, and an
+   identity certificate is bound to exactly one device.
+
+## Attackers considered
+
+- **Unauthenticated internet**: scans API, enrollment and protocol routes.
+- **Authenticated non-member**: has an account but no membership in the target tenant.
+- **Low-privilege member**: auditor/member or a narrowly scoped custom role.
+- **Malicious tenant owner**: can delete their own tenant, but must not reach another.
+- **Compromised device**: holds a valid identity certificate and tries to act for another device or tenant.
+- **Malicious or compromised vendor/IdP**: forged OIDC assertions, Stripe webhooks, Pub/Sub messages.
+- **Network attacker**: replay, tamper or redirect requests.
+- **Insider with deployment/secret access**: reads `AUTH_SECRET` or the database.
+
+## Threats and mitigations
+
+| #   | Threat                                                     | Mitigation                                                                                                                                                                                                                                                                                | Residual risk                                                                                             | Tests                                                                                                                                                                    |
+| --- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Cross-tenant read or write                                 | Membership is resolved per request; every query is scoped by organisation id; non-members receive `EnterpriseNotFound`; `listTenants` only lists memberships.                                                                                                                             | A missing scope predicate in a future endpoint.                                                           | `packages/enterprise-backend/tests/securityBoundaries.test.ts`, `packages/enterprise-backend/tests/enterpriseService.test.ts`                                            |
+| 2   | Custom role escalates above its creator                    | Every requested permission must be held by the actor; `tenant.delete`, `tenant.export` and `backups.*` additionally require a built-in owner. The same ceiling applies to role creation, editing and assignment, and to assigning built-in `admin`/`member`/`auditor`.                    | A new permission added outside the owner-only set.                                                        | `packages/enterprise-backend/tests/securityBoundaries.test.ts`                                                                                                           |
+| 3   | Admin removes or demotes an owner, or forges owner status  | Owner authority is `customRoleId == null && role contains built-in owner`; custom-role members never count as owners. Owner targets can only be changed by an owner, and the last owner cannot be removed. A custom role cannot be combined with the built-in owner role.                 | Two owners colluding is equivalent to one owner.                                                          | `packages/enterprise-backend/tests/securityBoundaries.test.ts`, `packages/enterprise-backend/tests/enterpriseService.test.ts`                                            |
+| 4   | Unverified account or token reaches tenant data            | `requireTenant` rejects unverified users before membership lookup; bearer tokens resolve to the same user row.                                                                                                                                                                            | Email ownership is only as strong as the mail provider.                                                   | `packages/enterprise-backend/tests/securityBoundaries.test.ts`, `packages/enterprise-backend/tests/enterpriseAuth.test.ts`                                               |
+| 5   | Session or API token theft and replay                      | `__Host-` cookies, hashed API tokens, read/write scopes, optional tenant binding, revocation and step-up for sensitive actions.                                                                                                                                                           | XSS on the dashboard or a leaked token until revocation.                                                  | `packages/enterprise-backend/tests/enterpriseAuth.test.ts`, `packages/enterprise-backend/tests/stepUp.test.ts`                                                           |
+| 6   | MFA requirement bypass                                     | Tenant MFA is checked after role resolution; any role with a write permission is blocked without a TOTP or passkey factor, while read-only roles keep read access.                                                                                                                        | A stolen factor is a valid factor.                                                                        | `packages/enterprise-backend/tests/totp.test.ts`, `packages/enterprise-backend/tests/passkey.test.ts`, `packages/enterprise-backend/tests/securityBoundaries.test.ts`    |
+| 7   | Device identity spoofing                                   | Device identity is rebuilt from the mTLS handshake, identity headers are stripped, fingerprints are pinned to the device row, and a certificate issued to another tenant is refused.                                                                                                      | A stolen device certificate is a valid device until revoked.                                              | `packages/management-backend-enterprise/src/tests/appleIdentity.test.ts`, `packages/management-backend-enterprise/src/tests/windows.test.ts`                             |
+| 8   | SCEP challenge replay or cross-tenant issuance             | Challenges are HMACs over the enrollment id with an expiry and nonce; their digest is persisted and consumed by a single conditional UPDATE before issuance, so a value is accepted once. The CSR subject OU is forced to the tenant; serial collisions and revoked renewals are refused. | Certificate issuance still trusts the bearer profile link until its first use (up to 7 days).             | `packages/scep/src/tests/challenge.test.ts`, `packages/scep/src/tests/service.test.ts`, `packages/management-backend-enterprise/src/tests/scep.test.ts`                  |
+| 9   | Webhook signature bypass or SSRF                           | Signatures are HMAC-SHA256 over the body and timestamp; URL validation rejects non-HTTPS, credentials, localhost, private IP literals and single-label hosts.                                                                                                                             | DNS rebinding can resolve an allowed host to a private address (accepted below).                          | `packages/enterprise-backend/tests/webhooks.test.ts`, `packages/management-backend-enterprise/src/tests/webhooks.test.ts`                                                |
+| 10  | Stripe webhook forgery or replay                           | Signature verification over the raw body; tenant resolution is by Stripe customer id, never by a client-supplied id; subscription writes are upserts.                                                                                                                                     | No event-id ledger, so repeated events are re-applied idempotently rather than rejected (accepted below). | `packages/enterprise-backend/tests/billingWebhook.test.ts`, `packages/effect-stripe/tests/client.test.ts`                                                                |
+| 11  | SSO assertion or login-CSRF attack                         | OIDC state and nonce, issuer/audience checks, verified-domain tenant routing, and disabled/auto-provision rules.                                                                                                                                                                          | Misconfigured customer IdP policy.                                                                        | `tests/e2e/sso.spec.ts`                                                                                                                                                  |
+| 12  | SCIM token abuse                                           | Tokens are stored as hashes, scoped to one tenant, revocable, and checked on every request. SCIM tokens carry no actor context, so provisioning is limited to built-in `member`; owner/admin roles requested over SCIM are rejected.                                                      | Tokens never expire (accepted below).                                                                     | `tests/e2e/scim.spec.ts`, `packages/enterprise-backend/tests/securityBoundaries.test.ts`                                                                                 |
+| 13  | Forged Android Pub/Sub or OIDC message                     | Pub/Sub push and OIDC tokens are verified before tenant-scoped writes; AMAPI calls are tenant-bound.                                                                                                                                                                                      | Google service-account compromise.                                                                        | `packages/dm-android/tests/oidc.test.ts`, `packages/dm-android/tests/pubsub.test.ts`, `packages/enterprise-backend/tests/android.test.ts`                                |
+| 14  | Recovery key, backup or export disclosure                  | Separate permissions plus step-up for recovery-key reveal, backup download and tenant deletion; backups and exports are tenant-scoped.                                                                                                                                                    | An owner can always export by design.                                                                     | `packages/enterprise-backend/tests/deviceSecrets.test.ts`, `packages/enterprise-backend/tests/backups.test.ts`, `packages/enterprise-backend/tests/tenantExport.test.ts` |
+| 15  | Rate-limit bypass or resource exhaustion                   | Edge rate-limit bindings with per-route buckets, a per-isolate fallback, bounded request bodies and bounded bulk concurrency.                                                                                                                                                             | The fallback is per isolate (accepted below).                                                             | `apps/api/src/rateLimit.test.ts`, `packages/enterprise-backend/tests/bounded.test.ts`                                                                                    |
+| 16  | `AUTH_SECRET` compromise                                   | Secrets are sealed at rest, never logged, and rotation requires re-sealing. The dashboard Worker receives a verify-only copy to check SSR tokens; bootstrap remains authoritative without it.                                                                                                                                                              | A leaked `AUTH_SECRET` forges sessions, unseals stored secrets and signs SSR tokens. The dashboard Worker's copy is the platform root secret, so its environment has the same blast radius as the API's. A dedicated `SSR_TOKEN_SECRET` is planned but not implemented. | `packages/crypto/src/crypto.ts`, `packages/enterprise-backend/tests/deviceSecrets.test.ts`                                                                               |
+| 17  | Cross-tenant ids in assignments                            | User, group, device and policy ids are validated against the tenant before assignment write; failures abort the whole mutation.                                                                                                                                                           | A future assignment table added without the guard.                                                        | `packages/enterprise-backend/tests/securityBoundaries.test.ts`                                                                                                           |
+| 18  | Invitation token replay or wrong-recipient acceptance      | Tokens are random, stored as SHA-256 hashes, expire in seven days, are single-use and must match the signed-in email.                                                                                                                                                                     | Email interception before acceptance.                                                                     | `packages/enterprise-backend/tests/enterpriseService.test.ts`, `tests/e2e/invitations.spec.ts`                                                                           |
+| 19  | Remote device command abuse                                | Device commands need `devices.command` plus step-up; command payloads are tenant-scoped and audited.                                                                                                                                                                                      | A compromised owner account is a valid commander.                                                         | `packages/enterprise-backend/tests/stepUp.test.ts`, `packages/enterprise-backend/tests/push.test.ts`                                                                     |
+| 20  | Vendor credential theft                                    | APNs, ABM, VPP, Entra and Android credentials are sealed with `AUTH_SECRET` and never returned by read endpoints.                                                                                                                                                                         | An operator with secret-store access can use them.                                                        | `packages/enterprise-backend/tests/appleBusinessManager.test.ts`, `packages/enterprise-backend/tests/credentialHealth.test.ts`                                           |
+| 21  | Audit-log tampering or missing attribution                 | Audit rows are append-only in the application, record actor, credential and effective RBAC, and are exported tenant-scoped.                                                                                                                                                               | Direct database access can alter rows; no hash chain.                                                     | `packages/enterprise-backend/tests/auditLog.test.ts`, `packages/enterprise-backend/tests/tenantExport.test.ts`                                                           |
+| 22  | Webhook signing secret disclosure                          | Secrets are generated once, stored sealed, shown once and can be rotated; list responses expose only a prefix.                                                                                                                                                                            | A secret in customer logs allows forged deliveries.                                                       | `packages/enterprise-backend/tests/webhooks.test.ts`                                                                                                                     |
+| 23  | Onboarding email duplicated, misaddressed or leaking links | Once-only markers are claimed with a conditional UPDATE before sending; recipients are the verified account or the tenant's verified built-in owner/admin; delivery failures log only ids and clear the claim; the dev sweep route is loopback/secret-gated and excluded from analytics.  | Mail provider or mailbox compromise is outside the boundary.                                              | `packages/enterprise-backend/tests/onboardingEmails.test.ts`, `packages/enterprise-backend/tests/enterpriseAuth.test.ts`, `tests/e2e/onboarding-email.spec.ts`           |
+| 24  | Forged or replayed SSR bootstrap token paints another account | The token is HMAC-SHA256 signed with the shared `AUTH_SECRET`, bound to the opaque session cookie through a SHA-256 fingerprint compared in constant time, and rejected when expired, unbound, or minted for an unverified account. It is display-only: every data endpoint re-authorises, and bootstrap is the authority. Built-in permissions are omitted (derived from the role key) to keep three owner tenants inside the cookie budget, and the browser-visible `/api` proxy redacts the token using a router-equivalent normalised path. No tenant-less token is issued or stored. | `ver` is signed but not enforced at the edge, so a warm token can show stale display data for its five-minute TTL. | `apps/web/src/server/ssr-token.test.ts`, `apps/web/src/server/preload.test.ts`, `packages/enterprise-backend/tests/ssrToken.test.ts`, `packages/enterprise-backend/tests/ssrEdgeInterop.test.ts`, `tests/e2e/ssr-bootstrap.spec.ts` |
+
+## Boundary notes
+
+**Apple.** Manual and ADE enrollment converge on the same device row. The SCEP
+subject OU is authoritative for tenancy, the issued serial is bound to the device
+slot, and a certificate that already belongs to another device is rejected. MDM
+check-ins are matched by identity fingerprint, not by UDID alone.
+
+**Windows.** Discovery and enrollment are intentionally unauthenticated but carry
+no tenant identity; WSTEP tokens and tenant tokens are scoped and expiring, and
+SyncML management requires the enrolled identity. Entra federated tokens are
+validated before they can enroll or query a device.
+
+**Android.** AMAPI signup is tenant-scoped, Pub/Sub messages are verified, and
+policy writes go through the tenant's Android enterprise binding. Android has no
+device mTLS equivalent, so the Google service account is the root of trust there.
+
+**Billing and webhooks.** Both entry points authenticate the sender before parsing
+business data. Outbound payloads contain only the event context needed by the
+customer; secrets are never included. Delivery failures are recorded rather than
+retried indefinitely.
+
+**Onboarding email.** Both emails are claimed atomically per account/tenant
+before the provider call, so retries and repeated sweeps cannot duplicate them.
+The welcome email only targets `source = 'manual'` verified accounts; the
+follow-up only targets verified built-in owners/admins of live tenants, one
+private message per recipient so admins never see each other's addresses, and is
+suppressed by real enrollment signals. Logs contain ids, never message bodies,
+signed links or recipient addresses. The debug sweep route reuses the
+development mailbox gate and the `/api/debug/` analytics exclusion.
+
+**SSR bootstrap snapshot.** The `__Host-mattrax_ssr` cookie is an edge cache for
+the signed-in shell, not a session. Both Workers must share `AUTH_SECRET`; the
+API signs the payload and the web Worker verifies it before rendering. The token
+is bound to the opaque session cookie, expires after five minutes, and is never
+minted for an unverified account; the edge also ignores a warm unverified token
+so a just-verified user is not left on the verification screen. Built-in role
+permissions are omitted from the token and derived from the shared catalogue on
+read, which keeps a three-owner payload inside the 3.5 KB cookie budget. A
+tenant-bearing payload that is still over budget is not signed, and the web
+Worker verifies a freshly issued token before storing it, so a tenant-less or
+foreign-secret token never becomes a cookie. Bootstrap is not free: a miss
+resolves memberships and per-tenant roles. The browser-visible `/api/v1/bootstrap`
+proxy redacts the token using a normalised path (percent-decoding, duplicate and
+trailing slashes, case, matrix parameters) because the API router accepts those
+spellings; an undecodable bootstrap body fails closed with a 502 instead of being
+forwarded unredacted. `ver` is signed metadata only; it is not a revocation check.
+
+## Accepted risks and follow-ups
+
+These are known, bounded gaps. They are recorded rather than hidden so operators
+can compensate and future work has an owner.
+
+- **SCEP bearer profile link.** A challenge is one-time, but the enrollment
+  profile link that carries it is a bearer credential until its first use, for up
+  to seven days. Enrollment ids and tenant OUs still bind issuance, and resetting
+  an enrollment invalidates old challenges. Follow-up: shorten the Apple profile
+  lifetime or require an operator-authenticated redemption step.
+- **DNS-rebinding gap in the webhook URL guard.** Workers `fetch` exposes no DNS
+  resolver hook, so `webhookUrlProblem` validates syntax and literals only.
+  Platform egress policy is the remaining control. Follow-up: resolve and pin the
+  destination in a trusted egress proxy.
+- **In-memory rate-limit fallback.** When the edge binding is unavailable,
+  `apps/api/src/rateLimit.ts` falls back to a per-isolate counter, which is weaker
+  across isolates. Follow-up: fail closed for authentication routes when the
+  binding is configured but unavailable.
+- **SCIM tokens without expiry.** Tokens are hashed and revocable but have no
+  `expiresAt`. Follow-up: add optional expiry and rotation reminders.
+- **No Stripe event-id dedupe.** Webhook writes are idempotent per subscription,
+  but a delivered event is not recorded in a ledger. Follow-up: persist
+  `event.id` and reject duplicates.
+- **MCP OAuth untested.** `packages/enterprise-backend/src/mcpOAuth.ts` implements
+  authorization-code flow with PKCE, but has no automated coverage. Follow-up: add
+  boundary tests for redirect URI validation, client binding and token reuse.
+- **SSR `ver` is advisory.** `ver` records `user.authRevision` and is signed, but
+  the edge verifier does not compare it to anything. A session revoked after a
+  token was minted can still paint that account's shell for up to the five-minute
+  TTL; no data endpoint accepts the token as authority. Follow-up: carry a
+  verifiable session-revision claim the edge can check without an API call.
+
+## Review log
+
+| Date       | Review                                         | Outcome                                                                                                                                                                                                                                                   |
+| ---------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-14 | Auth, RBAC and tenant boundaries (issue #14)   | Added `securityBoundaries.test.ts`; fixed custom-role permission ceilings, custom-role assignment ceilings and owner removal.                                                                                                                             |
+| 2026-11-14 | Protocol, SCEP, webhook and billing boundaries | Documented mitigations and accepted risks; mapped each threat to existing suites. No new high-severity code finding remained.                                                                                                                             |
+| 2026-11-14 | SCEP replay follow-up                          | Persisted hashed challenges and consume them before issuance; added replay, expiry, tenant and concurrency tests.                                                                                                                                         |
+| 2026-11-14 | Owner status and role-assignment escalation    | Owner authority now derives only from the built-in role on memberships without a custom role; built-in role assignment obeys the actor permission ceiling; custom roles cannot carry built-in owner; SCIM is limited to `member`. Added regression tests. |
+| 2026-11-14 | Edge SSR bootstrap token                       | Ignore pre-verification warm tokens, stop minting tokens for unverified accounts, require the session binding, compare fingerprints in constant time, fail closed on unreadable bootstrap redaction, cap profile names, and return no token when even the compact payload is oversized. Added signer/edge interop and warm-navigation tests. |
+| 2026-11-14 | Global web review follow-up                    | Normalise the bootstrap path before redaction (the API router accepts trailing/duplicate slashes, percent-encoding, case and matrix parameters), compress built-in permissions out of the token and reconstruct them on read, never issue or store a tenant-less token, skip bootstrap for passthrough prefixes, add HTML-only CORP, immutable woff2/wasm caching, and drop stale validators on redacted bodies. `AUTH_SECRET` misconfiguration now logs at error level for Workers Issues. |
+
+Re-run the evidence with:
+
+```bash
+pnpm exec vitest run packages/enterprise-backend/tests/securityBoundaries.test.ts
+pnpm test
+```
+
+This document must be updated whenever a trust boundary, permission or secret
+handling rule changes. The test files above are the executable part of the
+review; a mitigation without a test is a follow-up, not a control.

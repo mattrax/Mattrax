@@ -1,3 +1,4 @@
+import { Title } from "@solidjs/meta";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onSettled, Show } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
@@ -47,7 +48,8 @@ export default function SsoCompletePage() {
   });
 
   return (
-    <div class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
+    <main class="auth-page dark min-h-screen flex items-center justify-center bg-background text-foreground">
+      <Title>Completing sign-in · Mattrax</Title>
       <div class="w-full max-w-sm rounded-xl border bg-white p-6 text-center shadow-sm">
         <a href="/" class="mb-6 inline-flex items-center gap-2">
           <img
@@ -69,10 +71,16 @@ export default function SsoCompletePage() {
           <h1 class="text-xl font-semibold text-stone-900">
             {error() ? "Sign-in failed" : "Signing you in"}
           </h1>
-          <p class="mt-2 text-sm text-stone-500">{error() ?? "Finishing single sign-on…"}</p>
+          <p
+            role={error() ? "alert" : "status"}
+            aria-live={error() ? "assertive" : "polite"}
+            class="mt-2 text-sm text-stone-500"
+          >
+            {error() ?? "Finishing single sign-on…"}
+          </p>
           <Show when={error()}>
             <a
-              href="/login"
+              href={`/login?returnTo=${encodeURIComponent(returnTo())}`}
               class="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
             >
               Back to sign in
@@ -80,6 +88,6 @@ export default function SsoCompletePage() {
           </Show>
         </Show>
       </div>
-    </div>
+    </main>
   );
 }

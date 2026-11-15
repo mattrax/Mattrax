@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { makeApplePush } from "../src/push.js";
@@ -103,10 +103,32 @@ describe("summarizeApplePushHealth", () => {
 describe("makeApplePush outbound backstop", () => {
   const authSecret = "push-test-secret";
 
+  /** Columns `pushAppleDevice` writes back to the device row. */
+  type PushPatch = Partial<{
+    lastPushAt: Date;
+    lastPushOkAt: Date | null;
+    lastPushError: string | null;
+    lastPushErrorCode: string | null;
+    consecutivePushFailures: number;
+  }>;
+
+  /** The audit row `pushAppleDevice` inserts when the failure state changes. */
+  type PushAuditRow = Partial<{
+    organizationId: string;
+    actorEmail: string;
+    action: string;
+    targetType: string;
+    targetId: string;
+    metadata: Schema.Json;
+  }>;
+
+  /** Writes and audit rows the fake captured for assertions. */
+  type PushCapture = { patch?: PushPatch; audit?: PushAuditRow[] };
+
   /** Minimal read/write surface used by `pushAppleDevice`. */
   const makeFakeDb = (
     sealedKey: string,
-    captured: { patch?: Record<string, unknown>; audit?: Array<Record<string, unknown>> },
+    captured: PushCapture,
     previousCode: string | null = null,
   ) => ({
     query: {
@@ -139,14 +161,14 @@ describe("makeApplePush outbound backstop", () => {
       },
     },
     insert: () => ({
-      values: (row: Record<string, unknown>) => {
+      values: (row: PushAuditRow) => {
         captured.audit?.push(row);
 
         return Effect.void;
       },
     }),
     update: () => ({
-      set: (patch: Record<string, unknown>) => ({
+      set: (patch: PushPatch) => ({
         where: () => {
           captured.patch = patch;
 
@@ -156,22 +178,36 @@ describe("makeApplePush outbound backstop", () => {
     }),
   });
 
-  const makeApns = (push: () => Effect.Effect<void, never>) =>
+  const makeApns = (push: () => Effect.Effect<void, Error>) =>
+    // SAFETY: the push path only calls `name`, `available` and `push`; the rest of
+    // the APNs service is credential/registration management.
     ({ name: "fake", available: true, push }) as never;
+
+  /** Build the push service over the fake db with the given transport. */
+  const makePush = (
+    db: ReturnType<typeof makeFakeDb>,
+    push: () => Effect.Effect<void, Error>,
+    pushTimeoutMs: number,
+  ) =>
+    makeApplePush({
+      // SAFETY: the fake implements the device/certificate reads and the update
+      // the push path performs, but not the full Drizzle `EnterpriseDb`.
+      db: db as never,
+      // SAFETY: the core schema and the backend's generated schema are distinct
+      // nominal objects over the same tables.
+      schema: schema as never,
+      apns: makeApns(push),
+      authSecret,
+      pushTimeoutMs,
+    });
 
   it("gives up on a transport that never settles and records delivery_failed", async () => {
     const keyPair = await generateCaKeyPair();
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
-    const captured: { patch?: Record<string, unknown> } = {};
+    const captured: PushCapture = {};
 
-    const apple = makeApplePush({
-      db: makeFakeDb(sealedKey, captured) as never,
-      schema: schema as never,
-      apns: makeApns(() => Effect.never as unknown as Effect.Effect<void, never>),
-      authSecret,
-      pushTimeoutMs: 25,
-    });
+    const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.never, 25);
 
     const started = Date.now();
     await Effect.runPromise(apple.pushAppleDevice("device-1"));
@@ -184,15 +220,9 @@ describe("makeApplePush outbound backstop", () => {
     const keyPair = await generateCaKeyPair();
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
-    const captured: { patch?: Record<string, unknown> } = {};
+    const captured: PushCapture = {};
 
-    const apple = makeApplePush({
-      db: makeFakeDb(sealedKey, captured) as never,
-      schema: schema as never,
-      apns: makeApns(() => Effect.void),
-      authSecret,
-      pushTimeoutMs: 5_000,
-    });
+    const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.void, 5_000);
 
     const started = Date.now();
     await Effect.runPromise(apple.pushAppleDevice("device-1"));
@@ -205,23 +235,13 @@ describe("makeApplePush outbound backstop", () => {
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
 
-    const captured: {
-      patch?: Record<string, unknown>;
-      audit?: Array<Record<string, unknown>>;
-    } = { audit: [] };
+    const captured: PushCapture = { audit: [] };
 
-    const apple = makeApplePush({
-      db: makeFakeDb(sealedKey, captured) as never,
-      schema: schema as never,
-      apns: makeApns(
-        () =>
-          Effect.fail(
-            new Error('APNs rejected push (HTTP 410): {"reason":"Unregistered"}'),
-          ) as unknown as Effect.Effect<void, never>,
-      ),
-      authSecret,
-      pushTimeoutMs: 5_000,
-    });
+    const apple = makePush(
+      makeFakeDb(sealedKey, captured),
+      () => Effect.fail(new Error('APNs rejected push (HTTP 410): {"reason":"Unregistered"}')),
+      5_000,
+    );
 
     await Effect.runPromise(apple.pushAppleDevice("device-1"));
     expect(captured.patch).toMatchObject({ lastPushErrorCode: "invalid_token" });
@@ -240,39 +260,24 @@ describe("makeApplePush outbound backstop", () => {
     const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
     const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
 
-    const repeated: { audit?: Array<Record<string, unknown>> } = { audit: [] };
+    const repeated: PushCapture = { audit: [] };
 
-    const repeatedApple = makeApplePush({
-      db: makeFakeDb(sealedKey, repeated, "invalid_token") as never,
-      schema: schema as never,
-      apns: makeApns(
-        () =>
-          Effect.fail(
-            new Error('APNs rejected push (HTTP 410): {"reason":"Unregistered"}'),
-          ) as unknown as Effect.Effect<void, never>,
-      ),
-      authSecret,
-      pushTimeoutMs: 5_000,
-    });
+    const repeatedApple = makePush(
+      makeFakeDb(sealedKey, repeated, "invalid_token"),
+      () => Effect.fail(new Error('APNs rejected push (HTTP 410): {"reason":"Unregistered"}')),
+      5_000,
+    );
 
     await Effect.runPromise(repeatedApple.pushAppleDevice("device-1"));
     expect(repeated.audit).toHaveLength(0);
 
-    const delivery: { audit?: Array<Record<string, unknown>> } = { audit: [] };
+    const delivery: PushCapture = { audit: [] };
 
-    const deliveryApple = makeApplePush({
-      db: makeFakeDb(sealedKey, delivery) as never,
-      schema: schema as never,
-      apns: makeApns(
-        () =>
-          Effect.fail(new Error("APNs request failed: ECONNRESET")) as unknown as Effect.Effect<
-            void,
-            never
-          >,
-      ),
-      authSecret,
-      pushTimeoutMs: 5_000,
-    });
+    const deliveryApple = makePush(
+      makeFakeDb(sealedKey, delivery),
+      () => Effect.fail(new Error("APNs request failed: ECONNRESET")),
+      5_000,
+    );
 
     await Effect.runPromise(deliveryApple.pushAppleDevice("device-1"));
     expect(delivery.audit).toHaveLength(0);

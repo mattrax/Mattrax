@@ -1,17 +1,47 @@
 import { env } from "cloudflare:workers";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
-import { DashboardDataset, DeviceQuery, enterpriseApi } from "@mattrax/enterprise-domain";
+import {
+  DashboardDataset,
+  DashboardQueryRequest,
+  DeviceQuery,
+  enterpriseApi,
+  MeResponse as MeResponseSchema,
+  type MeResponse,
+} from "@mattrax/enterprise-domain/client";
 
 const API_BASE = "https://api.mattrax.internal";
 const SERVER_NAME = "mattrax";
 const SERVER_VERSION = "1.0.0";
 
-type MeResponse = {
-  user: { id: string; name: string; email: string };
-  tenants: Array<{ id: string; name: string; slug: string; role: string }>;
-};
+const isString = Schema.is(Schema.String);
+
+const isNumber = Schema.is(Schema.Number);
+
+const isJsonObject = Schema.is(Schema.JsonObject);
+
+const decodeJson = Schema.decodeUnknownOption(Schema.Json);
+
+const decodeDataset = Schema.decodeUnknownOption(DashboardDataset);
+
+const decodeDeviceQuery = Schema.decodeUnknownOption(DeviceQuery);
+
+const decodeMeResponse = Schema.decodeUnknownOption(MeResponseSchema);
+
+const asError = (cause: unknown): Error =>
+  cause instanceof Error ? cause : new Error(String(cause));
+
+type ApiRequestBody = Schema.Json | DashboardQueryRequest;
+
+interface ApiRequestInit {
+  method: string;
+  body?: ApiRequestBody;
+}
+
+type ToolParameters = Record<string, Schema.Json | undefined>;
+
+type ToolHandler = (params: ToolParameters) => Effect.Effect<Schema.Json | MeResponse, Error>;
 
 const withCors = (response: Response, request: Request) => {
   const headers = new Headers(response.headers);
@@ -96,21 +126,14 @@ const statusMessage = (status: number) => {
  * Tool errors are model-visible. Keep only a short, single-line description:
  * never return a full REST response body to the MCP client.
  */
-const failureMessage = (operation: string, status: number, data: unknown) => {
+const failureMessage = (operation: string, status: number, data: Schema.Json) => {
   // Internal server errors often carry diagnostic text. Never forward it.
-  const description =
-    status >= 500
-      ? undefined
-      : typeof data === "string"
-        ? data
-        : typeof data === "object" && data !== null
-          ? ((data as { error?: unknown; message?: unknown; detail?: unknown }).error ??
-            (data as { message?: unknown }).message ??
-            (data as { detail?: unknown }).detail)
-          : undefined;
+  const candidate = status >= 500 ? undefined : isString(data) ? data : undefined;
+  const envelope = isJsonObject(data) ? data : undefined;
+  const description = candidate ?? envelope?.error ?? envelope?.message ?? envelope?.detail;
 
   const summary =
-    typeof description === "string" && description.trim()
+    isString(description) && description.trim()
       ? description.trim().replace(/\s+/g, " ").slice(0, 200)
       : statusMessage(status);
 
@@ -132,32 +155,34 @@ const toBase64 = (bytes: Uint8Array) => {
 const apiFetch = async (
   authorization: string,
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: ApiRequestBody } = {},
 ) => {
   let response: Response;
 
+  const headers = new Headers({
+    authorization,
+    "x-mattrax-mcp-authorization": authorization,
+    accept: "application/json",
+  });
+
+  const requestInit: RequestInit = { method: init.method ?? "GET", headers };
+
+  if (init.body !== undefined) {
+    headers.set("content-type", "application/json");
+    requestInit.body = JSON.stringify(init.body);
+  }
+
   try {
-    response = await env.API.fetch(
-      new Request(`${API_BASE}${path}`, {
-        method: init.method ?? "GET",
-        headers: {
-          authorization,
-          "x-mattrax-mcp-authorization": authorization,
-          accept: "application/json",
-          ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      }),
-    );
+    response = await env.API.fetch(new Request(`${API_BASE}${path}`, requestInit));
   } catch {
     throw new Error("The Mattrax API could not be reached");
   }
 
   const contentType = response.headers.get("content-type") ?? "";
-  let data: unknown;
+  let data: Schema.Json;
 
   if (contentType.includes("application/json") || contentType.includes("+json")) {
-    data = await response.json().catch(() => null);
+    data = Option.getOrUndefined(decodeJson(await response.json().catch(() => null))) ?? null;
   } else if (
     contentType.startsWith("text/") ||
     contentType.includes("csv") ||
@@ -206,11 +231,11 @@ const recordActivity = async (
   }
 };
 
-const queryString = (value: unknown) => {
-  if (typeof value !== "object" || value === null) return "";
+const queryString = (value: Schema.Json | undefined) => {
+  if (!isJsonObject(value)) return "";
   const params = new URLSearchParams();
 
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, raw] of Object.entries(value)) {
     if (raw === undefined || raw === null) continue;
 
     if (Array.isArray(raw)) for (const item of raw) params.append(key, String(item));
@@ -317,6 +342,8 @@ const buildTools = (authorization: string, me: MeResponse) => {
       body: Schema.optional(Schema.Unknown),
     });
 
+    // SAFETY: the generated tool comes from Tool.make; the cast only erases
+    // the dynamically built parameter struct to the shared tool union.
     tools.push(
       Tool.make(name, {
         description: `${identifier.replace(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
@@ -331,70 +358,94 @@ const buildTools = (authorization: string, me: MeResponse) => {
     rest.set(name, { path, method: endpoint.method.toUpperCase() });
   }
 
-  const handlers: Record<string, (params: any) => Effect.Effect<unknown, unknown>> = {
-    list_tenants: () => Effect.succeed(me),
-    search: (params) =>
-      Effect.tryPromise({
-        try: async () => {
-          const path = `/api/v1/tenants/${encodeURIComponent(params.tenantId)}/search?q=${encodeURIComponent(params.q)}${params.limit ? `&limit=${params.limit}` : ""}`;
-          const result = await apiFetch(authorization, path);
-          await recordActivity(authorization, params.tenantId, {
-            tool: "search",
-            method: "GET",
-            path,
-            status: result.status,
-          });
+  const handlers = new Map<string, ToolHandler>([
+    ["list_tenants", () => Effect.succeed(me)],
+    [
+      "search",
+      (params) => {
+        const tenantId = isString(params.tenantId) ? params.tenantId : undefined;
+        const q = isString(params.q) ? params.q : undefined;
 
-          if (!result.ok) throw new Error(failureMessage("Search", result.status, result.data));
+        if (tenantId === undefined || q === undefined)
+          return Effect.fail(new Error("Search requires tenantId and q"));
 
-          return result.data;
-        },
-        catch: (error) => error,
-      }),
-    get_openapi: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const result = await apiFetch(authorization, "/api/openapi.json");
+        const limit = isNumber(params.limit) ? params.limit : undefined;
 
-          if (!result.ok)
-            throw new Error(failureMessage("OpenAPI discovery", result.status, result.data));
+        return Effect.tryPromise({
+          try: async () => {
+            const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ""}`;
+            const result = await apiFetch(authorization, path);
+            await recordActivity(authorization, tenantId, {
+              tool: "search",
+              method: "GET",
+              path,
+              status: result.status,
+            });
 
-          return result.data;
-        },
-        catch: (error) => error,
-      }),
-    query_data: (params) =>
-      Effect.tryPromise({
-        try: async () => {
-          const path = `/api/v1/tenants/${encodeURIComponent(params.tenantId)}/dashboard-query`;
+            if (!result.ok) throw new Error(failureMessage("Search", result.status, result.data));
 
-          const result = await apiFetch(authorization, path, {
-            method: "POST",
-            body: {
-              dataset: params.dataset,
-              query: params.query,
-              ...(params.groupBy ? { groupBy: params.groupBy } : {}),
-              ...(params.limit ? { limit: params.limit } : {}),
-            },
-          });
+            return result.data;
+          },
+          catch: asError,
+        });
+      },
+    ],
+    [
+      "get_openapi",
+      () =>
+        Effect.tryPromise({
+          try: async () => {
+            const result = await apiFetch(authorization, "/api/openapi.json");
 
-          await recordActivity(authorization, params.tenantId, {
-            tool: "query_data",
-            method: "POST",
-            path,
-            status: result.status,
-          });
+            if (!result.ok)
+              throw new Error(failureMessage("OpenAPI discovery", result.status, result.data));
 
-          if (!result.ok) throw new Error(failureMessage("Query", result.status, result.data));
+            return result.data;
+          },
+          catch: asError,
+        }),
+    ],
+    [
+      "query_data",
+      (params) => {
+        const tenantId = isString(params.tenantId) ? params.tenantId : undefined;
+        const dataset = Option.getOrUndefined(decodeDataset(params.dataset));
+        const query = Option.getOrUndefined(decodeDeviceQuery(params.query));
 
-          return result.data;
-        },
-        catch: (error) => error,
-      }),
-  };
+        if (tenantId === undefined || dataset === undefined || query === undefined)
+          return Effect.fail(new Error("Query requires tenantId, dataset and query"));
+
+        const body: DashboardQueryRequest = {
+          dataset,
+          query,
+          groupBy: isString(params.groupBy) ? params.groupBy : undefined,
+          limit: isNumber(params.limit) ? params.limit : undefined,
+        };
+
+        return Effect.tryPromise({
+          try: async () => {
+            const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/dashboard-query`;
+            const result = await apiFetch(authorization, path, { method: "POST", body });
+
+            await recordActivity(authorization, tenantId, {
+              tool: "query_data",
+              method: "POST",
+              path,
+              status: result.status,
+            });
+
+            if (!result.ok) throw new Error(failureMessage("Query", result.status, result.data));
+
+            return result.data;
+          },
+          catch: asError,
+        });
+      },
+    ],
+  ]);
 
   for (const [name, endpoint] of rest) {
-    handlers[name] = (params) =>
+    handlers.set(name, (params) =>
       Effect.tryPromise({
         try: async () => {
           const path = endpoint.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
@@ -406,12 +457,13 @@ const buildTools = (authorization: string, me: MeResponse) => {
           const body =
             endpoint.method === "GET" || endpoint.method === "HEAD" ? undefined : params.body;
 
-          const result = await apiFetch(authorization, `${path}${query}`, {
-            method: endpoint.method,
-            ...(body === undefined ? {} : { body }),
-          });
+          const init: ApiRequestInit = { method: endpoint.method };
 
-          const tenantId = typeof params.tenantId === "string" ? params.tenantId : undefined;
+          if (body !== undefined) init.body = body;
+
+          const result = await apiFetch(authorization, `${path}${query}`, init);
+
+          const tenantId = isString(params.tenantId) ? params.tenantId : undefined;
 
           if (tenantId)
             await recordActivity(authorization, tenantId, {
@@ -428,18 +480,27 @@ const buildTools = (authorization: string, me: MeResponse) => {
 
           return { status: result.status, body: result.data };
         },
-        catch: (error) => error,
-      });
+        catch: asError,
+      }),
+    );
   }
 
-  return { tools, handlers };
+  return { tools, handlers: Object.fromEntries(handlers) };
 };
 
 const mcpLayer = (authorization: string, me: MeResponse) => {
   const built = buildTools(authorization, me);
+  // SAFETY: every entry was produced by `Tool.make`; the generic tuple type
+  // cannot describe a tool list assembled from the runtime endpoint catalogue.
   const toolkit = Toolkit.make(...(built.tools as any));
 
-  const registrations = McpServer.toolkit(toolkit as any).pipe(
+  const registrations = McpServer.toolkit(
+    // SAFETY: `toolkit` was constructed by `Toolkit.make` from these tools, so
+    // the runtime tool list matches the literal tuple the server expects.
+    toolkit as any,
+  ).pipe(
+    // SAFETY: handler keys are the same tool names registered in `toolkit`,
+    // and each handler returns the JSON payload the tool's success schema accepts.
     Layer.provide(toolkit.toLayer(built.handlers as any)),
   );
 
@@ -497,11 +558,11 @@ const handleMcp = async (request: Request): Promise<Response> => {
   let me: MeResponse;
 
   try {
-    const body = (await meResponse.json()) as Partial<MeResponse> | null;
+    const body = Option.getOrUndefined(decodeMeResponse(await meResponse.json()));
 
-    if (!body || typeof body !== "object" || !body.user || !Array.isArray(body.tenants))
-      throw new Error("Unexpected identity response");
-    me = body as MeResponse;
+    if (body === undefined) throw new Error("Unexpected identity response");
+
+    me = body;
   } catch (cause) {
     console.error("MCP identity response could not be read", cause);
 
@@ -509,6 +570,8 @@ const handleMcp = async (request: Request): Promise<Response> => {
   }
 
   const layer = mcpLayer(authorization, me).pipe(Layer.provide(HttpServer.layerServices));
+  // SAFETY: `mcpLayer` provides the HTTP server services this layer needs; the
+  // concrete layer type is opaque to the router constructor.
   const web = HttpRouter.toWebHandler(layer as any);
 
   try {

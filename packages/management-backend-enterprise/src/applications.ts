@@ -7,6 +7,14 @@
  * installed, which is a legitimate result that must clear stale rows.
  */
 
+import {
+  isPlistArray,
+  isPlistObject,
+  plistBoolean,
+  plistText,
+  type PlistInput,
+} from "./internal/plistValue.js";
+
 export type InstalledApplicationReport = {
   readonly bundleId: string;
   readonly name?: string;
@@ -18,41 +26,8 @@ export type InstalledApplicationReport = {
   readonly isManaged: boolean;
 };
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-
-const text = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    return trimmed === "" ? undefined : trimmed;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-
-  return undefined;
-};
-
-const booleanValue = (value: unknown): boolean | undefined => {
-  if (typeof value === "boolean") return value;
-
-  if (typeof value === "number") return value === 0 ? false : value === 1 ? true : undefined;
-
-  if (typeof value === "string") {
-    const normalised = value.trim().toLowerCase();
-
-    if (["true", "yes", "1", "on"].includes(normalised)) return true;
-
-    if (["false", "no", "0", "off"].includes(normalised)) return false;
-  }
-
-  return undefined;
-};
-
-const byteCount = (value: unknown): number | undefined => {
-  const raw = text(value);
+const byteCount = (value: PlistInput): number | undefined => {
+  const raw = plistText(value);
 
   if (raw === undefined) return undefined;
 
@@ -62,16 +37,15 @@ const byteCount = (value: unknown): number | undefined => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
-const ITEM_LIST = (queryResponses: unknown): unknown => {
-  const root = record(queryResponses);
+const itemList = (queryResponses: PlistInput): PlistInput => {
+  if (!isPlistObject(queryResponses)) return undefined;
+  const value = queryResponses.InstalledApplicationList;
 
-  if (!root) return undefined;
-  const value = root.InstalledApplicationList;
+  if (isPlistArray(value)) return value;
 
-  if (Array.isArray(value)) return value;
-  const nested = record(value);
+  if (!isPlistObject(value)) return undefined;
 
-  return nested?.InstalledApplicationListItem ?? undefined;
+  return value.InstalledApplicationListItem;
 };
 
 /**
@@ -80,40 +54,43 @@ const ITEM_LIST = (queryResponses: unknown): unknown => {
  * are skipped.
  */
 export const parseInstalledApplications = (
-  queryResponses: unknown,
+  queryResponses: PlistInput,
 ): InstalledApplicationReport[] | undefined => {
-  const items = ITEM_LIST(queryResponses);
+  const items = itemList(queryResponses);
 
-  if (!Array.isArray(items)) return undefined;
+  if (!isPlistArray(items)) return undefined;
 
   const applications = new Map<string, InstalledApplicationReport>();
 
   for (const item of items) {
-    const entry = record(item);
-
-    if (!entry) continue;
-    const bundleId = text(entry.Identifier) ?? text(entry.BundleIdentifier);
+    if (!isPlistObject(item)) continue;
+    const bundleId = plistText(item.Identifier) ?? plistText(item.BundleIdentifier);
 
     if (!bundleId) continue;
-    const name = text(entry.Name);
-    const version = text(entry.Version);
-    const shortVersion = text(entry.ShortVersion);
-    const bundleSize = byteCount(entry.BundleSize);
-    const dynamicSize = byteCount(entry.DynamicSize);
-    const managementFlags = byteCount(entry.ManagementFlags);
-    applications.set(bundleId, {
+    const name = plistText(item.Name);
+    const version = plistText(item.Version);
+    const shortVersion = plistText(item.ShortVersion);
+    const bundleSize = byteCount(item.BundleSize);
+    const dynamicSize = byteCount(item.DynamicSize);
+    const managementFlags = byteCount(item.ManagementFlags);
+
+    // Optional fields are `undefined` when the device did not report them;
+    // JSON serialization and the response schema both treat that as absent.
+    const report: InstalledApplicationReport = {
       bundleId,
-      ...(name !== undefined ? { name } : {}),
-      ...(version !== undefined ? { version } : {}),
-      ...(shortVersion !== undefined ? { shortVersion } : {}),
-      ...(bundleSize !== undefined ? { bundleSize } : {}),
-      ...(dynamicSize !== undefined ? { dynamicSize } : {}),
-      hasUpdateAvailable: booleanValue(entry.HasUpdateAvailable) ?? false,
+      hasUpdateAvailable: plistBoolean(item.HasUpdateAvailable) ?? false,
       isManaged:
-        booleanValue(entry.IsManaged) ??
-        booleanValue(entry.Managed) ??
+        plistBoolean(item.IsManaged) ??
+        plistBoolean(item.Managed) ??
         (managementFlags !== undefined && managementFlags > 0),
-    });
+      name,
+      version,
+      shortVersion,
+      bundleSize,
+      dynamicSize,
+    };
+
+    applications.set(bundleId, report);
   }
 
   return [...applications.values()];

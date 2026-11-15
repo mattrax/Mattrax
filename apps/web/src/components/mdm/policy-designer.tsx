@@ -1,8 +1,10 @@
 import { useBeforeLeave, useNavigate } from "@solidjs/router";
+import { Option, Schema } from "effect";
 import type { JSX } from "@solidjs/web";
 import {
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   For,
   onCleanup,
@@ -43,8 +45,8 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import { authClient } from "~/lib/auth";
-import { chord, useCommands } from "~/lib/commands";
-import { errorMessage } from "~/lib/errors";
+import { chord, useCommands, type Command } from "~/lib/commands";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import {
   collectionProperties,
   loadCollection,
@@ -77,8 +79,8 @@ import {
   sameValue,
   validateDraft,
   valueKey,
-  type Draft,
   type PolicyDraft,
+  type PolicyValue,
   type Selection,
   type ValidationIssue,
 } from "~/lib/policy-designer/build";
@@ -125,16 +127,24 @@ const collectionGroup = (collection: {
   return "General settings";
 };
 
-const formatValue = (value: unknown) => {
+const isBoolean = Schema.is(Schema.Boolean);
+
+const isString = Schema.is(Schema.String);
+
+const isJsonObject = Schema.is(Schema.JsonObject);
+
+const decodeJson = Schema.decodeUnknownOption(Schema.Json);
+
+const formatValue = (value: PolicyValue | undefined) => {
   if (value === undefined) return "Not set";
 
   if (value === null) return "Empty";
 
-  if (typeof value === "boolean") return value ? "On" : "Off";
+  if (isBoolean(value)) return value ? "On" : "Off";
 
   if (Array.isArray(value)) return value.length === 0 ? "Empty list" : JSON.stringify(value);
 
-  if (typeof value === "object") return JSON.stringify(value);
+  if (isJsonObject(value)) return JSON.stringify(value);
 
   return String(value);
 };
@@ -176,14 +186,17 @@ const templateSets: Record<
   ],
 };
 
-const serializePolicy = (policy: PolicyDraft) =>
-  JSON.stringify({
+const serializePolicy = (policy: PolicyDraft) => {
+  const platforms: Array<[PlatformId, Selection[]]> = PLATFORM_ORDER.map((platform) => [
+    platform,
+    policy.platforms[platform] ?? [],
+  ]);
+
+  return JSON.stringify({
     name: policy.name,
-    platforms: PLATFORM_ORDER.map((platform) => [
-      platform,
-      policy.platforms[platform] ?? [],
-    ]).filter(([, selections]) => (selections as Selection[]).length > 0),
+    platforms: platforms.filter(([, selections]) => selections.length > 0),
   });
+};
 
 const SECTION_PAGE = 60;
 const SECTION_PAGE_INCREMENT = 40;
@@ -317,7 +330,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       void loadCollection(targetPlatform, collectionId)
         .then((collection) => setCollections((current) => ({ ...current, [cacheKey]: collection })))
         .catch((error) =>
-          setCollectionErrors((current) => ({ ...current, [cacheKey]: errorMessage(error) })),
+          setCollectionErrors((current) => ({
+            ...current,
+            [cacheKey]: errorMessage(raisedFailure(error)),
+          })),
         )
         .finally(() =>
           setLoadingCollections((current) => {
@@ -362,7 +378,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       })
       .catch((error) => {
         if (requestIds.get(target) !== id) return;
-        setIndexErrors((current) => ({ ...current, [target]: errorMessage(error) }));
+        setIndexErrors((current) => ({ ...current, [target]: errorMessage(raisedFailure(error)) }));
       });
   };
 
@@ -372,7 +388,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     if (!manifest())
       void loadManifest()
         .then(setManifest)
-        .catch((error) => setManifestError(errorMessage(error)));
+        .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
     const target = platform();
     setIndexes((current) => {
       const next = { ...current };
@@ -431,7 +447,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   onSettled(() => {
     void loadManifest()
       .then(setManifest)
-      .catch((error) => setManifestError(errorMessage(error)));
+      .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
@@ -542,7 +558,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           .catch((error) =>
             setSearchIndexErrors((current) => ({
               ...current,
-              [value.platform]: errorMessage(error),
+              [value.platform]: errorMessage(raisedFailure(error)),
             })),
           );
       });
@@ -755,8 +771,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     platforms: selectionMap(),
   });
 
-  const draft = (): Draft => draftForPlatform(policyDraft(), platform());
-
   const issues = createMemo<ValidationIssue[]>(() => [
     ...PLATFORM_ORDER.flatMap((target) => validateDraft(draftForPlatform(policyDraft(), target))),
     ...Object.values(invalidStructured()).map((field) => ({
@@ -903,7 +917,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       try {
         collection = await loadCollection(target, id);
       } catch (error) {
-        setNotice(`Could not load ${key}: ${errorMessage(error)}`);
+        setNotice(`Could not load ${key}: ${errorMessage(raisedFailure(error))}`);
 
         return false;
       }
@@ -958,7 +972,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     focusEditor();
   };
 
-  const updateValue = (key: string, property: Property, value: unknown) =>
+  const updateValue = (key: string, property: Property, value: PolicyValue | undefined) =>
     setSelections((current) =>
       current.map((selection) =>
         selection.collectionId === key
@@ -1043,7 +1057,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       const bundle = buildPolicyBundle(policyDraft());
 
       if (!bundle) return;
-      const blob = new Blob([bundle.content as BlobPart], { type: bundle.contentType });
+      const blob = new Blob([bundle.content], { type: bundle.contentType });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -1053,7 +1067,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setNotice(`Could not export the policy: ${errorMessage(error)}`);
+      setNotice(`Could not export the policy: ${errorMessage(raisedFailure(error))}`);
     }
   };
 
@@ -1105,7 +1119,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     void props.onSave?.(policyDraft());
   };
 
-  useCommands([
+  const designerCommands: Command[] = [
     {
       id: "policy-designer-save",
       title: "Save policy",
@@ -1175,7 +1189,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         setStartOverOpen(true);
       },
     },
-  ]);
+  ];
+
+  // `useCommands` is client-only, so its effect would consume a hydration id
+  // the server never allocated and shift every id in the editor by one. Give
+  // the effect an explicit owner id so both renders stay aligned.
+  createRoot(() => useCommands(designerCommands), { id: "designer-commands" });
 
   const platformLabel = (id: PlatformId | null | undefined) => {
     if (!id) return "";
@@ -1186,7 +1205,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     );
   };
 
-  const platforms = (): Array<{ id: PlatformId; short: string }> =>
+  const platforms = (): ReadonlyArray<{ id: PlatformId; short: string }> =>
     manifest()?.platforms ?? [
       { id: "apple", short: "Apple" },
       { id: "android", short: "Android" },
@@ -1667,7 +1686,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   class="flex w-full items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive"
                 >
                   <CircleAlert class="size-3.5 shrink-0" />
-                  <span class="min-w-0 flex-1 break-words">{errorMessage(error())}</span>
+                  <span class="min-w-0 flex-1 break-words">
+                    {errorMessage(raisedFailure(error()))}
+                  </span>
                 </div>
               )}
             </Show>
@@ -2630,12 +2651,12 @@ function MakeIssuesSummary(props: { issues: number; errors: number }) {
 type PropertyFieldProps = {
   property: Property;
   platform: PlatformId;
-  value: unknown;
+  value: PolicyValue | undefined;
   id: string;
   changed: boolean;
   searchMatch: boolean;
   issue?: ValidationIssue;
-  onChange: (value: unknown) => void;
+  onChange: (value: PolicyValue | undefined) => void;
   onReset: () => void;
   onStructuredInvalid?: (invalid: boolean) => void;
 };
@@ -2700,7 +2721,7 @@ function PropertyField(props: PropertyFieldProps) {
     return value;
   };
 
-  const arrayValue = () => (Array.isArray(props.value) ? (props.value as unknown[]) : []);
+  const arrayValue = () => (Array.isArray(props.value) ? props.value : []);
 
   const toggleArrayValue = (option: string, checked: boolean) => {
     const current = arrayValue().map(String);
@@ -2902,8 +2923,6 @@ function PropertyField(props: PropertyFieldProps) {
                 id={props.id}
                 role="group"
                 aria-label={props.property.name}
-                aria-required={props.property.required ? "true" : undefined}
-                aria-invalid={invalid() ? "true" : undefined}
                 aria-describedby={describedBy()}
                 class={cn(
                   "max-h-52 space-y-0.5 overflow-y-auto rounded-lg border bg-muted/20 p-1.5",
@@ -2940,8 +2959,6 @@ function PropertyField(props: PropertyFieldProps) {
             id={props.id}
             role="group"
             aria-label={props.property.name}
-            aria-required={props.property.required ? "true" : undefined}
-            aria-invalid={invalid() ? "true" : undefined}
             aria-describedby={describedBy()}
             class="flex w-full rounded-lg border border-input bg-muted/30 p-0.5"
           >
@@ -3077,28 +3094,28 @@ function PropertyField(props: PropertyFieldProps) {
 
 function StructuredField(props: {
   property: Property;
-  value: unknown;
+  value: PolicyValue | undefined;
   id: string;
   describedBy: string;
   invalid: boolean;
   onInvalidChange: (invalid: boolean) => void;
-  onChange: (value: unknown) => void;
+  onChange: (value: PolicyValue | undefined) => void;
 }) {
   const isData = () => props.property.type === "data";
 
-  const format = (value: unknown) => {
+  const format = (value: PolicyValue | undefined) => {
     if (value === undefined || value === null) return "";
 
-    if (isData()) return typeof value === "string" ? value : String(value);
+    if (isData()) return isString(value) ? value : String(value);
 
-    if (typeof value === "string") return value;
+    if (isString(value)) return value;
 
     return JSON.stringify(value, null, 2);
   };
 
   const [text, setText] = createSignal(format(props.value));
   const [error, setError] = createSignal<string | null>(null);
-  let lastIncoming: unknown;
+  let lastIncoming: PolicyValue | undefined;
   let hasIncoming = false;
 
   createEffect(
@@ -3135,7 +3152,14 @@ function StructuredField(props: {
     }
 
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = Option.getOrUndefined(decodeJson(JSON.parse(raw)));
+
+      if (parsed === undefined) {
+        setError("Expected a JSON value.");
+        props.onInvalidChange(true);
+
+        return;
+      }
 
       if (props.property.type === "array" && !Array.isArray(parsed)) {
         setError('Expected a JSON list, for example ["value"].');
@@ -3144,10 +3168,7 @@ function StructuredField(props: {
         return;
       }
 
-      if (
-        props.property.type === "dictionary" &&
-        (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-      ) {
+      if (props.property.type === "dictionary" && !isJsonObject(parsed)) {
         setError('Expected a JSON object, for example {"key": "value"}.');
         props.onInvalidChange(true);
 

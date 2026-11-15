@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Redacted, Result, Schema } from "effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import { describe, expect, it } from "vitest";
 import { Passkey } from "@yielded/auth";
@@ -99,13 +99,13 @@ const cosePublicKey = async (key: CryptoKey) => {
   const jwk = await crypto.subtle.exportKey("jwk", key);
 
   const x = Base64Url.decode(jwk.x!).pipe((result) => {
-    if (result._tag !== "Success") throw new Error("invalid x");
+    if (!Result.isSuccess(result)) throw new Error("invalid x");
 
     return new Uint8Array(result.success);
   });
 
   const y = Base64Url.decode(jwk.y!).pipe((result) => {
-    if (result._tag !== "Success") throw new Error("invalid y");
+    if (!Result.isSuccess(result)) throw new Error("invalid y");
 
     return new Uint8Array(result.success);
   });
@@ -180,6 +180,8 @@ describe("WebAuthn ceremonies", () => {
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = registrationCeremony(challenge);
 
+    // SAFETY: the fixture's user handle is opaque to this test; the verifier
+    // accepts any opaque bytes and echoes them in the challenge.
     const started = await Effect.runPromise(
       verifier.prepareRegistration({
         profile,
@@ -222,6 +224,8 @@ describe("WebAuthn ceremonies", () => {
       JSON.stringify({ type: "webauthn.create", challenge, origin, crossOrigin: false }),
     );
 
+    // SAFETY: the fixture ceremony is the exact object prepared above; its
+    // runtime shape matches what the verifier issued.
     const verified = await Effect.runPromise(
       verifier.verifyRegistration({
         ceremony: ceremony as never,
@@ -314,6 +318,8 @@ describe("WebAuthn ceremonies", () => {
       }),
     );
 
+    // SAFETY: the fixture ceremony is the exact object prepared above; its
+    // runtime shape matches what the verifier issued.
     const verified = await Effect.runPromise(
       verifier.verifyAuthentication({
         ceremony: ceremony as never,
@@ -405,6 +411,7 @@ describe("WebAuthn ceremonies", () => {
       }),
     );
 
+    // SAFETY: the fixture ceremony was prepared by this same verifier above.
     await expect(
       Effect.runPromise(
         verifier.verifyAuthentication({
@@ -424,6 +431,6 @@ describe("WebAuthn ceremonies", () => {
           ),
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "PasskeyProtocolRejected" });
+    ).rejects.toBeInstanceOf(Passkey.PasskeyProtocolRejected);
   });
 });

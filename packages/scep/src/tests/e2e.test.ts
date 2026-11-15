@@ -33,6 +33,23 @@ async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
   return handler;
 }
 
+function hasHexValue(
+  node: unknown,
+): node is { valueBlock: { valueHexView: Uint8Array<ArrayBuffer> } } {
+  if (typeof node !== "object" || node === null || !("valueBlock" in node)) return false;
+  const block = node.valueBlock;
+
+  if (typeof block !== "object" || block === null || !("valueHexView" in block)) return false;
+
+  return block.valueHexView instanceof Uint8Array;
+}
+
+function attributeText(attribute: pkijs.AttributeTypeAndValue | undefined): string | undefined {
+  if (!attribute || !(attribute.value instanceof asn1js.Utf8String)) return undefined;
+
+  return attribute.value.valueBlock.value;
+}
+
 async function decryptEnvelopedData(
   envelopedDataDer: ArrayBuffer,
   privateKeyJwk: JsonWebKey,
@@ -40,8 +57,16 @@ async function decryptEnvelopedData(
   const contentInfo = pkijs.ContentInfo.fromBER(envelopedDataDer);
   const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
 
-  const recipientInfo = envelopedData.recipientInfos[0]!.value as pkijs.KeyTransRecipientInfo;
-  const encryptedKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+  const recipient = envelopedData.recipientInfos[0]?.value;
+
+  if (!recipient || !("encryptedKey" in recipient))
+    throw new Error("No key-transport recipient info in EnvelopedData");
+
+  const encryptedKeyNode = recipient.encryptedKey;
+
+  if (!hasHexValue(encryptedKeyNode)) throw new Error("Recipient encrypted key has no bytes");
+
+  const encryptedKey = Buffer.from(encryptedKeyNode.valueBlock.valueHexView);
 
   const signingKey = await crypto.subtle.importKey(
     "jwk",
@@ -51,7 +76,7 @@ async function decryptEnvelopedData(
     ["sign"],
   );
 
-  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
+  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey);
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
   const sessionKeyBytes = privateDecrypt(
@@ -59,11 +84,12 @@ async function decryptEnvelopedData(
     encryptedKey,
   );
 
-  const ivHex = (
-    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
-  )?.valueBlock?.valueHex as ArrayBuffer;
+  const algorithmParams =
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams;
 
-  const iv = Buffer.from(ivHex);
+  if (!hasHexValue(algorithmParams)) throw new Error("Missing IV in algorithm params");
+
+  const iv = Buffer.from(algorithmParams.valueBlock.valueHexView);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
@@ -84,7 +110,7 @@ describe("SCEP E2E", () => {
     const caPrivateKeyJwk = (await crypto.subtle.exportKey(
       "jwk",
       caKeyPair.privateKey,
-    )) as JsonWebKey;
+    ));
 
     const repo = mockScepRepository({
       getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
@@ -157,20 +183,28 @@ describe("SCEP E2E", () => {
 
     // Check SCEP attributes
     const si = signedData.signerInfos[0];
-    const attrMap = new Map(si.signedAttrs!.attributes.map((a) => [a.type, a]));
+    const signedAttrs = si?.signedAttrs;
+
+    if (!signedAttrs) throw new Error("CertRep SignerInfo has no signed attributes");
+
+    const attrMap = new Map(signedAttrs.attributes.map((a) => [a.type, a]));
     expect(attrMap.has("2.16.840.1.113733.1.9.2")).toBe(true); // messageType = CertRep
     expect(attrMap.has("2.16.840.1.113733.1.9.3")).toBe(true); // pkiStatus = SUCCESS
     expect(attrMap.has("2.16.840.1.113733.1.9.7")).toBe(true); // transactionID
     expect(attrMap.has("2.16.840.1.113733.1.9.6")).toBe(true); // recipientNonce
 
     // ── Step 6: Decrypt EnvelopedData ─────────────────────────────────
-    const eContentNode = signedData.encapContentInfo.eContent!;
-    const envelopedDer = (eContentNode as asn1js.OctetString).getValue() as ArrayBuffer;
+    const eContentNode = signedData.encapContentInfo.eContent;
+
+    if (!(eContentNode instanceof asn1js.OctetString))
+      throw new Error("CertRep eContent is not an OCTET STRING");
+
+    const envelopedDer = eContentNode.getValue();
 
     const deviceJwk = (await crypto.subtle.exportKey(
       "jwk",
       deviceKeyPair.privateKey,
-    )) as JsonWebKey;
+    ));
 
     const decryptedDer = await decryptEnvelopedData(envelopedDer, deviceJwk);
 
@@ -181,9 +215,13 @@ describe("SCEP E2E", () => {
     const degSD = new pkijs.SignedData({ schema: degCI.content });
     expect(degSD.certificates).toHaveLength(1);
 
-    const issuedCert = degSD.certificates![0] as pkijs.Certificate;
+    const issuedCert = degSD.certificates?.[0];
+
+    if (!(issuedCert instanceof pkijs.Certificate))
+      throw new Error("Degenerate PKCS#7 has no device certificate");
+
     const cnAttr = issuedCert.subject.typesAndValues.find((a) => a.type === "2.5.4.3");
-    expect((cnAttr?.value as any).valueBlock.value).toBe("E2EDevice");
+    expect(attributeText(cnAttr)).toBe("E2EDevice");
 
     // Verify the issued cert is signed by the CA
     const certValid = await issuedCert.verify(caCert);

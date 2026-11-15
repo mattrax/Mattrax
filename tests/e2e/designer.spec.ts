@@ -3,6 +3,43 @@ import { expect, test } from "@playwright/test";
 import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("policy designer", () => {
+  test("switches platforms without a hydration or console error", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(`console: ${message.text()}`);
+    });
+
+    await gotoHydrated(page, "/designer");
+    await page.getByTitle("Edit Windows settings").click();
+    await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // A selection gives the editor a live subtree; switching platforms then
+    // changes the active selection identity, which used to desync hydration.
+    await page.getByRole("button", { name: /BitLocker/ }).first().click();
+    await page.getByRole("button", { name: /^Add to policy$/ }).click();
+    await expect(
+      page.getByRole("button", { name: "Remove BitLocker from policy", exact: true }),
+    ).toBeVisible();
+
+    await page.getByTitle("Edit Android settings").click();
+    await expect(page.getByRole("button", { name: /Android baseline/i })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTitle("Edit Apple settings").click();
+    await page.getByTitle("Edit Windows settings").click();
+    await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Remove BitLocker from policy", exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    expect(errors).toEqual([]);
+  });
+
   test("browses the catalogue, applies a template and exports a SyncML artifact", async ({
     page,
   }) => {

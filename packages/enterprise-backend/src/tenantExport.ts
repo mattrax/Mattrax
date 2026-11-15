@@ -1,7 +1,8 @@
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
 import {
+  JsonRecord,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
   type TenantExportApplication,
@@ -15,13 +16,7 @@ import {
   type TenantExportPreRegistration,
   type TenantExportProfile,
 } from "@mattrax/enterprise-domain";
-import type {
-  EnterpriseApplication,
-  EnterpriseDb,
-  EnterpriseGroup,
-  EnterpriseOrganization,
-  EnterprisePolicy,
-} from "./schema.ts";
+import type { EnterpriseDb, EnterpriseOrganization } from "./schema.ts";
 
 export type TenantExportBundle = {
   readonly body: string;
@@ -56,15 +51,15 @@ const safeFilename = (value: string) =>
  * `organization.metadata` is stored as JSON text. A malformed historical value
  * must not make the rest of a bundle unexportable.
  */
-const exportMetadata = (value: string | null | undefined): Record<string, unknown> | null => {
+const exportMetadata = (
+  value: string | null | undefined,
+): Schema.Schema.Type<typeof JsonRecord> | null => {
   if (!value) return null;
 
   try {
-    const parsed: unknown = JSON.parse(value);
-
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
+    return Option.getOrUndefined(
+      Schema.decodeUnknownOption(JsonRecord)(JSON.parse(value)),
+    ) ?? null;
   } catch {
     return null;
   }
@@ -83,67 +78,54 @@ export const buildTenantExport = (
   Effect.gen(function* () {
     const organizationId = organization.id;
 
-    const members = (yield* db
+    const members = yield* db
       .select()
       .from(schema.member)
-      .where(eq(schema.member.organizationId, organizationId))) as Array<{
-      userId: string;
-      role: string;
-      createdAt: Date;
-    }>;
+      .where(eq(schema.member.organizationId, organizationId));
 
     const userIds = [...new Set(members.map((member) => member.userId))];
 
     const users = userIds.length
-      ? ((yield* db
+      ? yield* db
           .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
           .from(schema.user)
-          .where(inArray(schema.user.id, userIds))) as Array<{
-          id: string;
-          name: string;
-          email: string;
-        }>)
+          .where(inArray(schema.user.id, userIds))
       : [];
 
     const usersById = new Map(users.map((user) => [user.id, user]));
 
-    const groups = (yield* db
+    const groups = yield* db
       .select()
       .from(schema.enterpriseGroup)
-      .where(eq(schema.enterpriseGroup.organizationId, organizationId))) as Array<EnterpriseGroup>;
+      .where(eq(schema.enterpriseGroup.organizationId, organizationId));
 
     const groupIds = groups.map((group) => group.id);
 
-    const policies = (yield* db
+    const policies = yield* db
       .select()
       .from(schema.policy)
-      .where(eq(schema.policy.organizationId, organizationId))) as Array<EnterprisePolicy>;
+      .where(eq(schema.policy.organizationId, organizationId));
 
     const policyIds = policies.map((policy) => policy.id);
 
-    const applications = (yield* db
+    const applications = yield* db
       .select()
       .from(schema.application)
-      .where(
-        eq(schema.application.organizationId, organizationId),
-      )) as Array<EnterpriseApplication>;
+      .where(eq(schema.application.organizationId, organizationId));
 
     const applicationIds = applications.map((application) => application.id);
 
     const groupDevices = groupIds.length
-      ? ((yield* db
+      ? yield* db
           .select()
           .from(schema.groupDevice)
-          .where(inArray(schema.groupDevice.groupId, groupIds))) as Array<{
-          groupId: string;
-          deviceId: string;
-        }>)
+          .where(inArray(schema.groupDevice.groupId, groupIds))
       : [];
 
     const deviceIds = [...new Set(groupDevices.map((link) => link.deviceId))];
 
     const devices = deviceIds.length
-      ? ((yield* db
+      ? yield* db
           .select({
             id: schema.device.id,
             name: schema.device.name,
@@ -155,19 +137,16 @@ export const buildTenantExport = (
               eq(schema.device.organizationId, organizationId),
               inArray(schema.device.id, deviceIds),
             ),
-          )) as Array<{ id: string; name: string; serial: string | null }>)
+          )
       : [];
 
     const devicesById = new Map(devices.map((device) => [device.id, device]));
 
     const groupPolicies = groupIds.length
-      ? ((yield* db
+      ? yield* db
           .select()
           .from(schema.groupPolicy)
-          .where(inArray(schema.groupPolicy.groupId, groupIds))) as Array<{
-          groupId: string;
-          policyId: string;
-        }>)
+          .where(inArray(schema.groupPolicy.groupId, groupIds))
       : [];
 
     const policyKeys = new Set(policyIds);
@@ -182,32 +161,25 @@ export const buildTenantExport = (
     }
 
     const configurations = policyIds.length
-      ? ((yield* db
+      ? yield* db
           .select()
           .from(schema.configuration)
-          .where(inArray(schema.configuration.policyId, policyIds))) as Array<{
-          policyId: string;
-          kind: string;
-          data: unknown;
-        }>)
+          .where(inArray(schema.configuration.policyId, policyIds))
       : [];
 
-    const policyConfigurations = new Map<string, Record<string, unknown>>();
+    const policyConfigurations = new Map<string, Record<string, Schema.Json>>();
 
     for (const configuration of configurations) {
       const current = policyConfigurations.get(configuration.policyId) ?? {};
-      current[configuration.kind] = configuration.data;
+      current[configuration.kind] = Schema.decodeUnknownSync(Schema.Json)(configuration.data);
       policyConfigurations.set(configuration.policyId, current);
     }
 
     const applicationGroups = applicationIds.length
-      ? ((yield* db
+      ? yield* db
           .select()
           .from(schema.applicationGroup)
-          .where(inArray(schema.applicationGroup.applicationId, applicationIds))) as Array<{
-          applicationId: string;
-          groupId: string;
-        }>)
+          .where(inArray(schema.applicationGroup.applicationId, applicationIds))
       : [];
 
     const groupKeys = new Set(groupIds);
@@ -225,46 +197,26 @@ export const buildTenantExport = (
       where: { organizationId },
     });
 
-    const preRegistrations = (yield* db
+    const preRegistrations = yield* db
       .select()
       .from(schema.devicePreRegistration)
-      .where(eq(schema.devicePreRegistration.organizationId, organizationId))) as Array<{
-      serial: string;
-      name: string | null;
-      assetTag: string | null;
-      notes: string | null;
-      groupId: string | null;
-    }>;
+      .where(eq(schema.devicePreRegistration.organizationId, organizationId));
 
-    const certificates = (yield* db
+    const certificates = yield* db
       .select()
       .from(schema.scepIssuedCertificate)
-      .where(eq(schema.scepIssuedCertificate.organizationId, organizationId))) as Array<{
-      serial: string;
-      enrollmentId: string | null;
-      deviceId: string | null;
-      notAfter: Date;
-      revokedAt: Date | null;
-      createdAt: Date;
-    }>;
+      .where(eq(schema.scepIssuedCertificate.organizationId, organizationId));
 
     let auditLog: TenantExportAuditEntry[] | undefined;
     let auditTruncated: boolean | undefined;
 
     if (options.includeAudit) {
-      const rows = (yield* db
+      const rows = yield* db
         .select()
         .from(schema.auditLog)
         .where(eq(schema.auditLog.organizationId, organizationId))
         .orderBy(desc(schema.auditLog.createdAt))
-        .limit(TENANT_EXPORT_MAX_ROWS + 1)) as Array<{
-        action: string;
-        targetType: string;
-        targetId: string | null;
-        actorEmail: string | null;
-        metadata: unknown;
-        createdAt: Date;
-      }>;
+        .limit(TENANT_EXPORT_MAX_ROWS + 1);
 
       auditTruncated = rows.length > TENANT_EXPORT_MAX_ROWS;
       auditLog = rows.slice(0, TENANT_EXPORT_MAX_ROWS).map((entry) => ({
@@ -380,11 +332,11 @@ export const buildTenantExport = (
       groups: exportedGroups,
       policies: exportedPolicies,
       applications: exportedApplications,
-      ...(exportedEnrollment ? { enrollment: exportedEnrollment } : {}),
+      enrollment: exportedEnrollment,
       preRegistrations: exportedPreRegistrations,
       scepCertificates: exportedCertificates,
-      ...(auditLog ? { auditLog } : {}),
-      ...(auditTruncated !== undefined ? { auditTruncated } : {}),
+      auditLog,
+      auditTruncated,
     };
 
     return {

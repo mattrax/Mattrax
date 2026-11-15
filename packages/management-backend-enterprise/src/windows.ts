@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, eq, lt } from "drizzle-orm";
 import { windowsPolicyNodes } from "./policy.ts";
 import { resolveEffectivePolicyForDevice } from "./policyResolutionStore.ts";
@@ -12,13 +12,22 @@ import {
 import { certificateSerialHex, openCaPrivateKey, signScepCsr } from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
 import {
+  WINDOWS_INVENTORY_REQUESTS,
+  hasWindowsInventory,
+  parseWindowsInventory,
+  windowsInventoryDue,
+  windowsInventoryUpdate,
+  windowsInventoryValues,
+} from "./windowsInventory.ts";
+import {
   federatedAuthServiceUrl,
-  isFederatedTokenShaped,
+  isFederatedToken,
   unverifiedFederatedTenantId,
   validateFederatedEntraToken,
   type FederatedEntraClaims,
   type FederatedJsonWebKeySet,
   type FederatedTokenValidation,
+  type ValidateFederatedEntraTokenOptions,
 } from "./federated.ts";
 import {
   InternalServerError,
@@ -36,6 +45,26 @@ import {
 } from "@mattrax/management-backend";
 
 const encoder = new TextEncoder();
+const JsonArray = Schema.Array(Schema.Json);
+
+const StatusEntry = Schema.Struct({
+  cmdRef: Schema.optional(Schema.Json),
+  data: Schema.optional(Schema.Json),
+});
+
+type DesiredCommand = {
+  policyId: string;
+  data: string;
+  format?: string;
+};
+
+type WindowsCommand = {
+  kind: string;
+  cmdID: string;
+  locURI?: string;
+  data?: string;
+  format?: string;
+};
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
@@ -76,7 +105,7 @@ const timingSafeEqual = (left: string, right: string): boolean => {
  * Used to distinguish a forged/expired Mattrax token from the opaque client
  * credential Windows sends on the first WSTEP policy request.
  */
-const isWindowsEnrollmentTokenShaped = (token: string): boolean => {
+const isWindowsEnrollmentToken = (token: string): boolean => {
   const parts = token.split(".");
 
   if (parts.length !== 3) return false;
@@ -370,7 +399,7 @@ export const organizationFromWindowsEnrollmentSubject = (
 /**
  * Identity values a SCEP certificate row may carry for a device.
  *
- * Certificates issued by {@link makeWindowsBackend} used to store the Windows
+ * Certificates issued by {@link createWindowsBackend} used to store the Windows
  * `DeviceID` (the device's `dmIdentifier`) instead of the internal `device.id`.
  * Revocation and renewal must honour both so legacy rows keep working after the
  * linkage fix.
@@ -502,7 +531,7 @@ type ResolveOrganizationInput = {
 
 type OrganizationResolution = Effect.Effect<string, UnknownDevice | InternalServerError, never>;
 
-export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
+export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
   const { db, origin, authSecret, windowsOrganizationId, requireDeviceIdentity } = options;
   const ttlSeconds = options.enrollmentTokenTtlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
 
@@ -535,7 +564,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     federated &&
     federated.enabled !== false &&
     federatedAudience &&
-    (typeof federatedAudience === "string"
+    (Schema.is(Schema.String)(federatedAudience)
       ? federatedAudience.trim()
       : federatedAudience.length > 0),
   );
@@ -568,20 +597,20 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     token: string,
     azureTenantId: string,
   ): Effect.Effect<FederatedTokenValidation, never> =>
-    Effect.promise(() =>
-      validateFederatedEntraToken({
+    Effect.promise(() => {
+      const input: ValidateFederatedEntraTokenOptions = {
         token,
         tenantId: azureTenantId,
         audience: federatedAudience!,
-        ...(federated?.jwks ? { jwks: federated.jwks } : {}),
-        ...(federated?.jwksUri ? { jwksUri: federated.jwksUri(azureTenantId) } : {}),
-        ...(federated?.fetch ? { fetch: federated.fetch } : {}),
-        ...(federated?.now !== undefined ? { now: federated.now } : {}),
-        ...(federated?.clockToleranceSeconds !== undefined
-          ? { clockToleranceSeconds: federated.clockToleranceSeconds }
-          : {}),
-      }),
-    );
+        jwks: federated?.jwks,
+        jwksUri: federated?.jwksUri?.(azureTenantId),
+        fetch: federated?.fetch,
+        now: federated?.now,
+        clockToleranceSeconds: federated?.clockToleranceSeconds,
+      };
+
+      return validateFederatedEntraToken(input);
+    });
 
   /**
    * Resolve a tenant from an Entra token, then validate the token against that
@@ -813,7 +842,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // presents one of our own still-valid tokens.
         const presentedToken = authToken.trim();
         const tenantEvaluation = yield* evaluateTenantToken(context.tenantToken);
-        const presentedJwt = isFederatedTokenShaped(presentedToken);
+        const presentedJwt = isFederatedToken(presentedToken);
 
         // Discovery mints a federated-mode tenant token; a JWT also selects
         // federated validation when the deployment supports it. OnPremise
@@ -856,7 +885,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // enrollment subject, otherwise an offline device would be wedged
         // forever.
         if (
-          isWindowsEnrollmentTokenShaped(presentedToken) &&
+          isWindowsEnrollmentToken(presentedToken) &&
           !evaluated.verification &&
           !evaluated.expired
         )
@@ -897,7 +926,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const secret = yield* requireSecret();
         const presentedToken = request.authToken.trim();
         const tenantEvaluation = yield* evaluateTenantToken(request.tenantToken);
-        const presentedJwt = isFederatedTokenShaped(presentedToken);
+        const presentedJwt = isFederatedToken(presentedToken);
 
         const federatedFlow =
           tenantEvaluation.verification?.federated === true || (federatedEnabled && presentedJwt);
@@ -991,8 +1020,12 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // Windows issuance reads the same sealed CA key as SCEP issuance. Pick
         // up a lazy migration (legacy plaintext row) exactly like the SCEP
         // repository does; failure must never fall back to a new CA.
+        const storedCaKey = Schema.decodeUnknownOption(Schema.Json)(ca.privateKeyJwk);
+
+        if (Option.isNone(storedCaKey)) return yield* Effect.fail(internal());
+
         const caKey = yield* Effect.tryPromise({
-          try: () => openCaPrivateKey(ca.privateKeyJwk, authSecret),
+          try: () => openCaPrivateKey(storedCaKey.value, authSecret),
           catch: internal,
         });
 
@@ -1103,8 +1136,8 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           signedCertificate: signed.certificatePem,
           identityCertificate: ca.certPem,
           // The provisioning document uses these for the APPSRV DIGEST
-          // challenge. The management endpoint does not currently issue
-          // commands, so the secret only needs to be unguessable.
+          // challenge. Device authentication uses the issued certificate, so
+          // the secret only needs to be unguessable.
           username: deviceIdentifier,
           secret: crypto.randomUUID(),
           providerId: "Mattrax",
@@ -1146,23 +1179,84 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           ))
         )
           return yield* Effect.fail(new UnknownDevice());
-        yield* touchDevice(device.id, organizationId, new Date());
+
+        const timestamp = new Date();
 
         for (const status of checkinRequest.statuses) {
-          const entry = status as { cmdRef?: unknown; data?: unknown };
-          const commandId = typeof entry.cmdRef === "string" ? entry.cmdRef : undefined;
+          if (!Schema.is(StatusEntry)(status)) continue;
+          const commandId = Schema.is(Schema.String)(status.cmdRef) ? status.cmdRef : undefined;
 
           if (!commandId) continue;
-          const data = String(entry.data ?? "");
+
+          const data = Schema.is(Schema.String)(status.data)
+            ? status.data
+            : Schema.is(Schema.Number)(status.data)
+              ? String(status.data)
+              : "";
+
+          const commandStatus = Match.value(data).pipe(
+            Match.when("200", () => "succeeded"),
+            Match.when("418", () => "queued"),
+            Match.orElse(() => "failed"),
+          );
+
           yield* db
             .update(s.deviceCommand)
             .set({
-              status: data === "200" ? "succeeded" : data === "418" ? "queued" : "failed",
+              status: commandStatus,
               resultStatus: data,
-              updatedAt: new Date(),
+              updatedAt: timestamp,
             })
             .where(and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)));
         }
+
+        // Inventory results arrive in the same SyncML message that answers the
+        // previous session's `Get` commands. Parse them before deciding whether
+        // this session should ask for another snapshot.
+        const inventory = parseWindowsInventory(windowsInventoryValues(checkinRequest.results));
+
+        const inventoryUpdate = windowsInventoryUpdate(inventory, device);
+
+        // `device` has a per-tenant unique serial. A duplicated or cloned
+        // SMBIOS serial must not make the check-in fail (which would also stop
+        // policy delivery), so keep the previous value for this device.
+        if (inventoryUpdate.serial) {
+          const [owner] = yield* db
+            .select({ id: s.device.id })
+            .from(s.device)
+            .where(
+              and(
+                eq(s.device.organizationId, organizationId),
+                eq(s.device.serial, inventoryUpdate.serial),
+              ),
+            )
+            .limit(1);
+
+          if (owner && owner.id !== device.id) delete inventoryUpdate.serial;
+        }
+
+        const hasInventoryUpdate = hasWindowsInventory(inventoryUpdate);
+
+        const inventoryDue = windowsInventoryDue({
+          lastUpdatedAt: hasInventoryUpdate ? timestamp : device.inventoryUpdatedAt,
+          lastRequestedAt: device.inventoryRequestedAt,
+          now: timestamp,
+        });
+
+        const inventoryColumns: Partial<typeof s.device.$inferInsert> = {
+          ...inventoryUpdate,
+        };
+
+        if (hasInventoryUpdate) inventoryColumns.inventoryUpdatedAt = timestamp;
+
+        if (inventoryDue) inventoryColumns.inventoryRequestedAt = timestamp;
+
+        if (Object.keys(inventoryColumns).length > 0)
+          yield* db.update(s.device).set(inventoryColumns).where(eq(s.device.id, device.id));
+
+        // Refresh liveness (and dynamic groups, which read model/OS/storage)
+        // after the inventory write so group rules see the new values.
+        yield* touchDevice(device.id, organizationId, timestamp);
 
         const effective = yield* resolveEffectivePolicyForDevice(db, {
           id: device.id,
@@ -1175,13 +1269,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           data: configuration.data,
         }));
 
-        const commands: Array<{
-          kind: string;
-          cmdID: string;
-          locURI?: string;
-          data?: string;
-          format?: string;
-        }> = [];
+        const commands: Array<WindowsCommand> = [];
 
         // 1 is reserved for the SyncHdr status; server commands start at 2.
         let index = 2;
@@ -1189,10 +1277,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // Resolve duplicate OMA-URIs deterministically. A policy with a
         // lexicographically smaller id wins, so check-ins are stable across
         // group ordering and devices.
-        const desired = new Map<
-          string,
-          { readonly policyId: string; readonly data: string; readonly format?: string }
-        >();
+        const desired = new Map<string, DesiredCommand>();
 
         const sorted = [...configurations].sort((left, right) =>
           String(left.policyId).localeCompare(String(right.policyId)),
@@ -1206,28 +1291,58 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             hash: "",
           })) {
             if (desired.has(node.omaUri)) continue;
-            desired.set(node.omaUri, {
+
+            const value = node.value;
+
+            const serializedValue =
+              Schema.is(Schema.String)(value)
+                ? value
+                : Schema.is(Schema.JsonObject)(value) ||
+                    Schema.is(JsonArray)(value) ||
+                    value === null
+                  ? JSON.stringify(value)
+                  : String(value);
+
+            const desiredNode: DesiredCommand = {
               policyId: configuration.policyId,
-              data:
-                typeof node.value === "string"
-                  ? node.value
-                  : typeof node.value === "object"
-                    ? JSON.stringify(node.value)
-                    : String(node.value),
-              ...(node.format ? { format: node.format } : {}),
-            });
+              data: serializedValue,
+            };
+
+            if (node.format) desiredNode.format = node.format;
+
+            desired.set(node.omaUri, desiredNode);
           }
         }
 
+        // OMA-DM has no per-setting diff here: a `Delete` is never emitted, so
+        // removing a setting from every policy leaves the last CSP value on the
+        // device until it is re-enrolled. The assignment UI warns that Windows
+        // applies on check-in; persistence of applied URIs is still required
+        // before user-targeted removal can revert a setting.
         for (const [locURI, node] of desired) {
-          commands.push({
+          const command: WindowsCommand = {
             kind: "Replace",
             cmdID: String(index++),
             locURI,
             data: node.data,
-            ...(node.format ? { format: node.format } : {}),
-          });
+          };
+
+          if (node.format) command.format = node.format;
+
+          commands.push(command);
         }
+
+        // Inventory `Get`s use stable command ids so a later `<Results>` entry
+        // can be matched back to its OMA-URI even when the device omits
+        // `Item/Source`. They are only emitted when the cadence guard says the
+        // snapshot is stale or was never collected.
+        if (inventoryDue)
+          for (const inventoryRequest of WINDOWS_INVENTORY_REQUESTS)
+            commands.push({
+              kind: "Get",
+              cmdID: inventoryRequest.cmdID,
+              locURI: inventoryRequest.locURI,
+            });
 
         // Commands handed out but never acknowledged would otherwise stay
         // "sent" forever. Re-queue them so the next check-in retries.
@@ -1250,12 +1365,17 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           .limit(1000);
 
         for (const command of queued) {
-          const payload = (command.payload ?? {}) as { locURI?: string; data?: string };
+          const payload = Schema.is(Schema.JsonObject)(command.payload) ? command.payload : {};
+          const locURI = payload.locURI;
+          const data = payload.data;
+
           commands.push({
             kind: "Exec",
             cmdID: command.id,
-            locURI: payload.locURI ?? "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
-            data: payload.data ?? "",
+            locURI: Schema.is(Schema.String)(locURI)
+              ? locURI
+              : "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
+            data: Schema.is(Schema.String)(data) ? data : "",
             format: "chr",
           });
           yield* db
@@ -1277,7 +1397,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         // have a client certificate yet; it is allowed to authenticate with the
         // tenant token (or the legacy pin). Management events must prove device
         // identity when configured.
-        const isEnrollmentEvent = event._tag === "Enrolled";
+        const isEnrollmentEvent = Predicate.isTagged("Enrolled")(event);
 
         const organizationId = yield* resolveOrganization({
           tenantToken: scope.tenantToken,
@@ -1308,7 +1428,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
             return yield* Effect.fail(new UnknownDevice());
         }
 
-        if (event._tag === "Enrolled") {
+        if (Predicate.isTagged("Enrolled")(event)) {
           if (device) {
             yield* db
               .update(s.device)
@@ -1337,3 +1457,9 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
       }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
   };
 };
+
+/**
+ * @deprecated Use {@link createWindowsBackend}. Kept as an alias for existing
+ * external callers.
+ */
+export const makeWindowsBackend = createWindowsBackend;

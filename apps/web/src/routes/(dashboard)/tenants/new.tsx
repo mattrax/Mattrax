@@ -19,6 +19,8 @@ export default function NewTenantPage() {
   const queryClient = useQueryClient();
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
+  const [error, setError] = createSignal<string | null>(null);
+  let nameInput: HTMLInputElement | undefined;
 
   const createTenant = useMutation(() => ({
     mutationFn: () => enterprise.createTenant({ name: name(), slug: slug() || slugify(name()) }),
@@ -47,14 +49,26 @@ export default function NewTenantPage() {
       <Panel>
         <form
           class="space-y-4"
+          novalidate
           onSubmit={(event) => {
             event.preventDefault();
+            setError(null);
+
+            if (!name().trim()) {
+              setError("Enter a tenant name.");
+              nameInput?.focus();
+
+              return;
+            }
+
             createTenant.mutate();
           }}
         >
           <Field label="Tenant name">
             <Input
-              required
+              ref={(element) => {
+                nameInput = element;
+              }}
               class="h-9"
               value={name()}
               onInput={(event) => {
@@ -70,24 +84,20 @@ export default function NewTenantPage() {
             hint="Used in URLs and API calls. Lowercase letters, numbers and dashes."
           >
             <Input
-              required
               class="h-9 font-mono text-[13px]"
               value={slug()}
               onInput={(event) => setSlug(slugify(event.currentTarget.value))}
               placeholder="acme-operations"
             />
           </Field>
-          <ErrorText error={createTenant.error} />
+          <ErrorText error={error() ?? createTenant.error} />
           <div class="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
             <Button type="submit" disabled={createTenant.isPending}>
               {createTenant.isPending ? "Creating..." : "Create tenant"}
             </Button>
-            <a
-              href="/dashboard"
-              class="text-[12.5px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
-            >
+            <Button as="a" href="/dashboard" variant="outline">
               Cancel
-            </a>
+            </Button>
           </div>
         </form>
       </Panel>

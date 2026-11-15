@@ -1,6 +1,12 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { TENANT_IMPORT_MAX_BYTES, type TenantImportRequest } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseBadRequest,
+  EnterprisePermissionDenied,
+  EnterpriseUnauthorized,
+  TENANT_IMPORT_MAX_BYTES,
+  TenantImportRequest,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
@@ -30,7 +36,7 @@ const makeContext = () => {
 
       return inputHeaders.cookie
         ? Effect.succeed({ user })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -41,11 +47,13 @@ const makeContext = () => {
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
     stripeClient: makeStripeClient(),
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret: "tenant-export-test-secret",
   });
@@ -127,7 +135,7 @@ const exportBundle = async (context: ReturnType<typeof makeContext>, tenantId: s
 
   return {
     ...result,
-    bundle: JSON.parse(result.body) as TenantImportRequest,
+    bundle: Schema.decodeUnknownSync(TenantImportRequest)(JSON.parse(result.body)),
   };
 };
 
@@ -299,7 +307,7 @@ describe("tenant export", () => {
 
     await expect(
       runEffect(context.service.exportTenant(request(headers), tenant.id, {})),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 });
 
@@ -309,13 +317,7 @@ describe("tenant import", () => {
     const source = await seedTenant(context);
     const { bundle } = await exportBundle(context, source.tenant.id);
 
-    const result = (await runEffect(context.service.importTenant(request(headers), bundle))) as {
-      tenantId: string;
-      slug: string;
-      counts: Record<string, number>;
-      skipped: Record<string, number>;
-      applicationsWithoutFiles: number;
-    };
+    const result = await runEffect(context.service.importTenant(request(headers), bundle));
 
     expect(result.tenantId).not.toBe(source.tenant.id);
     // The source tenant still owns `acme`, so the import derives a free slug.
@@ -462,7 +464,7 @@ describe("tenant import", () => {
           version: 2,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.organization).toHaveLength(before);
   });
 
@@ -486,7 +488,7 @@ describe("tenant import", () => {
           ],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.organization).toHaveLength(before);
   });
 
@@ -506,7 +508,7 @@ describe("tenant import", () => {
           preRegistrations: [],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.organization).toHaveLength(before);
   });
 
@@ -534,7 +536,7 @@ describe("tenant import", () => {
           preRegistrations: [],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.organization).toHaveLength(before);
     expect(context.db.store.policy).toHaveLength(1);
     expect(context.db.store.enterprise_group).toHaveLength(1);

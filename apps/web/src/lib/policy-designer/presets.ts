@@ -1,4 +1,5 @@
-import { serializePlist } from "./build";
+import { Match } from "effect";
+import { serializePlist, type PolicyValueMap } from "./build";
 
 const uuid = () => crypto.randomUUID();
 
@@ -31,15 +32,18 @@ export type WifiPreset = {
 
 export type PresetConfiguration = {
   kind: string;
-  data: Record<string, unknown>;
+  data: PolicyValueMap;
 };
 
 /** Apple Wi-Fi payload expressed as a signed-ready `.mobileconfig`. */
 export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration => {
-  const encryption =
-    preset.security === "wpa3" ? "WPA3" : preset.security === "wpa2" ? "WPA2" : "None";
+  const encryption = Match.value(preset.security).pipe(
+    Match.when("wpa3", () => "WPA3"),
+    Match.when("wpa2", () => "WPA2"),
+    Match.orElse(() => "None"),
+  );
 
-  const payload: Record<string, unknown> = {
+  const payload: PolicyValueMap = {
     PayloadType: "com.apple.wifi.managed",
     PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replace(/[^A-Za-z0-9]+/g, "-")}`,
     PayloadUUID: uuid(),
@@ -49,8 +53,9 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
     EncryptionType: encryption,
     AutoJoin: preset.autoJoin,
     HIDDEN_NETWORK: preset.hidden,
-    ...(preset.security !== "open" && preset.password ? { Password: preset.password } : {}),
   };
+
+  if (preset.security !== "open" && preset.password) payload.Password = preset.password;
 
   const profile = {
     PayloadContent: [payload],

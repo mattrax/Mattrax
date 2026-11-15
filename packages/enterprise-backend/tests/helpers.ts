@@ -1,20 +1,33 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import type { HttpServerRequest } from "effect/http";
 import { createEnterpriseSchema } from "../src/schema.js";
 
 export const schema = createEnterpriseSchema();
 
-type Row = Record<string, any>;
+/**
+ * A value the fake store holds for one column: the scalars, dates and nested
+ * rows the production schema writes.
+ */
+type RowValue = string | number | boolean | bigint | Date | null | undefined | RowValue[] | Row;
+
+type Row = { [column: string]: RowValue };
 
 type Store = Record<string, Row[]>;
 
-const tableSymbol = (description: string) => (value: object) =>
+const tableSymbol = (description: string) => (value: Row) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
 
 const nameSymbol = tableSymbol("drizzle:Name");
 
-const tableName = (table: any) => table?.[nameSymbol(table)] as string;
-const columnName = (column: any) => column?.name as string;
+const tableName = (table: any): string => table?.[nameSymbol(table)];
+const columnName = (column: any): string => column?.name;
 const columnTable = (column: any) => tableName(column?.table);
+
+/** A drizzle column chunk embedded in a compiled condition. */
+type ColumnChunk = { readonly table: any; readonly name: string };
+
+const isColumnChunk = (chunk: any): chunk is ColumnChunk =>
+  chunk?.table != null && Schema.is(Schema.String)(chunk.name);
 
 const flattenChunks = (value: any): any[] => {
   if (!value?.queryChunks) return [value];
@@ -30,7 +43,7 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
   for (let index = 0; index < chunks.length; index++) {
     const chunk = chunks[index];
 
-    if (chunk?.table && typeof chunk.name === "string") {
+    if (isColumnChunk(chunk)) {
       const op = chunks[index + 1]?.value?.join?.("") ?? "";
       const param = chunks[index + 2];
       const key = `${columnTable(chunk)}.${columnName(chunk)}`;
@@ -58,18 +71,33 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
-const comparable = (value: unknown): any => {
+/** Values the fake orders and compares: everything normalises to one of these. */
+type Comparable = number | string;
+
+const comparable = (value: RowValue): Comparable => {
   if (value instanceof Date) return value.getTime();
 
   // Drizzle serialises `datetime` parameters as SQL strings rather than Date
   // objects, so normalise date-looking strings before relational compares.
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+  if (Schema.is(Schema.String)(value) && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     const parsed = Date.parse(value.replace(" ", "T") + "Z");
 
     if (Number.isFinite(parsed)) return parsed;
   }
 
-  return value;
+  if (value == null) return "";
+
+  return Schema.is(Schema.Number)(value) ? value : String(value);
+};
+
+/** Order two normalised values, treating mixed types as text. */
+const compareComparable = (left: Comparable, right: Comparable): number => {
+  if (left === right) return 0;
+
+  if (Schema.is(Schema.Number)(left) && Schema.is(Schema.Number)(right))
+    return left < right ? -1 : 1;
+
+  return String(left) < String(right) ? -1 : 1;
 };
 
 /** Split on a connector that appears outside parentheses/quotes. */
@@ -173,20 +201,28 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   const operator = comparison[3]!.toLowerCase();
   const expected = params[Number(comparison[4]) - 1];
 
-  if (operator === "=") return actual === expected;
+  if (operator === "=") {
+    if (actual === expected) return true;
+
+    // Drizzle serialises datetime parameters, so a conditional update that
+    // compares a stored Date with the same instant needs semantic equality.
+    if (actual instanceof Date || expected instanceof Date)
+      return compareComparable(comparable(actual), comparable(expected)) === 0;
+
+    return false;
+  }
 
   if (operator === "like")
     return actual != null && likeRegex(String(expected)).test(String(actual));
-  const left = comparable(actual) as number | string;
-  const right = comparable(expected) as number | string;
+  const order = compareComparable(comparable(actual), comparable(expected));
 
-  if (operator === "<") return left < right;
+  if (operator === "<") return order < 0;
 
-  if (operator === "<=") return left <= right;
+  if (operator === "<=") return order <= 0;
 
-  if (operator === ">") return left > right;
+  if (operator === ">") return order > 0;
 
-  return left >= right;
+  return order >= 0;
 };
 
 const matchesSql = (sql: string, params: any[], row: Row): boolean => {
@@ -211,8 +247,17 @@ const matchesQuery = (condition: any, row: Row) => {
   return matchesSql(query.sql, query.params, row);
 };
 
-const matchesFieldFilter = (filter: any, value: unknown): boolean => {
-  if (filter && typeof filter === "object") {
+/**
+ * The two filter shapes the fake understands. `Schema.Any` keeps arbitrary
+ * column values (dates included) comparable, matching the production operators.
+ */
+const FieldFilter = Schema.Struct({
+  isNull: Schema.optional(Schema.Any),
+  eq: Schema.optional(Schema.Any),
+});
+
+const matchesFieldFilter = (filter: RowValue, value: RowValue): boolean => {
+  if (Schema.is(FieldFilter)(filter)) {
     if ("isNull" in filter) return value == null;
 
     if ("eq" in filter) return value === filter.eq;
@@ -221,34 +266,61 @@ const matchesFieldFilter = (filter: any, value: unknown): boolean => {
   return value === filter;
 };
 
-const matchesObject = (condition: Record<string, any>, row: Row): boolean =>
+const matchesObject = (condition: Row, row: Row): boolean =>
   Object.entries(condition).every(([key, filter]) => {
     const value = key in row ? row[key] : row[camel(key)];
 
     return matchesFieldFilter(filter, value);
   });
 
+/** Any plain object: an untyped condition is read as a column-to-filter map. */
+const isConditionObject = Schema.is(Schema.Record(Schema.String, Schema.Any));
+
 const matches = (condition: any, row: Row) => {
   if (condition === undefined) return true;
 
   if (queryFor(condition)) return matchesQuery(condition, row);
 
-  if (condition && typeof condition === "object" && !("queryChunks" in condition)) {
+  if (isConditionObject(condition) && !("queryChunks" in condition)) {
     return matchesObject(condition, row);
   }
 
   return collectPredicates(condition).every((predicate) => predicate(row));
 };
 
-const project = (fields: Record<string, any> | undefined, row: Row) => {
+const project = (fields: any, row: Row) => {
   if (!fields) return unprefix(row);
 
   return Object.fromEntries(
-    Object.entries(fields).map(([key, field]) => {
+    Object.keys(fields).map((key) => {
+      const field = fields[key];
+
+      // A whole table selected as a named field (`{ member: schema.member }`)
+      // is projected as an unprefixed row so callers get a nested object.
+      const nested = tableName(field);
+
+      if (nested) {
+        const prefix = `${nested}.`;
+
+        return [
+          key,
+          Object.fromEntries(
+            Object.entries(row)
+              .filter(([name]) => name.startsWith(prefix))
+              .map(([name, value]) => [name.slice(prefix.length), value]),
+          ),
+        ];
+      }
+
       if (field?.table) {
         const prefixed = `${columnTable(field)}.${columnName(field)}`;
+        const column = columnName(field);
+        const camelPrefixed = `${columnTable(field)}.${camel(column)}`;
 
-        return [key, prefixed in row ? row[prefixed] : row[columnName(field)]];
+        const candidates = [prefixed, camelPrefixed, column, camel(column)];
+        const match = candidates.find((candidate) => candidate in row);
+
+        return [key, match === undefined ? undefined : row[match]];
       }
 
       if (key === "value") return [key, row.value ?? 0];
@@ -271,7 +343,7 @@ const unprefix = (row: Row) =>
 
 class SelectBuilder {
   private readonly store: Store;
-  private readonly fields?: Record<string, any>;
+  private readonly fields?: any;
   private table = "";
   private joined?: string;
   private condition: any;
@@ -279,7 +351,7 @@ class SelectBuilder {
   private offsetCount?: number;
   private order: Array<{ table: string; name: string; descending: boolean }> = [];
 
-  constructor(store: Store, fields?: Record<string, any>) {
+  constructor(store: Store, fields?: any) {
     this.store = store;
     this.fields = fields;
   }
@@ -306,14 +378,13 @@ class SelectBuilder {
     this.order = columns.flatMap((column) => {
       const chunks = flattenChunks(column);
 
-      const found = chunks.find((chunk) => chunk?.table && typeof chunk.name === "string") as
-        | { table: any; name: string }
-        | undefined;
+      const found = chunks.find(isColumnChunk);
 
       if (!found) return [];
 
       const descending = chunks.some(
-        (chunk) => typeof chunk?.value === "string" && chunk.value.toLowerCase().trim() === "desc",
+        (chunk) =>
+          Schema.is(Schema.String)(chunk?.value) && chunk.value.toLowerCase().trim() === "desc",
       );
 
       return [{ table: columnTable(found), name: found.name, descending }];
@@ -357,13 +428,12 @@ class SelectBuilder {
     if (this.order.length > 0)
       rows = [...rows].sort((left, right) => {
         for (const key of this.order) {
-          const a = rowValue(left, key.table, key.name);
-          const b = rowValue(right, key.table, key.name);
-          const aValue = a instanceof Date ? a.getTime() : a;
-          const bValue = b instanceof Date ? b.getTime() : b;
+          const compared = compareComparable(
+            comparable(rowValue(left, key.table, key.name)),
+            comparable(rowValue(right, key.table, key.name)),
+          );
 
-          if (aValue === bValue) continue;
-          const compared = (aValue ?? 0) < (bValue ?? 0) ? -1 : 1;
+          if (compared === 0) continue;
 
           return key.descending ? -compared : compared;
         }
@@ -374,14 +444,6 @@ class SelectBuilder {
     const sliced = start > 0 ? rows.slice(start) : rows;
 
     return this.limitCount === undefined ? sliced : sliced.slice(0, this.limitCount);
-  }
-
-  then(resolve: (value: Row[]) => void, reject: (reason?: unknown) => void) {
-    try {
-      resolve(this.execute());
-    } catch (error) {
-      reject(error);
-    }
   }
 
   [Symbol.iterator]() {
@@ -449,10 +511,6 @@ class InsertBuilder {
     return this;
   }
 
-  then(resolve: (value: Row[]) => void) {
-    resolve(this.rows);
-  }
-
   [Symbol.iterator]() {
     return Effect.succeed(this.rows)[Symbol.iterator]();
   }
@@ -475,22 +533,20 @@ class UpdateBuilder {
   }
 
   where(condition: any) {
+    let affectedRows = 0;
+
     for (const row of this.store[this.table]) {
       if (matches(condition, row)) {
+        affectedRows++;
+
         for (const [key, value] of Object.entries(this.patch))
           if (value !== undefined) row[key] = value;
       }
     }
 
-    return this;
-  }
-
-  then(resolve: (value: Row[]) => void) {
-    resolve([]);
-  }
-
-  [Symbol.iterator]() {
-    return Effect.succeed([])[Symbol.iterator]();
+    // Drizzle's MySQL update resolves to a result with `affectedRows`, which
+    // conditional claims rely on for compare-and-set semantics.
+    return Effect.succeed({ affectedRows });
   }
 }
 
@@ -521,10 +577,6 @@ class DeleteBuilder {
     return this;
   }
 
-  then(resolve: (value: Row[]) => void) {
-    resolve(this.removed);
-  }
-
   [Symbol.iterator]() {
     return Effect.succeed(this.removed)[Symbol.iterator]();
   }
@@ -532,26 +584,22 @@ class DeleteBuilder {
 
 export const makeDb = (initial: Partial<Store> = {}) => {
   const store: Store = Object.fromEntries(
-    Object.keys(schema).map((key) => [tableName((schema as any)[key]), []]),
+    Object.values(schema).map((table) => [tableName(table), []]),
   );
 
   for (const [key, rows] of Object.entries(initial))
     store[key] = (rows ?? []).map((row) => ({ ...row }));
 
   const query = Object.fromEntries(
-    Object.keys(schema).map((key) => {
-      const table = tableName((schema as any)[key]);
-
-      return [
-        key,
-        {
-          findFirst: ({ where }: { where?: any } = {}) =>
-            Effect.sync(() => store[table].find((row) => matches(where, row))),
-          findMany: ({ where }: { where?: any } = {}) =>
-            Effect.sync(() => store[table].filter((row) => matches(where, row))),
-        },
-      ];
-    }),
+    Object.entries(schema).map(([key, table]) => [
+      key,
+      {
+        findFirst: ({ where }: { where?: any } = {}) =>
+          Effect.sync(() => store[tableName(table)].find((row) => matches(where, row))),
+        findMany: ({ where }: { where?: any } = {}) =>
+          Effect.sync(() => store[tableName(table)].filter((row) => matches(where, row))),
+      },
+    ]),
   );
 
   const db: any = {
@@ -560,20 +608,27 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     insert: (table: any) => new InsertBuilder(store, tableName(table)),
     update: (table: any) => new UpdateBuilder(store, tableName(table)),
     delete: (table: any) => new DeleteBuilder(store, tableName(table)),
-    select: (fields?: Record<string, any>) => new SelectBuilder(store, fields),
+    select: (fields?: any) => new SelectBuilder(store, fields),
     // The production Db exposes a transaction; the in-memory fake applies the
     // work directly so page-per-transaction code paths can be exercised.
-    transaction: (work: (tx: any) => unknown) => work(db),
+    transaction: <Result>(work: (tx: any) => Result): Result => work(db),
   };
 
   return db;
 };
 
+// SAFETY: tests provide every service layer before running, so no requirements
+// remain at the boundary; `any` keeps the call sites free of layer plumbing.
 export const runEffect = async <A, E>(
   effect: Effect.Effect<A, E, any> | Promise<Effect.Effect<A, E, any>>,
 ) => Effect.runPromise((await effect) as Effect.Effect<A, E, never>);
 
-export const request = (headers: Record<string, string> = {}) => ({ headers });
+export const request = (
+  headers: Record<string, string> = {},
+): HttpServerRequest.HttpServerRequest =>
+  // SAFETY: handler tests only read `headers`; the service surfaces under test
+  // never touch the method, URL or body stream of the request.
+  ({ headers }) as HttpServerRequest.HttpServerRequest;
 
 export const header = (response: any, name: string) =>
   response.headers?.get?.(name) ??
@@ -582,17 +637,41 @@ export const header = (response: any, name: string) =>
 
 export const cookieFrom = (response: any) => header(response, "set-cookie")?.split(";")[0] ?? "";
 
-export const makeStripeClient = (overrides: Record<string, any> = {}) => ({
+const defaultStripeClient = () => ({
   customers: {
     search: async () => ({ data: [] }),
     list: async function* () {},
     create: async () => ({ id: "cus_created" }),
-    ...overrides.customers,
   },
   billingPortal: {
     sessions: {
       create: async ({ return_url }: { return_url: string }) => ({ url: return_url }),
-      ...overrides.billingPortal?.sessions,
     },
   },
 });
+
+/** Per-test replacements merged one level into each Stripe namespace. */
+type StripeClientOverrides = {
+  readonly customers?: Partial<ReturnType<typeof defaultStripeClient>["customers"]>;
+  readonly billingPortal?: {
+    readonly sessions?: Partial<
+      ReturnType<typeof defaultStripeClient>["billingPortal"]["sessions"]
+    >;
+  };
+};
+
+/**
+ * A partial Stripe SDK double covering the three members the billing paths use.
+ * The enterprise service accepts the real `Stripe` surface, so the double is
+ * intentionally typed loosely rather than faking the whole SDK.
+ */
+export const makeStripeClient = (overrides: StripeClientOverrides = {}): any => {
+  const client = defaultStripeClient();
+
+  return {
+    customers: { ...client.customers, ...overrides.customers },
+    billingPortal: {
+      sessions: { ...client.billingPortal.sessions, ...overrides.billingPortal?.sessions },
+    },
+  };
+};

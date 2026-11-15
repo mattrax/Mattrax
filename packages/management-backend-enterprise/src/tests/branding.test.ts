@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import { makeDb, tableName } from "./fake-db.js";
+import {  makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -19,7 +19,7 @@ const scope = (udid: string) => ({
   mdmOrigin: new MdmOrigin({ url: origin }),
 });
 
-const setup = (organization: Record<string, unknown>) => {
+const setup = (organization: Row) => {
   const db = makeDb({
     [tableName(schema.organization)]: [
       {
@@ -46,6 +46,7 @@ const setup = (organization: Record<string, unknown>) => {
     ],
   });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
   return ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 };
 
@@ -119,6 +120,6 @@ describe("DDM management declaration branding", () => {
           MANAGEMENT_DECLARATION_ID,
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
   });
 });

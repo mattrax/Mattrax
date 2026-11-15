@@ -1,7 +1,8 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Match, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import {
   ManagementBackend,
+  ManagementManifest,
   ManagementNotSupported,
   UnknownDevice,
   type WindowsDeviceEvent,
@@ -99,16 +100,17 @@ export const createWindowsHarness = (): WindowsHarness => {
   };
 
   const failFor = (kind: "unknown" | "unsupported" | null) =>
-    kind === "unknown"
-      ? Effect.fail(new UnknownDevice())
-      : kind === "unsupported"
-        ? Effect.fail(new ManagementNotSupported())
-        : null;
+    Match.value(kind).pipe(
+      Match.when("unknown", () => Effect.fail(new UnknownDevice())),
+      Match.when("unsupported", () => Effect.fail(new ManagementNotSupported())),
+      Match.orElse(() => null),
+    );
 
   const backend = ManagementBackend.of({
     appleDeviceEvent: () => Effect.void,
     getAppleBootstrapToken: () => Effect.succeed(null),
-    appleManagementCheckin: () => Effect.succeed({ _tag: "Idle" } as const),
+    appleManagementCheckin: () =>
+      Effect.succeed(ManagementManifest.members[0].make({})),
     getAppleDeclarationTokens: () =>
       Effect.succeed({
         activationsToken: "",
@@ -140,10 +142,9 @@ export const createWindowsHarness = (): WindowsHarness => {
       const failure = failFor(state.policyError);
 
       if (failure) return failure;
-      state.policy.push({
-        authToken,
-        ...(context?.tenantToken ? { tenantToken: context.tenantToken } : {}),
-      });
+      state.policy.push(
+        context?.tenantToken ? { authToken, tenantToken: context.tenantToken } : { authToken },
+      );
 
       return Effect.succeed(
         state.enrollmentPolicy ?? {
@@ -193,10 +194,7 @@ export const createWindowsHarness = (): WindowsHarness => {
   const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
 
   const service = Effect.runSync(
-    Effect.provide(
-      Effect.service(WindowsMdmService),
-      serviceLayer,
-    ) as Effect.Effect<WindowsMdmService.Service>,
+    Effect.provide(Effect.service(WindowsMdmService), serviceLayer),
   );
 
   return { handler, state, service, origin };
@@ -266,14 +264,22 @@ export const windowsSyncMLBody = (
 ): string => {
   const command = options.command ?? "alert";
 
-  const commandXml =
-    command === "alert"
-      ? `<Alert><CmdID>2</CmdID><Data>1201</Data></Alert>`
-      : command === "replace"
-        ? `<Replace><CmdID>2</CmdID><Item><Target><LocURI>./DevDetail/Ext/Microsoft/DeviceName</LocURI></Target><Data>DESKTOP-COMPLIANCE</Data></Item></Replace>`
-        : command === "exec"
-          ? `<Exec><CmdID>2</CmdID><Item><Target><LocURI>./Device/Vendor/MSFT/RemoteWipe/doWipe</LocURI></Target></Item></Exec>`
-          : `<Get><CmdID>2</CmdID><Item><Target><LocURI>./DevInfo/DevId</LocURI></Target></Item></Get>`;
+  const commandXml = Match.value(command).pipe(
+    Match.when("alert", () => `<Alert><CmdID>2</CmdID><Data>1201</Data></Alert>`),
+    Match.when(
+      "replace",
+      () =>
+        `<Replace><CmdID>2</CmdID><Item><Target><LocURI>./DevDetail/Ext/Microsoft/DeviceName</LocURI></Target><Data>DESKTOP-COMPLIANCE</Data></Item></Replace>`,
+    ),
+    Match.when(
+      "exec",
+      () =>
+        `<Exec><CmdID>2</CmdID><Item><Target><LocURI>./Device/Vendor/MSFT/RemoteWipe/doWipe</LocURI></Target></Item></Exec>`,
+    ),
+    Match.orElse(
+      () => `<Get><CmdID>2</CmdID><Item><Target><LocURI>./DevInfo/DevId</LocURI></Target></Item></Get>`,
+    ),
+  );
 
   return `<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>${options.sessionId ?? "session-1"}</SessionID><MsgID>${options.msgId ?? "1"}</MsgID><Target><LocURI>https://mdm.example.test/mdm/windows/management</LocURI></Target><Source><LocURI>windows-device-1</LocURI></Source></SyncHdr><SyncBody>${commandXml}<Final/></SyncBody></SyncML>`;
 };
@@ -296,12 +302,12 @@ const origin = "https://mdm.example.test";
 
 export const decodeWindowsResponse = async <A>(
   response: Response,
-  schema: Parameters<typeof deserializeSoapElement>[1],
+  schema: Schema.Decoder<A>,
 ): Promise<A> => {
   const text = await response.text();
   const body = extractSoapBody(text);
 
-  return Effect.runPromise(deserializeSoapElement(body, schema) as Effect.Effect<A, never>);
+  return Effect.runPromise(deserializeSoapElement(body, schema));
 };
 
 export const windowsDiscoveryResponse = (response: Response) =>

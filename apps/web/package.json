@@ -8,7 +8,7 @@
     "preview": "vp preview",
     "typecheck": "cf workers types && tsc",
     "deploy": "cf deploy --prebuilt",
-    "deploy:prod": "pnpm build && pnpm --dir ../.. doc:build && node ../../scripts/copy-docs.mjs && cf deploy --prebuilt",
+    "deploy:prod": "pnpm build && pnpm --dir ../.. doc:build && node ../../scripts/copy-docs.mjs && node ../../scripts/bundle-budget.mjs web && cf deploy --prebuilt",
     "cf:types": "cf workers types"
   },
   "dependencies": {
@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:",
+    "@rolldown/perf-kit": "catalog:",
     "@solidjs/vite-plugin": "3.0.0-next.57",
     "@types/node": "catalog:",
     "cf": "catalog:",

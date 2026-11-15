@@ -80,11 +80,9 @@ describe("Error handling", () => {
       required: Schema.String,
     }).pipe(Schema.annotate({ identifier: "Strict" }));
 
-    const result = await Effect.runPromise(
-      serializeSoapElement(Strict, { required: undefined as unknown as string }).pipe(
-        Effect.result,
-      ),
-    );
+    // @ts-expect-error -- deliberately invalid input exercises the serializer error path.
+    const effect = serializeSoapElement(Strict, {});
+    const result = await Effect.runPromise(effect.pipe(Effect.result));
 
     expect(result._tag).toBe("Failure");
   });

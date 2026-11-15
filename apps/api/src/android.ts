@@ -47,7 +47,7 @@ export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
   let decoded: typeof ServiceAccountJson.Type;
 
   try {
-    decoded = Schema.decodeUnknownSync(ServiceAccountJson)(JSON.parse(raw) as unknown);
+    decoded = Schema.decodeUnknownSync(ServiceAccountJson)(JSON.parse(raw));
   } catch {
     console.warn(
       "Android Management is disabled: ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON is not a valid service account",
@@ -66,38 +66,35 @@ export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
     return undefined;
   }
 
-  const parsed = {
+  type MutableAndroidDeliveryConfig = {
+    -readonly [Key in keyof AndroidDeliveryConfig]: AndroidDeliveryConfig[Key];
+  };
+
+  const parsed: MutableAndroidDeliveryConfig = {
     serviceAccount: {
       clientEmail: decoded.client_email,
       privateKeyPem: decoded.private_key,
       projectId,
-      ...(decoded.token_uri ? { tokenUri: decoded.token_uri } : {}),
+      tokenUri: decoded.token_uri,
     },
-    ...(apiEnv.ANDROID_MANAGEMENT_PUBSUB_TOPIC
-      ? { pubsubTopic: apiEnv.ANDROID_MANAGEMENT_PUBSUB_TOPIC }
-      : {}),
-    ...(apiEnv.ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION
-      ? { pubsubSubscription: apiEnv.ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION }
-      : {}),
-    ...(apiEnv.ANDROID_MANAGEMENT_PUBSUB_AUDIENCE
-      ? { pubsubAudience: apiEnv.ANDROID_MANAGEMENT_PUBSUB_AUDIENCE }
-      : {}),
-    ...(apiEnv.ANDROID_MANAGEMENT_PUBSUB_JWKS_URI
-      ? { jwksUri: apiEnv.ANDROID_MANAGEMENT_PUBSUB_JWKS_URI }
-      : {}),
-  } satisfies AndroidDeliveryConfig;
+  };
+
+  parsed.pubsubTopic = apiEnv.ANDROID_MANAGEMENT_PUBSUB_TOPIC;
+  parsed.pubsubSubscription = apiEnv.ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION;
+  parsed.pubsubAudience = apiEnv.ANDROID_MANAGEMENT_PUBSUB_AUDIENCE;
+  parsed.jwksUri = apiEnv.ANDROID_MANAGEMENT_PUBSUB_JWKS_URI;
 
   cachedAndroidConfig = parsed;
 
   return parsed;
 };
 
-const unavailable = (label: string) =>
+const unavailable = (label: string): Effect.Effect<never, GoogleError> =>
   Effect.fail(
     new GoogleApiError({
       message: `Android Management is not configured (${label}).`,
     }),
-  ) as Effect.Effect<never, GoogleError>;
+  );
 
 /**
  * Always provide `AndroidManagement` so the HttpApi handler layer type is

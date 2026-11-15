@@ -44,7 +44,10 @@ export const sequence = (...keys: string[]): CommandShortcut => ({ kind: "sequen
 
 type StoredCommand = Command & { readonly owner: string };
 
-const [commands, setCommands] = createSignal<ReadonlyArray<Command>>([]);
+const isCommandSource = (source: Command[] | (() => Command[])): source is () => Command[] =>
+  typeof source === "function";
+
+const [commands, setCommands] = createSignal<ReadonlyArray<StoredCommand>>([]);
 
 /** Read-only view used by the command palette and global shortcut handler. */
 export const registeredCommands = commands;
@@ -59,19 +62,17 @@ export function useCommands(source: Command[] | (() => Command[])) {
   if (isServer) return;
   const owner = `commands-${nextOwner++}`;
   createEffect(
-    () => (typeof source === "function" ? source() : source),
+    () => (isCommandSource(source) ? source() : source),
     (list) => {
       const owned: StoredCommand[] = list.map((command) => ({ ...command, owner }));
       setCommands((current) => [
-        ...current.filter((command) => (command as StoredCommand).owner !== owner),
+        ...current.filter((command) => command.owner !== owner),
         ...owned,
       ]);
     },
   );
   onCleanup(() => {
-    setCommands((current) =>
-      current.filter((command) => (command as StoredCommand).owner !== owner),
-    );
+    setCommands((current) => current.filter((command) => command.owner !== owner));
   });
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
+  PubSubDecodeError,
   decodePubSubData,
   decodePubSubNotification,
   decodePubSubPush,
@@ -9,7 +10,7 @@ import {
   notificationType,
 } from "../src/index.js";
 
-function base64Json(value: unknown): string {
+function base64Json(value: Schema.Json): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
 
@@ -18,7 +19,7 @@ function base64Json(value: unknown): string {
   return btoa(binary);
 }
 
-function pushOf(data: unknown, attributes: Record<string, string> = {}) {
+function pushOf(data: Schema.Json, attributes: Record<string, string> = {}) {
   return {
     message: {
       data: base64Json(data),
@@ -104,13 +105,13 @@ describe("decodePubSubPush", () => {
       ),
     );
 
-    expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
+    expect(error).toBeInstanceOf(PubSubDecodeError);
     expect(error.message).toContain("no data");
   });
 
   it("rejects an invalid envelope", async () => {
     const error = await Effect.runPromise(Effect.flip(decodePubSubPush({ message: {} })));
-    expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
+    expect(error).toBeInstanceOf(PubSubDecodeError);
     expect(error.message).toContain("envelope");
   });
 
@@ -124,14 +125,14 @@ describe("decodePubSubPush", () => {
       ),
     );
 
-    expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
+    expect(error).toBeInstanceOf(PubSubDecodeError);
     expect(error.message).toContain("base64");
   });
 
   it("rejects data that is not valid JSON", async () => {
     const data = btoa("not json");
     const error = await Effect.runPromise(Effect.flip(decodePubSubData(data)));
-    expect(error).toMatchObject({ _tag: "PubSubDecodeError" });
+    expect(error).toBeInstanceOf(PubSubDecodeError);
     expect(error.message).toContain("JSON");
   });
 

@@ -1,10 +1,13 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { and, eq } from "drizzle-orm";
 import { AzureOidc } from "@mattrax/azure-oidc";
-import { Db, schema } from "@mattrax/enterprise-core";
-import { provisionEmailCredential, signToken, verifyToken } from "@mattrax/enterprise-backend";
+import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
+import { settlePendingInvitations, signToken, verifyToken } from "@mattrax/enterprise-backend";
 
-const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
+const TokenResponse = Schema.Struct({ id_token: Schema.optional(Schema.String) });
+
+const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {
     status,
     headers: { "cache-control": "no-store", ...headers },
@@ -12,6 +15,28 @@ const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
+
+/**
+ * SSO assertions reference a credential in the shared auth authority. Accounts
+ * created by directory sync may not have a passkey yet, so make sure the
+ * subject has one stable authority row. This row is not a sign-in method: the
+ * SSO strategy owns the assertion and the session requirement decides access.
+ */
+const ensureCredential = (db: any, subjectId: string) =>
+  Effect.gen(function* () {
+    const existing = yield* db
+      .select({ credentialId: authCredentials.credentialId })
+      .from(authCredentials)
+      .where(and(eq(authCredentials.subjectId, subjectId), eq(authCredentials.active, true)))
+      .limit(1);
+
+    if (existing.length > 0) return;
+
+    yield* db
+      .insert(authCredentials)
+      .ignore()
+      .values({ credentialId: id(), subjectId, revision: id(), active: true });
+  }).pipe(Effect.catch(() => Effect.void));
 
 const redirectUri = (origin: string) => `${origin}/api/v1/sso/azure/callback`;
 
@@ -106,7 +131,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         exp: Date.now() + 10 * 60 * 1000,
         purpose: "sso-state",
         nonce,
-        ...(returnTo ? { returnTo } : {}),
+        returnTo,
       });
 
       const authorize = new URL(
@@ -221,10 +246,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       if (!tokenResponse.ok)
         return json({ error: "Identity provider rejected the token exchange" }, 502);
 
-      const tokens = (yield* Effect.tryPromise({
+      const rawTokens = yield* Effect.tryPromise({
         try: () => tokenResponse.json(),
         catch: () => null,
-      })) as { id_token?: string } | null;
+      });
+
+      const tokens = Option.getOrUndefined(
+        Schema.decodeUnknownOption(TokenResponse)(rawTokens),
+      );
 
       if (!tokens?.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
 
@@ -311,6 +340,9 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           createdAt: timestamp,
           updatedAt: timestamp,
         });
+        // Auto-provisioned SSO members settle a matching invitation without
+        // inheriting any role the invitation offered.
+        yield* settlePendingInvitations(db, tenantId, email, timestamp);
         yield* db.insert(schema.ssoIdentity).values({
           organizationId: tenantId,
           objectId,
@@ -321,7 +353,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       }
 
       if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
-      yield* provisionEmailCredential(db, "effect-auth/email", user.id);
+      yield* ensureCredential(db, user.id);
 
       const assertion = yield* signToken(options.authSecret!, {
         sub: user.id,

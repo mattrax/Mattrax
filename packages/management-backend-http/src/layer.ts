@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Match, Schema } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import {
   ManagementBackend,
@@ -11,23 +11,20 @@ import { managementApi } from "./http.ts";
 
 type ManagementError = ManagementNotSupported | UnknownDevice | InternalServerError;
 
-const toManagementError = (error: { readonly _tag?: string }): ManagementError => {
-  switch (error._tag) {
-    case "ManagementNotSupported":
-      return new ManagementNotSupported();
-    case "UnknownDevice":
-      return new UnknownDevice();
-    default:
-      return new InternalServerError();
-  }
-};
+const toManagementError = (error: { readonly _tag?: string }): ManagementError =>
+  Match.value(error._tag).pipe(
+    Match.when("ManagementNotSupported", () => new ManagementNotSupported()),
+    Match.when("UnknownDevice", () => new UnknownDevice()),
+    Match.orElse(() => new InternalServerError()),
+  );
 
 const toCheckinError = (error: {
   readonly _tag?: string;
 }): ManagementError | ServerInitiatedUnenrollment =>
-  error._tag === "ServerInitiatedUnenrollment"
-    ? new ServerInitiatedUnenrollment()
-    : toManagementError(error);
+  Match.value(error._tag).pipe(
+    Match.when("ServerInitiatedUnenrollment", () => new ServerInitiatedUnenrollment()),
+    Match.orElse(() => toManagementError(error)),
+  );
 
 const normalize = <A, E extends { readonly _tag?: string | undefined }, R>(
   effect: Effect.Effect<A, E, R>,
@@ -70,7 +67,7 @@ export type ManagementBackendHttpOptions = {
   readonly secret?: string;
 };
 
-const signRequest = (secret: string, operation: string, payload: unknown) =>
+const signRequest = (secret: string, operation: string, payload: Schema.Json | undefined) =>
   Effect.gen(function* () {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const digest = yield* sha256(JSON.stringify(payload ?? null));
@@ -79,26 +76,38 @@ const signRequest = (secret: string, operation: string, payload: unknown) =>
     return {
       "x-mattrax-timestamp": timestamp,
       "x-mattrax-signature": signature,
-    } as Record<string, string>;
+    };
   });
+
+interface WebhookOperationOptions {
+  readonly payload?: Schema.Json;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+const CallableSchema = Schema.instanceOf(Function);
 
 const signingClient = <Client extends { ManagementWebhook: Record<string, unknown> }>(
   client: Client,
   secret: string,
 ): Client =>
+  // SAFETY: The generated client exposes one callable operation per webhook endpoint. The proxy delegates each call to that same operation after adding signature headers, so the surface and return types are unchanged; only per-operation property types are erased while wrapping.
   ({
     ...client,
     ManagementWebhook: new Proxy(client.ManagementWebhook, {
-      get(target, property, receiver) {
-        const value = Reflect.get(target, property, receiver);
+      get(target, property) {
+        if (!Schema.is(Schema.String)(property)) {
+          return undefined;
+        }
 
-        if (typeof value !== "function") return value;
+        const value = target[property];
 
-        return (options: Record<string, unknown> = {}) =>
-          Effect.flatMap(signRequest(secret, String(property), options.payload), (headers) =>
+        if (!Schema.is(CallableSchema)(value)) return value;
+
+        return (options: WebhookOperationOptions = {}) =>
+          Effect.flatMap(signRequest(secret, property, options.payload), (headers) =>
             value({
               ...options,
-              headers: { ...(options.headers as object | undefined), ...headers },
+              headers: { ...options.headers, ...headers },
             }),
           );
       },
@@ -109,7 +118,7 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
   Layer.effect(
     ManagementBackend,
     Effect.gen(function* () {
-      const options = typeof input === "string" ? { baseUrl: input } : input;
+      const options = Schema.is(Schema.String)(input) ? { baseUrl: input } : input;
 
       if (!options.secret)
         console.error(

@@ -1,7 +1,8 @@
 import * as DialogPrimitive from "@kobalte/core/dialog";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import type { Component } from "solid-js";
-import { Show } from "solid-js";
+import { createEffect, onCleanup, Show } from "solid-js";
+import { isServer } from "@solidjs/web";
 import type { ComponentProps, ValidComponent } from "@solidjs/web";
 import { mergeProps, splitProps } from "~/lib/solid";
 
@@ -42,6 +43,9 @@ type DialogOverlayProps<T extends ValidComponent = "div"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const DialogOverlay = <T extends ValidComponent = "div">(props: DialogOverlayProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DialogOverlayProps, ["class"]);
 
   return (
@@ -62,10 +66,33 @@ type DialogContentProps<T extends ValidComponent = "div"> = PolymorphicProps<
   };
 
 const DialogContent = <T extends ValidComponent = "div">(props: DialogContentProps<T>) => {
+  // SAFETY: the default props object is described by the component props type;
+  // `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps({ showCloseButton: true } as DialogContentProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
   const context = DialogPrimitive.useDialogContext();
   let opener: HTMLElement | null = null;
+
+  // Kobalte's dismissable layer fails to dispatch Escape for dialogs mounted
+  // behind <Show> in this RC. A capture-phase listener is the one path that is
+  // guaranteed to run before the event reaches an input inside the dialog.
+  createEffect(
+    () => undefined,
+    () => {
+      if (isServer) return;
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        context.close();
+      };
+
+      window.addEventListener("keydown", onKeyDown, true);
+      onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
+    },
+  );
 
   return (
     <DialogPrimitive.Portal>
@@ -81,21 +108,35 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
           event.preventDefault();
           context.close();
         }}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          event.stopPropagation();
-          context.close();
-        }}
         onOpenAutoFocus={() => {
           opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          opener?.focus({ preventScroll: true });
+
+          // The trigger can leave the DOM while the dialog is open (for
+          // example after a route change), so only restore focus to a node
+          // that is still connected. Otherwise fall back to the page's main
+          // landmark, and finally to the body, so focus never lands nowhere.
+          const fallback = document.getElementById("main");
+
+          if (fallback && !fallback.hasAttribute("tabindex")) fallback.tabIndex = -1;
+          const target = opener?.isConnected ? opener : (fallback ?? document.body);
+
+          target.focus({ preventScroll: true });
         }}
         {...others}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+
+          // Kobalte's DismissableLayer does not fire onEscapeKeyDown for
+          // lazily-mounted dialogs in this RC, so close from the DOM event.
+          event.preventDefault();
+          event.stopPropagation();
+          context.close();
+        }}
       >
+        <DialogBackgroundIsolation />
         {local.children}
         <Show when={local.showCloseButton}>
           <DialogPrimitive.CloseButton
@@ -137,6 +178,8 @@ type DialogFooterProps<T extends ValidComponent = "div"> = PolymorphicProps<
   };
 
 const DialogFooter = <T extends ValidComponent = "div">(props: DialogFooterProps<T>) => {
+  // SAFETY: the default props object is described by the component props type;
+  // `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps({ showCloseButton: false } as DialogFooterProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
 
@@ -147,6 +190,8 @@ const DialogFooter = <T extends ValidComponent = "div">(props: DialogFooterProps
         "z-dialog-footer flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         local.class,
       )}
+      // SAFETY: `others` has already had the footer-only keys removed,
+      // leaving the intrinsic div attributes this spread forwards.
       {...(others as any)}
     >
       {local.children}
@@ -166,6 +211,9 @@ type DialogTitleProps<T extends ValidComponent = "h2"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const DialogTitle = <T extends ValidComponent = "h2">(props: DialogTitleProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DialogTitleProps, ["class"]);
 
   return (
@@ -184,6 +232,9 @@ type DialogDescriptionProps<T extends ValidComponent = "p"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const DialogDescription = <T extends ValidComponent = "p">(props: DialogDescriptionProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DialogDescriptionProps, ["class"]);
 
   return (
@@ -194,6 +245,35 @@ const DialogDescription = <T extends ValidComponent = "p">(props: DialogDescript
     />
   );
 };
+
+/**
+ * Kobalte's modal layer in this Solid 2 RC marks the body (not its siblings)
+ * `aria-hidden`, which hides the dialog itself from assistive technology. Undo
+ * that attribute; the focus scope still keeps keyboard focus inside the dialog.
+ * Hiding the background properly needs a portal-aware primitive fix.
+ */
+export function DialogBackgroundIsolation() {
+  createEffect(
+    () => undefined,
+    () => {
+      if (isServer) return;
+
+      const clear = () => {
+        if (document.body.getAttribute("aria-hidden") === "true")
+          document.body.removeAttribute("aria-hidden");
+      };
+
+      clear();
+
+      const observer = new MutationObserver(clear);
+
+      observer.observe(document.body, { attributes: true, attributeFilter: ["aria-hidden"] });
+      onCleanup(() => observer.disconnect());
+    },
+  );
+
+  return null;
+}
 
 export {
   Dialog,

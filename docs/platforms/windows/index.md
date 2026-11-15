@@ -15,7 +15,7 @@ authentication, SSO for the dashboard and Autopilot deployment profiles.
 | Zero-touch | Autopilot hardware-hash import and deployment profiles    |
 | Directory  | Entra ID SSO, directory sync, SCIM                        |
 | Push       | None; devices poll on their SyncML schedule               |
-| Inventory  | Minimal; Autopilot metadata only                          |
+| Inventory  | Model, serial, OS build and storage on a six-hour cadence |
 
 ## Prerequisites
 
@@ -65,7 +65,43 @@ management provider (`w7`), the management URL and DM client polling.
 ### 4. Status
 
 A Windows device is created with status `enrolled` immediately. There is no separate
-`TokenUpdate` step. The device has no serial, model or OS version at enrollment.
+`TokenUpdate` step. Model, serial and OS details arrive with the first inventory report
+after enrollment (see [Inventory](#inventory)).
+
+## Inventory
+
+The first management check-in after enrollment asks the device for a snapshot with OMA-DM
+`Get` commands:
+
+| OMA-URI                                        | Stored in                              |
+| ---------------------------------------------- | -------------------------------------- |
+| `./DevDetail/SwV`                              | `osVersion`, `osBuild`                 |
+| `./DevInfo/Mod`                                | `model`                                |
+| `./DevDetail/DevTyp`                           | `model` fallback                       |
+| `./DevDetail/Ext/Microsoft/SystemSKU`          | `modelIdentifier`                      |
+| `./DevDetail/Ext/Microsoft/SMBIOSSerialNumber` | `serial`                               |
+| `./DevDetail/Ext/Microsoft/DeviceName`         | `name` (only when still a placeholder) |
+| `./DevDetail/Ext/Microsoft/OSPlatform`         | `osEdition`                            |
+| `./DevDetail/Ext/Microsoft/TotalStorage`       | `diskTotal`                            |
+| `./DevDetail/Ext/Microsoft/FreeStorage`        | `diskUsed`                             |
+
+The device returns the values in a SyncML `<Results>` block on a later session. They are
+written to the same `device` columns Apple inventory uses, so search, filters, dashboards
+and the health rollup work unchanged.
+
+- **Cadence**: a snapshot is requested at most once every six hours, tracked separately
+  from `inventoryUpdatedAt`. An unanswered request is retried after the same interval, so
+  a device that rejects a node does not receive the `Get` set on every check-in.
+- **Name**: the reported device name only fills a blank name or the Windows DeviceID
+  placeholder used at enrollment. An administrator-edited name is never overwritten.
+- **Serial**: vendor placeholders (`To be filled by O.E.M.`, `Default string`, and similar)
+  are ignored, and a serial already owned by another device in the tenant is not applied.
+- **Storage**: Windows reports both figures in MB and Mattrax stores bytes. If the free
+  value exceeds the total, neither figure is written. `TotalStorage` is documented as
+  mobile-only; desktop devices may report no total, in which case only the model, serial
+  and OS fields are populated.
+
+Autopilot metadata is separate and still available from the Autopilot pages.
 
 ## Policy delivery
 
@@ -114,7 +150,10 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 
 ## Limitations
 
-- No Windows inventory, BitLocker key escrow, Defender or OS-build compliance.
+- No BitLocker key escrow, Defender or OS-build compliance checks.
+- Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
+  documented as mobile-only), so storage health may be unavailable for some laptops.
+- Inventory depends on the device answering `Get`; no push channel wakes it early.
 - No remote lock, shutdown, app install or per-device policy push.
 - No Windows unenroll command; deleting the device removes the local row only.
 - Pre-registrations are not consumed: enrollment has no hardware serial to match.

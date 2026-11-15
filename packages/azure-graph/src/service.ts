@@ -128,7 +128,7 @@ export type AzureGraphService = {
   readonly get: <T>(
     tenantId: string,
     url: string,
-    schema: Schema.Schema<T>,
+    schema: Schema.Decoder<T>,
   ) => Effect.Effect<T, AzureGraphError>;
   readonly usersDelta: (
     tenantId: string,
@@ -262,6 +262,18 @@ function isSuccess(status: number): boolean {
   return status >= 200 && status <= 299;
 }
 
+function jsonObject(
+  fields: Readonly<Record<string, Schema.Json | undefined>>,
+): Schema.JsonObject {
+  const result: Record<string, Schema.Json> = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) result[key] = value;
+  }
+
+  return result;
+}
+
 function consentRedirectUri(config: AzureGraphConfig): string | undefined {
   if (config.redirectUri) return config.redirectUri;
 
@@ -343,16 +355,16 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const parseJson = (
         text: string,
         label: string,
-      ): Effect.Effect<unknown, AzureGraphInvalidResponse> =>
+      ): Effect.Effect<Schema.Json, AzureGraphInvalidResponse> =>
         Effect.try({
-          try: () => JSON.parse(text) as unknown,
+          try: () => JSON.parse(text),
           catch: (cause) =>
             new AzureGraphInvalidResponse({ message: `Invalid JSON from ${label}`, cause }),
         });
 
       const decode = <A>(
-        schema: Schema.Schema<A>,
-        json: unknown,
+        schema: Schema.Decoder<A>,
+        json: Schema.Json,
         label: string,
       ): Effect.Effect<A, AzureGraphInvalidResponse> =>
         Schema.decodeUnknownEffect(schema)(json).pipe(
@@ -363,7 +375,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
                 cause,
               }),
           ),
-        ) as Effect.Effect<A, AzureGraphInvalidResponse>;
+        );
 
       const fetchToken = (tenantId: string): Effect.Effect<TokenEntry, AzureGraphError> =>
         Effect.gen(function* () {
@@ -397,7 +409,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               new AzureGraphThrottled({
                 message: "Microsoft Graph token request was throttled",
                 status: result.status,
-                ...(retry ? { retryAfterSeconds: retry.seconds } : {}),
+                retryAfterSeconds: retry?.seconds,
                 body: result.text,
               }),
             );
@@ -416,10 +428,13 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           const json = yield* parseJson(result.text, "Microsoft Graph token endpoint");
           const token = yield* decode(TokenResponse, json, "Microsoft Graph token endpoint");
           const rawExpiresIn = token.expires_in;
-          const expiresIn = typeof rawExpiresIn === "string" ? Number(rawExpiresIn) : rawExpiresIn;
+
+          const expiresIn = Schema.is(Schema.String)(rawExpiresIn)
+            ? Number(rawExpiresIn)
+            : rawExpiresIn;
 
           const lifetime =
-            typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0
+            Schema.is(Schema.Number)(expiresIn) && Number.isFinite(expiresIn) && expiresIn > 0
               ? expiresIn
               : DEFAULT_TOKEN_LIFETIME_SECONDS;
 
@@ -444,7 +459,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const get = <T>(
         tenantId: string,
         url: string,
-        schema: Schema.Schema<T>,
+        schema: Schema.Decoder<T>,
       ): Effect.Effect<T, AzureGraphError> =>
         Effect.gen(function* () {
           const token = yield* accessToken(tenantId);
@@ -492,7 +507,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               new AzureGraphThrottled({
                 message: `Microsoft Graph request to ${label} was throttled`,
                 status: result.status,
-                ...(retry ? { retryAfterSeconds: retry.seconds } : {}),
+                retryAfterSeconds: retry?.seconds,
                 body: result.text,
               }),
             );
@@ -518,14 +533,28 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
        * per-attempt timeout and single 429/5xx retry are reused so Autopilot
        * calls behave exactly like directory-sync calls.
        */
-      const request = <T>(
+      function request(
         tenantId: string,
         method: "POST" | "PATCH" | "DELETE",
         url: string,
-        schema: Schema.Schema<T> | null,
-        body?: unknown,
-      ): Effect.Effect<T, AzureGraphError> =>
-        Effect.gen(function* () {
+        schema: null,
+        body?: Schema.Json,
+      ): Effect.Effect<void, AzureGraphError>;
+      function request<T>(
+        tenantId: string,
+        method: "POST" | "PATCH" | "DELETE",
+        url: string,
+        schema: Schema.Decoder<T>,
+        body?: Schema.Json,
+      ): Effect.Effect<T, AzureGraphError>;
+      function request<T>(
+        tenantId: string,
+        method: "POST" | "PATCH" | "DELETE",
+        url: string,
+        schema: Schema.Decoder<T> | null,
+        body?: Schema.Json,
+      ): Effect.Effect<T | void, AzureGraphError> {
+        return Effect.gen(function* () {
           const token = yield* accessToken(tenantId);
 
           const result = yield* execute(() => {
@@ -577,7 +606,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               new AzureGraphThrottled({
                 message: `Microsoft Graph request to ${label} was throttled`,
                 status: result.status,
-                ...(retry ? { retryAfterSeconds: retry.seconds } : {}),
+                retryAfterSeconds: retry?.seconds,
                 body: result.text,
               }),
             );
@@ -594,11 +623,12 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           // DELETE and assignment calls return 204 with no body.
-          if (schema === null) return undefined as T;
+          if (schema === null) return yield* Effect.void;
           const json = yield* parseJson(result.text, label);
 
           return yield* decode(schema, json, label);
         });
+      }
 
       const usersDelta = (
         tenantId: string,
@@ -706,13 +736,19 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         Effect.forEach(
           devices,
           (device) =>
-            request(tenantId, "POST", autopilotImportUrl, GraphAutopilotImportResponse, {
-              "@odata.type": "#microsoft.graph.importedWindowsAutopilotDeviceIdentity",
-              serialNumber: device.serialNumber,
-              hardwareIdentifier: device.hardwareIdentifier,
-              ...(device.groupTag ? { groupTag: device.groupTag } : {}),
-              ...(device.orderIdentifier ? { orderIdentifier: device.orderIdentifier } : {}),
-            }).pipe(Effect.map(importedAutopilotDevices)),
+            request(
+              tenantId,
+              "POST",
+              autopilotImportUrl,
+              GraphAutopilotImportResponse,
+              jsonObject({
+                "@odata.type": "#microsoft.graph.importedWindowsAutopilotDeviceIdentity",
+                serialNumber: device.serialNumber,
+                hardwareIdentifier: device.hardwareIdentifier,
+                groupTag: device.groupTag,
+                orderIdentifier: device.orderIdentifier,
+              }),
+            ).pipe(Effect.map(importedAutopilotDevices)),
           { concurrency: 1 },
         ).pipe(Effect.map((batches) => batches.flat()));
 
@@ -720,7 +756,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         tenantId: string,
         id: string,
       ): Effect.Effect<void, AzureGraphError> =>
-        request<void>(tenantId, "DELETE", `${autopilotDeviceBase}/${encodeURIComponent(id)}`, null);
+        request(tenantId, "DELETE", `${autopilotDeviceBase}/${encodeURIComponent(id)}`, null);
 
       const listAutopilotProfiles = (
         tenantId: string,
@@ -739,20 +775,17 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           };
         });
 
-      const profileBody = (input: AutopilotDeploymentProfileInput, create: boolean) => ({
-        ...(create ? { "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfile" } : {}),
-        displayName: input.displayName,
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        deploymentMode: input.deploymentMode,
-        joinType: input.joinType,
-        ...(input.deviceNameTemplate !== undefined
-          ? { deviceNameTemplate: input.deviceNameTemplate }
-          : {}),
-        ...(input.locale !== undefined ? { locale: input.locale } : {}),
-        ...(input.enableDevicePreparation !== undefined
-          ? { enableWhiteGlove: input.enableDevicePreparation }
-          : {}),
-      });
+      const profileBody = (input: AutopilotDeploymentProfileInput, create: boolean) =>
+        jsonObject({
+          "@odata.type": create ? "#microsoft.graph.windowsAutopilotDeploymentProfile" : undefined,
+          displayName: input.displayName,
+          description: input.description,
+          deploymentMode: input.deploymentMode,
+          joinType: input.joinType,
+          deviceNameTemplate: input.deviceNameTemplate,
+          locale: input.locale,
+          enableWhiteGlove: input.enableDevicePreparation,
+        });
 
       const createAutopilotProfile = (
         tenantId: string,
@@ -784,7 +817,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         id: string,
         groupId: string,
       ): Effect.Effect<void, AzureGraphError> =>
-        request<void>(
+        request(
           tenantId,
           "POST",
           `${autopilotProfileBase}/${encodeURIComponent(id)}/assign`,

@@ -1,20 +1,27 @@
 import "reflect-metadata";
-import { Context, Effect, Exit, Layer, Redacted } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/http-api";
+import { Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
+import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
-import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
-import { AuthContract, Http, Proofs } from "@yielded/auth";
+import { AuthContract, Http } from "@yielded/auth";
 import * as Workerd from "@yielded/auth-platform-workerd";
 import { AuthApi, enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
+  DEFAULT_ONBOARDING_REPLY_TO,
+  ONBOARDING_SUPPORT_EMAIL,
   EnterpriseService,
   enterpriseHandlers,
   billingWebhookRoutes,
   runMaintenance,
+  runOnboardingEmails,
   runScheduledBackups,
   runScheduledEntraSync,
+  runWelcomeEmailSweep,
+  linkedDeviceIdsForUsers,
+  syncAndroidPoliciesForTenant,
+  ScimMembershipNotifier,
+  makeApplePush,
   scimRoutes,
   mcpOAuthRoutes,
   androidRoutes,
@@ -22,8 +29,11 @@ import {
   makeAuthLive,
   makeSsoStrategy,
   makeEnterpriseAuthLive,
+  EnterpriseAnalyticsService,
   sessionCookie,
   type CredentialExpiryNotification,
+  type EmailReplyTo,
+  type EmailTransport,
 } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
@@ -34,7 +44,8 @@ import {
   ManagementBackendEnterpriseLive,
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
-import { Db, Env as CoreEnv, R2, parsePlanLimits } from "@mattrax/enterprise-core";
+import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
+import { Db, Env as CoreEnv, R2, parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
@@ -62,20 +73,20 @@ import {
   tenantIdFromPath,
   withRequestId,
 } from "./observability.js";
-import { makeRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
+import { createRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
 import {
   authEventForRequest,
   authOutcomeFromResponse,
   createRequestAnalytics,
   shouldReportError,
   shouldTrackApiRequest,
-  type RequestAnalytics,
+  type AnalyticsProperties,
 } from "./analytics.js";
 import { checkReadiness } from "./readiness.js";
 import { withSessionPresence } from "./sessionPresence.js";
 import { CREDENTIAL_EMAIL_FROM, credentialExpiryEmail } from "./credentialEmail.js";
 
-const rateLimiter = makeRateLimiter();
+const rateLimiter = createRateLimiter();
 
 /**
  * Plan limits are deployment configuration, not product pricing. A malformed
@@ -92,7 +103,7 @@ for (const warning of planLimits.warnings) console.warn(warning);
  */
 const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
 
-const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
+const appAuth = makeAppAuth(apiEnv.ORIGIN, {
   sso: makeSsoStrategy(),
 });
 
@@ -106,24 +117,8 @@ const authHttps = Http.make(appAuth, {
     .filter(Boolean),
 });
 
-// Proof delivery (password-reset links and passwordless email codes) is
-// scheduled by Auth after the proof commit resolves. Await it inside the
-// request: a `waitUntil`-only hand-off can be dropped when the request-scoped
-// Worker context is torn down before the provider accepts the message, which
-// silently loses reset/code emails. Unexpected scheduler failures are logged
-// and surfaced as `ProofUnavailable`; provider rejections are reported by the
-// auth delivery layer.
-const proofSchedulerLayer = Layer.succeed(Proofs.ProofDispatchScheduler, {
-  schedule: (work: Effect.Effect<void>) =>
-    Effect.tryPromise({
-      try: () => Effect.runPromise(work),
-      catch: (cause) => {
-        console.error("Proof delivery failed", cause);
-
-        return Proofs.ProofUnavailable.make({});
-      },
-    }),
-});
+// Proof delivery is not part of authentication: passkeys never leave the
+// browser and verification codes are delivered by EnterpriseAuth.
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
@@ -137,6 +132,44 @@ const apiRoot = HttpApi.make("Mattrax")
       servers: [{ url: "/" }],
     }),
   );
+
+/**
+ * The OpenAPI document is static for a build. Building it lazily once per
+ * isolate keeps it out of the global scope and stops every API request from
+ * paying for it (the previous Scalar layer generated it eagerly each request).
+ */
+let cachedOpenApi: ReturnType<typeof OpenApi.fromApi> | undefined;
+
+const openApiResponse = () => {
+  cachedOpenApi ??= OpenApi.fromApi(apiRoot);
+
+  return HttpServerResponse.jsonUnsafe(cachedOpenApi);
+};
+
+/**
+ * The management webhook contract is a separate document: these routes are
+ * implemented by a customer's management backend, not by this API.
+ */
+const managementWebhookOpenApiResponse = () =>
+  HttpServerResponse.jsonUnsafe(managementWebhookOpenApi());
+
+const apiDocsHtml = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Mattrax Cloud API</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <div id="api-reference"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest/dist/browser/standalone.min.js" crossorigin></script>
+    <script>
+      window.Scalar.createApiReference("#api-reference", { url: "/api/openapi.json" });
+    </script>
+  </body>
+</html>`;
+
+const apiDocsResponse = () => HttpServerResponse.html(apiDocsHtml);
 
 const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
@@ -159,13 +192,17 @@ const handlersLayer = Layer.mergeAll(
     "/api/version",
     HttpServerResponse.json({ version } satisfies { version: string }),
   ),
+  HttpRouter.add("GET", "/api/openapi.json", Effect.sync(openApiResponse)),
+  HttpRouter.add(
+    "GET",
+    "/api/webhooks/openapi.json",
+    Effect.sync(managementWebhookOpenApiResponse),
+  ),
+  HttpRouter.add("GET", "/api/docs", Effect.sync(apiDocsResponse)),
 );
 
 const apiLayer = Layer.mergeAll(
-  HttpApiBuilder.layer(apiRoot, { openapiPath: "/api/openapi.json" }).pipe(
-    Layer.provide(handlersLayer),
-  ),
-  HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
+  HttpApiBuilder.layer(apiRoot).pipe(Layer.provide(handlersLayer)),
   appleMdmRoutes,
   scepRoutes,
   scimRoutes,
@@ -195,8 +232,16 @@ const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
   head: (key) => env.STORAGE.head(key),
   get: (key) => env.STORAGE.get(key),
   put: (key, value, options) => env.STORAGE.put(key, value, options),
-  delete: (keys) => env.STORAGE.delete(typeof keys === "string" ? keys : [...keys]),
-  list: (options) => env.STORAGE.list(options as any),
+  delete: (keys) => env.STORAGE.delete(Schema.is(Schema.String)(keys) ? keys : [...keys]),
+  list: (options) =>
+    env.STORAGE.list(
+      options
+        ? {
+            ...options,
+            include: options.include ? [...options.include] : undefined,
+          }
+        : undefined,
+    ),
 });
 
 /**
@@ -204,9 +249,17 @@ const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
  * the deployment has Entra app credentials; otherwise the sweep returns
  * immediately so the rest of the cron job is unaffected.
  */
-const entraSyncEffect = (db: EnterpriseDb, env: Env, concurrency: number | undefined) => {
+const entraSyncEffect = (
+  db: EnterpriseDb,
+  env: Env,
+  concurrency: number | undefined,
+  onMembershipsChanged?: (
+    organizationId: string,
+    userIds: ReadonlyArray<string>,
+  ) => Effect.Effect<void, unknown, never>,
+) => {
   if (!env.AZURE_CLIENT_ID || !env.AZURE_CLIENT_SECRET)
-    return runScheduledEntraSync({ db, concurrency });
+    return runScheduledEntraSync({ db, concurrency, onMembershipsChanged });
 
   return Effect.scoped(
     Effect.gen(function* () {
@@ -222,6 +275,7 @@ const entraSyncEffect = (db: EnterpriseDb, env: Env, concurrency: number | undef
         db,
         graph: Context.get(context, AzureGraph),
         concurrency,
+        onMembershipsChanged,
       });
     }),
   );
@@ -241,19 +295,120 @@ const parsePositive = (value: string | undefined) => {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 };
 
+/** A non-negative day count; malformed input falls back to the default. */
+const parseDayCount = (value: string | undefined, fallback: number) => {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+};
+
+const optionalIsoDate = (value: string | undefined) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const onboardingReplyTo = () =>
+  apiEnv.MATTRAX_ONBOARDING_REPLY_TO ?? DEFAULT_ONBOARDING_REPLY_TO;
+
+const onboardingSupportEmail = () =>
+  apiEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL ?? ONBOARDING_SUPPORT_EMAIL;
+
+const onboardingSince = optionalIsoDate(apiEnv.MATTRAX_ONBOARDING_SINCE);
+
+if (apiEnv.MATTRAX_ONBOARDING_SINCE && !onboardingSince)
+  console.warn(
+    "MATTRAX_ONBOARDING_SINCE is not a valid ISO date; the follow-up window floor still applies",
+  );
+
+const onboardingEmailsEnabled = () => {
+  const value = apiEnv.MAINTENANCE_ONBOARDING_EMAILS?.trim().toLowerCase();
+
+  return !(value === "0" || value === "false" || value === "off");
+};
+
+/**
+ * Cloudflare's structured address requires `name`; a bare Reply-To string is
+ * also accepted, so normalise our optional-name form at the binding boundary.
+ */
+const replyToForBinding = (replyTo: EmailReplyTo | undefined) =>
+  replyTo === undefined
+    ? undefined
+    : Schema.is(Schema.String)(replyTo)
+      ? replyTo
+      : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
+
+/** Adapter for the Cloudflare `send_email` binding used outside a request. */
+const cloudEmailTransport = (binding: SendEmail | undefined): EmailTransport | undefined =>
+  binding
+    ? {
+        send: async (message) => {
+          await binding.send({
+            to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
+            from: message.from,
+            replyTo: replyToForBinding(message.replyTo),
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+          });
+        },
+      }
+    : undefined;
+
 /** Standalone scheduled Entra sweep used by the hourly trigger. */
 const entraSyncJob = (env: Env) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
+    const apns = makeApnsService(
+      env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
+        ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
+        : NoopPushTransport(
+            "APNs push relay is not configured; devices will poll for changes instead",
+          ),
+    );
+
+    const androidConfig = androidDeliveryConfig();
+
+    const applePush = makeApplePush({
+      db,
+      schema,
+      apns,
+      authSecret: env.AUTH_SECRET,
+      webhookFetch: fetch,
+    });
+
+    // Directory membership changes can add or remove user-assigned policies.
+    // Wake the linked devices so they converge without waiting for a poll.
+    const refreshMemberships = (organizationId: string, userIds: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
+
+        if (deviceIds.length === 0) return;
+
+        yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
+        yield* syncAndroidPoliciesForTenant({
+          db,
+          config: androidConfig,
+          organizationId,
+          deviceIds,
+        }).pipe(
+          Effect.catch(() => Effect.void),
+          Effect.provide(androidManagementLayer(androidConfig)),
+        );
+      });
+
     return yield* entraSyncEffect(
       db,
       env,
       parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
+      refreshMemberships,
     );
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
-const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) => {
+const makeAppLayer = (env: Env) => {
   const androidConfig = androidDeliveryConfig();
 
   const staticEnvLayer = CoreEnv.layer({
@@ -261,6 +416,9 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
     cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
     authSecret: env.AUTH_SECRET,
+    appleProfileSigningCert: env.APPLE_PROFILE_SIGNING_CERT,
+    appleProfileSigningKey: env.APPLE_PROFILE_SIGNING_KEY,
+    appleProfileSigningChain: env.APPLE_PROFILE_SIGNING_CHAIN,
   });
 
   const appleMdmConfigLayer = AppleMdmConfig.layer({
@@ -283,39 +441,69 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
-  const devMailbox = isDevMailboxEnabled(
-    env as unknown as {
-      DEV_MAILBOX?: string;
-      DEV_MAILBOX_ALLOW_REMOTE?: string;
-      DEV_MAILBOX_SECRET?: string;
-    },
-    env.ORIGIN,
-    request.url,
-  );
+  const devMailbox = isDevMailboxEnabled(env, env.ORIGIN, env.ORIGIN);
 
-  const devMailboxSecret = (env as unknown as { DEV_MAILBOX_SECRET?: string }).DEV_MAILBOX_SECRET;
+  const devMailboxSecret = env.DEV_MAILBOX_SECRET;
+
+  /** Dev mailbox records one entry per recipient so tests can find their own. */
+  const replyToAddress = (replyTo: EmailReplyTo | undefined) =>
+    replyTo === undefined
+      ? undefined
+      : Schema.is(Schema.String)(replyTo)
+        ? replyTo
+        : replyTo.email;
 
   const devEmail = devMailbox
     ? {
-        send: async (message: { to: string; subject: string; text?: string; html?: string }) => {
-          recordDevEmail({
-            to: message.to,
-            subject: message.subject,
-            text: message.text ?? "",
-            html: message.html,
-          });
-          console.log("DEV EMAIL", message.to, message.subject, message.text);
+        send: async (message: {
+          to: string | ReadonlyArray<string>;
+          replyTo?: EmailReplyTo;
+          subject: string;
+          text?: string;
+          html?: string;
+        }) => {
+          const recipients = Schema.is(Schema.String)(message.to) ? [message.to] : message.to;
+
+          for (const to of recipients) {
+            recordDevEmail({
+              to,
+              replyTo: replyToAddress(message.replyTo),
+              subject: message.subject,
+              text: message.text ?? "",
+              html: message.html,
+            });
+            console.log("DEV EMAIL", to, message.subject, message.text);
+          }
         },
       }
     : undefined;
 
-  const email = devEmail ?? (env as any).EMAIL;
+  // `SendEmail.send` is overloaded for raw MIME and structured messages. The
+  // structured overload is the one the auth layers need, and adapting it here
+  // keeps the auth contract free of Cloudflare's binding types.
+  const cloudEmail: SendEmail | undefined = env.EMAIL;
+
+  const email: EmailTransport | undefined =
+    devEmail ??
+    (cloudEmail
+      ? {
+          send: (message) =>
+            cloudEmail
+              .send({
+                to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
+                from: message.from,
+                replyTo: replyToForBinding(message.replyTo),
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+              })
+              .then(() => undefined),
+        }
+      : undefined);
 
   const authLive = makeAuthLive({
     appAuth,
     cryptoLayer: Workerd.layer,
-    proofSchedulerLayer,
-    email,
     authSecret: env.AUTH_SECRET,
     origin: env.ORIGIN,
     // Only same-site origins can share the deployment's WebAuthn relying party;
@@ -333,14 +521,9 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     // Use the same development mailbox as sign-in proofs so verification
     // codes are visible at /api/debug/emails locally.
     email,
+    onboardingReplyTo: onboardingReplyTo(),
+    onboardingSupportEmail: onboardingSupportEmail(),
   });
-
-  const proofContextLayer: Layer.Layer<Proofs.ProofRequestContext> = Layer.succeed(
-    Proofs.ProofRequestContext,
-    Effect.succeed({
-      networkKey: Redacted.make(request.headers.get("cf-connecting-ip") ?? "local"),
-    }),
-  );
 
   const storageBucket: Parameters<typeof R2.layer>[0] = storageBucketFor(env);
 
@@ -364,6 +547,14 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     }),
   ).pipe(Layer.provide(Db.layer));
 
+  // Federated WSTEP is opt-in: discovery only advertises it when an audience
+  // is configured, and policy/enroll then require a verifiable Entra JWT.
+  const windowsFederatedAudience = apiEnv.WINDOWS_FEDERATED_AUDIENCE ?? env.AZURE_CLIENT_ID;
+
+  const windowsFederated = windowsFederatedAudience
+    ? { enabled: true, audience: windowsFederatedAudience, clientId: env.AZURE_CLIENT_ID }
+    : undefined;
+
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
@@ -375,17 +566,7 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     requireWindowsDeviceIdentity: true,
     requireAppleDeviceIdentity: true,
     planLimits,
-    // Federated WSTEP is opt-in: discovery only advertises it when an audience
-    // is configured, and policy/enroll then require a verifiable Entra JWT.
-    ...(apiEnv.WINDOWS_FEDERATED_AUDIENCE || env.AZURE_CLIENT_ID
-      ? {
-          windowsFederated: {
-            enabled: true,
-            audience: apiEnv.WINDOWS_FEDERATED_AUDIENCE ?? env.AZURE_CLIENT_ID!,
-            ...(env.AZURE_CLIENT_ID ? { clientId: env.AZURE_CLIENT_ID } : {}),
-          },
-        }
-      : {}),
+    windowsFederated,
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
@@ -404,17 +585,13 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
       email,
+      invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM,
       azureClientId: env.AZURE_CLIENT_ID,
-      ...(apiEnv.WINDOWS_FEDERATED_AUDIENCE || env.AZURE_CLIENT_ID
-        ? {
-            windowsFederated: {
-              audience: apiEnv.WINDOWS_FEDERATED_AUDIENCE ?? env.AZURE_CLIENT_ID!,
-            },
-          }
-        : {}),
+      windowsFederated: windowsFederatedAudience
+        ? { audience: windowsFederatedAudience }
+        : undefined,
       android: androidConfig,
       planLimits,
-      analytics,
     }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
@@ -460,14 +637,58 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
             // verification links to arbitrary callers.
             const supplied = debugRequest.headers["x-dev-mailbox-secret"];
 
-            if (
-              devMailboxSecret &&
-              !timingSafeStringEqual(typeof supplied === "string" ? supplied : "", devMailboxSecret)
-            )
+            if (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
               return Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }));
 
             return HttpServerResponse.json(listDevEmails());
           }).pipe(Layer.provide(HttpServer.layerServices)),
+          // Runs the same bounded sweeps the daily cron uses, in this isolate,
+          // so browser tests can prove once-only welcome mail without waiting
+          // for a scheduler. The `/api/debug/` prefix is excluded from analytics
+          // and access is gated exactly like the mailbox.
+          HttpRouter.add("POST", "/api/debug/onboarding-emails", (debugRequest) =>
+            Effect.gen(function* () {
+              const supplied = debugRequest.headers["x-dev-mailbox-secret"];
+
+              if (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
+                return HttpServerResponse.text("Not Found", { status: 404 });
+
+              const db = yield* Db;
+
+              const welcome = yield* runWelcomeEmailSweep({
+                db,
+                email,
+                origin: env.ORIGIN,
+                replyTo: onboardingReplyTo(),
+                supportEmail: onboardingSupportEmail(),
+              });
+
+              const followUp = onboardingEmailsEnabled()
+                ? yield* runOnboardingEmails({
+                    db,
+                    email,
+                    origin: env.ORIGIN,
+                    replyTo: onboardingReplyTo(),
+                    supportEmail: onboardingSupportEmail(),
+                    followUpDays: parseDayCount(
+                      apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
+                      7,
+                    ),
+                    windowDays: parseDayCount(
+                      apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS,
+                      7,
+                    ),
+                    cooldownDays: parseDayCount(
+                      apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS,
+                      7,
+                    ),
+                    since: onboardingSince,
+                  })
+                : null;
+
+              return yield* HttpServerResponse.json({ welcome, followUp });
+            }),
+          ).pipe(Layer.provide(HttpServer.layerServices)),
         ]
       : []),
     androidRoutes({
@@ -478,16 +699,57 @@ const makeAppLayer = (env: Env, request: Request, analytics: RequestAnalytics) =
     }).pipe(Layer.provide(HttpServer.layerServices)),
   );
 
+  const scimNotifierLayer = Layer.succeed(
+    ScimMembershipNotifier,
+    (db: EnterpriseDb, organizationId: string, userIds: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
+
+        if (deviceIds.length === 0) return;
+
+        const applePush = makeApplePush({
+          db,
+          schema,
+          apns,
+          authSecret: env.AUTH_SECRET,
+          webhookFetch: fetch,
+        });
+
+        yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
+        yield* syncAndroidPoliciesForTenant({
+          db,
+          config: androidConfig,
+          organizationId,
+          deviceIds,
+        }).pipe(
+          Effect.catch(() => Effect.void),
+          Effect.provide(androidManagementLayer(androidConfig)),
+        );
+      }),
+  );
+
   return appWithDevRoutes.pipe(
+    Layer.provide(scimNotifierLayer),
     // `provideMerge` keeps the MDM/SCEP service instances in the layer's
     // output. With plain `provide` the routes were built, but their handlers
     // failed at request time with `Service not found: ScepService`.
     Layer.provideMerge(servicesLayer),
     Layer.provide(authLive),
-    Layer.provide(proofContextLayer),
     Layer.provideMerge(Db.layer),
     Layer.provide(databaseLayer(env)),
   );
+};
+
+/**
+ * The service graph is built per request. Caching it across requests is not
+ * safe yet: some layers capture request-scoped HTTP server services. Request-
+ * scoped analytics already travels in the per-request Context, so a future
+ * cache only needs to solve the HTTP layer lifetime.
+ */
+const getAppHandler = (env: Env) => {
+  // SAFETY: makeAppLayer returns the combined router/service layer; the web
+  // handler only reads the router and server services from its output.
+  return HttpRouter.toWebHandler(makeAppLayer(env) as any);
 };
 
 const checkDatabaseReady = (env: Env) =>
@@ -499,12 +761,7 @@ const checkDatabaseReady = (env: Env) =>
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env))),
   );
 
-const deploymentId = (env: Env): string | null => {
-  const metadata = (env as unknown as { CF_VERSION_METADATA?: { id?: string } })
-    .CF_VERSION_METADATA;
-
-  return metadata?.id ?? null;
-};
+const deploymentId = (env: Env): string | null => env.CF_VERSION_METADATA?.id ?? null;
 
 const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {
   const result = await checkReadiness({
@@ -525,6 +782,18 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
   );
 };
 
+const TlsClientAuth = Schema.Struct({
+  certVerified: Schema.optional(Schema.String),
+  certRevoked: Schema.optional(Schema.Union([Schema.String, Schema.Boolean])),
+  certSubjectDN: Schema.optional(Schema.String),
+  certSerial: Schema.optional(Schema.String),
+  certFingerprintSHA256: Schema.optional(Schema.String),
+});
+
+const RequestCfProperties = Schema.Struct({
+  tlsClientAuth: Schema.optional(TlsClientAuth),
+});
+
 /** Redact emails and long opaque tokens before an error message reaches logs. */
 const describeError = (cause: unknown): string => {
   const error = cause instanceof Error ? cause : undefined;
@@ -534,6 +803,39 @@ const describeError = (cause: unknown): string => {
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, 500);
+};
+
+/**
+ * Device identity must come from the verified mTLS handshake, never from a
+ * caller-supplied header. Cloudflare exposes the certificate subject on
+ * `request.cf`; a self-hosted reverse proxy terminates mTLS itself and
+ * forwards the verified fields instead, which requires an explicit opt-in.
+ */
+const TRUST_DEVICE_IDENTITY_HEADERS = apiEnv.TRUST_DEVICE_IDENTITY_HEADERS === "1";
+
+const deviceIdentityHeaders = (request: Request) => {
+  const headers = new Headers(request.headers);
+
+  if (TRUST_DEVICE_IDENTITY_HEADERS) return headers;
+
+  headers.delete("x-device-identity-certificate");
+  headers.delete("x-device-identity-certificate-serial");
+  headers.delete("x-device-identity-certificate-sha256");
+
+  const cf = Option.getOrUndefined(Schema.decodeUnknownOption(RequestCfProperties)(request.cf));
+
+  const tls = cf?.tlsClientAuth;
+
+  if (tls?.certVerified === "SUCCESS" && tls.certRevoked !== "1" && tls.certRevoked !== true) {
+    if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
+
+    if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
+
+    if (tls.certFingerprintSHA256)
+      headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
+  }
+
+  return headers;
 };
 
 export default {
@@ -558,7 +860,6 @@ export default {
 
     let response: Response;
     let uncaught: unknown;
-    let dispose: (() => Promise<void>) | undefined;
 
     try {
       const limited = await rateLimiter.check(request, rateLimitBindings(env));
@@ -580,50 +881,13 @@ export default {
       } else if (pathname === "/api/ready" && request.method === "GET") {
         response = await readinessResponse(env, requestId);
       } else {
-        // Device identity must come from the verified mTLS handshake, never
-        // from a caller-supplied header. Cloudflare exposes the certificate
-        // subject here.
-        const headers = new Headers(request.headers);
-        headers.delete("x-device-identity-certificate");
-        headers.delete("x-device-identity-certificate-serial");
-        headers.delete("x-device-identity-certificate-sha256");
+        const deviceRequest = new Request(request, { headers: deviceIdentityHeaders(request) });
 
-        const tls = (
-          request as unknown as {
-            cf?: {
-              tlsClientAuth?: {
-                certVerified?: string;
-                certRevoked?: string | boolean;
-                certSubjectDN?: string;
-                certSerial?: string;
-                certFingerprintSHA256?: string;
-              };
-            };
-          }
-        ).cf?.tlsClientAuth;
-
-        if (
-          tls?.certVerified === "SUCCESS" &&
-          tls.certRevoked !== "1" &&
-          tls.certRevoked !== true
-        ) {
-          if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
-
-          if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
-
-          if (tls.certFingerprintSHA256)
-            headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
-        }
-
-        const deviceRequest = new Request(request, { headers });
-
-        const handlerAndDispose = HttpRouter.toWebHandler(
-          makeAppLayer(env, deviceRequest, analytics) as any,
+        const context = Context.makeUnsafe<any>(
+          new Map<string, any>([[EnterpriseAnalyticsService.key, analytics]]),
         );
 
-        dispose = handlerAndDispose.dispose;
-        const context = Context.makeUnsafe<any>(new Map());
-        response = await handlerAndDispose.handler(deviceRequest, context);
+        response = await getAppHandler(env).handler(deviceRequest, context);
       }
     } catch (cause) {
       uncaught = cause;
@@ -631,11 +895,6 @@ export default {
         error: "internal_error",
         message: "Internal Server Error",
       });
-    } finally {
-      // Dispose even when the handler threw so the per-request Db pool/HTTP
-      // sessions are not leaked.
-      if (dispose)
-        waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     }
 
     const errorTag = uncaught ? "UncaughtError" : await readErrorTag(response);
@@ -648,8 +907,8 @@ export default {
         status: response.status,
         durationMs: Math.max(0, Date.now() - startedAt),
         tenantId: tenantIdFromPath(pathname),
-        ...(errorTag ? { errorTag } : {}),
-        ...(uncaught ? { error: describeError(uncaught) } : {}),
+        errorTag,
+        error: uncaught ? describeError(uncaught) : undefined,
       });
     }
 
@@ -658,14 +917,19 @@ export default {
     if (shouldTrackApiRequest(pathname, request.method)) {
       const durationMs = Math.max(0, Date.now() - startedAt);
       const tenantId = tenantIdFromPath(pathname);
-      analytics.capture("api_request", {
+
+      const properties: AnalyticsProperties = {
         status: response.status,
         duration_ms: durationMs,
         outcome:
           response.status >= 500 ? "server_error" : response.status >= 400 ? "client_error" : "ok",
-        ...(tenantId ? { tenant_id: tenantId } : {}),
-        ...(errorTag ? { error_tag: errorTag } : {}),
-      });
+      };
+
+      if (tenantId) properties.tenant_id = tenantId;
+
+      if (errorTag) properties.error_tag = errorTag;
+
+      analytics.capture("api_request", properties);
       const conversion = authEventForRequest(pathname, request.method, response.status);
 
       if (conversion === "auth_signed_in" || conversion === "auth_sso_signed_in") {
@@ -683,12 +947,13 @@ export default {
     // and 5xx responses are eligible; sampling and a per-isolate cap prevent
     // an outage from flooding the provider.
     if (shouldReportError(response.status, uncaught !== undefined)) {
+      const properties: AnalyticsProperties = { status: response.status };
+
+      if (errorTag) properties.error_tag = errorTag;
+
       analytics.captureError(
         uncaught ?? new Error(`${request.method} ${pathname} responded ${response.status}`),
-        {
-          status: response.status,
-          ...(errorTag ? { error_tag: errorTag } : {}),
-        },
+        properties,
       );
     }
 
@@ -802,6 +1067,48 @@ export default {
         console.error("Scheduled maintenance failed", maintenance.cause);
       else console.log("Scheduled maintenance complete", maintenance.value);
 
+      // Onboarding email runs after maintenance. The welcome sweep is a
+      // bounded backstop for a lost verification hook; the one-week follow-up
+      // is disabled by `MAINTENANCE_ONBOARDING_EMAILS=false`. Neither can
+      // abort the rest of the daily job.
+      const onboarding = yield* Effect.exit(
+        Effect.gen(function* () {
+          const welcome = yield* runWelcomeEmailSweep({
+            db,
+            email: cloudEmailTransport(env.EMAIL),
+            origin: apiEnv.ORIGIN,
+            replyTo: onboardingReplyTo(),
+            supportEmail: onboardingSupportEmail(),
+          });
+
+          const followUp = onboardingEmailsEnabled()
+            ? yield* runOnboardingEmails({
+                db,
+                email: cloudEmailTransport(env.EMAIL),
+                origin: apiEnv.ORIGIN,
+                replyTo: onboardingReplyTo(),
+                supportEmail: onboardingSupportEmail(),
+                followUpDays: parseDayCount(
+                  apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
+                  7,
+                ),
+                windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
+                cooldownDays: parseDayCount(
+                  apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS,
+                  7,
+                ),
+                since: onboardingSince,
+              })
+            : null;
+
+          return { welcome, followUp };
+        }),
+      );
+
+      if (Exit.isFailure(onboarding))
+        console.error("Scheduled onboarding email failed", onboarding.cause);
+      else console.log("Scheduled onboarding email complete", onboarding.value);
+
       // Tenant backups run after maintenance, bounded and failure-isolated per
       // tenant. `MAINTENANCE_BACKUP_RETENTION_DAYS=0` keeps runs indefinitely.
       const backups = yield* Effect.exit(
@@ -817,7 +1124,7 @@ export default {
         entraSyncEffect(db, env, parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY)),
       );
 
-      return { maintenance, backups, entra };
+      return { maintenance, onboarding, backups, entra };
     }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
     if (!graphConfigured)

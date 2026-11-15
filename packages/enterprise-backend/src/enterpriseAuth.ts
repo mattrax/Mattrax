@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { Effect, Layer, Option, Redacted } from "effect";
+import { Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
@@ -12,10 +12,16 @@ import {
   StepUpUnavailable,
   diagnoseError,
   type StepUpAction,
+  type StepUpMethod,
 } from "@mattrax/enterprise-domain";
-import { Db, schema } from "@mattrax/enterprise-core";
+import { Db, authIdentifiers, schema } from "@mattrax/enterprise-core";
 import { sessionCookie, type AppAuthService } from "./auth.ts";
-import { provisionEmailCredential } from "./emailCredential.ts";
+import {
+  DEFAULT_ONBOARDING_REPLY_TO,
+  ONBOARDING_SUPPORT_EMAIL,
+  sendWelcomeEmailOnce,
+} from "./onboardingEmails.ts";
+import type { EmailReplyTo, EmailTransport } from "./email.ts";
 import {
   signStepUpFlow,
   signStepUpGrant,
@@ -25,6 +31,27 @@ import {
 import { signToken, verifyToken } from "./tokens.ts";
 
 type HeadersRecord = Record<string, string | string[] | undefined>;
+
+const SessionReference = Schema.Struct({ sessionId: Schema.optional(Schema.String) });
+
+const sessionIdOf = (session: Schema.Json | undefined) =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(SessionReference)(session))?.sessionId;
+
+const StepUpMethods = Schema.Struct({
+  totp: Schema.Boolean,
+  passkey: Schema.Boolean,
+});
+
+const enabledStepUpMethods = (
+  value: Schema.Json | undefined,
+): Array<StepUpMethod> => {
+  const methods = Option.getOrElse(
+    Schema.decodeUnknownOption(StepUpMethods)(value),
+    () => ({ totp: false, passkey: false }),
+  );
+
+  return (["totp", "passkey"] as const).filter((name) => methods[name]);
+};
 
 const parseCookies = (header: string | null | undefined) =>
   Object.fromEntries(
@@ -77,42 +104,50 @@ export const API_TOKEN_SCOPES = ["read", "write"] as const;
 
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
 
+const ApiTokenScopeSchema = Schema.Literals(API_TOKEN_SCOPES);
+
 /**
  * Resolve the scopes stored on a token. Tokens created before scoping existed
  * have no scopes and keep full access. Malformed values fail closed.
  */
-export const tokenScopes = (value: unknown): Set<ApiTokenScope> => {
+const parseScopeList = (value: string): ReadonlyArray<Schema.Json> => {
+  try {
+    return (
+      Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Array(Schema.Json))(JSON.parse(value)),
+      ) ?? []
+    );
+  } catch {
+    return [];
+  }
+};
+
+export const tokenScopes = (value: Schema.Json | undefined): Set<ApiTokenScope> => {
   if (value == null) return new Set(API_TOKEN_SCOPES);
 
-  const raw = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? (() => {
-          try {
-            const parsed = JSON.parse(value);
-
-            return Array.isArray(parsed) ? parsed : [];
-          } catch {
-            return [];
-          }
-        })()
+  const raw = Schema.is(Schema.String)(value)
+    ? parseScopeList(value)
+    : Schema.is(Schema.Array(Schema.Json))(value)
+      ? value
       : [];
 
   return new Set(
-    raw.filter((scope): scope is ApiTokenScope =>
-      (API_TOKEN_SCOPES as readonly string[]).includes(scope),
-    ),
+    raw.flatMap((scope) => {
+      const decoded = Schema.decodeUnknownOption(ApiTokenScopeSchema)(scope);
+
+      return Option.isSome(decoded) ? [decoded.value] : [];
+    }),
   );
 };
 
 /** Normalise requested scopes into the canonical order, or reject unknowns. */
 const normalizeTokenScopes = (scopes: readonly string[] | undefined) => {
-  if (scopes === undefined) return [...API_TOKEN_SCOPES] as ApiTokenScope[];
+  if (scopes === undefined) return [...API_TOKEN_SCOPES];
   const requested = new Set(scopes);
 
   if (requested.size === 0) return undefined;
 
-  if ([...requested].some((scope) => !(API_TOKEN_SCOPES as readonly string[]).includes(scope)))
+  if ([...requested].some((scope) => !API_TOKEN_SCOPES.some((known) => known === scope)))
     return undefined;
 
   // `write` means read + mutate, so a write token always carries `read`.
@@ -163,15 +198,11 @@ export type EnterpriseAuthOptions = {
   readonly appAuth: AppAuthService;
   readonly origin: string;
   readonly authSecret: string;
-  readonly email?: {
-    send(message: {
-      to: string;
-      from: { name: string; email: string };
-      subject: string;
-      text?: string;
-      html?: string;
-    }): Promise<unknown>;
-  };
+  readonly email?: EmailTransport;
+  /** Reply-To for the one-time welcome email. Defaults to the documented address. */
+  readonly onboardingReplyTo?: EmailReplyTo;
+  /** Support address in the welcome footer. Defaults to the sender address. */
+  readonly onboardingSupportEmail?: string | null;
 };
 
 export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
@@ -188,8 +219,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const stepUp: StepUpService["Service"] = Option.isSome(stepUpOption)
         ? stepUpOption.value
         : {
-            methods: () => Effect.succeed({ password: false, totp: false, passkey: false }),
-            verifyPassword: () => Effect.succeed(false),
+            methods: () => Effect.succeed({ totp: false, passkey: false }),
             verifyTotp: () => Effect.succeed(false),
             beginPasskey: () =>
               Effect.fail(
@@ -197,10 +227,32 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                   message: "Step-up is not available on this deployment",
                 }),
               ),
-            completePasskey: () => Effect.succeed(false),
+            completePasskey: () => Effect.succeed(undefined),
           };
 
       const { origin, authSecret, email } = options;
+
+      /**
+       * The welcome email is a best-effort side effect of proving an address.
+       * The claim inside `sendWelcomeEmailOnce` makes it once-only and a
+       * provider failure can never turn a successful verification into an
+       * error response.
+       */
+      const sendWelcomeAfterVerification = (user: {
+        readonly id: string;
+        readonly name: string | null;
+        readonly email: string;
+        readonly disabled: boolean;
+        readonly source: string;
+      }) =>
+        sendWelcomeEmailOnce({
+          db,
+          user: { ...user, emailVerified: true },
+          email,
+          origin,
+          replyTo: options.onboardingReplyTo ?? DEFAULT_ONBOARDING_REPLY_TO,
+          supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
+        }).pipe(Effect.catchCause(() => Effect.void));
 
       const resolveSession = (request: Request) =>
         Effect.gen(function* () {
@@ -441,7 +493,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const resolved = yield* requireUser(request);
 
           if (resolved.apiToken || resolved.oauth) return resolved;
-          const sessionId = resolved.session?.sessionId as string | undefined;
+
+          const sessionId = sessionIdOf(resolved.session);
           const grant = request.headers.get("x-mattrax-step-up");
 
           if (grant && sessionId) {
@@ -458,11 +511,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           return yield* Effect.fail(
             new StepUpRequired({
-              message: "Confirm this action with your password, authenticator or passkey.",
+              message: "Confirm this action with your authenticator or passkey.",
               action,
-              methods: (Object.entries(methods) as Array<[string, boolean]>)
-                .filter(([, enabled]) => enabled)
-                .map(([name]) => name as "password" | "totp" | "passkey"),
+              methods: enabledStepUpMethods(methods),
             }),
           );
         });
@@ -471,7 +522,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         user: { readonly id: string; readonly email: string },
         sessionId: string,
         action: StepUpAction,
-        method: "password" | "totp" | "passkey",
+        method: StepUpMethod,
+        credentialId?: string,
       ) =>
         Effect.gen(function* () {
           const expiresAtMillis = Date.now() + STEP_UP_WINDOW_MILLIS;
@@ -481,6 +533,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             email: user.email,
             sessionId,
             action,
+            method,
+            credentialId,
             expiresAtMillis,
           });
 
@@ -498,7 +552,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const stepUpSession = (request: Request) =>
         Effect.gen(function* () {
           const resolved = yield* requireUser(request);
-          const sessionId = resolved.session?.sessionId as string | undefined;
+
+          const sessionId = sessionIdOf(resolved.session);
 
           if (!sessionId)
             return yield* Effect.fail(
@@ -508,20 +563,6 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             );
 
           return { user: resolved.user, sessionId };
-        });
-
-      const stepUpPassword = (request: Request, body: { password: string; action: StepUpAction }) =>
-        Effect.gen(function* () {
-          const { user, sessionId } = yield* stepUpSession(request);
-          const verified = yield* stepUp.verifyPassword(user.id, body.password);
-
-          if (!verified) {
-            const error = yield* invalidStepUp(user.id, body.action);
-
-            return yield* Effect.fail(error);
-          }
-
-          return yield* grant(user, sessionId, body.action, "password");
         });
 
       const stepUpTotp = (request: Request, body: { code: string; action: StepUpAction }) =>
@@ -589,13 +630,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             response: body.response,
           });
 
-          if (!verified) {
+          if (verified === undefined) {
             const error = yield* invalidStepUp(user.id, bound.action);
 
             return yield* Effect.fail(error);
           }
 
-          return yield* grant(user, sessionId, bound.action, "passkey");
+          return yield* grant(user, sessionId, bound.action, "passkey", verified);
         });
 
       /** Reject a bad factor without revealing which accounts have one. */
@@ -606,9 +647,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           return new StepUpRequired({
             message: "That confirmation was not accepted. Try again.",
             action,
-            methods: (Object.entries(methods) as Array<[string, boolean]>)
-              .filter(([, enabled]) => enabled)
-              .map(([name]) => name as "password" | "totp" | "passkey"),
+            methods: enabledStepUpMethods(methods),
           });
         });
 
@@ -864,12 +903,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               ),
             );
 
-            const codeHash = (challenge as typeof challenge & { codeHash?: unknown }).codeHash;
+            const codeHash = challenge.codeHash;
 
             if (
               challenge.exp <= Date.now() ||
               challenge.purpose !== "email-verify-code" ||
-              typeof codeHash !== "string" ||
+              codeHash === undefined ||
               challenge.sub !== user.id ||
               challenge.email.toLowerCase() !== user.email.toLowerCase()
             )
@@ -891,19 +930,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               .set({ emailVerified: true, updatedAt: new Date() })
               .where(eq(schema.user.id, user.id));
             yield* db
-              .update((schema as any).authIdentifiers)
+              .update(authIdentifiers)
               .set({ verifiedAt: Date.now() })
               .where(
                 and(
-                  eq((schema as any).authIdentifiers.subjectId, user.id),
-                  eq((schema as any).authIdentifiers.namespace, "email"),
+                  eq(authIdentifiers.subjectId, user.id),
+                  eq(authIdentifiers.namespace, "email"),
                 ),
               );
-            yield* provisionEmailCredential(
-              db,
-              options.appAuth.strategies.email.persistence.moduleId as string,
-              user.id,
-            );
+            yield* sendWelcomeAfterVerification(user);
 
             return { status: "ok" as const };
           }
@@ -929,19 +964,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .set({ emailVerified: true, updatedAt: new Date() })
             .where(eq(schema.user.id, user.id));
           yield* db
-            .update((schema as any).authIdentifiers)
+            .update(authIdentifiers)
             .set({ verifiedAt: Date.now() })
             .where(
               and(
-                eq((schema as any).authIdentifiers.subjectId, user.id),
-                eq((schema as any).authIdentifiers.namespace, "email"),
+                eq(authIdentifiers.subjectId, user.id),
+                eq(authIdentifiers.namespace, "email"),
               ),
             );
-          yield* provisionEmailCredential(
-            db,
-            options.appAuth.strategies.email.persistence.moduleId as string,
-            user.id,
-          );
+          yield* sendWelcomeAfterVerification(user);
 
           return { status: "ok" as const };
         });
@@ -971,18 +1002,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .set({ email: payload.email, emailVerified: true, updatedAt: new Date() })
             .where(eq(schema.user.id, user.id));
           yield* db
-            .update((schema as any).authIdentifiers)
+            .update(authIdentifiers)
             .set({ value: payload.email, verifiedAt: Date.now() })
             .where(
               and(
-                eq((schema as any).authIdentifiers.subjectId, user.id),
-                eq((schema as any).authIdentifiers.namespace, "email"),
+                eq(authIdentifiers.subjectId, user.id),
+                eq(authIdentifiers.namespace, "email"),
               ),
             );
-          yield* db
-            .update(schema.authEmailCredentials)
-            .set({ identifierValue: payload.email })
-            .where(eq(schema.authEmailCredentials.subjectId, user.id));
 
           return { status: "ok" as const };
         });
@@ -991,7 +1018,6 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         requireUser,
         requireStepUp,
         stepUpMethods,
-        stepUpPassword,
         stepUpTotp,
         beginStepUpPasskey,
         completeStepUpPasskey,

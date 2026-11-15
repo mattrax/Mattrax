@@ -1,6 +1,8 @@
 import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import { createEffect, onCleanup } from "solid-js";
+import { isServer } from "@solidjs/web";
 import { mergeProps, splitProps } from "~/lib/solid";
 import { Check, ChevronRight } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
@@ -28,6 +30,9 @@ type DropdownMenuTriggerProps<T extends ValidComponent = "button"> = Polymorphic
 const DropdownMenuTrigger = <T extends ValidComponent = "button">(
   props: DropdownMenuTriggerProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuTriggerProps, ["class"]);
 
   return (
@@ -48,7 +53,32 @@ type DropdownMenuContentProps<T extends ValidComponent = "div"> = PolymorphicPro
 const DropdownMenuContent = <T extends ValidComponent = "div">(
   props: DropdownMenuContentProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuContentProps, ["class"]);
+
+  createEffect(
+    () => undefined,
+    () => {
+      if (isServer) return;
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        // Kobalte closes the menu on an outside pointerdown; Escape does not
+        // reach its dismissable layer in this Solid RC.
+        document.body.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }),
+        );
+      };
+
+      window.addEventListener("keydown", onKeyDown, true);
+      onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
+    },
+  );
 
   return (
     <DropdownMenuPrimitive.Content
@@ -69,6 +99,9 @@ type DropdownMenuGroupProps<T extends ValidComponent = "div"> = PolymorphicProps
   Pick<ComponentProps<T>, "class">;
 
 const DropdownMenuGroup = <T extends ValidComponent = "div">(props: DropdownMenuGroupProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuGroupProps, ["class"]);
 
   return (
@@ -85,6 +118,9 @@ type DropdownMenuLabelProps<T extends ValidComponent = "span"> = PolymorphicProp
   };
 
 const DropdownMenuLabel = <T extends ValidComponent = "span">(props: DropdownMenuLabelProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuLabelProps, ["class", "inset"]);
 
   return (
@@ -107,7 +143,12 @@ type DropdownMenuItemProps<T extends ValidComponent = "div"> = PolymorphicProps<
   };
 
 const DropdownMenuItem = <T extends ValidComponent = "div">(rawProps: DropdownMenuItemProps<T>) => {
+  // SAFETY: the default props object is described by the component props type;
+  // `merge` combines it with the caller's props under that same contract.
   const props = mergeProps({ variant: "default" } as DropdownMenuItemProps<T>, rawProps);
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuItemProps, ["class", "inset", "variant"]);
 
   return (
@@ -141,6 +182,9 @@ type DropdownMenuSubTriggerProps<T extends ValidComponent = "div"> = Polymorphic
 const DropdownMenuSubTrigger = <T extends ValidComponent = "div">(
   props: DropdownMenuSubTriggerProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuSubTriggerProps, [
     "class",
     "inset",
@@ -172,6 +216,9 @@ type DropdownMenuSubContentProps<T extends ValidComponent = "div"> = Polymorphic
 const DropdownMenuSubContent = <T extends ValidComponent = "div">(
   props: DropdownMenuSubContentProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuSubContentProps, ["class"]);
 
   return (
@@ -197,6 +244,9 @@ type DropdownMenuCheckboxItemProps<T extends ValidComponent = "div"> = Polymorph
 const DropdownMenuCheckboxItem = <T extends ValidComponent = "div">(
   props: DropdownMenuCheckboxItemProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuCheckboxItemProps, ["class", "children"]);
 
   return (
@@ -230,6 +280,9 @@ type DropdownMenuRadioGroupProps<T extends ValidComponent = "div"> = Polymorphic
 const DropdownMenuRadioGroup = <T extends ValidComponent = "div">(
   props: DropdownMenuRadioGroupProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuRadioGroupProps, ["class"]);
 
   return (
@@ -250,6 +303,9 @@ type DropdownMenuRadioItemProps<T extends ValidComponent = "div"> = PolymorphicP
 const DropdownMenuRadioItem = <T extends ValidComponent = "div">(
   props: DropdownMenuRadioItemProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuRadioItemProps, ["class", "children"]);
 
   return (
@@ -283,6 +339,9 @@ type DropdownMenuSeparatorProps<T extends ValidComponent = "hr"> = PolymorphicPr
 const DropdownMenuSeparator = <T extends ValidComponent = "hr">(
   props: DropdownMenuSeparatorProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as DropdownMenuSeparatorProps, ["class"]);
 
   return (

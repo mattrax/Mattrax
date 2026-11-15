@@ -6,6 +6,7 @@ import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { CircleAlert } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 import {
   PLAN_LIMIT_REACHED_BODY,
   PLAN_LIMIT_REACHED_TITLE,
@@ -41,6 +42,7 @@ const statusTone = (status: string | null | undefined, configured: boolean) => {
 
 export default function BillingSettingsPage() {
   const params = useParams();
+  const { can } = useCan();
 
   const billing = useQuery(() => ({
     queryKey: enterpriseKeys.billing(params.tenantId),
@@ -114,13 +116,15 @@ export default function BillingSettingsPage() {
         </div>
 
         <div class="mt-4 border-t border-white/[0.06] pt-4">
-          <Button
-            variant="outline"
-            onClick={() => portal.mutate()}
-            disabled={portal.isPending || billing.isLoading || !configured()}
-          >
-            {portal.isPending ? "Opening…" : "Open billing portal"}
-          </Button>
+          <Show when={can("billing.write")}>
+            <Button
+              variant="outline"
+              onClick={() => portal.mutate()}
+              disabled={portal.isPending || billing.isLoading || !configured()}
+            >
+              {portal.isPending ? "Opening…" : "Open billing portal"}
+            </Button>
+          </Show>
           <Show when={!configured()}>
             <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
               The billing portal is unavailable until Stripe is configured for this deployment.

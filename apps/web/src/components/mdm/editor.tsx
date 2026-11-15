@@ -1,5 +1,7 @@
 import { useParams } from "@solidjs/router";
+import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { Option, Schema } from "effect";
 import {
   createEffect,
   createMemo,
@@ -11,13 +13,13 @@ import {
   Switch,
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
-import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { chord, useCommands } from "~/lib/commands";
-import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage, raisedFailure } from "~/lib/errors";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 
 const keys = {
@@ -28,13 +30,41 @@ const keys = {
   windows: "mttx.windows.custom.default",
 } as const;
 
-const isCustomProfile = (kind: string, value: unknown) =>
-  /^mttx\.apple\.custom\.[^.]+$/.test(kind) &&
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as { content?: unknown }).content === "string";
+const CustomProfile = Schema.Struct({
+  content: Schema.String,
+  fileName: Schema.optional(Schema.String),
+  signed: Schema.optional(Schema.Boolean),
+});
 
-type Config = Record<string, any>;
+const CertificateConfig = Schema.Struct({ pem: Schema.optional(Schema.String) });
+
+const DeviceConfig = Schema.Struct({ camera: Schema.optional(Schema.Boolean) });
+
+const WindowsConfig = Schema.Struct({
+  omaUri: Schema.optional(Schema.String),
+  value: Schema.optional(Schema.String),
+  format: Schema.optional(Schema.String),
+});
+
+const Config = Schema.Record(Schema.String, Schema.Json);
+
+type Config = typeof Config.Type;
+
+type CustomProfile = typeof CustomProfile.Type;
+
+const decodeConfig = Schema.decodeUnknownOption(Config);
+
+const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
+
+const decodeCustomProfile = Schema.decodeUnknownOption(CustomProfile);
+
+const decodeCertificate = Schema.decodeUnknownOption(CertificateConfig);
+
+const decodeDeviceConfig = Schema.decodeUnknownOption(DeviceConfig);
+
+const decodeWindowsConfig = Schema.decodeUnknownOption(WindowsConfig);
+
+const isCustomProfileKind = (kind: string) => /^mttx\.apple\.custom\.[^.]+$/.test(kind);
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent p-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -50,13 +80,15 @@ const sections = [
 export function PolicyConfigurationEditor() {
   const params = useParams();
   const queryClient = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("policies.write");
 
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => policy.data as PolicyRow | undefined;
+  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
   const [canEdit, setCanEdit] = createSignal(false);
   const [active, setActive] = createSignal("custom");
   const [config, setConfig] = createSignal<Config>({});
@@ -69,16 +101,19 @@ export function PolicyConfigurationEditor() {
       const configurations = row()?.configurations;
 
       if (!configurations) return;
-      setConfig(configurations);
-      setInitial(JSON.stringify(configurations));
-      setRaw(JSON.stringify(configurations, null, 2));
+
+      const decoded = Option.getOrUndefined(decodeConfig(configurations)) ?? {};
+
+      setConfig(decoded);
+      setInitial(JSON.stringify(decoded));
+      setRaw(JSON.stringify(decoded, null, 2));
     },
   );
 
   const dirty = createMemo(() => JSON.stringify(config()) !== initial());
   const configuredKinds = createMemo(() => Object.keys(config()).length);
 
-  const setKey = (key: string, value: unknown) =>
+  const setKey = (key: string, value: Schema.Json) =>
     setConfig((current) => ({ ...current, [key]: value }));
 
   const save = useMutation(() => ({
@@ -94,9 +129,18 @@ export function PolicyConfigurationEditor() {
   }));
 
   const toggleEdit = () => {
+    if (!writable()) return;
+
     if (canEdit() && dirty()) save.mutate();
     else setCanEdit(!canEdit());
   };
+
+  createEffect(
+    () => writable(),
+    (allowed) => {
+      if (!allowed) setCanEdit(false);
+    },
+  );
 
   const cancel = () => {
     setConfig(JSON.parse(initial()));
@@ -121,6 +165,7 @@ export function PolicyConfigurationEditor() {
       title: "Toggle edit mode",
       subtitle: "Switch between read-only and editable configurations",
       group: "This page",
+      enabled: writable,
       run: toggleEdit,
     },
     {
@@ -182,18 +227,25 @@ export function PolicyConfigurationEditor() {
             >
               Open designer
             </Button>
-            <Button variant={canEdit() ? "default" : "outline"} onClick={toggleEdit}>
-              {!canEdit() ? "Edit" : dirty() ? "Save" : "Done"}
-            </Button>
-            <Show when={canEdit()}>
-              <Button variant="ghost" onClick={cancel}>
-                Cancel
+            <Show when={writable()}>
+              <Button variant={canEdit() ? "default" : "outline"} onClick={toggleEdit}>
+                {!canEdit() ? "Edit" : dirty() ? "Save" : "Done"}
               </Button>
+              <Show when={canEdit()}>
+                <Button variant="ghost" onClick={cancel}>
+                  Cancel
+                </Button>
+              </Show>
             </Show>
           </>
         }
       />
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+      <Show when={!writable()}>
+        <ReadOnlyNotice>
+          Your role can view this policy's configuration but not edit it.
+        </ReadOnlyNotice>
+      </Show>
       <div class="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
         <EditorNav active={active()} setActive={setActive} canEdit={canEdit()} />
         <Panel
@@ -313,14 +365,14 @@ function EditorNav(props: {
                   {section.label}
                 </span>
               </span>
-              <span class="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+              <span class="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {section.hint}
               </span>
             </Button>
           );
         })}
         <Show when={!props.canEdit}>
-          <p class="hidden px-2 py-1 text-[10.5px] leading-relaxed text-muted-foreground/70 lg:block">
+          <p class="hidden px-2 py-1 text-[10.5px] leading-relaxed text-muted-foreground lg:block">
             Choose Edit to change these settings.
           </p>
         </Show>
@@ -329,8 +381,11 @@ function EditorNav(props: {
   );
 }
 
-function SecuritySection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
-  const cert = () => props.config[keys.cert] as { pem?: string } | null | undefined;
+function SecuritySection(props: {
+  config: Config;
+  setKey: (key: string, value: Schema.Json) => void;
+}) {
+  const cert = () => Option.getOrUndefined(decodeCertificate(props.config[keys.cert]));
 
   const uploadCert = async () =>
     props.setKey(keys.cert, {
@@ -371,8 +426,12 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
   );
 }
 
-function DeviceSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
-  const device = () => (props.config[keys.device] ?? { camera: true }) as { camera?: boolean };
+function DeviceSection(props: {
+  config: Config;
+  setKey: (key: string, value: Schema.Json) => void;
+}) {
+  const device = () =>
+    Option.getOrUndefined(decodeDeviceConfig(props.config[keys.device])) ?? { camera: true };
 
   return (
     <div class="space-y-4">
@@ -399,9 +458,11 @@ function DeviceSection(props: { config: Config; setKey: (key: string, value: unk
   );
 }
 
-function WindowsSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
-  const current = () =>
-    props.config[keys.windows] as { omaUri?: string; value?: string; format?: string } | undefined;
+function WindowsSection(props: {
+  config: Config;
+  setKey: (key: string, value: Schema.Json) => void;
+}) {
+  const current = () => Option.getOrUndefined(decodeWindowsConfig(props.config[keys.windows]));
 
   return (
     <div class="space-y-4">
@@ -448,14 +509,18 @@ function WindowsSection(props: { config: Config; setKey: (key: string, value: un
 
 function CustomSection(props: {
   config: Config;
-  setKey: (key: string, value: unknown) => void;
+  setKey: (key: string, value: Schema.Json) => void;
   policyId: string;
 }) {
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
 
   const profiles = () =>
-    Object.entries(props.config).filter(([kind, value]) => isCustomProfile(kind, value));
+    Object.entries(props.config).flatMap(([kind, value]) => {
+      const profile = Option.getOrUndefined(decodeCustomProfile(value));
+
+      return profile !== undefined && isCustomProfileKind(kind) ? [[kind, profile] as const] : [];
+    });
 
   const nextKind = () => {
     for (let index = 1; ; index++) {
@@ -485,12 +550,15 @@ function CustomSection(props: {
       });
     } catch (cause) {
       if (cause instanceof Error && /abort/i.test(cause.name)) return;
-      setError(errorMessage(cause, "Could not read that file."));
+      setError(errorMessage(raisedFailure(cause), "Could not read that file."));
     }
   };
 
   const extract = async (kind: string) => {
-    const value = props.config[kind] as { content: string; fileName?: string };
+    const value = Option.getOrUndefined(decodeCustomProfile(props.config[kind]));
+
+    if (value === undefined) return;
+
     setBusy(kind);
     setError(null);
 
@@ -502,7 +570,7 @@ function CustomSection(props: {
         signed: false,
       });
     } catch (cause) {
-      setError(errorMessage(cause, "Could not remove the signature."));
+      setError(errorMessage(raisedFailure(cause), "Could not remove the signature."));
     } finally {
       setBusy(null);
     }
@@ -533,13 +601,7 @@ function CustomSection(props: {
       >
         <div class="space-y-3">
           <For each={profiles()}>
-            {([kind, value]) => {
-              const profile = value as {
-                content: string;
-                fileName?: string;
-                signed?: boolean;
-              };
-
+            {([kind, profile]) => {
               return (
                 <div class="overflow-hidden rounded-lg border border-border">
                   <div class="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2">

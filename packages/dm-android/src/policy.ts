@@ -1,4 +1,4 @@
-import { Data } from "effect";
+import { Data, Schema } from "effect";
 
 /**
  * Raised when a policy cannot be merged safely.
@@ -16,14 +16,14 @@ export class PolicyMergeError extends Data.TaggedError("PolicyMergeError")<{
 
 const FORBIDDEN_KEYS = new Set(["name", "policyName"]);
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isPlainObject(value: Schema.Json | PolicyDocumentInput): value is Schema.JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value) as unknown;
+  const prototype: unknown = Object.getPrototypeOf(value);
 
   return prototype === Object.prototype || prototype === null;
 }
 
-function assertNoForbiddenKeys(value: unknown, path: string): void {
+function assertNoForbiddenKeys(value: PolicyDocumentInput, path: string): void {
   if (!isPlainObject(value)) return;
 
   for (const key of Object.keys(value)) {
@@ -38,30 +38,30 @@ function assertNoForbiddenKeys(value: unknown, path: string): void {
 }
 
 /** Stable JSON representation: object keys sorted recursively, arrays kept in order. */
-export function canonicalPolicyJson(value: unknown): string {
+export function canonicalPolicyJson(value: Schema.Json): string {
   return JSON.stringify(sortKeysDeep(value));
 }
 
-function sortKeysDeep(value: unknown): unknown {
+function sortKeysDeep(value: Schema.Json): Schema.Json {
   if (Array.isArray(value)) return value.map(sortKeysDeep);
 
   if (!isPlainObject(value)) return value;
-  const sorted: Record<string, unknown> = {};
+  const sorted: Record<string, Schema.Json> = {};
 
   for (const key of Object.keys(value).sort()) sorted[key] = sortKeysDeep(value[key]);
 
   return sorted;
 }
 
-function stableIdentity(value: unknown): string {
+function stableIdentity(value: Schema.Json): string {
   return canonicalPolicyJson(value);
 }
 
 function uniqueConcat(
-  existing: ReadonlyArray<unknown>,
-  incoming: ReadonlyArray<unknown>,
-): Array<unknown> {
-  const result: Array<unknown> = [];
+  existing: ReadonlyArray<Schema.Json>,
+  incoming: ReadonlyArray<Schema.Json>,
+): Array<Schema.Json> {
+  const result: Array<Schema.Json> = [];
   const seen = new Set<string>();
 
   for (const item of [...existing, ...incoming]) {
@@ -76,10 +76,10 @@ function uniqueConcat(
 }
 
 function mergeInto(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
+  target: Record<string, Schema.Json>,
+  source: PolicyDocumentInput,
   path: string,
-): Record<string, unknown> {
+): Record<string, Schema.Json> {
   for (const [key, value] of Object.entries(source)) {
     if (path === "" && FORBIDDEN_KEYS.has(key)) {
       throw new PolicyMergeError({
@@ -96,7 +96,11 @@ function mergeInto(
     if (Array.isArray(value)) {
       target[key] = uniqueConcat(Array.isArray(existing) ? existing : [], value);
     } else if (isPlainObject(value)) {
-      target[key] = mergeInto(isPlainObject(existing) ? { ...existing } : {}, value, childPath);
+      target[key] = mergeInto(
+        isPlainObject(existing) ? Object.assign({}, existing) : {},
+        value,
+        childPath,
+      );
     } else {
       target[key] = value;
     }
@@ -117,10 +121,12 @@ function mergeInto(
  * The result has recursively sorted keys so identical inputs always produce
  * byte-identical JSON.
  */
+export type PolicyDocumentInput = { readonly [key: string]: Schema.Json | undefined };
+
 export function mergeAndroidPolicies(
-  policies: ReadonlyArray<Record<string, unknown>>,
-): Record<string, unknown> {
-  let merged: Record<string, unknown> = {};
+  policies: ReadonlyArray<PolicyDocumentInput>,
+): Schema.JsonObject {
+  let merged: Record<string, Schema.Json> = {};
 
   for (const policy of policies) {
     if (!isPlainObject(policy)) {
@@ -134,11 +140,16 @@ export function mergeAndroidPolicies(
     merged = mergeInto(merged, policy, "");
   }
 
-  return sortKeysDeep(merged) as Record<string, unknown>;
+  const sorted = sortKeysDeep(merged);
+
+  if (!isPlainObject(sorted))
+    throw new PolicyMergeError({ message: "Compiled policy must be an object", path: "" });
+
+  return sorted;
 }
 
 /** SHA-256 (hex) of the canonical JSON representation of a policy. */
-export async function androidPolicyHash(policy: Record<string, unknown>): Promise<string> {
+export async function androidPolicyHash(policy: Schema.JsonObject): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(canonicalPolicyJson(policy)),
@@ -157,10 +168,6 @@ export type AndroidPolicyConfiguration = {
   readonly data: unknown;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Extract the Google policy document from one stored configuration.
  *
@@ -168,29 +175,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * the policy object itself. `draft` is editor state and must never reach
  * Google.
  */
-function policyFromConfiguration(
-  configuration: AndroidPolicyConfiguration,
-): Record<string, unknown> {
+function policyFromConfiguration(configuration: AndroidPolicyConfiguration): Schema.JsonObject {
   const data = configuration.data;
 
-  if (!isRecord(data))
+  if (!Schema.is(Schema.Json)(data) || !isPlainObject(data))
     throw new PolicyMergeError({
       message: `"${configuration.kind}" must be an object`,
       path: configuration.kind,
     });
 
   if (data["policy"] !== undefined) {
-    if (!isRecord(data["policy"]))
+    const policy = data["policy"];
+
+    if (!Schema.is(Schema.Json)(policy) || !isPlainObject(policy))
       throw new PolicyMergeError({
         message: `"${configuration.kind}.policy" must be an object`,
         path: `${configuration.kind}.policy`,
       });
 
-    return data["policy"];
+    return policy;
   }
 
-  const policy = { ...data };
-  delete policy["draft"];
+  const policy: Record<string, Schema.Json> = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key !== "draft") policy[key] = value;
+  }
 
   return policy;
 }
@@ -202,10 +212,10 @@ function policyFromConfiguration(
  */
 export function compileAndroidPolicy(
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Record<string, unknown> {
-  const policies = configurations
-    .filter((configuration) => isAndroidPolicyKind(configuration.kind))
-    .map(policyFromConfiguration);
+): Schema.JsonObject {
+  const policies = configurations.flatMap((configuration) =>
+    isAndroidPolicyKind(configuration.kind) ? [policyFromConfiguration(configuration)] : [],
+  );
 
   return mergeAndroidPolicies(policies);
 }
@@ -228,7 +238,7 @@ export function androidPolicyIdForHash(hash: string): string {
 /** Compile and hash in one step; the hash identifies the policy id. */
 export async function compileAndroidPolicyWithHash(
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Promise<{ policy: Record<string, unknown>; hash: string }> {
+): Promise<{ policy: Schema.JsonObject; hash: string }> {
   const policy = compileAndroidPolicy(configurations);
 
   return { policy, hash: await androidPolicyHash(policy) };

@@ -28,6 +28,7 @@ const DEVICE_READ = new Set([
   "getDevicePushHealth",
   "getCredentialHealth",
   "getDeviceEffectivePolicy",
+  "getDeviceUsers",
   "listDevicePreRegistrations",
 ]);
 
@@ -39,6 +40,7 @@ const DEVICE_WRITE = new Set([
   "importDevicePreRegistrations",
   "deviceUnenroll",
   "revokeDeviceIdentity",
+  "setDeviceUsers",
 ]);
 
 const GROUP_READ = new Set(["listGroups", "getGroup", "previewGroup"]);
@@ -173,11 +175,16 @@ const WEBHOOK_WRITE = new Set([
   "testWebhookEndpoint",
 ]);
 
-const MEMBER_READ = new Set(["listTenantUsers", "listTenantInvitations"]);
+const MEMBER_READ = new Set([
+  "listTenantUsers",
+  "listTenantInvitations",
+  "getTenantInvitationOptions",
+]);
 
 const MEMBER_WRITE = new Set([
   "inviteTenantUser",
   "cancelTenantInvitation",
+  "resendTenantInvitation",
   "patchTenantUser",
   "removeTenantUser",
 ]);
@@ -185,8 +192,11 @@ const MEMBER_WRITE = new Set([
 const ROLE_READ = new Set(["listTenantRoles"]);
 const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenantRole"]);
 
-const EXPLICIT: Record<string, Permission> = {
+const EXPLICIT = {
   getTenant: "tenant.read",
+  // Directory lists expose member names and email addresses, so they need the
+  // same permission as the member list rather than plain tenant read.
+  listDirectory: "members.read",
   search: "tenant.read",
   patchTenant: "tenant.write",
   deleteTenant: "tenant.delete",
@@ -205,10 +215,26 @@ const EXPLICIT: Record<string, Permission> = {
   getDeviceRecoveryKey: "devices.recovery_key",
   extractMobileconfig: "policies.read",
   previewMobileconfig: "policies.read",
-};
+} satisfies Record<string, Permission>;
+
+const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
+
+/**
+ * Account-scoped endpoints. These authenticate the caller but never resolve a
+ * tenant membership, so no tenant permission applies and a custom role cannot
+ * gain access to them by name. `bootstrap` is the SSR shell read: it returns
+ * only the caller's own account and memberships.
+ */
+const ACCOUNT_METHODS = new Set(["bootstrap"]);
+
+export const isAccountMethod = (method: string): boolean => ACCOUNT_METHODS.has(method);
 
 export const permissionForMethod = (method: string): Permission | undefined => {
-  if (EXPLICIT[method]) return EXPLICIT[method];
+  if (ACCOUNT_METHODS.has(method)) return undefined;
+
+  const explicit = EXPLICIT_PERMISSIONS.get(method);
+
+  if (explicit) return explicit;
 
   if (DEVICE_READ.has(method)) return "devices.read";
 
@@ -254,14 +280,43 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   if (ROLE_WRITE.has(method)) return "roles.write";
 
+  // Public invitations: accepting and previewing are token-bound and gated by
+  // the caller layer's rate limit instead of a tenant membership.
+  if (
+    method === "acceptInvitation" ||
+    method === "previewInvitation" ||
+    method === "getEnrollment"
+  )
+    return undefined;
+
   // Unknown methods fail safe to tenant write for mutations and tenant read for
   // obvious reads. This keeps future endpoints permission-checked by default.
   if (/^(list|get|search|export|preview|download)/.test(method)) return "tenant.read";
 
-  if (method === "acceptInvitation" || method === "getEnrollment") return undefined;
-
   return "tenant.write";
 };
+
+const rolesOf = (role: string) =>
+  role
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+/** Legacy memberships may carry several comma-separated built-in roles. */
+export const hasOwnerRole = (role: string) => rolesOf(role).includes("owner");
+
+type OwnerCandidate = {
+  readonly role: string;
+  readonly customRoleId?: string | null;
+};
+
+/**
+ * Owner authority comes only from the built-in owner role. A member assigned a
+ * custom role is a delegation, so it must never count as an owner even when the
+ * legacy `member.role` column still contains `owner`.
+ */
+export const isBuiltInOwnerMember = (member: OwnerCandidate) =>
+  member.customRoleId == null && hasOwnerRole(member.role);
 
 export type ResolvedTenantRole = {
   readonly roleName: string;

@@ -1,17 +1,28 @@
 /**
- * Stateless per-enrollment SCEP challenge passwords.
+ * Per-enrollment SCEP challenge passwords.
  *
  * A challenge is derived from the enrollment id and the application secret rather
  * than stored in the database, so resetting an enrollment (which allocates a new
  * id) automatically invalidates every previously issued challenge.
  *
+ * This helper is intentionally stateless: it can prove that a value was minted
+ * for an enrollment, but not that it was used. Replay protection needs shared
+ * state, so hosts that hand a challenge to a device also persist its digest and
+ * consume it once (see the enterprise management backend).
+ *
  * Encodings accepted by {@link verifyScepChallenge}:
  *   - `<enrollmentId>.<signature>`
  *   - `<enrollmentId>.<expiresAtEpochSeconds>.<signature>` (signed payload includes
  *     the expiry, so a stale challenge fails closed)
+ *   - `<enrollmentId>.<expiresAtEpochSeconds>.<nonce>.<signature>` (one-time
+ *     challenges; the nonce makes every issued value unique)
  */
 
 const encoder = new TextEncoder();
+
+/** Expiry (Unix epoch seconds) of a challenge created with the given lifetime. */
+export const scepChallengeExpiresAt = (ttlSeconds: number, now = Date.now()): number =>
+  Math.floor(now / 1000) + ttlSeconds;
 
 const toBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
@@ -51,11 +62,15 @@ export type ScepChallengeVerification = {
   readonly enrollmentId: string;
   /** Unix epoch seconds when the challenge expires, if it carries an expiry. */
   readonly expiresAt?: number;
+  /** One-time nonce carried by the challenge, when present. */
+  readonly nonce?: string;
 };
 
 export type ScepChallengeOptions = {
   /** Optional lifetime. When omitted the challenge does not expire. */
   readonly ttlSeconds?: number;
+  /** Optional one-time nonce. Requires `ttlSeconds` so the encoding stays unambiguous. */
+  readonly nonce?: string;
   /** Injectable clock for tests. */
   readonly now?: number;
 };
@@ -68,12 +83,19 @@ export const createScepChallenge = async (
   if (!enrollmentId) throw new Error("Enrollment id is required");
 
   if (options.ttlSeconds === undefined) {
+    if (options.nonce !== undefined) throw new Error("A challenge nonce requires ttlSeconds");
+
     return `${enrollmentId}.${await hmac(authSecret, enrollmentId)}`;
   }
 
-  const expiresAt = Math.floor((options.now ?? Date.now()) / 1000) + options.ttlSeconds;
+  const expiresAt = scepChallengeExpiresAt(options.ttlSeconds, options.now);
 
-  return `${enrollmentId}.${expiresAt}.${await hmac(authSecret, `${enrollmentId}.${expiresAt}`)}`;
+  const payload =
+    options.nonce === undefined
+      ? `${enrollmentId}.${expiresAt}`
+      : `${enrollmentId}.${expiresAt}.${options.nonce}`;
+
+  return `${payload}.${await hmac(authSecret, payload)}`;
 };
 
 export const verifyScepChallenge = async (
@@ -83,7 +105,7 @@ export const verifyScepChallenge = async (
 ): Promise<ScepChallengeVerification | null> => {
   if (!challenge) return null;
   const parts = challenge.split(".");
-  const [enrollmentId, middle, signature] = parts;
+  const [enrollmentId, middle, third, fourth] = parts;
 
   if (!enrollmentId) return null;
 
@@ -99,12 +121,28 @@ export const verifyScepChallenge = async (
     if (!Number.isFinite(expiresAt)) return null;
     const expected = await hmac(authSecret, `${enrollmentId}.${middle}`);
 
-    if (!timingSafeEqual(expected, signature ?? "")) return null;
+    if (!timingSafeEqual(expected, third ?? "")) return null;
     const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
 
     if (nowSeconds > expiresAt) return null;
 
     return { enrollmentId, expiresAt };
+  }
+
+  if (parts.length === 4) {
+    const expiresAt = Number(middle);
+    const nonce = third;
+
+    if (!Number.isFinite(expiresAt) || !nonce) return null;
+
+    const expected = await hmac(authSecret, `${enrollmentId}.${middle}.${nonce}`);
+
+    if (!timingSafeEqual(expected, fourth ?? "")) return null;
+    const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
+
+    if (nowSeconds > expiresAt) return null;
+
+    return { enrollmentId, expiresAt, nonce };
   }
 
   return null;

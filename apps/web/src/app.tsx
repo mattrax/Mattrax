@@ -1,72 +1,33 @@
-import { Head, Title } from "@solidjs/meta";
-import { createRouter } from "@solidjs/router";
+import { Head, Link, Meta, Title } from "@solidjs/meta";
+import { createRouter, useLocation } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
-import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import { isServer } from "@solidjs/web";
-import { Errored, Loading, createEffect, onSettled } from "solid-js";
+import { getRequestEvent, isServer } from "@solidjs/web";
+import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
-import { errorPresentation, errorTag } from "~/lib/errors";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
-import { reportGlobalError } from "~/lib/global-errors";
-import { authClient } from "~/lib/auth";
-import { syncPostHogUser } from "~/lib/posthog";
 import "./app.css";
-
-// Data lives behind the API Worker's auth and only the browser has the session
-// it expects. Keeping queries idle during SSR avoids holding the document open
-// (and serializing transport errors) while the client fetches after hydration.
-const queryClient = new QueryClient({
-  mutationCache: new MutationCache({
-    onError: (error, _variables, _context, mutation) => {
-      // Mutations that render their own inline error opt out with
-      // `meta: { inlineError: true }` to avoid showing the same failure twice.
-      if (mutation.meta?.inlineError) return;
-      reportGlobalError(error);
-    },
-  }),
-  defaultOptions: {
-    queries: {
-      enabled: !isServer,
-      retry: (count, error) => {
-        // Client errors (4xx) will not get better by retrying.
-        const tag = errorTag(error);
-
-        if (
-          tag &&
-          (tag.startsWith("Enterprise") ||
-            tag.startsWith("Platform") ||
-            tag.startsWith("Password") ||
-            tag.startsWith("Session"))
-        )
-          return false;
-
-        return count < 1;
-      },
-    },
-  },
-});
 
 const Router = createRouter({ routes: fileRoutes(pageRoutes) });
 
-/**
- * Keep browser analytics identity aligned with the dashboard session. The
- * server-side API capture uses the authenticated id; this makes browser
- * pageviews, session ids and server events resolve to the same person.
- */
-function PostHogIdentity() {
-  const session = authClient.useSession();
-  createEffect(
-    () => {
-      const state = session();
+const SITE_TITLE = "Mattrax";
 
-      return state.isPending ? undefined : (state.data?.user ?? null);
-    },
-    (user) => {
-      if (user !== undefined) syncPostHogUser(user);
-    },
-  );
+const SITE_DESCRIPTION =
+  "Enrollment, policy, inventory and remote actions for Apple, Windows and Android fleets, with a clean API, a real audit trail and a deployment model that fits how you work.";
 
-  return null;
+const SOCIAL_IMAGE = "/assets/brand/og-image.jpg";
+
+const TOUCH_ICON = "/assets/brand/apple-touch-icon.png";
+
+/** Public origin for absolute social URLs; localhost and self-hosted deployments keep their own host. */
+function siteOrigin() {
+  if (isServer) {
+    const request = getRequestEvent()?.request;
+
+    if (request) return new URL(request.url).origin;
+  }
+
+  return typeof window === "undefined" ? "https://mattrax.app" : window.location.origin;
 }
 
 function BootSplash() {
@@ -84,7 +45,7 @@ function BootSplash() {
 
 function ErrorFallback(props: { error: unknown; reset: () => void }) {
   console.error("Mattrax page error", props.error);
-  const presentation = errorPresentation(props.error);
+  const presentation = errorPresentation(raisedFailure(props.error));
 
   return (
     <div class="dark flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
@@ -114,7 +75,22 @@ function ErrorFallback(props: { error: unknown; reset: () => void }) {
   );
 }
 
+/** Canonical and social URL for the current route, on the host serving it. */
+function RouteUrl(props: { origin: string }) {
+  const location = useLocation();
+  const url = () => `${props.origin}${location.pathname}`;
+
+  return (
+    <>
+      <Link rel="canonical" href={url()} />
+      <Meta property="og:url" content={url()} />
+    </>
+  );
+}
+
 export default function App() {
+  const origin = siteOrigin();
+
   // Browser tests (and the first user interaction) need a deterministic signal
   // that hydration completed; SSR markup alone does not attach event handlers.
   onSettled(() => {
@@ -125,14 +101,19 @@ export default function App() {
     <Router>
       {(props) => (
         <Head>
-          <Title>Mattrax</Title>
-          <QueryClientProvider client={queryClient}>
-            <PostHogIdentity />
-            <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
-              <Loading fallback={<BootSplash />}>{props.children}</Loading>
-            </Errored>
-            <GlobalErrorBanner />
-          </QueryClientProvider>
+          <Title>{SITE_TITLE}</Title>
+          <Meta name="description" content={SITE_DESCRIPTION} />
+          <Meta property="og:title" content={SITE_TITLE} />
+          <Meta property="og:description" content={SITE_DESCRIPTION} />
+          <Meta property="og:type" content="website" />
+          <Meta property="og:image" content={`${origin}${SOCIAL_IMAGE}`} />
+          <Meta name="twitter:card" content="summary_large_image" />
+          <RouteUrl origin={origin} />
+          <Link rel="apple-touch-icon" sizes="180x180" href={TOUCH_ICON} />
+          <Errored fallback={(error, reset) => <ErrorFallback error={error()} reset={reset} />}>
+            <Loading fallback={<BootSplash />}>{props.children}</Loading>
+          </Errored>
+          <GlobalErrorBanner />
         </Head>
       )}
     </Router>

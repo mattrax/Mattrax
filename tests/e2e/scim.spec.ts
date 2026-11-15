@@ -14,16 +14,20 @@ test.describe("SCIM provisioning", () => {
 
       if (!response.ok) throw new Error(await response.text());
 
-      return (await response.json()) as { token: string; baseUrl: string };
+      const body: { token: string; baseUrl: string } = await response.json();
+
+      return body;
     }, tenant.id);
 
     const scim = async (path: string, init?: RequestInit) => {
+      const extraHeaders = init?.headers ? Object.fromEntries(new Headers(init.headers)) : {};
+
       const response = await page.request.fetch(`${created.baseUrl}${path}`, {
         ...init,
         headers: {
           authorization: `Bearer ${created.token}`,
           "content-type": "application/scim+json",
-          ...(init?.headers as Record<string, string> | undefined),
+          ...extraHeaders,
         },
       });
 
@@ -33,7 +37,7 @@ test.describe("SCIM provisioning", () => {
     const list = await scim("/Users");
     const listText = await list.text();
     expect(list.ok(), `${list.status()} ${listText}`).toBe(true);
-    const before = JSON.parse(listText) as { totalResults: number };
+    const before: { totalResults: number } = JSON.parse(listText);
     expect(before.totalResults).toBeGreaterThanOrEqual(1);
 
     const email = uniqueEmail("scim");
@@ -50,7 +54,7 @@ test.describe("SCIM provisioning", () => {
     });
 
     expect(create.status()).toBe(201);
-    const user = (await create.json()) as { id: string; userName: string };
+    const user: { id: string; userName: string } = await create.json();
     expect(user.userName).toBe(email);
 
     const groupResponse = await scim("/Groups", {
@@ -63,7 +67,7 @@ test.describe("SCIM provisioning", () => {
     });
 
     expect(groupResponse.status()).toBe(201);
-    const group = (await groupResponse.json()) as { id: string; members: unknown[] };
+    const group: { id: string; members: unknown[] } = await groupResponse.json();
     expect(group.members).toHaveLength(1);
 
     const patch = await scim(`/Groups/${group.id}`, {
@@ -80,7 +84,7 @@ test.describe("SCIM provisioning", () => {
     expect(remove.status()).toBe(204);
 
     const after = await scim("/Users");
-    const result = (await after.json()) as { Resources: Array<{ id: string }> };
+    const result: { Resources: Array<{ id: string }> } = await after.json();
     expect(result.Resources.some((resource) => resource.id === user.id)).toBe(false);
   });
 });

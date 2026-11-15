@@ -1,9 +1,10 @@
 import { useParams } from "@solidjs/router";
+import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -17,6 +18,7 @@ import {
   Smartphone,
 } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type AutopilotProfileInfo } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
 
@@ -29,6 +31,8 @@ const textareaClass =
 export default function ManagementSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("management.write");
 
   const apns = useQuery(() => ({
     queryKey: enterpriseKeys.apns(params.tenantId),
@@ -297,12 +301,18 @@ export default function ManagementSettingsPage() {
 
       if (!response.ok) {
         const body = await response.json().catch(() => undefined);
-        throw new Error(errorMessage(body, `CSR request failed (${response.status})`));
+        throw new Error(
+          errorMessage(raisedFailure(body), `CSR request failed (${response.status})`),
+        );
       }
 
-      const data = (await response.json()) as { plist?: string };
+      const data = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Struct({ plist: Schema.optional(Schema.String) }))(
+          await response.json(),
+        ),
+      );
 
-      if (!data.plist) throw new Error("The server did not return a CSR");
+      if (data?.plist === undefined) throw new Error("The server did not return a CSR");
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/x-plist" }));
       const link = document.createElement("a");
@@ -312,7 +322,7 @@ export default function ManagementSettingsPage() {
       URL.revokeObjectURL(url);
       setStep(2);
     } catch (error) {
-      setCsrError(errorMessage(error, "Could not download the CSR"));
+      setCsrError(errorMessage(raisedFailure(error), "Could not download the CSR"));
     }
   };
 
@@ -472,7 +482,7 @@ export default function ManagementSettingsPage() {
               </pre>
             </Show>
             <ErrorText error={upload.error} />
-            <Button type="submit" disabled={upload.isPending || !cert()}>
+            <Button type="submit" disabled={!writable() || upload.isPending || !cert()}>
               {upload.isPending ? "Uploading…" : "Save certificate"}
             </Button>
           </form>
@@ -533,11 +543,9 @@ export default function ManagementSettingsPage() {
                 <>
                   <Show when={!data().configured}>
                     <p class="text-xs leading-relaxed text-muted-foreground">
-                      Android Enterprise is not configured for this deployment. Set{" "}
-                      <span class="break-all font-mono text-[11px]">
-                        ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON
-                      </span>{" "}
-                      and restart the API. Android enrollment stays unavailable until then.
+                      Android Enterprise is not available on this deployment yet. Your Mattrax
+                      operator needs to connect a Google Cloud project before you can link it here
+                      and enroll Android devices.
                     </p>
                   </Show>
                   <Show when={data().configured && !data().enterpriseName}>
@@ -548,7 +556,7 @@ export default function ManagementSettingsPage() {
                     </p>
                     <Button
                       onClick={() => connectAndroid.mutate()}
-                      disabled={connectAndroid.isPending}
+                      disabled={!writable() || connectAndroid.isPending}
                     >
                       {connectAndroid.isPending ? "Opening Google…" : "Connect Android Enterprise"}
                     </Button>
@@ -577,7 +585,7 @@ export default function ManagementSettingsPage() {
                         <Button
                           variant="outline"
                           onClick={() => toggleAndroid.mutate(true)}
-                          disabled={toggleAndroid.isPending}
+                          disabled={!writable() || toggleAndroid.isPending}
                         >
                           Enable Android delivery
                         </Button>
@@ -586,7 +594,7 @@ export default function ManagementSettingsPage() {
                         <Button
                           variant="outline"
                           onClick={() => syncAndroid.mutate()}
-                          disabled={syncAndroid.isPending}
+                          disabled={!writable() || syncAndroid.isPending}
                         >
                           <RotateCcw class="size-4" />
                           {syncAndroid.isPending ? "Syncing…" : "Sync policies"}
@@ -594,7 +602,7 @@ export default function ManagementSettingsPage() {
                         <Button
                           variant="outline"
                           onClick={() => toggleAndroid.mutate(false)}
-                          disabled={toggleAndroid.isPending}
+                          disabled={!writable() || toggleAndroid.isPending}
                         >
                           Disable
                         </Button>
@@ -690,7 +698,9 @@ export default function ManagementSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => syncAbm.mutate()}
-                        disabled={syncAbm.isPending || data().credentialType === "legacy_dep"}
+                        disabled={
+                          !writable() || syncAbm.isPending || data().credentialType === "legacy_dep"
+                        }
                       >
                         <RotateCcw class="size-4" />
                         {syncAbm.isPending ? "Syncing…" : "Sync devices"}
@@ -698,7 +708,7 @@ export default function ManagementSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => deleteAbm.mutate()}
-                        disabled={deleteAbm.isPending}
+                        disabled={!writable() || deleteAbm.isPending}
                       >
                         Remove token
                       </Button>
@@ -717,8 +727,9 @@ export default function ManagementSettingsPage() {
                     }}
                   >
                     <p class="text-xs leading-relaxed text-muted-foreground">
-                      Upload the ABM API private key (.pem) with its Client ID and Key ID, or a
-                      legacy .p7m server token. The credential is sealed with AUTH_SECRET.
+                      Upload the Apple Business Manager API private key (.pem) with its Client ID
+                      and Key ID, or a legacy .p7m server token. Credentials are stored encrypted
+                      and never shown again.
                     </p>
                     <div class="grid gap-3 md:grid-cols-3">
                       <Field label="Client ID">
@@ -746,6 +757,7 @@ export default function ManagementSettingsPage() {
                         type="button"
                         variant="outline"
                         data-testid="abm-token-file"
+                        disabled={!writable()}
                         onClick={chooseAbmFile}
                       >
                         Choose file
@@ -757,7 +769,10 @@ export default function ManagementSettingsPage() {
                       </Show>
                     </div>
                     <ErrorText error={uploadAbm.error ?? syncAbm.error ?? deleteAbm.error} />
-                    <Button type="submit" disabled={uploadAbm.isPending || !abmContent()}>
+                    <Button
+                      type="submit"
+                      disabled={!writable() || uploadAbm.isPending || !abmContent()}
+                    >
                       {uploadAbm.isPending ? "Validating…" : "Save ABM credential"}
                     </Button>
                   </form>
@@ -831,7 +846,7 @@ export default function ManagementSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => syncVpp.mutate()}
-                        disabled={syncVpp.isPending}
+                        disabled={!writable() || syncVpp.isPending}
                       >
                         <RotateCcw class="size-4" />
                         {syncVpp.isPending ? "Syncing…" : "Sync licences"}
@@ -839,7 +854,7 @@ export default function ManagementSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => deleteVpp.mutate()}
-                        disabled={deleteVpp.isPending}
+                        disabled={!writable() || deleteVpp.isPending}
                       >
                         Remove token
                       </Button>
@@ -858,14 +873,15 @@ export default function ManagementSettingsPage() {
                     }}
                   >
                     <p class="text-xs leading-relaxed text-muted-foreground">
-                      Upload the .vpptoken content token from Apple Business Manager → Apps and
-                      Books. The token is sealed with AUTH_SECRET.
+                      Upload the .vpptoken file from Apple Business Manager → Apps and Books. The
+                      token is stored encrypted and never shown again.
                     </p>
                     <div class="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         data-testid="vpp-token-file"
+                        disabled={!writable()}
                         onClick={chooseVppFile}
                       >
                         Choose file
@@ -877,7 +893,10 @@ export default function ManagementSettingsPage() {
                       </Show>
                     </div>
                     <ErrorText error={uploadVpp.error ?? syncVpp.error ?? deleteVpp.error} />
-                    <Button type="submit" disabled={uploadVpp.isPending || !vppContent()}>
+                    <Button
+                      type="submit"
+                      disabled={!writable() || uploadVpp.isPending || !vppContent()}
+                    >
                       {uploadVpp.isPending ? "Validating…" : "Save Apps and Books token"}
                     </Button>
                   </form>
@@ -925,9 +944,8 @@ export default function ManagementSettingsPage() {
             <>
               <Show when={!data().graphConfigured}>
                 <p class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs leading-relaxed text-warning-foreground">
-                  Microsoft Graph credentials are not configured for this deployment. Set{" "}
-                  <span class="font-mono">AZURE_CLIENT_ID</span> and{" "}
-                  <span class="font-mono">AZURE_CLIENT_SECRET</span>, then restart the API.
+                  Windows Autopilot is not available on this deployment yet. Your Mattrax operator
+                  needs to connect a Microsoft Graph application before profiles can be imported.
                 </p>
               </Show>
               <Show when={data().graphConfigured && !data().azureTenantId}>
@@ -992,7 +1010,12 @@ export default function ManagementSettingsPage() {
                     onInput={(event) => setAutopilotContent(event.currentTarget.value)}
                   />
                   <div class="flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="outline" onClick={chooseAutopilotFile}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!writable()}
+                      onClick={chooseAutopilotFile}
+                    >
                       Choose CSV
                     </Button>
                     <Show when={autopilotFileName()}>
@@ -1003,6 +1026,7 @@ export default function ManagementSettingsPage() {
                     <Button
                       onClick={() => importAutopilot.mutate()}
                       disabled={
+                        !writable() ||
                         importAutopilot.isPending ||
                         !autopilotContent().trim() ||
                         !data().configured
@@ -1013,7 +1037,7 @@ export default function ManagementSettingsPage() {
                     <Button
                       variant="outline"
                       onClick={() => syncAutopilot.mutate()}
-                      disabled={syncAutopilot.isPending || !data().configured}
+                      disabled={!writable() || syncAutopilot.isPending || !data().configured}
                     >
                       <RotateCcw class="size-4" />
                       {syncAutopilot.isPending ? "Syncing…" : "Sync from Graph"}
@@ -1080,14 +1104,15 @@ export default function ManagementSettingsPage() {
                         <select
                           class={selectClass}
                           value={profileMode()}
-                          onChange={(event) =>
-                            setProfileMode(
-                              event.currentTarget.value as
-                                | "userDriven"
-                                | "selfDeploying"
-                                | "preProvisioned",
-                            )
-                          }
+                          onChange={(event) => {
+                            const value = Option.getOrUndefined(
+                              Schema.decodeUnknownOption(
+                                Schema.Literals(["userDriven", "selfDeploying", "preProvisioned"]),
+                              )(event.currentTarget.value),
+                            );
+
+                            if (value !== undefined) setProfileMode(value);
+                          }}
                         >
                           <option value="userDriven">User driven</option>
                           <option value="selfDeploying">Self deploying</option>
@@ -1098,14 +1123,19 @@ export default function ManagementSettingsPage() {
                         <select
                           class={selectClass}
                           value={profileJoinType()}
-                          onChange={(event) =>
-                            setProfileJoinType(
-                              event.currentTarget.value as
-                                | "azureADJoin"
-                                | "azureADJoinUsingDeviceAuth"
-                                | "hybridAzureADJoin",
-                            )
-                          }
+                          onChange={(event) => {
+                            const value = Option.getOrUndefined(
+                              Schema.decodeUnknownOption(
+                                Schema.Literals([
+                                  "azureADJoin",
+                                  "azureADJoinUsingDeviceAuth",
+                                  "hybridAzureADJoin",
+                                ]),
+                              )(event.currentTarget.value),
+                            );
+
+                            if (value !== undefined) setProfileJoinType(value);
+                          }}
                         >
                           <option value="azureADJoin">Entra join (user)</option>
                           <option value="azureADJoinUsingDeviceAuth">
@@ -1161,7 +1191,9 @@ export default function ManagementSettingsPage() {
                     <ErrorText error={saveAutopilotProfile.error ?? assignAutopilotProfile.error} />
                     <Button
                       type="submit"
-                      disabled={saveAutopilotProfile.isPending || !profileName().trim()}
+                      disabled={
+                        !writable() || saveAutopilotProfile.isPending || !profileName().trim()
+                      }
                     >
                       {saveAutopilotProfile.isPending
                         ? "Saving…"
@@ -1232,7 +1264,7 @@ export default function ManagementSettingsPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  disabled={deleteAutopilotDevice.isPending}
+                                  disabled={!writable() || deleteAutopilotDevice.isPending}
                                   onClick={() => deleteAutopilotDevice.mutate(device.serial)}
                                 >
                                   Remove
@@ -1285,6 +1317,7 @@ export default function ManagementSettingsPage() {
                             assignAutopilotProfile.mutate({ profileId: profile.id, groupId })
                           }
                           assigning={assignAutopilotProfile.isPending}
+                          readOnly={!writable()}
                         />
                       )}
                     </For>
@@ -1304,6 +1337,7 @@ function AutopilotProfileRow(props: {
   onEdit: () => void;
   onAssign: (groupId: string) => void;
   assigning: boolean;
+  readOnly?: boolean;
 }) {
   const [groupId, setGroupId] = createSignal(props.profile.assignedGroupId ?? "");
 
@@ -1317,7 +1351,13 @@ function AutopilotProfileRow(props: {
         <span class="text-xs text-muted-foreground">
           {props.profile.deploymentMode} · {props.profile.joinType}
         </span>
-        <Button variant="ghost" size="sm" class="ml-auto" onClick={props.onEdit}>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="ml-auto"
+          disabled={props.readOnly}
+          onClick={props.onEdit}
+        >
           Edit
         </Button>
       </div>
@@ -1334,7 +1374,7 @@ function AutopilotProfileRow(props: {
         <Button
           variant="outline"
           size="sm"
-          disabled={props.assigning || !groupId().trim()}
+          disabled={props.readOnly || props.assigning || !groupId().trim()}
           onClick={() => props.onAssign(groupId().trim())}
         >
           Assign to group

@@ -9,7 +9,7 @@ import {
   isDeclarationFailure,
   pushInvalidTokenTransition,
 } from "../index.js";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import {  dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -29,7 +29,7 @@ const organization = (id: string, slug: string) => ({
   updatedAt: now,
 });
 
-const device = (id: string, organizationId: string, overrides: Record<string, unknown> = {}) => ({
+const device = (id: string, organizationId: string, overrides: Row = {}) => ({
   id,
   organizationId,
   proto: "apple",
@@ -53,6 +53,7 @@ const setup = () => {
     [tableName(schema.device)]: [device("device-1", "org-1"), device("device-2", "org-2")],
   });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
   return { db, backend };
@@ -84,7 +85,7 @@ describe("system audit device lifecycle", () => {
     const { db, backend } = setup();
     await run(
       backend.appleDeviceEvent(scope("udid-device-1"), {
-        _tag: "Authenticate",
+        _tag: "Authenticate" as const,
         serialNumber: "SERIAL-device-1",
         model: "MacBookPro18,3",
       }),
@@ -116,8 +117,8 @@ describe("system audit device lifecycle", () => {
 
   it("records a device check-out once and keeps it tenant scoped", async () => {
     const { db, backend } = setup();
-    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" }));
-    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" }));
+    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }));
+    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }));
 
     expect(auditRows(db)).toHaveLength(1);
     expect(auditRows(db)[0]).toMatchObject({

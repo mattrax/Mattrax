@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 /**
  * Typed validation for Entra ID tokens presented to WSTEP when a tenant uses
  * the `Federated` auth policy.
@@ -83,6 +85,25 @@ const JWKS_CACHE_TTL_MS = 60 * 60 * 1_000;
 
 const textEncoder = new TextEncoder();
 
+const JsonWebKey = Schema.Struct({
+  kty: Schema.String,
+  kid: Schema.optional(Schema.String),
+  use: Schema.optional(Schema.String),
+  alg: Schema.optional(Schema.String),
+  n: Schema.optional(Schema.String),
+  e: Schema.optional(Schema.String),
+});
+
+const JsonWebKeySet = Schema.Struct({
+  keys: Schema.Array(JsonWebKey),
+});
+
+const TokenHeader = Schema.Struct({
+  alg: Schema.String,
+  kid: Schema.optional(Schema.String),
+  typ: Schema.optional(Schema.String),
+});
+
 type CacheEntry = {
   readonly value: FederatedJsonWebKeySet;
   readonly expiresAt: number;
@@ -136,21 +157,23 @@ function base64UrlToBytes(input: string): Uint8Array | null {
   }
 }
 
-function decodeJson(value: string): unknown {
+function decodeJson(value: string): Schema.Json | null {
   const bytes = base64UrlToBytes(value);
 
   if (!bytes) return null;
 
   try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return Schema.decodeUnknownSync(Schema.Json)(
+      JSON.parse(new TextDecoder().decode(bytes)),
+    );
   } catch {
     return null;
   }
 }
 
 type DecodedToken = {
-  readonly header: { readonly alg: string; readonly kid?: string; readonly typ?: string };
-  readonly payload: Record<string, unknown>;
+  readonly header: typeof TokenHeader.Type;
+  readonly payload: Schema.JsonObject;
   readonly signingInput: string;
   readonly signature: Uint8Array;
 };
@@ -163,35 +186,19 @@ function decodeToken(token: string): DecodedToken | null {
   const payload = decodeJson(parts[1]);
   const signature = base64UrlToBytes(parts[2]);
 
-  if (
-    !header ||
-    typeof header !== "object" ||
-    !payload ||
-    typeof payload !== "object" ||
-    !signature
-  )
+  if (!Schema.is(TokenHeader)(header) || !Schema.is(Schema.JsonObject)(payload) || !signature)
     return null;
-  const alg = (header as { alg?: unknown }).alg;
-  const kid = (header as { kid?: unknown }).kid;
-
-  if (typeof alg !== "string") return null;
 
   return {
-    header: {
-      alg,
-      ...(typeof kid === "string" ? { kid } : {}),
-      ...(typeof (header as { typ?: unknown }).typ === "string"
-        ? { typ: (header as { typ: string }).typ }
-        : {}),
-    },
-    payload: payload as Record<string, unknown>,
+    header,
+    payload,
     signingInput: `${parts[0]}.${parts[1]}`,
     signature,
   };
 }
 
-/** True when the value has the three-part JWT shape used by Entra. */
-export function isFederatedTokenShaped(token: string): boolean {
+/** True when the value is a three-part JWT that decodes to an Entra header and claims. */
+export function isFederatedToken(token: string): boolean {
   return decodeToken(token) !== null;
 }
 
@@ -200,7 +207,7 @@ export function unverifiedFederatedTenantId(token: string): string | null {
   const decoded = decodeToken(token);
   const tid = decoded?.payload.tid;
 
-  return typeof tid === "string" && tid.trim() ? tid.trim() : null;
+  return claimString(tid) ?? null;
 }
 
 async function loadJwks(
@@ -230,14 +237,13 @@ async function loadJwks(
     });
 
     if (!response.ok) return failure("jwks", `Entra JWKS request returned HTTP ${response.status}`);
-    const body = (await response.json()) as unknown;
+    const body = await response.json();
 
-    if (!body || typeof body !== "object" || !Array.isArray((body as { keys?: unknown }).keys))
+    if (!Schema.is(JsonWebKeySet)(body))
       return failure("jwks", "Entra JWKS response did not contain a keys array");
-    const value = body as FederatedJsonWebKeySet;
-    jwksCache.set(uri, { value, expiresAt: Date.now() + JWKS_CACHE_TTL_MS });
+    jwksCache.set(uri, { value: body, expiresAt: Date.now() + JWKS_CACHE_TTL_MS });
 
-    return value;
+    return body;
   } catch (cause) {
     return failure("jwks", `Entra JWKS request failed: ${String(cause)}`);
   } finally {
@@ -246,13 +252,13 @@ async function loadJwks(
 }
 
 const audienceValues = (audience: string | ReadonlyArray<string>): string[] =>
-  (typeof audience === "string" ? [audience] : [...audience]).filter(Boolean);
+  (Schema.is(Schema.String)(audience) ? [audience] : [...audience]).filter(Boolean);
 
-const claimString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim() ? value.trim() : undefined;
+const claimString = (value: Schema.Json | undefined): string | undefined =>
+  Schema.is(Schema.String)(value) && value.trim() ? value.trim() : undefined;
 
-const claimNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+const claimNumber = (value: Schema.Json | undefined): number | undefined =>
+  Schema.is(Schema.Number)(value) && Number.isFinite(value) ? value : undefined;
 
 /**
  * Validate an Entra access/ID token for WSTEP. Every failure is typed and
@@ -299,9 +305,9 @@ export async function validateFederatedEntraToken(
     return failure("audience", "At least one expected token audience is required");
   const rawAudience = decoded.payload.aud;
 
-  const tokenAudiences = Array.isArray(rawAudience)
-    ? rawAudience.filter((value): value is string => typeof value === "string")
-    : typeof rawAudience === "string"
+  const tokenAudiences = Schema.is(Schema.Array(Schema.String))(rawAudience)
+    ? rawAudience
+    : Schema.is(Schema.String)(rawAudience)
       ? [rawAudience]
       : [];
 
@@ -350,7 +356,10 @@ export async function validateFederatedEntraToken(
     valid = await crypto.subtle.verify(
       { name: "RSASSA-PKCS1-v1_5" },
       key,
+      // SAFETY: WebCrypto accepts Uint8Array as a BufferSource; the TypeScript
+      // DOM libs model the buffer backing separately from the view.
       decoded.signature as BufferSource,
+      // SAFETY: Same WebCrypto BufferSource representation as above.
       textEncoder.encode(decoded.signingInput) as BufferSource,
     );
   } catch {

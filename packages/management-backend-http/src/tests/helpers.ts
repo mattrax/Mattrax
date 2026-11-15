@@ -1,7 +1,15 @@
-import { Layer, Effect } from "effect";
+import { Layer, Effect, Schema } from "effect";
 import { ManagementBackend } from "@mattrax/management-backend";
 
 type ManagementBackendType = InstanceType<typeof ManagementBackend>;
+
+const IdleManifest = Schema.TaggedStruct("Idle", {}).make({});
+
+function unsupportedWindowsOperation<A>(): Effect.Effect<A, never> {
+  // SAFETY: The management service contract has no failure channel for this local
+  // "not supported" stub, so the stub error is surfaced as its failure value.
+  return Effect.fail(new Error("Windows management not supported") as never);
+}
 
 export function mockManagementBackend(
   overrides?: Partial<{
@@ -25,7 +33,7 @@ export function mockManagementBackend(
       getAppleBootstrapToken: () => Effect.succeed(null),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
-        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
+        overrides?.appleManagementCheckin ?? (() => Effect.succeed(IdleManifest)),
       getAppleDeclarationTokens:
         overrides?.getAppleDeclarationTokens ??
         (() =>
@@ -50,19 +58,19 @@ export function mockManagementBackend(
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery:
         overrides?.windowsDiscovery ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => unsupportedWindowsOperation()),
       getWindowsEnrollmentPolicy:
         overrides?.getWindowsEnrollmentPolicy ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => unsupportedWindowsOperation()),
       windowsEnroll:
         overrides?.windowsEnroll ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => unsupportedWindowsOperation()),
       windowsManagementCheckin:
         overrides?.windowsManagementCheckin ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => unsupportedWindowsOperation()),
       windowsDeviceEvent:
         overrides?.windowsDeviceEvent ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => unsupportedWindowsOperation()),
     }),
   );
 }

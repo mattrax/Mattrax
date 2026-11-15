@@ -1,6 +1,8 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { DeviceRow, EffectivePolicyResponse } from "@mattrax/enterprise-domain/client";
+import { Match, Option, Schema } from "effect";
+import { createEffect, createSignal, Errored, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DeviceHealthBadge,
@@ -13,6 +15,7 @@ import {
   PlatformBadge,
   QueryError,
 } from "~/components/mdm/common";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -29,11 +32,18 @@ import {
   enterpriseKeys,
   enterpriseQueries,
   type DeviceApplication,
-  type DeviceRow,
-  type EffectivePolicyResponse,
 } from "~/lib/enterprise";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
+
+const decodeDeviceRow = Schema.decodeUnknownOption(DeviceRow);
+
+const decodeEffectivePolicy = Schema.decodeUnknownOption(EffectivePolicyResponse);
+
+const decodeJson = Schema.decodeUnknownOption(Schema.Json);
+
+const isString = Schema.is(Schema.String);
 
 const chipTones: Record<ChipTone, string> = {
   success: "border-success/25 bg-success/10 text-success-foreground",
@@ -80,27 +90,219 @@ function DeviceGlyph(props: { proto: string; class?: string }) {
   );
 }
 
+function AbmPanel(props: {
+  tenantId: string | undefined;
+  serial: string | undefined;
+  writable: boolean;
+  assignAbm: any;
+  adeProfile: any;
+  adeUrl: () => string | null;
+}) {
+  const abmConfig = useQuery(() => enterpriseQueries.abm(props.tenantId));
+
+  // A tenant without an ABM credential has no inventory to look a serial up in;
+  // skipping the request keeps the console free of expected 404s.
+  const abmDevice = useQuery(() => ({
+    ...enterpriseQueries.abmDevice(props.tenantId, props.serial),
+    enabled: Boolean(props.serial) && abmConfig.data?.configured === true,
+  }));
+
+  return (
+    <Panel
+      title="Apple Business Manager"
+      description="Automated Device Enrollment state for this serial."
+    >
+      <div class="space-y-3 text-[12.5px]">
+        <Show
+          when={abmDevice.data}
+          fallback={
+            <Show
+              when={abmDevice.isError}
+              fallback={
+                <p class="text-muted-foreground">
+                  {abmConfig.data?.configured === false
+                    ? "Apple Business Manager is not connected for this tenant."
+                    : "This serial is not in the tenant's Apple Business Manager inventory."}{" "}
+                  <a
+                    class="font-medium text-foreground underline underline-offset-2"
+                    href={`/t/${props.tenantId}/settings/management`}
+                  >
+                    Open Apple Business Manager settings
+                  </a>
+                  .
+                </p>
+              }
+            >
+              <QueryError error={abmDevice.error} onRetry={() => void abmDevice.refetch()} />
+            </Show>
+          }
+        >
+          {(abm) => (
+            <>
+              <div class="flex flex-wrap items-center gap-2">
+                <Chip tone="muted" class="capitalize">
+                  {abm().enrollmentState.toLowerCase()}
+                </Chip>
+                <Chip tone="muted" class="capitalize">
+                  profile {abm().profileStatus}
+                </Chip>
+                <Show when={abm().deviceFamily}>
+                  <span class="text-[11px] text-muted-foreground">{abm().deviceFamily}</span>
+                </Show>
+                <Show when={abm().os}>
+                  <span class="text-[11px] text-muted-foreground">{abm().os}</span>
+                </Show>
+              </div>
+              <Show when={abm().assignedProfileUuid}>
+                <p class="break-all font-mono text-[11px] text-muted-foreground">
+                  ADE profile {abm().assignedProfileUuid}
+                </p>
+              </Show>
+              <Show when={abm().assignedServerId}>
+                <p class="break-all font-mono text-[11px] text-muted-foreground">
+                  MDM server {abm().assignedServerId}
+                </p>
+              </Show>
+              <p class="text-[11px] text-muted-foreground">
+                Last ABM update {formatDate(abm().lastSeenAt)}
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <Show when={abm().enrollmentState !== "ASSIGNED" && props.writable}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={props.assignAbm.isPending}
+                    onClick={() => props.assignAbm.mutate()}
+                  >
+                    {props.assignAbm.isPending ? "Assigning…" : "Assign to Mattrax"}
+                  </Button>
+                </Show>
+                <Show when={abm().enrollmentState === "ASSIGNED" && props.writable}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={props.adeProfile.isPending}
+                    onClick={() => props.adeProfile.mutate()}
+                  >
+                    {props.adeProfile.isPending ? "Creating link…" : "Get ADE profile link"}
+                  </Button>
+                </Show>
+              </div>
+              <Show when={props.adeUrl()}>
+                {(url) => (
+                  <p class="break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 font-mono text-[11px] text-muted-foreground">
+                    {url()}
+                  </p>
+                )}
+              </Show>
+              <ErrorText error={props.assignAbm.error ?? props.adeProfile.error} />
+            </>
+          )}
+        </Show>
+      </div>
+    </Panel>
+  );
+}
+
 export default function DeviceDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("devices.write");
+  const canCommand = () => can("devices.command");
+  const canRevealKey = () => can("devices.recovery_key");
 
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
     queryFn: () => enterprise.get(params.tenantId, "device", params.deviceId),
   }));
 
-  const row = () => device.data as DeviceRow | undefined;
-  // The ABM lookup is keyed by serial, which only exists once the device query
-  // resolves. Mirroring it into a signal keeps the query options free of
-  // pending async reads, which throw when evaluated outside a tracking scope.
-  const [abmSerial, setAbmSerial] = createSignal<string | undefined>(undefined);
+  const row = () => Option.getOrUndefined(decodeDeviceRow(device.data));
+
+  const scopeLabel = (scope: string) => {
+    if (scope === "direct") return "Direct include";
+
+    if (scope === "group") return "Group include";
+
+    if (scope === "user") return "User include";
+
+    if (scope === "user-group") return "User group include";
+
+    return scope;
+  };
+
+  const exclusionLabel = (exclusion: {
+    scope: string;
+    groupName?: string | null;
+    userNames?: ReadonlyArray<string>;
+    userGroupName?: string | null;
+  }) => {
+    if (exclusion.scope === "direct") return "is excluded directly";
+
+    if (exclusion.scope === "user")
+      return `is excluded for ${exclusion.userNames?.join(", ") ?? "a user"}`;
+
+    if (exclusion.scope === "user-group")
+      return `is excluded for ${exclusion.userGroupName ?? "a directory group"}`;
+
+    return `is excluded by ${exclusion.groupName ?? "a group"}`;
+  };
+
+  const audienceNames = (policy: {
+    groupNames: ReadonlyArray<string>;
+    userNames?: ReadonlyArray<string>;
+    userGroupNames?: ReadonlyArray<string>;
+  }) => [
+    ...new Set([
+      ...policy.groupNames,
+      ...(policy.userNames ?? []),
+      ...(policy.userGroupNames ?? []),
+    ]),
+  ];
+
+  const deviceUsers = useQuery(() =>
+    enterpriseQueries.deviceUsers(params.tenantId, params.deviceId),
+  );
+
+  const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
+  const [selectedUsers, setSelectedUsers] = createSignal<Set<string>>(new Set());
+  const [usersMessage, setUsersMessage] = createSignal<string | null>(null);
+  const [usersDirty, setUsersDirty] = createSignal(false);
+
   createEffect(
-    () => (row()?.proto === "apple" ? (row()?.serial ?? undefined) : undefined),
-    (serial) => {
-      setAbmSerial(serial);
+    () => deviceUsers.data,
+    (data) => {
+      // A background refetch must not discard unsaved checkbox changes.
+      if (!data || usersDirty()) return;
+      setSelectedUsers(new Set(data.users.map((user) => user.id)));
     },
   );
+
+  const toggleUser = (id: string) => {
+    const next = new Set(selectedUsers());
+
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedUsers(next);
+    setUsersDirty(true);
+  };
+
+  const saveUsers = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.setDeviceUsers(params.tenantId, params.deviceId, [...selectedUsers()]),
+    onSuccess: async () => {
+      setUsersMessage("Device users saved.");
+      setUsersDirty(false);
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceUsers(params.tenantId, params.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
+      });
+    },
+  }));
+
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
@@ -197,7 +399,6 @@ export default function DeviceDetailPage() {
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
 
-  const abmDevice = useQuery(() => enterpriseQueries.abmDevice(params.tenantId, abmSerial()));
   const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
 
   const assignAbm = useMutation(() => ({
@@ -215,7 +416,7 @@ export default function DeviceDetailPage() {
     onSuccess: (result) => setAdeUrl(result.url),
   }));
 
-  const resolved = () => effectivePolicy.data as EffectivePolicyResponse | undefined;
+  const resolved = () => Option.getOrUndefined(decodeEffectivePolicy(effectivePolicy.data));
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = createSignal(false);
@@ -346,7 +547,7 @@ export default function DeviceDetailPage() {
     setRecoveryDialogOpen(true);
   };
 
-  const appNames = () => (applications.data?.applications ?? []) as DeviceApplication[];
+  const appNames = (): readonly DeviceApplication[] => applications.data?.applications ?? [];
 
   const capabilityLabels = () => {
     const value = row()?.capabilities;
@@ -355,7 +556,7 @@ export default function DeviceDetailPage() {
 
     if (Array.isArray(value)) return value.map((entry) => String(entry));
 
-    if (typeof value === "string") return [value];
+    if (isString(value)) return [value];
 
     return [JSON.stringify(value)];
   };
@@ -439,18 +640,18 @@ export default function DeviceDetailPage() {
     }
   };
 
-  const pushBadge = (): { label: string; tone: ChipTone } => {
+  const pushBadge = () => {
     const push = health.data?.push;
 
-    if (!push) return { label: "Unknown", tone: "muted" };
+    if (!push) return { label: "Unknown", tone: "muted" } as const;
 
-    if (push.invalidToken) return { label: "Re-enroll required", tone: "danger" };
+    if (push.invalidToken) return { label: "Re-enroll required", tone: "danger" } as const;
 
-    if (push.consecutiveFailures > 0) return { label: "Failing", tone: "warning" };
+    if (push.consecutiveFailures > 0) return { label: "Failing", tone: "warning" } as const;
 
-    if (push.lastSuccessAt) return { label: "Delivering", tone: "success" };
+    if (push.lastSuccessAt) return { label: "Delivering", tone: "success" } as const;
 
-    return { label: "Not attempted", tone: "muted" };
+    return { label: "Not attempted", tone: "muted" } as const;
   };
 
   const declarationIssues = () =>
@@ -465,21 +666,18 @@ export default function DeviceDetailPage() {
       );
     });
 
-  const declarationReasons = (reasons: unknown) => {
-    if (reasons == null) return [];
+  const declarationReasons = (reasons: Schema.Json | undefined) => {
+    if (reasons === null || reasons === undefined) return [];
     const values = Array.isArray(reasons) ? reasons : [reasons];
 
     return values
       .map((value) => {
-        if (typeof value === "string") return value;
+        if (isString(value)) return value;
 
-        if (value && typeof value === "object") {
-          const record = value as Record<string, unknown>;
+        const object = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.JsonObject)(value));
 
-          return [record.code, record.description]
-            .filter((part): part is string => typeof part === "string")
-            .join(": ");
-        }
+        if (object !== undefined)
+          return [object.code, object.description].filter(isString).join(": ");
 
         return "";
       })
@@ -490,18 +688,22 @@ export default function DeviceDetailPage() {
   const hasActiveCertificate = () => certificates().some((certificate) => !certificate.revokedAt);
 
   const confirmDescription = () =>
-    confirmAction() === "delete"
-      ? "The device record and its history will be removed."
-      : confirmAction() === "revoke"
-        ? "The SCEP identity certificates issued to this device will be revoked. The device cannot renew them and may need to re-enroll."
-        : "The device will be asked to remove its management profile.";
+    Match.value(confirmAction()).pipe(
+      Match.when("delete", () => "The device record and its history will be removed."),
+      Match.when(
+        "revoke",
+        () =>
+          "The SCEP identity certificates issued to this device will be revoked. The device cannot renew them and may need to re-enroll.",
+      ),
+      Match.orElse(() => "The device will be asked to remove its management profile."),
+    );
 
   const confirmLabel = () =>
-    confirmAction() === "delete"
-      ? "Delete device"
-      : confirmAction() === "revoke"
-        ? "Revoke identity"
-        : "Unenroll device";
+    Match.value(confirmAction()).pipe(
+      Match.when("delete", () => "Delete device"),
+      Match.when("revoke", () => "Revoke identity"),
+      Match.orElse(() => "Unenroll device"),
+    );
 
   const confirmPending = () => unenroll.isPending || remove.isPending || revokeIdentity.isPending;
 
@@ -542,7 +744,32 @@ export default function DeviceDetailPage() {
               </Panel>
             }
           >
-            <QueryError error={device.error} onRetry={() => void device.refetch()} />
+            <Panel>
+              <div class="flex flex-col items-start gap-3 py-2">
+                <div class="min-w-0">
+                  <p class="text-[13px] font-medium text-foreground">
+                    This device could not be loaded
+                  </p>
+                  <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                    It may have been deleted, or you may not have access to it.
+                  </p>
+                </div>
+                <ErrorText error={device.error} />
+                <div class="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={device.isFetching}
+                    onClick={() => void device.refetch()}
+                  >
+                    {device.isFetching ? "Retrying…" : "Try again"}
+                  </Button>
+                  <Button as="a" size="sm" variant="outline" href={`/t/${params.tenantId}/devices`}>
+                    Back to devices
+                  </Button>
+                </div>
+              </div>
+            </Panel>
           </Show>
         }
       >
@@ -588,33 +815,37 @@ export default function DeviceDetailPage() {
                 </div>
               </div>
               <div class="flex flex-wrap items-center gap-2 lg:justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="h-8"
-                  onClick={() => sync.mutate()}
-                  disabled={sync.isPending || row()!.status !== "enrolled"}
-                >
-                  {sync.isPending ? "Syncing…" : "Sync"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="h-8"
-                  onClick={() => setConfirmAction("unenroll")}
-                  disabled={unenroll.isPending || row()!.status !== "enrolled"}
-                >
-                  Unenroll
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  class="h-8"
-                  onClick={() => setConfirmAction("delete")}
-                  disabled={remove.isPending || row()!.status === "enrolled"}
-                >
-                  Delete
-                </Button>
+                <Show when={canCommand()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-8"
+                    onClick={() => sync.mutate()}
+                    disabled={sync.isPending || row()!.status !== "enrolled"}
+                  >
+                    {sync.isPending ? "Syncing…" : "Sync"}
+                  </Button>
+                </Show>
+                <Show when={writable()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="h-8"
+                    onClick={() => setConfirmAction("unenroll")}
+                    disabled={unenroll.isPending || row()!.status !== "enrolled"}
+                  >
+                    Unenroll
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    class="h-8"
+                    onClick={() => setConfirmAction("delete")}
+                    disabled={remove.isPending || row()!.status === "enrolled"}
+                  >
+                    Delete
+                  </Button>
+                </Show>
               </div>
             </div>
             <div class="relative grid grid-cols-2 gap-px border-t border-white/[0.06] bg-white/[0.06] sm:grid-cols-4">
@@ -646,7 +877,12 @@ export default function DeviceDetailPage() {
                 </p>
                 <p class="mt-1 truncate text-[12.5px] font-medium text-foreground">{osLabel()}</p>
                 <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {row()!.osBuild ? `Build ${row()!.osBuild}` : "No build reported"}
+                  {[
+                    row()!.osBuild ? `Build ${row()!.osBuild}` : "No build reported",
+                    row()!.modelNumber ? `Model ${row()!.modelNumber}` : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
               </div>
               <div class="min-w-0 bg-card px-4 py-3">
@@ -657,7 +893,7 @@ export default function DeviceDetailPage() {
                   {row()!.assetTag ?? "Unassigned"}
                 </p>
                 <p class="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {row()!.modelNumber ? `Model ${row()!.modelNumber}` : "No model number"}
+                  {row()!.assetTag ? "Assigned" : "Not assigned"}
                 </p>
               </div>
             </div>
@@ -665,6 +901,92 @@ export default function DeviceDetailPage() {
 
           <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
             <div class="min-w-0 space-y-5">
+              <Panel
+                title="Users"
+                description="User-assigned policies follow these directory users to this device."
+              >
+                <div class="space-y-3">
+                  <p class="rounded-lg border border-white/[0.08] bg-muted/15 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                    Policies assigned to a user are delivered on the device channel. They affect
+                    every user on this device, not only the linked account. Windows applies changes
+                    on its next check-in.
+                  </p>
+                  <Show
+                    when={directory.data}
+                    fallback={
+                      <Show
+                        when={directory.isError}
+                        fallback={<div class="h-16 animate-pulse rounded-lg bg-muted/40" />}
+                      >
+                        <QueryError
+                          error={directory.error}
+                          onRetry={() => void directory.refetch()}
+                        />
+                      </Show>
+                    }
+                  >
+                    <Show
+                      when={
+                        (directory.data?.users ?? []).filter((user) => !user.disabled).length > 0
+                      }
+                      fallback={
+                        <p class="text-[12.5px] text-muted-foreground">
+                          No directory users. Sync Entra or SCIM first.
+                        </p>
+                      }
+                    >
+                      <div class="max-h-64 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
+                        <For each={(directory.data?.users ?? []).filter((user) => !user.disabled)}>
+                          {(user) => (
+                            <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted/30">
+                              <input
+                                type="checkbox"
+                                checked={selectedUsers().has(user.id)}
+                                disabled={!writable()}
+                                onChange={() => toggleUser(user.id)}
+                                class="size-3.5 rounded border-border"
+                              />
+                              <span class="min-w-0 flex-1">
+                                <span class="block truncate text-foreground">{user.name}</span>
+                                <span class="block truncate text-[11px] text-muted-foreground">
+                                  {user.email}
+                                </span>
+                              </span>
+                              <Badge variant="outline" class="shrink-0 text-[10px]">
+                                {user.source}
+                              </Badge>
+                            </label>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </Show>
+                  <ErrorText error={saveUsers.error} />
+                  <Show when={usersMessage()}>
+                    {(text) => (
+                      <p
+                        role="status"
+                        class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                      >
+                        {text()}
+                      </p>
+                    )}
+                  </Show>
+                  <Show
+                    when={writable()}
+                    fallback={
+                      <ReadOnlyNotice>
+                        Your role can view linked users but not change them.
+                      </ReadOnlyNotice>
+                    }
+                  >
+                    <Button disabled={saveUsers.isPending} onClick={() => saveUsers.mutate()}>
+                      {saveUsers.isPending ? "Saving…" : "Save users"}
+                    </Button>
+                  </Show>
+                </div>
+              </Panel>
+
               <Panel
                 title="Health"
                 description="Compliance rollup from enrollment, check-in freshness and declaration state."
@@ -703,13 +1025,20 @@ export default function DeviceDetailPage() {
                               {(reason) => (
                                 <li class="flex items-start gap-2 text-[12.5px]">
                                   <span
-                                    class={
-                                      reason.severity === "critical"
-                                        ? "mt-1.5 size-2 shrink-0 rounded-full bg-destructive"
-                                        : reason.severity === "warning"
-                                          ? "mt-1.5 size-2 shrink-0 rounded-full bg-warning"
-                                          : "mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/50"
-                                    }
+                                    class={Match.value(reason.severity).pipe(
+                                      Match.when(
+                                        "critical",
+                                        () => "mt-1.5 size-2 shrink-0 rounded-full bg-destructive",
+                                      ),
+                                      Match.when(
+                                        "warning",
+                                        () => "mt-1.5 size-2 shrink-0 rounded-full bg-warning",
+                                      ),
+                                      Match.orElse(
+                                        () =>
+                                          "mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/50",
+                                      ),
+                                    )}
                                     aria-hidden="true"
                                   />
                                   <span
@@ -731,7 +1060,7 @@ export default function DeviceDetailPage() {
                         <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                           Failing declarations
                           <Show when={(health.data?.declarations.length ?? 0) > 0}>
-                            <span class="ml-2 normal-case tracking-normal text-muted-foreground/70">
+                            <span class="ml-2 normal-case tracking-normal text-muted-foreground">
                               {declarationIssues().length} of {health.data?.declarations.length}
                             </span>
                           </Show>
@@ -756,9 +1085,19 @@ export default function DeviceDetailPage() {
                                     {declaration.active ? "active" : "inactive"}
                                   </span>
                                 </div>
-                                <Show when={declarationReasons(declaration.reasons).length > 0}>
+                                <Show
+                                  when={
+                                    declarationReasons(
+                                      Option.getOrUndefined(decodeJson(declaration.reasons)),
+                                    ).length > 0
+                                  }
+                                >
                                   <ul class="mt-1 space-y-0.5 text-destructive">
-                                    <For each={declarationReasons(declaration.reasons)}>
+                                    <For
+                                      each={declarationReasons(
+                                        Option.getOrUndefined(decodeJson(declaration.reasons)),
+                                      )}
+                                    >
                                       {(reason) => <li>{reason}</li>}
                                     </For>
                                   </ul>
@@ -775,7 +1114,7 @@ export default function DeviceDetailPage() {
                         <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                           SCEP identity certificates
                         </p>
-                        <Show when={certificates().length > 0}>
+                        <Show when={certificates().length > 0 && writable()}>
                           <Button
                             variant="outline"
                             size="sm"
@@ -872,7 +1211,9 @@ export default function DeviceDetailPage() {
                 title="Security & inventory"
                 description="Encryption, escrow state and the last inventory snapshot."
                 actions={
-                  <Show when={row()!.proto === "apple" && row()!.status === "enrolled"}>
+                  <Show
+                    when={canCommand() && row()!.proto === "apple" && row()!.status === "enrolled"}
+                  >
                     <Button
                       variant="outline"
                       size="sm"
@@ -888,13 +1229,11 @@ export default function DeviceDetailPage() {
                   <dl class="grid gap-x-6 sm:grid-cols-2">
                     <MetaRow label="FileVault">
                       <Chip
-                        tone={
-                          row()!.fileVaultStatus === "enabled"
-                            ? "success"
-                            : row()!.fileVaultStatus === "disabled"
-                              ? "warning"
-                              : "muted"
-                        }
+                        tone={Match.value(row()?.fileVaultStatus).pipe(
+                          Match.when("enabled", () => "success" as const),
+                          Match.when("disabled", () => "warning" as const),
+                          Match.orElse(() => "muted" as const),
+                        )}
                       >
                         {fileVaultLabel()}
                       </Chip>
@@ -904,7 +1243,7 @@ export default function DeviceDetailPage() {
                         <Chip tone={row()!.recoveryKeyEscrowed ? "success" : "warning"}>
                           {row()!.recoveryKeyEscrowed ? "Escrowed" : "Not escrowed"}
                         </Chip>
-                        <Show when={row()!.recoveryKeyEscrowed}>
+                        <Show when={row()!.recoveryKeyEscrowed && canRevealKey()}>
                           <Button variant="outline" size="xs" onClick={openRecoveryDialog}>
                             Reveal
                           </Button>
@@ -1019,11 +1358,7 @@ export default function DeviceDetailPage() {
                                   {configuration.kind}
                                 </span>
                                 <span class="flex flex-wrap items-center gap-1.5">
-                                  <Chip tone="muted">
-                                    {configuration.scope === "direct"
-                                      ? "Direct include"
-                                      : "Group include"}
-                                  </Chip>
+                                  <Chip tone="muted">{scopeLabel(configuration.scope)}</Chip>
                                   <Chip tone="muted">priority {configuration.priority}</Chip>
                                 </span>
                               </div>
@@ -1034,10 +1369,10 @@ export default function DeviceDetailPage() {
                                 >
                                   {configuration.policyName}
                                 </a>
-                                <Show when={configuration.groupNames.length > 0}>
+                                <Show when={audienceNames(configuration).length > 0}>
                                   <span class="text-muted-foreground">
                                     {" "}
-                                    via {configuration.groupNames.join(", ")}
+                                    via {audienceNames(configuration).join(", ")}
                                   </span>
                                 </Show>
                               </p>
@@ -1079,13 +1414,10 @@ export default function DeviceDetailPage() {
                                 }
                               >
                                 <span class="font-medium">{exclusion.policyName}</span>{" "}
-                                {exclusion.scope === "direct"
-                                  ? "is excluded directly"
-                                  : `is excluded by ${exclusion.groupName ?? "a group"}`}
-                                .{" "}
+                                {exclusionLabel(exclusion)}.{" "}
                                 {exclusion.effective
-                                  ? "It removed a group include."
-                                  : "No include to remove."}
+                                  ? "It removed an applicable assignment."
+                                  : "No applicable assignment to remove."}
                               </li>
                             )}
                           </For>
@@ -1105,7 +1437,9 @@ export default function DeviceDetailPage() {
                     : "Installed applications reported by the device."
                 }
                 actions={
-                  <Show when={row()!.proto === "apple" && row()!.status === "enrolled"}>
+                  <Show
+                    when={canCommand() && row()!.proto === "apple" && row()!.status === "enrolled"}
+                  >
                     <Button
                       variant="outline"
                       size="sm"
@@ -1199,96 +1533,30 @@ export default function DeviceDetailPage() {
               </Panel>
 
               <Show when={row()!.proto === "apple" && row()!.serial}>
-                <Panel
-                  title="Apple Business Manager"
-                  description="Automated Device Enrollment state for this serial."
-                >
-                  <div class="space-y-3 text-[12.5px]">
-                    <Show
-                      when={abmDevice.data}
-                      fallback={
-                        <Show
-                          when={abmDevice.isError}
-                          fallback={
-                            <p class="text-muted-foreground">
-                              This serial is not in the tenant's Apple Business Manager inventory.
-                              Upload an ABM credential and sync devices in Settings → Management.
-                            </p>
-                          }
-                        >
-                          <QueryError
-                            error={abmDevice.error}
-                            onRetry={() => void abmDevice.refetch()}
-                          />
-                        </Show>
-                      }
-                    >
-                      {(abm) => (
-                        <>
-                          <div class="flex flex-wrap items-center gap-2">
-                            <Chip tone="muted" class="capitalize">
-                              {abm().enrollmentState.toLowerCase()}
-                            </Chip>
-                            <Chip tone="muted" class="capitalize">
-                              profile {abm().profileStatus}
-                            </Chip>
-                            <Show when={abm().deviceFamily}>
-                              <span class="text-[11px] text-muted-foreground">
-                                {abm().deviceFamily}
-                              </span>
-                            </Show>
-                            <Show when={abm().os}>
-                              <span class="text-[11px] text-muted-foreground">{abm().os}</span>
-                            </Show>
-                          </div>
-                          <Show when={abm().assignedProfileUuid}>
-                            <p class="break-all font-mono text-[11px] text-muted-foreground">
-                              ADE profile {abm().assignedProfileUuid}
-                            </p>
-                          </Show>
-                          <Show when={abm().assignedServerId}>
-                            <p class="break-all font-mono text-[11px] text-muted-foreground">
-                              MDM server {abm().assignedServerId}
-                            </p>
-                          </Show>
-                          <p class="text-[11px] text-muted-foreground">
-                            Last ABM update {formatDate(abm().lastSeenAt)}
-                          </p>
-                          <div class="flex flex-wrap gap-2">
-                            <Show when={abm().enrollmentState !== "ASSIGNED"}>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={assignAbm.isPending}
-                                onClick={() => assignAbm.mutate()}
-                              >
-                                {assignAbm.isPending ? "Assigning…" : "Assign to Mattrax"}
-                              </Button>
-                            </Show>
-                            <Show when={abm().enrollmentState === "ASSIGNED"}>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={adeProfile.isPending}
-                                onClick={() => adeProfile.mutate()}
-                              >
-                                {adeProfile.isPending ? "Creating link…" : "Get ADE profile link"}
-                              </Button>
-                            </Show>
-                          </div>
-                          <Show when={adeUrl()}>
-                            {(url) => (
-                              <p class="break-all rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 font-mono text-[11px] text-muted-foreground">
-                                {url()}
-                              </p>
-                            )}
-                          </Show>
-                          <ErrorText error={assignAbm.error ?? adeProfile.error} />
-                        </>
-                      )}
-                    </Show>
-                  </div>
-                </Panel>
+                {(serial) => (
+                  <Errored
+                    fallback={() => (
+                      <Panel
+                        title="Apple Business Manager"
+                        description="Automated Device Enrollment state for this serial."
+                      >
+                        <p class="text-[12.5px] text-muted-foreground">
+                          This serial is not in the tenant's Apple Business Manager inventory.
+                          Upload an ABM credential and sync devices in Settings → Management.
+                        </p>
+                      </Panel>
+                    )}
+                  >
+                    <AbmPanel
+                      tenantId={params.tenantId}
+                      serial={serial()}
+                      writable={can("management.write")}
+                      assignAbm={assignAbm}
+                      adeProfile={adeProfile}
+                      adeUrl={adeUrl}
+                    />
+                  </Errored>
+                )}
               </Show>
 
               <Show when={row()!.autopilot}>
@@ -1328,7 +1596,8 @@ export default function DeviceDetailPage() {
                   (row()!.proto === "apple" ||
                     row()!.proto === "win" ||
                     row()!.proto === "android") &&
-                  row()!.status === "enrolled"
+                  row()!.status === "enrolled" &&
+                  canCommand()
                 }
               >
                 <Panel
@@ -1518,7 +1787,7 @@ export default function DeviceDetailPage() {
                                 {command.resultStatus ?? ""} {command.resultDetail ?? ""}
                               </p>
                             </Show>
-                            <p class="mt-1 text-muted-foreground/70">
+                            <p class="mt-1 text-muted-foreground">
                               {formatDate(command.createdAt)}
                             </p>
                           </li>
@@ -1530,6 +1799,11 @@ export default function DeviceDetailPage() {
               </Show>
 
               <Panel title="Edit details" description="Management name, asset tag and notes.">
+                <Show when={!writable()}>
+                  <ReadOnlyNotice class="mb-4">
+                    Your role can view this device but not edit its details.
+                  </ReadOnlyNotice>
+                </Show>
                 <form
                   class="space-y-4"
                   onSubmit={(event) => {
@@ -1538,25 +1812,33 @@ export default function DeviceDetailPage() {
                   }}
                 >
                   <Field label="Name">
-                    <Input value={name()} onInput={(event) => setName(event.currentTarget.value)} />
+                    <Input
+                      disabled={!writable()}
+                      value={name()}
+                      onInput={(event) => setName(event.currentTarget.value)}
+                    />
                   </Field>
                   <Field label="Asset tag">
                     <Input
+                      disabled={!writable()}
                       value={assetTag()}
                       onInput={(event) => setAssetTag(event.currentTarget.value)}
                     />
                   </Field>
                   <Field label="Notes">
                     <textarea
+                      disabled={!writable()}
                       class="min-h-24 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
                       value={notes()}
                       onInput={(event) => setNotes(event.currentTarget.value)}
                     />
                   </Field>
                   <ErrorText error={save.error || sync.error || unenroll.error || remove.error} />
-                  <Button type="submit" disabled={save.isPending}>
-                    {save.isPending ? "Saving…" : "Save changes"}
-                  </Button>
+                  <Show when={writable()}>
+                    <Button type="submit" disabled={save.isPending}>
+                      {save.isPending ? "Saving…" : "Save changes"}
+                    </Button>
+                  </Show>
                 </form>
               </Panel>
             </div>

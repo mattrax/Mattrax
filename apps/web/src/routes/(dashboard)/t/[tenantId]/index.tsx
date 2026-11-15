@@ -1,7 +1,8 @@
 import { useNavigate, useParams } from "@solidjs/router";
+import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createMemo, For, Show } from "solid-js";
-import { defaultOverviewWidgets } from "@mattrax/enterprise-domain";
+import { defaultOverviewWidgets } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Page, QueryError } from "~/components/mdm/common";
 import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
@@ -14,6 +15,7 @@ import {
   type DashboardSummary,
   type DashboardWidget,
 } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 
 const previewWidgets = (): DashboardWidget[] =>
   defaultOverviewWidgets().map((widget, index) => ({
@@ -35,7 +37,7 @@ function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: 
       <For each={props.widgets}>
         {(widget) => (
           <article
-            class="dashboard-widget flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
+            class={`dashboard-widget dashboard-widget-${widget.type} flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]`}
             style={{
               "grid-column": `${widget.x + 1} / span ${widget.w}`,
               "grid-row": `${widget.y + 1} / span ${widget.h}`,
@@ -43,10 +45,16 @@ function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: 
           >
             <header class="px-0.5 pb-2">
               <h2 class="truncate text-[12.5px] font-medium text-foreground">{widget.title}</h2>
-              <p class="truncate text-[10px] capitalize text-muted-foreground/70">
+              <p class="truncate text-[10px] capitalize text-muted-foreground">
                 {widget.type === "markdown"
                   ? "Markdown"
-                  : `${widget.type} · ${String((widget.config as any)?.dataset ?? "devices")}`}
+                  : `${widget.type} · ${String(
+                      Option.getOrUndefined(
+                        Schema.decodeUnknownOption(
+                          Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
+                        )(widget.config),
+                      )?.dataset ?? "devices",
+                    )}`}
               </p>
             </header>
             <div class="min-h-0 flex-1 overflow-hidden">
@@ -70,6 +78,8 @@ function OverviewHeader(props: {
   creating: boolean;
   error?: unknown;
 }) {
+  const { can } = useCan();
+
   return (
     <>
       <div class="flex flex-wrap items-start justify-between gap-3">
@@ -110,22 +120,30 @@ function OverviewHeader(props: {
           <Button as="a" href={`/t/${props.tenantId}/dashboards`} size="sm" variant="ghost">
             All dashboards
           </Button>
-          <Button size="sm" disabled={props.creating} onClick={props.create}>
-            {props.creating ? "Creating…" : props.preview ? "Customise overview" : "New dashboard"}
-          </Button>
+          <Show when={can("dashboards.write")}>
+            <Button size="sm" disabled={props.creating} onClick={props.create}>
+              {props.creating
+                ? "Creating…"
+                : props.preview
+                  ? "Customise overview"
+                  : "New dashboard"}
+            </Button>
+          </Show>
         </div>
       </div>
       <Show when={props.error}>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <ErrorText error={props.error} />
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={props.creating}
-            onClick={() => props.create()}
-          >
-            Try again
-          </Button>
+          <Show when={can("dashboards.write")}>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={props.creating}
+              onClick={() => props.create()}
+            >
+              Try again
+            </Button>
+          </Show>
         </div>
       </Show>
     </>
@@ -140,6 +158,7 @@ function LoadedOverview(props: {
   error?: unknown;
 }) {
   const dashboard = useQuery(() => enterpriseQueries.dashboard(props.tenantId, props.summary.id));
+  const { can } = useCan();
 
   return (
     <Page class="gap-5">
@@ -162,14 +181,16 @@ function LoadedOverview(props: {
             <p class="mt-1 text-[12px] text-muted-foreground">
               Add widgets from the dashboard editor to share tables, charts and notes.
             </p>
-            <Button
-              as="a"
-              href={`/t/${props.tenantId}/dashboards/${props.summary.id}?edit=1`}
-              size="sm"
-              class="mt-3"
-            >
-              Edit dashboard
-            </Button>
+            <Show when={can("dashboards.write")}>
+              <Button
+                as="a"
+                href={`/t/${props.tenantId}/dashboards/${props.summary.id}?edit=1`}
+                size="sm"
+                class="mt-3"
+              >
+                Edit dashboard
+              </Button>
+            </Show>
           </div>
         }
       >
@@ -186,6 +207,7 @@ function PreviewOverview(props: {
   error?: unknown;
 }) {
   const widgets = createMemo(previewWidgets);
+  const { can } = useCan();
 
   return (
     <Page class="gap-5">
@@ -203,9 +225,11 @@ function PreviewOverview(props: {
           This is the built-in overview. Create a dashboard to add widgets, write team notes and
           share a layout with everyone.
         </p>
-        <Button size="sm" disabled={props.creating} onClick={props.create}>
-          {props.creating ? "Creating…" : "Create from this layout"}
-        </Button>
+        <Show when={can("dashboards.write")}>
+          <Button size="sm" disabled={props.creating} onClick={props.create}>
+            {props.creating ? "Creating…" : "Create from this layout"}
+          </Button>
+        </Show>
       </div>
     </Page>
   );

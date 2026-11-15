@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 /**
  * Google OIDC verification for Pub/Sub push deliveries.
@@ -27,19 +27,16 @@ export class PubSubAuthError extends Data.TaggedError("PubSubAuthError")<{
   cause?: unknown;
 }> {}
 
-type JsonWebKey = {
-  readonly kty?: string;
+type SigningJwk = {
+  readonly kty: "RSA";
   readonly kid?: string;
   readonly use?: string;
   readonly alg?: string;
-  readonly n?: string;
-  readonly e?: string;
-  readonly [key: string]: unknown;
+  readonly n: string;
+  readonly e: string;
 };
 
-type JwkSet = { readonly keys: ReadonlyArray<JsonWebKey> };
-
-type CachedJwkSet = { readonly keys: ReadonlyArray<JsonWebKey>; readonly expiresAt: number };
+type CachedJwkSet = { readonly keys: ReadonlyArray<SigningJwk>; readonly expiresAt: number };
 
 const jwksCache = new Map<string, CachedJwkSet>();
 
@@ -49,7 +46,7 @@ const UNKNOWN_KID_NEGATIVE_CACHE_MS = 60 * 1000;
 
 const textDecoder = new TextDecoder();
 
-function decodeBase64Url(input: string): Uint8Array {
+function decodeBase64Url(input: string): Uint8Array<ArrayBuffer> {
   const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
@@ -57,14 +54,15 @@ function decodeBase64Url(input: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-function decodeJsonPart(input: string, label: string): Record<string, unknown> {
+function decodeJsonPart(input: string, label: string): Schema.JsonObject {
   try {
-    const value = JSON.parse(textDecoder.decode(decodeBase64Url(input))) as unknown;
+    const value = Schema.decodeUnknownSync(Schema.Json)(
+      JSON.parse(textDecoder.decode(decodeBase64Url(input))),
+    );
 
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      throw new Error(`${label} is not an object`);
+    if (!Schema.is(Schema.JsonObject)(value)) throw new Error(`${label} is not an object`);
 
-    return value as Record<string, unknown>;
+    return value;
   } catch (cause) {
     throw new PubSubAuthError({ message: `OIDC token ${label} is not valid JSON`, cause });
   }
@@ -94,8 +92,10 @@ export type PubSubOidcClaims = {
   readonly emailVerified?: boolean;
   readonly expiresAt: number;
   readonly issuedAt?: number;
-  readonly claims: Readonly<Record<string, unknown>>;
+  readonly claims: Schema.JsonObject;
 };
+
+type MutableClaims = { -readonly [K in keyof PubSubOidcClaims]: PubSubOidcClaims[K] };
 
 async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise<CachedJwkSet> {
   const cached = jwksCache.get(uri);
@@ -107,20 +107,19 @@ async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise
   });
 
   if (!response.ok) throw new Error(`JWKS request returned HTTP ${response.status}`);
-  const json = (await response.json()) as unknown;
+  const json = Schema.decodeUnknownSync(Schema.Json)(await response.json());
 
-  if (typeof json !== "object" || json === null || !Array.isArray((json as JwkSet).keys))
+  if (!Schema.is(Schema.JsonObject)(json) || !Array.isArray(json["keys"]))
     throw new Error("JWKS response has no keys array");
 
-  const keys = (json as JwkSet).keys.filter(
-    (key): key is JsonWebKey =>
-      typeof key === "object" &&
-      key !== null &&
-      key.kty === "RSA" &&
-      typeof key.n === "string" &&
-      typeof key.e === "string" &&
-      (key.alg === undefined || key.alg === "RS256") &&
-      (key.use === undefined || key.use === "sig"),
+  const keys = json["keys"].filter(
+    (key): key is SigningJwk =>
+      Schema.is(Schema.JsonObject)(key) &&
+      key["kty"] === "RSA" &&
+      Schema.is(Schema.String)(key["n"]) &&
+      Schema.is(Schema.String)(key["e"]) &&
+      (key["alg"] === undefined || key["alg"] === "RS256") &&
+      (key["use"] === undefined || key["use"] === "sig"),
   );
 
   if (keys.length === 0) throw new Error("JWKS response has no usable RS256 keys");
@@ -130,20 +129,20 @@ async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise
   return entry;
 }
 
-function audienceMatches(audience: unknown, expected: string): boolean {
-  if (typeof audience === "string") return audience === expected;
+function audienceMatches(audience: Schema.Json | undefined, expected: string): boolean {
+  if (Schema.is(Schema.String)(audience)) return audience === expected;
 
   if (Array.isArray(audience)) return audience.some((value) => value === expected);
 
   return false;
 }
 
-function stringClaim(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+function stringClaim(value: Schema.Json | undefined): string | undefined {
+  return Schema.is(Schema.String)(value) && value.length > 0 ? value : undefined;
 }
 
-function numberClaim(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+function numberClaim(value: Schema.Json | undefined): number | undefined {
+  return Schema.is(Schema.Number)(value) && Number.isFinite(value) ? value : undefined;
 }
 
 /**
@@ -168,7 +167,7 @@ export function verifyPubSubOidcToken(
       return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is malformed" }));
 
     const header = yield* Effect.try({
-      try: () => decodeJsonPart(parts[0]!, "header"),
+      try: () => decodeJsonPart(parts[0] ?? "", "header"),
       catch: (cause) =>
         cause instanceof PubSubAuthError
           ? cause
@@ -182,7 +181,7 @@ export function verifyPubSubOidcToken(
     if (!kid) return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token has no kid" }));
 
     const claims = yield* Effect.try({
-      try: () => decodeJsonPart(parts[1]!, "payload"),
+      try: () => decodeJsonPart(parts[1] ?? "", "payload"),
       catch: (cause) =>
         cause instanceof PubSubAuthError
           ? cause
@@ -230,7 +229,7 @@ export function verifyPubSubOidcToken(
       try: () =>
         crypto.subtle.importKey(
           "jwk",
-          { kty: "RSA", n: signingJwk.n!, e: signingJwk.e! },
+          { kty: "RSA", n: signingJwk.n, e: signingJwk.e },
           { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
           false,
           ["verify"],
@@ -243,7 +242,7 @@ export function verifyPubSubOidcToken(
         crypto.subtle.verify(
           { name: "RSASSA-PKCS1-v1_5" },
           key,
-          decodeBase64Url(parts[2]!) as unknown as BufferSource,
+          decodeBase64Url(parts[2] ?? ""),
           new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
         ),
       catch: (cause) => new PubSubAuthError({ message: "OIDC signature check failed", cause }),
@@ -279,8 +278,8 @@ export function verifyPubSubOidcToken(
 
     const email = stringClaim(claims["email"]);
 
-    const emailVerified =
-      typeof claims["email_verified"] === "boolean" ? claims["email_verified"] : undefined;
+    const rawEmailVerified = claims["email_verified"];
+    const emailVerified = Schema.is(Schema.Boolean)(rawEmailVerified) ? rawEmailVerified : undefined;
 
     if (config.serviceAccountEmail) {
       if (!email || email.toLowerCase() !== config.serviceAccountEmail.toLowerCase())
@@ -294,16 +293,24 @@ export function verifyPubSubOidcToken(
         );
     }
 
-    return {
+    const result: MutableClaims = {
       issuer,
-      audience: typeof claims["aud"] === "string" ? claims["aud"] : config.audience,
-      ...(stringClaim(claims["sub"]) ? { subject: stringClaim(claims["sub"])! } : {}),
-      ...(email ? { email } : {}),
-      ...(emailVerified !== undefined ? { emailVerified } : {}),
+      audience: stringClaim(claims["aud"]) ?? config.audience,
       expiresAt,
-      ...(issuedAt !== undefined ? { issuedAt } : {}),
       claims,
-    } satisfies PubSubOidcClaims;
+    };
+
+    const subject = stringClaim(claims["sub"]);
+
+    if (subject !== undefined) result.subject = subject;
+
+    if (email !== undefined) result.email = email;
+
+    if (emailVerified !== undefined) result.emailVerified = emailVerified;
+
+    if (issuedAt !== undefined) result.issuedAt = issuedAt;
+
+    return result;
   });
 }
 

@@ -98,12 +98,24 @@ export declare namespace R2 {
   };
 }
 
-const stringField = (value: unknown, field: string) =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as Record<string, unknown>)[field] === "string"
-    ? (value as Record<string, string>)[field]
-    : undefined;
+/**
+ * String fields provider SDKs and R2 errors use to explain a failure. All are
+ * optional: a caught value only has to be an object, and a missing or non-string
+ * field reads as absent.
+ */
+const ErrorFields = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  code: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+});
+
+type ErrorField = "message" | "code" | "name";
+
+const stringField = (cause: unknown, field: ErrorField): string | undefined => {
+  if (!Schema.is(ErrorFields)(cause)) return undefined;
+
+  return cause[field];
+};
 
 export const toR2Error = (cause: unknown): R2Error => {
   if (cause instanceof R2FileNotFound || cause instanceof R2InternalError) return cause;

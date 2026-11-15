@@ -10,7 +10,7 @@ import {
   type WebhookEndpointInfo,
   type WebhookEventType,
   type WebhookTestResponse,
-} from "@mattrax/enterprise-domain";
+} from "@mattrax/enterprise-domain/client";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import {
@@ -23,8 +23,9 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
 /**
@@ -36,6 +37,7 @@ import { cn } from "~/lib/utils";
 export default function IntegrationsSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+  const { can } = useCan();
   const webhooks = useQuery(() => enterpriseQueries.webhooks(params.tenantId));
 
   const tenant = useQuery(() => ({
@@ -60,15 +62,7 @@ export default function IntegrationsSettingsPage() {
   const [testingId, setTestingId] = createSignal<string | null>(null);
   const [rotateError, setRotateError] = createSignal<unknown>();
 
-  const canManage = () => {
-    // The tenant query is browser-only. During SSR we render the read-only
-    // shell and let hydration reveal the controls, so an unauthenticated
-    // server render cannot throw out of a Show accessor.
-    if (isServer) return false;
-    const role = tenant.data?.role ?? "";
-
-    return role.split(",").some((item) => item === "owner" || item === "admin");
-  };
+  const canManage = () => can("webhooks.write");
 
   const urlProblem = createMemo(() => (url().trim() ? webhookUrlProblem(url()) : null));
 
@@ -171,7 +165,7 @@ export default function IntegrationsSettingsPage() {
         [endpoint.id]: {
           status: "failed",
           responseStatus: null,
-          error: errorMessage(error, "Could not send the test delivery"),
+          error: errorMessage(raisedFailure(error), "Could not send the test delivery"),
           durationMs: 0,
         },
       }));
@@ -283,7 +277,7 @@ export default function IntegrationsSettingsPage() {
                       each={
                         endpoint.events.length > 0
                           ? endpoint.events
-                          : (Array.from(WEBHOOK_EVENT_TYPES) as WebhookEventType[])
+                          : Array.from(WEBHOOK_EVENT_TYPES)
                       }
                     >
                       {(event) => (

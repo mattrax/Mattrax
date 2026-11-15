@@ -8,7 +8,12 @@ type SeparatorProps<T extends ValidComponent = "hr"> = PolymorphicProps<T, Separ
   Pick<ComponentProps<T>, "class">;
 
 const Separator = <T extends ValidComponent = "hr">(props: SeparatorProps<T>) => {
+  // SAFETY: the default props object is described by the component props type;
+  // `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps({ orientation: "horizontal" } as const, props);
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(mergedProps as SeparatorProps, ["class"]);
 
   return (

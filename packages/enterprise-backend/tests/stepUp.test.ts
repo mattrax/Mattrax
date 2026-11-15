@@ -1,7 +1,12 @@
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
-import { EnterpriseAuth, StepUpService, StepUpUnavailable } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseAuth,
+  StepUpRequired,
+  StepUpService,
+  StepUpUnavailable,
+} from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
 import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
@@ -36,7 +41,7 @@ const seed = () => {
   };
 };
 
-const makeContext = (verifyPassword = true) => {
+const makeContext = (verifyTotp = true) => {
   const db = makeDb(seed());
 
   const appAuth = {
@@ -44,18 +49,19 @@ const makeContext = (verifyPassword = true) => {
   };
 
   const stepUp = Layer.succeed(StepUpService, {
-    methods: () => Effect.succeed({ password: true, totp: true, passkey: false }),
-    verifyPassword: () => Effect.succeed(verifyPassword),
-    verifyTotp: () => Effect.succeed(false),
+    methods: () => Effect.succeed({ totp: true, passkey: false }),
+    verifyTotp: () => Effect.succeed(verifyTotp),
     beginPasskey: () => Effect.fail(new StepUpUnavailable({ message: "No passkey" })),
-    completePasskey: () => Effect.succeed(false),
+    completePasskey: () => Effect.succeed(undefined),
   });
 
   const Live = makeEnterpriseAuthLive({
+    // SAFETY: the fake exposes only `verifySession`, the one app-auth member the
+    // step-up grant path reads.
     appAuth: Effect.succeed(appAuth) as any,
     origin,
     authSecret,
-  }).pipe(Layer.provide(Layer.succeed(Db, db as any)), Layer.provide(stepUp));
+  }).pipe(Layer.provide(Layer.succeed(Db, db)), Layer.provide(stepUp));
 
   const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>) =>
     runEffect(
@@ -69,14 +75,13 @@ const makeContext = (verifyPassword = true) => {
   return { db, run };
 };
 
-const session = (grant?: string) =>
-  new Request(`${origin}/api/v1/tenants/tenant-1`, {
-    method: "DELETE",
-    headers: {
-      cookie: "__Host-mattrax_session=test",
-      ...(grant ? { "x-mattrax-step-up": grant } : {}),
-    },
-  });
+const session = (grant?: string) => {
+  const headers = new Headers({ cookie: "__Host-mattrax_session=test" });
+
+  if (grant !== undefined) headers.set("x-mattrax-step-up", grant);
+
+  return new Request(`${origin}/api/v1/tenants/tenant-1`, { method: "DELETE", headers });
+};
 
 const grant = (
   input: {
@@ -92,6 +97,8 @@ const grant = (
       email: "owner@example.com",
       sessionId: input.sessionId ?? "session-1",
       action: input.action ?? "tenant-delete",
+      method: "passkey" as const,
+      credentialId: "passkey-1",
       expiresAtMillis: input.expiresAtMillis ?? Date.now() + 60_000,
     }),
   );
@@ -99,12 +106,11 @@ const grant = (
 describe("step-up enforcement", () => {
   it("rejects a sensitive action without a grant and reports usable factors", async () => {
     const { run } = makeContext();
-    await expect(
-      run((auth) => auth.requireStepUp(session(), "tenant-delete")),
-    ).rejects.toMatchObject({
-      _tag: "StepUpRequired",
+    const attempt = run((auth) => auth.requireStepUp(session(), "tenant-delete"));
+    await expect(attempt).rejects.toBeInstanceOf(StepUpRequired);
+    await expect(attempt).rejects.toMatchObject({
       action: "tenant-delete",
-      methods: ["password", "totp"],
+      methods: ["totp"],
     });
   });
 
@@ -121,7 +127,7 @@ describe("step-up enforcement", () => {
     const expired = await grant({ expiresAtMillis: Date.now() - 1_000 });
     await expect(
       run((auth) => auth.requireStepUp(session(expired), "tenant-delete")),
-    ).rejects.toMatchObject({ _tag: "StepUpRequired" });
+    ).rejects.toBeInstanceOf(StepUpRequired);
   });
 
   it("rejects a grant issued for another action, session or account", async () => {
@@ -129,17 +135,17 @@ describe("step-up enforcement", () => {
     const otherAction = await grant({ action: "billing-portal" });
     await expect(
       run((auth) => auth.requireStepUp(session(otherAction), "tenant-delete")),
-    ).rejects.toMatchObject({ _tag: "StepUpRequired" });
+    ).rejects.toBeInstanceOf(StepUpRequired);
 
     const otherSession = await grant({ sessionId: "session-other" });
     await expect(
       run((auth) => auth.requireStepUp(session(otherSession), "tenant-delete")),
-    ).rejects.toMatchObject({ _tag: "StepUpRequired" });
+    ).rejects.toBeInstanceOf(StepUpRequired);
 
     const otherSubject = await grant({ subjectId: "user-2" });
     await expect(
       run((auth) => auth.requireStepUp(session(otherSubject), "tenant-delete")),
-    ).rejects.toMatchObject({ _tag: "StepUpRequired" });
+    ).rejects.toBeInstanceOf(StepUpRequired);
   });
 
   it("exempts a valid bearer token because it is already a scoped credential", async () => {
@@ -170,17 +176,17 @@ describe("step-up enforcement", () => {
     );
   });
 
-  it("issues a grant from a verified password and rejects a wrong one", async () => {
+  it("issues a grant from a verified authenticator code and rejects a wrong one", async () => {
     const { run } = makeContext(true);
 
     const issued = await run((auth) =>
-      auth.stepUpPassword(session(), {
-        password: "correct horse battery",
+      auth.stepUpTotp(session(), {
+        code: "123456",
         action: "tenant-delete",
       }),
     );
 
-    expect(issued.method).toBe("password");
+    expect(issued.method).toBe("totp");
     expect(issued.expiresAtMillis).toBeGreaterThan(Date.now());
     await expect(
       run((auth) => auth.requireStepUp(session(issued.grant), "tenant-delete")),
@@ -189,8 +195,8 @@ describe("step-up enforcement", () => {
     const rejecting = makeContext(false);
     await expect(
       rejecting.run((auth) =>
-        auth.stepUpPassword(session(), { password: "wrong", action: "tenant-delete" }),
+        auth.stepUpTotp(session(), { code: "000000", action: "tenant-delete" }),
       ),
-    ).rejects.toMatchObject({ _tag: "StepUpRequired" });
+    ).rejects.toBeInstanceOf(StepUpRequired);
   });
 });

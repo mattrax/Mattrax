@@ -1,8 +1,18 @@
 import { Effect, Schema } from "effect";
 import { parse as fastPlistParse } from "fast-plist";
-import { PlistParseError, PlistSerializeError, PlistValue } from "./schema.js";
+import {
+  PlistParseError,
+  PlistSerializeError,
+  PlistValue,
+  type PlistValue as PlistValueType,
+} from "./schema.js";
 
 export * from "./schema.js";
+
+const PlistArray = Schema.Array(PlistValue);
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+const PlistBytes = Schema.instanceOf(Uint8Array);
+const PlistDate = Schema.instanceOf(Date);
 
 export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistParseError> =>
   Effect.try({
@@ -19,16 +29,16 @@ function escapeXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function serializeValue(value: unknown): string {
+function serializeValue(value: PlistValueType): string {
   if (value === null || value === undefined) {
     return "<string></string>";
   }
 
-  if (typeof value === "boolean") {
+  if (Schema.is(Schema.Boolean)(value)) {
     return value ? "<true/>" : "<false/>";
   }
 
-  if (typeof value === "number") {
+  if (Schema.is(Schema.Number)(value)) {
     if (Number.isInteger(value)) {
       return `<integer>${value}</integer>`;
     }
@@ -36,30 +46,31 @@ function serializeValue(value: unknown): string {
     return `<real>${value}</real>`;
   }
 
-  if (typeof value === "string") {
+  if (Schema.is(Schema.String)(value)) {
     return `<string>${escapeXml(value)}</string>`;
   }
 
-  if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
-    const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
-    const base64 = btoa(String.fromCharCode(...bytes));
-
-    return `<data>${base64}</data>`;
+  if (Schema.is(PlistBytes)(value)) {
+    return `<data>${btoa(String.fromCharCode(...value))}</data>`;
   }
 
-  if (value instanceof Date) {
+  if (Schema.is(Schema.instanceOf(ArrayBuffer))(value)) {
+    return `<data>${btoa(String.fromCharCode(...new Uint8Array(value)))}</data>`;
+  }
+
+  if (Schema.is(PlistDate)(value)) {
     return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
   }
 
-  if (Array.isArray(value)) {
-    const items = value.map((v) => serializeValue(v)).join("");
+  if (Schema.is(PlistArray)(value)) {
+    const items = value.map((item) => serializeValue(item)).join("");
 
     return `<array>${items}</array>`;
   }
 
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .map(([k, v]) => `<key>${escapeXml(k)}</key>${serializeValue(v)}`)
+  if (Schema.is(PlistDictionary)(value)) {
+    const entries = Object.entries(value)
+      .map(([key, item]) => `<key>${escapeXml(key)}</key>${serializeValue(item)}`)
       .join("");
 
     return `<dict>${entries}</dict>`;
@@ -68,7 +79,9 @@ function serializeValue(value: unknown): string {
   return `<string>${escapeXml(String(value))}</string>`;
 }
 
-export const serializePlist = (value: unknown): Effect.Effect<string, PlistSerializeError> =>
+export const serializePlist = (
+  value: PlistValueType,
+): Effect.Effect<string, PlistSerializeError> =>
   Effect.try({
     try: () => {
       const body = serializeValue(value);

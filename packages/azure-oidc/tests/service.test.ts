@@ -1,8 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { AzureOidc, AzureOidcLive, azureIssuer } from "../src/index.js";
-import type { JsonWebKey } from "../src/index.js";
+import { AzureOidc, AzureOidcError, AzureOidcLive, JsonWebKey, azureIssuer } from "../src/index.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
 const audience = "api://mattrax";
@@ -11,18 +10,25 @@ let sharedPair: CryptoKeyPair;
 let sharedJwk: JsonWebKey;
 
 function base64Url(data: ArrayBuffer | Uint8Array | string): string {
-  const bytes =
-    typeof data === "string"
-      ? new TextEncoder().encode(data)
-      : data instanceof Uint8Array
-        ? data
-        : new Uint8Array(data);
+  const bytes = Schema.is(Schema.String)(data)
+    ? new TextEncoder().encode(data)
+    : data instanceof Uint8Array
+      ? data
+      : new Uint8Array(data);
 
   let binary = "";
 
   for (const byte of bytes) binary += String.fromCharCode(byte);
 
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+
+  new Uint8Array(buffer).set(bytes);
+
+  return buffer;
 }
 
 function base64UrlToBytes(input: string): Uint8Array {
@@ -37,7 +43,7 @@ function base64UrlToBytes(input: string): Uint8Array {
 }
 
 async function makeKeyPair() {
-  const pair = (await crypto.subtle.generateKey(
+  const pair = await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
       hash: "SHA-256",
@@ -46,17 +52,25 @@ async function makeKeyPair() {
     },
     true,
     ["sign", "verify"],
-  )) as CryptoKeyPair;
+  );
 
   const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
 
-  return { pair, jwk: { ...jwk, kid, kty: "RSA", use: "sig", alg: "RS256" } };
+  const decoded = Schema.decodeUnknownSync(JsonWebKey)({
+    ...jwk,
+    kid,
+    kty: "RSA",
+    use: "sig",
+    alg: "RS256",
+  });
+
+  return { pair, jwk: decoded };
 }
 
 async function signJwt(
   privateKey: CryptoKey,
-  claims: Record<string, unknown>,
-  header: Record<string, unknown> = {},
+  claims: Schema.JsonObject,
+  header: Schema.JsonObject = {},
 ) {
   const encodedHeader = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid, ...header }));
   const encodedPayload = base64Url(JSON.stringify(claims));
@@ -65,20 +79,20 @@ async function signJwt(
   const signature = await crypto.subtle.sign(
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     privateKey,
-    new TextEncoder().encode(signingInput),
+    toArrayBuffer(new TextEncoder().encode(signingInput)),
   );
 
   return `${signingInput}.${base64Url(signature)}`;
 }
 
-function mockAzureLayer(jwks: unknown, counters?: { discovery: number; jwks: number }) {
+function mockAzureLayer(jwks: Schema.Json, counters?: { discovery: number; jwks: number }) {
   const discovery = {
     issuer: azureIssuer(tenantId),
     jwks_uri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
   };
 
   const fetch: typeof globalThis.fetch = async (input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
 
     if (url.endsWith("/.well-known/openid-configuration")) {
       if (counters) counters.discovery++;
@@ -106,7 +120,7 @@ function mockAzureLayer(jwks: unknown, counters?: { discovery: number; jwks: num
 
 function runWithOidc<A, E>(
   effect: Effect.Effect<A, E, AzureOidc>,
-  jwks: unknown,
+  jwks: Schema.Json,
   counters?: { discovery: number; jwks: number },
 ) {
   return Effect.runPromise(
@@ -122,7 +136,7 @@ describe("AzureOidc", () => {
   beforeAll(async () => {
     const { pair, jwk } = await makeKeyPair();
     sharedPair = pair;
-    sharedJwk = jwk as JsonWebKey;
+    sharedJwk = jwk;
   });
 
   it("fetches discovery and JWKS through the Effect HTTP client", async () => {
@@ -173,8 +187,8 @@ describe("AzureOidc", () => {
       await crypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
         imported,
-        base64UrlToBytes(parts[2]!) as BufferSource,
-        new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+        toArrayBuffer(base64UrlToBytes(parts[2]!)),
+        toArrayBuffer(new TextEncoder().encode(`${parts[0]}.${parts[1]}`)),
       ),
     ).toBe(true);
 
@@ -211,7 +225,7 @@ describe("AzureOidc", () => {
         }),
         { keys: [sharedJwk] },
       ),
-    ).rejects.toMatchObject({ _tag: "AzureOidcError" });
+    ).rejects.toBeInstanceOf(AzureOidcError);
   });
 
   it("rejects wrong tenant", async () => {
@@ -237,7 +251,7 @@ describe("AzureOidc", () => {
         }),
         { keys: [sharedJwk] },
       ),
-    ).rejects.toMatchObject({ _tag: "AzureOidcError" });
+    ).rejects.toBeInstanceOf(AzureOidcError);
   });
 
   it("rejects expired tokens", async () => {
@@ -264,7 +278,7 @@ describe("AzureOidc", () => {
         }),
         { keys: [sharedJwk] },
       ),
-    ).rejects.toMatchObject({ _tag: "AzureOidcError" });
+    ).rejects.toBeInstanceOf(AzureOidcError);
   });
 
   it("refreshes JWKS when the token kid is missing", async () => {
@@ -281,7 +295,8 @@ describe("AzureOidc", () => {
     let calls = 0;
 
     const fetch: typeof globalThis.fetch = async (input) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        input instanceof URL ? input.href : input instanceof Request ? input.url : input;
 
       if (url.endsWith("/.well-known/openid-configuration")) {
         return new Response(

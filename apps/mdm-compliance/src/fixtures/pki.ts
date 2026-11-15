@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { constants, privateDecrypt, publicEncrypt } from "node:crypto";
@@ -17,12 +18,29 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   }
 }
 
-const algorithm = {
+const algorithm: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
 };
+
+type AttributeValueBlock = { readonly value?: unknown; readonly valueDec?: number };
+
+function hasAttributeValueBlock(node: unknown): node is AttributeValueBlock {
+  return typeof node === "object" && node !== null;
+}
+
+function hasHexValue(
+  node: unknown,
+): node is { valueBlock: { valueHexView: Uint8Array<ArrayBuffer> } } {
+  if (typeof node !== "object" || node === null || !("valueBlock" in node)) return false;
+  const block = node.valueBlock;
+
+  if (typeof block !== "object" || block === null || !("valueHexView" in block)) return false;
+
+  return block.valueHexView instanceof Uint8Array;
+}
 
 export type ScepCaFixture = {
   readonly keyPair: CryptoKeyPair;
@@ -33,7 +51,7 @@ export type ScepCaFixture = {
 };
 
 export const generateKeyPair = async (): Promise<CryptoKeyPair> =>
-  crypto.subtle.generateKey(algorithm as never, true, ["sign", "verify"]) as Promise<CryptoKeyPair>;
+  crypto.subtle.generateKey(algorithm, true, ["sign", "verify"] as const);
 
 export const createCaFixture = async (): Promise<ScepCaFixture> => {
   const keyPair = await generateKeyPair();
@@ -43,7 +61,7 @@ export const createCaFixture = async (): Promise<ScepCaFixture> => {
     keyPair,
     cert,
     certPem: certToPem(cert),
-    privateKeyJwk: (await crypto.subtle.exportKey("jwk", keyPair.privateKey)) as JsonWebKey,
+    privateKeyJwk: await crypto.subtle.exportKey("jwk", keyPair.privateKey),
     serial: certificateSerialHex(cert),
   };
 };
@@ -163,10 +181,7 @@ export const encryptEnvelopedData = async (
       algorithmParams: new asn1js.Null(),
     }),
     encryptedKey: new asn1js.OctetString({
-      valueHex: encryptedSessionKey.buffer.slice(
-        encryptedSessionKey.byteOffset,
-        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
-      ) as ArrayBuffer,
+      valueHex: new Uint8Array(encryptedSessionKey).buffer,
     }),
   });
 
@@ -177,7 +192,7 @@ export const encryptEnvelopedData = async (
       contentType: pkijs.ContentInfo.DATA,
       contentEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
         algorithmId: "2.16.840.1.101.3.4.1.2",
-        algorithmParams: new asn1js.OctetString({ valueHex: iv.buffer as ArrayBuffer }),
+        algorithmParams: new asn1js.OctetString({ valueHex: new Uint8Array(iv).buffer }),
       }),
       encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
     }),
@@ -195,20 +210,26 @@ const signerAttribute = (signedData: pkijs.SignedData, oid: string): pkijs.Attri
   signedData.signerInfos[0]?.signedAttrs?.attributes.find((attribute) => attribute.type === oid);
 
 const stringValue = (attribute: pkijs.Attribute | undefined): string | undefined => {
-  const value = attribute?.values[0] as
-    | { valueBlock?: { value?: string; valueDec?: number } }
-    | undefined;
+  const value = attribute?.values[0];
 
-  if (!value?.valueBlock) return undefined;
+  if (!value) return undefined;
 
-  return (
-    value.valueBlock.value ??
-    (value.valueBlock.valueDec === undefined ? undefined : String(value.valueBlock.valueDec))
-  );
+  const block: unknown = value.valueBlock;
+
+  if (!hasAttributeValueBlock(block)) return undefined;
+
+  if (Schema.is(Schema.String)(block.value)) return block.value;
+
+  return block.valueDec === undefined ? undefined : String(block.valueDec);
 };
 
-const octetValue = (attribute: pkijs.Attribute | undefined): ArrayBuffer | undefined =>
-  (attribute?.values[0] as asn1js.OctetString | undefined)?.valueBlock.valueHexView.slice().buffer;
+const octetValue = (attribute: pkijs.Attribute | undefined): ArrayBuffer | undefined => {
+  const value = attribute?.values[0];
+
+  if (!(value instanceof asn1js.OctetString)) return undefined;
+
+  return value.valueBlock.valueHexView.slice().buffer;
+};
 
 export type ParsedCertRep = {
   readonly signedData: pkijs.SignedData;
@@ -262,12 +283,19 @@ export const decryptCertRep = async (
 ): Promise<pkijs.Certificate> => {
   const eContent = certRep.signedData.encapContentInfo.eContent;
 
-  if (!eContent) throw new Error("CertRep has no eContent");
-  const envelopedDer = (eContent as asn1js.OctetString).getValue() as ArrayBuffer;
+  if (!(eContent instanceof asn1js.OctetString)) throw new Error("CertRep has no eContent");
+
+  const envelopedDer = eContent.getValue();
   const contentInfo = pkijs.ContentInfo.fromBER(envelopedDer);
   const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
-  const recipientInfo = envelopedData.recipientInfos[0]!.value as pkijs.KeyTransRecipientInfo;
-  const encryptedKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+  const recipient = envelopedData.recipientInfos[0]?.value;
+
+  if (!recipient || !("encryptedKey" in recipient))
+    throw new Error("CertRep has no key transport recipient");
+
+  if (!hasHexValue(recipient.encryptedKey)) throw new Error("Recipient key has no bytes");
+
+  const encryptedKey = Buffer.from(recipient.encryptedKey.valueBlock.valueHexView);
 
   const signingKey = await crypto.subtle.importKey(
     "jwk",
@@ -277,7 +305,7 @@ export const decryptCertRep = async (
     ["sign"],
   );
 
-  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
+  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey);
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
   const sessionKeyBytes = privateDecrypt(
@@ -285,20 +313,19 @@ export const decryptCertRep = async (
     encryptedKey,
   );
 
-  const ivHex = (
-    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as {
-      valueBlock?: { valueHex?: ArrayBuffer };
-    }
-  )?.valueBlock?.valueHex;
+  const algorithmParams =
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams;
 
-  if (!ivHex) throw new Error("CertRep has no content encryption IV");
+  if (!hasHexValue(algorithmParams)) throw new Error("CertRep has no content encryption IV");
+
+  const iv = algorithmParams.valueBlock.valueHexView;
 
   const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
     "decrypt",
   ]);
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-CBC", iv: Buffer.from(ivHex) },
+    { name: "AES-CBC", iv: Buffer.from(iv) },
     aesKey,
     envelopedData.encryptedContentInfo.getEncryptedContent(),
   );
@@ -330,7 +357,7 @@ export const buildPkcsReq = async (options: {
     options.encryptCsr === false ? csrDer : await encryptEnvelopedData(csrDer, options.caCert);
 
   const innerDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", innerContent as ArrayBuffer),
+    await crypto.subtle.digest("SHA-256", innerContent),
   );
 
   const signedData = new pkijs.SignedData({
@@ -380,7 +407,7 @@ export const buildPkcsReq = async (options: {
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5",
-          values: [new asn1js.OctetString({ valueHex: options.senderNonce.buffer as ArrayBuffer })],
+          values: [new asn1js.OctetString({ valueHex: new Uint8Array(options.senderNonce).buffer })],
         }),
       ],
     }),
@@ -438,7 +465,9 @@ export const certificateValue = (
   oid: string,
 ): string | undefined => {
   const attribute = certificate.subject.typesAndValues.find((item) => item.type === oid);
-  const value = attribute?.value.valueBlock as { value?: string } | undefined;
+  const block: unknown = attribute?.value.valueBlock;
 
-  return value?.value;
+  if (!hasAttributeValueBlock(block)) return undefined;
+
+  return Schema.is(Schema.String)(block.value) ? block.value : undefined;
 };

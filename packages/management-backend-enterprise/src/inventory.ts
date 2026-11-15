@@ -2,11 +2,21 @@
  * DDM status-item ingestion.
  *
  * Apple reports subscribed status items as a nested path tree, but some clients
- * (and older protocol shims) flatten the keys into a single object. Both shapes
+ * (and older protocol shims) flatten the keys into a single object. Both forms
  * are accepted here so a reporting change never silently drops inventory.
  *
  * Pure functions only: `updateInventoryFromStatus` owns persistence.
  */
+
+import { Schema } from "effect";
+import type { PlistValue } from "@mattrax/plist";
+import {
+  isPlistArray,
+  isPlistObject,
+  plistStatusBoolean,
+  plistText,
+  type PlistInput,
+} from "./internal/plistValue.js";
 
 export type DeviceInventory = {
   readonly serial?: string;
@@ -19,112 +29,82 @@ export type DeviceInventory = {
   /** `null` means the report explicitly says the value is unavailable. */
   readonly fileVaultEnabled?: boolean | null;
   readonly batteryHealth?: string | null;
-  readonly capabilities?: unknown;
+  readonly capabilities?: PlistValue | null;
   readonly diskTotal?: string;
   readonly diskUsed?: string;
 };
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-
 /** Resolve a dotted path, falling back to a flattened key on the root object. */
-export const statusItemValue = (statusItems: unknown, path: string): unknown => {
-  const root = record(statusItems);
-
-  if (!root) return undefined;
-  let current: unknown = root;
+export const statusItemValue = (
+  statusItems: PlistInput,
+  path: string,
+): PlistInput => {
+  if (!isPlistObject(statusItems)) return undefined;
+  let current: PlistInput = statusItems;
 
   for (const part of path.split(".")) {
-    current = record(current)?.[part];
+    current = isPlistObject(current) ? current[part] : undefined;
 
     if (current === undefined) break;
   }
 
   if (current !== undefined) return current;
 
-  return root[path];
+  return statusItems[path];
 };
 
-const text = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
+const text = (value: PlistInput): string | undefined => {
+  const direct = plistText(value);
 
-    return trimmed === "" ? undefined : trimmed;
-  }
+  if (direct !== undefined) return direct;
 
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  const nested = record(value);
+  if (!isPlistObject(value)) return undefined;
 
-  if (nested) {
-    for (const key of ["value", "Value", "text", "string"]) {
-      const candidate = text(nested[key]);
+  for (const key of ["value", "Value", "text", "string"]) {
+    const candidate = text(value[key]);
 
-      if (candidate !== undefined) return candidate;
-    }
+    if (candidate !== undefined) return candidate;
   }
 
   return undefined;
 };
 
-const BOOLEAN_TRUE = new Set(["enabled", "true", "yes", "on", "1"]);
-const BOOLEAN_FALSE = new Set(["disabled", "false", "no", "off", "0"]);
+const BATTERY_LABELS = new Map([
+  ["good", "Good"],
+  ["fair", "Fair"],
+  ["poor", "Poor"],
+  ["unknown", "Unknown"],
+  ["service recommended", "Service Recommended"],
+  ["service battery", "Service Battery"],
+  ["replace soon", "Replace Soon"],
+  ["replace now", "Replace Now"],
+]);
 
 /** Normalise `Enabled` / `Disabled` / booleans / `{ enabled }` wrappers. */
-export const normalizeBoolean = (value: unknown): boolean | undefined => {
-  if (typeof value === "boolean") return value;
+export const normalizeBoolean = (value: PlistInput): boolean | undefined => {
+  const direct = plistStatusBoolean(value);
 
-  if (typeof value === "number") {
-    if (value === 1) return true;
+  if (direct !== undefined) return direct;
 
-    if (value === 0) return false;
+  if (!isPlistObject(value)) return undefined;
 
-    return undefined;
-  }
+  for (const key of ["enabled", "Enabled", "value", "Value", "state", "status"]) {
+    if (!(key in value)) continue;
+    const parsed = normalizeBoolean(value[key]);
 
-  if (typeof value === "string") {
-    const text = value.trim().toLowerCase();
-
-    if (BOOLEAN_TRUE.has(text)) return true;
-
-    if (BOOLEAN_FALSE.has(text)) return false;
-
-    return undefined;
-  }
-
-  const nested = record(value);
-
-  if (nested) {
-    for (const key of ["enabled", "Enabled", "value", "Value", "state", "status"]) {
-      if (!(key in nested)) continue;
-      const parsed = normalizeBoolean(nested[key]);
-
-      if (parsed !== undefined) return parsed;
-    }
+    if (parsed !== undefined) return parsed;
   }
 
   return undefined;
-};
-
-const BATTERY_LABELS: Record<string, string> = {
-  good: "Good",
-  fair: "Fair",
-  poor: "Poor",
-  unknown: "Unknown",
-  "service recommended": "Service Recommended",
-  "service battery": "Service Battery",
-  "replace soon": "Replace Soon",
-  "replace now": "Replace Now",
 };
 
 /** Canonicalise the battery condition strings macOS reports. */
-export const normalizeBatteryHealth = (value: unknown): string | undefined => {
+export const normalizeBatteryHealth = (value: PlistInput): string | undefined => {
   const raw = text(value);
 
   if (!raw) return undefined;
   const collapsed = raw.replace(/\s+/g, " ").trim();
-  const canonical = BATTERY_LABELS[collapsed.toLowerCase()];
+  const canonical = BATTERY_LABELS.get(collapsed.toLowerCase());
 
   if (canonical) return canonical;
 
@@ -132,14 +112,13 @@ export const normalizeBatteryHealth = (value: unknown): string | undefined => {
   return collapsed.charAt(0).toUpperCase() + collapsed.slice(1);
 };
 
-const capabilityLabel = (entry: unknown): string | undefined => {
-  if (typeof entry === "string") return text(entry);
-  const nested = record(entry);
+const capabilityLabel = (entry: PlistInput): string | undefined => {
+  if (Schema.is(Schema.String)(entry)) return text(entry);
 
-  if (!nested) return text(entry);
+  if (!isPlistObject(entry)) return text(entry);
 
   for (const key of ["capability", "name", "identifier", "code", "id"]) {
-    const label = text(nested[key]);
+    const label = text(entry[key]);
 
     if (label) return label;
   }
@@ -151,12 +130,12 @@ const capabilityLabel = (entry: unknown): string | undefined => {
  * Capabilities arrive as an array of strings, an array of dictionaries, a
  * comma-separated string, or (some clients) a `{ capabilities: [...] }`
  * envelope. Arrays of dictionaries become a de-duplicated label list; an
- * unrecognised shape is preserved verbatim so nothing is lost.
+ * unrecognised value is preserved verbatim so nothing is lost.
  */
-export const normalizeCapabilities = (value: unknown): unknown => {
-  if (value == null) return undefined;
+export const normalizeCapabilities = (value: PlistInput): PlistInput => {
+  if (value === null || value === undefined) return undefined;
 
-  if (typeof value === "string") {
+  if (Schema.is(Schema.String)(value)) {
     const parts = value
       .split(",")
       .map((part) => part.trim())
@@ -165,7 +144,7 @@ export const normalizeCapabilities = (value: unknown): unknown => {
     return parts.length > 0 ? [...new Set(parts)] : undefined;
   }
 
-  if (Array.isArray(value)) {
+  if (isPlistArray(value)) {
     const labels = value
       .map(capabilityLabel)
       .filter((label): label is string => label !== undefined);
@@ -175,24 +154,22 @@ export const normalizeCapabilities = (value: unknown): unknown => {
     return value;
   }
 
-  const nested = record(value);
-
-  if (nested) {
+  if (isPlistObject(value)) {
     for (const key of ["capabilities", "items", "values"]) {
-      if (key in nested) {
-        const parsed = normalizeCapabilities(nested[key]);
+      if (key in value) {
+        const parsed = normalizeCapabilities(value[key]);
 
         if (parsed !== undefined) return parsed;
       }
     }
 
-    return nested;
+    return value;
   }
 
   return undefined;
 };
 
-const byteCount = (value: unknown): number | undefined => {
+const byteCount = (value: PlistInput): number | undefined => {
   const raw = text(value);
 
   if (!raw) return undefined;
@@ -204,7 +181,9 @@ const byteCount = (value: unknown): number | undefined => {
 };
 
 /** Merge the status items into a normalised inventory fragment. */
-export const parseDeviceInventory = (statusItems: unknown): DeviceInventory => {
+export const parseDeviceInventory = (
+  statusItems: PlistInput,
+): DeviceInventory => {
   const at = (path: string) => statusItemValue(statusItems, path);
 
   const inventory: {

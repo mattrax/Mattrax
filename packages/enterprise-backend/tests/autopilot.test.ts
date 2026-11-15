@@ -1,11 +1,14 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import type {
-  AutopilotDeploymentProfileInput,
-  AzureGraphService,
-  GraphAutopilotDevice,
+import {
+  AzureGraphConsentRequired,
+  type AutopilotDeploymentProfileInput,
+  type AzureGraphService,
+  type GraphAutopilotDevice,
+  type ImportAutopilotDeviceIdentity,
 } from "@mattrax/azure-graph";
 import {
+  AutopilotError,
   createAutopilotProfile,
   importAutopilotDevices,
   listAutopilotProfiles,
@@ -13,7 +16,7 @@ import {
   syncAutopilotDevices,
   validateAutopilotProfileInput,
 } from "../src/autopilot.js";
-import { makeDb, schema } from "./helpers.js";
+import { makeDb } from "./helpers.js";
 
 const organizationId = "org-1";
 const azureTenantId = "11111111-1111-1111-1111-111111111111";
@@ -30,11 +33,17 @@ const device = (overrides: Partial<GraphAutopilotDevice> = {}): GraphAutopilotDe
 });
 
 type GraphCalls = {
-  imports: Array<{ tenantId: string; devices: Array<Record<string, unknown>> }>;
+  imports: Array<{ tenantId: string; devices: ReadonlyArray<ImportAutopilotDeviceIdentity> }>;
   lists: string[];
   profiles: AutopilotDeploymentProfileInput[];
   assignments: Array<{ tenantId: string; profileId: string; groupId: string }>;
 };
+
+/** Build a Graph double from the methods the case under test reaches. */
+const asGraphService = (mock: Partial<AzureGraphService>): AzureGraphService =>
+  // SAFETY: the mock is deliberately partial; only the stubbed methods are
+  // called by the code under test.
+  mock as AzureGraphService;
 
 const graphMock = (
   options: {
@@ -45,14 +54,16 @@ const graphMock = (
   const calls: GraphCalls = { imports: [], lists: [], profiles: [], assignments: [] };
   const pages = options.pages ?? [[device()]];
 
-  const graph = {
-    importAutopilotDevices: (tenantId: string, devices: Array<Record<string, unknown>>) =>
+  const graph = asGraphService({
+    importAutopilotDevices: (
+      tenantId: string,
+      devices: ReadonlyArray<ImportAutopilotDeviceIdentity>,
+    ) =>
       Effect.sync(() => {
         calls.imports.push({ tenantId, devices });
 
         return (
-          options.imported ??
-          devices.map((item) => device({ serialNumber: item.serialNumber as string }))
+          options.imported ?? devices.map((item) => device({ serialNumber: item.serialNumber }))
         );
       }),
     listAutopilotDevices: (tenantId: string, link?: string) =>
@@ -85,7 +96,7 @@ const graphMock = (
       Effect.sync(() => {
         calls.assignments.push({ tenantId, profileId, groupId });
       }),
-  } as unknown as AzureGraphService;
+  });
 
   return { graph, calls };
 };
@@ -312,26 +323,25 @@ describe("Autopilot Graph mirroring", () => {
   it("fails closed before writing when Graph rejects the import", async () => {
     const db = makeDb();
 
-    const graph = {
+    const graph = asGraphService({
       importAutopilotDevices: () =>
-        Effect.fail({
-          _tag: "ConsentRequired",
-          message: "requires admin consent",
-          status: 403,
-        }),
-    } as unknown as AzureGraphService;
+        Effect.fail(
+          new AzureGraphConsentRequired({ message: "requires admin consent", status: 403 }),
+        ),
+    });
 
-    await expect(
-      run(
-        importAutopilotDevices({
-          db,
-          graph,
-          organizationId,
-          azureTenantId,
-          rows: [{ serial: "ABC123", hardwareHash: "aGFzaA==" }],
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "AutopilotError", reason: "graph" });
+    const failure = run(
+      importAutopilotDevices({
+        db,
+        graph,
+        organizationId,
+        azureTenantId,
+        rows: [{ serial: "ABC123", hardwareHash: "aGFzaA==" }],
+      }),
+    );
+
+    await expect(failure).rejects.toBeInstanceOf(AutopilotError);
+    await expect(failure).rejects.toMatchObject({ reason: "graph" });
     expect(db.store["autopilot_device"] ?? []).toHaveLength(0);
   });
 

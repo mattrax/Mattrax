@@ -1,8 +1,8 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { eq } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
-import { verifyStripeWebhookSignature, type Stripe } from "@mattrax/effect-stripe";
+import { verifyStripeWebhookSignature } from "@mattrax/effect-stripe";
 import { schema } from "./schema.ts";
 import type { EnterpriseDb } from "./schema.ts";
 
@@ -19,31 +19,31 @@ export class BillingWebhookError extends Data.TaggedError("BillingWebhookError")
 const fail = (message: string, statusCode = 400) =>
   new BillingWebhookError({ message, statusCode });
 
-const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+const json = (body: Schema.Json, status = 200) =>
+  HttpServerResponse.jsonUnsafe(body, { status });
 
-const idOf = (value: unknown): string | undefined => {
-  if (typeof value === "string" && value.trim()) return value.trim();
+type StripeIdRef = string | { readonly id?: string | undefined } | null | undefined;
 
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    typeof (value as { id?: unknown }).id === "string"
-  )
-    return (value as { id: string }).id;
+const idOf = (value: StripeIdRef): string | undefined => {
+  if (Schema.is(Schema.String)(value)) return value.trim() || undefined;
 
-  return undefined;
+  return value?.id;
 };
 
-const organizationIdFromMetadata = (metadata: unknown): string | undefined => {
-  if (typeof metadata !== "object" || metadata === null) return undefined;
-  const value = (metadata as Record<string, unknown>).organizationId;
+const OrganizationMetadata = Schema.Struct({
+  organizationId: Schema.optional(Schema.String),
+});
 
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+const organizationIdFromMetadata = (metadata: Schema.Json | undefined): string | undefined => {
+  const value = Option.getOrUndefined(
+    Schema.decodeUnknownOption(OrganizationMetadata)(metadata),
+  )?.organizationId?.trim();
+
+  return value || undefined;
 };
 
-const dateFromUnix = (value: unknown): Date | null =>
-  typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000) : null;
+const dateFromUnix = (value: number | undefined): Date | null =>
+  value !== undefined && Number.isFinite(value) ? new Date(value * 1000) : null;
 
 const subscriptionPeriod = (subscription: any) => {
   // Stripe moved current period fields onto subscription items in newer API
@@ -59,10 +59,12 @@ const subscriptionPeriod = (subscription: any) => {
 };
 
 const planFor = (subscription: any, deviceMonthlyPriceId?: string) => {
-  const metadataPlan = subscription.metadata?.plan;
+  const metadataPlan = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.String)(subscription.metadata?.plan),
+  )?.trim();
 
-  if (typeof metadataPlan === "string" && metadataPlan.trim())
-    return metadataPlan.trim().slice(0, 255);
+  if (metadataPlan) return metadataPlan.slice(0, 255);
+
   const priceId = subscription.items?.data?.[0]?.price?.id;
 
   if (deviceMonthlyPriceId && priceId === deviceMonthlyPriceId) return "device";
@@ -190,9 +192,8 @@ const applySubscription = (input: ApplySubscriptionInput) =>
       stripeSubscriptionId,
       status:
         input.statusOverride ??
-        (typeof subscription.status === "string" && subscription.status
-          ? subscription.status
-          : "incomplete"),
+        Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(subscription.status)) ??
+        "incomplete",
       periodStart,
       periodEnd,
       cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
@@ -228,9 +229,9 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
     const invoice = input.invoice;
 
     const embeddedSubscription =
-      typeof invoice.subscription === "object" && invoice.subscription !== null
-        ? invoice.subscription
-        : undefined;
+      invoice.subscription === null || Schema.is(Schema.String)(invoice.subscription)
+        ? undefined
+        : invoice.subscription;
 
     const stripeSubscriptionId =
       idOf(invoice.subscription) ??
@@ -245,15 +246,17 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
     const customerId = idOf(invoice.customer);
 
     if (embeddedSubscription?.id) {
+      // Expanded invoice subscriptions do not always repeat metadata.
+      const subscriptionMetadata = { ...embeddedSubscription.metadata };
+
+      if (metadataOrganizationId)
+        subscriptionMetadata.organizationId = metadataOrganizationId;
+
       return yield* applySubscription({
         db: input.db,
         subscription: {
           ...embeddedSubscription,
-          // Expanded invoice subscriptions do not always repeat metadata.
-          metadata: {
-            ...embeddedSubscription.metadata,
-            ...(metadataOrganizationId ? { organizationId: metadataOrganizationId } : {}),
-          },
+          metadata: subscriptionMetadata,
           customer: embeddedSubscription.customer ?? customerId,
         },
         statusOverride: input.paymentFailed
@@ -293,6 +296,13 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
 
     if (!existing)
       return yield* Effect.fail(fail("Invoice does not match a known Mattrax subscription"));
+
+    // The invoice resolved to one organization but the subscription row it
+    // points at belongs to another: refuse rather than write across tenants.
+    if (existing.referenceId !== organization.id)
+      return yield* Effect.fail(
+        fail("Stripe invoice subscription already belongs to another Mattrax organization"),
+      );
 
     yield* input.db
       .update(schema.subscription)
@@ -340,14 +350,14 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
       case "customer.subscription.updated":
         return yield* applySubscription({
           db: input.db,
-          subscription: event.data.object as Stripe.Subscription,
+          subscription: event.data.object,
           deviceMonthlyPriceId: input.deviceMonthlyPriceId,
           now,
         });
       case "customer.subscription.deleted":
         return yield* applySubscription({
           db: input.db,
-          subscription: event.data.object as Stripe.Subscription,
+          subscription: event.data.object,
           statusOverride: "canceled",
           deviceMonthlyPriceId: input.deviceMonthlyPriceId,
           now,
@@ -356,7 +366,7 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
       case "invoice.payment_succeeded":
         return yield* applyInvoice({
           db: input.db,
-          invoice: event.data.object as Stripe.Invoice,
+          invoice: event.data.object,
           paymentFailed: false,
           deviceMonthlyPriceId: input.deviceMonthlyPriceId,
           now,
@@ -364,7 +374,7 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
       case "invoice.payment_failed":
         return yield* applyInvoice({
           db: input.db,
-          invoice: event.data.object as Stripe.Invoice,
+          invoice: event.data.object,
           paymentFailed: true,
           deviceMonthlyPriceId: input.deviceMonthlyPriceId,
           now,

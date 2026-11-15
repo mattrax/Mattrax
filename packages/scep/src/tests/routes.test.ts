@@ -43,7 +43,7 @@ describe("SCEP routes", () => {
       const privateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         keyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem, privateKeyJwk }),
@@ -84,7 +84,7 @@ describe("SCEP routes", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
@@ -129,7 +129,7 @@ describe("SCEP routes", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");

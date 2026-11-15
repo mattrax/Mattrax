@@ -1,5 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { GroupNode } from "@mattrax/enterprise-domain/client";
+import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
@@ -29,14 +31,22 @@ import {
   type DeviceRow,
   type DynamicGroupKind,
   type DynamicGroupRules,
-  type GroupNode,
   type PolicyRow,
 } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
+
+const decodeGroupNode = Schema.decodeUnknownOption(GroupNode);
+
+const decodeGroupKind = Schema.decodeUnknownOption(Schema.Literals(["manual", "dynamic"]));
+
+const decodeAssignmentMode = Schema.decodeUnknownOption(Schema.Literals(["include", "exclude"]));
 
 export default function GroupDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const editable = () => can("groups.write");
 
   const group = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
@@ -69,8 +79,17 @@ export default function GroupDetailPage() {
     queryFn: () => enterprise.previewGroup(params.tenantId, params.groupId),
   }));
 
-  const row = () => group.data as GroupNode | undefined;
+  const row = () => Option.getOrUndefined(decodeGroupNode(group.data));
   const [edit, setEdit] = createSignal(false);
+
+  // A read-only role never enters the edit state, even if it was opened before
+  // a role change landed.
+  createEffect(
+    () => editable(),
+    (writable) => {
+      if (!writable) setEdit(false);
+    },
+  );
 
   // The full tenant list is only needed while editing, because the picker must
   // offer unassigned devices too.
@@ -182,9 +201,9 @@ export default function GroupDetailPage() {
       await enterprise.patchGroupMembers(params.tenantId, params.groupId, {
         assign: {
           devices: nextDevices.filter((id) => !oldDevices.includes(id)),
-          policies: [...nextPolicies]
-            .filter(([id, mode]) => oldPolicies.get(id) !== mode)
-            .map(([id, mode]) => ({ id, mode })),
+          policies: [...nextPolicies].flatMap(([id, mode]) =>
+            oldPolicies.get(id) === mode ? [] : [{ id, mode }],
+          ),
         },
         unassign: {
           devices: oldDevices.filter((id) => !nextDevices.includes(id)),
@@ -250,27 +269,33 @@ export default function GroupDetailPage() {
           dirty() ? "Group has unsaved changes" : "Manage group metadata and assignments."
         }
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => (edit() ? (dirty() ? save.mutate() : setEdit(false)) : setEdit(true))}
-            >
-              {!edit() ? "Edit" : dirty() ? "Save" : "Done"}
-            </Button>
-            <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
-              {sync.isPending ? "Syncing…" : "Sync"}
-            </Button>
-            <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
-              Duplicate
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={del.isPending}
-            >
-              Delete
-            </Button>
-          </>
+          <Show when={editable()}>
+            <>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  edit() ? (dirty() ? save.mutate() : setEdit(false)) : setEdit(true)
+                }
+              >
+                {!edit() ? "Edit" : dirty() ? "Save" : "Done"}
+              </Button>
+              <Show when={row()?.kind === "dynamic"}>
+                <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
+                  {sync.isPending ? "Syncing…" : "Sync"}
+                </Button>
+              </Show>
+              <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
+                Duplicate
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={del.isPending}
+              >
+                Delete
+              </Button>
+            </>
+          </Show>
         }
       />
 
@@ -350,7 +375,11 @@ export default function GroupDetailPage() {
                     disabled={!edit()}
                     class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
                     value={kind()}
-                    onChange={(e) => setKind(e.currentTarget.value as DynamicGroupKind)}
+                    onChange={(e) => {
+                      const value = Option.getOrUndefined(decodeGroupKind(e.currentTarget.value));
+
+                      if (value !== undefined) setKind(value);
+                    }}
                   >
                     <option value="manual">Manual — choose devices</option>
                     <option value="dynamic">Dynamic — match device rules</option>
@@ -380,13 +409,13 @@ export default function GroupDetailPage() {
                 title="Assignments"
                 description="Where this group's membership and policy scope live."
               >
-                <dl class="divide-y divide-white/[0.05] text-[13px]">
+                <div class="divide-y divide-white/[0.05] text-[13px]">
                   <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div class="min-w-0">
-                      <dt class="font-medium text-foreground">Devices</dt>
-                      <dd class="mt-0.5 text-[12px] text-muted-foreground">
+                      <p class="font-medium text-foreground">Devices</p>
+                      <p class="mt-0.5 text-[12px] text-muted-foreground">
                         {row()?.devices?.length ?? 0} assigned manually
-                      </dd>
+                      </p>
                     </div>
                     <Button size="sm" variant="outline" onClick={() => setTab("devices")}>
                       Manage
@@ -394,16 +423,16 @@ export default function GroupDetailPage() {
                   </div>
                   <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div class="min-w-0">
-                      <dt class="font-medium text-foreground">Policies</dt>
-                      <dd class="mt-0.5 text-[12px] text-muted-foreground">
+                      <p class="font-medium text-foreground">Policies</p>
+                      <p class="mt-0.5 text-[12px] text-muted-foreground">
                         {row()?.policies?.length ?? 0} included or excluded
-                      </dd>
+                      </p>
                     </div>
                     <Button size="sm" variant="outline" onClick={() => setTab("policies")}>
                       Manage
                     </Button>
                   </div>
-                </dl>
+                </div>
               </Panel>
             }
           >
@@ -532,6 +561,7 @@ export default function GroupDetailPage() {
                 selected={deviceIds()}
                 toggle={(id) => toggle(deviceIds, setDeviceIds, id)}
                 href={(id) => `/t/${params.tenantId}/devices/${id}`}
+                editable={editable() && edit()}
                 emptyTitle="No devices assigned"
                 emptyDescription="Use Edit to choose from the tenant's enrolled devices and add them to this group."
               />
@@ -572,6 +602,7 @@ export default function GroupDetailPage() {
                 toggle={(id) => setPolicyMode(id, policyModes().has(id) ? "" : "include")}
                 mode={(id) => policyModes().get(id)}
                 setMode={setPolicyMode}
+                editable={editable() && edit()}
                 href={(id) => `/t/${params.tenantId}/policies/${id}`}
                 emptyTitle="No policies yet"
                 emptyDescription="Create a policy first, then return here to include or exclude it for this group's members."
@@ -618,6 +649,7 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
   href: (id: string) => string;
   mode?: (id: string) => "include" | "exclude" | undefined;
   setMode?: (id: string, mode: "include" | "exclude" | "") => void;
+  editable?: boolean;
   emptyTitle: string;
   emptyDescription: string;
   emptyIcon?: (props: { class?: string }) => JSX.Element;
@@ -643,7 +675,9 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
         <table class="w-full text-[13px]">
           <thead class="border-b border-white/[0.06] bg-white/[0.02] text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <tr>
-              <th class="w-10 px-4 py-2.5">In</th>
+              <Show when={!props.mode}>
+                <th class="w-10 px-4 py-2.5">In</th>
+              </Show>
               <th class="px-4 py-2.5">Name</th>
               <Show when={props.mode}>
                 <th class="w-40 px-4 py-2.5">Mode</th>
@@ -656,15 +690,18 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
             <For each={props.rows}>
               {(row) => (
                 <tr class="transition-colors hover:bg-white/[0.025]">
-                  <td class="px-4 py-2.5">
-                    <input
-                      type="checkbox"
-                      class="size-3.5 accent-[var(--brand)]"
-                      aria-label={`Assign ${row.name}`}
-                      checked={props.selected.has(row.id)}
-                      onChange={() => props.toggle(row.id)}
-                    />
-                  </td>
+                  <Show when={!props.mode}>
+                    <td class="px-4 py-2.5">
+                      <input
+                        type="checkbox"
+                        class="size-3.5 accent-[var(--brand)]"
+                        aria-label={`Assign ${row.name}`}
+                        checked={props.selected.has(row.id)}
+                        disabled={props.editable === false}
+                        onChange={() => props.toggle(row.id)}
+                      />
+                    </td>
+                  </Show>
                   <td class="px-4 py-2.5">
                     <a
                       class="font-medium text-foreground hover:underline"
@@ -678,18 +715,26 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
                       <select
                         class="h-7 rounded-md px-2 pr-7 text-[11.5px] disabled:opacity-50"
                         aria-label={`Assignment mode for ${row.name}`}
-                        disabled={!props.selected.has(row.id)}
+                        disabled={props.editable === false}
                         value={props.mode?.(row.id) ?? ""}
                         onChange={(event) =>
                           props.setMode?.(
                             row.id,
-                            event.currentTarget.value as "include" | "exclude" | "",
+                            Option.getOrUndefined(
+                              decodeAssignmentMode(event.currentTarget.value),
+                            ) ?? "",
                           )
                         }
                       >
-                        <option value="">Not assigned</option>
-                        <option value="include">Include</option>
-                        <option value="exclude">Exclude</option>
+                        <option value="" selected={!props.mode?.(row.id)}>
+                          Not assigned
+                        </option>
+                        <option value="include" selected={props.mode?.(row.id) === "include"}>
+                          Include
+                        </option>
+                        <option value="exclude" selected={props.mode?.(row.id) === "exclude"}>
+                          Exclude
+                        </option>
                       </select>
                     </td>
                   </Show>

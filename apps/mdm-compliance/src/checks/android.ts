@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   PolicyMergeError,
   androidPolicyHash,
@@ -13,13 +13,14 @@ import {
   mergeAndroidPolicies,
   notificationType,
 } from "@mattrax/dm-android";
+import type { AndroidPubSubResult } from "@mattrax/enterprise-backend";
 import type { Check } from "../types.ts";
 import { createAndroidHarness } from "../harness/android.ts";
 
 const enterpriseName = "enterprises/LC123456";
 const deviceName = `${enterpriseName}/devices/device-1`;
 
-const base64 = (value: unknown): string => {
+const base64 = (value: Schema.Json): string => {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
 
@@ -28,7 +29,7 @@ const base64 = (value: unknown): string => {
   return btoa(binary);
 };
 
-const push = (data: unknown, type: string, messageId = "message-1") => ({
+const push = (data: Schema.Json, type: string, messageId = "message-1") => ({
   message: {
     data: base64(data),
     attributes: { notificationType: type },
@@ -37,6 +38,10 @@ const push = (data: unknown, type: string, messageId = "message-1") => ({
   subscription: "projects/compliance-project/subscriptions/mattrax-android",
 });
 
+
+const withDayN = (result: Check, dayN: boolean): Check =>
+  dayN ? { ...result, dayN: true } : result;
+
 const check = (
   id: string,
   category: Check["category"],
@@ -44,17 +49,34 @@ const check = (
   description: string,
   run: Check["run"],
   dayN = false,
-): Check => ({
-  id: `android.${id}`,
-  platform: "android",
-  category,
-  name,
-  description,
-  ...(dayN ? { dayN: true } : {}),
-  run,
-});
+): Check =>
+  withDayN(
+    {
+      id: `android.${id}`,
+      platform: "android",
+      category,
+      name,
+      description,
+      run,
+    },
+    dayN,
+  );
 
-const rejectsKind = async (work: Promise<unknown>, kind: string): Promise<void> => {
+const assertResult = (
+  result: AndroidPubSubResult,
+  status: AndroidPubSubResult["status"],
+  type: string,
+): void => {
+  const { reason, ...rest } = result;
+
+  assert.equal(reason, undefined);
+  assert.deepEqual(rest, { status, type });
+};
+
+const assertOkResult = (result: AndroidPubSubResult, type: string): void =>
+  assertResult(result, "ok", type);
+
+const rejectsKind = async (work: Promise<object>, kind: string): Promise<void> => {
   await assert.rejects(work, (error: any) => {
     assert.equal(error?._tag, "AndroidDeliveryError");
     assert.equal(error?.kind, kind);
@@ -334,7 +356,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         authorization: `Bearer ${token}`,
       });
 
-      assert.deepEqual(result, { status: "ok", type: "ENROLLMENT" });
+      assertOkResult(result, "ENROLLMENT");
       assert.ok(
         harness.db.store.device!.some(
           (row) => row.dmIdentifier === `${enterpriseName}/devices/device-2`,
@@ -371,8 +393,8 @@ export const androidChecks: ReadonlyArray<Check> = [
         authorization: `Bearer ${token}`,
       });
 
-      assert.deepEqual(first, { status: "ok", type: "ENROLLMENT" });
-      assert.deepEqual(second, { status: "duplicate", type: "ENROLLMENT" });
+      assertOkResult(first, "ENROLLMENT");
+      assertResult(second, "duplicate", "ENROLLMENT");
       assert.equal(
         harness.db.store.device!.filter(
           (row) => row.dmIdentifier === `${enterpriseName}/devices/device-3`,
@@ -405,7 +427,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         authorization: `Bearer ${token}`,
       });
 
-      assert.deepEqual(result, { status: "ok", type: "COMMAND" });
+      assertOkResult(result, "COMMAND");
       assert.equal(harness.calls.commands.length, 0);
     },
   ),
@@ -613,7 +635,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         authorization: `Bearer ${token}`,
       });
 
-      assert.deepEqual(result, { status: "ok", type: "ENROLLMENT" });
+      assertOkResult(result, "ENROLLMENT");
       assert.equal(harness.db.store.device![0]?.status, "unenrolled");
       assert.equal(harness.db.store.android_device![0]?.state, "DELETED");
     },

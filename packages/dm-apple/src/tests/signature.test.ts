@@ -16,13 +16,13 @@ beforeAll(() => {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 });
 
 // ─── Test PKI ────────────────────────────────────────────────────
 
-const RSA_ALGORITHM = {
+const RSA_ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
@@ -44,27 +44,23 @@ type TestCertificate = {
 
 let serialCounter = 0;
 
-const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
-  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
 const generateKeyPair = (): Promise<CryptoKeyPair> =>
-  crypto.subtle.generateKey(RSA_ALGORITHM as never, true, [
-    "sign",
-    "verify",
-  ]) as Promise<CryptoKeyPair>;
+  crypto.subtle.generateKey(RSA_ALGORITHM, true, ["sign", "verify"] as const);
 
-const DN_OIDS: Record<string, string> = {
-  CN: "2.5.4.3",
-  O: "2.5.4.10",
-  OU: "2.5.4.11",
-};
+const DN_OIDS = new Map<string, string>([
+  ["CN", "2.5.4.3"],
+  ["O", "2.5.4.10"],
+  ["OU", "2.5.4.11"],
+]);
 
 const distinguishedName = (attributes: ReadonlyArray<readonly [string, string]>) =>
   new pkijs.RelativeDistinguishedNames({
     typesAndValues: attributes.map(
       ([type, value]) =>
         new pkijs.AttributeTypeAndValue({
-          type: DN_OIDS[type] ?? type,
+          type: DN_OIDS.get(type) ?? type,
           value: new asn1js.Utf8String({ value }),
         }),
     ),
@@ -179,15 +175,19 @@ const buildCms = async (options: {
     algorithmParams: new asn1js.Null(),
   });
 
+  const encapContentInfo = new pkijs.EncapsulatedContentInfo({
+    eContentType: pkijs.ContentInfo.DATA,
+  });
+
+  if (options.eContent)
+    encapContentInfo.eContent = new asn1js.OctetString({
+      valueHex: toArrayBuffer(options.eContent),
+    });
+
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [digestAlgorithm],
-    encapContentInfo: new pkijs.EncapsulatedContentInfo({
-      eContentType: pkijs.ContentInfo.DATA,
-      ...(options.eContent
-        ? { eContent: new asn1js.OctetString({ valueHex: toArrayBuffer(options.eContent) }) }
-        : {}),
-    }),
+    encapContentInfo,
     certificates:
       options.certificates?.slice() ?? options.signers.map((signer) => signer.certificate.cert),
     signerInfos: [],

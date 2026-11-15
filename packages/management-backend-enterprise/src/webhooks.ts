@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import {
@@ -31,18 +31,20 @@ export type WebhookEventInput = {
   readonly organizationId: string;
   readonly type: WebhookEventType | typeof WEBHOOK_TEST_EVENT;
   /** Target type/id plus small, secret-free context copied from the audit row. */
-  readonly data?: Record<string, unknown>;
+  readonly data?: Schema.JsonObject;
   readonly id?: string;
   readonly occurredAt?: Date;
 };
 
-export type WebhookPayload = {
-  readonly id: string;
-  readonly type: string;
-  readonly occurredAt: string;
-  readonly organizationId: string;
-  readonly data: Record<string, unknown>;
-};
+export const WebhookPayload = Schema.Struct({
+  id: Schema.String,
+  type: Schema.String,
+  occurredAt: Schema.String,
+  organizationId: Schema.String,
+  data: Schema.JsonObject,
+});
+
+export type WebhookPayload = typeof WebhookPayload.Type;
 
 export type WebhookDeliveryOptions = {
   /** Application secret used to unseal endpoint signing secrets. */
@@ -91,7 +93,7 @@ const errorText = (cause: unknown): string => {
     return truncate(name || "Delivery failed");
   }
 
-  const text = String(cause ?? "").trim();
+  const text = Schema.is(Schema.String)(cause) ? cause.trim() : "";
 
   return truncate(text || "Delivery failed");
 };
@@ -389,7 +391,7 @@ export const dispatchWebhookEvent = (
           eq(s.webhookEndpoint.organizationId, event.organizationId),
           eq(s.webhookEndpoint.enabled, true),
         ),
-      )) as WebhookEndpointRow[];
+      ));
 
     const matching = endpoints.filter((endpoint) => eventMatchesFilters(endpoint, payload.type));
 
@@ -506,7 +508,7 @@ export const retryFailedWebhookDeliveries = (
         ),
       )
       .orderBy(asc(s.webhookDelivery.createdAt))
-      .limit(limit)) as Array<typeof s.webhookDelivery.$inferSelect>;
+      .limit(limit));
 
     yield* Effect.forEach(
       rows,
@@ -521,18 +523,18 @@ export const retryFailedWebhookDeliveries = (
                 eq(s.webhookEndpoint.organizationId, row.organizationId),
               ),
             )
-            .limit(1)) as WebhookEndpointRow[];
+            .limit(1));
 
           if (!endpoint || !endpoint.enabled) return;
-          const payload = row.payload as WebhookPayload | null;
+          const payload = Schema.decodeUnknownOption(WebhookPayload)(row.payload);
 
-          if (!payload || typeof payload !== "object" || !payload.type) return;
+          if (Option.isNone(payload)) return;
           result.retried += 1;
 
           const outcome = yield* Effect.promise(() =>
             attemptDelivery({
               endpoint,
-              payload,
+              payload: payload.value,
               authSecret: options.authSecret!,
               fetch: options.fetch,
               timeoutMs: options.timeoutMs,
@@ -600,7 +602,7 @@ export const pruneWebhookDeliveries = (
     const stale = (yield* db
       .select({ id: s.webhookDelivery.id })
       .from(s.webhookDelivery)
-      .where(lt(s.webhookDelivery.createdAt, cutoff))) as Array<{ id: string }>;
+      .where(lt(s.webhookDelivery.createdAt, cutoff)));
 
     if (stale.length === 0) return 0;
     yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));

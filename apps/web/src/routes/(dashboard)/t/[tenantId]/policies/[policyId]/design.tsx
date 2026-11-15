@@ -1,11 +1,14 @@
 import { useNavigate, useParams } from "@solidjs/router";
+import { PolicyRow } from "@mattrax/enterprise-domain/client";
+import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, onSettled, Show } from "solid-js";
 import { QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import {
   emptyPolicyDraft,
   parsePolicyDraft,
@@ -19,28 +22,37 @@ const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.android.policy.designer",
 ]);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isRecord = (value: Schema.Json | undefined): value is Schema.JsonObject =>
+  value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
 
-const isDesignerDeclaration = (kind: string, value: unknown) =>
+const isDesignerDeclaration = (kind: string, value: Schema.Json | undefined) =>
   kind.startsWith("mttx.apple.declaration.") && isRecord(value) && value.designer === true;
 
-const isDesignerConfiguration = (kind: string, value: unknown) =>
+const isDesignerConfiguration = (kind: string, value: Schema.Json | undefined) =>
   CUSTOM_DESIGNER_KINDS.has(kind) || isDesignerDeclaration(kind, value);
+
+const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
+
+const decodeConfigurations = Schema.decodeUnknownOption(Schema.JsonObject);
 
 export default function PolicyDesignerPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const storageKey = () => `mattrax:designer:${params.policyId}`;
+  const { can } = useCan();
+  const writable = () => can("policies.write");
 
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => policy.data as PolicyRow | undefined;
-  const configurations = () => row()?.configurations ?? {};
+  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+
+  const configurations = () =>
+    Option.getOrUndefined(decodeConfigurations(row()?.configurations)) ?? {};
+
   const [ready, setReady] = createSignal(false);
   const [replaceExisting, setReplaceExisting] = createSignal(false);
 
@@ -175,6 +187,14 @@ export default function PolicyDesignerPage() {
           </div>
         </Show>
 
+        <Show when={!writable()}>
+          <div class="shrink-0 border-b border-white/[0.08] px-3 py-2 sm:px-4">
+            <ReadOnlyNotice>
+              Your role can view this policy designer but not save changes.
+            </ReadOnlyNotice>
+          </div>
+        </Show>
+
         <PolicyDesigner
           mode="dashboard"
           pageActions={pageActions()}
@@ -182,11 +202,15 @@ export default function PolicyDesignerPage() {
           persistedDraft={configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
           storageKey={storageKey()}
           saving={save.isPending}
-          saveDisabled={false}
+          saveDisabled={!writable()}
           error={save.error}
-          onSave={(draft) => {
-            void save.mutate(draft);
-          }}
+          onSave={
+            writable()
+              ? (draft) => {
+                  void save.mutate(draft);
+                }
+              : undefined
+          }
         />
       </Show>
     </div>

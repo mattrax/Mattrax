@@ -2,8 +2,24 @@ import { expect, test } from "@playwright/test";
 import { api, bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
 
 const openPalette = async (page: import("@playwright/test").Page) => {
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
-  const input = page.locator('input[role="combobox"]');
+  // Global shortcuts register from `onSettled`, which can be later than first
+  // paint on a cold dev server. Retry the header trigger until the palette is
+  // actually mounted instead of racing the first transition.
+  const input = page.locator('[data-slot="command-palette"] input[role="combobox"]');
+
+  await expect
+    .poll(
+      async () => {
+        if ((await input.count()) > 0) return 1;
+
+        await page.getByRole("button", { name: "Search" }).click();
+
+        return input.count();
+      },
+      { timeout: 20_000 },
+    )
+    .toBeGreaterThan(0);
+
   await expect(input).toBeVisible();
 
   return input;
@@ -61,7 +77,7 @@ test.describe("command palette", () => {
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
     await page.waitForTimeout(900);
 
-    const input = await openPalette(page);
+    await openPalette(page);
     await expect(page.getByRole("option", { name: /Account settings/ })).toBeVisible();
     await expect(page.getByRole("option", { name: /Create policy/ })).toBeVisible();
 

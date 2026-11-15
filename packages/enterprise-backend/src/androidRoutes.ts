@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, type PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
@@ -8,7 +8,8 @@ import {
   type AndroidDeliveryConfig,
 } from "./android.ts";
 
-const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+const json = (body: Schema.Json, status = 200) =>
+  HttpServerResponse.jsonUnsafe(body, { status });
 
 export type AndroidRoutesOptions = {
   readonly origin: string;
@@ -94,7 +95,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
         authSecret: options.authSecret,
         origin: options.origin,
         planLimits: options.planLimits,
-        authorization: typeof authorization === "string" ? authorization : undefined,
+        authorization,
         body,
       });
 

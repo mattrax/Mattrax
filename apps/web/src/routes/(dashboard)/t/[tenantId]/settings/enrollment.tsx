@@ -1,18 +1,23 @@
 import { useParams } from "@solidjs/router";
+import { Match } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
 export default function EnrollmentSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("enrollment.write");
 
   const enrollment = useQuery(() => ({
     queryKey: enterpriseKeys.enrollment(params.tenantId),
@@ -42,6 +47,7 @@ export default function EnrollmentSettingsPage() {
   const [edit, setEdit] = createSignal(false);
   const [code, setCode] = createSignal("");
   const [maxDevices, setMaxDevices] = createSignal(100);
+  const [confirmReset, setConfirmReset] = createSignal(false);
   const [apple, setApple] = createSignal(false);
   const [windows, setWindows] = createSignal(false);
   const [android, setAndroid] = createSignal(false);
@@ -59,6 +65,13 @@ export default function EnrollmentSettingsPage() {
   );
 
   const enabled = () => apple() || windows() || android();
+
+  createEffect(
+    () => writable(),
+    (allowed) => {
+      if (!allowed) setEdit(false);
+    },
+  );
 
   const url = () =>
     enrollment.data
@@ -85,7 +98,10 @@ export default function EnrollmentSettingsPage() {
 
   const reset = useMutation(() => ({
     mutationFn: () => enterprise.resetTenantEnrollment(params.tenantId),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      setConfirmReset(false);
+      await invalidate();
+    },
   }));
 
   return (
@@ -227,6 +243,23 @@ export default function EnrollmentSettingsPage() {
           />
         </fieldset>
 
+        <Show when={apple() && apns.data && !apns.data.configured}>
+          <p class="mt-4 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs leading-relaxed text-warning-foreground">
+            <Info class="mt-px size-3.5 shrink-0" />
+            <span>
+              Apple enrollment is on, but push notifications are not set up. Devices can enroll,
+              yet commands and policy updates will not reach them until APNs is connected.{" "}
+              <a
+                class="font-medium underline underline-offset-2"
+                href={`/t/${params.tenantId}/settings/management`}
+              >
+                Set up push notifications
+              </a>
+              .
+            </span>
+          </p>
+        </Show>
+
         <p class="mt-4 flex items-start gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-xs leading-relaxed text-muted-foreground">
           <Info class="mt-px size-3.5 shrink-0" />
           <span>
@@ -249,7 +282,7 @@ export default function EnrollmentSettingsPage() {
               type="number"
               min="0"
               value={String(maxDevices())}
-              onInput={(e) => setMaxDevices(Number(e.currentTarget.value || 0))}
+              onInput={(e) => setMaxDevices(Math.max(0, Number(e.currentTarget.value || 0)))}
             />
           </Field>
         </div>
@@ -257,15 +290,28 @@ export default function EnrollmentSettingsPage() {
         <ErrorText error={save.error || reset.error} />
 
         <div class="mt-4 flex flex-wrap gap-2 border-t border-white/[0.06] pt-4">
-          <Button
-            onClick={() => (edit() ? save.mutate() : setEdit(true))}
-            disabled={save.isPending}
+          <Show
+            when={writable()}
+            fallback={
+              <ReadOnlyNotice>
+                Your role can view enrollment settings but not change them.
+              </ReadOnlyNotice>
+            }
           >
-            {edit() ? (save.isPending ? "Saving…" : "Save") : "Edit settings"}
-          </Button>
-          <Button variant="destructive" onClick={() => reset.mutate()} disabled={reset.isPending}>
-            {reset.isPending ? "Resetting…" : "Reset enrollment URL"}
-          </Button>
+            <Button
+              onClick={() => (edit() ? save.mutate() : setEdit(true))}
+              disabled={save.isPending}
+            >
+              {edit() ? (save.isPending ? "Saving…" : "Save") : "Edit settings"}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => setConfirmReset(true)}
+              disabled={reset.isPending}
+            >
+              Reset enrollment URL
+            </Button>
+          </Show>
         </div>
       </Panel>
 
@@ -311,14 +357,16 @@ export default function EnrollmentSettingsPage() {
         title="Pre-registered devices"
         description="Devices imported by serial before enrollment. Name, asset tag, notes and group are applied automatically when the device checks in."
         actions={
-          <Button
-            as="a"
-            href={`/t/${params.tenantId}/devices?import=1`}
-            variant="outline"
-            size="sm"
-          >
-            Import CSV
-          </Button>
+          <Show when={can("devices.write")}>
+            <Button
+              as="a"
+              href={`/t/${params.tenantId}/devices?import=1`}
+              variant="outline"
+              size="sm"
+            >
+              Import CSV
+            </Button>
+          </Show>
         }
         flush
       >
@@ -412,43 +460,51 @@ export default function EnrollmentSettingsPage() {
           <ErrorText error={attempts.error} />
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={confirmReset()}
+        onOpenChange={setConfirmReset}
+        title="Reset the enrollment URL?"
+        description="Every existing enrollment link, QR code and pre-registration code stops working immediately. Devices already enrolled stay enrolled."
+        confirmLabel="Reset enrollment URL"
+        destructive
+        pending={reset.isPending}
+        onConfirm={() => reset.mutate()}
+      />
     </div>
   );
 }
 
-const outcomeTones = {
-  ok: "success",
-  bad_code: "warning",
-  disabled: "neutral",
-  limit: "warning",
-  no_apns: "danger",
-  scep_error: "danger",
-  other: "neutral",
-} as const;
-
-const outcomeLabels: Record<string, string> = {
-  ok: "Success",
-  bad_code: "Bad password",
-  disabled: "Disabled",
-  limit: "Device limit",
-  no_apns: "APNs missing",
-  scep_error: "SCEP error",
-  other: "Other",
-};
+const outcomeLabels = new Map<string, string>([
+  ["ok", "Success"],
+  ["bad_code", "Bad password"],
+  ["disabled", "Disabled"],
+  ["limit", "Device limit"],
+  ["no_apns", "APNs missing"],
+  ["scep_error", "SCEP error"],
+  ["other", "Other"],
+]);
 
 const outcomeTone = (outcome: string) =>
-  outcomeTones[outcome as keyof typeof outcomeTones] ?? outcomeTones.other;
+  Match.value(outcome).pipe(
+    Match.when("ok", () => "success" as const),
+    Match.when("bad_code", () => "warning" as const),
+    Match.when("disabled", () => "neutral" as const),
+    Match.when("limit", () => "warning" as const),
+    Match.when("no_apns", () => "danger" as const),
+    Match.when("scep_error", () => "danger" as const),
+    Match.orElse(() => "neutral" as const),
+  );
 
-const outcomeLabel = (outcome: string) => outcomeLabels[outcome] ?? outcome;
+const outcomeLabel = (outcome: string) => outcomeLabels.get(outcome) ?? outcome;
 
 const platformLabel = (platform: string) =>
-  platform === "apple"
-    ? "Apple"
-    : platform === "win"
-      ? "Windows"
-      : platform === "android"
-        ? "Android"
-        : "Unknown device";
+  Match.value(platform).pipe(
+    Match.when("apple", () => "Apple"),
+    Match.when("win", () => "Windows"),
+    Match.when("android", () => "Android"),
+    Match.orElse(() => "Unknown device"),
+  );
 
 const formatAttemptTime = (value: string) => {
   const date = new Date(value);

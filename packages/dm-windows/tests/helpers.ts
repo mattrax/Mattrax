@@ -1,7 +1,9 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { ManagementBackend, ManagementNotSupported } from "@mattrax/management-backend";
 
 type ManagementBackendType = InstanceType<typeof ManagementBackend>;
+
+const IdleManifest = Schema.TaggedStruct("Idle", {});
 
 export function mockManagementBackend(overrides?: Partial<ManagementBackendType>) {
   return Layer.succeed(
@@ -10,7 +12,7 @@ export function mockManagementBackend(overrides?: Partial<ManagementBackendType>
       getAppleBootstrapToken: () => Effect.succeed(null),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
-        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
+        overrides?.appleManagementCheckin ?? (() => Effect.succeed(IdleManifest.make({}))),
       getAppleDeclarationTokens:
         overrides?.getAppleDeclarationTokens ??
         (() =>

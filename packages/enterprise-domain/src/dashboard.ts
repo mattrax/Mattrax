@@ -260,7 +260,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
   },
   {
     type: "table",
-    title: "Devices needing attention",
+    title: "Attention queue",
     config: {
       dataset: "devices",
       query: { all: [{ field: "health", op: "eq", value: "attention" }] },
@@ -277,7 +277,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
     title: "Welcome",
     config: {
       markdown:
-        "## Your fleet at a glance\n\nThis dashboard is shared with everyone in the tenant. Select **Customise** to add widgets, resize the grid, or write team notes and links here.",
+        "## Your fleet at a glance\n\nThis dashboard is shared with everyone in the tenant. Add widgets, resize the grid, or write team notes and links from the dashboard editor.",
     },
     x: 0,
     y: 7,

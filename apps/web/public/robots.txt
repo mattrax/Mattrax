@@ -1,0 +1,16 @@
+# Mattrax crawlers
+User-agent: *
+Allow: /
+
+# Authenticated application and machine endpoints are not public content.
+Disallow: /dashboard
+Disallow: /account
+Disallow: /t/
+Disallow: /api/
+Disallow: /mcp
+Disallow: /mdm/
+Disallow: /scim/
+Disallow: /sso/
+Disallow: /accept-invitation
+Disallow: /reset-password
+Disallow: /verify-email

@@ -2,7 +2,7 @@ import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/http";
 import { AppleMdmService } from "./service.js";
-import { parsePlist, serializePlist } from "@mattrax/plist";
+import { parsePlist, serializePlist, PlistValue } from "@mattrax/plist";
 import {
   AuthenticatePlist,
   DeviceUnenrolled,
@@ -14,9 +14,25 @@ import {
   SetBootstrapTokenPlist,
 } from "./schema.js";
 import { appleMdmApi } from "./domain.js";
-import type { CheckinScope } from "@mattrax/management-backend";
+import { CheckinScope } from "@mattrax/management-backend";
 
-const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
+const [DeviceCheckinScope] = CheckinScope.members;
+
+const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+
+function plistField(value: PlistValue, key: string): PlistValue | undefined {
+  if (!Schema.is(PlistDictionary)(value)) return undefined;
+
+  return value[key];
+}
+
+function plistString(value: PlistValue, key: string): string | undefined {
+  const field = plistField(value, key);
+
+  return Schema.is(Schema.String)(field) ? field : undefined;
+}
 
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
@@ -26,11 +42,24 @@ const decodeBase64 = (value: string): Uint8Array => {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
-const commandBytes = (command: { commandUUID: string; requestType: string; payload: unknown }) =>
-  serializePlist({
+const commandBytes = (command: {
+  commandUUID: string;
+  requestType: string;
+  payload: PlistValue;
+}) => {
+  const entries: Array<[string, PlistValue]> = [["RequestType", command.requestType]];
+
+  if (Schema.is(PlistDictionary)(command.payload)) {
+    for (const [key, value] of Object.entries(command.payload)) {
+      if (key !== "RequestType") entries.push([key, value]);
+    }
+  }
+
+  return serializePlist({
     CommandUUID: command.commandUUID,
-    Command: { RequestType: command.requestType, ...(command.payload as object) },
+    Command: Object.fromEntries(entries),
   });
+};
 
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
   handlers.handle("enroll", () =>
@@ -52,22 +81,15 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const service = yield* AppleMdmService;
     const buf = yield* request.arrayBuffer;
 
-    const identityCertificate = request.headers["x-device-identity-certificate"] as
-      | string
-      | undefined;
-
-    const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"] as
-      | string
-      | undefined;
+    const identityCertificate = request.headers["x-device-identity-certificate"];
+    const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"];
 
     const verifiedSignature = yield* service.verifyDeviceSignature({
-      signature: request.headers["mdm-signature"] as string | undefined,
+      signature: request.headers["mdm-signature"],
       body: buf,
       identityCertificateSubject: identityCertificate,
       identityCertificateSerial,
-      identityCertificateFingerprintSha256: request.headers[
-        "x-device-identity-certificate-sha256"
-      ] as string | undefined,
+      identityCertificateFingerprintSha256: request.headers["x-device-identity-certificate-sha256"],
     });
 
     const identityFingerprint = verifiedSignature?.fingerprintSha256;
@@ -77,18 +99,18 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const text = new TextDecoder().decode(buf);
     const plist = yield* parsePlist(text);
 
-    const messageType = (plist as any)?.MessageType;
-    const status = (plist as any)?.Status;
-    const udid = (plist as any)?.UDID ?? (plist as any)?.EnrollmentID;
+    const messageType = plistString(plist, "MessageType");
+    const status = plistField(plist, "Status");
+    const udid = plistString(plist, "UDID") ?? plistString(plist, "EnrollmentID");
 
-    const scope = (): CheckinScope => ({
-      _tag: "device",
-      udid: udid ?? "",
-      identityCertificate,
-      ...(identityFingerprint ? { identityCertificateFingerprintSha256: identityFingerprint } : {}),
-      ...(identitySerial ? { identityCertificateSerial: identitySerial } : {}),
-      mdmOrigin: service.mdmOrigin,
-    });
+    const scope = (): CheckinScope =>
+      DeviceCheckinScope.make({
+        udid: udid ?? "",
+        identityCertificate,
+        identityCertificateFingerprintSha256: identityFingerprint,
+        identityCertificateSerial: identitySerial,
+        mdmOrigin: service.mdmOrigin,
+      });
 
     if (messageType) {
       switch (messageType) {
@@ -138,7 +160,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         }
 
         case "DeclarativeManagement": {
-          const endpoint = (plist as any).Endpoint;
+          const endpoint = plistString(plist, "Endpoint");
 
           if (!udid) return HttpServerResponse.empty({ status: 400 });
           const checkinScope = scope();
@@ -156,12 +178,15 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           }
 
           if (endpoint === "status") {
-            const data = (plist as any).Data;
+            const data = plistString(plist, "Data");
 
-            if (typeof data !== "string") return HttpServerResponse.empty({ status: 400 });
+            if (data === undefined) return HttpServerResponse.empty({ status: 400 });
 
             const parsed = yield* Effect.try({
-              try: () => JSON.parse(new TextDecoder().decode(decodeBase64(data))) as unknown,
+              try: () =>
+                Schema.decodeUnknownSync(Schema.Json)(
+                  JSON.parse(new TextDecoder().decode(decodeBase64(data))),
+                ),
               catch: (cause) => new Error(`Invalid DDM status report: ${String(cause)}`),
             });
 
@@ -174,15 +199,18 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             return HttpServerResponse.empty({ status: 200 });
           }
 
-          if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
+          if (endpoint !== undefined && endpoint.startsWith("declaration/")) {
             const parts = endpoint.split("/");
 
             if (parts.length !== 3) return HttpServerResponse.empty({ status: 400 });
             const [, type, identifier] = parts;
 
-            if (!["activation", "configuration", "asset", "management"].includes(type!))
+            if (type === undefined || identifier === undefined)
+              return HttpServerResponse.empty({ status: 400 });
+
+            if (!["activation", "configuration", "asset", "management"].includes(type))
               return HttpServerResponse.empty({ status: 404 });
-            const decl = yield* service.handleDeclaration(checkinScope, type!, identifier!);
+            const decl = yield* service.handleDeclaration(checkinScope, type, identifier);
 
             return json(decl);
           }
@@ -286,9 +314,7 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
 
-    const identityCertificate = request.headers["x-device-identity-certificate"] as
-      | string
-      | undefined;
+    const identityCertificate = request.headers["x-device-identity-certificate"];
 
     const url = new URL(request.url, "http://localhost");
     const identifier = url.pathname.replace("/mdm/apple/assets/", "");

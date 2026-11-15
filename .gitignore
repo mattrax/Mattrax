@@ -59,3 +59,12 @@ apps/web/.certs
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Rolldown perf-kit build artifacts
+**/perf-kit.vite.config.ts
+dist-attrib/
+.perf-kit/
+
+# Lighthouse CI reports
+/.lighthouseci/
+/.lighthouse-prod/

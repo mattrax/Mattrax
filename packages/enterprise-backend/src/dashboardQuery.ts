@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Match, Option, Schema } from "effect";
 import {
   DeviceQuery,
   deviceQueryProblem,
@@ -11,10 +11,12 @@ const decodeQuery = Schema.decodeUnknownSync(DeviceQuery);
 
 export type WidgetLayout = { x: number; y: number; w: number; h: number };
 
-const integer = (value: unknown, fallback: number) => {
-  const number = typeof value === "number" ? value : Number(value);
+const NumericValue = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
 
-  return Number.isFinite(number) ? Math.trunc(number) : fallback;
+const integer = (value: Schema.Json | undefined, fallback: number) => {
+  const number = Option.getOrUndefined(Schema.decodeUnknownOption(NumericValue)(value));
+
+  return number === undefined ? fallback : Math.trunc(number);
 };
 
 export const normalizeWidgetLayout = (
@@ -29,17 +31,21 @@ export const normalizeWidgetLayout = (
   return { x, y, w, h };
 };
 
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+const WidgetRecord = Schema.Record(Schema.String, Schema.Json);
 
-const text = (value: unknown, field: string, maximum = 500) => {
-  if (typeof value !== "string" || value.trim() === "")
+const record = (value: Schema.Json | undefined): Schema.Schema.Type<typeof WidgetRecord> =>
+  Option.getOrElse(Schema.decodeUnknownOption(WidgetRecord)(value), () => ({}));
+
+const text = (value: Schema.Json | undefined, field: string, maximum = 500) => {
+  const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
+  if (decoded === undefined || decoded.trim() === "")
     throw new EnterpriseBadRequest({ message: `${field} is required` });
 
-  return value.trim().slice(0, maximum);
+  return decoded.trim().slice(0, maximum);
 };
 
-const queryValue = (value: unknown) => {
+const queryValue = (value: Schema.Json | undefined) => {
   try {
     const query = decodeQuery(value ?? { all: [] });
     const problem = deviceQueryProblem(query);
@@ -53,27 +59,64 @@ const queryValue = (value: unknown) => {
   }
 };
 
-const datasetValue = (value: unknown) => {
+const datasetValue = (value: Schema.Json | undefined): "devices" | "software" => {
   if (value !== "devices" && value !== "software")
     throw new EnterpriseBadRequest({ message: "Choose a devices or software dataset" });
 
   return value;
 };
 
-const columnsValue = (value: unknown) => {
+const columnsValue = (value: Schema.Json | undefined) => {
   if (value === undefined) return undefined;
 
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
+  const decoded = Schema.decodeUnknownOption(Schema.Array(Schema.String))(value);
+
+  if (Option.isNone(decoded))
     throw new EnterpriseBadRequest({ message: "Table columns must be a list of field names" });
 
-  return value.slice(0, 20).map((item) => String(item));
+  return decoded.value.slice(0, 20);
 };
+
+type StatWidgetConfig = {
+  dataset: "devices" | "software";
+  query: DeviceQuery;
+  label?: string;
+};
+
+type TableWidgetConfig = {
+  dataset: "devices" | "software";
+  query: DeviceQuery;
+  columns?: ReadonlyArray<string>;
+  limit?: number;
+};
+
+export type DashboardWidgetConfig =
+  | { readonly markdown: string }
+  | {
+      readonly dataset: "devices" | "software";
+      readonly query: DeviceQuery;
+      readonly label?: string;
+    }
+  | {
+      readonly dataset: "devices" | "software";
+      readonly query: DeviceQuery;
+      readonly dimension: string;
+    }
+  | {
+      readonly dataset: "devices" | "software";
+      readonly query: DeviceQuery;
+      readonly columns?: ReadonlyArray<string>;
+      readonly limit?: number;
+    };
 
 /**
  * Validate widget configuration before it reaches the database. Unknown fields
  * are dropped so a widget only ever stores the options its type understands.
  */
-export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown): unknown => {
+export const normalizeWidgetConfig = (
+  type: DashboardWidgetType,
+  value: Schema.Json | undefined,
+): DashboardWidgetConfig => {
   const config = record(value);
 
   switch (type) {
@@ -83,14 +126,19 @@ export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown)
       return { markdown };
     }
 
-    case "stat":
-      return {
+    case "stat": {
+      const label = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.String)(config.label),
+      )?.trim();
+
+      const stat: StatWidgetConfig = {
         dataset: datasetValue(config.dataset),
         query: queryValue(config.query),
-        ...(typeof config.label === "string" && config.label.trim()
-          ? { label: config.label.trim().slice(0, 80) }
-          : {}),
       };
+
+      return label ? { ...stat, label: label.slice(0, 80) } : stat;
+    }
+
     case "pie":
       return {
         dataset: datasetValue(config.dataset),
@@ -100,14 +148,17 @@ export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown)
     case "table": {
       const columns = columnsValue(config.columns);
 
-      return {
+      const table: TableWidgetConfig = {
         dataset: datasetValue(config.dataset),
         query: queryValue(config.query),
-        ...(columns ? { columns } : {}),
-        ...(config.limit === undefined
-          ? {}
-          : { limit: Math.min(Math.max(integer(config.limit, 100), 1), 200) }),
       };
+
+      if (columns) table.columns = columns;
+
+      if (config.limit !== undefined)
+        table.limit = Math.min(Math.max(integer(config.limit, 100), 1), 200);
+
+      return table;
     }
 
     default:
@@ -116,13 +167,12 @@ export const normalizeWidgetConfig = (type: DashboardWidgetType, value: unknown)
 };
 
 export const platformBucket = (proto: string | null | undefined) =>
-  proto === "apple"
-    ? "Apple"
-    : proto === "win"
-      ? "Windows"
-      : proto === "android"
-        ? "Android"
-        : "Unknown";
+  Match.value(proto).pipe(
+    Match.when("apple", () => "Apple"),
+    Match.when("win", () => "Windows"),
+    Match.when("android", () => "Android"),
+    Match.orElse(() => "Unknown"),
+  );
 
 export const deviceBucket = (
   device: {
@@ -197,16 +247,17 @@ const ageInDays = (value: Date | string | null | undefined, now: Date) => {
   return Math.max(0, (now.getTime() - date.getTime()) / (24 * 60 * 60 * 1000));
 };
 
-const ageBucket = (days: number) =>
-  days < 1
-    ? "Today"
-    : days <= 7
-      ? "1–7 days"
-      : days <= 30
-        ? "8–30 days"
-        : days <= 90
-          ? "31–90 days"
-          : "Over 90 days";
+const ageBucket = (days: number) => {
+  if (days < 1) return "Today";
+
+  if (days <= 7) return "1–7 days";
+
+  if (days <= 30) return "8–30 days";
+
+  if (days <= 90) return "31–90 days";
+
+  return "Over 90 days";
+};
 
 export const softwareBucket = (
   application: {

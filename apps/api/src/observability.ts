@@ -1,3 +1,5 @@
+import { Option, Schema } from "effect";
+
 /**
  * Request-scoped observability helpers for the API Worker.
  *
@@ -69,9 +71,9 @@ export const formatRequestLog = (entry: RequestLogEntry): string => {
     status: entry.status,
     outcome,
     durationMs: entry.durationMs,
-    ...(entry.tenantId ? { tenantId: entry.tenantId } : {}),
-    ...(entry.errorTag ? { errorTag: entry.errorTag } : {}),
-    ...(entry.error ? { error: entry.error } : {}),
+    tenantId: entry.tenantId,
+    errorTag: entry.errorTag,
+    error: entry.error,
   });
 };
 
@@ -85,16 +87,17 @@ export const logRequest = (
   else log.log(line);
 };
 
+const ErrorTagBody = Schema.Struct({ _tag: Schema.optional(Schema.String) });
+
 /**
  * Read only the machine tag from an error response. Effect's `HttpApi` encodes
  * tagged failures as `{ "_tag": "EnterpriseBadRequest", ... }`; the rest of the
  * body (which can contain tenant data) is never read or logged.
  */
-export const errorTagFromBody = (body: unknown): string | undefined => {
-  if (!body || typeof body !== "object") return undefined;
-  const tag = (body as { _tag?: unknown })._tag;
+export const errorTagFromBody = (body: Schema.Json): string | undefined => {
+  const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorTagBody)(body));
 
-  return typeof tag === "string" && tag.length > 0 ? tag.slice(0, 120) : undefined;
+  return parsed?._tag && parsed._tag.length > 0 ? parsed._tag.slice(0, 120) : undefined;
 };
 
 export const readErrorTag = async (response: Response): Promise<string | undefined> => {
@@ -104,7 +107,11 @@ export const readErrorTag = async (response: Response): Promise<string | undefin
   if (!contentType.includes("json")) return undefined;
 
   try {
-    return errorTagFromBody(await response.clone().json());
+    const body = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.Json)(await response.clone().json()),
+    );
+
+    return body === undefined ? undefined : errorTagFromBody(body);
   } catch {
     return undefined;
   }

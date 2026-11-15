@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
+import type {
+  WindowsManagementRequest,
+  WindowsManagementScope,
+} from "@mattrax/management-backend";
 import { WindowsMdmServiceLive } from "../src/service.js";
 import { windowsMdmRoutes } from "../src/handlers.js";
 import { mockManagementBackend, soapEnvelope } from "./helpers.js";
@@ -218,5 +222,37 @@ describe("Windows MDM handlers", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("./DevInfo/DevId");
+  });
+
+  it("forwards SyncML Results to the backend", async () => {
+    let received: unknown;
+
+    const h = await handler({
+      windowsManagementCheckin: (_scope: WindowsManagementScope, request: WindowsManagementRequest) => {
+        received = request.results;
+
+        return Effect.succeed({
+          commands: [{ kind: "Get", cmdID: "2", locURI: "./DevDetail/SwV" }],
+        });
+      },
+    });
+
+    const body = `<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>1</SessionID><MsgID>2</MsgID><Target><LocURI>server</LocURI></Target><Source><LocURI>device-1</LocURI></Source></SyncHdr><SyncBody><Results><CmdID>2</CmdID><MsgRef>1</MsgRef><CmdRef>3</CmdRef><Item><Source><LocURI>./DevDetail/SwV</LocURI></Source><Data>10.0.19045.3803</Data></Item></Results><Final/></SyncBody></SyncML>`;
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/management", { method: "POST", body }),
+    );
+
+    const text = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(received).toMatchObject([
+      {
+        cmdRef: "3",
+        items: [{ source: { locURI: "./DevDetail/SwV" }, data: "10.0.19045.3803" }],
+      },
+    ]);
+    expect(text).toContain("<Get>");
+    expect(text).toContain("./DevDetail/SwV");
   });
 });

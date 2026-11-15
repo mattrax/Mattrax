@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
 import {
@@ -22,6 +22,7 @@ import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 
 const configurationCount = (row: PolicyRow) => Object.keys(row.configurations ?? {}).length;
 
@@ -39,7 +40,7 @@ const fields: ReadonlyArray<EntityField<PolicyRow>> = [
 
 export default function PoliciesPage() {
   const params = useParams();
-  const navigate = useNavigate();
+  const { can } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -79,17 +80,22 @@ export default function PoliciesPage() {
             </span>
           </Show>
         }
-        actions={<LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>}
+        actions={
+          <Show when={can("policies.write") && rows().length > 0}>
+            <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+          </Show>
+        }
       />
       <MdmTable<PolicyRow>
         rows={rows()}
+        selectable={can("policies.write")}
         loading={policies.isPending}
         error={policies.error}
         storageKey="policies"
         toolbar={
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
-        onRowClick={(row) => navigate(`/t/${params.tenantId}/policies/${row.id}`)}
+        rowHref={(row) => `/t/${params.tenantId}/policies/${row.id}`}
         actions={(selected, clear) => (
           <EntityActions entity="policy" selected={selected} clear={clear} />
         )}
@@ -106,7 +112,9 @@ export default function PoliciesPage() {
               title="No policies"
               description="Create a policy to start configuring managed devices."
               action={
-                <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+                <Show when={can("policies.write")}>
+                  <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+                </Show>
               }
             />
           )

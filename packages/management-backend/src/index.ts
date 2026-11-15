@@ -244,6 +244,12 @@ export const WindowsManagementRequest = Schema.Struct({
   target: Schema.String,
   statuses: Schema.Array(Schema.Unknown),
   alerts: Schema.Array(Schema.Unknown),
+  /**
+   * OMA-DM `<Results>` blocks returned by the device for server `Get`
+   * commands. Each block carries `CmdRef` and `Item`/`Source`/`Data` entries;
+   * the inventory parser reads them.
+   */
+  results: Schema.optional(Schema.Array(Schema.Unknown)),
 });
 
 export type WindowsManagementRequest = typeof WindowsManagementRequest.Type;
@@ -300,7 +306,7 @@ export declare namespace ManagementBackend {
       type: string,
       identifier: string,
     ) => Effect.Effect<
-      Record<string, unknown> | null,
+      Schema.JsonObject | null,
       ManagementNotSupported | UnknownDevice | InternalServerError
     >;
     readonly getAppleAsset: (

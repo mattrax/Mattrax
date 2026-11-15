@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   generateCaKeyPair,
   exportPrivateKeyJwk,
@@ -87,7 +87,7 @@ describe("SCEP crypto wrappers", () => {
     it("round-trips random bytes", () => {
       const bytes = crypto.getRandomValues(new Uint8Array(64));
       const base64 = arrayBufferToBase64(bytes.buffer);
-      expect(typeof base64).toBe("string");
+      expect(Schema.is(Schema.String)(base64)).toBe(true);
       expect(base64.length).toBeGreaterThan(0);
 
       const recovered = base64ToArrayBuffer(base64);

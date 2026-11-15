@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
-import { parsePlist, serializePlist } from "@mattrax/plist";
+import { Effect, Schema } from "effect";
+import { parsePlist, serializePlist, PlistValue } from "@mattrax/plist";
+
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
 describe("plist", () => {
   describe("parsePlist", () => {
@@ -29,11 +31,14 @@ describe("plist", () => {
 </dict>
 </plist>`;
 
-      const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
-      expect(result.name).toBe("Test");
-      expect(result.count).toBe(42);
-      expect(result.active).toBe(true);
-      expect(result.ratio).toBe(3.14);
+      const result = await parsePlist(xml).pipe(Effect.runPromise);
+
+      if (!Schema.is(PlistDictionary)(result)) throw new Error("expected a plist dictionary");
+
+      expect(result["name"]).toBe("Test");
+      expect(result["count"]).toBe(42);
+      expect(result["active"]).toBe(true);
+      expect(result["ratio"]).toBe(3.14);
     });
 
     it("parses nested arrays and dictionaries", async () => {
@@ -49,8 +54,11 @@ describe("plist", () => {
 </dict>
 </plist>`;
 
-      const result = (await parsePlist(xml).pipe(Effect.runPromise)) as Record<string, unknown>;
-      expect(result.items).toEqual(["one", "two"]);
+      const result = await parsePlist(xml).pipe(Effect.runPromise);
+
+      if (!Schema.is(PlistDictionary)(result)) throw new Error("expected a plist dictionary");
+
+      expect(result["items"]).toEqual(["one", "two"]);
     });
 
     it("fails on invalid XML", async () => {
@@ -74,7 +82,10 @@ describe("plist", () => {
 
       const result = await parsePlist(xml).pipe(Effect.runPromise);
       expect(result).toBeInstanceOf(Date);
-      expect((result as Date).toISOString()).toBe("2024-01-15T10:30:00.000Z");
+
+      if (!(result instanceof Date)) throw new Error("expected a plist date");
+
+      expect(result.toISOString()).toBe("2024-01-15T10:30:00.000Z");
     });
   });
 
@@ -126,8 +137,13 @@ describe("plist", () => {
     });
 
     it("serializes null/undefined as empty string", async () => {
-      const n = await serializePlist(null).pipe(Effect.runPromise);
-      const u = await serializePlist(undefined).pipe(Effect.runPromise);
+      // SAFETY: serializePlist renders null/undefined as an empty string at runtime; the typed
+      // contract excludes them, so this test deliberately probes that fallback.
+      const [n, u] = await Promise.all([
+        serializePlist(null as never).pipe(Effect.runPromise),
+        serializePlist(undefined as never).pipe(Effect.runPromise),
+      ]);
+
       expect(n).toContain("<string></string>");
       expect(u).toContain("<string></string>");
     });
@@ -164,11 +180,14 @@ describe("plist", () => {
       };
 
       const plist = await serializePlist(original).pipe(Effect.runPromise);
-      const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
-      expect(parsed.MessageType).toBe("Authenticate");
-      expect(parsed.UDID).toBe("abc-123");
-      expect(parsed.Tokens).toEqual(["one", "two"]);
-      expect(parsed.Nested).toEqual({ key: "value" });
+      const parsed = await parsePlist(plist).pipe(Effect.runPromise);
+
+      if (!Schema.is(PlistDictionary)(parsed)) throw new Error("expected a plist dictionary");
+
+      expect(parsed["MessageType"]).toBe("Authenticate");
+      expect(parsed["UDID"]).toBe("abc-123");
+      expect(parsed["Tokens"]).toEqual(["one", "two"]);
+      expect(parsed["Nested"]).toEqual({ key: "value" });
     });
   });
 });

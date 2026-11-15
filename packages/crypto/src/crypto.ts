@@ -15,38 +15,50 @@ export class CryptoError extends Data.TaggedError("CryptoError")<{
 }> {}
 
 export async function generateCaKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"]) as Promise<CryptoKeyPair>;
+  return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"]);
 }
 
 export async function exportPrivateKeyJwk(key: CryptoKey): Promise<JsonWebKey> {
-  return crypto.subtle.exportKey("jwk", key) as Promise<JsonWebKey>;
+  return crypto.subtle.exportKey("jwk", key);
 }
 
 export async function importPrivateKeyJwk(jwk: JsonWebKey): Promise<CryptoKey> {
-  return crypto.subtle.importKey("jwk", jwk, ALGORITHM, true, ["sign"]) as Promise<CryptoKey>;
+  return crypto.subtle.importKey("jwk", jwk, ALGORITHM, true, ["sign"]);
 }
 
 export async function exportPublicKeySpki(key: CryptoKey): Promise<ArrayBuffer> {
-  return crypto.subtle.exportKey("spki", key) as Promise<ArrayBuffer>;
+  return crypto.subtle.exportKey("spki", key);
 }
 
 export async function signData(key: CryptoKey, data: ArrayBuffer): Promise<ArrayBuffer> {
-  return crypto.subtle.sign(SIGN_ALGORITHM, key, data) as Promise<ArrayBuffer>;
+  return crypto.subtle.sign(SIGN_ALGORITHM, key, data);
 }
 
 export async function sha256(data: ArrayBuffer): Promise<ArrayBuffer> {
-  return crypto.subtle.digest("SHA-256", data) as Promise<ArrayBuffer>;
+  return crypto.subtle.digest("SHA-256", data);
 }
 
-export function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
+/** Copy a typed array into a plain `ArrayBuffer` owned by the caller. */
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+
+  new Uint8Array(buffer).set(bytes);
+
+  return buffer;
+}
+
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = "";
 
   for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i]!);
   }
 
   return btoa(binary);
+}
+
+export function arrayBufferToBase64(buf: ArrayBuffer): string {
+  return uint8ArrayToBase64(new Uint8Array(buf));
 }
 
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -57,7 +69,7 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
 
-  return bytes.buffer as ArrayBuffer;
+  return toArrayBuffer(bytes);
 }
 
 export function pemEncode(label: string, der: ArrayBuffer): string {

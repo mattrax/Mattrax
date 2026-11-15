@@ -76,21 +76,21 @@ const normalizeHeader = (value: string) =>
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
-const ALIASES: Record<string, "serial" | "name" | "asset_tag" | "group" | "notes"> = {
-  serial: "serial",
-  serial_number: "serial",
-  serialnumber: "serial",
-  name: "name",
-  device_name: "name",
-  asset_tag: "asset_tag",
-  assettag: "asset_tag",
-  asset: "asset_tag",
-  group: "group",
-  group_name: "group",
-  groupname: "group",
-  notes: "notes",
-  note: "notes",
-};
+const ALIASES = new Map<string, "serial" | "name" | "asset_tag" | "group" | "notes">([
+  ["serial", "serial"],
+  ["serial_number", "serial"],
+  ["serialnumber", "serial"],
+  ["name", "name"],
+  ["device_name", "name"],
+  ["asset_tag", "asset_tag"],
+  ["assettag", "asset_tag"],
+  ["asset", "asset_tag"],
+  ["group", "group"],
+  ["group_name", "group"],
+  ["groupname", "group"],
+  ["notes", "notes"],
+  ["note", "notes"],
+]);
 
 const optional = (value: string | undefined) => {
   const trimmed = value?.trim();
@@ -110,7 +110,7 @@ export const parseDeviceImportCsv = (input: string): DeviceImportParseResult => 
     return { rows: [], issues: [{ row: 1, message: "The file is empty." }], headers: [] };
 
   const rawHeaders = records[0]!;
-  const headers = rawHeaders.map((header) => ALIASES[normalizeHeader(header)] ?? null);
+  const headers = rawHeaders.map((header) => ALIASES.get(normalizeHeader(header)) ?? null);
 
   if (!headers.includes("serial"))
     return {

@@ -1,16 +1,17 @@
 import { useQuery } from "@tanstack/solid-query";
+import {
+  DashboardQueryRequest,
+  DashboardQueryRow,
+  DeviceQuery,
+} from "@mattrax/enterprise-domain/client";
+import { Match, Option, Schema } from "effect";
 import { For, Show, createMemo } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
 import { Markdown } from "~/components/dashboard/markdown";
-import {
-  enterprise,
-  enterpriseKeys,
-  type DashboardWidget,
-  type DeviceQuery,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, type DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
-import { errorPresentation } from "~/lib/errors";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
 
 const CHART_COLORS = [
   "var(--brand)",
@@ -23,37 +24,54 @@ const CHART_COLORS = [
   "oklch(0.75 0.12 80)",
 ];
 
-type QueryConfig = {
-  dataset?: "devices" | "software";
-  query?: DeviceQuery;
-  label?: string;
-  dimension?: string;
-  columns?: ReadonlyArray<string>;
-  limit?: number;
-};
+const QueryConfig = Schema.Struct({
+  dataset: Schema.optional(Schema.Literals(["devices", "software"])),
+  query: Schema.optional(DeviceQuery),
+  label: Schema.optional(Schema.String),
+  dimension: Schema.optional(Schema.String),
+  columns: Schema.optional(Schema.Array(Schema.String)),
+  limit: Schema.optional(Schema.Number),
+});
+
+type QueryConfig = typeof QueryConfig.Type;
+
+const MarkdownConfig = Schema.Struct({ markdown: Schema.optional(Schema.String) });
+
+const decodeQueryConfig = Schema.decodeUnknownOption(QueryConfig);
+
+const decodeMarkdownConfig = Schema.decodeUnknownOption(MarkdownConfig);
+
+const isString = Schema.is(Schema.String);
+
+const isNumber = Schema.is(Schema.Number);
+
+const isBoolean = Schema.is(Schema.Boolean);
 
 const configOf = (widget: DashboardWidget): QueryConfig =>
-  typeof widget.config === "object" && widget.config !== null ? (widget.config as QueryConfig) : {};
+  Option.getOrUndefined(decodeQueryConfig(widget.config)) ?? {};
 
-const DEVICE_COLUMNS: Record<string, string> = {
-  name: "Name",
-  platform: "Platform",
-  osVersion: "OS",
-  status: "Status",
-  health: "Health",
-  lastSeenAt: "Last seen",
-  enrolledAt: "Enrolled",
-  model: "Model",
-  serial: "Serial",
-};
+const markdownOf = (widget: DashboardWidget): string =>
+  Option.getOrUndefined(decodeMarkdownConfig(widget.config))?.markdown ?? "";
 
-const SOFTWARE_COLUMNS: Record<string, string> = {
-  name: "Application",
-  version: "Version",
-  managed: "Managed",
-  deviceCount: "Devices",
-  bundleId: "Bundle ID",
-};
+const DEVICE_COLUMNS = new Map([
+  ["name", "Name"],
+  ["platform", "Platform"],
+  ["osVersion", "OS"],
+  ["status", "Status"],
+  ["health", "Health"],
+  ["lastSeenAt", "Last seen"],
+  ["enrolledAt", "Enrolled"],
+  ["model", "Model"],
+  ["serial", "Serial"],
+]);
+
+const SOFTWARE_COLUMNS = new Map([
+  ["name", "Application"],
+  ["version", "Version"],
+  ["managed", "Managed"],
+  ["deviceCount", "Devices"],
+  ["bundleId", "Bundle ID"],
+]);
 
 const defaultColumns = (dataset: string | undefined) =>
   dataset === "software"
@@ -61,56 +79,63 @@ const defaultColumns = (dataset: string | undefined) =>
     : ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
 
 const healthClass = (value: string | null | undefined) =>
-  value === "healthy"
-    ? "text-success"
-    : value === "attention"
-      ? "text-warning"
-      : value === "critical"
-        ? "text-destructive"
-        : "text-muted-foreground";
+  Match.value(value).pipe(
+    Match.when("healthy", () => "text-success"),
+    Match.when("attention", () => "text-warning"),
+    Match.when("critical", () => "text-destructive"),
+    Match.orElse(() => "text-muted-foreground"),
+  );
 
 const platformLabel = (value: string | null | undefined) =>
-  value === "apple"
-    ? "Apple"
-    : value === "win"
-      ? "Windows"
-      : value === "android"
-        ? "Android"
-        : (value ?? "—");
+  Match.value(value).pipe(
+    Match.when("apple", () => "Apple"),
+    Match.when("win", () => "Windows"),
+    Match.when("android", () => "Android"),
+    Match.orElse((platform) => platform ?? "—"),
+  );
 
-const cellValue = (row: Record<string, unknown>, column: string, dataset: string | undefined) => {
-  const value = row[column];
+const cellValue = (row: DashboardQueryRow, column: string, dataset: string | undefined) => {
+  if (column === "platform") return platformLabel(row.platform);
 
-  if (column === "platform") return platformLabel(value as string | null);
+  if (column === "managed")
+    return isBoolean(row.managed) ? (row.managed ? "Managed" : "Unmanaged") : "—";
 
-  if (column === "managed") return value === true ? "Managed" : value === false ? "Unmanaged" : "—";
+  if (column === "lastSeenAt") return isString(row.lastSeenAt) ? relativeTime(row.lastSeenAt) : "—";
 
-  if (column === "lastSeenAt" || column === "enrolledAt")
-    return value ? relativeTime(String(value)) : "—";
+  if (column === "enrolledAt") return isString(row.enrolledAt) ? relativeTime(row.enrolledAt) : "—";
 
   if (column === "health")
     return (
-      <span class={cn("capitalize", healthClass(value as string | null))}>
-        {typeof value === "string" ? value : "Unknown"}
+      <span class={cn("capitalize", healthClass(row.health))}>
+        {isString(row.health) ? row.health : "Unknown"}
       </span>
     );
 
   if (column === "status")
-    return <span class="capitalize">{typeof value === "string" ? value : "—"}</span>;
+    return <span class="capitalize">{isString(row.status) ? row.status : "—"}</span>;
 
-  if (column === "deviceCount") return typeof value === "number" ? value : "—";
+  if (column === "deviceCount") return isNumber(row.deviceCount) ? row.deviceCount : "—";
 
   if (column === "name" && dataset === "software")
     return (
       <span class="block min-w-0">
-        <span class="block truncate font-medium text-foreground">{String(value ?? "—")}</span>
-        <Show when={typeof row.bundleId === "string"}>
+        <span class="block truncate font-medium text-foreground">{row.name}</span>
+        <Show when={isString(row.bundleId)}>
           <span class="block max-w-[28ch] truncate font-mono text-[10.5px] text-muted-foreground">
-            {String(row.bundleId)}
+            {row.bundleId}
           </span>
         </Show>
       </span>
     );
+
+  const value = {
+    name: row.name,
+    osVersion: row.osVersion,
+    model: row.model,
+    serial: row.serial,
+    version: row.version,
+    bundleId: row.bundleId,
+  }[column];
 
   if (value === null || value === undefined || value === "") return "—";
 
@@ -122,12 +147,18 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
   const dataset = () => config().dataset ?? "devices";
   const query = createMemo(() => config().query ?? { all: [] });
 
-  const queryRequest = (groupBy?: string, limit?: number) => ({
+  const queryRequest = (groupBy?: string, limit?: number): DashboardQueryRequest => ({
     dataset: dataset(),
     query: query(),
-    ...(groupBy ? { groupBy } : {}),
-    ...(limit ? { limit } : {}),
+    groupBy,
+    limit,
   });
+
+  const columns = () => {
+    const configured = config().columns;
+
+    return configured && configured.length > 0 ? configured : defaultColumns(dataset());
+  };
 
   const result = useQuery(() => ({
     queryKey: enterpriseKeys.dashboardQuery(
@@ -142,22 +173,28 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
   return (
     <Show
       when={props.widget.type !== "markdown"}
-      fallback={
-        <Markdown
-          content={String((props.widget.config as { markdown?: string })?.markdown ?? "")}
-        />
-      }
+      fallback={<Markdown content={markdownOf(props.widget)} />}
     >
       <Show
         when={!result.isPending}
-        fallback={<div class="h-16 animate-pulse rounded-lg bg-white/[0.04]" />}
+        fallback={
+          <div
+            role="status"
+            aria-label="Loading widget data"
+            class="h-16 animate-pulse rounded-lg bg-white/[0.04]"
+          />
+        }
       >
         <Show
           when={!result.error}
           fallback={
             <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
-              <p class="font-medium text-destructive">{errorPresentation(result.error).title}</p>
-              <p class="mt-0.5 text-muted-foreground">{errorPresentation(result.error).message}</p>
+              <p class="font-medium text-destructive">
+                {errorPresentation(raisedFailure(result.error)).title}
+              </p>
+              <p class="mt-0.5 text-muted-foreground">
+                {errorPresentation(raisedFailure(result.error)).message}
+              </p>
               <button
                 type="button"
                 class="mt-2 rounded border border-white/[0.1] px-2 py-1 text-[10.5px] text-foreground hover:bg-white/[0.05]"
@@ -180,7 +217,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                     <p class="mt-1.5 text-[11px] text-muted-foreground">
                       {config().label ?? (dataset() === "software" ? "applications" : "devices")}
                     </p>
-                    <p class="mt-0.5 text-[10.5px] text-muted-foreground/70">
+                    <p class="mt-0.5 text-[10.5px] text-muted-foreground">
                       {dataset() === "software"
                         ? "matching installed software"
                         : "matching the current query"}
@@ -200,22 +237,21 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                       </div>
                     }
                   >
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto" aria-busy={result.isFetching ? "true" : undefined}>
                       <table class="w-full text-[11.5px]">
-                        <thead class="text-left text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground/80">
+                        <caption class="sr-only">
+                          {dataset() === "software" ? "Applications" : "Devices"} matching this
+                          widget
+                        </caption>
+                        <thead class="text-left text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground">
                           <tr>
-                            <For
-                              each={
-                                config().columns?.length
-                                  ? config().columns!
-                                  : defaultColumns(dataset())
-                              }
-                            >
+                            <For each={columns()}>
                               {(column) => (
-                                <th class="whitespace-nowrap px-1.5 py-1.5 font-medium">
-                                  {(dataset() === "software" ? SOFTWARE_COLUMNS : DEVICE_COLUMNS)[
-                                    column
-                                  ] ?? column}
+                                <th scope="col" class="whitespace-nowrap px-1.5 py-1.5 font-medium">
+                                  {(dataset() === "software"
+                                    ? SOFTWARE_COLUMNS
+                                    : DEVICE_COLUMNS
+                                  ).get(column) ?? column}
                                 </th>
                               )}
                             </For>
@@ -225,20 +261,10 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                           <For each={data().rows}>
                             {(row) => (
                               <tr class="hover:bg-white/[0.025]">
-                                <For
-                                  each={
-                                    config().columns?.length
-                                      ? config().columns!
-                                      : defaultColumns(dataset())
-                                  }
-                                >
+                                <For each={columns()}>
                                   {(column) => (
                                     <td class="max-w-[24ch] px-1.5 py-1.5 text-muted-foreground">
-                                      {cellValue(
-                                        row as unknown as Record<string, unknown>,
-                                        column,
-                                        dataset(),
-                                      )}
+                                      {cellValue(row, column, dataset())}
                                     </td>
                                   )}
                                 </For>
@@ -248,7 +274,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                         </tbody>
                       </table>
                     </div>
-                    <p class="mt-1.5 text-[10px] text-muted-foreground/70">
+                    <p role="status" class="mt-1.5 text-[10px] text-muted-foreground">
                       {data().rows.length} of {data().total} rows
                     </p>
                   </Show>

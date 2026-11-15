@@ -1,5 +1,5 @@
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
-import type { DynamicGroupRules } from "~/lib/enterprise";
+import type { DeviceQuery, DynamicGroupRules } from "~/lib/enterprise";
 
 /**
  * Dynamic groups use the same query language and builder as dashboards and
@@ -11,13 +11,13 @@ export function GroupRuleBuilder(props: {
   onChange: (rules: DynamicGroupRules) => void;
   disabled?: boolean;
 }) {
-  const query = () =>
+  const query = (): DeviceQuery | null =>
     props.rules
       ? {
-          version: 1 as const,
-          ...(props.rules.all ? { all: props.rules.all } : {}),
-          ...(props.rules.any ? { any: props.rules.any } : {}),
-          ...(props.rules.none ? { none: props.rules.none } : {}),
+          version: 1,
+          all: props.rules.all,
+          any: props.rules.any,
+          none: props.rules.none,
         }
       : null;
 
@@ -28,9 +28,9 @@ export function GroupRuleBuilder(props: {
       onChange={(next) =>
         props.onChange({
           version: 1,
-          ...(next?.all ? { all: next.all } : {}),
-          ...(next?.any ? { any: next.any } : {}),
-          ...(next?.none ? { none: next.none } : {}),
+          all: next?.all,
+          any: next?.any,
+          none: next?.none,
         })
       }
     />

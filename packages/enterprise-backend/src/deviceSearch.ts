@@ -1,3 +1,4 @@
+import { Match, Option, Schema } from "effect";
 import {
   EnterpriseBadRequest,
   DeviceProtocol,
@@ -46,17 +47,13 @@ export type DeviceSearchFilters = {
   readonly direction: SortDirection;
 };
 
+const NumericQueryValue = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
+
 /** Coerce a query-string value (or JSON number) into an integer. */
-const integer = (value: unknown, fallback: number) => {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+const integer = (value: number | string | undefined, fallback: number) => {
+  const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(NumericQueryValue)(value));
 
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-
-    if (Number.isFinite(parsed)) return Math.trunc(parsed);
-  }
-
-  return fallback;
+  return parsed === undefined ? fallback : Math.trunc(parsed);
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -109,7 +106,7 @@ export const normalizeDeviceSearchQuery = (
     if (problem) throw new EnterpriseBadRequest({ message: problem });
   }
 
-  return {
+  const filters: DeviceSearchFilters = {
     q: optionalText(query.q),
     status: query.status,
     proto: query.proto,
@@ -117,12 +114,13 @@ export const normalizeDeviceSearchQuery = (
     notSeenBefore,
     health: query.health,
     push: query.push,
-    ...(structured ? { query: structured } : {}),
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),
     sort: query.sort ?? "name",
     direction: query.direction ?? "asc",
   };
+
+  return structured ? { ...filters, query: structured } : filters;
 };
 
 const CSV_SPECIAL = /[",\r\n]/;
@@ -134,7 +132,7 @@ const CSV_SPECIAL = /[",\r\n]/;
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
 /** Escape a single RFC 4180 field, doubling embedded quotes. */
-export const csvEscape = (value: unknown) => {
+export const csvEscape = (value: Schema.Json | undefined) => {
   const raw = value == null ? "" : String(value);
   const text = CSV_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
 
@@ -144,7 +142,7 @@ export const csvEscape = (value: unknown) => {
 /** Serialise a header and rows using RFC 4180 conventions (CRLF, quoted fields). */
 export const toCsv = (
   header: ReadonlyArray<string>,
-  rows: Iterable<ReadonlyArray<unknown>>,
+  rows: Iterable<ReadonlyArray<Schema.Json | undefined>>,
 ): string => {
   const lines = [header.map(csvEscape).join(",")];
 
@@ -154,4 +152,8 @@ export const toCsv = (
 };
 
 export const platformLabel = (proto: DeviceProtocolValue) =>
-  proto === "apple" ? "Apple" : proto === "win" ? "Windows" : "Android";
+  Match.value(proto).pipe(
+    Match.when("apple", () => "Apple"),
+    Match.when("win", () => "Windows"),
+    Match.orElse(() => "Android"),
+  );

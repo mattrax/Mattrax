@@ -1,4 +1,5 @@
 import { createSignal, Show } from "solid-js";
+import { Match as EffectMatch } from "effect";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 
@@ -12,6 +13,13 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
   const [code, setCode] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+
+  const modeLabel = () =>
+    EffectMatch.value(mode()).pipe(
+      EffectMatch.when("totp", () => "Using an authenticator code."),
+      EffectMatch.when("recovery", () => "Using a recovery code."),
+      EffectMatch.orElse(() => "Using a passkey."),
+    );
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -67,9 +75,10 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         </p>
       </div>
 
-      <div class="flex gap-2 text-xs">
+      <div role="group" aria-label="Verification method" class="flex gap-2 text-xs">
         <button
           type="button"
+          aria-pressed={mode() === "totp" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
             mode() === "totp" ? "bg-stone-900 text-white" : "border border-stone-300 text-stone-700"
           }`}
@@ -83,6 +92,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         </button>
         <button
           type="button"
+          aria-pressed={mode() === "recovery" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
             mode() === "recovery"
               ? "bg-stone-900 text-white"
@@ -98,6 +108,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         </button>
         <button
           type="button"
+          aria-pressed={mode() === "passkey" ? "true" : "false"}
           class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
             mode() === "passkey"
               ? "bg-stone-900 text-white"
@@ -112,6 +123,10 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           Passkey
         </button>
       </div>
+
+      <p role="status" aria-live="polite" class="sr-only">
+        {modeLabel()}
+      </p>
 
       <form onSubmit={submit} class="space-y-3">
         <Show when={mode() !== "passkey"}>

@@ -1,23 +1,30 @@
 import { useParams } from "@solidjs/router";
+import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 export default function IdentitySettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("identity.write");
 
   const tokens = useQuery(() => ({
     queryKey: enterpriseKeys.scim(params.tenantId),
     queryFn: () => enterprise.listScimTokens(params.tenantId),
   }));
 
-  const [name, setName] = createSignal("Identity provider");
+  const [name, setName] = createSignal("");
+  const [copiedUrl, setCopiedUrl] = createSignal(false);
+  const [revokeTarget, setRevokeTarget] = createSignal<{ id: string; name: string } | null>(null);
   const [created, setCreated] = createSignal<{ token: string; baseUrl: string } | null>(null);
 
   const create = useMutation(() => ({
@@ -31,6 +38,7 @@ export default function IdentitySettingsPage() {
   const revoke = useMutation(() => ({
     mutationFn: (tokenId: string) => enterprise.revokeScimToken(params.tenantId, tokenId),
     onSuccess: async () => {
+      setRevokeTarget(null);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) });
     },
   }));
@@ -59,6 +67,21 @@ export default function IdentitySettingsPage() {
     },
   );
 
+  const [ssoSaved, setSsoSaved] = createSignal(false);
+
+  const ssoDirty = () => {
+    const current = sso.data;
+
+    if (!current) return false;
+
+    return (
+      ssoEnabled() !== current.enabled ||
+      azureTenantId().trim() !== (current.azureTenantId ?? "") ||
+      autoProvision() !== current.autoProvision ||
+      requireMfa() !== current.requireMfa
+    );
+  };
+
   const saveSso = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchSsoConfig(params.tenantId, {
@@ -68,6 +91,8 @@ export default function IdentitySettingsPage() {
         requireMfa: requireMfa(),
       }),
     onSuccess: async () => {
+      setSsoSaved(true);
+      setTimeout(() => setSsoSaved(false), 3000);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
     },
   }));
@@ -82,12 +107,16 @@ export default function IdentitySettingsPage() {
         `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
       );
 
-      const body = (await response.json().catch(() => ({}))) as {
-        url?: string;
-        error?: string;
-      };
+      const body = Option.getOrUndefined(
+        Schema.decodeUnknownOption(
+          Schema.Struct({
+            url: Schema.optional(Schema.String),
+            error: Schema.optional(Schema.String),
+          }),
+        )(await response.json().catch(() => ({}))),
+      );
 
-      if (body.url) {
+      if (body?.url) {
         window.location.href = body.url;
 
         return;
@@ -95,13 +124,18 @@ export default function IdentitySettingsPage() {
 
       setSsoError(errorMessage(body, "Single sign-on is not available for this tenant."));
     } catch (error) {
-      setSsoError(errorMessage(error));
+      setSsoError(errorMessage(raisedFailure(error)));
     }
   };
 
   return (
     <div class="grid gap-5 xl:grid-cols-2">
       <QueryError class="xl:col-span-2" error={tokens.error ?? sso.error} />
+      <Show when={!writable()}>
+        <ReadOnlyNotice class="xl:col-span-2">
+          Your role can view identity settings but not change them.
+        </ReadOnlyNotice>
+      </Show>
 
       <Panel
         title="SCIM provisioning"
@@ -111,31 +145,55 @@ export default function IdentitySettingsPage() {
           <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             SCIM base URL
           </p>
-          <code class="mt-1.5 block break-all font-mono text-xs text-foreground">{baseUrl()}</code>
+          <div class="mt-1.5 flex items-start gap-2">
+            <code class="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+              {baseUrl()}
+            </code>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(baseUrl());
+                  setCopiedUrl(true);
+                  setTimeout(() => setCopiedUrl(false), 1500);
+                } catch {
+                  // Clipboard access can be denied; the URL stays selectable.
+                }
+              }}
+            >
+              {copiedUrl() ? "Copied" : "Copy"}
+            </Button>
+          </div>
           <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
             Use a bearer token below. Supported resources: Users and Groups.
           </p>
         </div>
 
-        <form
-          class="mt-4 flex flex-col gap-2 sm:flex-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create.mutate();
-          }}
-        >
-          <Input
-            required
-            aria-label="SCIM token name"
-            placeholder="Token name"
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value)}
-            class="min-w-0 flex-1"
-          />
-          <Button type="submit" class="shrink-0" disabled={create.isPending}>
-            Create token
-          </Button>
-        </form>
+        <Show when={writable()}>
+          <form
+            class="mt-4 flex flex-col gap-2 sm:flex-row"
+            novalidate
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (!name().trim()) return;
+              create.mutate();
+            }}
+          >
+            <Input
+              aria-label="SCIM token name"
+              placeholder="e.g. Okta SCIM"
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
+              class="min-w-0 flex-1"
+            />
+            <Button type="submit" class="shrink-0" disabled={create.isPending || !name().trim()}>
+              Create token
+            </Button>
+          </form>
+        </Show>
         <ErrorText error={create.error} />
 
         <Show when={created()}>
@@ -147,14 +205,18 @@ export default function IdentitySettingsPage() {
               <code class="mt-2 block break-all rounded-md border border-white/[0.07] bg-black/25 p-2 font-mono text-xs text-muted-foreground">
                 {value().token}
               </code>
-              <Button
-                size="sm"
-                class="mt-2"
-                variant="outline"
-                onClick={() => navigator.clipboard.writeText(value().token)}
-              >
-                Copy token
-              </Button>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigator.clipboard.writeText(value().token)}
+                >
+                  Copy token
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setCreated(null)}>
+                  Done
+                </Button>
+              </div>
             </div>
           )}
         </Show>
@@ -186,15 +248,17 @@ export default function IdentitySettingsPage() {
                         : ""}
                     </span>
                   </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    class="shrink-0 self-start sm:self-auto"
-                    disabled={revoke.isPending}
-                    onClick={() => revoke.mutate(token.id)}
-                  >
-                    Revoke
-                  </Button>
+                  <Show when={writable()}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      class="shrink-0 self-start sm:self-auto"
+                      disabled={revoke.isPending}
+                      onClick={() => setRevokeTarget({ id: token.id, name: token.name })}
+                    >
+                      Revoke
+                    </Button>
+                  </Show>
                 </li>
               )}
             </For>
@@ -261,19 +325,27 @@ export default function IdentitySettingsPage() {
           />
           <ToggleSetting
             title="Require MFA for owners and admins"
-            description="Owners and admins must enroll an authenticator app before they can access this tenant. Members can still view it."
+            description="Owners and admins must enroll a passkey or authenticator app before they can access this tenant. Members can still view it."
             checked={requireMfa()}
             onChange={setRequireMfa}
           />
 
           <div class="flex flex-wrap gap-2 pt-4">
-            <Button type="submit" disabled={saveSso.isPending}>
-              Save SSO settings
-            </Button>
+            <Show when={writable()}>
+              <Button type="submit" disabled={saveSso.isPending || !ssoDirty()}>
+                {saveSso.isPending ? "Saving…" : "Save SSO settings"}
+              </Button>
+              <Show when={ssoSaved()}>
+                <span role="status" class="self-center text-[12.5px] text-success-foreground">
+                  Saved.
+                </span>
+              </Show>
+            </Show>
             <Button
               type="button"
               variant="outline"
-              disabled={!sso.data?.enabled || !sso.data?.azureTenantId}
+              disabled={!sso.data?.enabled || !sso.data?.azureTenantId || ssoDirty()}
+              title={ssoDirty() ? "Save your changes before testing sign-in" : undefined}
               onClick={startSso}
             >
               Test sign-in
@@ -291,6 +363,23 @@ export default function IdentitySettingsPage() {
           </div>
         </form>
       </Panel>
+
+      <ConfirmDialog
+        open={revokeTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title={`Revoke “${revokeTarget()?.name ?? "this SCIM token"}”?`}
+        description="Your identity provider will stop syncing users and groups immediately. This cannot be undone."
+        confirmLabel="Revoke token"
+        destructive
+        pending={revoke.isPending}
+        onConfirm={() => {
+          const token = revokeTarget();
+
+          if (token) revoke.mutate(token.id);
+        }}
+      />
     </div>
   );
 }

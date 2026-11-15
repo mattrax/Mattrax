@@ -5,8 +5,8 @@ what a policy change will do to a fleet.
 
 ## Accounts and tenants
 
-- **Account** — a person who signs in. An account has a name, email, password, optional
-  authenticator app and optional passkeys.
+- **Account** — a person who signs in. An account has a name, email, one or more
+  passkeys, and optionally an authenticator app as a second factor.
 - **Tenant** — an isolated environment with its own devices, groups, policies, enrollment
   settings, branding, audit log, webhooks and billing subscription. Tenant ids are opaque
   and are never reused.
@@ -78,17 +78,35 @@ catalogue or a direct `install-app` command instead.
 
 ## Assignments and precedence
 
-Policies reach devices through group assignments and direct device assignments. Each link
-can be an **include** or an **exclude**.
+Policies reach devices through device group assignments, direct device assignments, and
+directory users or user groups. Each link can be an **include** or an **exclude**.
+
+User-assigned policies use the device channel: there is no per-user payload isolation
+yet, so a user policy applies to every linked device and affects every user of that device.
+Link users to devices from the device page. Directory sync (Entra or SCIM) keeps user
+groups current and triggers a refresh for linked devices.
 
 Resolution order, from strongest to weakest:
 
-1. Direct device **exclude** removes the policy, even if a group includes it.
+1. Direct device **exclude** removes the policy, even if a group or user includes it.
 2. Direct device **include** wins over every group include or exclude.
-3. Group **exclude** vetoes group delivery. Another group cannot re-add it, but a direct
+3. A device assignment (direct or group) beats a user assignment for the same
+   configuration kind. A user policy fills kinds the device policies do not provide; it
+   does not replace them.
+4. Group **exclude** vetoes group delivery. Another group cannot re-add it, but a direct
    include can.
-4. Among remaining policies, the highest `priority` wins. Ties go to the most recently
+5. Among remaining policies, the highest `priority` wins. Ties go to the most recently
    updated policy, then the lowest id.
+
+User assignments follow Intune-style targeting:
+
+- A direct user include beats that user's directory group assignments.
+- A user exclusion removes only that user's contribution. It never removes a policy that
+  another linked user includes. A policy disappears when no linked user includes it.
+- A device group exclude also removes a policy a linked user includes, matching the
+  device-scope precedence above.
+- Windows devices converge on their next scheduled OMA-DM check-in; Apple and Android are
+  notified when assignments or directory membership change.
 
 Use `GET /api/v1/tenants/:tenantId/devices/:id/effective-policy` to see the resolved
 trace for one device.

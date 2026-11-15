@@ -11,7 +11,7 @@ const now = new Date("2026-11-10T12:00:00.000Z");
 const run = (db: ReturnType<typeof makeDb>) =>
   runEffect(
     runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
-      Effect.provideService(Db, db as unknown as Db["Service"]),
+      Effect.provideService(Db, db),
     ),
   );
 
@@ -62,7 +62,7 @@ describe("maintenance enrollment-attempt retention", () => {
         auditRetentionDays: 0,
         enrollmentAttemptRetentionDays: 0,
         credentialAlerts: false,
-      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+      }).pipe(Effect.provideService(Db, db)),
     );
 
     expect(result.purgedEnrollmentAttempts).toBe(0);
@@ -142,7 +142,7 @@ describe("maintenance dynamic groups", () => {
         auditRetentionDays: 0,
         credentialAlerts: false,
         dynamicGroups: false,
-      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+      }).pipe(Effect.provideService(Db, db)),
     );
 
     expect(result.dynamicGroupsEvaluated).toBe(0);
@@ -150,7 +150,7 @@ describe("maintenance dynamic groups", () => {
 });
 
 describe("maintenance webhook deliveries", () => {
-  const endpoint = async (overrides: Record<string, unknown> = {}) => ({
+  const endpoint = async () => ({
     id: "wh-1",
     organizationId: "org-1",
     url: "https://hooks.example.com/mattrax",
@@ -164,7 +164,6 @@ describe("maintenance webhook deliveries", () => {
     consecutiveFailures: 0,
     createdAt: now,
     updatedAt: now,
-    ...overrides,
   });
 
   it("prunes delivery rows older than 30 days", async () => {
@@ -223,7 +222,7 @@ describe("maintenance webhook deliveries", () => {
         dynamicGroups: false,
         webhookAuthSecret: "maintenance-secret",
         webhookFetch: fetch,
-      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+      }).pipe(Effect.provideService(Db, db)),
     );
 
     expect(result.webhookRetries).toBe(1);

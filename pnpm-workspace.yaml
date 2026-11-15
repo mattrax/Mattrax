@@ -3,16 +3,20 @@ packages:
   - packages/*
 
 catalog:
+  "@axe-core/playwright": ^4.14.0
   "@cloudflare/vite-plugin": 2.0.0-beta.v.12
   "@effect/platform-node": ^4.1.2
   "@effect/sql-mysql2": ^4.1.2
+  "@lhci/cli": ^0.16.1
   "@playwright/test": ^1.65.0
+  "@rolldown/perf-kit": ^0.1.0
   "@rspress/core": ^2.1.2
   "@rspress/plugin-llms": ^2.1.2
   "@simplewebauthn/browser": ^14.0.0
   "@simplewebauthn/server": ^14.0.1
   "@tanstack/solid-query": ^5.107.1
   "@types/node": ^26.6.6
+  "@types/react": ^19.3.0
   "@xmldom/xmldom": ^0.9.12
   "@yielded/auth": 0.1.0-beta.47
   "@yielded/auth-persistence-drizzle": 0.1.0-beta.47
@@ -29,6 +33,7 @@ catalog:
   pkijs: ^4.0.1
   posthog-js: ^1.448.0
   posthog-node: ^5.73.0
+  react: ^19.3.1
   reflect-metadata: ^0.2.2
   typescript: ~7.0.2
   uqr: ^0.1.3

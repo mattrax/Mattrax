@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import {
   AndroidManagement,
   AndroidManagementLive,
+  AndroidManagementValidationError,
+  GoogleApiError,
   type AndroidManagementConfig,
 } from "../src/index.js";
 import {
@@ -46,9 +48,11 @@ function router(request: RecordedRequest): Response {
   }
 
   if (method === "POST" && pathname === "/v1/enterprises") {
-    const body = jsonBody(request) as Record<string, unknown>;
+    const body = jsonBody(request);
 
-    return jsonResponse({ name: enterprise, displayName: body["displayName"] });
+    const displayName = Schema.is(Schema.JsonObject)(body) ? body["displayName"] : undefined;
+
+    return jsonResponse(displayName === undefined ? { name: enterprise } : { name: enterprise, displayName });
   }
 
   if (method === "POST" && pathname === `/v1/${enterprise}/enrollmentTokens`) {
@@ -61,17 +65,26 @@ function router(request: RecordedRequest): Response {
   }
 
   if (method === "PATCH" && pathname === `/v1/${enterprise}/policies/default`) {
-    return jsonResponse({
-      ...(jsonBody(request) as Record<string, unknown>),
-      name: `${enterprise}/policies/default`,
-      version: "7",
-    });
+    const body = jsonBody(request);
+
+    const response: Record<string, Schema.Json> = {};
+
+    if (Schema.is(Schema.JsonObject)(body)) {
+      for (const [key, value] of Object.entries(body)) response[key] = value;
+    }
+
+    response["name"] = `${enterprise}/policies/default`;
+    response["version"] = "7";
+
+    return jsonResponse(response);
   }
 
   if (method === "PATCH" && pathname === `/v1/${device}`) {
-    const body = jsonBody(request) as Record<string, unknown>;
+    const body = jsonBody(request);
 
-    return jsonResponse({ name: device, policyName: body["policyName"] });
+    const policyName = Schema.is(Schema.JsonObject)(body) ? body["policyName"] : undefined;
+
+    return jsonResponse(policyName === undefined ? { name: device } : { name: device, policyName });
   }
 
   if (method === "GET" && pathname === `/v1/${enterprise}/devices`) {
@@ -355,7 +368,8 @@ describe("AndroidManagement service", () => {
       ),
     );
 
-    expect(error).toMatchObject({ _tag: "GoogleApiError", status: 404 });
+    expect(error).toBeInstanceOf(GoogleApiError);
+    expect(error).toMatchObject({ status: 404 });
     expect(error.message).toContain("Enterprise not found");
   });
 
@@ -372,10 +386,8 @@ describe("AndroidManagement service", () => {
       ),
     );
 
-    expect(error).toMatchObject({
-      _tag: "AndroidManagementValidationError",
-      field: "deviceName",
-    });
+    expect(error).toBeInstanceOf(AndroidManagementValidationError);
+    expect(error).toMatchObject({ field: "deviceName" });
   });
 
   it("rejects path traversal in policy IDs", async () => {
@@ -395,9 +407,7 @@ describe("AndroidManagement service", () => {
       ),
     );
 
-    expect(error).toMatchObject({
-      _tag: "AndroidManagementValidationError",
-      field: "policyId",
-    });
+    expect(error).toBeInstanceOf(AndroidManagementValidationError);
+    expect(error).toMatchObject({ field: "policyId" });
   });
 });

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "identifier": "urn:air:e.mattrax.app:mattrax:rest-api",
+      "displayName": "Mattrax Fleet API",
+      "type": "application/vnd.oai.openapi+json",
+      "url": "https://e.mattrax.app/api/openapi.json",
+      "description": "OpenAPI description of the Mattrax device management API: tenants, devices, groups, policies, applications, enrollment and audit events.",
+      "tags": ["device management", "mdm", "openapi", "apple", "windows", "android"],
+      "representativeQueries": [
+        "List the devices enrolled in a Mattrax tenant",
+        "Find which policy applies to a device",
+        "Create a device group for a set of serial numbers"
+      ]
+    }
+  ]
+}

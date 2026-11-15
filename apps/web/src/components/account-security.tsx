@@ -27,11 +27,9 @@ const formatDate = (millis: number | undefined) =>
  * can be used on their own.
  */
 export function AccountSecurity(props: {
-  mfaEnabled: boolean;
   totpEnabled: boolean;
   passkeyEnabled: boolean;
   mfaRequired: boolean;
-  hasPassword: boolean;
   email: string;
 }) {
   const [enrollment, setEnrollment] = createSignal<{
@@ -45,13 +43,11 @@ export function AccountSecurity(props: {
   const [enrollError, setEnrollError] = createSignal<string | null>(null);
   const [enrollPending, setEnrollPending] = createSignal(false);
 
-  const [recoveryCodes, setRecoveryCodes] = createSignal<string[] | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = createSignal<ReadonlyArray<string> | null>(null);
   const [disableCode, setDisableCode] = createSignal("");
-  const [disablePassword, setDisablePassword] = createSignal("");
   const [disableError, setDisableError] = createSignal<string | null>(null);
   const [disablePending, setDisablePending] = createSignal(false);
   const [regenerateCode, setRegenerateCode] = createSignal("");
-  const [regeneratePassword, setRegeneratePassword] = createSignal("");
   const [regenerateError, setRegenerateError] = createSignal<string | null>(null);
   const [regeneratePending, setRegeneratePending] = createSignal(false);
   const [signedOut, setSignedOut] = createSignal(false);
@@ -129,7 +125,6 @@ export function AccountSecurity(props: {
     setDisablePending(true);
 
     const result = await authClient.disableTotp({
-      password: disablePassword(),
       code: disableCode().trim(),
     });
 
@@ -142,7 +137,6 @@ export function AccountSecurity(props: {
     }
 
     setDisableCode("");
-    setDisablePassword("");
     setSignedOut(true);
   };
 
@@ -152,7 +146,6 @@ export function AccountSecurity(props: {
     setRegeneratePending(true);
 
     const result = await authClient.regenerateTotpRecoveryCodes({
-      password: regeneratePassword(),
       code: regenerateCode().trim(),
     });
 
@@ -167,7 +160,6 @@ export function AccountSecurity(props: {
     }
 
     setRegenerateCode("");
-    setRegeneratePassword("");
     setRecoveryCodes(result.data.recoveryCodes);
   };
 
@@ -216,19 +208,20 @@ export function AccountSecurity(props: {
         </span>
         <div class="min-w-0">
           <h2 class="mb-1 text-[13px] font-semibold text-foreground">
-            Multi-factor authentication
+            Passkeys and two-factor authentication
           </h2>
           <p class="text-xs leading-relaxed text-muted-foreground">
-            Protect your account with an authenticator app or a passkey. Either one satisfies
-            multi-factor sign-in; passkeys also let you sign in without a password.
+            Passkeys are the only way to sign in. Add more than one so you can still get in if a
+            device is lost. An authenticator app adds a second layer that a phished passkey alone
+            cannot satisfy.
           </p>
         </div>
       </div>
 
-      <Show when={props.mfaRequired && !props.mfaEnabled}>
+      <Show when={props.mfaRequired && !props.passkeyEnabled}>
         <Banner tone="warning" class="mt-4">
-          A tenant where you are an owner or admin requires MFA. Add a passkey or enable an
-          authenticator to regain access to its settings.
+          A tenant where you are an owner or admin requires MFA. Add a passkey to regain access to
+          its settings.
         </Banner>
       </Show>
 
@@ -271,8 +264,8 @@ export function AccountSecurity(props: {
           <div class="min-w-0">
             <p class="text-[13px] font-medium text-foreground">Passkeys</p>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              Sign in with Face ID, Touch ID, Windows Hello or a security key. Passkeys are
-              phishing-resistant.
+              Sign in with Face ID, Touch ID, Windows Hello or a security key. Add more than one
+              passkey so a lost device cannot lock you out.
             </p>
           </div>
           <Chip tone={props.passkeyEnabled ? "success" : "neutral"}>
@@ -284,7 +277,7 @@ export function AccountSecurity(props: {
           when={passkeysLoaded() && passkeys().length > 0}
           fallback={
             <p class="mt-3 text-xs text-muted-foreground">
-              No passkeys yet. Add one to sign in without a password.
+              No passkeys yet. Add one to sign in.
             </p>
           }
         >
@@ -331,7 +324,11 @@ export function AccountSecurity(props: {
           Adding or removing a passkey asks you to confirm your identity first.
         </p>
         <Show when={passkeyError()}>
-          {(message) => <p class="mt-2 text-[13px] text-destructive">{message()}</p>}
+          {(message) => (
+            <p role="alert" class="mt-2 text-[13px] text-destructive">
+              {message()}
+            </p>
+          )}
         </Show>
       </div>
 
@@ -355,12 +352,11 @@ export function AccountSecurity(props: {
             fallback={
               <div class="mt-3">
                 <Show
-                  when={props.hasPassword}
+                  when={props.passkeyEnabled}
                   fallback={
                     <Banner tone="warning">
-                      Set a password for this account before enabling an authenticator app. Password
-                      and authenticator are required together; passwordless or SSO-only accounts
-                      should use a passkey instead.
+                      Add a passkey first. Passkeys are the only sign-in method, so the
+                      authenticator app can only be a second layer on top of one.
                     </Banner>
                   }
                 >
@@ -369,7 +365,11 @@ export function AccountSecurity(props: {
                   </Button>
                 </Show>
                 <Show when={enrollError()}>
-                  {(message) => <p class="mt-2 text-[13px] text-destructive">{message()}</p>}
+                  {(message) => (
+                    <p role="alert" class="mt-2 text-[13px] text-destructive">
+                      {message()}
+                    </p>
+                  )}
                 </Show>
               </div>
             }
@@ -402,13 +402,19 @@ export function AccountSecurity(props: {
                       autocomplete="one-time-code"
                       inputmode="numeric"
                       placeholder="000000"
+                      aria-invalid={enrollError() ? "true" : undefined}
+                      aria-describedby={enrollError() ? "totp-confirm-error" : undefined}
                       value={enrollCode()}
                       onInput={(event) => setEnrollCode(event.currentTarget.value)}
                       class={inputClass}
                     />
                   </div>
                   <Show when={enrollError()}>
-                    {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
+                    {(message) => (
+                      <p id="totp-confirm-error" role="alert" class="text-[13px] text-destructive">
+                        {message()}
+                      </p>
+                    )}
                   </Show>
                   <div class="flex flex-wrap gap-2">
                     <Button type="submit" disabled={enrollPending()}>
@@ -437,25 +443,20 @@ export function AccountSecurity(props: {
             <form onSubmit={regenerate} class="space-y-2">
               <p class="text-[13px] font-medium text-foreground">Regenerate recovery codes</p>
               <p class="text-xs leading-relaxed text-muted-foreground">
-                This replaces every existing recovery code. Enter your current password and an
-                authenticator code to confirm.
+                This replaces every existing recovery code. Confirm with your passkey and a current
+                authenticator code.
               </p>
               <div class="space-y-2">
-                <input
-                  type="password"
-                  required
-                  autocomplete="current-password"
-                  placeholder="Current password"
-                  value={regeneratePassword()}
-                  onInput={(event) => setRegeneratePassword(event.currentTarget.value)}
-                  class={inputClass}
-                />
                 <div class="flex flex-col gap-2 sm:flex-row">
                   <input
+                    id="regenerate-code"
                     required
                     autocomplete="one-time-code"
                     inputmode="numeric"
                     placeholder="000000"
+                    aria-label="Authenticator code"
+                    aria-invalid={regenerateError() ? "true" : undefined}
+                    aria-describedby={regenerateError() ? "regenerate-error" : undefined}
                     value={regenerateCode()}
                     onInput={(event) => setRegenerateCode(event.currentTarget.value)}
                     class={inputClass}
@@ -471,32 +472,31 @@ export function AccountSecurity(props: {
                 </div>
               </div>
               <Show when={regenerateError()}>
-                {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
+                {(message) => (
+                  <p id="regenerate-error" role="alert" class="text-[13px] text-destructive">
+                    {message()}
+                  </p>
+                )}
               </Show>
             </form>
 
             <form onSubmit={disable} class="space-y-2 border-t border-white/[0.06] pt-4">
               <p class="text-[13px] font-medium text-destructive">Disable authenticator app</p>
               <p class="text-xs leading-relaxed text-muted-foreground">
-                This removes the second factor and invalidates your sessions. Enter your current
-                password and an authenticator code to confirm.
+                This removes the second factor and invalidates your sessions. Confirm with your
+                passkey and a current authenticator code.
               </p>
               <div class="space-y-2">
-                <input
-                  type="password"
-                  required
-                  autocomplete="current-password"
-                  placeholder="Current password"
-                  value={disablePassword()}
-                  onInput={(event) => setDisablePassword(event.currentTarget.value)}
-                  class={inputClass}
-                />
                 <div class="flex flex-col gap-2 sm:flex-row">
                   <input
+                    id="disable-code"
                     required
                     autocomplete="one-time-code"
                     inputmode="numeric"
                     placeholder="000000"
+                    aria-label="Authenticator code"
+                    aria-invalid={disableError() ? "true" : undefined}
+                    aria-describedby={disableError() ? "disable-error" : undefined}
                     value={disableCode()}
                     onInput={(event) => setDisableCode(event.currentTarget.value)}
                     class={inputClass}
@@ -512,7 +512,11 @@ export function AccountSecurity(props: {
                 </div>
               </div>
               <Show when={disableError()}>
-                {(message) => <p class="text-[13px] text-destructive">{message()}</p>}
+                {(message) => (
+                  <p id="disable-error" role="alert" class="text-[13px] text-destructive">
+                    {message()}
+                  </p>
+                )}
               </Show>
             </form>
           </div>

@@ -1,5 +1,17 @@
 import { Schema } from "effect";
 import { env as cfEnv } from "cloudflare:workers";
+import type { RateLimitBindingLike } from "./rateLimit.js";
+
+declare global {
+  interface Env {
+    readonly RATE_LIMITER_AUTH?: RateLimitBindingLike;
+    readonly RATE_LIMITER_ENROLLMENT?: RateLimitBindingLike;
+    readonly RATE_LIMITER_MDM?: RateLimitBindingLike;
+    readonly RATE_LIMITER_SCIM?: RateLimitBindingLike;
+    readonly RATE_LIMITER_BILLING?: RateLimitBindingLike;
+    readonly RATE_LIMITER_SCEP?: RateLimitBindingLike;
+  }
+}
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
 
@@ -28,6 +40,13 @@ const ApiEnvSchema = Schema.Struct({
   MATTRAX_PLAN_LIMITS: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_CERT: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
+  /**
+   * Deployment identity used to CMS-sign Apple enrollment profiles. The key is
+   * an unencrypted PKCS#8 PEM; the optional chain is a PEM bundle.
+   */
+  APPLE_PROFILE_SIGNING_CERT: Schema.optional(Schema.String),
+  APPLE_PROFILE_SIGNING_KEY: Schema.optional(Schema.String),
+  APPLE_PROFILE_SIGNING_CHAIN: Schema.optional(Schema.String),
   /** Hosted Cloud push relay. When set, APNs pushes go through the relay. */
   APNS_RELAY_URL: Schema.optional(urlString),
   APNS_RELAY_SECRET: Schema.optional(nonEmptyString),
@@ -55,8 +74,6 @@ const ApiEnvSchema = Schema.Struct({
    * split-origin whitelabel deployments.
    */
   TRUSTED_ORIGINS: Schema.optional(Schema.String),
-  /** HTTPS landing URL for password-reset emails; defaults to `ORIGIN`. */
-  AUTH_RESET_URL: Schema.optional(Schema.String),
   /**
    * Local-only debug mailbox. The mailbox is only exposed when the canonical
    * `ORIGIN` is loopback, or when `DEV_MAILBOX_ALLOW_REMOTE=true` is also set.
@@ -69,6 +86,31 @@ const ApiEnvSchema = Schema.Struct({
   DEV_MAILBOX_ALLOW_REMOTE: Schema.optional(nonEmptyString),
   /** Optional shared secret required in `x-dev-mailbox-secret`. */
   DEV_MAILBOX_SECRET: Schema.optional(nonEmptyString),
+  /** Verified sender for invitation email; defaults to `hello@mattrax.cloud`. */
+  MATTRAX_INVITATION_FROM: Schema.optional(nonEmptyString),
+  /**
+   * Reply-To for the one-time onboarding emails. Defaults to
+   * `oscar@otbeaumont.me`; set it to a monitored mailbox, never `no-reply@`.
+   */
+  MATTRAX_ONBOARDING_REPLY_TO: Schema.optional(nonEmptyString),
+  /** Support address in the onboarding email footer. Defaults to the sender. */
+  MATTRAX_ONBOARDING_SUPPORT_EMAIL: Schema.optional(nonEmptyString),
+  /**
+   * ISO date (for example `2026-11-14`). Tenants created before this date are
+   * never sent the follow-up, so enabling it does not mail existing customers.
+   */
+  MATTRAX_ONBOARDING_SINCE: Schema.optional(nonEmptyString),
+  /** Disable the scheduled one-week follow-up with `false`, `0` or `off`. */
+  MAINTENANCE_ONBOARDING_EMAILS: Schema.optional(nonEmptyString),
+  /** Days after tenant creation before the follow-up is eligible. Defaults to 7. */
+  MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: Schema.optional(nonEmptyString),
+  /** Extra eligible days after the follow-up threshold. Defaults to 7. */
+  MAINTENANCE_ONBOARDING_WINDOW_DAYS: Schema.optional(nonEmptyString),
+  /**
+   * Suppress a recipient who already received a follow-up for another tenant
+   * this many days ago. `0` disables the cooldown. Defaults to 7.
+   */
+  MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: Schema.optional(nonEmptyString),
   /**
    * Legacy fallback tenant for Windows devices. Tenant-scoped enrollment URLs
    * carry a signed token, so this is no longer required. Set it only for a
@@ -83,6 +125,13 @@ const ApiEnvSchema = Schema.Struct({
    * set.
    */
   WINDOWS_FEDERATED_AUDIENCE: Schema.optional(nonEmptyString),
+  /**
+   * Trust `x-device-identity-certificate*` headers set by a TLS-terminating
+   * reverse proxy. Only enable behind a proxy that verifies device client
+   * certificates and strips caller-supplied values. Off on Cloudflare, where
+   * the certificate comes from the mTLS handshake.
+   */
+  TRUST_DEVICE_IDENTITY_HEADERS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
@@ -108,72 +157,132 @@ const ApiEnvSchema = Schema.Struct({
   POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
 });
 
-const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
+const optionalString = Schema.optional(Schema.String);
+
+const RawApiEnvSchema = Schema.Struct({
+  ORIGIN: optionalString,
+  AUTH_SECRET: optionalString,
+  STRIPE_SECRET_KEY: optionalString,
+  STRIPE_WEBHOOK_SECRET: optionalString,
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: optionalString,
+  MATTRAX_PLAN_LIMITS: optionalString,
+  CLOUD_APPLE_VENDOR_CERT: optionalString,
+  CLOUD_APPLE_VENDOR_KEY: optionalString,
+  APPLE_PROFILE_SIGNING_CERT: optionalString,
+  APPLE_PROFILE_SIGNING_KEY: optionalString,
+  APPLE_PROFILE_SIGNING_CHAIN: optionalString,
+  APNS_RELAY_URL: optionalString,
+  APNS_RELAY_SECRET: optionalString,
+  AZURE_CLIENT_ID: optionalString,
+  AZURE_CLIENT_SECRET: optionalString,
+  ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: optionalString,
+  ANDROID_MANAGEMENT_PROJECT_ID: optionalString,
+  ANDROID_MANAGEMENT_PUBSUB_TOPIC: optionalString,
+  ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: optionalString,
+  ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: optionalString,
+  ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: optionalString,
+  TRUSTED_ORIGINS: optionalString,
+  DEV_MAILBOX: optionalString,
+  DEV_MAILBOX_ALLOW_REMOTE: optionalString,
+  DEV_MAILBOX_SECRET: optionalString,
+  MATTRAX_INVITATION_FROM: optionalString,
+  MATTRAX_ONBOARDING_REPLY_TO: optionalString,
+  MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
+  MATTRAX_ONBOARDING_SINCE: optionalString,
+  MAINTENANCE_ONBOARDING_EMAILS: optionalString,
+  MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: optionalString,
+  MAINTENANCE_ONBOARDING_WINDOW_DAYS: optionalString,
+  MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: optionalString,
+  WINDOWS_ORGANIZATION_ID: optionalString,
+  WINDOWS_FEDERATED_AUDIENCE: optionalString,
+  TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
+  MAINTENANCE_STALE_DEVICE_DAYS: optionalString,
+  MAINTENANCE_AUDIT_RETENTION_DAYS: optionalString,
+  MAINTENANCE_BACKUP_RETENTION_DAYS: optionalString,
+  MAINTENANCE_BACKUP_CONCURRENCY: optionalString,
+  MAINTENANCE_ENTRA_SYNC_CONCURRENCY: optionalString,
+  POSTHOG_KEY: optionalString,
+  POSTHOG_HOST: optionalString,
+  POSTHOG_ENVIRONMENT: optionalString,
+  POSTHOG_ERROR_SAMPLE_RATE: optionalString,
+  POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: optionalString,
+});
+
+const rawEnv = Schema.decodeUnknownSync(RawApiEnvSchema)(cfEnv);
+
+const emptyStringAsUndefined = (value: string | undefined) => (value === "" ? undefined : value);
 
 // For now this is only used for runtime validation, so transformations aren't safe.
 export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   // Keep the hosted default so existing deployments that have not set the
   // newly-configurable secret keep working. Local dev overrides it via
   // `.dev.vars`; whitelabel deployments set their own origin.
-  ORIGIN: emptyStringAsUndefined(cfEnv.ORIGIN) ?? "https://e.mattrax.app",
-  AUTH_SECRET: emptyStringAsUndefined(cfEnv.AUTH_SECRET),
-  STRIPE_SECRET_KEY: emptyStringAsUndefined((cfEnv as any).STRIPE_SECRET_KEY),
-  STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined((cfEnv as any).STRIPE_WEBHOOK_SECRET),
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(
-    (cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID,
-  ),
-  MATTRAX_PLAN_LIMITS: emptyStringAsUndefined((cfEnv as any).MATTRAX_PLAN_LIMITS),
-  CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_CERT),
-  CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_KEY),
-  APNS_RELAY_URL: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_URL),
-  APNS_RELAY_SECRET: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_SECRET),
-  AZURE_CLIENT_ID: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_ID),
-  AZURE_CLIENT_SECRET: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_SECRET),
+  ORIGIN: emptyStringAsUndefined(rawEnv.ORIGIN) ?? "https://e.mattrax.app",
+  AUTH_SECRET: emptyStringAsUndefined(rawEnv.AUTH_SECRET),
+  STRIPE_SECRET_KEY: emptyStringAsUndefined(rawEnv.STRIPE_SECRET_KEY),
+  STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined(rawEnv.STRIPE_WEBHOOK_SECRET),
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID),
+  MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
+  CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),
+  CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_KEY),
+  APPLE_PROFILE_SIGNING_CERT: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_CERT),
+  APPLE_PROFILE_SIGNING_KEY: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_KEY),
+  APPLE_PROFILE_SIGNING_CHAIN: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_CHAIN),
+  APNS_RELAY_URL: emptyStringAsUndefined(rawEnv.APNS_RELAY_URL),
+  APNS_RELAY_SECRET: emptyStringAsUndefined(rawEnv.APNS_RELAY_SECRET),
+  AZURE_CLIENT_ID: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_ID),
+  AZURE_CLIENT_SECRET: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_SECRET),
   ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON,
+    rawEnv.ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON,
   ),
-  ANDROID_MANAGEMENT_PROJECT_ID: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_PROJECT_ID,
-  ),
-  ANDROID_MANAGEMENT_PUBSUB_TOPIC: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_TOPIC,
-  ),
+  ANDROID_MANAGEMENT_PROJECT_ID: emptyStringAsUndefined(rawEnv.ANDROID_MANAGEMENT_PROJECT_ID),
+  ANDROID_MANAGEMENT_PUBSUB_TOPIC: emptyStringAsUndefined(rawEnv.ANDROID_MANAGEMENT_PUBSUB_TOPIC),
   ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION,
+    rawEnv.ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION,
   ),
   ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_AUDIENCE,
+    rawEnv.ANDROID_MANAGEMENT_PUBSUB_AUDIENCE,
   ),
   ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: emptyStringAsUndefined(
-    (cfEnv as any).ANDROID_MANAGEMENT_PUBSUB_JWKS_URI,
+    rawEnv.ANDROID_MANAGEMENT_PUBSUB_JWKS_URI,
   ),
-  TRUSTED_ORIGINS: emptyStringAsUndefined((cfEnv as any).TRUSTED_ORIGINS),
-  AUTH_RESET_URL: emptyStringAsUndefined((cfEnv as any).AUTH_RESET_URL),
-  DEV_MAILBOX: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX),
-  DEV_MAILBOX_ALLOW_REMOTE: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_ALLOW_REMOTE),
-  DEV_MAILBOX_SECRET: emptyStringAsUndefined((cfEnv as any).DEV_MAILBOX_SECRET),
-  WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined((cfEnv as any).WINDOWS_ORGANIZATION_ID),
-  WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined((cfEnv as any).WINDOWS_FEDERATED_AUDIENCE),
-  MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(
-    (cfEnv as any).MAINTENANCE_STALE_DEVICE_DAYS,
+  TRUSTED_ORIGINS: emptyStringAsUndefined(rawEnv.TRUSTED_ORIGINS),
+  DEV_MAILBOX: emptyStringAsUndefined(rawEnv.DEV_MAILBOX),
+  DEV_MAILBOX_ALLOW_REMOTE: emptyStringAsUndefined(rawEnv.DEV_MAILBOX_ALLOW_REMOTE),
+  DEV_MAILBOX_SECRET: emptyStringAsUndefined(rawEnv.DEV_MAILBOX_SECRET),
+  MATTRAX_INVITATION_FROM: emptyStringAsUndefined(rawEnv.MATTRAX_INVITATION_FROM),
+  MATTRAX_ONBOARDING_REPLY_TO: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_REPLY_TO),
+  MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(
+    rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL,
   ),
-  MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(
-    (cfEnv as any).MAINTENANCE_AUDIT_RETENTION_DAYS,
+  MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
+  MAINTENANCE_ONBOARDING_EMAILS: emptyStringAsUndefined(rawEnv.MAINTENANCE_ONBOARDING_EMAILS),
+  MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS,
   ),
+  MAINTENANCE_ONBOARDING_WINDOW_DAYS: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS,
+  ),
+  MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS,
+  ),
+  WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined(rawEnv.WINDOWS_ORGANIZATION_ID),
+  WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined(rawEnv.WINDOWS_FEDERATED_AUDIENCE),
+  TRUST_DEVICE_IDENTITY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_DEVICE_IDENTITY_HEADERS),
+  MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+  MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
   MAINTENANCE_BACKUP_RETENTION_DAYS: emptyStringAsUndefined(
-    (cfEnv as any).MAINTENANCE_BACKUP_RETENTION_DAYS,
+    rawEnv.MAINTENANCE_BACKUP_RETENTION_DAYS,
   ),
-  MAINTENANCE_BACKUP_CONCURRENCY: emptyStringAsUndefined(
-    (cfEnv as any).MAINTENANCE_BACKUP_CONCURRENCY,
-  ),
+  MAINTENANCE_BACKUP_CONCURRENCY: emptyStringAsUndefined(rawEnv.MAINTENANCE_BACKUP_CONCURRENCY),
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: emptyStringAsUndefined(
-    (cfEnv as any).MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
+    rawEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
   ),
-  POSTHOG_KEY: emptyStringAsUndefined((cfEnv as any).POSTHOG_KEY),
-  POSTHOG_HOST: emptyStringAsUndefined((cfEnv as any).POSTHOG_HOST),
-  POSTHOG_ENVIRONMENT: emptyStringAsUndefined((cfEnv as any).POSTHOG_ENVIRONMENT),
-  POSTHOG_ERROR_SAMPLE_RATE: emptyStringAsUndefined((cfEnv as any).POSTHOG_ERROR_SAMPLE_RATE),
+  POSTHOG_KEY: emptyStringAsUndefined(rawEnv.POSTHOG_KEY),
+  POSTHOG_HOST: emptyStringAsUndefined(rawEnv.POSTHOG_HOST),
+  POSTHOG_ENVIRONMENT: emptyStringAsUndefined(rawEnv.POSTHOG_ENVIRONMENT),
+  POSTHOG_ERROR_SAMPLE_RATE: emptyStringAsUndefined(rawEnv.POSTHOG_ERROR_SAMPLE_RATE),
   POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: emptyStringAsUndefined(
-    (cfEnv as any).POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE,
+    rawEnv.POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE,
   ),
 });

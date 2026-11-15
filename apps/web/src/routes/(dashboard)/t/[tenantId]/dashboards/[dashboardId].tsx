@@ -1,14 +1,18 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { DeviceQuery } from "@mattrax/enterprise-domain/client";
+import { Option, Schema } from "effect";
+import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
 import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -21,39 +25,83 @@ import {
   enterpriseQueries,
   type DashboardWidget,
   type DashboardWidgetType,
-  type DeviceQuery,
 } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
+import { useCan } from "~/lib/permissions";
 
 type Layout = { x: number; y: number; w: number; h: number };
+
+type MutableJsonObject = { [key: string]: Schema.Json };
 
 type Draft = {
   type: DashboardWidgetType;
   title: string;
-  config: Record<string, any>;
+  config: MutableJsonObject;
+};
+
+const decodeWidgetConfig = Schema.decodeUnknownOption(Schema.JsonObject);
+
+const decodeDeviceQuery = Schema.decodeUnknownOption(DeviceQuery);
+
+const decodeWidgetType = Schema.decodeUnknownOption(
+  Schema.Literals(["table", "pie", "stat", "markdown"]),
+);
+
+const decodeDataset = Schema.decodeUnknownOption(Schema.Literals(["devices", "software"]));
+
+const widgetConfig = (widget: DashboardWidget): MutableJsonObject => {
+  const decoded = Option.getOrUndefined(decodeWidgetConfig(widget.config));
+
+  return decoded === undefined ? {} : { ...decoded };
+};
+
+const isDataset = Schema.is(Schema.Literals(["devices", "software"]));
+
+const configString = (config: MutableJsonObject, key: string) => {
+  const value = config[key];
+
+  return Schema.is(Schema.String)(value) ? value : undefined;
+};
+
+const configColumns = (config: MutableJsonObject) => {
+  const columns = config.columns;
+
+  return Array.isArray(columns) ? columns.filter(Schema.is(Schema.String)) : [];
 };
 
 const rowHeight = 64;
 const gap = 12;
 
-const defaultConfig = (type: DashboardWidgetType): Record<string, any> => {
-  if (type === "markdown")
-    return {
-      markdown:
-        "## Team notes\n\nAdd context, links and images here.\n\n- [Mattrax docs](/docs/)\n- Status page: https://status.otbeaumont.me",
-    };
+const defaultConfig = (type: DashboardWidgetType) => {
+  const config: MutableJsonObject = {};
 
-  if (type === "pie") return { dataset: "devices", query: { all: [] }, dimension: "platform" };
+  if (type === "markdown") {
+    config.markdown =
+      "## Team notes\n\nAdd context, links and images here.\n\n- [Mattrax docs](/docs/)\n- Status page: https://status.otbeaumont.me";
 
-  if (type === "stat") return { dataset: "devices", query: { all: [] }, label: "devices" };
+    return config;
+  }
 
-  return {
-    dataset: "devices",
-    query: { all: [] },
-    columns: ["name", "platform", "osVersion", "status", "health", "lastSeenAt"],
-    limit: 10,
-  };
+  config.dataset = "devices";
+  config.query = { all: [] };
+
+  if (type === "pie") {
+    config.dimension = "platform";
+
+    return config;
+  }
+
+  if (type === "stat") {
+    config.label = "devices";
+
+    return config;
+  }
+
+  config.columns = ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+  config.limit = 10;
+
+  return config;
 };
 
 const deviceDimensions = [
@@ -106,10 +154,7 @@ const overlaps = (left: Layout, right: Layout) =>
  * this client-side makes drag feedback instant; only the final positions are
  * persisted, and only for widgets that actually changed.
  */
-const resolveLayout = (
-  input: Record<string, Layout>,
-  priorityId?: string,
-): Record<string, Layout> => {
+const resolveLayout = (input: Record<string, Layout>, priorityId?: string) => {
   const placed: Record<string, Layout> = {};
 
   const ordered = Object.entries(input).sort(([leftId, left], [rightId, right]) => {
@@ -121,16 +166,13 @@ const resolveLayout = (
   });
 
   for (const [id, layout] of ordered) {
-    let next = { ...layout };
+    const next = { ...layout };
 
     for (let guard = 0; guard < 100; guard++) {
       const blockers = Object.entries(placed).filter(([, other]) => overlaps(next, other));
 
       if (blockers.length === 0) break;
-      next = {
-        ...next,
-        y: Math.max(...blockers.map(([, other]) => other.y + other.h)),
-      };
+      next.y = Math.max(...blockers.map(([, other]) => other.y + other.h));
     }
 
     placed[id] = next;
@@ -157,17 +199,36 @@ const clampLayout = (layout: Layout, mode: "move" | "resize", dx: number, dy: nu
 export default function DashboardPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("dashboards.write");
 
   const dashboard = useQuery(() =>
     enterpriseQueries.dashboard(params.tenantId, params.dashboardId),
   );
 
-  const [editing, setEditing] = createSignal(
+  // `?edit=1` is a request, not a grant: the dashboard only enters edit mode
+  // when the role can write.
+  const [editRequested, setEditRequested] = createSignal(
     untrack(() => (Array.isArray(searchParams.edit) ? searchParams.edit[0] : searchParams.edit)) ===
       "1",
   );
+
+  const editing = () => writable() && editRequested();
+
+  const toggleEditing = () => {
+    if (!writable()) {
+      setEditRequested(false);
+      setSearchParams({ edit: undefined }, { replace: true });
+
+      return;
+    }
+
+    const next = !editRequested();
+    setEditRequested(next);
+    setSearchParams({ edit: next ? "1" : undefined }, { replace: true });
+  };
 
   const [layout, setLayout] = createSignal<Record<string, Layout>>({});
   const [editorOpen, setEditorOpen] = createSignal(false);
@@ -186,6 +247,8 @@ export default function DashboardPage() {
   const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
   const [removeDashboardError, setRemoveDashboardError] = createSignal<unknown>(null);
   const [removeWidgetError, setRemoveWidgetError] = createSignal<unknown>(null);
+  const [confirmDeleteDashboard, setConfirmDeleteDashboard] = createSignal(false);
+  const [removeWidgetTarget, setRemoveWidgetTarget] = createSignal<DashboardWidget | null>(null);
   const [layoutError, setLayoutError] = createSignal<unknown>(null);
   const [pendingLayout, setPendingLayout] = createSignal<Array<{ id: string } & Layout>>([]);
   let gridRef: HTMLDivElement | undefined;
@@ -231,7 +294,9 @@ export default function DashboardPage() {
       await invalidate();
     },
     onError: (cause) =>
-      setSettingsError(errorMessage(cause, "Could not save the dashboard. Try again.")),
+      setSettingsError(
+        errorMessage(raisedFailure(cause), "Could not save the dashboard. Try again."),
+      ),
   }));
 
   const makeDefault = useMutation(() => ({
@@ -266,15 +331,16 @@ export default function DashboardPage() {
 
       if (!title) throw new Error("Give the widget a title");
 
-      const config: Record<string, any> = {
-        ...value.config,
-        ...(value.type === "markdown" ? {} : { query: value.config.query ?? { all: [] } }),
-      };
+      const config = { ...value.config };
+
+      if (value.type !== "markdown") config.query = value.config.query ?? { all: [] };
 
       if (value.type === "markdown" && !String(config.markdown ?? "").trim())
         throw new Error("Write some markdown first");
 
-      if (value.type === "table" && !(config.columns?.length > 0))
+      const columns = Array.isArray(config.columns) ? config.columns : [];
+
+      if (value.type === "table" && columns.length === 0)
         throw new Error("Choose at least one column");
 
       if (value.type === "pie" && !config.dimension) throw new Error("Choose a pie dimension");
@@ -313,6 +379,7 @@ export default function DashboardPage() {
     onMutate: () => setRemoveWidgetError(null),
     onSuccess: async () => {
       setRemoveWidgetError(null);
+      setRemoveWidgetTarget(null);
       await invalidate();
     },
     onError: (cause) => setRemoveWidgetError(cause),
@@ -333,9 +400,16 @@ export default function DashboardPage() {
     onError: (cause) => setLayoutError(cause),
   }));
 
+  const defaultTitles: Record<DashboardWidgetType, string> = {
+    table: "New table",
+    pie: "New pie chart",
+    stat: "New count",
+    markdown: "New note",
+  };
+
   const openCreate = () => {
     setEditingWidget(null);
-    setDraft({ type: "table", title: "New table", config: defaultConfig("table") });
+    setDraft({ type: "table", title: defaultTitles.table, config: defaultConfig("table") });
     setFormError(null);
     setEditorOpen(true);
   };
@@ -345,10 +419,7 @@ export default function DashboardPage() {
     setDraft({
       type: widget.type,
       title: widget.title,
-      config:
-        typeof widget.config === "object" && widget.config !== null
-          ? { ...(widget.config as Record<string, any>) }
-          : defaultConfig(widget.type),
+      config: widgetConfig(widget),
     });
     setFormError(null);
     setEditorOpen(true);
@@ -357,7 +428,10 @@ export default function DashboardPage() {
   const changeType = (type: DashboardWidgetType) => {
     setDraft((value) => ({
       type,
-      title: value.title,
+      // Only replace a title we generated; a typed title is the person's own.
+      title: Object.values(defaultTitles).includes(value.title)
+        ? defaultTitles[type]
+        : value.title,
       config: defaultConfig(type),
     }));
   };
@@ -423,13 +497,18 @@ export default function DashboardPage() {
     window.addEventListener("pointercancel", up);
   };
 
-  const dataset = () => draft().config.dataset ?? "devices";
+  const dataset = (): "devices" | "software" => {
+    const value = draft().config.dataset;
+
+    return isDataset(value) ? value : "devices";
+  };
+
   const dimensionOptions = () => (dataset() === "software" ? softwareDimensions : deviceDimensions);
   const columnOptions = () => (dataset() === "software" ? softwareColumns : deviceColumns);
 
   const toggleColumn = (id: string) => {
     setDraft((value) => {
-      const columns: string[] = value.config.columns ?? [];
+      const columns = configColumns(value.config);
 
       return {
         ...value,
@@ -472,7 +551,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Show when={!dashboard.data?.isDefault}>
+          <Show when={writable() && !dashboard.data?.isDefault}>
             <Button
               size="sm"
               variant="outline"
@@ -482,19 +561,17 @@ export default function DashboardPage() {
               Set as Overview
             </Button>
           </Show>
-          <Show when={editing()}>
-            <Button size="sm" variant="outline" onClick={openCreate}>
-              <Plus class="size-3.5" />
-              Add widget
+          <Show when={writable()}>
+            <Show when={editing()}>
+              <Button size="sm" variant="outline" onClick={openCreate}>
+                <Plus class="size-3.5" />
+                Add widget
+              </Button>
+            </Show>
+            <Button size="sm" variant={editing() ? "default" : "outline"} onClick={toggleEditing}>
+              {editing() ? "Done editing" : "Edit dashboard"}
             </Button>
           </Show>
-          <Button
-            size="sm"
-            variant={editing() ? "default" : "outline"}
-            onClick={() => setEditing((value) => !value)}
-          >
-            {editing() ? "Done editing" : "Edit dashboard"}
-          </Button>
         </div>
       </div>
 
@@ -541,16 +618,18 @@ export default function DashboardPage() {
             </p>
           </Show>
           <div class="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Drag widgets to move them. Use the corner handle to resize.</span>
+            <span class="hidden sm:inline">
+              Drag widgets to move them. Use the corner handle to resize.
+            </span>
+            <span class="sm:hidden">
+              Open this dashboard on a larger screen to rearrange widgets.
+            </span>
             <Button
               size="xs"
               variant="ghost"
               class="text-muted-foreground hover:text-destructive"
               disabled={removeDashboard.isPending}
-              onClick={() => {
-                if (window.confirm(`Delete “${dashboard.data?.name ?? "this dashboard"}”?`))
-                  removeDashboard.mutate();
-              }}
+              onClick={() => setConfirmDeleteDashboard(true)}
             >
               Delete dashboard
             </Button>
@@ -584,20 +663,18 @@ export default function DashboardPage() {
             <p class="mt-1 text-[12px] text-muted-foreground">
               Add a table, pie chart, count or markdown note.
             </p>
-            <Button
-              size="sm"
-              class="mt-3"
-              onClick={() => {
-                setEditing(true);
-                openCreate();
-              }}
-            >
+            <Button size="sm" class="mt-3" onClick={openCreate}>
               Add the first widget
             </Button>
           </div>
         }
       >
-        <div ref={gridRef} class="dashboard-grid">
+        <div
+          ref={(element) => {
+            gridRef = element;
+          }}
+          class="dashboard-grid"
+        >
           <For each={widgets()}>
             {(widget) => {
               const position = () => currentLayout(widget);
@@ -606,6 +683,7 @@ export default function DashboardPage() {
                 <article
                   class={cn(
                     "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-white/[0.07] bg-card p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]",
+                    `dashboard-widget-${widget.type}`,
                     editing() && "border-white/[0.11]",
                   )}
                   style={{
@@ -618,7 +696,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         aria-label={`Move ${widget.title}`}
-                        class="dashboard-drag-handle -ml-1 mt-0.5 cursor-grab touch-none rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.06] hover:text-foreground active:cursor-grabbing"
+                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground active:cursor-grabbing"
                         onPointerDown={(event) => startDrag(event, widget, "move")}
                       >
                         <GripVertical class="size-3.5" />
@@ -628,27 +706,29 @@ export default function DashboardPage() {
                       <h2 class="truncate text-[12.5px] font-medium text-foreground">
                         {widget.title}
                       </h2>
-                      <p class="truncate text-[10px] capitalize text-muted-foreground/70">
+                      <p class="truncate text-[10px] capitalize text-muted-foreground">
                         {widget.type === "markdown"
                           ? "Markdown"
-                          : `${widget.type} · ${String((widget.config as any)?.dataset ?? "devices")}`}
+                          : `${widget.type} · ${String(widgetConfig(widget).dataset ?? "devices")}`}
                       </p>
                     </div>
                     <Show when={editing()}>
                       <div class="flex shrink-0 items-center gap-1">
-                        <Button size="xs" variant="ghost" onClick={() => openEdit(widget)}>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          class="min-h-9 sm:min-h-0"
+                          onClick={() => openEdit(widget)}
+                        >
                           Edit
                         </Button>
                         <Button
                           size="xs"
                           variant="ghost"
                           aria-label={`Remove ${widget.title}`}
-                          class="text-muted-foreground hover:text-destructive"
+                          class="min-h-9 min-w-9 text-muted-foreground hover:text-destructive sm:min-h-0 sm:min-w-0"
                           disabled={removeWidget.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Remove “${widget.title}”?`))
-                              removeWidget.mutate(widget);
-                          }}
+                          onClick={() => setRemoveWidgetTarget(widget)}
                         >
                           <X class="size-3" />
                         </Button>
@@ -662,7 +742,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       aria-label={`Resize ${widget.title}`}
-                      class="dashboard-resize-handle absolute bottom-1 right-1 size-3 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground/40"
+                      class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground"
                       onPointerDown={(event) => startDrag(event, widget, "resize")}
                     />
                   </Show>
@@ -677,6 +757,9 @@ export default function DashboardPage() {
         <DialogContent class="max-w-2xl rounded-xl border border-white/[0.09] bg-card p-5">
           <DialogHeader>
             <DialogTitle>{editingWidget() ? "Edit widget" : "Add widget"}</DialogTitle>
+            <DialogDescription>
+              Widgets run live queries against this tenant, so everyone sees current data.
+            </DialogDescription>
           </DialogHeader>
           <div class="space-y-3">
             <div class="grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)]">
@@ -685,7 +768,11 @@ export default function DashboardPage() {
                 <select
                   class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   value={draft().type}
-                  onChange={(event) => changeType(event.currentTarget.value as DashboardWidgetType)}
+                  onChange={(event) => {
+                    const type = Option.getOrUndefined(decodeWidgetType(event.currentTarget.value));
+
+                    if (type !== undefined) changeType(type);
+                  }}
                 >
                   <option value="table">Table</option>
                   <option value="pie">Pie chart</option>
@@ -712,7 +799,7 @@ export default function DashboardPage() {
                 </span>
                 <textarea
                   class="min-h-48 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                  value={draft().config.markdown ?? ""}
+                  value={configString(draft().config, "markdown") ?? ""}
                   onInput={(event) =>
                     setDraft((value) => ({
                       ...value,
@@ -736,7 +823,11 @@ export default function DashboardPage() {
                     class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                     value={dataset()}
                     onChange={(event) => {
-                      const nextDataset = event.currentTarget.value as "devices" | "software";
+                      const nextDataset = Option.getOrUndefined(
+                        decodeDataset(event.currentTarget.value),
+                      );
+
+                      if (nextDataset === undefined) return;
                       setDraft((value) => {
                         const config = defaultConfig(value.type);
 
@@ -767,7 +858,7 @@ export default function DashboardPage() {
                     </span>
                     <select
                       class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                      value={draft().config.dimension ?? "platform"}
+                      value={configString(draft().config, "dimension") ?? "platform"}
                       onChange={(event) =>
                         setDraft((value) => ({
                           ...value,
@@ -788,7 +879,7 @@ export default function DashboardPage() {
                     </span>
                     <Input
                       class="h-8"
-                      value={draft().config.label ?? ""}
+                      value={configString(draft().config, "label") ?? ""}
                       placeholder="devices"
                       onInput={(event) =>
                         setDraft((value) => ({
@@ -806,7 +897,7 @@ export default function DashboardPage() {
                   compact
                   dataset={dataset()}
                   disabled={saveWidget.isPending}
-                  query={(draft().config.query as DeviceQuery | null) ?? null}
+                  query={Option.getOrUndefined(decodeDeviceQuery(draft().config.query)) ?? null}
                   onChange={(query) =>
                     setDraft((value) => ({
                       ...value,
@@ -824,7 +915,7 @@ export default function DashboardPage() {
                   <div class="flex flex-wrap gap-1.5">
                     <For each={columnOptions()}>
                       {([id, label]) => {
-                        const checked = () => (draft().config.columns ?? []).includes(id);
+                        const checked = () => configColumns(draft().config).includes(id);
 
                         return (
                           <button
@@ -868,13 +959,41 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-      <p class="text-[11px] text-muted-foreground/70">
+      <p class="text-[11px] text-muted-foreground">
         Shared with everyone in this tenant.
         <Show when={dashboard.data?.updatedAt}>
           {" "}
           Last updated {relativeTime(dashboard.data!.updatedAt)}.
         </Show>
       </p>
+
+      <ConfirmDialog
+        open={confirmDeleteDashboard()}
+        onOpenChange={setConfirmDeleteDashboard}
+        title={`Delete “${dashboard.data?.name ?? "this dashboard"}”?`}
+        description="This removes the dashboard and its layout. This cannot be undone."
+        confirmLabel="Delete dashboard"
+        destructive
+        pending={removeDashboard.isPending}
+        onConfirm={() => removeDashboard.mutate()}
+      />
+
+      <ConfirmDialog
+        open={removeWidgetTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveWidgetTarget(null);
+        }}
+        title={`Remove “${removeWidgetTarget()?.title ?? "this widget"}”?`}
+        description="The widget and its layout position are removed from this dashboard."
+        confirmLabel="Remove widget"
+        destructive
+        pending={removeWidget.isPending}
+        onConfirm={() => {
+          const target = removeWidgetTarget();
+
+          if (target) removeWidget.mutate(target);
+        }}
+      />
     </Page>
   );
 }

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import {  dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -13,8 +14,8 @@ const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effe
 
 const now = new Date("2026-11-11T10:00:00.000Z");
 
-const preRegistration = (overrides: Record<string, unknown>) => ({
-  id: `pre-${String(overrides.serial)}`,
+const preRegistration = (overrides: Row) => ({
+  id: `pre-${Schema.is(Schema.String)(overrides.serial) ? overrides.serial : "unknown"}`,
   organizationId: "org-1",
   serial: "C02A",
   name: null,
@@ -96,6 +97,7 @@ const setup = () => {
     ],
   });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
   return { db, backend };
@@ -114,7 +116,7 @@ describe("Apple Authenticate pre-registration", () => {
     const { db, backend } = setup();
     await run(
       backend.appleDeviceEvent(scope("udid-1"), {
-        _tag: "Authenticate",
+        _tag: "Authenticate" as const,
         serialNumber: "C02A",
         model: "MacBookPro18,3",
         osVersion: "15.1",
@@ -143,7 +145,7 @@ describe("Apple Authenticate pre-registration", () => {
     // serial but must never leak into org-1.
     await run(
       backend.appleDeviceEvent(scope("udid-1"), {
-        _tag: "Authenticate",
+        _tag: "Authenticate" as const,
         serialNumber: "C02A",
         model: "MacBookPro18,3",
       }),
@@ -174,7 +176,7 @@ describe("Apple Authenticate pre-registration", () => {
 
     await run(
       backend.appleDeviceEvent(scope("new-udid"), {
-        _tag: "Authenticate",
+        _tag: "Authenticate" as const,
         serialNumber: "C02B",
         model: "MacBookPro18,3",
       }),

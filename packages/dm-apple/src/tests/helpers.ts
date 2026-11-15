@@ -1,5 +1,9 @@
 import { Layer, Effect } from "effect";
-import { ManagementBackend } from "@mattrax/management-backend";
+import {
+  ManagementBackend,
+  ManagementManifest,
+  ManagementNotSupported,
+} from "@mattrax/management-backend";
 
 type ManagementBackendType = InstanceType<typeof ManagementBackend>;
 
@@ -25,7 +29,8 @@ export function mockManagementBackend(
       getAppleBootstrapToken: () => Effect.succeed(null),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
-        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
+        overrides?.appleManagementCheckin ??
+        (() => Effect.succeed(ManagementManifest.members[0].make({}))),
       getAppleDeclarationTokens:
         overrides?.getAppleDeclarationTokens ??
         (() =>
@@ -50,19 +55,19 @@ export function mockManagementBackend(
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery:
         overrides?.windowsDiscovery ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => Effect.fail(new ManagementNotSupported())),
       getWindowsEnrollmentPolicy:
         overrides?.getWindowsEnrollmentPolicy ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => Effect.fail(new ManagementNotSupported())),
       windowsEnroll:
         overrides?.windowsEnroll ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => Effect.fail(new ManagementNotSupported())),
       windowsManagementCheckin:
         overrides?.windowsManagementCheckin ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => Effect.fail(new ManagementNotSupported())),
       windowsDeviceEvent:
         overrides?.windowsDeviceEvent ??
-        (() => Effect.fail(new Error("Windows management not supported") as never)),
+        (() => Effect.fail(new ManagementNotSupported())),
     }),
   );
 }
@@ -268,14 +273,14 @@ export async function generateTestCertPem(topic: string, useUid = true): Promise
 }
 
 async function generateRealTestCertPem(topic: string, oidUid: string): Promise<string> {
-  const algorithm = {
+  const algorithm: RsaHashedKeyGenParams = {
     name: "RSASSA-PKCS1-v1_5",
     hash: "SHA-256",
     modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]),
   };
 
-  const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
+  const keyPair = await crypto.subtle.generateKey(algorithm, true, ["sign", "verify"] as const);
 
   // Build a minimal self-signed cert with pkijs
   const pkijs = await import("pkijs");

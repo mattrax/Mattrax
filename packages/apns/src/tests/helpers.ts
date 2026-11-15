@@ -7,7 +7,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 

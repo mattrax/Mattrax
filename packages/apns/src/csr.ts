@@ -9,6 +9,7 @@ import {
   importPrivateKeyJwk,
   pemDecode,
   pemEncode,
+  uint8ArrayToBase64,
 } from "@mattrax/crypto";
 import {
   APPLE_ROOT_CA,
@@ -19,7 +20,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -150,7 +151,7 @@ export async function buildApnsCsr(options: {
   );
 
   return {
-    plist: arrayBufferToBase64(new TextEncoder().encode(plist).buffer as ArrayBuffer),
+    plist: uint8ArrayToBase64(new TextEncoder().encode(plist)),
     certificateSigningRequest,
     signature,
     certificateChain,

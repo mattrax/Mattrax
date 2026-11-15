@@ -1,4 +1,4 @@
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Option, Schema } from "effect";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import {
@@ -8,14 +8,22 @@ import {
   syncDynamicGroupsForTenant,
 } from "@mattrax/management-backend-enterprise";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
+import { isBuiltInOwnerMember } from "./rbac.ts";
+import type { WebhookDeliveryOptions } from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
 
-/** An owner/admin who should receive credential-expiry notifications. */
+/**
+ * A tenant owner/admin recipient. Shared by credential-expiry notifications
+ * and onboarding email so both apply the same built-in-role and disabled-user
+ * rules.
+ */
 export type CredentialAlertRecipient = {
   readonly userId: string;
   readonly name: string;
   readonly email: string;
   readonly role: string;
+  /** `undefined` for callers that only construct notification payloads. */
+  readonly emailVerified?: boolean;
 };
 
 /**
@@ -91,7 +99,6 @@ export type MaintenanceOptions = {
 export type MaintenanceResult = {
   readonly expiredInvitations: number;
   readonly staleDevices: number;
-  readonly expiredAuthProofs: number;
   readonly expiredAuthSessions: number;
   readonly purgedAuditEntries: number;
   /** Enrollment-attempt diagnostics deleted this run. */
@@ -137,58 +144,96 @@ const alertThreshold = (health: CredentialHealth): CredentialAlertThreshold | nu
   return null;
 };
 
-const thresholdFromMetadata = (metadata: unknown): CredentialAlertThreshold | null => {
-  if (typeof metadata !== "object" || metadata === null) return null;
-  const value = (metadata as Record<string, unknown>).threshold;
+const CredentialAlertThresholdSchema = Schema.Literals(["expired", "7d", "30d"]);
 
-  return value === "expired" || value === "7d" || value === "30d" ? value : null;
+const CredentialAlertMetadata = Schema.Struct({
+  threshold: Schema.optional(CredentialAlertThresholdSchema),
+});
+
+const thresholdFromMetadata = (
+  metadata: Schema.Json | null | undefined,
+): CredentialAlertThreshold | null => {
+  const decoded = Option.getOrUndefined(
+    Schema.decodeUnknownOption(CredentialAlertMetadata)(metadata),
+  );
+
+  return decoded?.threshold ?? null;
 };
 
-const isOwnerOrAdmin = (role: string): boolean =>
+const hasAdminRole = (role: string): boolean =>
   role
     .split(",")
     .map((part) => part.trim())
-    .some((part) => part === "owner" || part === "admin");
+    .includes("admin");
+
+/**
+ * An owner/admin derived only from built-in roles. `isBuiltInOwnerMember`
+ * enforces the custom-role exclusion for owner authority; the admin branch
+ * keeps the existing expiry-notification reach.
+ */
+const isBuiltInManager = (member: {
+  readonly role: string;
+  readonly customRoleId?: string | null;
+}): boolean =>
+  isBuiltInOwnerMember(member) || (member.customRoleId == null && hasAdminRole(member.role));
 
 /**
  * Load the tenant's owner/admin recipients for an expiry notification.
  *
  * Roles are comma-separated (`owner,admin`), so the filter runs in application
- * code rather than as an `IN` predicate that would miss combined roles. The
- * member and user reads are both tenant/user scoped; disabled users are
- * skipped and recipients are deduplicated by email address.
+ * code rather than as an `IN` predicate that would miss combined roles. Owner
+ * authority only comes from a built-in role on a membership without a custom
+ * role, matching RBAC. The member and user reads are both tenant/user scoped;
+ * disabled users are skipped and recipients are deduplicated by email address.
  */
-export const loadCredentialAlertRecipients = (
+export const loadTenantAdminRecipients = (
   db: EnterpriseDb,
   organizationId: string,
 ): Effect.Effect<CredentialAlertRecipient[], unknown> =>
   Effect.gen(function* () {
-    const members = (yield* db
+    const memberRows = yield* db
       .select()
       .from(s.member)
-      .where(eq(s.member.organizationId, organizationId))) as Array<{
-      userId: string;
-      role: string;
-    }>;
+      .where(eq(s.member.organizationId, organizationId));
+
+    const members = memberRows.map((row) =>
+      Schema.decodeUnknownSync(
+        Schema.Struct({
+          userId: Schema.String,
+          role: Schema.String,
+          customRoleId: Schema.optional(Schema.NullOr(Schema.String)),
+        }),
+      )(row),
+    );
 
     const roles = new Map<string, string>();
 
     for (const member of members) {
-      if (!isOwnerOrAdmin(member.role)) continue;
+      // A custom role is authoritative. Its legacy built-in string must not
+      // leak notifications to a delegated member, and owner authority must be
+      // the built-in role rather than a custom-role delegation.
+      if (!isBuiltInManager(member)) continue;
       roles.set(member.userId, member.role);
     }
 
     if (roles.size === 0) return [];
 
-    const users = (yield* db
+    const userRows = yield* db
       .select()
       .from(s.user)
-      .where(inArray(s.user.id, [...roles.keys()]))) as Array<{
-      id: string;
-      name: string;
-      email: string;
-      disabled: boolean;
-    }>;
+      .where(inArray(s.user.id, [...roles.keys()]));
+
+    const users = userRows.map((row) =>
+      Schema.decodeUnknownSync(
+        Schema.Struct({
+          id: Schema.String,
+          name: Schema.String,
+          email: Schema.String,
+          disabled: Schema.Boolean,
+          emailVerified: Schema.optional(Schema.Boolean),
+        }),
+      )(row),
+    );
 
     const seen = new Set<string>();
     const recipients: CredentialAlertRecipient[] = [];
@@ -205,11 +250,15 @@ export const loadCredentialAlertRecipients = (
         name: user.name,
         email,
         role: roles.get(user.id) ?? "",
+        emailVerified: user.emailVerified === true,
       });
     }
 
     return recipients.sort((left, right) => left.email.localeCompare(right.email));
   });
+
+/** Backwards-compatible name used by credential-expiry notifications. */
+export const loadCredentialAlertRecipients = loadTenantAdminRecipients;
 
 /**
  * Idempotent scheduled maintenance shared by the Cloud Worker cron trigger and
@@ -232,12 +281,9 @@ export const runMaintenance = (
     const androidPubSubRetentionDays = options.androidPubSubRetentionDays ?? 30;
     const webhookDeliveryRetentionDays = options.webhookDeliveryRetentionDays ?? 30;
 
-    const result: {
-      -readonly [K in keyof MaintenanceResult]: MaintenanceResult[K];
-    } = {
+    const result = {
       expiredInvitations: 0,
       staleDevices: 0,
-      expiredAuthProofs: 0,
       expiredAuthSessions: 0,
       purgedAuditEntries: 0,
       purgedEnrollmentAttempts: 0,
@@ -274,15 +320,18 @@ export const runMaintenance = (
     if (staleDeviceDays > 0) {
       const staleCutoff = new Date(now.getTime() - staleDeviceDays * day);
 
-      const staleDevices = (yield* db
+      const staleDeviceRows = yield* db
         .select({ id: s.device.id, organizationId: s.device.organizationId })
         .from(s.device)
         .where(
           and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)),
-        )) as Array<{
-        id: string;
-        organizationId: string;
-      }>;
+        );
+
+      const staleDevices = staleDeviceRows.map((row) =>
+        Schema.decodeUnknownSync(
+          Schema.Struct({ id: Schema.String, organizationId: Schema.String }),
+        )(row),
+      );
 
       if (staleDevices.length > 0) {
         yield* db
@@ -312,31 +361,21 @@ export const runMaintenance = (
                 },
               },
               {
-                ...(options.webhookAuthSecret ? { authSecret: options.webhookAuthSecret } : {}),
-                ...(options.webhookFetch ? { fetch: options.webhookFetch } : {}),
                 now,
-              },
+                authSecret: options.webhookAuthSecret,
+                fetch: options.webhookFetch,
+              } satisfies WebhookDeliveryOptions,
             ),
           { concurrency: 4, discard: true },
         );
       }
     }
 
-    // 3. Purge expired auth proofs and sessions. The auth tables are owned by
+    // 3. Purge expired auth sessions. The auth tables are owned by
     //    `@yielded/auth`, so they are referenced through the shared schema
     //    aliases rather than duplicated table definitions. Their expiry columns
     //    are BIGINT epoch milliseconds, not DATETIME, so compare with millis.
     const nowMillis = now.getTime();
-
-    const expiredProofs = yield* db
-      .select({ proofId: s.authProofs.proofId })
-      .from(s.authProofs)
-      .where(lt(s.authProofs.expiresAt, nowMillis));
-
-    if (expiredProofs.length > 0) {
-      yield* db.delete(s.authProofs).where(lt(s.authProofs.expiresAt, nowMillis));
-      result.expiredAuthProofs = expiredProofs.length;
-    }
 
     const expiredSessions = yield* db
       .select({ sessionId: s.authSessions.sessionId })
@@ -410,12 +449,18 @@ export const runMaintenance = (
       const alertDay = credentialAlertDay(now);
       const alertCutoff = startOfUtcDay(now);
 
-      const organizations = (yield* db
+      const organizationRows = yield* db
         .select({ id: s.organization.id, name: s.organization.name })
-        .from(s.organization)) as Array<{ id: string; name: string }>;
+        .from(s.organization);
+
+      const organizations = organizationRows.map((row) =>
+        Schema.decodeUnknownSync(
+          Schema.Struct({ id: Schema.String, name: Schema.String }),
+        )(row),
+      );
 
       for (const organization of organizations) {
-        const existingAlerts = (yield* db
+        const existingAlerts = yield* db
           .select()
           .from(s.auditLog)
           .where(
@@ -424,10 +469,7 @@ export const runMaintenance = (
               eq(s.auditLog.action, CREDENTIAL_ALERT_ACTION),
               gte(s.auditLog.createdAt, alertCutoff),
             ),
-          )) as Array<{
-          metadata: unknown;
-          createdAt: Date;
-        }>;
+          );
 
         const alerted = new Set<string>();
 
@@ -436,7 +478,12 @@ export const runMaintenance = (
             entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt);
 
           if (Number.isNaN(createdAt.getTime()) || createdAt < alertCutoff) continue;
-          const threshold = thresholdFromMetadata(entry.metadata);
+
+          const metadata = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Json)(entry.metadata),
+          );
+
+          const threshold = thresholdFromMetadata(metadata);
 
           if (threshold) alerted.add(threshold);
         }

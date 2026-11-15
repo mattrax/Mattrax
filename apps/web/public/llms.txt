@@ -1,0 +1,29 @@
+# Mattrax
+
+> Mattrax is device management infrastructure for Apple, Windows and Android fleets: enrollment, policy, inventory and remote actions, with a typed REST API and a real audit trail.
+
+## Product
+
+- [Mattrax overview](https://e.mattrax.app/)
+- [Policy designer](https://e.mattrax.app/designer)
+- [Pricing](https://e.mattrax.app/#pricing)
+
+## Documentation
+
+- [Documentation](https://e.mattrax.app/docs/)
+- [Quick start](https://e.mattrax.app/docs/getting-started/quick-start)
+- [Core concepts](https://e.mattrax.app/docs/getting-started/concepts)
+- [REST API reference](https://e.mattrax.app/docs/api/)
+- [OpenAPI document](https://e.mattrax.app/api/openapi.json)
+- [Migration guides](https://e.mattrax.app/docs/migration/)
+
+## Enrollment
+
+- [Apple enrollment](https://e.mattrax.app/docs/platforms/apple/)
+- [Windows enrollment](https://e.mattrax.app/docs/platforms/windows/)
+- [Android Enterprise enrollment](https://e.mattrax.app/docs/platforms/android/)
+
+## Operations
+
+- [Self-hosting](https://e.mattrax.app/docs/operations/self-hosting)
+- [Security model](https://e.mattrax.app/docs/reference/threat-model)

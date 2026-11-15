@@ -19,6 +19,11 @@ export default defineConfig({
     width: 104,
     height: 16,
   },
+  // Rspress prefixes root-relative hrefs with the docs base, so the wordmark
+  // link is rendered by the custom `theme/components/NavTitle` component. It
+  // points at the product home in the same tab; the docs no longer need a
+  // separate external "Mattrax" nav item.
+  logoHref: "/",
   icon: "/favicon.ico",
   globalStyles: path.resolve("docs/styles/global.css"),
   llms: false,
@@ -44,7 +49,7 @@ export default defineConfig({
       message:
         '<p>Mattrax — device management infrastructure. <a href="https://mattrax.app">mattrax.app</a> · <a href="/docs/llms.txt">llms.txt</a> · <a href="/docs/api/">API</a></p>',
     },
-    nav: [{ text: "Mattrax", link: "https://e.mattrax.app/" }],
+    nav: [],
     sidebar: {
       "/": [
         {
@@ -150,6 +155,8 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: "Architecture", link: "/reference/architecture" },
+            { text: "Performance and a11y budgets", link: "/reference/performance" },
+            { text: "Threat model", link: "/reference/threat-model" },
             { text: "Production readiness", link: "/reference/production-readiness" },
             { text: "Policy catalogue", link: "/reference/policy-catalogue" },
             { text: "Glossary", link: "/reference/glossary" },

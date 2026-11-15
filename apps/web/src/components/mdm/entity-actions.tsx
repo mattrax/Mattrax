@@ -1,8 +1,9 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { Match } from "effect";
 import { createSignal, For, Show } from "solid-js";
-import { Button, buttonVariants } from "~/components/ui/button";
-import { cn } from "~/lib/utils";
+import { announce } from "~/components/app-shell";
+import { Button } from "~/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,9 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { ErrorText } from "./common";
+import { useCan } from "~/lib/permissions";
 import {
   enterprise,
   enterpriseKeys,
@@ -24,8 +25,6 @@ import {
 } from "~/lib/enterprise";
 
 type Named = { id: string; name: string };
-
-const selectedNamed = (rows: Named[]) => rows.map((row) => ({ id: row.id, name: row.name }));
 
 const confirmTarget = (rows: Named[], entity: string) =>
   rows.length > 3
@@ -117,12 +116,13 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
     onSuccess: async () => {
       setChanges({});
       setOpen(false);
+      announce("Group assignments updated");
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });
     },
   }));
 
-  const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
+  const groupRows = () => groups.data?.rows ?? [];
 
   return (
     <div class="relative">
@@ -151,11 +151,11 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
               >
                 <span>{group.name}</span>
                 <span class="text-muted-foreground">
-                  {changes()[group.id] === "all"
-                    ? "Assign"
-                    : changes()[group.id] === "none"
-                      ? "Remove"
-                      : ""}
+                  {Match.value(changes()[group.id]).pipe(
+                    Match.when("all", () => "Assign"),
+                    Match.when("none", () => "Remove"),
+                    Match.orElse(() => ""),
+                  )}
                 </span>
               </button>
             )}
@@ -183,8 +183,23 @@ export function EntityActions(props: {
 }) {
   const params = useParams();
   const qc = useQueryClient();
-  const rows = () => selectedNamed(props.selected as Named[]);
+  const { can } = useCan();
+  const rows = () => props.selected.map((row) => ({ id: row.id, name: row.name }));
   const ids = () => rows().map((row) => row.id);
+
+  const canSync = () => {
+    if (props.entity === "device") return can("devices.command");
+
+    if (props.entity === "group") return can("groups.write");
+
+    return can("policies.write");
+  };
+
+  const canDelete = () => {
+    if (props.entity === "group") return can("groups.write");
+
+    return can("policies.write");
+  };
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, props.entity) });
@@ -194,31 +209,42 @@ export function EntityActions(props: {
     props.clear();
   };
 
+  const countLabel = (count: number) => `${count} ${props.entity}${count === 1 ? "" : "s"}`;
+
   const sync = useMutation(() => ({
-    mutationFn: async () =>
-      props.entity === "device"
-        ? Promise.all(ids().map((id) => enterprise.deviceAction(params.tenantId, id)))
-        : props.entity === "group"
-          ? enterprise.syncGroups(params.tenantId, ids())
-          : enterprise.syncPolicies(params.tenantId, ids()),
-    onSuccess: invalidate,
+    mutationFn: async () => {
+      if (props.entity === "device")
+        return Promise.all(ids().map((id) => enterprise.deviceAction(params.tenantId, id)));
+
+      if (props.entity === "group") return enterprise.syncGroups(params.tenantId, ids());
+
+      return enterprise.syncPolicies(params.tenantId, ids());
+    },
+    onSuccess: async () => {
+      const count = ids().length;
+
+      await invalidate();
+      announce(`Sync requested for ${countLabel(count)}`);
+    },
   }));
 
   return (
     <>
-      <Show when={props.entity === "device"}>
-        <ScopeGroupsAction selected={rows()} relation="devices" />
+      <Show when={props.entity !== "group" && can("groups.write")}>
+        <ScopeGroupsAction
+          selected={rows()}
+          relation={props.entity === "device" ? "devices" : "policies"}
+        />
       </Show>
-      <Show when={props.entity === "policy"}>
-        <ScopeGroupsAction selected={rows()} relation="policies" />
+      <Show when={canSync()}>
+        <Button variant="outline" disabled={sync.isPending} onClick={() => sync.mutate()}>
+          Sync
+        </Button>
       </Show>
-      <Button variant="outline" disabled={sync.isPending} onClick={() => sync.mutate()}>
-        Sync
-      </Button>
       <Show when={sync.error}>
         <ErrorText error={sync.error} />
       </Show>
-      <Show when={props.entity === "device"}>
+      <Show when={props.entity === "device" && can("devices.write")}>
         <ConfirmAction
           title="Unenroll"
           description="Unenroll selected devices."
@@ -227,21 +253,27 @@ export function EntityActions(props: {
             .join(", ")}
           destructive
           onConfirm={async () => {
+            const count = ids().length;
+
             await Promise.all(ids().map((id) => enterprise.deviceUnenroll(params.tenantId, id)));
             await invalidate();
+            announce(`Unenrolled ${countLabel(count)}`);
           }}
         />
       </Show>
-      <Show when={props.entity !== "device"}>
+      <Show when={props.entity !== "device" && canDelete()}>
         <ConfirmAction
           title={`Delete ${ids().length} ${props.entity === "policy" ? (ids().length === 1 ? "policy" : "policies") : `${props.entity}${ids().length === 1 ? "" : "s"}`}?`}
           description="This cannot be undone."
           target={confirmTarget(rows(), props.entity)}
           destructive
           onConfirm={async () => {
+            const count = ids().length;
+
             if (props.entity === "group") await enterprise.deleteGroups(params.tenantId, ids());
             else await enterprise.deletePolicies(params.tenantId, ids());
             await invalidate();
+            announce(`Deleted ${countLabel(count)}`);
           }}
         />
       </Show>

@@ -1,4 +1,4 @@
-import { Separator } from "~/components/ui/separator";
+import type { JSX } from "@solidjs/web";
 
 const LAST_UPDATED = "12th May 2026";
 
@@ -60,10 +60,13 @@ export default function Page() {
   );
 }
 
-function TermsSection(props: { title: string; withSeparator?: boolean; children: any }) {
+function TermsSection(props: { title: string; withSeparator?: boolean; children: JSX.Element }) {
   return (
     <div>
-      {props.withSeparator && <Separator class="bg-stone-100 mb-12" />}
+      <div
+        aria-hidden="true"
+        class={props.withSeparator ? "mb-12 h-px w-full bg-stone-100" : "hidden"}
+      />
       <h2 class="text-lg font-semibold text-stone-900 mb-4">{props.title}</h2>
       <ul class="space-y-3">{props.children}</ul>
     </div>

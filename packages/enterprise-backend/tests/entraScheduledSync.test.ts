@@ -9,7 +9,19 @@ import { makeDb } from "./helpers.js";
 
 const now = new Date("2026-11-11T12:00:00.000Z");
 
-const tenantRow = (overrides: Record<string, unknown> = {}) => ({
+/** A directory-sync row as the scheduler reads it. */
+type TenantSyncRow = {
+  readonly organizationId: string;
+  readonly enabled: boolean;
+  readonly status: string;
+  readonly syncIntervalMinutes: number;
+  readonly nextSyncAt: Date | null;
+  readonly lastAttemptedAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+const tenantRow = (overrides: Partial<TenantSyncRow> = {}): TenantSyncRow => ({
   organizationId: "org-1",
   enabled: true,
   status: "idle",
@@ -39,6 +51,8 @@ const page = (deltaLink: string) => ({
 
 type GraphCall = { kind: "domains" | "users" | "groups"; tenantId: string };
 
+// SAFETY: the double implements only the Graph calls the scheduler makes; the
+// remaining members are unused by this path.
 const makeGraph = (options: {
   calls: GraphCall[];
   failFor?: string;
@@ -167,7 +181,7 @@ describe("runScheduledEntraSync", () => {
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
-      runScheduledEntraSync({ db: db as never, graph: makeGraph({ calls }), now }),
+      runScheduledEntraSync({ db, graph: makeGraph({ calls }), now }),
     );
 
     expect(result).toMatchObject({ graphConfigured: true, due: 1, succeeded: 1, failed: 0 });
@@ -182,7 +196,7 @@ describe("runScheduledEntraSync", () => {
       entra_directory_sync: [tenantRow()],
     });
 
-    const result = await Effect.runPromise(runScheduledEntraSync({ db: db as never, now }));
+    const result = await Effect.runPromise(runScheduledEntraSync({ db, now }));
 
     expect(result).toEqual({
       graphConfigured: false,
@@ -204,7 +218,7 @@ describe("runScheduledEntraSync", () => {
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
-      runScheduledEntraSync({ db: db as never, graph: makeGraph({ calls }), now }),
+      runScheduledEntraSync({ db, graph: makeGraph({ calls }), now }),
     );
 
     expect(result).toMatchObject({ due: 1, skipped: 1, succeeded: 0 });
@@ -222,7 +236,7 @@ describe("runScheduledEntraSync", () => {
     const calls: GraphCall[] = [];
 
     const result = await Effect.runPromise(
-      runScheduledEntraSync({ db: db as never, graph: makeGraph({ calls }), now }),
+      runScheduledEntraSync({ db, graph: makeGraph({ calls }), now }),
     );
 
     expect(result).toMatchObject({ due: 1, locked: 1, succeeded: 0, failed: 0 });
@@ -243,7 +257,7 @@ describe("runScheduledEntraSync", () => {
 
     const result = await Effect.runPromise(
       runScheduledEntraSync({
-        db: db as never,
+        db,
         graph: makeGraph({ calls, failFor: "entra-1" }),
         now,
         concurrency: 2,
@@ -265,9 +279,7 @@ describe("runScheduledEntraSync", () => {
 
     const calls: GraphCall[] = [];
 
-    await Effect.runPromise(
-      runScheduledEntraSync({ db: db as never, graph: makeGraph({ calls }), now }),
-    );
+    await Effect.runPromise(runScheduledEntraSync({ db, graph: makeGraph({ calls }), now }));
 
     expect(db.store.entra_directory_sync[0]).toMatchObject({
       status: "idle",
@@ -290,7 +302,7 @@ describe("runScheduledEntraSync", () => {
 
     const outcome = await Effect.runPromise(
       runEntraDirectorySyncForTenant({
-        db: db as never,
+        db,
         graph: makeGraph({ calls: [] }),
         organizationId: "org-1",
         trigger: "manual",
@@ -310,7 +322,7 @@ describe("runScheduledEntraSync", () => {
 
     const outcome = await Effect.runPromise(
       runEntraDirectorySyncForTenant({
-        db: db as never,
+        db,
         organizationId: "org-1",
         now,
       }),

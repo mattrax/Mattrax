@@ -37,7 +37,7 @@ test.describe("MCP", () => {
     });
 
     expect(registration.status()).toBe(201);
-    const client = (await registration.json()) as { client_id: string };
+    const client: { client_id: string } = await registration.json();
 
     const verifier = base64Url(randomBytes(32));
     const challenge = base64Url(createHash("sha256").update(verifier).digest());
@@ -72,7 +72,7 @@ test.describe("MCP", () => {
     });
 
     expect(tokenResponse.status()).toBe(200);
-    const tokens = (await tokenResponse.json()) as { access_token: string };
+    const tokens: { access_token: string } = await tokenResponse.json();
 
     const headers = {
       authorization: `Bearer ${tokens.access_token}`,
@@ -97,9 +97,9 @@ test.describe("MCP", () => {
 
     expect(list.status()).toBe(200);
 
-    const listed = (await list.json()) as {
+    const listed: {
       result: { tools: Array<{ name: string }> };
-    };
+    } = await list.json();
 
     expect(listed.result.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["list_tenants", "query_data", "list_devices", "patch_device"]),
@@ -129,9 +129,9 @@ test.describe("MCP", () => {
 
     expect(query.status()).toBe(200);
 
-    const result = (await query.json()) as {
+    const result: {
       result: { structuredContent: { total: number } };
-    };
+    } = await query.json();
 
     expect(result.result.structuredContent.total).toBe(0);
 
@@ -155,9 +155,9 @@ test.describe("MCP", () => {
 
     expect(devices.status()).toBe(200);
 
-    const devicesResult = (await devices.json()) as {
-      result: { structuredContent: { status: number; body: { rows: unknown[] } } };
-    };
+    const devicesResult: {
+      result: { structuredContent: { status: number; body: { rows: Array<unknown> } } };
+    } = await devices.json();
 
     expect(devicesResult.result.structuredContent.status).toBe(200);
     expect(Array.isArray(devicesResult.result.structuredContent.body.rows)).toBe(true);
@@ -216,7 +216,7 @@ test.describe("MCP", () => {
     });
 
     expect(created.status()).toBe(200);
-    const { token } = (await created.json()) as { token: string };
+    const { token }: { token: string } = await created.json();
 
     const headers = {
       authorization: `Bearer ${token}`,

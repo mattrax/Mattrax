@@ -58,8 +58,9 @@ export const DynamicGroupKind = Schema.Literals(["manual", "dynamic"]);
 export type DynamicGroupKind = typeof DynamicGroupKind.Type;
 
 /** Version currently supported by this build; anything else is rejected. */
-export const isSupportedDynamicGroupRulesVersion = (value: unknown): boolean =>
-  value === DYNAMIC_GROUP_RULES_VERSION;
+export const isSupportedDynamicGroupRulesVersion = (
+  value: unknown,
+): value is typeof DYNAMIC_GROUP_RULES_VERSION => value === DYNAMIC_GROUP_RULES_VERSION;
 
 const conditionCount = (rules: DynamicGroupRules): number =>
   (rules.all?.length ?? 0) + (rules.any?.length ?? 0) + (rules.none?.length ?? 0);
@@ -85,7 +86,7 @@ export const dynamicGroupRulesProblem = (
 
   for (const list of [rules.all ?? [], rules.any ?? [], rules.none ?? []])
     for (const condition of list) {
-      if (typeof condition.value === "string" && condition.value.trim() === "")
+      if (Schema.is(Schema.String)(condition.value) && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
 
       if (

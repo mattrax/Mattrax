@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHash, createHmac } from "node:crypto";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { HttpApiBuilder } from "effect/http-api";
 import {
@@ -11,21 +11,24 @@ import {
 import { managementApi, managementWebhookHandlers } from "../index.js";
 import { mockManagementBackend } from "./helpers.js";
 
-const webhookOperations: Record<string, string> = {
-  "/webhook/apple/event": "appleDeviceEvent",
-  "/webhook/apple/checkin": "appleManagementCheckin",
-  "/webhook/apple/bootstrap-token": "getAppleBootstrapToken",
-  "/webhook/apple/declaration-tokens": "getAppleDeclarationTokens",
-  "/webhook/apple/declaration-items": "getAppleDeclarationItems",
-  "/webhook/apple/declaration": "getAppleDeclaration",
-  "/webhook/apple/asset": "getAppleAsset",
-  "/webhook/apple/profile": "getAppleProfile",
-  "/webhook/windows/discovery": "windowsDiscovery",
-  "/webhook/windows/policy": "getWindowsEnrollmentPolicy",
-  "/webhook/windows/enroll": "windowsEnroll",
-  "/webhook/windows/checkin": "windowsManagementCheckin",
-  "/webhook/windows/event": "windowsDeviceEvent",
-};
+const webhookOperations = new Map([
+  ["/webhook/apple/event", "appleDeviceEvent"],
+  ["/webhook/apple/checkin", "appleManagementCheckin"],
+  ["/webhook/apple/bootstrap-token", "getAppleBootstrapToken"],
+  ["/webhook/apple/declaration-tokens", "getAppleDeclarationTokens"],
+  ["/webhook/apple/declaration-items", "getAppleDeclarationItems"],
+  ["/webhook/apple/declaration", "getAppleDeclaration"],
+  ["/webhook/apple/asset", "getAppleAsset"],
+  ["/webhook/apple/profile", "getAppleProfile"],
+  ["/webhook/windows/discovery", "windowsDiscovery"],
+  ["/webhook/windows/policy", "getWindowsEnrollmentPolicy"],
+  ["/webhook/windows/enroll", "windowsEnroll"],
+  ["/webhook/windows/checkin", "windowsManagementCheckin"],
+  ["/webhook/windows/event", "windowsDeviceEvent"],
+]);
+
+const readJson = async (response: Response): Promise<Schema.JsonObject> =>
+  Schema.decodeUnknownSync(Schema.JsonObject)(await response.json());
 
 const TEST_WEBHOOK_SECRET = "test-webhook-secret";
 
@@ -64,7 +67,7 @@ async function makeHandler(
     }
 
     if (!secret) return handler(input);
-    const operation = webhookOperations[new URL(input.url).pathname];
+    const operation = webhookOperations.get(new URL(input.url).pathname);
 
     if (!operation) return handler(input);
 
@@ -97,6 +100,26 @@ const deviceScope = {
 };
 
 describe("Management Backend HTTP E2E", () => {
+  it("serves a non-empty OpenAPI document", async () => {
+    const { handler, dispose } = await makeHandler(mockManagementBackend({}));
+
+    const res = await handler(new Request("http://localhost/openapi.json"));
+
+    expect(res.status).toBe(200);
+
+    const document = Schema.decodeUnknownSync(
+      Schema.Struct({
+        openapi: Schema.String,
+        paths: Schema.Record(Schema.String, Schema.Json),
+      }),
+    )(await res.json());
+
+    expect(document.openapi).toBe("3.1.0");
+    expect(Object.keys(document.paths).length).toBeGreaterThan(0);
+
+    await dispose();
+  });
+
   it("handles apple device event", async () => {
     let receivedEvent: unknown;
 
@@ -126,7 +149,7 @@ describe("Management Backend HTTP E2E", () => {
 
     expect(res.status).toBe(204);
     expect(receivedEvent).toBeDefined();
-    expect((receivedEvent as any)._tag).toBe("Authenticate");
+    expect(receivedEvent).toMatchObject(Schema.TaggedStruct("Authenticate", {}).make({}));
     await dispose();
   });
 
@@ -152,7 +175,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body._tag).toBe("Command");
     expect(body.commandUUID).toBe("cmd-001");
     await dispose();
@@ -181,7 +204,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body.activationsToken).toBe("act-001");
     expect(body.configurationsToken).toBe("cfg-001");
     expect(body.assetsToken).toBe("asset-001");
@@ -211,7 +234,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body.activations).toHaveLength(1);
     expect(body.configurations).toHaveLength(1);
     expect(body.assets).toHaveLength(1);
@@ -244,7 +267,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body.Identifier).toBe("decl-001");
     expect(body.Type).toBe("com.apple.configuration");
     await dispose();
@@ -266,7 +289,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body._tag).toBe("ManagementNotSupported");
     await dispose();
   });
@@ -287,7 +310,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body._tag).toBe("UnknownDevice");
     await dispose();
   });
@@ -312,9 +335,11 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body.contentType).toBe("application/x-apple-aspen-config");
-    expect(atob(body.content)).toBe("policy-1:mttx.apple.device");
+    expect(atob(Schema.decodeUnknownSync(Schema.String)(body.content))).toBe(
+      "policy-1:mttx.apple.device",
+    );
     await dispose();
   });
 
@@ -347,7 +372,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body.authPolicy).toBe("OnPremise");
     expect(body.enrollmentServiceUrl).toBe("https://mdm.test/mdm/windows/enroll");
     await dispose();
@@ -406,7 +431,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body._tag).toBe("ManagementNotSupported");
     await dispose();
   });
@@ -427,7 +452,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = (await res.json()) as any;
+    const body = await readJson(res);
     expect(body._tag).toBe("InternalServerError");
     await dispose();
   });
@@ -436,7 +461,7 @@ describe("Management Backend HTTP E2E", () => {
 describe("Management webhook signing", () => {
   const secret = "test-webhook-secret";
 
-  const sign = async (operation: string, payload: unknown) => {
+  const sign = async (operation: string, payload: Schema.Json) => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
     const digest = createHash("sha256")

@@ -1,5 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import {
+  EnterpriseBadRequest,
+  EnterpriseNotFound,
+  EnterprisePermissionDenied,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -71,7 +77,7 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
 
       return headers.cookie
         ? Effect.succeed({ user: db.store.user[0], apiToken: undefined })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -82,10 +88,12 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
     webhookFetch: options.fetch,
@@ -94,11 +102,11 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
   return { db, service, headers: { cookie: "mattrax_session=test" } };
 };
 
-const create = (service: any, payload: Record<string, unknown>, tenantId = "org-1") =>
-  runEffect(service.createWebhookEndpoint(request({ cookie: "1" }) as any, tenantId, payload));
+const create = (service: any, payload: Schema.JsonObject, tenantId = "org-1") =>
+  runEffect(service.createWebhookEndpoint(request({ cookie: "1" }), tenantId, payload));
 
 const list = (service: any, tenantId = "org-1") =>
-  runEffect(service.listWebhookEndpoints(request({ cookie: "1" }) as any, tenantId));
+  runEffect(service.listWebhookEndpoints(request({ cookie: "1" }), tenantId));
 
 describe("webhook endpoint CRUD", () => {
   it("creates an endpoint and returns the signing secret exactly once", async () => {
@@ -141,9 +149,9 @@ describe("webhook endpoint CRUD", () => {
       "https://localhost/mattrax",
       "https://user:pass@hooks.example.com/mattrax",
     ]) {
-      await expect(create(service, { url, events: [] })).rejects.toMatchObject({
-        _tag: "EnterpriseBadRequest",
-      });
+      await expect(create(service, { url, events: [] })).rejects.toBeInstanceOf(
+        EnterpriseBadRequest,
+      );
     }
   });
 
@@ -156,7 +164,7 @@ describe("webhook endpoint CRUD", () => {
     });
 
     const patched = await runEffect(
-      service.patchWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id, {
+      service.patchWebhookEndpoint(request(headers), "org-1", created.endpoint.id, {
         url: "https://hooks.example.com/b",
         events: ["device.unenrolled"],
         enabled: false,
@@ -170,16 +178,14 @@ describe("webhook endpoint CRUD", () => {
     });
 
     const rotated = await runEffect(
-      service.rotateWebhookSecret(request(headers) as any, "org-1", created.endpoint.id),
+      service.rotateWebhookSecret(request(headers), "org-1", created.endpoint.id),
     );
 
     expect(rotated.secret).toMatch(/^whsec_/);
     expect(rotated.secret).not.toBe(created.secret);
     expect(db.store.webhook_endpoint[0]!.secretPrefix).toBe(rotated.secret.slice(-4));
 
-    await runEffect(
-      service.deleteWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id),
-    );
+    await runEffect(service.deleteWebhookEndpoint(request(headers), "org-1", created.endpoint.id));
     expect(db.store.webhook_endpoint).toHaveLength(0);
     expect(db.store.audit_log.map((row) => row.action)).toEqual(
       expect.arrayContaining(["webhook.updated", "webhook.secret_rotated", "webhook.deleted"]),
@@ -198,35 +204,29 @@ describe("webhook endpoint CRUD", () => {
     expect((await list(service, "org-2")).endpoints).toHaveLength(0);
     await expect(
       runEffect(
-        service.patchWebhookEndpoint(request(headers) as any, "org-2", created.endpoint.id, {
+        service.patchWebhookEndpoint(request(headers), "org-2", created.endpoint.id, {
           enabled: false,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
     await expect(
-      runEffect(
-        service.deleteWebhookEndpoint(request(headers) as any, "org-2", created.endpoint.id),
-      ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+      runEffect(service.deleteWebhookEndpoint(request(headers), "org-2", created.endpoint.id)),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
     await expect(
-      runEffect(service.rotateWebhookSecret(request(headers) as any, "org-2", created.endpoint.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+      runEffect(service.rotateWebhookSecret(request(headers), "org-2", created.endpoint.id)),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
     expect((await list(service, "org-2")).endpoints).toHaveLength(0);
   });
 
   it("limits the whole surface to owners and admins", async () => {
     const { service, headers } = makeContext({ role: "member" });
-    await expect(list(service)).rejects.toMatchObject({
-      _tag: "EnterprisePermissionDenied",
-    });
+    await expect(list(service)).rejects.toBeInstanceOf(EnterprisePermissionDenied);
     await expect(
       create(service, { url: "https://hooks.example.com/a", events: [] }),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
 
     const auditor = makeContext({ role: "auditor" });
-    await expect(list(auditor.service)).rejects.toMatchObject({
-      _tag: "EnterprisePermissionDenied",
-    });
+    await expect(list(auditor.service)).rejects.toBeInstanceOf(EnterprisePermissionDenied);
 
     const admin = makeContext({ role: "admin" });
     await expect(list(admin.service)).resolves.toMatchObject({ endpoints: [] });
@@ -245,7 +245,7 @@ describe("webhook test delivery", () => {
     });
 
     const result = await runEffect(
-      service.testWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id),
+      service.testWebhookEndpoint(request(headers), "org-1", created.endpoint.id),
     );
 
     expect(result.status).toBe("succeeded");
@@ -273,7 +273,7 @@ describe("webhook test delivery", () => {
     });
 
     const result = await runEffect(
-      service.testWebhookEndpoint(request(headers) as any, "org-1", created.endpoint.id),
+      service.testWebhookEndpoint(request(headers), "org-1", created.endpoint.id),
     );
 
     expect(result).toMatchObject({
@@ -307,7 +307,7 @@ describe("webhook event emission", () => {
       events: ["device.unenrolled"],
     });
 
-    await runEffect(service.deleteDevices(request(headers) as any, "org-1", ["device-1"]));
+    await runEffect(service.deleteDevices(request(headers), "org-1", ["device-1"]));
     expect(db.store.device).toHaveLength(0);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(db.store.webhook_delivery[0]).toMatchObject({

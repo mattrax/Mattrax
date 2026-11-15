@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createTenant, register, gotoHydrated } from "./helpers";
+import { createTenant, gotoHydrated, register, signIn } from "./helpers";
 
 test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
@@ -20,47 +20,35 @@ test.describe("authentication and onboarding", () => {
     await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
   });
 
-  test("asks for email first and keeps password-manager fields", async ({ page }) => {
+  test("offers passkey sign-in without any password fields", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+
+    await expect(page.getByRole("button", { name: /sign in with a passkey/i })).toBeVisible();
+    await expect(page.locator("#password")).toHaveCount(0);
+    await expect(page.locator("#email")).toHaveCount(0);
+
+    await page.getByRole("button", { name: /sign in with your organisation/i }).click();
     const email = page.locator("#email");
     await expect(email).toHaveAttribute("autocomplete", "username");
-    await expect(page.locator("#password")).toHaveCount(0);
-
     await email.fill("person@example.com");
-    // Changing steps is local state, so the password screen appears at once.
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await expect(page.locator("#password")).toBeVisible();
-    await expect(page.locator("#password")).toHaveAttribute("autocomplete", "current-password");
-    // The hidden username keeps the password paired with the account in
-    // browser password managers.
-    await expect(page.locator("#login-email")).toHaveAttribute("autocomplete", "username");
-    await expect(page.getByText("person@example.com", { exact: true })).toBeVisible();
-
-    await page.getByRole("button", { name: /use a different email/i }).click();
-    await expect(page.locator("#email")).toHaveValue("person@example.com");
+    await expect(email).toHaveValue("person@example.com");
   });
 
-  test("starts on the password step when an email is supplied", async ({ page }) => {
-    await page.goto("/login?email=person%40example.com", { waitUntil: "networkidle" });
+  test("registration has no password fields", async ({ page }) => {
+    await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
-    await expect(page.locator("#password")).toBeVisible();
-    await expect(page.getByText("person@example.com", { exact: true })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: /create account with a passkey/i })).toBeVisible();
+    await expect(page.locator("#password")).toHaveCount(0);
+    await expect(page.locator("#confirm-password")).toHaveCount(0);
   });
 
-  test("branches to organisation sign-in when the domain has SSO", async ({ page }) => {
+  test("branches to organisation sign-in", async ({ page }) => {
     await page.route("**/api/v1/sso/azure/start*", async (route) => {
       const url = new URL(route.request().url());
 
-      if (url.searchParams.get("discover") === "1") {
-        await route.fulfill({
-          json: { available: true, organization: { name: "Acme Corp" } },
-        });
-
-        return;
-      }
-
-      // The redirect must carry the same return target as password sign-in.
+      // The redirect must keep the requested return target.
       expect(url.searchParams.get("returnTo")).toBe("/t/example/devices");
       await route.fulfill({
         json: {
@@ -72,14 +60,13 @@ test.describe("authentication and onboarding", () => {
 
     await page.goto("/login?returnTo=%2Ft%2Fexample%2Fdevices", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await page.getByRole("button", { name: /sign in with your organisation/i }).click();
     await page.locator("#email").fill("person@acme.com");
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await expect(page.getByRole("button", { name: /Continue with Acme Corp/ })).toBeVisible();
-    await page.getByRole("button", { name: /Continue with Acme Corp/ }).click();
+    await page.getByRole("button", { name: /continue with sso/i }).click();
     await expect(page).toHaveURL(/sso=started/);
   });
 
-  test("signs out and back in", async ({ page }) => {
+  test("signs out and back in with a passkey", async ({ page }) => {
     const { email } = await register(page);
     const tenant = await createTenant(page, "Session Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
@@ -90,10 +77,7 @@ test.describe("authentication and onboarding", () => {
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
-    await page.locator("#email").fill(email);
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await page.locator("#password").fill("Correct-Horse-Battery-Staple-123!");
-    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\//);
   });
 });

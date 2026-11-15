@@ -1,5 +1,9 @@
 import { isServer } from "@solidjs/web";
-import posthog from "posthog-js";
+import { Schema } from "effect";
+import type posthogSdk from "posthog-js";
+
+type PostHog = typeof posthogSdk;
+
 import { registerPostHogReader, analyticsHeaders } from "./posthog-context";
 
 export type PostHogUser = {
@@ -10,9 +14,34 @@ export type PostHogUser = {
 };
 
 let initialized = false;
+let starting: Promise<boolean> | undefined;
+let posthog: PostHog | undefined;
+let loading: Promise<PostHog | undefined> | undefined;
 let lastUserId: string | null | undefined;
 let lastTenantId: string | null | undefined;
 let fetchInstalled = false;
+
+/**
+ * `posthog-js` is ~470KB. Import it only when analytics is configured and the
+ * browser is idle, so it never delays hydration or the first page load.
+ */
+const loadPostHog = (): Promise<PostHog | undefined> => {
+  if (posthog) return Promise.resolve(posthog);
+
+  loading ??= import("posthog-js")
+    .then((module) => {
+      posthog = module.default;
+
+      return posthog;
+    })
+    .catch((error) => {
+      console.warn("PostHog failed to load", error);
+
+      return undefined;
+    });
+
+  return loading;
+};
 
 const applyAnalyticsHeaders = (headers: Headers): void => {
   for (const [name, value] of Object.entries(analyticsHeaders())) headers.set(name, value);
@@ -29,6 +58,8 @@ const installFetchHeaders = (): void => {
   if (fetchInstalled || typeof window === "undefined") return;
   fetchInstalled = true;
   const originalFetch = window.fetch.bind(window);
+  // SAFETY: the wrapper accepts the same `(input, init)` arguments and forwards
+  // every request unchanged to the bound native fetch.
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
     let url: URL;
@@ -59,13 +90,15 @@ const installFetchHeaders = (): void => {
   }) as typeof window.fetch;
 };
 
+const isString = Schema.is(Schema.String);
+
 const redact = (value: string): string =>
   value
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
 
-const withoutQuery = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
+const withoutQuery = (value: Schema.Json): Schema.Json => {
+  if (!isString(value)) return value;
 
   try {
     const url = new URL(value, window.location.href);
@@ -78,7 +111,7 @@ const withoutQuery = (value: unknown): unknown => {
   }
 };
 
-const sanitizeCapture = <T extends { properties?: Record<string, any> }>(capture: T): T => {
+const sanitizeCapture = <T extends { properties?: Record<string, Schema.Json> }>(capture: T): T => {
   const properties = capture.properties;
 
   if (!properties) return capture;
@@ -91,29 +124,33 @@ const sanitizeCapture = <T extends { properties?: Record<string, any> }>(capture
 
   if (Array.isArray(exceptionValues))
     properties.$exception_values = exceptionValues.map((item) =>
-      typeof item === "string" ? redact(item) : item,
+      isString(item) ? redact(item) : item,
     );
   const exceptions = properties.$exception_list;
 
   if (Array.isArray(exceptions))
-    properties.$exception_list = exceptions.map((item) =>
-      item && typeof item === "object" && typeof item.value === "string"
-        ? { ...item, value: redact(item.value) }
-        : item,
-    );
+    properties.$exception_list = exceptions.map((item) => {
+      if (item === null || !isString(item.value)) return item;
+
+      return { ...item, value: redact(item.value) };
+    });
 
   return capture;
 };
 
 /** Initialise the browser SDK once, from the config injected by the SSR shell. */
-export const initPostHog = (): boolean => {
+const startPostHog = async (): Promise<boolean> => {
   if (isServer || initialized) return initialized;
   const config = window.__MATTRAX_POSTHOG__;
 
   if (!config?.key) return false;
 
+  const sdk = await loadPostHog();
+
+  if (!sdk || initialized) return initialized;
+
   try {
-    posthog.init(config.key, {
+    sdk.init(config.key, {
       api_host: config.host,
       capture_pageview: "history_change",
       capture_pageleave: true,
@@ -126,8 +163,8 @@ export const initPostHog = (): boolean => {
     });
     initialized = true;
     registerPostHogReader(() => ({
-      distinctId: posthog.get_distinct_id(),
-      sessionId: posthog.get_session_id(),
+      distinctId: sdk.get_distinct_id(),
+      sessionId: sdk.get_session_id(),
     }));
     installFetchHeaders();
 
@@ -139,50 +176,60 @@ export const initPostHog = (): boolean => {
   }
 };
 
+export const initPostHog = (): Promise<boolean> => {
+  starting ??= startPostHog();
+
+  return starting;
+};
+
 /** Keep the PostHog person in sync with the dashboard's authenticated user. */
 export const syncPostHogUser = (user: PostHogUser | null): void => {
-  initPostHog();
+  void initPostHog().then((ready) => {
+    if (!ready || !posthog) return;
 
-  if (!initialized) return;
+    if (user) {
+      if (lastUserId === user.id) return;
+      const properties: Record<string, Schema.Json> = {};
 
-  if (user) {
-    if (lastUserId === user.id) return;
-    posthog.identify(user.id, {
-      ...(user.email ? { email: user.email } : {}),
-      ...(user.name ? { name: user.name } : {}),
-      ...(user.emailVerified === undefined ? {} : { email_verified: user.emailVerified }),
-    });
-    lastUserId = user.id;
+      if (user.email) properties.email = user.email;
 
-    return;
-  }
+      if (user.name) properties.name = user.name;
 
-  // A first-time signed-out visitor keeps their anonymous id. Only a real
-  // sign-out (identified -> signed out) starts a fresh anonymous session.
-  if (typeof lastUserId === "string") posthog.reset();
-  lastUserId = null;
+      if (user.emailVerified !== undefined) properties.email_verified = user.emailVerified;
+
+      posthog.identify(user.id, properties);
+      lastUserId = user.id;
+
+      return;
+    }
+
+    // A first-time signed-out visitor keeps their anonymous id. Only a real
+    // sign-out (identified -> signed out) starts a fresh anonymous session.
+    if (isString(lastUserId)) posthog.reset();
+    lastUserId = null;
+  });
 };
 
 /** Group browser pageviews and interactions by the current tenant. */
 export const syncPostHogTenant = (tenantId?: string | null): void => {
-  initPostHog();
+  void initPostHog().then((ready) => {
+    if (!ready || !posthog) return;
 
-  if (!initialized) return;
+    if (lastTenantId === tenantId) return;
 
-  if (lastTenantId === tenantId) return;
-
-  if (tenantId) posthog.group("tenant", tenantId);
-  else posthog.resetGroups();
-  lastTenantId = tenantId ?? null;
+    if (tenantId) posthog.group("tenant", tenantId);
+    else posthog.resetGroups();
+    lastTenantId = tenantId ?? null;
+  });
 };
 
 /** Capture a product event from the dashboard when server capture is not the source. */
-export const capturePostHog = (event: string, properties?: Record<string, unknown>): void => {
-  initPostHog();
-
-  if (initialized) posthog.capture(event, properties);
+export const capturePostHog = (event: string, properties?: Record<string, Schema.Json>): void => {
+  void initPostHog().then((ready) => {
+    if (ready) posthog?.capture(event, properties);
+  });
 };
 
-// The browser entry imports this module before rendering, so initialise early
-// enough to capture the first pageview and wrap fetch for API correlation.
-initPostHog();
+// Analytics is not on the critical path. Give hydration a head start, then
+// load the SDK while the browser is otherwise idle.
+if (!isServer) setTimeout(() => void initPostHog(), 1_500);

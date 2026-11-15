@@ -8,14 +8,17 @@ import {
 } from "../src/index.js";
 
 /** A fetch that never responds, but rejects when aborted like a real one. */
-const hangingFetch = (seen: { signal?: AbortSignal } = {}): typeof globalThis.fetch =>
-  ((_input: RequestInfo | URL, init?: RequestInit) =>
+const hangingFetch =
+  (onSignal: (signal: AbortSignal | undefined) => void = () => {}) =>
+  (_input: RequestInfo | URL, init?: RequestInit) =>
     new Promise<Response>((_resolve, reject) => {
-      seen.signal = init?.signal ?? undefined;
-      seen.signal?.addEventListener("abort", () =>
+      const signal = init?.signal ?? undefined;
+
+      onSignal(signal);
+      signal?.addEventListener("abort", () =>
         reject(new DOMException("The operation was aborted.", "AbortError")),
       );
-    })) as typeof globalThis.fetch;
+    });
 
 describe("fetchWithTimeout", () => {
   it("returns a response that arrives in time", async () => {
@@ -24,7 +27,7 @@ describe("fetchWithTimeout", () => {
       {},
       {
         timeoutMs: 1_000,
-        fetch: (async () => new Response("ok", { status: 200 })) as typeof fetch,
+        fetch: async () => new Response("ok", { status: 200 }),
       },
     );
 
@@ -33,20 +36,28 @@ describe("fetchWithTimeout", () => {
   });
 
   it("aborts a hung request and reports the deadline", async () => {
-    const seen: { signal?: AbortSignal } = {};
+    let seen: AbortSignal | undefined;
     const started = Date.now();
 
     const error = await fetchWithTimeout(
       "https://example.test/hang",
       {},
-      { timeoutMs: 25, fetch: hangingFetch(seen) },
+      {
+        timeoutMs: 25,
+        fetch: hangingFetch((signal) => {
+          seen = signal;
+        }),
+      },
     ).catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(OutboundTimeoutError);
-    expect((error as OutboundTimeoutError).timeoutMs).toBe(25);
-    expect((error as Error).message).toContain("timed out");
+
+    if (error instanceof OutboundTimeoutError) expect(error.timeoutMs).toBe(25);
+
+    if (error instanceof Error) expect(error.message).toContain("timed out");
+
     expect(Date.now() - started).toBeLessThan(1_000);
-    expect(seen.signal?.aborted).toBe(true);
+    expect(seen?.aborted).toBe(true);
   });
 
   it("honours a caller-provided abort signal without masking it as a timeout", async () => {
@@ -72,9 +83,9 @@ describe("fetchWithTimeout", () => {
       {},
       {
         timeoutMs: 1_000,
-        fetch: (async () => {
+        fetch: async () => {
           throw failure;
-        }) as typeof fetch,
+        },
       },
     ).catch((cause: unknown) => cause);
 

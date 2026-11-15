@@ -1,4 +1,38 @@
-import { PostHog } from "posthog-node/edge";
+import { Option, Schema } from "effect";
+
+export type AnalyticsValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly AnalyticsValue[]
+  | { readonly [key: string]: AnalyticsValue };
+
+export type AnalyticsProperties = Record<string, AnalyticsValue>;
+
+type AnalyticsBaseProperties = {
+  $lib: string;
+  $current_url: string;
+  request_id: string;
+  method: string;
+  path: string;
+  $lib_version?: string;
+  release?: string;
+  environment?: string;
+  deployment_id?: string;
+  $session_id?: string;
+  tenant_id?: string;
+  role_name?: string;
+  role_kind?: string;
+};
+
+type AnalyticsCaptureMessage = Parameters<AnalyticsClient["capture"]>[0];
+
+type IdentifyProperties = AnalyticsBaseProperties & {
+  $set: AnalyticsProperties;
+  $set_once: { first_seen_at: string };
+  $anon_distinct_id?: string;
+};
 
 /**
  * Server-side PostHog delivery for product analytics and error tracking.
@@ -17,14 +51,14 @@ export type AnalyticsClient = {
   capture: (message: {
     distinctId: string;
     event: string;
-    properties?: Record<string, unknown>;
+    properties?: AnalyticsProperties;
     groups?: Record<string, string | number>;
     timestamp?: Date;
   }) => void;
   captureException: (
-    error: unknown,
+    cause: unknown,
     distinctId?: string,
-    additionalProperties?: Record<string, unknown>,
+    additionalProperties?: AnalyticsProperties,
   ) => void;
   flush: () => Promise<void>;
 };
@@ -64,8 +98,8 @@ export type AnalyticsConfig = {
 export type RequestAnalytics = {
   readonly enabled: boolean;
   identify(identity: AnalyticsIdentity): void;
-  capture(event: string, properties?: Record<string, unknown>): void;
-  captureError(error: unknown, properties?: Record<string, unknown>): void;
+  capture(event: string, properties?: AnalyticsProperties): void;
+  captureError(cause: unknown, properties?: AnalyticsProperties): void;
   flush(): Promise<void>;
 };
 
@@ -74,9 +108,9 @@ const DISTINCT_ID_PATTERN = /^[A-Za-z0-9._:@+-]{1,200}$/;
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Remove emails and long opaque tokens, then bound the result. */
-export const redactAnalyticsText = (value: unknown): string => {
-  const error = value instanceof Error ? value : undefined;
-  const text = error ? `${error.name}: ${error.message}` : String(value);
+export const redactAnalyticsText = (cause: unknown): string => {
+  const error = cause instanceof Error ? cause : undefined;
+  const text = error ? `${error.name}: ${error.message}` : String(cause);
 
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
@@ -133,29 +167,121 @@ const withinErrorBudget = (now: number, maxEvents: number): boolean => {
   return true;
 };
 
-const sanitizeError = (error: unknown): Error => {
-  if (!(error instanceof Error)) return new Error(redactAnalyticsText(error));
-  const message = redactAnalyticsText(error.message);
+const sanitizeError = (cause: unknown): Error => {
+  if (!(cause instanceof Error)) return new Error(redactAnalyticsText(cause));
+  const message = redactAnalyticsText(cause.message);
   const safe = new Error(message);
-  safe.name = redactAnalyticsText(error.name);
+  safe.name = redactAnalyticsText(cause.name);
 
-  if (error.stack)
-    safe.stack = error.stack
+  if (cause.stack)
+    safe.stack = cause.stack
       .split("\n")
-      .map((line) => line.replace(error.message, message))
+      .map((line) => line.replace(cause.message, message))
       .join("\n");
 
   return safe;
 };
 
-const createClient = (config: AnalyticsConfig & { key: string }): AnalyticsClient =>
-  new PostHog(config.key, {
-    host: (config.host ?? "https://us.i.posthog.com").replace(/\/+$/, ""),
-    flushAt: 50,
-    flushInterval: 0,
-    enableExceptionAutocapture: false,
-    ...(config.fetch ? { fetch: config.fetch as never } : {}),
-  });
+type PostHogEvent = {
+  readonly event: string;
+  readonly distinct_id: string;
+  readonly properties: AnalyticsProperties;
+  readonly timestamp: string;
+  readonly groups?: Readonly<Record<string, string | number>>;
+};
+
+const stackFrames = (stack: string | undefined) => {
+  if (!stack) return [];
+
+  const frames = [];
+
+  for (const line of stack.split("\n").slice(1)) {
+    const match = line.match(/^\s*at (?:(.+?) \()?(.+?):(\d+):(\d+)\)?$/);
+
+    if (!match) continue;
+
+    frames.push({
+      function: match[1] ?? "<anonymous>",
+      filename: match[2],
+      lineno: Number(match[3]),
+      colno: Number(match[4]),
+    });
+  }
+
+  return frames;
+};
+
+/**
+ * Minimal PostHog client for the Worker.
+ *
+ * `posthog-node` bundles its own batching, retry, UUID, gzip, and error-
+ * tracking stack (~365KB of the Worker's startup graph). The API sends one or
+ * two events per request and already awaits `flush()` inside `waitUntil`, so a
+ * direct `/batch/` POST keeps the same semantics without the SDK. Delivery is
+ * best-effort, exactly like the SDK path.
+ */
+const createClient = (config: AnalyticsConfig & { key: string }): AnalyticsClient => {
+  const host = (config.host ?? "https://us.i.posthog.com").replace(/\/+$/, "");
+  const endpoint = `${host}/batch/`;
+  const send = config.fetch ?? globalThis.fetch;
+  const pending: Promise<void>[] = [];
+
+  const enqueue = (event: PostHogEvent) => {
+    const request = send(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ api_key: config.key, batch: [event] }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`PostHog responded ${response.status}`);
+      })
+      .catch((error) => {
+        (config.warn ?? ((message: string) => console.warn(message)))(
+          `PostHog delivery failed: ${redactAnalyticsText(error)}`,
+        );
+      });
+
+    pending.push(request);
+  };
+
+  return {
+    capture: (message) => {
+      enqueue({
+        event: message.event,
+        distinct_id: message.distinctId,
+        properties: message.properties ?? {},
+        timestamp: (message.timestamp ?? new Date()).toISOString(),
+        groups: message.groups,
+      });
+    },
+    captureException: (cause, distinctId, additionalProperties) => {
+      const error = cause instanceof Error ? cause : new Error(redactAnalyticsText(cause));
+      const type = redactAnalyticsText(error.name);
+      const value = redactAnalyticsText(error.message);
+
+      enqueue({
+        event: "$exception",
+        distinct_id: distinctId ?? "anonymous",
+        properties: {
+          ...additionalProperties,
+          $exception_list: [
+            {
+              type,
+              value,
+              mechanism: { handled: true, synthetic: false },
+              stacktrace: { type: "raw", frames: stackFrames(error.stack) },
+            },
+          ],
+          $exception_values: [`${type}: ${value}`],
+        },
+        timestamp: new Date().toISOString(),
+      });
+    },
+    flush: async () => {
+      await Promise.allSettled(pending);
+    },
+  };
+};
 
 /**
  * Create a request-scoped analytics session. The client is created lazily only
@@ -217,20 +343,34 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
   let roleKind: "built-in" | "custom" | undefined;
   let groupedTenant: string | undefined;
 
-  const baseProperties = (): Record<string, unknown> => ({
-    $lib: "mattrax-api",
-    $current_url: path,
-    request_id: config.requestId,
-    method,
-    path,
-    ...(config.release ? { $lib_version: config.release, release: config.release } : {}),
-    ...(config.environment ? { environment: config.environment } : {}),
-    ...(config.deploymentId ? { deployment_id: config.deploymentId } : {}),
-    ...(sessionId ? { $session_id: sessionId } : {}),
-    ...(tenantId ? { tenant_id: tenantId } : {}),
-    ...(roleName ? { role_name: roleName } : {}),
-    ...(roleKind ? { role_kind: roleKind } : {}),
-  });
+  const baseProperties = (): AnalyticsBaseProperties => {
+    const properties: AnalyticsBaseProperties = {
+      $lib: "mattrax-api",
+      $current_url: path,
+      request_id: config.requestId,
+      method,
+      path,
+    };
+
+    if (config.release) {
+      properties.$lib_version = config.release;
+      properties.release = config.release;
+    }
+
+    if (config.environment) properties.environment = config.environment;
+
+    if (config.deploymentId) properties.deployment_id = config.deploymentId;
+
+    if (sessionId) properties.$session_id = sessionId;
+
+    if (tenantId) properties.tenant_id = tenantId;
+
+    if (roleName) properties.role_name = roleName;
+
+    if (roleKind) properties.role_kind = roleKind;
+
+    return properties;
+  };
 
   const safeCapture = (message: Parameters<AnalyticsClient["capture"]>[0]) => {
     const active = ensureClient();
@@ -246,8 +386,8 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
   };
 
   const safeCaptureException = (
-    error: unknown,
-    properties: Record<string, unknown>,
+    cause: unknown,
+    properties: AnalyticsProperties,
     distinct: string,
   ) => {
     const active = ensureClient();
@@ -256,7 +396,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
     captured = true;
 
     try {
-      active.captureException(error, distinct, properties);
+      active.captureException(cause, distinct, properties);
     } catch (cause) {
       warn(`PostHog exception capture failed: ${redactAnalyticsText(cause)}`);
     }
@@ -274,24 +414,38 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
       if (identifiedUserId !== identity.userId) {
         const previous = distinctId;
         distinctId = identity.userId;
-        safeCapture({
+
+        const set: AnalyticsProperties = {};
+
+        if (identity.email) set.email = identity.email;
+
+        if (identity.name) set.name = identity.name;
+
+        const properties: IdentifyProperties = {
+          ...baseProperties(),
+          $set: set,
+          $set_once: { first_seen_at: new Date(now()).toISOString() },
+        };
+
+        if (previous !== distinctId) properties.$anon_distinct_id = previous;
+
+        const message: AnalyticsCaptureMessage = {
           distinctId,
           event: "$identify",
-          properties: {
-            ...baseProperties(),
-            $set: {
-              ...(identity.email ? { email: identity.email } : {}),
-              ...(identity.name ? { name: identity.name } : {}),
-            },
-            $set_once: { first_seen_at: new Date(now()).toISOString() },
-            ...(previous !== distinctId ? { $anon_distinct_id: previous } : {}),
-          },
-          ...(tenantId ? { groups: { tenant: tenantId } } : {}),
-        });
+          properties,
+        };
+
+        if (tenantId) message.groups = { tenant: tenantId };
+
+        safeCapture(message);
         identifiedUserId = identity.userId;
       }
 
       if (tenantId && groupedTenant !== tenantId) {
+        const groupSet: AnalyticsProperties = {};
+
+        if (tenantName) groupSet.name = tenantName;
+
         safeCapture({
           distinctId,
           event: "$groupidentify",
@@ -299,7 +453,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
             ...baseProperties(),
             $group_type: "tenant",
             $group_key: tenantId,
-            $group_set: (tenantName ? { name: tenantName } : {}),
+            $group_set: groupSet,
           },
           groups: { tenant: tenantId },
         });
@@ -307,19 +461,22 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
       }
     },
     capture: (event, properties = {}) => {
-      safeCapture({
+      const message: AnalyticsCaptureMessage = {
         distinctId,
         event,
         properties: { ...baseProperties(), ...properties },
-        ...(tenantId ? { groups: { tenant: tenantId } } : {}),
-      });
+      };
+
+      if (tenantId) message.groups = { tenant: tenantId };
+
+      safeCapture(message);
     },
-    captureError: (error, properties = {}) => {
+    captureError: (cause, properties = {}) => {
       if (random() >= errorSampleRate) return;
 
       if (!withinErrorBudget(now(), maxErrors)) return;
       safeCaptureException(
-        sanitizeError(error),
+        sanitizeError(cause),
         { ...baseProperties(), ...properties },
         distinctId,
       );
@@ -350,14 +507,12 @@ export const authEventForRequest = (
   if (method !== "POST") return undefined;
 
   switch (safeAnalyticsPath(path)) {
-    case "/api/v1/signIn":
+    case "/api/v1/completePasskeySignIn":
       return "auth_signed_in";
-    case "/api/v1/register":
+    case "/api/v1/completePasskeyRegistration":
       return "auth_register_submitted";
     case "/api/v1/signOut":
       return "auth_signed_out";
-    case "/api/v1/completeReset":
-      return "auth_password_reset_completed";
     case "/api/v1/verify-email":
       return "auth_email_verified";
     case "/api/v1/invitations/accept":
@@ -373,16 +528,19 @@ export const authEventForRequest = (
  * Read only the auth completion tag (never the credentials or session body) so
  * an MFA challenge is not counted as a completed sign-in conversion.
  */
+const AuthOutcomeBody = Schema.Struct({
+  value: Schema.optional(Schema.Struct({ _tag: Schema.optional(Schema.String) })),
+  _tag: Schema.optional(Schema.String),
+});
+
 export const authOutcomeFromResponse = async (
   response: Response,
 ): Promise<"authenticated" | "pending" | undefined> => {
   if (!(response.headers.get("content-type") ?? "").includes("json")) return undefined;
 
   try {
-    const body = (await response.clone().json()) as {
-      value?: { _tag?: unknown };
-      _tag?: unknown;
-    };
+    const raw: Schema.Json = await response.clone().json();
+    const body = Option.getOrUndefined(Schema.decodeUnknownOption(AuthOutcomeBody)(raw));
 
     const tag = body?.value?._tag ?? body?._tag;
 
@@ -407,7 +565,9 @@ export const shouldTrackApiRequest = (path: string, method: string): boolean => 
     pathname === "/api/ready" ||
     pathname === "/api/version" ||
     pathname === "/api/openapi.json" ||
+    pathname === "/api/webhooks/openapi.json" ||
     pathname === "/api/v1/getSession" ||
+    pathname === "/api/v1/bootstrap" ||
     pathname.startsWith("/api/docs") ||
     pathname.startsWith("/api/debug/")
   )

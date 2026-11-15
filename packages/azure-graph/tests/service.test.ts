@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { AzureGraph, AzureGraphLive, type AzureGraphConfig } from "../src/index.js";
+import {
+  AzureGraph,
+  AzureGraphConsentRequired,
+  AzureGraphInvalidResponse,
+  AzureGraphLive,
+  AzureGraphNotFound,
+  AzureGraphRequestFailed,
+  type AzureGraphConfig,
+} from "../src/index.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
 
@@ -18,7 +26,7 @@ type FetchHandler = (
 
 function mockLayer(handler: FetchHandler) {
   const fetch: typeof globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
 
     return handler(url, init);
   };
@@ -40,15 +48,14 @@ function header(init: RequestInit | undefined, name: string): string | undefined
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
 
   if (Array.isArray(headers)) return new Headers(headers).get(name) ?? undefined;
-  const record = headers as Record<string, string>;
 
-  return record[name.toLowerCase()] ?? record[name];
+  return new Headers(headers).get(name) ?? undefined;
 }
 
 function bodyText(init: RequestInit | undefined): string {
   const body = init?.body;
 
-  if (typeof body === "string") return body;
+  if (Schema.is(Schema.String)(body)) return body;
 
   if (body instanceof URLSearchParams) return body.toString();
 
@@ -59,7 +66,7 @@ function bodyText(init: RequestInit | undefined): string {
 
 const isTokenRequest = (url: string) => url.includes("/oauth2/v2.0/token");
 
-function json(body: unknown, status = 200): Response {
+function json(body: Schema.Json, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -345,7 +352,7 @@ describe("AzureGraph", () => {
                 403,
               ),
       ),
-    ).rejects.toMatchObject({ _tag: "ConsentRequired", status: 403 });
+    ).rejects.toBeInstanceOf(AzureGraphConsentRequired);
   });
 
   it("retries a 429 once after the Retry-After delay", async () => {
@@ -396,7 +403,7 @@ describe("AzureGraph", () => {
         (url) =>
           isTokenRequest(url) ? tokenResponse() : new Response("this is not json", { status: 200 }),
       ),
-    ).rejects.toMatchObject({ _tag: "InvalidResponse" });
+    ).rejects.toBeInstanceOf(AzureGraphInvalidResponse);
   });
 
   it("builds an admin-consent URL with the configured origin", async () => {
@@ -457,8 +464,8 @@ describe("AzureGraph outbound timeouts", () => {
       { timeoutMs: 50 },
     ).catch((cause: unknown) => cause);
 
-    expect(error).toMatchObject({ _tag: "RequestFailed" });
-    expect((error as Error).message).toContain("timed out after 50ms");
+    expect(error).toBeInstanceOf(AzureGraphRequestFailed);
+    expect(error instanceof Error ? error.message : "").toContain("timed out after 50ms");
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
@@ -467,8 +474,8 @@ describe("AzureGraph outbound timeouts", () => {
       (cause: unknown) => cause,
     );
 
-    expect(error).toMatchObject({ _tag: "RequestFailed" });
-    expect((error as Error).message).toContain("timed out after 50ms");
+    expect(error).toBeInstanceOf(AzureGraphRequestFailed);
+    expect(error instanceof Error ? error.message : "").toContain("timed out after 50ms");
   });
 
   it("still retries a throttled request within the deadline", async () => {
@@ -700,6 +707,6 @@ describe("AzureGraph Autopilot", () => {
         }),
         (url) => (isTokenRequest(url) ? tokenResponse() : json({ error: "not found" }, 404)),
       ),
-    ).rejects.toMatchObject({ _tag: "NotFound", status: 404 });
+    ).rejects.toBeInstanceOf(AzureGraphNotFound);
   });
 });

@@ -7,7 +7,7 @@ real-vendor validation. It is a status page, not a marketing page.
 
 - Tenant isolation, roles (`owner`, `admin`, `member`, `auditor`), scoped API tokens and
   optional tenant binding.
-- Authenticator-app MFA, passkeys, session revocation and step-up for sensitive actions.
+- Passkey authentication with optional authenticator-app MFA, session revocation and step-up for sensitive actions.
 - Entra OIDC SSO, SCIM 2.0 and Entra directory sync with delta cursors and locking.
 - Apple manual enrollment, SCEP identity, APNs push, DDM, legacy profiles, certificates,
   custom declarations, FileVault escrow, installed-app inventory and device health.
@@ -65,7 +65,7 @@ These are implemented but not proven end to end in this repository.
 ### Identity
 
 - [ ] At least two owners.
-- [ ] MFA or passkeys enrolled for owners/admins.
+- [ ] At least two passkeys (and optionally TOTP) enrolled for owners/admins.
 - [ ] SSO configured and tested.
 - [ ] SCIM or directory sync tested.
 - [ ] Break-glass recovery procedure documented and audited.

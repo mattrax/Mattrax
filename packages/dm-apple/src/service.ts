@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option } from "effect";
+import { Context, Effect, Layer, Option, Predicate, Schema } from "effect";
 import {
   type AuthenticatePlist,
   type CheckOutPlist,
@@ -8,11 +8,17 @@ import {
   DeviceUnenrolled,
   MdmError,
 } from "./schema.js";
-import { ManagementBackend, MdmOrigin, type CheckinScope } from "@mattrax/management-backend";
+import {
+  AppleDeviceEvent,
+  CheckinScope,
+  ManagementBackend,
+  ManagementManifest,
+  MdmOrigin,
+} from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
-import { serializePlist } from "@mattrax/plist";
+import { PlistValue, serializePlist } from "@mattrax/plist";
 import { verifyAppleProfileToken } from "./tokens.js";
 import { verifyMdmSignature, type VerifiedMdmSignature } from "./signature.js";
 import { AppleMdmTrust, type AppleMdmTrustService } from "./trust.js";
@@ -132,7 +138,7 @@ export declare namespace AppleMdmService {
     readonly handleCheckin: (
       scope: CheckinScope,
     ) => Effect.Effect<
-      { commandUUID: string; requestType: string; payload: unknown } | null,
+      { commandUUID: string; requestType: string; payload: PlistValue } | null,
       MdmError | DeviceUnenrolled
     >;
     readonly handleDeclarativeTokens: (
@@ -154,7 +160,7 @@ export declare namespace AppleMdmService {
       scope: CheckinScope,
       type: string,
       identifier: string,
-    ) => Effect.Effect<object, MdmError>;
+    ) => Effect.Effect<Schema.JsonObject, MdmError>;
     readonly handleAsset: (
       identityCertificate: string | undefined,
       identifier: string,
@@ -178,6 +184,19 @@ export declare namespace AppleMdmService {
 }
 
 const placeholderTopic = "com.apple.mgmt.External.placeholder";
+
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
+const [DeviceCheckinScope, UserCheckinScope] = CheckinScope.members;
+
+const [
+  AuthenticateEvent,
+  TokenUpdateEvent,
+  CheckOutEvent,
+  BootstrapTokenEvent,
+  CommandResultEvent,
+  DeclarationStatusEvent,
+] = AppleDeviceEvent.members;
 
 export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.Service>()(
   "AppleMdmTopic",
@@ -269,24 +288,23 @@ const makeAppleMdmService = (
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = {
-      _tag: "device",
+    const scope: CheckinScope = DeviceCheckinScope.make({
       udid: auth.UDID,
       identityCertificate,
-      ...(identityFingerprintSha256
-        ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-        : {}),
-      ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+      identityCertificateFingerprintSha256: identityFingerprintSha256,
+      identityCertificateSerial,
       mdmOrigin,
-    };
+    });
 
     return backend
-      .appleDeviceEvent(scope, {
-        _tag: "Authenticate",
-        serialNumber: auth.SerialNumber,
-        model: auth.Model ?? auth.ModelName ?? auth.ProductName,
-        osVersion: auth.OSVersion,
-      })
+      .appleDeviceEvent(
+        scope,
+        AuthenticateEvent.make({
+          serialNumber: auth.SerialNumber,
+          model: auth.Model ?? auth.ModelName ?? auth.ProductName,
+          osVersion: auth.OSVersion,
+        }),
+      )
       .pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.mapError(toMdmError("Failed to send Authenticate event")),
@@ -300,46 +318,40 @@ const makeAppleMdmService = (
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = update.UserID
-      ? {
-          _tag: "user",
+      ? UserCheckinScope.make({
           udid: update.UDID,
           identityCertificate,
-          ...(identityFingerprintSha256
-            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-            : {}),
-          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+          identityCertificateFingerprintSha256: identityFingerprintSha256,
+          identityCertificateSerial,
           userId: update.UserID,
           mdmOrigin,
-        }
-      : {
-          _tag: "device",
+        })
+      : DeviceCheckinScope.make({
           udid: update.UDID,
           identityCertificate,
-          ...(identityFingerprintSha256
-            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-            : {}),
-          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+          identityCertificateFingerprintSha256: identityFingerprintSha256,
+          identityCertificateSerial,
           mdmOrigin,
-        };
+        });
 
     const pushToken = base64ToHex(update.Token);
 
     return backend
-      .appleDeviceEvent(scope, {
-        _tag: "TokenUpdate",
-        pushToken,
-        pushMagic: update.PushMagic,
-        topic: update.Topic,
-        channel: update.UserID ? "user" : "device",
-        ...(update.UserID ? { userId: update.UserID } : {}),
-        ...(update.UnlockToken ? { unlockToken: update.UnlockToken } : {}),
-        ...(update.EnrollmentID ? { enrollmentId: update.EnrollmentID } : {}),
-        ...(update.AwaitingConfiguration !== undefined
-          ? { awaitingConfiguration: update.AwaitingConfiguration }
-          : {}),
-        ...(update.UserShortName ? { userShortName: update.UserShortName } : {}),
-        ...(update.UserLongName ? { userLongName: update.UserLongName } : {}),
-      })
+      .appleDeviceEvent(
+        scope,
+        TokenUpdateEvent.make({
+          pushToken,
+          pushMagic: update.PushMagic,
+          topic: update.Topic,
+          channel: update.UserID ? "user" : "device",
+          userId: update.UserID,
+          unlockToken: update.UnlockToken,
+          enrollmentId: update.EnrollmentID,
+          awaitingConfiguration: update.AwaitingConfiguration,
+          userShortName: update.UserShortName,
+          userLongName: update.UserLongName,
+        }),
+      )
       .pipe(
         Effect.catchTag("UnknownDevice", () => Effect.void),
         Effect.mapError(toMdmError("Failed to send TokenUpdate event")),
@@ -353,33 +365,24 @@ const makeAppleMdmService = (
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
     const scope: CheckinScope = checkout.UserID
-      ? {
-          _tag: "user",
+      ? UserCheckinScope.make({
           udid: checkout.UDID,
           userId: checkout.UserID,
           identityCertificate,
-          ...(identityFingerprintSha256
-            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-            : {}),
-          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+          identityCertificateFingerprintSha256: identityFingerprintSha256,
+          identityCertificateSerial,
           mdmOrigin,
-        }
-      : {
-          _tag: "device",
+        })
+      : DeviceCheckinScope.make({
           udid: checkout.UDID,
           identityCertificate,
-          ...(identityFingerprintSha256
-            ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-            : {}),
-          ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+          identityCertificateFingerprintSha256: identityFingerprintSha256,
+          identityCertificateSerial,
           mdmOrigin,
-        };
+        });
 
     return backend
-      .appleDeviceEvent(scope, {
-        _tag: "CheckOut",
-        ...(checkout.UserID ? { userId: checkout.UserID } : {}),
-      })
+      .appleDeviceEvent(scope, CheckOutEvent.make({ userId: checkout.UserID }))
       .pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
@@ -393,16 +396,13 @@ const makeAppleMdmService = (
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = {
-      _tag: "device",
+    const scope: CheckinScope = DeviceCheckinScope.make({
       udid: result.UDID,
       identityCertificate,
-      ...(identityFingerprintSha256
-        ? { identityCertificateFingerprintSha256: identityFingerprintSha256 }
-        : {}),
-      ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+      identityCertificateFingerprintSha256: identityFingerprintSha256,
+      identityCertificateSerial,
       mdmOrigin,
-    };
+    });
 
     const detail = result.ErrorChain
       ? result.ErrorChain.map((e) => `${e.ErrorDomain ?? ""}:${e.ErrorCode}`).join(", ")
@@ -411,13 +411,15 @@ const makeAppleMdmService = (
     if (!result.CommandUUID) return Effect.void;
 
     return backend
-      .appleDeviceEvent(scope, {
-        _tag: "CommandResult",
-        commandUUID: result.CommandUUID,
-        status: result.Status,
-        errorDetail: detail,
-        queryResponses: result.QueryResponses,
-      })
+      .appleDeviceEvent(
+        scope,
+        CommandResultEvent.make({
+          commandUUID: result.CommandUUID,
+          status: result.Status,
+          errorDetail: detail,
+          queryResponses: result.QueryResponses,
+        }),
+      )
       .pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
@@ -428,12 +430,14 @@ const makeAppleMdmService = (
   const handleCheckin = (
     scope: CheckinScope,
   ): Effect.Effect<
-    { commandUUID: string; requestType: string; payload: unknown } | null,
+    { commandUUID: string; requestType: string; payload: PlistValue } | null,
     MdmError | DeviceUnenrolled
   > =>
     Effect.gen(function* () {
       const manifest = yield* backend.appleManagementCheckin(scope).pipe(
-        Effect.catchTag("UnknownDevice", () => Effect.succeed({ _tag: "Idle" } as const)),
+        Effect.catchTag("UnknownDevice", () =>
+          Effect.succeed(ManagementManifest.members[0].make({})),
+        ),
         Effect.catchTag("ServerInitiatedUnenrollment", () => Effect.fail(new DeviceUnenrolled())),
         Effect.mapError((error) =>
           error instanceof DeviceUnenrolled
@@ -442,34 +446,33 @@ const makeAppleMdmService = (
         ),
       );
 
-      switch (manifest._tag) {
-        case "Idle":
-          return null;
-        case "Command": {
-          const payload = manifest.payload as Record<string, unknown> | null;
+      if (Predicate.isTagged(manifest, "Idle")) return null;
 
-          if (
-            manifest.requestType === "ClearPasscode" &&
-            payload &&
-            typeof payload.UnlockToken === "string"
-          ) {
-            const binary = atob(payload.UnlockToken);
-            payload.UnlockToken = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-          }
+      if (Predicate.isTagged(manifest, "Command")) {
+        let payload = Schema.is(PlistValue)(manifest.payload) ? manifest.payload : null;
+        const unlockToken = payload && Schema.is(PlistDictionary)(payload) ? payload["UnlockToken"] : undefined;
 
-          return {
-            commandUUID: manifest.commandUUID,
-            requestType: manifest.requestType,
-            payload,
-          };
+        if (manifest.requestType === "ClearPasscode" && Schema.is(Schema.String)(unlockToken)) {
+          const binary = atob(unlockToken);
+          const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+          payload = Schema.is(PlistDictionary)(payload)
+            ? Object.assign({}, payload, { UnlockToken: bytes })
+            : { UnlockToken: bytes };
         }
 
-        case "DdmSync": {
-          const uuid = yield* deterministicUuid(`dcm:${scope.udid}:${manifest.serverToken}`);
-
-          return { commandUUID: uuid, requestType: "DeclarativeManagement", payload: {} };
-        }
+        return {
+          commandUUID: manifest.commandUUID,
+          requestType: manifest.requestType,
+          payload: payload ?? {},
+        };
       }
+
+      if (!Predicate.isTagged(manifest, "DdmSync")) return null;
+
+      const uuid = yield* deterministicUuid(`dcm:${scope.udid}:${manifest.serverToken}`);
+
+      return { commandUUID: uuid, requestType: "DeclarativeManagement", payload: {} };
     });
 
   const handleDeclarativeTokens = (
@@ -525,7 +528,7 @@ const makeAppleMdmService = (
     scope: CheckinScope,
     type: string,
     identifier: string,
-  ): Effect.Effect<object, MdmError> =>
+  ): Effect.Effect<Schema.JsonObject, MdmError> =>
     Effect.gen(function* () {
       const decl = yield* backend.getAppleDeclaration(scope, type, identifier).pipe(
         Effect.catchTag("UnknownDevice", () =>
@@ -591,15 +594,14 @@ const makeAppleMdmService = (
     Effect.gen(function* () {
       if (!udid) return yield* new MdmError({ message: "Bootstrap token has no UDID" });
 
-      const scope: CheckinScope = {
-        _tag: "device",
+      const scope: CheckinScope = DeviceCheckinScope.make({
         udid,
         identityCertificate,
-        ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+        identityCertificateSerial,
         mdmOrigin,
-      };
+      });
 
-      yield* backend.appleDeviceEvent(scope, { _tag: "BootstrapToken", token }).pipe(
+      yield* backend.appleDeviceEvent(scope, BootstrapTokenEvent.make({ token })).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
         Effect.mapError(toMdmError("Failed to set bootstrap token")),
@@ -614,13 +616,12 @@ const makeAppleMdmService = (
     Effect.gen(function* () {
       if (!udid) return null;
 
-      const scope: CheckinScope = {
-        _tag: "device",
+      const scope: CheckinScope = DeviceCheckinScope.make({
         udid,
         identityCertificate,
-        ...(identityCertificateSerial ? { identityCertificateSerial } : {}),
+        identityCertificateSerial,
         mdmOrigin,
-      };
+      });
 
       return yield* backend.getAppleBootstrapToken(scope).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
@@ -634,18 +635,20 @@ const makeAppleMdmService = (
     report: DDMStatusReport,
   ): Effect.Effect<void, MdmError> =>
     backend
-      .appleDeviceEvent(scope, {
-        _tag: "DeclarationStatus",
-        statusItems: report.StatusItems,
-        errors: report.Errors?.map((e) => ({
-          statusItem: e.StatusItem,
-          reasons: e.Reasons?.map((r) => ({
-            code: r.Code,
-            description: r.Description,
-            details: r.Details,
+      .appleDeviceEvent(
+        scope,
+        DeclarationStatusEvent.make({
+          statusItems: report.StatusItems,
+          errors: report.Errors?.map((e) => ({
+            statusItem: e.StatusItem,
+            reasons: e.Reasons?.map((r) => ({
+              code: r.Code,
+              description: r.Description,
+              details: r.Details,
+            })),
           })),
-        })),
-      })
+        }),
+      )
       .pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.catchTag("UnknownDevice", () => Effect.void),
@@ -661,16 +664,18 @@ const makeAppleMdmService = (
     readonly identifier?: string;
   }): Effect.Effect<string, MdmError> =>
     serializePlist(
-      buildAppleEnrollmentProfile({
+      Schema.decodeUnknownSync(PlistValue)(
+        buildAppleEnrollmentProfile({
         origin: config.origin,
         topic,
         organizationId: options?.organizationId ?? config.organizationId ?? "",
         organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
         supportEmail: options?.supportEmail ?? config.supportEmail,
         challenge: options?.challenge ?? crypto.randomUUID(),
-        displayName: options?.displayName,
-        identifier: options?.identifier,
-      }),
+          displayName: options?.displayName,
+          identifier: options?.identifier,
+        }),
+      ),
     ).pipe(
       Effect.mapError(
         (cause) => new MdmError({ message: "Failed to serialize enrollment profile", cause }),

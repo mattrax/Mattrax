@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { Match, Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
@@ -9,9 +10,10 @@ import {
   resolveTenantBranding,
   TENANT_IMPORT_MAX_BYTES,
   validateTenantBranding,
+  TenantImportRequest as TenantImportRequestSchema,
   type TenantImportRequest,
   type TenantImportResponse,
-} from "@mattrax/enterprise-domain";
+} from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import {
@@ -25,26 +27,39 @@ import {
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
-import { errorPresentation } from "~/lib/errors";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are
  * normalised by `errorPresentation`; anything else keeps the status fallback
  * instead of surfacing a raw response body.
  */
+const StepUpFailure = Schema.Struct({
+  _tag: Schema.Literal("StepUpRequired"),
+  action: Schema.optional(Schema.String),
+  methods: Schema.optional(Schema.Array(Schema.String)),
+});
+
+const isStepUpFailure = Schema.is(StepUpFailure);
+
+const decodeTenantImport = Schema.decodeUnknownOption(TenantImportRequestSchema);
+
 const responseFailure = async (response: Response, fallback: string) => {
   const text = await response.text().catch(() => "");
-  let body: unknown = text;
+  let body: Schema.Json | undefined = text;
 
   try {
-    body = text ? (JSON.parse(text) as unknown) : undefined;
+    body = text
+      ? Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(text)))
+      : undefined;
   } catch {
     // Plain-text error bodies are replaced by the status fallback below.
   }
 
-  const presentation = errorPresentation(body, fallback);
+  const presentation = errorPresentation(raisedFailure(body), fallback);
 
   return new Error(presentation.tag ? presentation.message : fallback);
 };
@@ -53,6 +68,13 @@ export default function GeneralSettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canWrite = () => can("tenant.write");
+  const canExport = () => can("tenant.export");
+  const canImport = () => can("tenant.import");
+  const canBackups = () => can("backups.read");
+  const canRunBackup = () => can("backups.write");
+  const canDelete = () => can("tenant.delete");
 
   const tenant = useQuery(() => ({
     queryKey: enterpriseKeys.tenant(params.tenantId),
@@ -76,6 +98,7 @@ export default function GeneralSettingsPage() {
   const [importError, setImportError] = createSignal<unknown>();
   const [importing, setImporting] = createSignal(false);
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
+  const [saved, setSaved] = createSignal(false);
   let importFileInput: HTMLInputElement | undefined;
 
   createEffect(
@@ -116,6 +139,21 @@ export default function GeneralSettingsPage() {
     }),
   );
 
+  const dirty = () => {
+    const current = tenant.data;
+
+    if (!current) return false;
+
+    return (
+      name() !== current.name ||
+      slug() !== current.slug ||
+      displayName() !== (current.displayName ?? "") ||
+      logo() !== (current.logo ?? "") ||
+      supportEmail() !== (current.supportEmail ?? "") ||
+      brandColor() !== (current.brandColor ?? "")
+    );
+  };
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchTenant(params.tenantId, {
@@ -127,6 +165,8 @@ export default function GeneralSettingsPage() {
         brandColor: brandColor() || null,
       }),
     onSuccess: async () => {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
       await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
@@ -140,14 +180,12 @@ export default function GeneralSettingsPage() {
     },
   }));
 
-  const isOwner = () => (tenant.data?.role ?? "").split(",").includes("owner");
-
-  // Non-owners get a 403 from the API and the card stays hidden; avoiding an
-  // `enabled` gate keeps query options out of a pending tenant-query read.
+  // Backups are an operational admin surface. Skip the request entirely for
+  // roles that cannot read it instead of retrying a 403 on every visit.
   const backups = useQuery(() => ({
     queryKey: enterpriseKeys.backups(params.tenantId),
     queryFn: () => enterprise.listTenantBackups(params.tenantId),
-    // Non-owners get a 403; do not retry it three times on every visit.
+    enabled: canBackups(),
     retry: false,
   }));
 
@@ -202,18 +240,14 @@ export default function GeneralSettingsPage() {
           )}/download`,
           {
             credentials: "include",
-            ...(grant ? { headers: { "x-mattrax-step-up": grant } } : {}),
+            headers: grant ? { "x-mattrax-step-up": grant } : undefined,
           },
         );
 
         if (result.status === 403) {
-          const body = (await result.json().catch(() => null)) as {
-            _tag?: string;
-            action?: string;
-            methods?: string[];
-          } | null;
+          const body = await result.json().catch(() => null);
 
-          if (body?._tag === "StepUpRequired") throw body;
+          if (isStepUpFailure(body)) throw body;
         }
 
         return result;
@@ -299,15 +333,10 @@ export default function GeneralSettingsPage() {
         throw new Error(
           `The bundle is too large. The limit is ${TENANT_IMPORT_MAX_BYTES / 1024} KB.`,
         );
-      const parsed = JSON.parse(await file.text()) as TenantImportRequest;
+      const parsed = Option.getOrUndefined(decodeTenantImport(JSON.parse(await file.text())));
 
-      if (
-        !parsed ||
-        typeof parsed !== "object" ||
-        typeof parsed.version !== "number" ||
-        !parsed.tenant
-      )
-        throw new Error("This file is not a Mattrax tenant bundle.");
+      if (parsed === undefined) throw new Error("This file is not a Mattrax tenant bundle.");
+
       setImportBundle(parsed);
     } catch (error) {
       setImportError(error);
@@ -375,10 +404,16 @@ export default function GeneralSettingsPage() {
         >
           <div class="divide-y divide-white/[0.05]">
             <FieldRow label="Name" hint="Internal tenant name used by the dashboard.">
-              <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} required />
+              <Input
+                disabled={!canWrite()}
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
+                required
+              />
             </FieldRow>
             <FieldRow label="Slug" hint="Used in URLs and when generating identifiers.">
               <Input
+                disabled={!canWrite()}
                 value={slug()}
                 pattern="[a-z0-9-]+"
                 onInput={(e) => setSlug(e.currentTarget.value.toLowerCase())}
@@ -390,6 +425,7 @@ export default function GeneralSettingsPage() {
               hint="Shown on the enrollment page, Apple profile and tenant emails. Falls back to the name above."
             >
               <Input
+                disabled={!canWrite()}
                 value={displayName()}
                 placeholder={name() || "Mattrax"}
                 onInput={(e) => setDisplayName(e.currentTarget.value)}
@@ -405,6 +441,7 @@ export default function GeneralSettingsPage() {
               hint="An https URL, an inline data: image URL, or an absolute path."
             >
               <Input
+                disabled={!canWrite()}
                 value={logo()}
                 placeholder="https://example.com/logo.png"
                 onInput={(e) => setLogo(e.currentTarget.value)}
@@ -416,6 +453,7 @@ export default function GeneralSettingsPage() {
             <FieldRow label="Support email" hint="Shown to people enrolling a device.">
               <Input
                 type="email"
+                disabled={!canWrite()}
                 value={supportEmail()}
                 placeholder="hello@mattrax.app"
                 onInput={(e) => setSupportEmail(e.currentTarget.value)}
@@ -431,12 +469,14 @@ export default function GeneralSettingsPage() {
                 <input
                   type="color"
                   aria-label="Brand colour picker"
+                  disabled={!canWrite()}
                   class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-white/[0.03] p-1"
                   value={colorValue()}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
                 <Input
                   aria-label="Brand colour hex value"
+                  disabled={!canWrite()}
                   value={brandColor()}
                   placeholder={DEFAULT_BRAND_COLOR}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
@@ -455,10 +495,26 @@ export default function GeneralSettingsPage() {
                 Created {new Date(tenant.data!.createdAt).toLocaleDateString()}
               </span>
             </Show>
-            <Button type="submit" class="ml-auto" disabled={save.isPending || hasBrandingErrors()}>
-              {save.isPending ? "Saving…" : "Save changes"}
-            </Button>
+            <Show when={canWrite()}>
+              <Button
+                type="submit"
+                class="ml-auto"
+                disabled={save.isPending || hasBrandingErrors() || !dirty()}
+              >
+                {save.isPending ? "Saving…" : "Save changes"}
+              </Button>
+              <Show when={saved()}>
+                <span role="status" class="text-xs text-success-foreground">
+                  Saved.
+                </span>
+              </Show>
+            </Show>
           </div>
+          <Show when={!canWrite()}>
+            <ReadOnlyNotice class="mt-3">
+              Your role can view these settings but not change them.
+            </ReadOnlyNotice>
+          </Show>
           <ErrorText error={save.error} />
         </form>
       </Panel>
@@ -495,8 +551,7 @@ export default function GeneralSettingsPage() {
               <p class="text-xs text-muted-foreground">
                 Need help? Contact{" "}
                 <a
-                  class="break-all underline underline-offset-2"
-                  style={{ color: preview().brandColor }}
+                  class="break-all font-medium text-foreground underline underline-offset-2"
                   href={`mailto:${preview().supportEmail}`}
                 >
                   {preview().supportEmail}
@@ -518,7 +573,9 @@ export default function GeneralSettingsPage() {
               </span>
             </DetailRow>
             <DetailRow label="Your role">
-              <span class="font-medium capitalize text-foreground">{tenant.data?.role ?? "…"}</span>
+              <span class="font-medium capitalize text-foreground">
+                {tenantRoleName(tenant.data) ?? "…"}
+              </span>
             </DetailRow>
             <DetailRow label="Devices">
               <span class="text-right text-foreground">Managed from the Devices page</span>
@@ -555,15 +612,19 @@ export default function GeneralSettingsPage() {
                 />
                 Include the audit log (up to 10,000 recent entries)
               </label>
-              <Show when={tenant.data && !isOwner()}>
+              <Show when={tenant.data && !canExport()}>
                 <p class="mt-2 text-xs text-muted-foreground">
-                  Only the tenant owner can export or import tenant data.
+                  Your role cannot export or import tenant data.
                 </p>
               </Show>
               <ErrorText error={exportError()} />
             </div>
             <div class="shrink-0">
-              <Button variant="outline" onClick={exportTenant} disabled={!isOwner() || exporting()}>
+              <Button
+                variant="outline"
+                onClick={exportTenant}
+                disabled={!canExport() || exporting()}
+              >
                 {exporting() ? "Preparing…" : "Export tenant"}
               </Button>
             </div>
@@ -586,13 +647,15 @@ export default function GeneralSettingsPage() {
               </p>
             </div>
             <div class="shrink-0">
-              <Button variant="outline" onClick={openImport} disabled={!isOwner()}>
-                Import tenant
-              </Button>
+              <Show when={canImport()}>
+                <Button variant="outline" onClick={openImport}>
+                  Import tenant
+                </Button>
+              </Show>
             </div>
           </section>
 
-          <Show when={isOwner()}>
+          <Show when={canBackups()}>
             <section class="pt-5">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0 max-w-2xl">
@@ -610,7 +673,7 @@ export default function GeneralSettingsPage() {
                 <Button
                   variant="outline"
                   onClick={() => backupNow.mutate()}
-                  disabled={!isOwner() || backupNow.isPending}
+                  disabled={!canRunBackup() || backupNow.isPending}
                 >
                   {backupNow.isPending ? "Backing up…" : "Back up now"}
                 </Button>
@@ -686,13 +749,11 @@ export default function GeneralSettingsPage() {
                           <td class="px-3 py-2 capitalize text-muted-foreground">{run.trigger}</td>
                           <td class="px-3 py-2">
                             <StatusChip
-                              tone={
-                                run.status === "succeeded"
-                                  ? "success"
-                                  : run.status === "failed"
-                                    ? "danger"
-                                    : "warning"
-                              }
+                              tone={Match.value(run.status).pipe(
+                                Match.when("succeeded", () => "success" as const),
+                                Match.when("failed", () => "danger" as const),
+                                Match.orElse(() => "warning" as const),
+                              )}
                             >
                               {run.status}
                             </StatusChip>
@@ -740,7 +801,9 @@ export default function GeneralSettingsPage() {
       </Panel>
 
       <input
-        ref={importFileInput}
+        ref={(element) => {
+          importFileInput = element;
+        }}
         type="file"
         accept="application/json,.json"
         class="hidden"
@@ -838,58 +901,60 @@ export default function GeneralSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Panel
-        class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
-        header={
-          <div class="flex items-center gap-2">
-            <TriangleAlert class="size-4 text-destructive" />
-            <h2 class="text-[13px] font-semibold text-destructive">Danger zone</h2>
-          </div>
-        }
-      >
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <p class="text-[13px] font-medium text-foreground">Delete this tenant</p>
-            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Devices are sent an unenroll request and all tenant data is permanently removed.
-            </p>
-            <ErrorText error={del.error} />
-          </div>
-          <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-            Delete tenant
-          </Button>
-        </div>
-      </Panel>
-
-      <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete {tenant.data?.name ?? "tenant"}?</DialogTitle>
-            <DialogDescription>
-              This cannot be undone. Type the tenant slug{" "}
-              <span class="font-mono font-medium">{tenant.data?.slug}</span> to confirm.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={confirm()}
-            onInput={(e) => setConfirm(e.currentTarget.value)}
-            placeholder={tenant.data?.slug}
-          />
-          <ErrorText error={del.error} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={confirm() !== tenant.data?.slug || del.isPending}
-              onClick={() => del.mutate()}
-            >
+      <Show when={canDelete()}>
+        <Panel
+          class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
+          header={
+            <div class="flex items-center gap-2">
+              <TriangleAlert class="size-4 text-destructive" />
+              <h2 class="text-[13px] font-semibold text-destructive">Danger zone</h2>
+            </div>
+          }
+        >
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-medium text-foreground">Delete this tenant</p>
+              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Devices are sent an unenroll request and all tenant data is permanently removed.
+              </p>
+              <ErrorText error={del.error} />
+            </div>
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               Delete tenant
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Panel>
+
+        <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete {tenant.data?.name ?? "tenant"}?</DialogTitle>
+              <DialogDescription>
+                This cannot be undone. Type the tenant slug{" "}
+                <span class="font-mono font-medium">{tenant.data?.slug}</span> to confirm.
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              value={confirm()}
+              onInput={(e) => setConfirm(e.currentTarget.value)}
+              placeholder={tenant.data?.slug}
+            />
+            <ErrorText error={del.error} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={confirm() !== tenant.data?.slug || del.isPending}
+                onClick={() => del.mutate()}
+              >
+                Delete tenant
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Show>
     </div>
   );
 }

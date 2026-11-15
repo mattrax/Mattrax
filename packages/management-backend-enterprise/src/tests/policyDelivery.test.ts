@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import { makeWindowsBackend } from "../windows.js";
+import { createWindowsBackend } from "../windows.js";
 import { makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://policies.test";
@@ -43,7 +44,12 @@ const policy = (id: string, organizationId: string, priority: number) => ({
   updatedAt: new Date(Date.UTC(2026, 0, 1, 0, priority)),
 });
 
-const configuration = (policyId: string, kind: string, data: unknown, hash: string) => ({
+const configuration = (
+  policyId: string,
+  kind: string,
+  data: Schema.Json,
+  hash: string,
+) => ({
   policyId,
   kind,
   data,
@@ -79,6 +85,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
       ],
     });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));
@@ -113,6 +120,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
       ],
     });
 
+// SAFETY: The fake store implements only the query chains these tests exercise.
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));
@@ -154,7 +162,8 @@ describe("Windows command delivery uses resolved policy", () => {
       ],
     });
 
-    const backend = makeWindowsBackend({
+    // SAFETY: The fake store implements only the query chains these tests exercise.
+    const backend = createWindowsBackend({
       db: db as any,
       origin,
       authSecret,

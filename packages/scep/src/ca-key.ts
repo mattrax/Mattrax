@@ -1,4 +1,4 @@
-import { Data } from "effect";
+import { Data, Schema } from "effect";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 
 /**
@@ -42,6 +42,9 @@ export class ScepCaKeyError extends Data.TaggedError("ScepCaKeyError")<{
   readonly reason: ScepCaKeyErrorReason;
 }> {}
 
+/** Stored forms accepted from the database column: JSON text, an envelope, or a legacy JWK. */
+export type StoredCaPrivateKey = Schema.Json | JsonWebKey | SealedCaPrivateKey;
+
 export type OpenedCaPrivateKey = {
   /** The unsealed signing key. */
   readonly privateKeyJwk: JsonWebKey;
@@ -53,24 +56,37 @@ export type OpenedCaPrivateKey = {
   readonly migrated?: SealedCaPrivateKey;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+type JsonRecord = { readonly [key: string]: Schema.Json | undefined };
+
+const isRecord = (value: Schema.Json | JsonWebKey): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** A structural check for an RSA private JWK. */
-export const isPrivateRsaJwk = (value: unknown): value is JsonWebKey =>
-  isRecord(value) &&
-  value.kty === "RSA" &&
-  typeof value.n === "string" &&
-  value.n.length > 0 &&
-  typeof value.d === "string" &&
-  value.d.length > 0;
+export const isPrivateRsaJwk = (value: Schema.Json | JsonWebKey): value is JsonWebKey => {
+  if (!isRecord(value)) return false;
+
+  const modulus = value["n"];
+  const exponent = value["d"];
+
+  return (
+    value["kty"] === "RSA" &&
+    Schema.is(Schema.String)(modulus) &&
+    modulus.length > 0 &&
+    Schema.is(Schema.String)(exponent) &&
+    exponent.length > 0
+  );
+};
 
 /** Whether a stored column value is the current sealed envelope. */
-export const isSealedCaPrivateKey = (value: unknown): value is SealedCaPrivateKey =>
-  isRecord(value) &&
-  value.v === SCEP_CA_KEY_ENVELOPE_VERSION &&
-  typeof value.sealed === "string" &&
-  value.sealed.length > 0;
+export const isSealedCaPrivateKey = (value: StoredCaPrivateKey): value is SealedCaPrivateKey => {
+  if (typeof value !== "object" || value === null) return false;
+
+  if (!("v" in value) || !("sealed" in value)) return false;
+
+  const sealed = value.sealed;
+
+  return value.v === SCEP_CA_KEY_ENVELOPE_VERSION && Schema.is(Schema.String)(sealed) && sealed.length > 0;
+};
 
 const requireSecret = (authSecret: string | undefined): string => {
   const secret = authSecret?.trim();
@@ -130,15 +146,15 @@ export const sealCaPrivateKey = async (
  * invalidate every device identity issued so far.
  */
 export const openCaPrivateKey = async (
-  stored: unknown,
+  stored: StoredCaPrivateKey,
   authSecret: string | undefined,
 ): Promise<OpenedCaPrivateKey> => {
-  let value = stored;
+  let value: StoredCaPrivateKey = stored;
 
   // D1 and some filesystem rows store the column as JSON text.
-  if (typeof value === "string") {
+  if (Schema.is(Schema.String)(value)) {
     try {
-      value = JSON.parse(value) as unknown;
+      value = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value));
     } catch {
       throw new ScepCaKeyError({
         message: "Stored SCEP CA private key is not valid JSON",
@@ -162,10 +178,10 @@ export const openCaPrivateKey = async (
       });
     }
 
-    let parsed: unknown;
+    let parsed: Schema.Json;
 
     try {
-      parsed = JSON.parse(plaintext) as unknown;
+      parsed = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(plaintext));
     } catch {
       throw new ScepCaKeyError({
         message: "Decrypted SCEP CA private key is not valid JSON",

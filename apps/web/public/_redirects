@@ -1,0 +1,17 @@
+# Static redirects for the public Worker.
+#
+# Redirects are evaluated before headers and only apply to URLs listed here.
+# /api, /mdm, /scim, /mcp, /.well-known and /assets are deliberately absent:
+# each is owned by the Worker or the asset layer and must never be redirected.
+
+# Rspress writes both files; canonicalise them onto the docs index.
+/docs/index.html /docs/ 308
+/docs/404.html /docs/ 308
+
+# Legacy dashboard paths from the old app shell. The client shell now lives at
+# /dashboard, so old bookmarks and emails land there instead of the 404 page.
+/app /dashboard 308
+/app/* /dashboard 308
+/instances /dashboard 308
+/instances/* /dashboard 308
+/admin /dashboard 308

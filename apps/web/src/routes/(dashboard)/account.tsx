@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
+import { Option, Schema } from "effect";
 import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import {
@@ -17,7 +18,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 
 export default function AccountPage() {
   const session = authClient.useSession();
@@ -33,7 +34,12 @@ export default function AccountPage() {
       const result = await authClient.verifyEmailChange({ token });
 
       if (result.error) {
-        setEmailError(errorMessage(result.error, "That email change link is invalid or expired."));
+        setEmailError(
+          errorMessage(
+            raisedFailure(result.error),
+            "That email change link is invalid or expired.",
+          ),
+        );
 
         return;
       }
@@ -57,18 +63,26 @@ export default function AccountPage() {
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => undefined)) as
-          | { message?: string; error?: { message?: string } }
-          | undefined;
+        const body = Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.Json)(await response.json().catch(() => undefined)),
+        );
 
-        setDeleteError(errorMessage(body ?? { message: `Request failed (${response.status})` }));
+        setDeleteError(
+          errorMessage(
+            body !== undefined
+              ? raisedFailure(body)
+              : { message: `Request failed (${response.status})` },
+          ),
+        );
 
         return;
       }
 
       window.location.href = "/";
     } catch (error) {
-      setDeleteError(errorMessage(error, "Could not delete your account. Try again."));
+      setDeleteError(
+        errorMessage(raisedFailure(error), "Could not delete your account. Try again."),
+      );
     }
   };
 
@@ -94,7 +108,7 @@ export default function AccountPage() {
     setNamePending(false);
 
     if (result.error) {
-      setNameError(errorMessage(result.error, "Failed to update name"));
+      setNameError(errorMessage(raisedFailure(result.error), "Failed to update name"));
     } else {
       setNameSuccess(true);
       setTimeout(() => setNameSuccess(false), 3000);
@@ -120,19 +134,12 @@ export default function AccountPage() {
     setEmailPending(false);
 
     if (result.error) {
-      setEmailError(errorMessage(result.error, "Failed to request email change"));
+      setEmailError(errorMessage(raisedFailure(result.error), "Failed to request email change"));
     } else {
       setEmailSent(true);
       setNewEmail("");
     }
   };
-
-  const [currentPassword, setCurrentPassword] = createSignal("");
-  const [newPassword, setNewPassword] = createSignal("");
-  const [confirmPassword, setConfirmPassword] = createSignal("");
-  const [passwordPending, setPasswordPending] = createSignal(false);
-  const [passwordError, setPasswordError] = createSignal<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = createSignal(false);
 
   type ApiTokens = Awaited<ReturnType<typeof authClient.listApiTokens>>;
 
@@ -149,7 +156,7 @@ export default function AccountPage() {
       setTokens(await authClient.listApiTokens());
     } catch (error) {
       setTokens(undefined);
-      setTokensError(errorMessage(error));
+      setTokensError(errorMessage(raisedFailure(error)));
     } finally {
       setTokensPending(false);
     }
@@ -159,15 +166,19 @@ export default function AccountPage() {
     if (!isServer) void refetchTokens();
   });
 
-  type Sessions = {
-    sessions: Array<{
-      id: string;
-      current: boolean;
-      createdAt: string;
-      expiresAt: string;
-      method?: string;
-    }>;
-  };
+  const Sessions = Schema.Struct({
+    sessions: Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        current: Schema.Boolean,
+        createdAt: Schema.String,
+        expiresAt: Schema.String,
+        method: Schema.optional(Schema.String),
+      }),
+    ),
+  });
+
+  type Sessions = typeof Sessions.Type;
 
   const [sessions, setSessions] = createSignal<Sessions>();
   const [sessionsError, setSessionsError] = createSignal<string | null>(null);
@@ -184,9 +195,15 @@ export default function AccountPage() {
         return;
       }
 
-      setSessions((await response.json()) as Sessions);
+      const body = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Sessions)(await response.json()),
+      );
+
+      if (body === undefined) throw new Error("Unexpected sessions response");
+
+      setSessions(body);
     } catch (error) {
-      setSessionsError(errorMessage(error));
+      setSessionsError(errorMessage(raisedFailure(error)));
     }
   };
 
@@ -202,12 +219,14 @@ export default function AccountPage() {
         const result = await authClient.signOut();
 
         if (result.error) {
-          setSessionsError(errorMessage(result.error, "Could not sign out. Try again."));
+          setSessionsError(
+            errorMessage(raisedFailure(result.error), "Could not sign out. Try again."),
+          );
 
           return;
         }
       } catch (error) {
-        setSessionsError(errorMessage(error, "Could not sign out. Try again."));
+        setSessionsError(errorMessage(raisedFailure(error), "Could not sign out. Try again."));
 
         return;
       }
@@ -232,7 +251,9 @@ export default function AccountPage() {
 
       await refetchSessions();
     } catch (error) {
-      setSessionsError(errorMessage(error, "Could not revoke that session. Try again."));
+      setSessionsError(
+        errorMessage(raisedFailure(error), "Could not revoke that session. Try again."),
+      );
     }
   };
 
@@ -248,7 +269,7 @@ export default function AccountPage() {
       await enterprise.revokeMcpConnection(connectionId);
       await connections.refetch();
     } catch (error) {
-      setConnectionError(errorMessage(error, "Could not revoke this MCP client"));
+      setConnectionError(errorMessage(raisedFailure(error), "Could not revoke this MCP client"));
     } finally {
       setRevoking(null);
     }
@@ -262,6 +283,12 @@ export default function AccountPage() {
   const [tokenExpiry, setTokenExpiry] = createSignal("never");
   const [tokenTenantId, setTokenTenantId] = createSignal("");
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
+
+  // Session claims are a sign-in snapshot. The `me` query reads the current
+  // user row, so verification changes made in this tab cannot leave stale
+  // "Not verified" badges behind.
+  const email = () => me.data?.user.email ?? user()?.email;
+  const emailVerified = () => me.data?.user.emailVerified ?? user()?.emailVerified ?? false;
   const tenants = () => me.data?.tenants ?? [];
 
   const tenantLabel = (tenantId?: string | null) =>
@@ -300,7 +327,7 @@ export default function AccountPage() {
       setTokenOpen(false);
       await refetchTokens();
     } catch (error) {
-      setTokenError(errorMessage(error));
+      setTokenError(errorMessage(raisedFailure(error)));
     }
   };
 
@@ -312,47 +339,9 @@ export default function AccountPage() {
       await authClient.revokeApiToken(tokenId);
       await refetchTokens();
     } catch (error) {
-      setTokenError(errorMessage(error, "Could not revoke that token. Try again."));
+      setTokenError(errorMessage(raisedFailure(error), "Could not revoke that token. Try again."));
     } finally {
       setRevokingToken(null);
-    }
-  };
-
-  const handlePasswordChange = async (e: SubmitEvent) => {
-    e.preventDefault();
-    setPasswordError(null);
-    setPasswordSuccess(false);
-
-    if (newPassword() !== confirmPassword()) {
-      setPasswordError("New passwords do not match");
-
-      return;
-    }
-
-    if (newPassword().length < 8) {
-      setPasswordError("Password must be at least 15 characters");
-
-      return;
-    }
-
-    setPasswordPending(true);
-
-    const result = await authClient.changePassword({
-      currentPassword: currentPassword(),
-      newPassword: newPassword(),
-      revokeOtherSessions: false,
-    });
-
-    setPasswordPending(false);
-
-    if (result.error) {
-      setPasswordError(errorMessage(result.error, "Failed to change password"));
-    } else {
-      setPasswordSuccess(true);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setTimeout(() => setPasswordSuccess(false), 3000);
     }
   };
 
@@ -366,12 +355,12 @@ export default function AccountPage() {
         title="Account"
         description="Manage your personal information and security settings."
         meta={
-          <Show when={user()}>
+          <Show when={email()}>
             {(current) => (
               <>
-                <span class="break-all">{current().email}</span>
+                <span class="break-all">{current()}</span>
                 <Show
-                  when={current().emailVerified}
+                  when={emailVerified()}
                   fallback={<Badge variant="outline">Not verified</Badge>}
                 >
                   <Badge
@@ -427,11 +416,8 @@ export default function AccountPage() {
       >
         <p class="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
           Your current email is
-          <span class="font-medium text-foreground">{user()?.email}</span>
-          <Show
-            when={user()?.emailVerified}
-            fallback={<Badge variant="outline">Not verified</Badge>}
-          >
+          <span class="font-medium text-foreground">{email()}</span>
+          <Show when={emailVerified()} fallback={<Badge variant="outline">Not verified</Badge>}>
             <Badge
               variant="outline"
               class="border-success/25 bg-success/10 text-success-foreground"
@@ -477,71 +463,11 @@ export default function AccountPage() {
         </Show>
       </Panel>
 
-      <Panel
-        title="Change password"
-        description="Choose a strong password of at least 15 characters."
-      >
-        <form onSubmit={handlePasswordChange} class="space-y-3">
-          <Field label="Current password">
-            <Input
-              id="current-password"
-              type="password"
-              required
-              value={currentPassword()}
-              onInput={(e) => setCurrentPassword(e.currentTarget.value)}
-              placeholder="••••••••"
-              autocomplete="current-password"
-            />
-          </Field>
-          <Field label="New password">
-            <Input
-              id="new-password"
-              type="password"
-              required
-              minlength={15}
-              value={newPassword()}
-              onInput={(e) => setNewPassword(e.currentTarget.value)}
-              placeholder="••••••••"
-              autocomplete="new-password"
-            />
-          </Field>
-          <Field label="Confirm new password">
-            <Input
-              id="confirm-password"
-              type="password"
-              required
-              minlength={15}
-              value={confirmPassword()}
-              onInput={(e) => setConfirmPassword(e.currentTarget.value)}
-              placeholder="••••••••"
-              autocomplete="new-password"
-            />
-          </Field>
-          <Show when={passwordError()}>
-            {(msg) => (
-              <p role="alert" class="text-[12.5px] text-destructive">
-                {msg()}
-              </p>
-            )}
-          </Show>
-          <Show when={passwordSuccess()}>
-            <p class="text-[12.5px] text-success-foreground">Password changed successfully.</p>
-          </Show>
-          <div class="border-t border-white/[0.06] pt-3">
-            <Button type="submit" disabled={passwordPending()}>
-              {passwordPending() ? "Updating…" : "Update password"}
-            </Button>
-          </div>
-        </form>
-      </Panel>
-
       <AccountSecurity
-        mfaEnabled={me.data?.user.mfaEnabled ?? false}
         totpEnabled={me.data?.user.totpEnabled ?? false}
         passkeyEnabled={me.data?.user.passkeyEnabled ?? false}
         mfaRequired={me.data?.user.mfaRequired ?? false}
-        hasPassword={me.data?.user.hasPassword ?? false}
-        email={user()?.email ?? ""}
+        email={email() ?? ""}
       />
 
       <Show when={sessionsError()}>
@@ -563,7 +489,7 @@ export default function AccountPage() {
                 <div class="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div class="min-w-0">
                     <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
-                      {item.method ?? "Password"}
+                      <span class="capitalize">{item.method ?? "Unknown"}</span>
                       <Show when={item.current}>
                         <Badge
                           variant="outline"
@@ -584,7 +510,7 @@ export default function AccountPage() {
                     aria-label={
                       item.current
                         ? "Sign out of this session"
-                        : `Revoke ${item.method ?? "password"} session signed in ${new Date(item.createdAt).toLocaleString()}`
+                        : `Revoke ${item.method ?? "unknown"} session signed in ${new Date(item.createdAt).toLocaleString()}`
                     }
                     onClick={() => revokeSession(item.id, item.current)}
                   >
@@ -635,7 +561,15 @@ export default function AccountPage() {
                   id="token-scope"
                   class={selectClass}
                   value={tokenScope()}
-                  onChange={(e) => setTokenScope(e.currentTarget.value as "read" | "write")}
+                  onChange={(e) => {
+                    const value = Option.getOrUndefined(
+                      Schema.decodeUnknownOption(Schema.Literals(["read", "write"]))(
+                        e.currentTarget.value,
+                      ),
+                    );
+
+                    if (value !== undefined) setTokenScope(value);
+                  }}
                 >
                   <option value="read">Read only</option>
                   <option value="write">Read &amp; write</option>
@@ -774,7 +708,7 @@ export default function AccountPage() {
         <Show when={connections.error}>
           {(error) => (
             <p role="alert" class="text-[12.5px] text-destructive">
-              {errorMessage(error(), "Could not load MCP connections")}
+              {errorMessage(raisedFailure(error()), "Could not load MCP connections")}
             </p>
           )}
         </Show>
@@ -853,14 +787,14 @@ export default function AccountPage() {
             type="email"
             aria-label="Type your email address to confirm account deletion"
             class="h-9 sm:flex-1"
-            placeholder={user()?.email}
+            placeholder={email() ?? ""}
             value={deleteConfirm()}
             onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
           />
           <Button
             type="button"
             variant="destructive"
-            disabled={deleteConfirm() !== user()?.email}
+            disabled={deleteConfirm() !== email()}
             onClick={deleteAccount}
           >
             Delete account

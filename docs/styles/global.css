@@ -80,6 +80,14 @@ html.rp-dark {
   --rp-content-max-width: 920px;
 }
 
+/* The theme pins the logo height to 1.6rem while the image keeps its `width`
+   attribute, which stretches the wordmark. Size by height only so the mark
+   keeps its aspect ratio and matches the product header (16px). */
+.rp-nav__title .rp-nav__title__logo-image {
+  width: auto;
+  height: 1rem;
+}
+
 html {
   scrollbar-gutter: stable;
   scroll-behavior: smooth;

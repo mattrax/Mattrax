@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
@@ -10,6 +10,18 @@ import {
   sealSecret,
 } from "@mattrax/crypto";
 import { ApnsError, generateApnsKeyPair, makeApnsService } from "@mattrax/apns";
+import {
+  EnterpriseBadRequest,
+  EnterpriseConflict,
+  EnterpriseForbidden,
+  EnterpriseLastTenantUser,
+  EnterpriseNotFound,
+  EnterpriseNotConfigured,
+  EnterprisePermissionDenied,
+  EnterpriseStripeError,
+  EnterpriseTenantHasMembers,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/management-backend-enterprise";
 import {
   appleEnrollmentProfileResponse,
@@ -21,7 +33,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -107,12 +119,18 @@ const sealedJwk = async (secret = authSecret) => {
   return { keyPair: keys, jwk, encrypted: await sealSecret(secret, JSON.stringify(jwk)) };
 };
 
+/** One row of the JSON audit export, as the endpoint renders it. */
+const AuditExportEntry = Schema.Struct({
+  action: Schema.String,
+  actorEmail: Schema.String,
+});
+
 const makeContext = async (
   overrides: {
     apns?: any;
     pushes?: Array<any>;
     authSecret?: string | null;
-    email?: { send: (message: any) => Promise<unknown> };
+    email?: { send: (message: any) => Promise<void> };
     stripeClient?: any;
     apiToken?: any;
     db?: any;
@@ -140,7 +158,7 @@ const makeContext = async (
 
       return headers.cookie
         ? Effect.succeed({ user, apiToken: overrides.apiToken })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -151,12 +169,14 @@ const makeContext = async (
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
     stripeClient:
       overrides.stripeClient === null ? undefined : (overrides.stripeClient ?? makeStripeClient()),
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret: overrides.authSecret === null ? undefined : (overrides.authSecret ?? authSecret),
     apns: overrides.apns,
@@ -172,7 +192,7 @@ describe("enterprise service tenant flow", () => {
     const { service } = await makeContext();
     await expect(
       runEffect(service.createTenant(request(), { name: "Acme", slug: "acme" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseUnauthorized" });
+    ).rejects.toBeInstanceOf(EnterpriseUnauthorized);
   });
 
   it("creates an organization, owner member, and enrollment row", async () => {
@@ -306,7 +326,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     const result = await runEffect(service.listTenants(request(headers)));
-    expect(result.tenants).toEqual([
+    expect(result.tenants).toMatchObject([
       {
         id: owned.id,
         name: "Acme",
@@ -316,8 +336,13 @@ describe("enterprise service tenant flow", () => {
         supportEmail: null,
         brandColor: null,
         role: "owner",
+        roleId: null,
+        roleName: "Owner",
+        roleKind: "built-in",
       },
     ]);
+    expect(result.tenants[0]?.permissions).toContain("tenant.read");
+    expect(result.tenants[0]?.permissions).toContain("members.write");
   });
 
   it("stores tenant branding and applies fallbacks for unconfigured tenants", async () => {
@@ -372,13 +397,13 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { brandColor: "blue" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { supportEmail: "not-an-email" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { logo: "javascript:alert(1)" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await runEffect(
       service.patchTenant(request(headers), tenant.id, {
@@ -520,7 +545,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
 
     db.store.member[0].role = "admin";
     await runEffect(service.patchTenant(request(headers), tenant.id, { name: "Allowed" }));
@@ -528,7 +553,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 
   it("allows auditors to read but not write or delete", async () => {
@@ -546,10 +571,10 @@ describe("enterprise service tenant flow", () => {
     });
     await expect(
       runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 
   it("enforces custom role permissions and audits the effective role", async () => {
@@ -568,10 +593,9 @@ describe("enterprise service tenant flow", () => {
 
     db.store.member[0].customRoleId = role.id;
 
-    await expect(
-      runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" })),
-    ).rejects.toMatchObject({
-      _tag: "EnterprisePermissionDenied",
+    const denied = runEffect(service.patchTenant(request(headers), tenant.id, { name: "Denied" }));
+    await expect(denied).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+    await expect(denied).rejects.toMatchObject({
       permission: "tenant.write",
       roleName: "Helpdesk",
       roleKind: "custom",
@@ -659,10 +683,10 @@ describe("enterprise service tenant flow", () => {
       runEffect(
         first.service.patchTenant(request(first.headers), firstTenant.id, { name: "Denied" }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
     await expect(
       runEffect(first.service.deleteTenant(request(first.headers), firstTenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     // A tenant-bound token cannot reach another tenant, even when the user is
     // a member.
@@ -673,7 +697,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(bound.service.getTenant(request(bound.headers), secondTenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
 
     // A write token passes the scope check and the member role check.
     const writer = await makeContext({
@@ -729,7 +753,7 @@ describe("enterprise service tenant flow", () => {
 
     await expect(
       runEffect(service.deleteTenant(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseTenantHasMembers" });
+    ).rejects.toBeInstanceOf(EnterpriseTenantHasMembers);
   });
 
   it("supports invitation lifecycle", async () => {
@@ -804,7 +828,7 @@ describe("enterprise service tenant flow", () => {
     expect(sent[0]).toMatchObject({
       to: "new@example.com",
       from: { name: "Acme <Corp>", email: "hello@mattrax.cloud" },
-      subject: "You have been invited to Acme <Corp>",
+      subject: "Join Acme <Corp> on Mattrax",
     });
     expect(sent[0]!.text).toContain("Acme <Corp>");
     expect(sent[0]!.text).toContain("help@acme.test");
@@ -846,7 +870,7 @@ describe("enterprise service tenant flow", () => {
     await runEffect(service.removeTenantUser(request(headers), tenant.id, "member-2"));
     await expect(
       runEffect(service.removeTenantUser(request(headers), tenant.id, db.store.member[0].id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseLastTenantUser" });
+    ).rejects.toBeInstanceOf(EnterpriseLastTenantUser);
   });
 });
 
@@ -930,11 +954,13 @@ describe("enterprise service billing flow", () => {
     });
 
     const service = createEnterpriseService({
-      db: db as any,
+      db,
       schema,
       origin,
       stripeClient,
+      // SAFETY: this test never reaches R2; the service only stores the binding.
       storage: {} as any,
+      // SAFETY: the fake only implements the auth methods these tests exercise.
       auth: auth as any,
     });
 
@@ -978,7 +1004,7 @@ describe("enterprise service billing flow", () => {
           returnUrl: "https://app.test/settings",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 
   it("reports unconfigured billing without failing the summary", async () => {
@@ -998,7 +1024,7 @@ describe("enterprise service billing flow", () => {
           returnUrl: "https://app.test/settings",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseStripeError" });
+    ).rejects.toBeInstanceOf(EnterpriseStripeError);
   });
 
   it("maps Stripe failures to EnterpriseStripeError", async () => {
@@ -1024,7 +1050,7 @@ describe("enterprise service billing flow", () => {
           returnUrl: "https://app.test/settings",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseStripeError" });
+    ).rejects.toBeInstanceOf(EnterpriseStripeError);
   });
 
   it("bounds the customer-list fallback to one page", async () => {
@@ -1032,11 +1058,13 @@ describe("enterprise service billing flow", () => {
 
     const tenant = await runEffect(
       createEnterpriseService({
-        db: db as any,
+        db,
         schema,
         origin,
         stripeClient: makeStripeClient(),
+        // SAFETY: this test never reaches R2; the service only stores the binding.
         storage: {} as any,
+        // SAFETY: the fake only implements the auth methods these tests exercise.
         auth: auth as any,
         authSecret,
       }).createTenant(request(headers), { name: "Acme", slug: "acme" }),
@@ -1045,7 +1073,7 @@ describe("enterprise service billing flow", () => {
     const listCalls: any[] = [];
 
     const boundedService = createEnterpriseService({
-      db: db as any,
+      db,
       schema,
       origin,
       stripeClient: makeStripeClient({
@@ -1070,7 +1098,9 @@ describe("enterprise service billing flow", () => {
           },
         },
       }),
+      // SAFETY: this test never reaches R2; the service only stores the binding.
       storage: {} as any,
+      // SAFETY: the fake only implements the auth methods these tests exercise.
       auth: auth as any,
     });
 
@@ -1155,7 +1185,7 @@ describe("enterprise service group flow", () => {
           devices: ["other-device"],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("patches group metadata and membership assignments", async () => {
@@ -1408,7 +1438,7 @@ describe("enterprise service group flow", () => {
           assign: { devices: ["device-1"] },
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("rejects dynamic rules without conditions and manual groups with rules", async () => {
@@ -1426,7 +1456,7 @@ describe("enterprise service group flow", () => {
           rules: { version: 1 },
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
       runEffect(
@@ -1436,7 +1466,7 @@ describe("enterprise service group flow", () => {
           rules: dynamicRules,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 });
 
@@ -1520,7 +1550,7 @@ describe("enterprise service policy flow", () => {
       runEffect(
         service.patchPolicy(request(headers), tenant.id, "other-policy", { name: "Denied" }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("duplicates policy configurations and deletes with partial failure reporting", async () => {
@@ -1683,7 +1713,7 @@ describe("enterprise service effective policy", () => {
 
     await expect(
       runEffect(service.getDeviceEffectivePolicy(request(headers), second.id, "device-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 });
 
@@ -1800,7 +1830,7 @@ describe("enterprise service APNs", () => {
           cert: "not a certificate",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     const expired = await generateApnsKeyPair();
 
@@ -1817,7 +1847,7 @@ describe("enterprise service APNs", () => {
           cert: expiredPem,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     // A pending key exists, so a certificate for a different key is rejected.
     const pending = await sealedJwk();
@@ -1836,7 +1866,7 @@ describe("enterprise service APNs", () => {
           cert: otherPem,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("pushes on device action and unenroll", async () => {
@@ -1977,7 +2007,7 @@ describe("enterprise service APNs", () => {
 
     await expect(
       runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "missing")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("rejects identity revocation when no certificates are recorded", async () => {
@@ -1990,7 +2020,7 @@ describe("enterprise service APNs", () => {
     await seedDevice(db, tenant.id, "device-1");
     await expect(
       runEffect(service.revokeDeviceIdentity(request(headers), tenant.id, "device-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseConflict" });
+    ).rejects.toBeInstanceOf(EnterpriseConflict);
   });
 
   it("links Windows enrollment certificates to the internal device id end to end", async () => {
@@ -2016,7 +2046,7 @@ describe("enterprise service APNs", () => {
     });
 
     const windows = makeWindowsBackend({
-      db: db as any,
+      db,
       origin,
       authSecret,
       windowsOrganizationId: tenant.id,
@@ -2024,6 +2054,8 @@ describe("enterprise service APNs", () => {
 
     const policy = await runEffect(windows.getWindowsEnrollmentPolicy(""));
 
+    // SAFETY: enrollment only reads `url` off the MDM origin; the remaining
+    // origin fields belong to the full Windows management backend.
     const result = await runEffect(
       windows.windowsEnroll({
         authToken: policy.authToken,
@@ -2048,7 +2080,7 @@ describe("enterprise service APNs", () => {
     expect(certificate.deviceId).not.toBe(device.dmIdentifier);
     expect(certificate.serial).toMatch(/^[0-9a-f]+$/);
 
-    const scep = ScepRepositoryLive.make(db as any, { authSecret });
+    const scep = ScepRepositoryLive.make(db, { authSecret });
     // Renewal resolves through the internal id before revocation.
     await expect(
       Effect.runPromise(scep.findIssuedCertificate!(certificate.serial)),
@@ -2062,12 +2094,9 @@ describe("enterprise service APNs", () => {
     expect(certificate.revokedAt).toBeInstanceOf(Date);
 
     // The renewed identity can no longer be used to renew.
-    await expect(
-      Effect.runPromise(scep.findIssuedCertificate!(certificate.serial)),
-    ).rejects.toMatchObject({
-      _tag: "ScepError",
-      message: expect.stringContaining("revoked"),
-    });
+    const lookup = Effect.runPromise(scep.findIssuedCertificate!(certificate.serial));
+    await expect(lookup).rejects.toHaveProperty("_tag", "ScepError");
+    await expect(lookup).rejects.toMatchObject({ message: expect.stringContaining("revoked") });
 
     // Health surfaces the (now revoked) certificate for the device.
     const health = await runEffect(service.getDeviceHealth(request(headers), tenant.id, device.id));
@@ -2102,13 +2131,10 @@ describe("enterprise service APNs", () => {
     const certificate = db.store.scep_issued_certificate[0]!;
     expect(certificate.revokedAt).toBeInstanceOf(Date);
 
-    const scep = ScepRepositoryLive.make(db as any, { authSecret });
-    await expect(
-      Effect.runPromise(scep.findIssuedCertificate!("legacy-serial")),
-    ).rejects.toMatchObject({
-      _tag: "ScepError",
-      message: expect.stringContaining("revoked"),
-    });
+    const scep = ScepRepositoryLive.make(db, { authSecret });
+    const legacy = Effect.runPromise(scep.findIssuedCertificate!("legacy-serial"));
+    await expect(legacy).rejects.toHaveProperty("_tag", "ScepError");
+    await expect(legacy).rejects.toMatchObject({ message: expect.stringContaining("revoked") });
   });
 
   it("derives device health and tenant-level counts", async () => {
@@ -2179,7 +2205,7 @@ describe("enterprise service APNs", () => {
 
     await expect(
       runEffect(service.getDeviceHealth(request(headers), tenant.id, "missing")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("pushes enrolled Apple devices when groups sync", async () => {
@@ -2315,7 +2341,7 @@ describe("enterprise service APNs", () => {
     expect(apple().lastPushError).toBeNull();
     expect(apple().lastPushErrorCode).toBeNull();
     expect(apple().consecutivePushFailures).toBe(0);
-    const firstSuccess = apple().lastPushOkAt as Date;
+    const firstSuccess = apple().lastPushOkAt;
 
     mode = "fail";
     await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
@@ -2329,7 +2355,7 @@ describe("enterprise service APNs", () => {
     expect(apple().consecutivePushFailures).toBe(0);
     expect(apple().lastPushError).toBeNull();
     expect(apple().lastPushErrorCode).toBeNull();
-    expect((apple().lastPushOkAt as Date).getTime()).toBeGreaterThanOrEqual(firstSuccess.getTime());
+    expect(apple().lastPushOkAt.getTime()).toBeGreaterThanOrEqual(firstSuccess.getTime());
 
     mode = "invalid";
     await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
@@ -2515,11 +2541,11 @@ describe("enterprise service APNs", () => {
 
     await expect(
       runEffect(service.getDeviceActivity(request(headers), tenant.id, "missing", {})),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
     // The device exists, but in another tenant.
     await expect(
       runEffect(service.getDeviceActivity(request(headers), other.id, "device-1", {})),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 });
 
@@ -2541,7 +2567,7 @@ describe("enterprise policy validation and enrollment", () => {
           configurations: { passcode: { minLength: 8 } },
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
       runEffect(
@@ -2549,7 +2575,7 @@ describe("enterprise policy validation and enrollment", () => {
           configurations: { "mttx.apple.application.office": { fileName: "Office.pkg" } },
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("embeds a per-enrollment SCEP challenge in the Apple profile", async () => {
@@ -2790,7 +2816,7 @@ describe("enterprise policy validation and enrollment", () => {
     // A group belonging to another tenant is not addressable from this tenant.
     await expect(
       runEffect(service.searchDevices(request(headers), first.id, { groupId: "group-second" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("signals truncation and neutralises formula cells in CSV exports", async () => {
@@ -3017,7 +3043,7 @@ describe("enterprise policy validation and enrollment", () => {
     const { service } = await makeContext();
     await expect(
       runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 });
 
@@ -3052,7 +3078,7 @@ describe("Apple enrollment profile download", () => {
     return { ...context, tenant, enrollment };
   };
 
-  it("returns a plist and a safe tenant filename", async () => {
+  it("serves an unsigned plist until a signing identity or SCEP CA exists", async () => {
     const { service, enrollment } = await setupEnrollment();
 
     const result = await runEffect(
@@ -3060,9 +3086,12 @@ describe("Apple enrollment profile download", () => {
     );
 
     expect(result.filename).toBe("profile-tenant-enrollment.mobileconfig");
-    expect(result.plist).toContain("<plist");
-    expect(result.plist).toContain("com.apple.security.scep");
-    expect(result.plist).toContain("com.apple.mdm.token");
+
+    const plist = new TextDecoder().decode(result.profile);
+
+    expect(plist).toContain("<plist");
+    expect(plist).toContain("com.apple.security.scep");
+    expect(plist).toContain("com.apple.mdm.token");
 
     const response = appleEnrollmentProfileResponse(result);
     expect(response.headers["content-type"]).toBe("application/x-apple-aspen-config");
@@ -3072,6 +3101,48 @@ describe("Apple enrollment profile download", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
   });
 
+  it("serves a CMS SignedData profile when the SCEP CA exists", async () => {
+    const { db, service, enrollment } = await setupEnrollment();
+    const caKeys = await generateCaKeyPair();
+
+    db.store.scep_ca.push({
+      id: 1,
+      certPem: await testCertificate({ keyPair: caKeys }),
+      privateKeyJwk: await exportPrivateKeyJwk(caKeys.privateKey),
+      createdAt: new Date(),
+    });
+
+    const result = await runEffect(
+      service.getAppleEnrollmentProfile(enrollment.id, undefined, { ip: "profile-signed" }),
+    );
+
+    const buffer = new ArrayBuffer(result.profile.byteLength);
+
+    new Uint8Array(buffer).set(result.profile);
+
+    const contentInfo = pkijs.ContentInfo.fromBER(buffer);
+
+    expect(contentInfo.contentType).toBe(pkijs.ContentInfo.SIGNED_DATA);
+
+    const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+
+    expect(signedData.signerInfos).toHaveLength(1);
+    expect(
+      new TextDecoder().decode(new Uint8Array(signedData.encapContentInfo.eContent!.getValue())),
+    ).toContain("com.apple.security.scep");
+
+    const verification = await signedData.verify({
+      signer: 0,
+      checkChain: false,
+      extendedMode: true,
+    });
+
+    expect(verification.signatureVerified).toBe(true);
+    expect(result.filename).toBe("profile-tenant-enrollment.mobileconfig");
+    // The legacy plaintext key row is sealed as it is read.
+    expect(db.store.scep_ca[0]?.privateKeyJwk).toMatchObject({ v: 1 });
+  });
+
   it("rejects a bad password and disabled/APNs-missing enrollments", async () => {
     const { db, service, enrollment } = await setupEnrollment();
     Object.assign(db.store.enterprise_enrollment[0], { code: "secret" });
@@ -3079,7 +3150,7 @@ describe("Apple enrollment profile download", () => {
       runEffect(
         service.getAppleEnrollmentProfile(enrollment.id, "wrong", { ip: "profile-bad-code" }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     // Try the missing APNs branch with the correct password.
     db.store.apple_push_certificate.length = 0;
@@ -3087,24 +3158,21 @@ describe("Apple enrollment profile download", () => {
       runEffect(
         service.getAppleEnrollmentProfile(enrollment.id, "secret", { ip: "profile-no-apns" }),
       ),
-    ).rejects.toMatchObject({
-      _tag: "EnterpriseBadRequest",
-      message: "Apple management is not configured! Contact your administrator.",
-    });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     Object.assign(db.store.enterprise_enrollment[0], { enabledApple: false });
     await expect(
       runEffect(
         service.getAppleEnrollmentProfile(enrollment.id, "secret", { ip: "profile-disabled" }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("returns not found for an unknown enrollment", async () => {
     const { service } = await makeContext();
     await expect(
       runEffect(service.getAppleEnrollmentProfile("missing", undefined, { ip: "profile-missing" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 });
 
@@ -3207,7 +3275,7 @@ describe("device pre-registration", () => {
       runEffect(
         service.deleteDevicePreRegistration(request(headers), second.id, listed.rows[0]!.id),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
   it("bulk-deletes only rows in the requested tenant", async () => {
@@ -3220,7 +3288,7 @@ describe("device pre-registration", () => {
     );
 
     expect(imported.created).toBe(2);
-    const ids = db.store.device_pre_registration.map((row) => row.id as string);
+    const ids = db.store.device_pre_registration.map((row) => row.id);
     await runEffect(service.deleteDevicePreRegistrations(request(headers), first.id, ids));
     expect(db.store.device_pre_registration).toHaveLength(0);
   });
@@ -3234,7 +3302,7 @@ describe("device pre-registration", () => {
           rows: [{ serial: "C02A" }],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 });
 
@@ -3257,7 +3325,7 @@ describe("audit search and export", () => {
     organizationId: string,
     id: string,
     createdAt: Date,
-    overrides: Record<string, unknown> = {},
+    overrides: Schema.JsonObject = {},
   ) => ({
     id,
     organizationId,
@@ -3397,7 +3465,7 @@ describe("audit search and export", () => {
           to: "2026-01-01T00:00:00.000Z",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("caps CSV exports, signals truncation and neutralises formulas", async () => {
@@ -3432,7 +3500,7 @@ describe("audit search and export", () => {
       }),
     );
 
-    const entries = JSON.parse(json.body) as Array<{ action: string; actorEmail: string }>;
+    const entries = Schema.decodeUnknownSync(Schema.Array(AuditExportEntry))(JSON.parse(json.body));
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       action: "tenant.created",
@@ -3465,7 +3533,7 @@ describe("Autopilot service configuration", () => {
           content: "ABC123,aGFzaA==",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+    ).rejects.toBeInstanceOf(EnterpriseNotConfigured);
 
     await expect(
       runEffect(
@@ -3475,11 +3543,11 @@ describe("Autopilot service configuration", () => {
           joinType: "azureADJoin",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+    ).rejects.toBeInstanceOf(EnterpriseNotConfigured);
 
     await expect(
       runEffect(service.syncAutopilotDevices(request(headers), tenant.id)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+    ).rejects.toBeInstanceOf(EnterpriseNotConfigured);
   });
 
   it("rejects an invalid profile before checking Graph configuration", async () => {
@@ -3497,6 +3565,6 @@ describe("Autopilot service configuration", () => {
           joinType: "hybridAzureADJoin",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 });

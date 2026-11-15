@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import {
   PolicyMergeError,
   androidPolicyHash,
@@ -51,9 +52,11 @@ describe("mergeAndroidPolicies", () => {
   });
 
   it("skips null and undefined instead of erasing earlier values", () => {
+    const invalid = { cameraDisabled: null, applications: undefined };
+
     const merged = mergeAndroidPolicies([
       { cameraDisabled: true, applications: [{ packageName: "a" }] },
-      { cameraDisabled: null as unknown as boolean, applications: undefined },
+      invalid,
     ]);
 
     expect(merged).toEqual({ applications: [{ packageName: "a" }], cameraDisabled: true });
@@ -68,12 +71,17 @@ describe("mergeAndroidPolicies", () => {
   it("sorts keys deterministically", () => {
     const merged = mergeAndroidPolicies([{ zeta: 1, alpha: { beta: 2, gamma: 3 } }]);
     expect(Object.keys(merged)).toEqual(["alpha", "zeta"]);
-    expect(Object.keys(merged["alpha"] as Record<string, unknown>)).toEqual(["beta", "gamma"]);
+
+    const alpha = merged["alpha"];
+
+    if (!Schema.is(Schema.JsonObject)(alpha)) throw new Error("alpha must be a JSON object");
+
+    expect(Object.keys(alpha)).toEqual(["beta", "gamma"]);
   });
 
   it("does not mutate its inputs", () => {
     const first = { applications: [{ packageName: "a" }] };
-    const snapshot = JSON.parse(JSON.stringify(first)) as unknown;
+    const snapshot = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(first)));
     mergeAndroidPolicies([first, { applications: [{ packageName: "b" }] }]);
     expect(first).toEqual(snapshot);
   });

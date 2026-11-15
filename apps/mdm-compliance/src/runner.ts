@@ -1,12 +1,17 @@
-import type { Check, CheckResult, Platform, RunOptions, RunReport, RunSummary } from "./types.ts";
+import { Schema } from "effect";
+import type { Check, CheckResult, CheckStatus, Platform, RunOptions, RunReport, RunSummary } from "./types.ts";
 import { PLATFORMS } from "./types.ts";
 
 export const SUITE_VERSION = "1.0.0";
 
-const emptyByPlatform = (): RunSummary["byPlatform"] =>
-  Object.fromEntries(
-    PLATFORMS.map((platform) => [platform, { total: 0, passed: 0, failed: 0 }]),
-  ) as RunSummary["byPlatform"];
+const emptyCounts = () => ({ total: 0, passed: 0, failed: 0 });
+
+const emptyByPlatform = (): RunSummary["byPlatform"] => ({
+  apple: emptyCounts(),
+  windows: emptyCounts(),
+  android: emptyCounts(),
+  scep: emptyCounts(),
+});
 
 export const filterChecks = (
   checks: ReadonlyArray<Check>,
@@ -38,16 +43,28 @@ export const filterChecks = (
   });
 };
 
-const errorMessage = (error: unknown): string => {
+const errorMessage = (error: Error | Schema.Json): string => {
   if (error instanceof Error) return error.message;
 
-  if (typeof error === "string") return error;
+  if (Schema.is(Schema.String)(error)) return error;
 
   try {
     return JSON.stringify(error);
   } catch {
-    return String(error);
+    return "Unserializable failure";
   }
+};
+
+function isPrimitiveThrown(value: unknown): value is bigint | symbol {
+  return typeof value === "bigint" || typeof value === "symbol";
+}
+
+const describeFailure = (cause: unknown): string => {
+  if (cause instanceof Error || Schema.is(Schema.Json)(cause)) return errorMessage(cause);
+
+  if (isPrimitiveThrown(cause)) return String(cause);
+
+  return "Unserializable failure";
 };
 
 const withTimeout = async <A>(
@@ -73,14 +90,14 @@ const withTimeout = async <A>(
   }
 };
 
-const platformName = (platform: Platform): string =>
-  platform === "scep"
-    ? "SCEP"
-    : platform === "apple"
-      ? "Apple"
-      : platform === "windows"
-        ? "Windows"
-        : "Android";
+const PLATFORM_NAMES = new Map<Platform, string>([
+  ["scep", "SCEP"],
+  ["apple", "Apple"],
+  ["windows", "Windows"],
+  ["android", "Android"],
+]);
+
+const platformName = (platform: Platform): string => PLATFORM_NAMES.get(platform) ?? platform;
 
 export async function runChecks(
   checks: ReadonlyArray<Check>,
@@ -105,7 +122,7 @@ export async function runChecks(
       await withTimeout(check.run(), options.timeoutMs, check.id);
     } catch (cause) {
       status = "failed";
-      error = errorMessage(cause);
+      error = describeFailure(cause);
     } finally {
       console.error = originalConsoleError;
     }
@@ -115,7 +132,7 @@ export async function runChecks(
     if (status === "passed") byPlatform[check.platform].passed++;
     else byPlatform[check.platform].failed++;
 
-    const result: CheckResult = {
+    const base = {
       id: check.id,
       platform: check.platform,
       category: check.category,
@@ -124,8 +141,9 @@ export async function runChecks(
       dayN: Boolean(check.dayN),
       status,
       durationMs,
-      ...(error ? { error } : {}),
     };
+
+    const result: CheckResult = error === undefined ? base : { ...base, error };
 
     results.push(result);
     onResult?.(result);
@@ -155,8 +173,14 @@ export async function runChecks(
   };
 }
 
+const STATUS_BADGES = new Map<CheckStatus, string>([
+  ["passed", "PASS"],
+  ["failed", "FAIL"],
+  ["skipped", "SKIP"],
+]);
+
 export const formatResult = (result: CheckResult, verbose = false): string => {
-  const badge = result.status === "passed" ? "PASS" : result.status === "failed" ? "FAIL" : "SKIP";
+  const badge = STATUS_BADGES.get(result.status) ?? "SKIP";
   const dayN = result.dayN ? " [day-N]" : "";
   const line = `${badge}  ${result.id}${dayN}  ${result.name} (${result.durationMs}ms)`;
 

@@ -1,12 +1,15 @@
 import { Meta, Title } from "@solidjs/meta";
 import { useParams, useSearchParams } from "@solidjs/router";
-import { useQuery } from "@tanstack/solid-query";
-import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain";
+import { QueryClientProvider, useQuery } from "@tanstack/solid-query";
+import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain/client";
+import { Match as EffectMatch, Schema } from "effect";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import {
   enterprise,
   type AndroidEnrollment,
@@ -15,8 +18,26 @@ import {
   type WindowsEnrollment,
 } from "~/lib/enterprise";
 import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
+import { queryClient } from "~/lib/query-client";
 
-export default function EnrollPage() {
+const isAuthenticatedEnrollment = (
+  value: EnrollmentResponse | undefined,
+): value is Extract<EnrollmentResponse, { authenticated: true }> => value?.authenticated === true;
+
+const AppleReady = Schema.Struct({ profile: Schema.String });
+
+const WindowsReady = Schema.Struct({ discoveryUrl: Schema.String });
+
+const AndroidReady = Schema.Struct({
+  qrCode: Schema.optional(Schema.NullOr(Schema.String)),
+  enrollmentToken: Schema.String,
+  policyName: Schema.optional(Schema.NullOr(Schema.String)),
+  expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const ErrorEnrollment = Schema.Struct({ error: Schema.String });
+
+function EnrollPage() {
   const params = useParams();
   const [search, setSearch] = useSearchParams();
   const searchCode = () => (Array.isArray(search.code) ? search.code[0] : search.code);
@@ -38,6 +59,13 @@ export default function EnrollPage() {
   );
 
   const branding = () => enrollment.data?.branding;
+
+  const authenticated = () => {
+    const value = enrollment.data;
+
+    return isAuthenticatedEnrollment(value) ? value : undefined;
+  };
+
   const brandName = () => branding()?.displayName ?? "Mattrax";
   const brandColor = () => branding()?.brandColor ?? DEFAULT_BRAND_COLOR;
   const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
@@ -49,33 +77,42 @@ export default function EnrollPage() {
   };
 
   return (
-    <main class="min-h-svh bg-stone-950 px-4 py-10 text-stone-950">
+    <main
+      class="min-h-svh bg-stone-950 px-4 py-10 text-stone-950"
+      style={{ "color-scheme": "light" }}
+    >
       <Title>Enroll in {brandName()}</Title>
       <Meta name="robots" content="noindex" />
       <div class="mx-auto flex min-h-[calc(100svh-5rem)] max-w-md items-center">
-        <Card class="w-full overflow-hidden bg-white">
+        <Card class="theme-light w-full overflow-hidden bg-white">
           <div class="h-1.5" style={{ "background-color": brandColor() }} />
           <CardHeader class="text-center">
             <Show when={branding()?.logo}>
               {(logo) => (
-                <img src={logo()} alt="" class="mx-auto mb-2 h-12 max-w-[12rem] object-contain" />
+                <img
+                  src={logo()}
+                  alt=""
+                  width="922"
+                  height="142"
+                  class="mx-auto mb-2 h-12 w-auto max-w-[12rem] object-contain"
+                />
               )}
             </Show>
-            <CardTitle>Enroll in {brandName()}</CardTitle>
+            <CardTitle>
+              <h1>Enroll in {brandName()}</h1>
+            </CardTitle>
             <CardDescription>
               <Show when={enrollment.data} fallback="Verifying enrollment link...">
-                {(data) => (
-                  <>
-                    Enroll a device into{" "}
-                    <span class="font-medium text-stone-900">{data().branding.displayName}</span>.
-                  </>
-                )}
+                Choose how to enroll this device.
               </Show>
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Show when={enrollment.isError}>
-              <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div
+                role="alert"
+                class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
                 This enrollment link is invalid or unavailable. Contact your administrator.
               </div>
             </Show>
@@ -85,55 +122,81 @@ export default function EnrollPage() {
                 <p class="text-sm text-muted-foreground">
                   Your administrator has set an enrollment password.
                 </p>
-                <Input
-                  value={code()}
-                  onInput={(event) => setCode(event.currentTarget.value)}
-                  placeholder="Enrollment password"
-                  autofocus
-                />
+                <div class="space-y-1.5">
+                  <Label for="enrollment-password" class="text-sm text-stone-700">
+                    Enrollment password
+                  </Label>
+                  <Input
+                    id="enrollment-password"
+                    type="password"
+                    autocomplete="off"
+                    value={code()}
+                    onInput={(event) => setCode(event.currentTarget.value)}
+                    aria-invalid={searchCode() ? "true" : undefined}
+                    aria-describedby={
+                      searchCode()
+                        ? "enrollment-password-hint enrollment-password-error"
+                        : "enrollment-password-hint"
+                    }
+                    autofocus
+                  />
+                  <p id="enrollment-password-hint" class="text-xs text-muted-foreground">
+                    Enter the password provided by your administrator.
+                  </p>
+                </div>
                 <Button type="submit" class="w-full">
                   Continue
                 </Button>
                 <Show when={searchCode()}>
-                  <p class="text-center text-sm text-red-600">
+                  <p
+                    id="enrollment-password-error"
+                    role="alert"
+                    class="text-center text-sm text-red-600"
+                  >
                     The enrollment password is invalid.
                   </p>
                 </Show>
               </form>
             </Show>
 
-            <Show when={enrollment.data?.authenticated === true}>
-              <Show when={deviceLimit()}>
-                {(deviceLimit) => (
-                  <Show when={deviceLimit().reached}>
-                    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                      <p class="font-medium">{DEVICE_LIMIT_REACHED_TITLE}</p>
-                      <p class="mt-1">{deviceLimitReachedMessage(deviceLimit().limit)}</p>
-                    </div>
+            <Show when={authenticated()}>
+              {(authenticatedEnrollment) => (
+                <>
+                  <Show when={deviceLimit()}>
+                    {(deviceLimit) => (
+                      <Show when={deviceLimit().reached}>
+                        <div
+                          role="alert"
+                          class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                        >
+                          <p class="font-medium">{DEVICE_LIMIT_REACHED_TITLE}</p>
+                          <p class="mt-1">{deviceLimitReachedMessage(deviceLimit().limit)}</p>
+                        </div>
+                      </Show>
+                    )}
                   </Show>
-                )}
-              </Show>
-              <EnrollmentOptions
-                enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>}
-                id={params.id}
-                code={searchCode() ?? ""}
-                brandColor={brandColor()}
-              />
-              <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
-                <p class="text-sm font-medium text-stone-800">Scan to open this page</p>
-                <QrCode value={enrollmentUrl()} label="QR code for this enrollment link" />
-                <p class="max-w-xs text-center text-xs text-muted-foreground">
-                  This QR code contains the enrollment link only.
-                  <Show when={searchCode()}> It does not include the enrollment password.</Show>
-                </p>
-              </div>
+                  <EnrollmentOptions
+                    enrollment={authenticatedEnrollment()}
+                    id={params.id}
+                    code={searchCode() ?? ""}
+                    brandColor={brandColor()}
+                  />
+                  <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
+                    <p class="text-sm font-medium text-stone-800">Scan to open this page</p>
+                    <QrCode value={enrollmentUrl()} label="QR code for this enrollment link" />
+                    <p class="max-w-xs text-center text-xs text-muted-foreground">
+                      This QR code contains the enrollment link only.
+                      <Show when={searchCode()}> It does not include the enrollment password.</Show>
+                    </p>
+                  </div>
+                </>
+              )}
             </Show>
 
             <div class="mt-5 border-t pt-4 text-center text-xs text-muted-foreground">
               Need help?{" "}
               <a
-                class="font-medium underline"
-                style={{ color: brandColor() }}
+                class="font-medium text-stone-600 underline decoration-stone-400 underline-offset-2 hover:text-stone-900"
                 href={`mailto:${supportEmail()}`}
               >
                 Contact {supportEmail()}
@@ -150,8 +213,9 @@ type Platform = "apple" | "windows" | "android";
 
 const isAvailable = (value: PlatformEnrollment | WindowsEnrollment | AndroidEnrollment) =>
   value === "available" ||
-  (typeof value === "object" &&
-    ("profile" in value || "discoveryUrl" in value || "enrollmentToken" in value));
+  Schema.is(AppleReady)(value) ||
+  Schema.is(WindowsReady)(value) ||
+  Schema.is(AndroidReady)(value);
 
 function EnrollmentOptions(props: {
   id: string | undefined;
@@ -175,46 +239,121 @@ function EnrollmentOptions(props: {
   const [tab, setTab] = createSignal<Platform>(firstAvailable());
   const active = () => tab();
 
+  const tabRefs = new Map<Platform, HTMLButtonElement>();
+
+  const selectTab = (next: Platform) => {
+    setTab(next);
+    tabRefs.get(next)?.focus();
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent) => {
+    if (event.isComposing) return;
+    const order = platforms();
+    const current = order.indexOf(active());
+    const last = order.length - 1;
+
+    const next = EffectMatch.value(event.key).pipe(
+      EffectMatch.when("ArrowRight", () => order[current === last ? 0 : current + 1]),
+      EffectMatch.when("ArrowDown", () => order[current === last ? 0 : current + 1]),
+      EffectMatch.when("ArrowLeft", () => order[current === 0 ? last : current - 1]),
+      EffectMatch.when("ArrowUp", () => order[current === 0 ? last : current - 1]),
+      EffectMatch.when("Home", () => order[0]),
+      EffectMatch.when("End", () => order[last]),
+      EffectMatch.orElse(() => undefined),
+    );
+
+    if (!next) return;
+    event.preventDefault();
+    selectTab(next);
+  };
+
   return (
     <div class="space-y-4">
-      <div class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1">
+      <div
+        role="tablist"
+        aria-label="Enrollment platform"
+        tabindex={-1}
+        class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1"
+        onKeyDown={handleTabKeyDown}
+      >
         <For each={platforms()}>
           {(platform) => (
-            <TabButton active={active() === platform} onClick={() => setTab(platform)}>
-              {platform === "apple" ? "Apple" : platform === "windows" ? "Windows" : "Android"}
+            <TabButton
+              platform={platform}
+              active={active() === platform}
+              onSelect={() => selectTab(platform)}
+              ref={(element) => tabRefs.set(platform, element)}
+            >
+              {EffectMatch.value(platform).pipe(
+                EffectMatch.when("apple", () => "Apple"),
+                EffectMatch.when("windows", () => "Windows"),
+                EffectMatch.orElse(() => "Android"),
+              )}
             </TabButton>
           )}
         </For>
       </div>
       <Switch>
         <Match when={active() === "apple"}>
-          <ApplePane
-            apple={props.enrollment.apple}
-            id={props.id}
-            code={props.code}
-            brandColor={props.brandColor}
-          />
+          <TabPanel platform="apple">
+            <ApplePane
+              apple={props.enrollment.apple}
+              id={props.id}
+              code={props.code}
+              brandColor={props.brandColor}
+            />
+          </TabPanel>
         </Match>
         <Match when={active() === "windows"}>
-          <WindowsPane windows={props.enrollment.windows} />
+          <TabPanel platform="windows">
+            <WindowsPane windows={props.enrollment.windows} />
+          </TabPanel>
         </Match>
         <Match when={active() === "android"}>
-          <AndroidPane id={props.id} android={props.enrollment.android} />
+          <TabPanel platform="android">
+            <AndroidPane id={props.id} android={props.enrollment.android} />
+          </TabPanel>
         </Match>
       </Switch>
     </div>
   );
 }
 
-function TabButton(props: { active: boolean; onClick: () => void; children: string }) {
+function TabPanel(props: { platform: Platform; children: JSX.Element }) {
+  return (
+    <div
+      role="tabpanel"
+      id={`enrollment-panel-${props.platform}`}
+      aria-labelledby={`enrollment-tab-${props.platform}`}
+      tabindex={0}
+      class="outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+    >
+      {props.children}
+    </div>
+  );
+}
+
+function TabButton(props: {
+  platform: Platform;
+  active: boolean;
+  onSelect: () => void;
+  ref?: (element: HTMLButtonElement) => void;
+  children: string;
+}) {
   return (
     <button
+      ref={props.ref}
       type="button"
-      onClick={props.onClick}
+      role="tab"
+      id={`enrollment-tab-${props.platform}`}
+      aria-selected={props.active ? "true" : "false"}
+      aria-controls={props.active ? `enrollment-panel-${props.platform}` : undefined}
+      tabindex={props.active ? 0 : -1}
+      onClick={props.onSelect}
       class={
         props.active
-          ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm"
-          : "rounded-md px-3 py-2 text-sm text-stone-600"
+          ? "rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm"
+          : "rounded-md px-3 py-2 text-sm text-stone-600 hover:bg-stone-100 hover:text-stone-900"
       }
     >
       {props.children}
@@ -228,10 +367,10 @@ function ApplePane(props: {
   code: string;
   brandColor: string;
 }) {
-  if (typeof props.apple === "object" && "error" in props.apple)
+  if (Schema.is(ErrorEnrollment)(props.apple))
     return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
 
-  if (typeof props.apple !== "object" || !("profile" in props.apple))
+  if (!Schema.is(AppleReady)(props.apple))
     return (
       <p class="text-center text-sm text-muted-foreground">Apple enrollment is unavailable.</p>
     );
@@ -270,10 +409,10 @@ function ApplePane(props: {
 }
 
 function WindowsPane(props: { windows: WindowsEnrollment }) {
-  if (typeof props.windows === "object" && "error" in props.windows)
+  if (Schema.is(ErrorEnrollment)(props.windows))
     return <p class="text-center text-sm text-red-600">{props.windows.error}</p>;
 
-  if (typeof props.windows !== "object" || !("discoveryUrl" in props.windows))
+  if (!Schema.is(WindowsReady)(props.windows))
     return (
       <p class="text-center text-sm text-muted-foreground">Windows enrollment is unavailable.</p>
     );
@@ -297,9 +436,19 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
       <p class="text-sm text-muted-foreground">
         Add this discovery URL to your Windows provisioning package or Autopilot profile.
       </p>
-      <div class="flex gap-2">
-        <Input readonly value={url} onClick={(event) => event.currentTarget.select()} />
-        <Button variant="outline" onClick={copy}>
+      <div class="flex items-start gap-2">
+        <div class="min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2">
+          <Label for="windows-discovery-url" class="sr-only">
+            Windows discovery URL
+          </Label>
+          <code
+            id="windows-discovery-url"
+            class="block break-all font-mono text-[11px] leading-5 text-stone-700"
+          >
+            {url}
+          </code>
+        </div>
+        <Button variant="outline" aria-label="Copy Windows discovery URL" onClick={copy}>
           {copied() ? "Copied" : "Copy"}
         </Button>
       </div>
@@ -337,10 +486,10 @@ function WindowsPane(props: { windows: WindowsEnrollment }) {
 }
 
 function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment }) {
-  if (typeof props.android === "object" && "error" in props.android)
+  if (Schema.is(ErrorEnrollment)(props.android))
     return <p class="text-center text-sm text-red-600">{props.android.error}</p>;
 
-  if (typeof props.android !== "object" || !("enrollmentToken" in props.android))
+  if (!Schema.is(AndroidReady)(props.android))
     return (
       <div class="space-y-3 text-center text-sm text-muted-foreground">
         <p>
@@ -375,14 +524,17 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
         )}
       </Show>
       <div class="space-y-2">
-        <p class="text-sm font-medium text-stone-800">Enrollment token</p>
+        <Label for="android-enrollment-token" class="text-sm font-medium text-stone-800">
+          Enrollment token
+        </Label>
         <div class="flex gap-2">
           <Input
+            id="android-enrollment-token"
             readonly
             value={android.enrollmentToken}
             onClick={(event) => event.currentTarget.select()}
           />
-          <Button variant="outline" onClick={copy}>
+          <Button variant="outline" aria-label="Copy Android enrollment token" onClick={copy}>
             {copied() ? "Copied" : "Copy"}
           </Button>
         </div>
@@ -406,5 +558,13 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
         <li>Follow the prompts to finish provisioning. The device appears in Mattrax shortly.</li>
       </ol>
     </div>
+  );
+}
+
+export default function EnrollRoute() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <EnrollPage />
+    </QueryClientProvider>
   );
 }

@@ -1,18 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Predicate, Schema } from "effect";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
 import {
+  AppleDeviceEvent,
+  CheckinScope,
   ManagementBackend,
+  ManagementManifest,
   ManagementNotSupported,
   UnknownDevice,
   MdmOrigin,
 } from "@mattrax/management-backend";
 import { mockManagementBackend } from "./helpers.js";
-import { parsePlist } from "@mattrax/plist";
+import { parsePlist, PlistValue } from "@mattrax/plist";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
 const TEST_MDM_ORIGIN = new MdmOrigin({ url: TEST_CONFIG.origin });
+const DeviceCheckinScope = CheckinScope.members[0];
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
+function expectScope(scope: CheckinScope | undefined): CheckinScope {
+  if (!scope) throw new Error("expected a check-in scope");
+
+  return scope;
+}
+
+
 
 function runWithService<A, E>(
   backendLayer: Layer.Layer<ManagementBackend>,
@@ -32,10 +45,10 @@ function runWithService<A, E>(
 describe("AppleMdmService", () => {
   describe("handleAuthenticate", () => {
     it("sends an Authenticate event to the backend", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -58,17 +71,20 @@ describe("AppleMdmService", () => {
       );
 
       expect(receivedEvent).toBeDefined();
-      const ev = receivedEvent as { _tag: string; serialNumber: string; model: string };
-      expect(ev._tag).toBe("Authenticate");
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "Authenticate"))
+        throw new Error("expected a Authenticate event");
+
       expect(ev.serialNumber).toBe("SN123");
       expect(ev.model).toBe("MacBookPro18,1");
     });
 
     it("passes the identity certificate serial to the backend scope", async () => {
-      let receivedScope: unknown;
+      let receivedScope: CheckinScope | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (scope: unknown) =>
+        appleDeviceEvent: (scope: CheckinScope) =>
           Effect.sync(() => {
             receivedScope = scope;
           }),
@@ -93,8 +109,10 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      expect(receivedScope).toMatchObject({
-        _tag: "device",
+      const scope = expectScope(receivedScope);
+
+      expect(Predicate.isTagged(scope, "device")).toBe(true);
+      expect(scope).toMatchObject({
         udid: "udid-123",
         identityCertificate: "CN=Device,OU=org-1",
         identityCertificateFingerprintSha256: "fingerprint-1",
@@ -144,10 +162,10 @@ describe("AppleMdmService", () => {
     });
 
     it("uses ModelName as fallback for Model", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -167,17 +185,20 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { model: string };
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "Authenticate"))
+        throw new Error("expected a Authenticate event");
       expect(ev.model).toBe("MacBookPro17,1");
     });
   });
 
   describe("handleTokenUpdate", () => {
     it("sends a device-scoped TokenUpdate", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -198,17 +219,20 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { _tag: string; pushToken: string; channel: string };
-      expect(ev._tag).toBe("TokenUpdate");
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "TokenUpdate"))
+        throw new Error("expected a TokenUpdate event");
+
       expect(ev.pushToken).toBe("746573742d746f6b656e"); // hex of base64 "dGVzdC10b2tlbg=="
       expect(ev.channel).toBe("device");
     });
 
     it("sends a user-scoped TokenUpdate when UserID is present", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -230,17 +254,20 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { channel: string };
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "TokenUpdate"))
+        throw new Error("expected a TokenUpdate event");
       expect(ev.channel).toBe("user");
     });
   });
 
   describe("handleCheckOut", () => {
     it("sends a CheckOut event", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -259,17 +286,17 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { _tag: string };
-      expect(ev._tag).toBe("CheckOut");
+      if (!receivedEvent || !Predicate.isTagged(receivedEvent, "CheckOut"))
+        throw new Error("expected a CheckOut event");
     });
   });
 
   describe("handleCommandResult", () => {
     it("sends a CommandResult with status", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -288,16 +315,19 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { _tag: string; status: string };
-      expect(ev._tag).toBe("CommandResult");
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "CommandResult"))
+        throw new Error("expected a CommandResult event");
+
       expect(ev.status).toBe("Acknowledged");
     });
 
     it("includes errorDetail from ErrorChain", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -320,16 +350,19 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { errorDetail: string };
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "CommandResult"))
+        throw new Error("expected a CommandResult event");
       expect(ev.errorDetail).toContain("MDMClientError:89");
       expect(ev.errorDetail).toContain("MDMErrorDomain:12075");
     });
 
     it("includes queryResponses when present", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -349,7 +382,10 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { queryResponses: Record<string, unknown> };
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "CommandResult"))
+        throw new Error("expected a CommandResult event");
       expect(ev.queryResponses).toEqual({ DeviceName: "TestMac" });
     });
   });
@@ -358,12 +394,13 @@ describe("AppleMdmService", () => {
     it("returns a command when backend returns Command", async () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () =>
-          Effect.succeed({
-            _tag: "Command" as const,
-            commandUUID: "cmd-001",
-            requestType: "DeviceInformation",
-            payload: { Queries: ["DeviceName"] },
-          }),
+          Effect.succeed(
+            ManagementManifest.members[1].make({
+              commandUUID: "cmd-001",
+              requestType: "DeviceInformation",
+              payload: { Queries: ["DeviceName"] },
+            }),
+          ),
       });
 
       const result = await runWithService(
@@ -371,11 +408,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin({
-            _tag: "device",
-            udid: "udid-123",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -386,7 +419,8 @@ describe("AppleMdmService", () => {
 
     it("returns null when backend returns Idle", async () => {
       const backend = mockManagementBackend({
-        appleManagementCheckin: () => Effect.succeed({ _tag: "Idle" } as const),
+        appleManagementCheckin: () =>
+          Effect.succeed(ManagementManifest.members[0].make({})),
       });
 
       const result = await runWithService(
@@ -394,11 +428,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin({
-            _tag: "device",
-            udid: "udid-123",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -408,10 +438,11 @@ describe("AppleMdmService", () => {
     it("returns a DeclarativeManagement command for DdmSync", async () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () =>
-          Effect.succeed({
-            _tag: "DdmSync" as const,
-            serverToken: "token-abc",
-          }),
+          Effect.succeed(
+            ManagementManifest.members[2].make({
+              serverToken: "token-abc",
+            }),
+          ),
       });
 
       const result = await runWithService(
@@ -419,11 +450,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin({
-            _tag: "device",
-            udid: "udid-123",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -442,11 +469,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleCheckin({
-            _tag: "device",
-            udid: "unknown",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleCheckin(DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -472,11 +495,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarativeTokens({
-            _tag: "device",
-            udid: "udid-123",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleDeclarativeTokens(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -494,11 +513,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarativeTokens({
-            _tag: "device",
-            udid: "unknown",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleDeclarativeTokens(DeviceCheckinScope.make({ udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       )
         .then(() => "Success")
@@ -525,11 +540,7 @@ describe("AppleMdmService", () => {
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
 
-          return yield* service.handleDeclarationItems({
-            _tag: "device",
-            udid: "udid-123",
-            mdmOrigin: TEST_MDM_ORIGIN,
-          });
+          return yield* service.handleDeclarationItems(DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }));
         }),
       );
 
@@ -552,7 +563,7 @@ describe("AppleMdmService", () => {
           const service = yield* AppleMdmService;
 
           return yield* service.handleDeclaration(
-            { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
             "configurations",
             "decl-1",
           );
@@ -573,7 +584,7 @@ describe("AppleMdmService", () => {
           const service = yield* AppleMdmService;
 
           return yield* service.handleDeclaration(
-            { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
             "configurations",
             "missing",
           );
@@ -588,10 +599,10 @@ describe("AppleMdmService", () => {
 
   describe("handleStatusReport", () => {
     it("sends a DeclarationStatus event", async () => {
-      let receivedEvent: unknown;
+      let receivedEvent: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -603,7 +614,7 @@ describe("AppleMdmService", () => {
           const service = yield* AppleMdmService;
 
           return yield* service.handleStatusReport(
-            { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
+            DeviceCheckinScope.make({ udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN }),
             {
               StatusItems: { test: true },
               Errors: [
@@ -617,11 +628,14 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const ev = receivedEvent as { _tag: string; statusItems: unknown; errors: any[] };
-      expect(ev._tag).toBe("DeclarationStatus");
+      const ev = receivedEvent;
+
+      if (!ev || !Predicate.isTagged(ev, "DeclarationStatus"))
+        throw new Error("expected a DeclarationStatus event");
+
       expect(ev.errors).toHaveLength(1);
-      expect(ev.errors[0].statusItem).toBe("management.declarations");
-      expect(ev.errors[0].reasons[0].description).toBe("Test error");
+      expect(ev.errors?.[0]?.statusItem).toBe("management.declarations");
+      expect(ev.errors?.[0]?.reasons?.[0]?.description).toBe("Test error");
     });
   });
 
@@ -642,32 +656,108 @@ describe("AppleMdmService", () => {
         }),
       );
 
-      const parsed = (await Effect.runPromise(parsePlist(profile))) as any;
+      const parsed = await Effect.runPromise(parsePlist(profile));
 
-      expect(parsed.PayloadType).toBe("Configuration");
-      expect(parsed.PayloadIdentifier).toBe("com.mattrax.enrollment");
-      expect(parsed.PayloadContent).toHaveLength(2);
+      if (!Schema.is(PlistDictionary)(parsed)) throw new Error("profile must be a plist dictionary");
 
-      const scepPayload = parsed.PayloadContent.find(
-        (p: any) => p.PayloadType === "com.apple.security.scep",
+      expect(parsed["PayloadType"]).toBe("Configuration");
+      expect(parsed["PayloadIdentifier"]).toBe("com.mattrax.enrollment");
+
+      const content = parsed["PayloadContent"];
+
+      if (!Array.isArray(content)) throw new Error("profile must have a PayloadContent array");
+
+      const scepPayload = content.find(
+        (payload) =>
+          Schema.is(PlistDictionary)(payload) &&
+          payload["PayloadType"] === "com.apple.security.scep",
       );
 
-      expect(scepPayload).toBeDefined();
-      expect(scepPayload.PayloadContent.URL).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep`);
-      expect(scepPayload.PayloadContent.Challenge).toBe("enrollment-123.signature");
-      expect(scepPayload.PayloadContent.Subject).toEqual([
+      if (!scepPayload || !Schema.is(PlistDictionary)(scepPayload))
+        throw new Error("profile must have an SCEP payload");
+
+      const scepContent = scepPayload["PayloadContent"];
+
+      if (!Schema.is(PlistDictionary)(scepContent))
+        throw new Error("SCEP payload must have content");
+
+      expect(scepContent["URL"]).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep`);
+      expect(scepContent["Challenge"]).toBe("enrollment-123.signature");
+      expect(scepContent["Subject"]).toEqual([
         [["O", "Acme"]],
         [["OU", "tenant-123"]],
         [["CN", "Acme Identity"]],
       ]);
 
-      const mdmPayload = parsed.PayloadContent.find((p: any) => p.PayloadType === "com.apple.mdm");
-      expect(mdmPayload).toBeDefined();
-      expect(mdmPayload.ServerURL).toBe(`${TEST_CONFIG.origin}/mdm/apple/mdm`);
-      expect(mdmPayload.Topic).toBe(TEST_CONFIG.topic);
-      expect(mdmPayload.AccessRights).toBe(8191);
-      expect(mdmPayload.ServerCapabilities).toContain("com.apple.mdm.bootstraptoken");
-      expect(mdmPayload.ServerCapabilities).toContain("com.apple.mdm.token");
+      const mdmPayload = content.find(
+        (payload) =>
+          Schema.is(PlistDictionary)(payload) && payload["PayloadType"] === "com.apple.mdm",
+      );
+
+      if (!mdmPayload || !Schema.is(PlistDictionary)(mdmPayload))
+        throw new Error("profile must have an MDM payload");
+
+      expect(mdmPayload["ServerURL"]).toBe(`${TEST_CONFIG.origin}/mdm/apple/mdm`);
+      expect(mdmPayload["Topic"]).toBe(TEST_CONFIG.topic);
+      expect(mdmPayload["AccessRights"]).toBe(8191);
+      expect(mdmPayload["ServerCapabilities"]).toContain("com.apple.mdm.bootstraptoken");
+      expect(mdmPayload["ServerCapabilities"]).toContain("com.apple.mdm.token");
+    });
+  });
+
+  describe("verifyDeviceSignature", () => {
+    const trustedService = (requireSignature: boolean) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        const config = yield* AppleMdmConfig;
+
+        return AppleMdmService.make({
+          backend,
+          config,
+          topic: TEST_CONFIG.topic,
+          trust: { requireSignature, caCertPems: Effect.succeed([]) },
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            mockManagementBackend(),
+            AppleMdmConfig.layer({ origin: TEST_CONFIG.origin }),
+          ),
+        ),
+      );
+
+    it("fails closed when a signature is required but missing", async () => {
+      const service = await Effect.runPromise(trustedService(true));
+
+      const error = await Effect.runPromise(
+        service.verifyDeviceSignature({ body: new ArrayBuffer(0) }).pipe(Effect.flip),
+      );
+
+      expect(error).toMatchObject({ message: "Missing Mdm-Signature" });
+    });
+
+    it("fails closed when a signature is required but no CA is configured", async () => {
+      const service = await Effect.runPromise(trustedService(true));
+
+      const error = await Effect.runPromise(
+        service
+          .verifyDeviceSignature({ signature: "AAAA", body: new ArrayBuffer(0) })
+          .pipe(Effect.flip),
+      );
+
+      expect(error).toMatchObject({
+        message: "No SCEP CA configured to verify Mdm-Signature",
+      });
+    });
+
+    it("leaves signature checks optional for hosts that do not opt in", async () => {
+      const service = await Effect.runPromise(trustedService(false));
+
+      await expect(
+        Effect.runPromise(
+          service.verifyDeviceSignature({ signature: "AAAA", body: new ArrayBuffer(0) }),
+        ),
+      ).resolves.toBeNull();
     });
   });
 });

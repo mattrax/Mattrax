@@ -3,13 +3,10 @@ export * as schema from "./schema.ts";
 export {
   AuthPersistenceConfig,
   authCredentials,
-  authEmailCredentials,
   authIdentifiers,
   authPasskeyCredentials,
   authPasskeyFlows,
-  authPasswords,
   authPending,
-  authProofs,
   authRequirement,
   authRequirementForSubject,
   authSchema,
@@ -17,6 +14,7 @@ export {
   authStorage,
   authTotpFactors,
   hasMfaFactor,
+  passkeyRegistrationMapping,
   totpMapping,
 } from "./schema.ts";
 

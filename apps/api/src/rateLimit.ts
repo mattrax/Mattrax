@@ -23,14 +23,12 @@ export type RateLimitRule = {
   readonly windowSeconds: 10 | 60;
 };
 
-/** POST endpoints that issue proofs, sessions or password changes. */
+/** POST endpoints that issue sessions or mutate authentication factors. */
 export const SENSITIVE_AUTH_PATHS = new Set([
-  "/api/v1/signIn",
-  "/api/v1/register",
-  "/api/v1/requestReset",
-  "/api/v1/requestEmailCode",
-  "/api/v1/beginEmailSignIn",
-  "/api/v1/completeEmailCode",
+  "/api/v1/beginPasskeySignIn",
+  "/api/v1/completePasskeySignIn",
+  "/api/v1/beginPasskeyRegistration",
+  "/api/v1/completePasskeyRegistration",
   "/api/v1/ssoSignIn",
   "/api/v1/verify-email",
   "/api/v1/account/email-change",
@@ -42,8 +40,6 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/confirmTotpEnrollment",
   "/api/v1/disableTotp",
   "/api/v1/regenerateTotpRecoveryCodes",
-  "/api/v1/changePassword",
-  "/api/v1/completeReset",
 ]);
 
 /**
@@ -55,7 +51,28 @@ export const SENSITIVE_AUTH_PATHS = new Set([
 export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined => {
   const { pathname } = new URL(request.url);
 
+  // Bootstrap is a cheap, authenticated read over the web Worker's service
+  // binding. It is account-scoped (no tenant lookup) and deliberately outside
+  // the credential-stuffing buckets: the API still requires a valid session.
+  if (pathname === "/api/v1/bootstrap") return undefined;
+
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname))
+    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+
+  // Invitation links are bearer credentials: preview and accept are public, so
+  // they share the auth bucket's credential-stuffing ceiling.
+  if (
+    (request.method === "POST" && pathname === "/api/v1/invitations/accept") ||
+    (request.method === "GET" && pathname === "/api/v1/invitations/preview")
+  )
+    return { bucket: "auth", limit: 120, windowSeconds: 60 };
+
+  // Creating and resending invitations sends mail; keep them in the auth bucket
+  // so a compromised member cannot fan out unbounded messages.
+  if (
+    request.method === "POST" &&
+    /^\/api\/v1\/tenants\/[^/]+\/invitations(?:\/[^/]+\/resend)?$/.test(pathname)
+  )
     return { bucket: "auth", limit: 120, windowSeconds: 60 };
 
   // Passkey ceremonies and step-up factor verification are credential checks.
@@ -97,25 +114,29 @@ export type RateLimitBindingLike = {
 
 export type RateLimitBindings = Partial<Record<RateLimitBucket, RateLimitBindingLike>>;
 
+export type RateLimitEnv = {
+  readonly RATE_LIMITER_AUTH?: RateLimitBindingLike;
+  readonly RATE_LIMITER_ENROLLMENT?: RateLimitBindingLike;
+  readonly RATE_LIMITER_MDM?: RateLimitBindingLike;
+  readonly RATE_LIMITER_SCIM?: RateLimitBindingLike;
+  readonly RATE_LIMITER_BILLING?: RateLimitBindingLike;
+  readonly RATE_LIMITER_SCEP?: RateLimitBindingLike;
+};
+
 /**
  * Read the optional Cloudflare Rate Limiting bindings from the Worker env.
  * Every bucket has its own binding name; any missing binding (or a
  * deployment that did not configure a namespace) simply falls back to the
  * per-isolate limiter for that bucket.
  */
-export const rateLimitBindingsFromEnv = (env: unknown): RateLimitBindings => {
-  const candidate = env as Record<string, unknown>;
-  const binding = (name: string) => candidate[name] as RateLimitBindingLike | undefined;
-
-  return {
-    auth: binding("RATE_LIMITER_AUTH"),
-    enrollment: binding("RATE_LIMITER_ENROLLMENT"),
-    mdm: binding("RATE_LIMITER_MDM"),
-    scim: binding("RATE_LIMITER_SCIM"),
-    billing: binding("RATE_LIMITER_BILLING"),
-    scep: binding("RATE_LIMITER_SCEP"),
-  };
-};
+export const rateLimitBindingsFromEnv = (env: RateLimitEnv): RateLimitBindings => ({
+  auth: env.RATE_LIMITER_AUTH,
+  enrollment: env.RATE_LIMITER_ENROLLMENT,
+  mdm: env.RATE_LIMITER_MDM,
+  scim: env.RATE_LIMITER_SCIM,
+  billing: env.RATE_LIMITER_BILLING,
+  scep: env.RATE_LIMITER_SCEP,
+});
 
 export type RateLimitOutcome = {
   readonly limited: boolean;
@@ -132,16 +153,16 @@ export type RateLimiterOptions = {
   readonly store?: RateLimitStore;
   readonly now?: () => number;
   readonly maxEntries?: number;
-  readonly warn?: (message: string, error?: unknown) => void;
+  readonly warn?: (message: string, cause?: unknown) => void;
 };
 
 const DEFAULT_MAX_ENTRIES = 10_000;
 
-export const makeRateLimiter = ({
+export const createRateLimiter = ({
   store = new Map<string, Counter>(),
   now = Date.now,
   maxEntries = DEFAULT_MAX_ENTRIES,
-  warn = (message, error) => console.warn(message, error),
+  warn = (message, cause) => console.warn(message, cause),
 }: RateLimiterOptions = {}) => {
   const prune = () => {
     if (store.size < maxEntries) return;
@@ -207,12 +228,12 @@ export const makeRateLimiter = ({
               limit: rule.limit,
               retryAfterSeconds: rule.windowSeconds,
             };
-      } catch (error) {
+      } catch (cause) {
         // A limiter outage must not take down auth or enrollment. Keep serving
         // with the per-isolate fallback and make the degradation visible.
         warn(
           `Cloudflare rate limiter failed for bucket ${rule.bucket}; using local fallback`,
-          error,
+          cause,
         );
       }
     }
@@ -223,7 +244,7 @@ export const makeRateLimiter = ({
   return { check, store };
 };
 
-export type RateLimiter = ReturnType<typeof makeRateLimiter>;
+export type RateLimiter = ReturnType<typeof createRateLimiter>;
 
 /** Stable JSON body for 429s so clients and probes can branch on `error`. */
 export const rateLimitResponse = (outcome: RateLimitOutcome, requestId: string): Response => {

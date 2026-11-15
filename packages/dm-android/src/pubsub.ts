@@ -54,7 +54,7 @@ export class PubSubDecodeError extends Data.TaggedError("PubSubDecodeError")<{
  */
 export type DecodedPubSubPush = {
   readonly notificationType: string | undefined;
-  readonly data: unknown;
+  readonly data: Schema.Json;
   readonly messageId: string;
   readonly subscription: string;
   readonly attributes: Readonly<Record<string, string>>;
@@ -64,7 +64,7 @@ export type DecodedPubSubPush = {
 export type NotificationLike = {
   readonly notificationType?: string | undefined;
   readonly attributes?: Readonly<Record<string, string>> | undefined;
-  readonly data?: unknown;
+  readonly data?: Schema.Json;
 };
 
 function decodeBase64Utf8(data: string): string {
@@ -78,24 +78,21 @@ function decodeBase64Utf8(data: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-function parsePushBody(input: unknown): Effect.Effect<PubSubPushEnvelope, PubSubDecodeError> {
-  const json =
-    typeof input === "string"
-      ? Effect.try({
-          try: () => JSON.parse(input) as unknown,
-          catch: (cause) =>
-            new PubSubDecodeError({ message: "Push body is not valid JSON", cause }),
-        })
-      : Effect.succeed(input);
+function parseJson(text: string): Schema.Json {
+  return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
+}
+
+function parsePushBody(input: Schema.Json): Effect.Effect<PubSubPushEnvelope, PubSubDecodeError> {
+  const json = Schema.is(Schema.String)(input)
+    ? Effect.try({
+        try: () => parseJson(input),
+        catch: (cause) => new PubSubDecodeError({ message: "Push body is not valid JSON", cause }),
+      })
+    : Effect.succeed(input);
 
   return json.pipe(
     Effect.flatMap((value) =>
-      (
-        Schema.decodeUnknownEffect(PubSubPushEnvelope)(value) as Effect.Effect<
-          PubSubPushEnvelope,
-          unknown
-        >
-      ).pipe(
+      Schema.decodeUnknownEffect(PubSubPushEnvelope)(value).pipe(
         Effect.mapError(
           (cause) => new PubSubDecodeError({ message: "Invalid Pub/Sub push envelope", cause }),
         ),
@@ -105,7 +102,7 @@ function parsePushBody(input: unknown): Effect.Effect<PubSubPushEnvelope, PubSub
 }
 
 /** Decode the base64 `message.data` field into parsed JSON. */
-export function decodePubSubData(data: string): Effect.Effect<unknown, PubSubDecodeError> {
+export function decodePubSubData(data: string): Effect.Effect<Schema.Json, PubSubDecodeError> {
   return Effect.gen(function* () {
     const json = yield* Effect.try({
       try: () => decodeBase64Utf8(data),
@@ -114,7 +111,7 @@ export function decodePubSubData(data: string): Effect.Effect<unknown, PubSubDec
     });
 
     return yield* Effect.try({
-      try: () => JSON.parse(json) as unknown,
+      try: () => parseJson(json),
       catch: (cause) =>
         new PubSubDecodeError({ message: "Pub/Sub message data is not valid JSON", cause }),
     });
@@ -130,7 +127,7 @@ export function decodePubSubData(data: string): Effect.Effect<unknown, PubSubDec
  * present (older/simplified payloads).
  */
 export function decodePubSubPush(
-  input: unknown,
+  input: Schema.Json,
 ): Effect.Effect<DecodedPubSubPush, PubSubDecodeError> {
   return Effect.gen(function* () {
     const envelope = yield* parsePushBody(input);
@@ -144,17 +141,14 @@ export function decodePubSubPush(
     const data = yield* decodePubSubData(envelope.message.data);
     const attributes = envelope.message.attributes ?? {};
 
-    const dataRecord =
-      typeof data === "object" && data !== null && !Array.isArray(data)
-        ? (data as Record<string, unknown>)
-        : undefined;
+    const dataRecord = Schema.is(Schema.JsonObject)(data) ? data : undefined;
 
     const inlineType = dataRecord?.["notificationType"];
 
     return {
       notificationType:
         attributes[NOTIFICATION_TYPE_ATTRIBUTE] ??
-        (typeof inlineType === "string" ? inlineType : undefined),
+        (Schema.is(Schema.String)(inlineType) ? inlineType : undefined),
       data,
       messageId: envelope.message.messageId,
       subscription: envelope.subscription,
@@ -165,16 +159,16 @@ export function decodePubSubPush(
 
 /** Decode a Pub/Sub push body and return only the JSON resource payload. */
 export function decodePubSubNotification(
-  input: unknown,
-): Effect.Effect<unknown, PubSubDecodeError> {
+  input: Schema.Json,
+): Effect.Effect<Schema.Json, PubSubDecodeError> {
   return decodePubSubPush(input).pipe(Effect.map((push) => push.data));
 }
 
-function readString(source: unknown, key: string): string | undefined {
-  if (typeof source !== "object" || source === null) return undefined;
-  const value = (source as Record<string, unknown>)[key];
+function readString(source: Schema.Json | undefined, key: string): string | undefined {
+  if (!Schema.is(Schema.JsonObject)(source)) return undefined;
+  const value = source[key];
 
-  return typeof value === "string" ? value : undefined;
+  return Schema.is(Schema.String)(value) ? value : undefined;
 }
 
 /** Notification type, from the push attributes or an inline field. */
@@ -204,19 +198,20 @@ export function enrollmentState(notification: NotificationLike): string | undefi
  * Operation without a `commandStatus` field.
  */
 export function commandStatus(notification: NotificationLike): string | undefined {
-  if (typeof notification.data !== "object" || notification.data === null) return undefined;
-  const operation = notification.data as Record<string, unknown>;
+  const operation = notification.data;
 
-  const metadata =
-    typeof operation.metadata === "object" && operation.metadata !== null
-      ? (operation.metadata as Record<string, unknown>)
-      : undefined;
+  if (!Schema.is(Schema.JsonObject)(operation)) return undefined;
 
-  if (metadata && typeof metadata.errorCode === "string") return "FAILED";
+  const rawMetadata = operation["metadata"];
+  const metadata = Schema.is(Schema.JsonObject)(rawMetadata) ? rawMetadata : undefined;
 
-  if (operation.error !== undefined) return "FAILED";
+  if (metadata && Schema.is(Schema.String)(metadata["errorCode"])) return "FAILED";
 
-  if (typeof operation.done === "boolean") return operation.done ? "COMPLETED" : "PENDING";
+  if (operation["error"] !== undefined) return "FAILED";
+
+  const done = operation["done"];
+
+  if (Schema.is(Schema.Boolean)(done)) return done ? "COMPLETED" : "PENDING";
 
   return undefined;
 }

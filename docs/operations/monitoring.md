@@ -52,8 +52,7 @@ failures:
 - `api_request` — method, path, status, duration, tenant and error tag for every
   user-facing API call.
 - `auth_signed_in`, `auth_mfa_pending`, `auth_register_submitted`, `auth_signed_out`,
-  `auth_email_verified`,
-  `auth_password_reset_completed`, `auth_sso_signed_in` and
+  `auth_email_verified`, `auth_sso_signed_in` and
   `member_invitation_accepted` conversion events. The dashboard emits
   `auth_registered` only after registration and the first sign-in both succeed.
 - Named operation events such as `tenant_created`, `policy_created`,

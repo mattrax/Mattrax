@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { arrayBufferToBase64, exportPrivateKeyJwk, generateCaKeyPair } from "@mattrax/crypto";
@@ -8,21 +8,26 @@ import { MdmOrigin, UnknownDevice } from "@mattrax/management-backend";
 import {
   createWindowsEnrollmentToken,
   createWindowsTenantToken,
-  makeWindowsBackend,
+  createWindowsBackend,
   verifyWindowsEnrollmentToken,
   verifyWindowsEnrollmentTokenDetailed,
   verifyWindowsTenantToken,
   verifyWindowsTenantTokenDetailed,
   windowsTenantTokenExpiresAt,
 } from "../windows.js";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import {   dbRows, makeDb, tableName, type Store, dateValue } from "./fake-db.js";
+import {
+  WINDOWS_INVENTORY_REQUESTS,
+  WINDOWS_INVENTORY_URI,
+} from "../windowsInventory.js";
 import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
+import type { Row } from "./fake-db.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -88,15 +93,15 @@ const setup = async (
     requireDeviceIdentity?: boolean;
     tenantTokenTtlSeconds?: number;
     planLimits?: ReturnType<typeof parsePlanLimits>;
-    subscription?: Record<string, unknown>;
-    devices?: Array<Record<string, unknown>>;
-    ssoConfig?: Array<Record<string, unknown>>;
-    federated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
+    subscription?: Row;
+    devices?: Array<Row>;
+    ssoConfig?: Array<Row>;
+    federated?: Parameters<typeof createWindowsBackend>[0]["federated"];
   } = {},
 ) => {
   const ca = await makeCa();
 
-  const db = makeDb({
+  const initial: Store = {
     [tableName(schema.organization)]: [
       organizationRow("org-late", new Date("2024-02-01T00:00:00Z")),
       organizationRow("org-early", new Date("2024-01-01T00:00:00Z")),
@@ -108,14 +113,19 @@ const setup = async (
       enrollmentRow("org-late"),
       enrollmentRow("org-early"),
     ],
-    ...(overrides.subscription
-      ? { [tableName(schema.subscription)]: [overrides.subscription] }
-      : {}),
-    ...(overrides.devices ? { [tableName(schema.device)]: overrides.devices } : {}),
-    ...(overrides.ssoConfig ? { [tableName(schema.ssoConfig)]: overrides.ssoConfig } : {}),
-  });
+  };
 
-  const backend = makeWindowsBackend({
+  if (overrides.subscription)
+    initial[tableName(schema.subscription)] = [overrides.subscription];
+
+  if (overrides.devices) initial[tableName(schema.device)] = overrides.devices;
+
+  if (overrides.ssoConfig) initial[tableName(schema.ssoConfig)] = overrides.ssoConfig;
+
+  const db = makeDb(initial);
+
+  // SAFETY: The fake store implements only the query chains these tests exercise.
+  const backend = createWindowsBackend({
     db: db as any,
     origin,
     authSecret,
@@ -126,7 +136,7 @@ const setup = async (
     requireDeviceIdentity: overrides.requireDeviceIdentity,
     tenantTokenTtlSeconds: overrides.tenantTokenTtlSeconds,
     planLimits: overrides.planLimits,
-    ...(overrides.federated ? { federated: overrides.federated } : {}),
+    federated: overrides.federated,
   });
 
   return { ca, db, backend };
@@ -142,11 +152,25 @@ const enrollmentRequest = (authToken: string, csr: string, deviceId = "device-1"
   mdmOrigin,
 });
 
+/**
+ * Mark the seeded devices as freshly inventoried so tests that assert on
+ * policy/operator commands are not coupled to the inventory `Get` requests that
+ * a genuinely new device receives on its first check-in.
+ */
+const suppressInventory = (db: ReturnType<typeof makeDb>) => {
+  const now = new Date();
+
+  for (const row of db.store[tableName(schema.device)] ?? []) {
+    row.inventoryRequestedAt = now;
+    row.inventoryUpdatedAt = now;
+  }
+};
+
 const federatedTenantId = "11111111-1111-1111-1111-111111111111";
 const federatedAudience = "22222222-2222-2222-2222-222222222222";
 
 const base64Url = (value: Uint8Array | string): string => {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const bytes = Schema.is(Schema.String)(value) ? new TextEncoder().encode(value) : value;
   let binary = "";
 
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -166,7 +190,7 @@ const makeFederatedSigner = async () => {
     ["sign", "verify"],
   );
 
-  const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
 
   return {
     privateKey: pair.privateKey,
@@ -187,7 +211,7 @@ const makeFederatedSigner = async () => {
 
 const makeFederatedToken = async (
   signer: Awaited<ReturnType<typeof makeFederatedSigner>>,
-  overrides: Record<string, unknown> = {},
+  overrides: Row = {},
 ) => {
   const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "federated-test-key" }));
   const now = Math.floor(Date.now() / 1000);
@@ -277,7 +301,7 @@ describe("Windows enterprise backend", () => {
     // enrollment.
     const forged = await createWindowsEnrollmentToken("subject", "wrong-secret");
     await expect(run(backend.getWindowsEnrollmentPolicy(forged))).rejects.toMatchObject({
-      _tag: "UnknownDevice",
+      _tag: "UnknownDevice" as const,
     });
 
     // An authentic token whose lifetime elapsed may start a fresh enrollment
@@ -377,7 +401,7 @@ describe("Windows enterprise backend", () => {
     const csr = await makeCsr();
     await expect(
       run(backend.windowsEnroll(enrollmentRequest(policy.authToken, csr, "device-1"))),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
     expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
   });
 
@@ -438,14 +462,14 @@ describe("Windows enterprise backend", () => {
 
     await expect(
       run(backend.windowsEnroll(enrollmentRequest("forged.token.value", csr))),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
       now: Date.now() - 2 * 60 * 60 * 1000,
     });
 
     await expect(run(backend.windowsEnroll(enrollmentRequest(expired, csr)))).rejects.toMatchObject(
-      { _tag: "UnknownDevice" },
+      { _tag: "UnknownDevice" as const },
     );
   });
 
@@ -484,6 +508,7 @@ describe("Windows enterprise backend", () => {
     const { backend, db } = await setup();
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
 
     const old = new Date("2020-01-01T00:00:00Z");
     db.store[tableName(schema.device)]![0]!.lastSeenAt = old;
@@ -504,13 +529,229 @@ describe("Windows enterprise backend", () => {
 
     expect(response).toEqual({ commands: [] });
     const device = db.store[tableName(schema.device)]![0]!;
-    expect(device.lastSeenAt.getTime()).toBeGreaterThan(old.getTime());
+    expect(dateValue(device.lastSeenAt).getTime()).toBeGreaterThan(old.getTime());
+  });
+
+  it("requests inventory on the first check-in and throttles repeats", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const checkin = () =>
+      run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-1", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: [],
+            alerts: [],
+          },
+        ),
+      );
+
+    const first = await checkin();
+    const gets = first.commands.filter((command) => command.kind === "Get");
+
+    expect(gets).toHaveLength(WINDOWS_INVENTORY_REQUESTS.length);
+    expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.osVersion);
+    expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.serial);
+    expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.model);
+    expect(dateValue(db.store[tableName(schema.device)]![0]!.inventoryRequestedAt)).toBeInstanceOf(
+      Date,
+    );
+
+    // The same check-in cycle must not re-ask. Only a report (or the refresh
+    // interval) can make inventory due again.
+    expect((await checkin()).commands).toEqual([]);
+  });
+
+  it("applies a SyncML Results report to the device row", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    const results = [
+      {
+        cmdID: "3",
+        msgRef: "1",
+        cmdRef: "windows-inventory-os-version",
+        items: [
+          {
+            source: { locURI: WINDOWS_INVENTORY_URI.osVersion },
+            data: "10.0.19045.3803",
+          },
+        ],
+      },
+      {
+        cmdID: "4",
+        msgRef: "1",
+        // No Source: the stable inventory command id identifies the URI.
+        cmdRef: "windows-inventory-serial",
+        items: [{ data: "SERIAL-123" }],
+      },
+      {
+        cmdID: "5",
+        msgRef: "1",
+        cmdRef: "windows-inventory-device-name",
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.deviceName }, data: "DESKTOP-ABC" }],
+      },
+      {
+        cmdID: "6",
+        msgRef: "1",
+        cmdRef: "windows-inventory-model",
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.model }, data: "Surface Laptop 5" }],
+      },
+      {
+        cmdID: "7",
+        msgRef: "1",
+        cmdRef: "windows-inventory-system-sku",
+        items: [
+          { source: { locURI: WINDOWS_INVENTORY_URI.systemSKU }, data: "Surface_Laptop_5" },
+        ],
+      },
+      {
+        cmdID: "8",
+        msgRef: "1",
+        cmdRef: "windows-inventory-os-platform",
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.osPlatform }, data: "Windows 11 Pro" }],
+      },
+      {
+        cmdID: "9",
+        msgRef: "1",
+        cmdRef: "windows-inventory-total-storage",
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.totalStorage }, data: "512000" }],
+      },
+      {
+        cmdID: "10",
+        msgRef: "1",
+        cmdRef: "windows-inventory-free-storage",
+        items: [{ source: { locURI: WINDOWS_INVENTORY_URI.freeStorage }, data: "128000" }],
+      },
+    ];
+
+    const response = await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+          results,
+        },
+      ),
+    );
+
+    // A successful report satisfies the cadence guard for this session.
+    expect(response.commands).toEqual([]);
+
+    const device = dbRows(db, tableName(schema.device))[0]!;
+    expect(device).toMatchObject({
+      model: "Surface Laptop 5",
+      modelIdentifier: "Surface_Laptop_5",
+      serial: "SERIAL-123",
+      osEdition: "Windows 11 Pro",
+      osVersion: "10.0.19045",
+      osBuild: "19045.3803",
+      diskTotal: String(512000 * 1024 * 1024),
+      diskUsed: String((512000 - 128000) * 1024 * 1024),
+    });
+    // Enrollment supplied a human name, so the inventory one must not replace it.
+    expect(device.name).toBe("DESKTOP-TEST");
+    expect(dateValue(device.inventoryUpdatedAt)).toBeInstanceOf(Date);
+  });
+
+  it("fills an enrollment placeholder name from inventory", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    db.store[tableName(schema.device)]![0]!.name = "device-1";
+
+    await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+          results: [
+            {
+              cmdID: "3",
+              msgRef: "1",
+              cmdRef: "windows-inventory-device-name",
+              items: [
+                { source: { locURI: WINDOWS_INVENTORY_URI.deviceName }, data: "DESKTOP-ABC" },
+              ],
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(dbRows(db, tableName(schema.device))[0]!.name).toBe("DESKTOP-ABC");
+  });
+
+  it("does not reuse another device's serial", async () => {
+    const now = new Date("2024-01-01T00:00:00Z");
+
+    const { backend, db } = await setup({
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "EXISTING",
+          serial: "SERIAL-123",
+          dmIdentifier: "device-existing",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "device-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+          results: [
+            {
+              cmdID: "3",
+              msgRef: "1",
+              cmdRef: "windows-inventory-serial",
+              items: [{ source: { locURI: WINDOWS_INVENTORY_URI.serial }, data: "SERIAL-123" }],
+            },
+          ],
+        },
+      ),
+    );
+
+    const enrolled = dbRows(db, tableName(schema.device)).find((row) => row.id !== "existing")!;
+    expect(enrolled.serial ?? null).toBeNull();
   });
 
   it("requires a matching client certificate when configured", async () => {
-    const { backend } = await setup({ requireDeviceIdentity: true });
+    const { backend, db } = await setup({ requireDeviceIdentity: true });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
 
     await expect(
       run(
@@ -565,7 +806,7 @@ describe("Windows enterprise backend", () => {
           },
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
   });
 
   it("upserts on Enrolled and touches the device on CommandResult", async () => {
@@ -574,7 +815,7 @@ describe("Windows enterprise backend", () => {
       backend.windowsDeviceEvent(
         { deviceId: "device-2", mdmOrigin },
         {
-          _tag: "Enrolled",
+          _tag: "Enrolled" as const,
           deviceId: "device-2",
         },
       ),
@@ -593,10 +834,10 @@ describe("Windows enterprise backend", () => {
     await run(
       backend.windowsDeviceEvent(
         { deviceId: "device-2", mdmOrigin },
-        { _tag: "CommandResult", deviceId: "device-2", status: "200" },
+        { _tag: "CommandResult" as const, deviceId: "device-2", status: "200" },
       ),
     );
-    expect(db.store[tableName(schema.device)]![0]!.lastSeenAt.getTime()).toBeGreaterThan(
+    expect(dateValue(db.store[tableName(schema.device)]![0]!.lastSeenAt).getTime()).toBeGreaterThan(
       old.getTime(),
     );
   });
@@ -622,7 +863,7 @@ describe("Windows enterprise backend", () => {
           mdmOrigin,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
   });
 });
 
@@ -707,13 +948,13 @@ describe("Windows tenant enrollment tokens", () => {
           tenantToken: earlyToken,
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     // Replaying the late tenant's WSTEP token through the early tenant's
     // policy endpoint must also fail.
     await expect(
       run(backend.getWindowsEnrollmentPolicy(policy.authToken, { tenantToken: earlyToken })),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
   });
 
   it("rejects a tenant token that disagrees with the client certificate", async () => {
@@ -741,7 +982,7 @@ describe("Windows tenant enrollment tokens", () => {
           },
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
   });
 });
 
@@ -762,6 +1003,7 @@ describe("Windows identity lifecycle", () => {
     const { backend, db } = await setup({ requireDeviceIdentity: true });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
 
     const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0]!;
     const storedCertificate = db.store[tableName(schema.scepIssuedCertificate)]![0]!;
@@ -769,7 +1011,7 @@ describe("Windows identity lifecycle", () => {
     const scope = {
       deviceId: "device-1",
       identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
-      identityCertificateSerial: certificate.serial as string,
+      identityCertificateSerial: Schema.decodeUnknownSync(Schema.String)(certificate.serial),
       mdmOrigin,
     };
 
@@ -786,7 +1028,7 @@ describe("Windows identity lifecycle", () => {
     });
 
     storedCertificate.revokedAt = new Date();
-    await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     storedCertificate.revokedAt = null;
     await expect(checkin(backend, scope)).resolves.toEqual({ commands: [] });
@@ -805,7 +1047,7 @@ describe("Windows identity lifecycle", () => {
       run(
         backend.windowsDeviceEvent(
           { deviceId: "device-2", tenantToken: token, mdmOrigin },
-          { _tag: "Enrolled", deviceId: "device-2" },
+          { _tag: "Enrolled" as const, deviceId: "device-2" },
         ),
       ),
     ).resolves.toBeUndefined();
@@ -814,10 +1056,10 @@ describe("Windows identity lifecycle", () => {
       run(
         backend.windowsDeviceEvent(
           { deviceId: "device-2", tenantToken: token, mdmOrigin },
-          { _tag: "ManagementCheckin", deviceId: "device-2" },
+          { _tag: "ManagementCheckin" as const, deviceId: "device-2" },
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     await expect(
       run(
@@ -828,7 +1070,7 @@ describe("Windows identity lifecycle", () => {
             tenantToken: token,
             mdmOrigin,
           },
-          { _tag: "ManagementCheckin", deviceId: "device-2" },
+          { _tag: "ManagementCheckin" as const, deviceId: "device-2" },
         ),
       ),
     ).resolves.toBeUndefined();

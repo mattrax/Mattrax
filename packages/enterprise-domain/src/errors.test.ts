@@ -14,7 +14,7 @@ describe("enterprise error diagnostics", () => {
       details: { invitationId: "inv-1" },
     });
     expect(JSON.stringify(error)).toBe(
-      JSON.stringify({ _tag: "EnterpriseBadRequest", message: "Invitation expired" }),
+      JSON.stringify(EnterpriseBadRequest.make({ message: "Invitation expired" })),
     );
   });
 

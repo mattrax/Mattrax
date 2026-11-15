@@ -5,7 +5,7 @@
 declare module "virtual:solid-ssr-handler" {
   export interface SolidHandlerOptions {
     /** Extra fields added to the request event, for example `nativeEvent`. */
-    event?: Record<string, unknown>;
+    event?: Record<string, import("effect").Schema.Json>;
   }
 
   /**

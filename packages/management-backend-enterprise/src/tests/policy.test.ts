@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { verifyAppleAssetToken, verifyAppleProfileToken } from "@mattrax/dm-apple";
 import {
   buildAssetDeclaration,
@@ -56,7 +56,8 @@ describe("enterprise policy compiler", () => {
       Type: "com.apple.configuration.legacy",
       Identifier: "policy-1:mttx.apple.device",
     });
-    const url = new URL((declaration!.Payload as any).ProfileURL);
+    const profileUrl = Schema.decodeUnknownSync(Schema.String)(declaration!.Payload.ProfileURL);
+    const url = new URL(profileUrl);
     expect(url.origin).toBe("https://mdm.example.com");
     expect(url.pathname).toBe("/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device");
     const token = url.searchParams.get("token")!;
@@ -101,9 +102,10 @@ describe("enterprise policy compiler", () => {
       Type: "com.apple.asset.credential.certificate",
       Identifier: "policy-1.mttx.apple.certificate.root.asset",
     });
-    const reference = (asset!.Payload as any).Reference;
+    const reference = Schema.decodeUnknownSync(Schema.JsonObject)(asset!.Payload.Reference);
     expect(reference.ContentType).toBe("application/pem");
-    const url = new URL(reference.DataURL);
+    const assetUrl = Schema.decodeUnknownSync(Schema.String)(reference.DataURL);
+    const url = new URL(assetUrl);
     expect(url.pathname).toBe("/mdm/apple/assets/policy-1.mttx.apple.certificate.root.asset");
     const token = url.searchParams.get("token")!;
     await expect(
@@ -194,7 +196,7 @@ describe("enterprise policy compiler", () => {
 });
 
 describe("policy configuration validation", () => {
-  const validate = (kind: string, data: unknown) =>
+  const validate = (kind: string, data: Schema.Json) =>
     Effect.runPromise(validateConfiguration(kind, data).pipe(Effect.flip));
 
   it("accepts supported kinds", async () => {

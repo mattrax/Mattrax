@@ -1,19 +1,18 @@
 import type { AnyAuthContract } from "@yielded/auth/AuthContract";
+import type { StrategyDefinition, StrategyTypeLambda } from "@yielded/auth/Auth";
 import {
   Auth,
   AuthContract,
-  Email,
   Operations,
   Passkey,
   PasskeyContract,
-  Password,
-  Proofs,
   Schema as AuthSchema,
   Sessions,
   Totp,
   TotpContract,
 } from "@yielded/auth";
-import { Schema } from "effect";
+import type { Effect } from "effect";
+import { Match, Schema } from "effect";
 
 /** Stable TOTP module namespace. It is also the persistence scope for secrets. */
 export const TOTP_MODULE_ID = "mattrax/auth/totp";
@@ -89,45 +88,52 @@ export type AuthClaims = typeof AuthClaims.Type;
 const AUTH_REQUIREMENT_MAX_AGE_MILLIS = 365 * 24 * 60 * 60 * 1000;
 
 /**
- * Assurance required to complete sign-in. Without MFA a single knowledge or
- * possession factor is enough. With MFA the session needs either the password
- * plus a current authenticator code, or a phishing-resistant passkey whose
- * user was verified by the authenticator. Email codes and SSO assertions are
- * possession only, so they cannot replace a factor.
+ * Assurance required to complete sign-in. Passkeys are the primary credential,
+ * so a user-verified phishing-resistant passkey is enough on its own. SSO
+ * assertions are possession-only and are accepted as an enterprise alternative.
+ *
+ * When an authenticator app is enabled it becomes an additional layer: sign-in
+ * then needs the passkey or SSO credential *and* a current authenticator code,
+ * which is why the requirement asks for two distinct credentials.
  */
 export const authenticationRequirement = (
-  mfaEnabled: boolean,
+  totpEnabled: boolean,
 ): Sessions.AuthenticationRequirement => ({
-  alternatives: mfaEnabled
+  alternatives: totpEnabled
     ? [
         {
-          factors: ["knowledge", "possession"],
-          userVerified: false,
-          phishingResistant: false,
+          // Passkey plus authenticator code. The passkey carries the
+          // phishing-resistant, user-verified flag; the code is a second
+          // possession credential.
+          factors: ["possession"],
+          userVerified: true,
+          phishingResistant: true,
           minimumCredentials: 2,
         },
         {
-          // A passkey is possession plus a user-verified, phishing-resistant
-          // ceremony, so it satisfies MFA on its own. TOTP and email codes do
-          // not meet `userVerified`/`phishingResistant`, so they still need the
-          // knowledge factor above.
+          // SSO plus authenticator code. OIDC assertions are possession-only,
+          // so they cannot satisfy the passkey alternative, but they must still
+          // be combined with the second factor. `userVerified` distinguishes an
+          // SSO assertion from a bare authenticator code.
+          factors: ["possession"],
+          userVerified: true,
+          phishingResistant: false,
+          minimumCredentials: 2,
+        },
+      ]
+    : [
+        {
           factors: ["possession"],
           userVerified: true,
           phishingResistant: true,
           minimumCredentials: 1,
         },
-      ]
-    : [
         {
-          factors: ["knowledge"],
-          userVerified: false,
-          phishingResistant: false,
-          minimumCredentials: 1,
-        },
-        {
-          // Passwordless email-code sign-in proves possession of the mailbox.
+          // SSO for accounts that sign in through their organisation instead
+          // of a passkey. Email codes are not a sign-in method, and a bare
+          // authenticator code never satisfies this alternative.
           factors: ["possession"],
-          userVerified: false,
+          userVerified: true,
           phishingResistant: false,
           minimumCredentials: 1,
         },
@@ -137,62 +143,14 @@ export const authenticationRequirement = (
 
 export const Registration = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+  email: Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email)),
 });
 
 export type Registration = typeof Registration.Type;
 
-const email = Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email));
-const password = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
-const secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
-
 export class SsoRejected extends Schema.TaggedError<SsoRejected>()("SsoRejected", {
   message: Schema.String,
 }) {}
-
-export const EmailCodeFailure = Schema.Union([
-  Email.EmailRejected,
-  Email.EmailUnavailable,
-  Email.EmailActionRequired,
-  Email.EmailMethodUnsupported,
-]);
-
-const EmailSignInBase = {
-  flowId: Operations.RequestBindingFlowId,
-  email,
-  returnTarget: Schema.String.check(Schema.isMaxLength(2048)),
-};
-
-export const RequestEmailCodeInput = Schema.Struct({
-  ...EmailSignInBase,
-  requestId: Proofs.ProofRequestId,
-  locale: Schema.String.check(Schema.isMaxLength(32)),
-});
-
-export const CompleteEmailCodeInput = Schema.Struct({
-  ...EmailSignInBase,
-  reference: Proofs.ProofReference,
-  secret,
-});
-
-export const PasswordFailure = Schema.Union([
-  Password.PasswordRejected,
-  Password.PasswordUnavailable,
-  Password.PasswordActionRequired,
-  Password.PasswordMethodUnsupported,
-  Password.NewPasswordRejected,
-  Password.PasswordCheckUnavailable,
-]);
-
-const mutationResult = Schema.Struct({
-  invalidation: Sessions.SessionInvalidationWindow,
-});
-
-const RegisterInput = Schema.Struct({
-  requestId: Password.PasswordCommandId,
-  email,
-  newPassword: password,
-  registration: Registration,
-});
 
 export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
   basePath: "/api/v1",
@@ -210,6 +168,8 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
 
     const passkeyManagement = PasskeyContract.makeManagement(PASSKEY_MODULE_ID);
 
+    const passkeyRegistration = PasskeyContract.makeRegistration(PASSKEY_MODULE_ID, Registration);
+
     /**
      * Private credentials injected by the HTTP boundary from their cookies.
      * They never appear in a public payload or a success value.
@@ -219,92 +179,23 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
     );
 
     return {
-      signIn: AuthContract.passwordSignIn(sessions, { strategy: "password" }),
+      // ---- Registration ---------------------------------------------------
+      // An account is created by registering its first passkey. The library
+      // provisions the subject and credential; the browser then signs in with
+      // that same passkey.
+      beginPasskeyRegistration: AuthContract.fromOperation(
+        passkeyRegistration.operations.Begin,
+        { strategy: "registration", method: "register" },
+      ),
 
-      register: AuthContract.action({
-        payload: RegisterInput,
-        success: Schema.TaggedStruct("RegistrationAccepted", {}),
-        error: PasswordFailure,
-        mode: "mutation",
-        replay: "idempotent",
-        strategy: "password",
-      }),
-
-      requestReset: AuthContract.action({
-        payload: Schema.Struct({
-          flowId: Sessions.AuthenticationFlowId,
-          email,
-          requestId: Proofs.ProofRequestId,
-          locale: Schema.String,
-        }),
-        success: Proofs.ProofRequestReceipt,
-        error: PasswordFailure,
-        mode: "mutation",
-        replay: "non-idempotent",
-        strategy: "password",
-      }),
-
-      completeReset: AuthContract.action({
-        payload: Schema.Struct({
-          flowId: Sessions.AuthenticationFlowId,
-          email,
-          commandId: Password.PasswordCommandId,
-          newPassword: password,
-          reference: Proofs.ProofReference,
-          secret,
-        }),
-        success: mutationResult,
-        error: PasswordFailure,
-        mode: "mutation",
-        replay: "single-use",
-        credentials: true,
-        strategy: "password",
-      }),
-
-      beginEmailSignIn: AuthContract.action({
-        payload: Schema.Struct({ flowId: Operations.RequestBindingFlowId }),
-        success: Operations.RequestBindingPublic,
-        error: EmailCodeFailure,
-        mode: "mutation",
-        credentials: true,
-        replay: "non-idempotent",
-        method: "beginSignIn",
-        strategy: "email",
-      }),
-
-      requestEmailCode: AuthContract.action({
-        payload: RequestEmailCodeInput,
-        success: Proofs.ProofRequestReceipt,
-        error: EmailCodeFailure,
-        mode: "mutation",
-        replay: "non-idempotent",
-        method: "signIn",
-        strategy: "email",
-        requestFields: { requestBinding: "request-binding" },
-      }),
-
-      completeEmailCode: AuthContract.action({
-        payload: CompleteEmailCodeInput,
-        success: Schema.Struct({
-          completion: sessions.CompletionResult,
-          returnTarget: Email.SafeReturnTarget,
-        }),
-        error: EmailCodeFailure,
-        mode: "mutation",
-        credentials: true,
-        replay: "single-use",
-        method: "completeSignIn",
-        strategy: "email",
-        requestFields: { requestBinding: "request-binding" },
-        subject: {
-          fromSuccess: (value) =>
-            value.completion._tag === "Authenticated"
-              ? value.completion.session.subjectId
-              : undefined,
-          sessionFromSuccess: (value) =>
-            value.completion._tag === "Authenticated" ? value.completion.session : undefined,
+      completePasskeyRegistration: AuthContract.fromOperation(
+        passkeyRegistration.operations.Complete,
+        {
+          strategy: "registration",
+          method: "completeRegistration",
+          requestFields: { bindingCredential: "request-binding" },
         },
-      }),
+      ),
 
       ssoSignIn: AuthContract.action({
         payload: Schema.Struct({ token: Schema.String }),
@@ -315,20 +206,6 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
         replay: "single-use",
         method: "signIn",
         strategy: "sso",
-      }),
-
-      changePassword: AuthContract.action({
-        payload: Schema.Struct({
-          commandId: Password.PasswordCommandId,
-          currentPassword: Schema.optionalKey(password),
-          newPassword: password,
-        }),
-        success: mutationResult,
-        error: PasswordFailure,
-        mode: "mutation",
-        replay: "non-idempotent",
-        credentials: true,
-        strategy: "password",
       }),
 
       beginTotpEnrollment: AuthContract.fromOperation(totp.operations.Begin, {
@@ -377,9 +254,15 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
         requestFields: { bindingCredential: "request-binding" },
         subject: {
           fromSuccess: (value) =>
-            value._tag === "Authenticated" ? value.session.subjectId : undefined,
+            Match.value(value).pipe(
+              Match.tag("Authenticated", (completion) => completion.session.subjectId),
+              Match.orElse(() => undefined),
+            ),
           sessionFromSuccess: (value) =>
-            value._tag === "Authenticated" ? value.session : undefined,
+            Match.value(value).pipe(
+              Match.tag("Authenticated", (completion) => completion.session),
+              Match.orElse(() => undefined),
+            ),
         },
       }),
 
@@ -419,9 +302,15 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
         },
         subject: {
           fromSuccess: (value) =>
-            value._tag === "Authenticated" ? value.session.subjectId : undefined,
+            Match.value(value).pipe(
+              Match.tag("Authenticated", (completion) => completion.session.subjectId),
+              Match.orElse(() => undefined),
+            ),
           sessionFromSuccess: (value) =>
-            value._tag === "Authenticated" ? value.session : undefined,
+            Match.value(value).pipe(
+              Match.tag("Authenticated", (completion) => completion.session),
+              Match.orElse(() => undefined),
+            ),
         },
       }),
 
@@ -502,10 +391,25 @@ export const appSessionConfiguration = Sessions.stateful({
 });
 
 /**
- * The auth definition used by server Layers. `resetUrl` is the HTTPS landing
- * page for password-reset links; it defaults to the canonical origin. Keeping
- * it separate lets local HTTP development run with the production reset URL
- * (the proof library refuses non-HTTPS landing pages).
+ * A strategy that has already been built by its module, mirroring the
+ * `BuiltStrategy` contract `@yielded/auth` accepts in its selection (the type
+ * itself is not re-exported from the package root).
+ */
+type BuiltAuthStrategy = {
+  readonly completion?: boolean;
+  readonly make: Effect.Effect<Readonly<Record<string, Auth.AuthMethod>>, unknown, unknown>;
+};
+
+/** Strategy overrides merged into the definition, keyed by strategy name. */
+type ExtraAuthStrategies = Readonly<
+  Record<string, StrategyDefinition<StrategyTypeLambda, string | undefined> | BuiltAuthStrategy>
+>;
+
+/**
+ * The auth definition used by server Layers. Passkeys are the only primary
+ * credential; TOTP is an optional second factor and SSO is an enterprise
+ * alternative. `origin` remains part of the signature because callers build
+ * the relying-party profile from the same deployment origin.
  *
  * Sessions are deliberately not passed here: when any strategy completes
  * authentication the library only enables pending MFA when the application
@@ -513,21 +417,21 @@ export const appSessionConfiguration = Sessions.stateful({
  * provides both the strategy and completion layers from `appSessionConfiguration`.
  */
 export const makeAppAuth = (
-  origin: string,
-  resetUrl?: string,
-  extraStrategies: Record<string, any> = {},
+  _origin: string,
+  extraStrategies: ExtraAuthStrategies = {},
 ): any =>
   Auth.make(AuthApi, {
     strategies: {
-      password: Password.make({
-        registration: Registration,
-        reset: Password.resetLink({ url: resetUrl ?? `${origin}/reset-password` }),
-      }),
-      email: Email.makeCode({ digits: 6 }),
       totp: Totp.make(TOTP_POLICY),
-      // One namespace, four facets. Sign-in, pending MFA, step-up and account
-      // management each need their own strategy entry because the auth API
-      // dispatches by method name, but they share credentials and challenges.
+      // One namespace, five facets. Registration, sign-in, pending MFA,
+      // step-up and account management each need their own strategy entry
+      // because the auth API dispatches by method name, but they share
+      // credentials and challenges.
+      registration: Passkey.makeRegistration({
+        namespace: PASSKEY_MODULE_ID,
+        policy: PASSKEY_POLICY,
+        registration: Registration,
+      }),
       passkey: Passkey.make({
         namespace: PASSKEY_MODULE_ID,
         policy: PASSKEY_POLICY,
@@ -547,7 +451,7 @@ export const makeAppAuth = (
       }),
       ...extraStrategies,
     },
-    defaultStrategy: "password",
+    defaultStrategy: "passkey",
   });
 
 export const AuthDefinition = Object.freeze({

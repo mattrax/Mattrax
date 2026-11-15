@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
@@ -14,6 +14,7 @@ import {
 import { MdmTable } from "~/components/mdm/table";
 import { UsersRound } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
+import { useCan } from "~/lib/permissions";
 
 function MembershipBadge(props: { kind: GroupRow["kind"] }) {
   const dynamic = () => props.kind === "dynamic";
@@ -50,7 +51,7 @@ const fields: ReadonlyArray<EntityField<GroupRow>> = [
 
 export default function GroupsPage() {
   const params = useParams();
-  const navigate = useNavigate();
+  const { can } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
   const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -76,10 +77,15 @@ export default function GroupsPage() {
       <PageHeader
         title="Groups"
         description="Scope devices and policies into reusable deployment targets."
-        actions={<LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>}
+        actions={
+          <Show when={can("groups.write") && filteredRows().length > 0}>
+            <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+          </Show>
+        }
       />
       <MdmTable<GroupRow>
         rows={filteredRows()}
+        selectable={can("groups.write")}
         loading={groups.isPending}
         error={groups.error}
         storageKey="groups"
@@ -87,7 +93,7 @@ export default function GroupsPage() {
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
         searchPlaceholder="Search groups…"
-        onRowClick={(row) => navigate(`/t/${params.tenantId}/groups/${row.id}`)}
+        rowHref={(row) => `/t/${params.tenantId}/groups/${row.id}`}
         actions={(selected, clear) => (
           <EntityActions entity="group" selected={selected} clear={clear} />
         )}
@@ -104,7 +110,9 @@ export default function GroupsPage() {
               title="No groups"
               description="Create a group to organize devices and attach policy scope."
               action={
-                <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+                <Show when={can("groups.write")}>
+                  <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+                </Show>
               }
             />
           )
@@ -144,9 +152,12 @@ export default function GroupsPage() {
             id: "devices",
             header: "Devices",
             sort: (row) => row.devicesCount ?? 0,
-            cell: (row) => (
-              <span class="tabular-nums text-foreground">{row.devicesCount ?? 0}</span>
-            ),
+            cell: (row) =>
+              (row.kind ?? "manual") === "dynamic" ? (
+                <span class="text-muted-foreground">Rule-based</span>
+              ) : (
+                <span class="tabular-nums text-foreground">{row.devicesCount ?? 0}</span>
+              ),
           },
           {
             id: "policies",

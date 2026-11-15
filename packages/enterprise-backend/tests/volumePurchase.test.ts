@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import {
   assignVppLicence,
   openVppToken,
@@ -15,7 +16,7 @@ const authSecret = "vpp-test-secret";
 const organizationId = "org-1";
 const otherOrganizationId = "org-2";
 
-const contentToken = (overrides: Record<string, unknown> = {}) =>
+const contentToken = (overrides: Schema.JsonObject = {}) =>
   btoa(
     JSON.stringify({
       token: "vpp-org-token",
@@ -25,7 +26,7 @@ const contentToken = (overrides: Record<string, unknown> = {}) =>
     }),
   );
 
-const jsonResponse = (body: unknown, status = 200) =>
+const jsonResponse = (body: Schema.Json, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -33,7 +34,7 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const makeFetch = (
   options: {
-    assets?: Array<Record<string, unknown>>;
+    assets?: Array<Schema.JsonObject>;
     tokenStatus?: number;
   } = {},
 ) => {
@@ -62,7 +63,7 @@ const makeFetch = (
       });
 
     return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 500);
-  }) as typeof globalThis.fetch;
+  }) satisfies typeof globalThis.fetch;
 
   return { fetchImpl, calls };
 };
@@ -116,7 +117,7 @@ const saveToken = async (db: any, fetchImpl: typeof fetch) =>
     }),
   );
 
-const seedAsset = (db: any, overrides: Record<string, unknown> = {}) => {
+const seedAsset = (db: ReturnType<typeof makeDb>, overrides: Schema.JsonObject = {}) => {
   const now = new Date();
   db.store.vpp_asset.push({
     organizationId,

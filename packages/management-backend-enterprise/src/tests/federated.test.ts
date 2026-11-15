@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import {
   federatedAuthServiceUrl,
   federatedIssuer,
   federatedJwksUri,
   federatedRealm,
-  isFederatedTokenShaped,
+  isFederatedToken,
   unverifiedFederatedTenantId,
   validateFederatedEntraToken,
   type FederatedJsonWebKeySet,
@@ -14,7 +15,7 @@ const tenantId = "11111111-1111-1111-1111-111111111111";
 const audience = "22222222-2222-2222-2222-222222222222";
 
 const base64Url = (value: Uint8Array | string): string => {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const bytes = Schema.is(Schema.String)(value) ? new TextEncoder().encode(value) : value;
   let binary = "";
 
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -39,7 +40,7 @@ const makeKey = async (kid = "test-key"): Promise<SigningKey> => {
     ["sign", "verify"],
   );
 
-  const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
 
   return {
     privateKey: pair.privateKey,
@@ -60,7 +61,7 @@ const makeKey = async (kid = "test-key"): Promise<SigningKey> => {
 
 const signToken = async (
   key: SigningKey,
-  claims: Record<string, unknown>,
+  claims: Schema.JsonObject,
   options: { alg?: string; kid?: string; signature?: Uint8Array } = {},
 ): Promise<string> => {
   const header = base64Url(
@@ -83,18 +84,21 @@ const signToken = async (
   return `${signingInput}.${base64Url(signature)}`;
 };
 
-const claims = (overrides: Record<string, unknown> = {}) => ({
-  iss: federatedIssuer(tenantId),
-  aud: audience,
-  tid: tenantId,
-  sub: "subject-1",
-  oid: "object-1",
-  preferred_username: "user@contoso.com",
-  exp: Math.floor(Date.now() / 1000) + 3_600,
-  nbf: Math.floor(Date.now() / 1000) - 10,
-  iat: Math.floor(Date.now() / 1000) - 10,
-  ...overrides,
-});
+const claims = (overrides: Schema.JsonObject = {}) =>
+  Object.assign(
+    {
+      iss: federatedIssuer(tenantId),
+      aud: audience,
+      tid: tenantId,
+      sub: "subject-1",
+      oid: "object-1",
+      preferred_username: "user@contoso.com",
+      exp: Math.floor(Date.now() / 1000) + 3_600,
+      nbf: Math.floor(Date.now() / 1000) - 10,
+      iat: Math.floor(Date.now() / 1000) - 10,
+    },
+    overrides,
+  );
 
 const validate = async (
   token: string,
@@ -208,9 +212,9 @@ describe("federated Entra token validation", () => {
   it("routes by the unverified tenant claim but still requires verification", async () => {
     const key = await makeKey();
     const token = await signToken(key, claims());
-    expect(isFederatedTokenShaped(token)).toBe(true);
+    expect(isFederatedToken(token)).toBe(true);
     expect(unverifiedFederatedTenantId(token)).toBe(tenantId);
-    expect(isFederatedTokenShaped("opaque")).toBe(false);
+    expect(isFederatedToken("opaque")).toBe(false);
   });
 
   it("builds tenant-specific issuer, JWKS and auth-service URLs", () => {

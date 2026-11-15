@@ -1,3 +1,4 @@
+import { Match } from "effect";
 import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
@@ -38,8 +39,10 @@ const inline = (text: string): JSX.Element[] => {
           <img
             src={src}
             alt={parts?.[1] ?? ""}
+            width={640}
+            height={360}
             loading="lazy"
-            class="my-2 max-h-56 max-w-full rounded-lg border border-white/[0.08] object-contain"
+            class="my-2 h-auto max-h-56 w-auto max-w-full rounded-lg border border-white/[0.08] object-contain"
           />
         ) : (
           token
@@ -101,7 +104,6 @@ export function Markdown(props: { content: string }) {
       }
 
       if (line.startsWith("```")) {
-        const language = line.slice(3).trim();
         const body: string[] = [];
         index++;
 
@@ -125,18 +127,22 @@ export function Markdown(props: { content: string }) {
         const level = heading[1]!.length;
         const content = inline(heading[2]!);
         output.push(() =>
-          level === 1 ? (
-            <h2 class="mb-1.5 mt-3 text-[15px] font-semibold text-foreground first:mt-0">
-              {content}
-            </h2>
-          ) : level === 2 ? (
-            <h3 class="mb-1.5 mt-3 text-[13.5px] font-semibold text-foreground first:mt-0">
-              {content}
-            </h3>
-          ) : (
-            <h4 class="mb-1 mt-2.5 text-[12.5px] font-semibold text-foreground first:mt-0">
-              {content}
-            </h4>
+          Match.value(level).pipe(
+            Match.when(1, () => (
+              <h2 class="mb-1.5 mt-3 text-[15px] font-semibold text-foreground first:mt-0">
+                {content}
+              </h2>
+            )),
+            Match.when(2, () => (
+              <h3 class="mb-1.5 mt-3 text-[13.5px] font-semibold text-foreground first:mt-0">
+                {content}
+              </h3>
+            )),
+            Match.orElse(() => (
+              <h4 class="mb-1 mt-2.5 text-[12.5px] font-semibold text-foreground first:mt-0">
+                {content}
+              </h4>
+            )),
           ),
         );
         index++;

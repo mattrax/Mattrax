@@ -66,21 +66,21 @@ export type RunReport = {
 };
 
 export const isPlatform = (value: string): value is Platform =>
-  (PLATFORMS as ReadonlyArray<string>).includes(value);
+  PLATFORMS.some((platform) => platform === value);
+
+export const CHECK_CATEGORIES = [
+  "enrollment",
+  "check-in",
+  "commands",
+  "declarative-management",
+  "management",
+  "certificates",
+  "authentication",
+  "policy",
+  "notifications",
+  "day-n",
+  "errors",
+] as const satisfies ReadonlyArray<CheckCategory>;
 
 export const isCheckCategory = (value: string): value is CheckCategory =>
-  (
-    [
-      "enrollment",
-      "check-in",
-      "commands",
-      "declarative-management",
-      "management",
-      "certificates",
-      "authentication",
-      "policy",
-      "notifications",
-      "day-n",
-      "errors",
-    ] as ReadonlyArray<string>
-  ).includes(value);
+  CHECK_CATEGORIES.some((category) => category === value);

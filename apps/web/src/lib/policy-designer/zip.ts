@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 /**
  * Minimal ZIP writer for policy bundles. Entries are stored (no compression):
  * artifacts are small text files, and this keeps the browser bundle free of a
@@ -49,11 +51,13 @@ const writeU32 = (view: DataView, offset: number, value: number) => {
 
 export type ZipEntry = { name: string; content: string | Uint8Array; modified?: Date };
 
+const isString = Schema.is(Schema.String);
+
 const bytesOf = (value: string | Uint8Array) =>
-  typeof value === "string" ? new TextEncoder().encode(value) : value;
+  isString(value) ? new TextEncoder().encode(value) : value;
 
 /** Build a store-only ZIP archive from text or byte entries. */
-export const buildZip = (entries: ZipEntry[]): Uint8Array => {
+export const buildZip = (entries: ZipEntry[]): Uint8Array<ArrayBuffer> => {
   const encoder = new TextEncoder();
 
   const files = entries.map((entry) => ({

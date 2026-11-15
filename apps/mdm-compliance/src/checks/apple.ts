@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { Effect } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import { signAppleProfileToken } from "@mattrax/dm-apple";
+import { ManagementManifest } from "@mattrax/management-backend";
+import { PlistValue } from "@mattrax/plist";
 import type { Check } from "../types.ts";
 import {
   appleMdmRequest,
@@ -9,6 +11,25 @@ import {
   createAppleHarness,
   parseAppleBody,
 } from "../harness/apple.ts";
+
+interface PlistDictionary {
+  readonly [key: string]: PlistNode;
+}
+
+type PlistNode = PlistValue & PlistDictionary & ReadonlyArray<PlistNode>;
+
+type PlistPayload = { readonly [key: string]: PlistValue };
+
+const PlistDictionarySchema = Schema.Record(Schema.String, PlistValue);
+
+const isPlistDictionary = (value: PlistValue): value is PlistDictionary =>
+  Schema.is(PlistDictionarySchema)(value);
+
+const readPlist = (value: PlistValue): PlistDictionary => {
+  assert.ok(isPlistDictionary(value), "expected a plist dictionary");
+
+  return value;
+};
 
 const origin = "https://mdm.example.test";
 const udid = "00008030-001A2B3C4D5E6F70";
@@ -23,21 +44,27 @@ const authenticate = () => ({
   Model: "MacBookPro18,3",
 });
 
-const tokenUpdate = (overrides: Record<string, unknown> = {}) => ({
-  MessageType: "TokenUpdate",
-  Topic: topic,
-  UDID: udid,
-  PushMagic: "push-magic",
-  Token: btoa(String.fromCharCode(0xde, 0xad, 0xbe, 0xef)),
-  ...overrides,
-});
+const tokenUpdate = (overrides: PlistPayload = {}): PlistPayload =>
+  Object.assign(
+    {
+      MessageType: "TokenUpdate",
+      Topic: topic,
+      UDID: udid,
+      PushMagic: "push-magic",
+      Token: btoa(String.fromCharCode(0xde, 0xad, 0xbe, 0xef)),
+    },
+    overrides,
+  );
 
-const declarative = (endpoint: string, extra: Record<string, unknown> = {}) => ({
-  MessageType: "DeclarativeManagement",
-  UDID: udid,
-  Endpoint: endpoint,
-  ...extra,
-});
+const declarative = (endpoint: string, extra: PlistPayload = {}): PlistPayload =>
+  Object.assign(
+    {
+      MessageType: "DeclarativeManagement",
+      UDID: udid,
+      Endpoint: endpoint,
+    },
+    extra,
+  );
 
 const rawMdmRequest = (body: string, headers: Record<string, string> = {}) =>
   new Request(`${origin}/mdm/apple/mdm`, {
@@ -59,15 +86,21 @@ const check = (
   description: string,
   run: Check["run"],
   dayN = false,
-): Check => ({
-  id: `apple.${id}`,
-  platform: "apple",
-  category,
-  name,
-  description,
-  ...(dayN ? { dayN: true } : {}),
-  run,
-});
+): Check =>
+  withDayN(
+    {
+      id: `apple.${id}`,
+      platform: "apple",
+      category,
+      name,
+      description,
+      run,
+    },
+    dayN,
+  );
+
+const withDayN = (result: Check, dayN: boolean): Check =>
+  dayN ? { ...result, dayN: true } : result;
 
 export const appleChecks: ReadonlyArray<Check> = [
   check(
@@ -86,7 +119,7 @@ export const appleChecks: ReadonlyArray<Check> = [
         }),
       );
 
-      const profile = (await parseAppleBody(raw)) as any;
+      const profile = readPlist(await parseAppleBody(raw));
       assert.equal(profile.PayloadType, "Configuration");
       assert.equal(profile.PayloadContent.length, 2);
 
@@ -107,8 +140,12 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(mdm.CheckInURL, `${origin}/mdm/apple/mdm`);
       assert.equal(mdm.CheckOutWhenRemoved, true);
       assert.equal(mdm.SignMessage, true);
-      assert.ok(mdm.ServerCapabilities.includes("com.apple.mdm.bootstraptoken"));
-      assert.ok(mdm.ServerCapabilities.includes("com.apple.mdm.token"));
+      assert.ok(
+        mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.bootstraptoken"),
+      );
+      assert.ok(
+        mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.token"),
+      );
     },
   ),
   check(
@@ -122,11 +159,11 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(response.status, 200);
       assert.equal(harness.state.events.length, 1);
       const recorded = harness.state.events[0]!;
-      assert.equal(recorded.event._tag, "Authenticate");
+      assert.ok(Predicate.isTagged(recorded.event, "Authenticate"));
       assert.equal(recorded.scope._tag, "device");
       assert.equal(recorded.scope.udid, udid);
 
-      if (recorded.event._tag === "Authenticate") {
+      if (Predicate.isTagged(recorded.event, "Authenticate")) {
         assert.equal(recorded.event.serialNumber, "C02COMPLIANCE");
         assert.equal(recorded.event.osVersion, "15.4");
         assert.equal(recorded.event.model, "MacBookPro18,3");
@@ -163,9 +200,9 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "TokenUpdate");
+      assert.ok(Predicate.isTagged(event, "TokenUpdate"));
 
-      if (event._tag !== "TokenUpdate") return;
+      if (!Predicate.isTagged(event, "TokenUpdate")) return;
       assert.equal(event.pushToken, "deadbeef");
       assert.equal(event.pushMagic, "push-magic");
       assert.equal(event.topic, topic);
@@ -195,13 +232,13 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const recorded = harness.state.events[0]!;
-      assert.equal(recorded.scope._tag, "user");
+      assert.ok(Predicate.isTagged(recorded.scope, "user"));
 
-      if (recorded.scope._tag === "user") assert.equal(recorded.scope.userId, "user-1");
+      if (Predicate.isTagged(recorded.scope, "user")) assert.equal(recorded.scope.userId, "user-1");
       const event = recorded.event;
-      assert.equal(event._tag, "TokenUpdate");
+      assert.ok(Predicate.isTagged(event, "TokenUpdate"));
 
-      if (event._tag !== "TokenUpdate") return;
+      if (!Predicate.isTagged(event, "TokenUpdate")) return;
       assert.equal(event.channel, "user");
       assert.equal(event.userId, "user-1");
       assert.equal(event.unlockToken, "dW5sb2Nr");
@@ -266,9 +303,9 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(response.status, 200);
       assert.equal(harness.state.events[0]!.scope._tag, "user");
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "CheckOut");
+      assert.ok(Predicate.isTagged(event, "CheckOut"));
 
-      if (event._tag === "CheckOut") assert.equal(event.userId, "user-1");
+      if (Predicate.isTagged(event, "CheckOut")) assert.equal(event.userId, "user-1");
     },
   ),
   check(
@@ -278,16 +315,17 @@ export const appleChecks: ReadonlyArray<Check> = [
     "Idle device polls must receive a plist containing CommandUUID and Command.RequestType.",
     async () => {
       const harness = createAppleHarness();
-      harness.state.checkinQueue.push({
-        _tag: "Command",
+      harness.state.checkinQueue.push(
+        ManagementManifest.members[1].make({
         commandUUID: "command-1",
         requestType: "DeviceInformation",
-        payload: { Queries: ["DeviceName"] },
-      });
+          payload: { Queries: ["DeviceName"] },
+        }),
+      );
       const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /xml/);
-      const plist = (await applePlistResponse(response)) as any;
+      const plist = readPlist(await applePlistResponse(response));
       assert.equal(plist.CommandUUID, "command-1");
       assert.equal(plist.Command.RequestType, "DeviceInformation");
       assert.deepEqual(plist.Command.Queries, ["DeviceName"]);
@@ -305,7 +343,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       const text = await response.text();
 
       if (text.trim() !== "") {
-        const plist = (await parseAppleBody(text)) as Record<string, unknown>;
+        const plist = readPlist(await parseAppleBody(text));
         assert.equal(Object.keys(plist).length, 0);
       }
     },
@@ -317,12 +355,13 @@ export const appleChecks: ReadonlyArray<Check> = [
     "A Status=Acknowledged result must be recorded and the same response may carry the next command.",
     async () => {
       const harness = createAppleHarness();
-      harness.state.checkinQueue.push({
-        _tag: "Command",
+      harness.state.checkinQueue.push(
+        ManagementManifest.members[1].make({
         commandUUID: "command-2",
         requestType: "SecurityInfo",
-        payload: {},
-      });
+          payload: {},
+        }),
+      );
 
       const response = await harness.handler(
         await appleMdmRequest({
@@ -336,15 +375,15 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "CommandResult");
+      assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (event._tag === "CommandResult") {
+      if (Predicate.isTagged(event, "CommandResult")) {
         assert.equal(event.commandUUID, "command-1");
         assert.equal(event.status, "Acknowledged");
         assert.deepEqual(event.queryResponses, { DeviceName: "Mac" });
       }
 
-      const plist = (await applePlistResponse(response)) as any;
+      const plist = readPlist(await applePlistResponse(response));
       assert.equal(plist.CommandUUID, "command-2");
       assert.equal(plist.Command.RequestType, "SecurityInfo");
     },
@@ -371,9 +410,9 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "CommandResult");
+      assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (event._tag === "CommandResult")
+      if (Predicate.isTagged(event, "CommandResult"))
         assert.equal(event.errorDetail, "MCMDMErrorDomain:12013, MCMDMErrorDomain:12014");
     },
   ),
@@ -411,9 +450,9 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "CommandResult");
+      assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (event._tag === "CommandResult") {
+      if (Predicate.isTagged(event, "CommandResult")) {
         assert.equal(event.status, "NotNow");
         assert.equal(event.commandUUID, "command-not-now");
       }
@@ -426,17 +465,18 @@ export const appleChecks: ReadonlyArray<Check> = [
     "The backend stores UnlockToken as base64 but the device command must contain binary plist data.",
     async () => {
       const harness = createAppleHarness();
-      harness.state.checkinQueue.push({
-        _tag: "Command",
+      harness.state.checkinQueue.push(
+        ManagementManifest.members[1].make({
         commandUUID: "command-clear",
         requestType: "ClearPasscode",
-        payload: { UnlockToken: btoa(String.fromCharCode(1, 2, 3, 4)) },
-      });
+          payload: { UnlockToken: btoa(String.fromCharCode(1, 2, 3, 4)) },
+        }),
+      );
       const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
       assert.equal(response.status, 200);
       const text = await response.text();
       assert.match(text, /<key>UnlockToken<\/key><data>AQIDBA==<\/data>/);
-      const plist = (await parseAppleBody(text)) as any;
+      const plist = readPlist(await parseAppleBody(text));
       assert.equal(plist.Command.RequestType, "ClearPasscode");
       assert.equal(plist.Command.UnlockToken, "AQIDBA==");
     },
@@ -463,7 +503,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       const response = await harness.handler(await appleMdmRequest(declarative("tokens")));
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /json/);
-      const body = (await response.json()) as any;
+      const body = await response.json();
       assert.equal(body.SyncTokens.DeclarationsToken, "declarations-token");
       assert.match(body.SyncTokens.Timestamp, /^\d{4}-\d{2}-\d{2}T/);
     },
@@ -481,7 +521,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const body = (await response.json()) as any;
+      const body = await response.json();
       assert.equal(body.DeclarationsToken, "declarations-token");
       assert.deepEqual(body.Declarations.Activations, [
         { Identifier: "activation.one", ServerToken: "a1" },
@@ -508,7 +548,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const body = (await response.json()) as any;
+      const body = await response.json();
       assert.equal(body.Identifier, "configuration.one");
       assert.equal(body.Type, "com.apple.configuration.management.test");
       assert.equal(body.Payload.Enabled, true);
@@ -553,9 +593,9 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "DeclarationStatus");
+      assert.ok(Predicate.isTagged(event, "DeclarationStatus"));
 
-      if (event._tag === "DeclarationStatus") {
+      if (Predicate.isTagged(event, "DeclarationStatus")) {
         assert.deepEqual(event.statusItems, report.StatusItems);
         assert.equal(event.errors?.[0]?.statusItem, "configuration.one");
         assert.equal(event.errors?.[0]?.reasons?.[0]?.code, "Error");
@@ -610,9 +650,9 @@ export const appleChecks: ReadonlyArray<Check> = [
 
       assert.equal(response.status, 200);
       const event = harness.state.events[0]!.event;
-      assert.equal(event._tag, "BootstrapToken");
+      assert.ok(Predicate.isTagged(event, "BootstrapToken"));
 
-      if (event._tag === "BootstrapToken") assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
+      if (Predicate.isTagged(event, "BootstrapToken")) assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
     },
   ),
   check(
@@ -630,7 +670,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(response.status, 200);
       const text = await response.text();
       assert.match(text, /<key>BootstrapToken<\/key><data>/);
-      const plist = (await parseAppleBody(text)) as any;
+      const plist = readPlist(await parseAppleBody(text));
       assert.equal(plist.BootstrapToken, "Ym9vdHN0cmFwLXRva2Vu");
     },
   ),
@@ -842,23 +882,27 @@ export const appleChecks: ReadonlyArray<Check> = [
     async () => {
       const harness = createAppleHarness();
       harness.state.checkinQueue.push(
-        { _tag: "DdmSync", serverToken: "server-token-a" },
-        { _tag: "DdmSync", serverToken: "server-token-b" },
+        ManagementManifest.members[2].make({ serverToken: "server-token-a" }),
+        ManagementManifest.members[2].make({ serverToken: "server-token-b" }),
       );
 
-      const first = (await applePlistResponse(
-        await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
-      )) as any;
+      const first = readPlist(
+        await applePlistResponse(
+          await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        ),
+      );
 
-      const second = (await applePlistResponse(
-        await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
-      )) as any;
+      const second = readPlist(
+        await applePlistResponse(
+          await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        ),
+      );
 
       assert.equal(first.Command.RequestType, "DeclarativeManagement");
       assert.equal(second.Command.RequestType, "DeclarativeManagement");
       assert.notEqual(first.CommandUUID, second.CommandUUID);
       assert.match(
-        first.CommandUUID,
+        String(first.CommandUUID),
         /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       );
     },
@@ -886,10 +930,9 @@ export const appleChecks: ReadonlyArray<Check> = [
         ),
       );
 
-      const tokens = harness.state.events
-        .map((entry) => entry.event)
-        .filter((event) => event._tag === "TokenUpdate")
-        .map((event) => event.pushToken);
+      const tokens = harness.state.events.flatMap((entry) =>
+        Predicate.isTagged(entry.event, "TokenUpdate") ? [entry.event.pushToken] : [],
+      );
 
       assert.deepEqual(tokens, ["01010101", "02020202"]);
     },

@@ -1,5 +1,17 @@
-import { collectionProperties, type Collection, type PlatformId, type Property } from "./catalog";
+import { Option, Schema } from "effect";
+import {
+  collectionProperties,
+  Property as PropertySchema,
+  type Collection,
+  type PlatformId,
+  type Property,
+} from "./catalog";
 import { buildZip } from "./zip";
+
+/** A JSON value stored in a policy draft. */
+export type PolicyValue = Schema.Json;
+
+export type PolicyValueMap = Record<string, PolicyValue | undefined>;
 
 export type Selection = {
   collectionId: string;
@@ -7,8 +19,8 @@ export type Selection = {
   kind: Collection["kind"];
   surface: string;
   name: string;
-  properties: Property[];
-  values: Record<string, unknown>;
+  properties: ReadonlyArray<Property>;
+  values: Readonly<Record<string, PolicyValue | undefined>>;
 };
 
 export type Draft = {
@@ -29,31 +41,64 @@ const escapeXml = (value: string) =>
     .replaceAll("'", "&apos;");
 
 /** Marks a string that is already base64 and should become `<data>`. */
-const PLIST_DATA = Symbol("plist-data");
-const plistData = (value: string) => ({ [PLIST_DATA]: value });
+class PlistData {
+  readonly base64: string;
 
-const isPlistData = (value: unknown): value is { [PLIST_DATA]: string } =>
-  typeof value === "object" && value !== null && PLIST_DATA in value;
+  constructor(base64: string) {
+    this.base64 = base64;
+  }
+}
 
-const plistValue = (value: unknown): string => {
+const plistData = (value: string) => new PlistData(value);
+
+export type PlistValue =
+  | null
+  | undefined
+  | boolean
+  | number
+  | string
+  | Date
+  | PlistData
+  | readonly PlistValue[]
+  | { readonly [key: string]: PlistValue };
+
+const isString = Schema.is(Schema.String);
+
+const isBoolean = Schema.is(Schema.Boolean);
+
+const isNumber = Schema.is(Schema.Number);
+
+const isJsonObject = Schema.is(Schema.JsonObject);
+
+const isPlistData = (value: PlistValue): value is PlistData => value instanceof PlistData;
+
+const isPlistObject = (value: PlistValue): value is { readonly [key: string]: PlistValue } =>
+  typeof value === "object" &&
+  value !== null &&
+  !(value instanceof Date) &&
+  !(value instanceof PlistData) &&
+  !Array.isArray(value);
+
+const plistValue = (value: PlistValue): string => {
   if (value === null || value === undefined) return "<string></string>";
 
-  if (isPlistData(value)) return `<data>${escapeXml(value[PLIST_DATA].replace(/\s/g, ""))}</data>`;
+  if (isPlistData(value)) return `<data>${escapeXml(value.base64.replace(/\s/g, ""))}</data>`;
 
-  if (typeof value === "boolean") return value ? "<true/>" : "<false/>";
+  if (isBoolean(value)) return value ? "<true/>" : "<false/>";
 
-  if (typeof value === "number")
+  if (isNumber(value))
     return Number.isInteger(value) ? `<integer>${value}</integer>` : `<real>${value}</real>`;
 
-  if (value instanceof Date) return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
+  if (value instanceof Date)
+    return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
 
-  if (typeof value === "string") return `<string>${escapeXml(value)}</string>`;
+  if (isString(value)) return `<string>${escapeXml(value)}</string>`;
 
   if (Array.isArray(value))
     return `<array>${value.map((item) => plistValue(item)).join("")}</array>`;
 
-  if (typeof value === "object")
-    return `<dict>${Object.entries(value as Record<string, unknown>)
+  if (isPlistObject(value))
+    return `<dict>${Object.entries(value)
       .filter(([, item]) => item !== undefined && item !== null)
       .map(([key, item]) => `<key>${escapeXml(key)}</key>${plistValue(item)}`)
       .join("")}</dict>`;
@@ -61,7 +106,7 @@ const plistValue = (value: unknown): string => {
   return `<string>${escapeXml(String(value))}</string>`;
 };
 
-export const serializePlist = (value: unknown) =>
+export const serializePlist = (value: PlistValue) =>
   `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">${plistValue(value)}</plist>`;
 
 const uuid = () => crypto.randomUUID();
@@ -76,14 +121,17 @@ const isPlistDataProperty = (property: Property) => property.type === "data";
 const isPlistDateProperty = (property: Property) => property.type === "date";
 
 /** Payload fields, without generated declaration envelope fields or unset values. */
-const payloadValues = (selection: Selection): Record<string, unknown> => {
+const payloadValues = (selection: Selection) => {
   const envelope = new Set(selection.properties.filter(isEnvelope).map((property) => property.key));
+  const values: PolicyValueMap = {};
 
-  return Object.fromEntries(
-    Object.entries(selection.values).filter(
-      ([key, value]) => value !== undefined && value !== null && !envelope.has(key),
-    ),
-  );
+  for (const [key, value] of Object.entries(selection.values)) {
+    if (value === undefined || value === null || envelope.has(key)) continue;
+
+    values[key] = value;
+  }
+
+  return values;
 };
 
 /**
@@ -107,7 +155,7 @@ const enumDomainKind = (property: Property): "boolean" | "number" | "string" => 
 };
 
 /** Normalise an enum default to the type the control will store. */
-const coerceEnumValue = (property: Property, value: unknown): unknown => {
+const coerceEnumValue = (property: Property, value: PolicyValue): PolicyValue => {
   if (!property.enum) return value;
   const kind = enumDomainKind(property);
 
@@ -120,7 +168,7 @@ const coerceEnumValue = (property: Property, value: unknown): unknown => {
   }
 
   if (kind === "number") {
-    const number = typeof value === "number" ? value : Number(value);
+    const number = isNumber(value) ? value : Number(value);
 
     return Number.isFinite(number) ? number : value;
   }
@@ -128,7 +176,7 @@ const coerceEnumValue = (property: Property, value: unknown): unknown => {
   return value;
 };
 
-export const catalogDefault = (property: Property): unknown => {
+export const catalogDefault = (property: Property): PolicyValue | undefined => {
   const value = property.defaultValue;
 
   if (value === undefined || value === null) return undefined;
@@ -141,13 +189,13 @@ export const catalogDefault = (property: Property): unknown => {
     case "dictionary":
       return isPlainObject(value) ? value : undefined;
     case "data":
-      return typeof value === "string" ? value : undefined;
+      return isString(value) ? value : undefined;
     case "boolean":
-      return property.enum || typeof value === "boolean" ? value : undefined;
+      return property.enum || isBoolean(value) ? value : undefined;
     case "integer":
     case "real": {
       if (property.enum) return value;
-      const number = typeof value === "number" ? value : Number(value);
+      const number = isNumber(value) ? value : Number(value);
 
       return Number.isFinite(number) ? number : undefined;
     }
@@ -157,30 +205,34 @@ export const catalogDefault = (property: Property): unknown => {
   }
 };
 
-export const defaultValues = (collection: Collection): Record<string, unknown> =>
-  Object.fromEntries(
-    collectionProperties(collection)
-      .filter((property) => !isEnvelope(property))
-      .map((property) => [valueKey(property, collection.platform), catalogDefault(property)])
-      .filter(([, value]) => value !== undefined),
-  );
+export const defaultValues = (collection: Collection) => {
+  const values: PolicyValueMap = {};
+
+  for (const property of collectionProperties(collection)) {
+    if (isEnvelope(property)) continue;
+
+    const value = catalogDefault(property);
+
+    if (value === undefined) continue;
+
+    values[valueKey(property, collection.platform)] = value;
+  }
+
+  return values;
+};
 
 /**
  * Compare drafts and catalogue defaults without depending on object key order.
  * Dates are normalized because date properties round-trip through JSON strings.
  */
-export const sameValue = (left: unknown, right: unknown): boolean => {
-  const normalize = (value: unknown): string => {
-    if (value instanceof Date) return `date:${value.toISOString()}`;
-
+export const sameValue = (left: PolicyValue | undefined, right: PolicyValue | undefined): boolean => {
+  const normalize = (value: PolicyValue | undefined): string => {
     if (Array.isArray(value)) return `[${value.map(normalize).join(",")}]`;
 
-    if (typeof value === "object" && value !== null)
-      return `{${Object.keys(value as Record<string, unknown>)
+    if (isPlainObject(value))
+      return `{${Object.keys(value)
         .sort()
-        .map(
-          (key) => `${JSON.stringify(key)}:${normalize((value as Record<string, unknown>)[key])}`,
-        )
+        .map((key) => `${JSON.stringify(key)}:${normalize(value[key])}`)
         .join(",")}}`;
 
     return JSON.stringify(value) ?? "undefined";
@@ -190,10 +242,11 @@ export const sameValue = (left: unknown, right: unknown): boolean => {
 };
 
 /** A value is configured when the payload will contain it. */
-export const isConfiguredValue = (value: unknown) => value !== undefined && value !== null;
+export const isConfiguredValue = (value: PolicyValue | undefined) =>
+  value !== undefined && value !== null;
 
 /** A value is changed when it differs from the catalogue default (including unset). */
-export const isChangedValue = (property: Property, value: unknown) =>
+export const isChangedValue = (property: Property, value: PolicyValue | undefined) =>
   !sameValue(value, catalogDefault(property));
 
 export type ValidationSeverity = "error" | "warning";
@@ -207,8 +260,9 @@ export type ValidationIssue = {
   readonly message: string;
 };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+function isPlainObject(value: PolicyValue | undefined): value is Schema.JsonObject {
+  return isJsonObject(value) && !Array.isArray(value);
+}
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -260,7 +314,7 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       }
 
       if (property.type === "data") {
-        if (typeof value !== "string") {
+        if (!isString(value)) {
           add("error", "Expected a base64-encoded string.");
         } else if (value.trim() !== "" && !BASE64.test(value.replace(/\s/g, ""))) {
           add("warning", "This value does not look like base64 data.");
@@ -270,12 +324,12 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       }
 
       if (property.type === "boolean" && !enumProperty) {
-        if (typeof value !== "boolean") add("error", "Expected On or Off.");
+        if (!isBoolean(value)) add("error", "Expected On or Off.");
         continue;
       }
 
       if ((property.type === "integer" || property.type === "real") && !enumProperty) {
-        const number = typeof value === "number" ? value : Number(value);
+        const number = isNumber(value) ? value : Number(value);
 
         if (!Number.isFinite(number)) {
           add("error", `Expected a ${property.type === "integer" ? "whole number" : "number"}.`);
@@ -289,7 +343,7 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
         continue;
       }
 
-      if (property.type === "string" && property.pattern && typeof value === "string") {
+      if (property.type === "string" && property.pattern && isString(value)) {
         try {
           if (!new RegExp(property.pattern).test(value))
             add("error", `Does not match the required format (${property.pattern}).`);
@@ -320,17 +374,21 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
 };
 
 const applePayloadValues = (selection: Selection) => {
-  const values = payloadValues(selection);
+  const values: Record<string, PlistValue> = {};
+
+  for (const [key, value] of Object.entries(payloadValues(selection))) {
+    if (value !== undefined) values[key] = value;
+  }
 
   for (const property of selection.properties) {
     const value = values[property.key];
 
     if (value === undefined) continue;
 
-    if (isPlistDataProperty(property) && typeof value === "string")
+    if (isPlistDataProperty(property) && isString(value))
       values[property.key] = plistData(value);
 
-    if (isPlistDateProperty(property) && typeof value === "string") {
+    if (isPlistDateProperty(property) && isString(value)) {
       const date = new Date(value);
       values[property.key] = Number.isNaN(date.getTime()) ? value : date;
     }
@@ -380,15 +438,12 @@ export const buildDeclarations = (draft: Draft) =>
         Type: selection.identifier,
         Identifier: `com.mattrax.designer.${identifierSafe(selection.identifier)}`,
         ServerToken: crypto.randomUUID(),
-        Payload:
-          typeof explicit === "object" && explicit !== null && !Array.isArray(explicit)
-            ? explicit
-            : values,
+        Payload: isPlainObject(explicit) ? explicit : values,
       };
     });
 
 /** Older drafts stored enum defaults as strings; normalise before SyncML. */
-const normalizeEnumValue = (property: Property, value: unknown) => {
+const normalizeEnumValue = (property: Property, value: PolicyValue): PolicyValue => {
   if (!property.enum) return value;
   const kind = enumDomainKind(property);
 
@@ -401,7 +456,7 @@ const normalizeEnumValue = (property: Property, value: unknown) => {
   }
 
   if (kind === "number") {
-    const number = typeof value === "number" ? value : Number(value);
+    const number = isNumber(value) ? value : Number(value);
 
     return Number.isFinite(number) ? number : value;
   }
@@ -409,10 +464,10 @@ const normalizeEnumValue = (property: Property, value: unknown) => {
   return value;
 };
 
-const windowsFormat = (property: Property, value: unknown) => {
-  if (typeof value === "boolean") return "int";
+const windowsFormat = (property: Property, value: PolicyValue) => {
+  if (isBoolean(value)) return "int";
 
-  if (typeof value === "number") return Number.isInteger(value) ? "int" : "chr";
+  if (isNumber(value)) return Number.isInteger(value) ? "int" : "chr";
 
   if (property.type === "integer" || property.type === "boolean") return "int";
 
@@ -424,19 +479,24 @@ const windowsFormat = (property: Property, value: unknown) => {
 };
 
 /** SyncML booleans are 1/0, not JSON booleans. */
-const syncmlData = (value: unknown) =>
-  value === null || value === undefined
-    ? ""
-    : typeof value === "boolean"
-      ? value
-        ? "1"
-        : "0"
-      : typeof value === "object"
-        ? JSON.stringify(value)
-        : String(value);
+const syncmlData = (value: PolicyValue) => {
+  if (value === null || value === undefined) return "";
 
-export const buildWindowsNodes = (draft: Draft) => {
-  const nodes = new Map<string, { omaUri: string; value: unknown; format: string }>();
+  if (isBoolean(value)) return value ? "1" : "0";
+
+  if (isJsonObject(value) || Array.isArray(value)) return JSON.stringify(value);
+
+  return String(value);
+};
+
+export type WindowNode = {
+  readonly omaUri: string;
+  readonly value: PolicyValue;
+  readonly format: string;
+};
+
+export const buildWindowsNodes = (draft: Draft): WindowNode[] => {
+  const nodes = new Map<string, WindowNode>();
 
   for (const selection of draft.selections) {
     for (const property of collectionProperties(selection)) {
@@ -491,10 +551,13 @@ ${commands}
 };
 
 export const buildAndroidPolicy = (draft: Draft) => {
-  const policy = Object.assign(
-    {},
-    ...draft.selections.map((selection) => payloadValues(selection)),
-  ) as Record<string, unknown>;
+  const policy: PolicyValueMap = {};
+
+  for (const selection of draft.selections) {
+    for (const [key, value] of Object.entries(payloadValues(selection))) {
+      if (value !== undefined) policy[key] = value;
+    }
+  }
 
   // These are read-only Google resource fields, not policy settings.
   delete policy.name;
@@ -570,11 +633,43 @@ const stableId = (value: string) => {
 const declarationConfigKind = (identifier: string, index: number) =>
   `mttx.apple.declaration.d${stableId(`${identifier}:${index}`)}`;
 
-export const artifactToConfigurations = (draft: Draft): Record<string, unknown> => {
+export type AppleProfileConfiguration = {
+  readonly content: string;
+  readonly draft: Draft;
+};
+
+export type AppleDeclarationConfiguration = {
+  readonly kind: string;
+  readonly configuration: PolicyValueMap;
+  readonly designer: true;
+  readonly draft?: Draft;
+};
+
+export type WindowsDesignerConfiguration = {
+  readonly nodes: readonly WindowNode[];
+  readonly draft: Draft;
+};
+
+export type AndroidDesignerConfiguration = {
+  readonly policy: PolicyValueMap;
+  readonly draft: Draft;
+};
+
+export type PolicyConfiguration =
+  | PolicyValue
+  | PolicyValueMap
+  | AppleProfileConfiguration
+  | AppleDeclarationConfiguration
+  | WindowsDesignerConfiguration
+  | AndroidDesignerConfiguration;
+
+export type PolicyConfigurations = Record<string, PolicyConfiguration | undefined>;
+
+export const artifactToConfigurations = (draft: Draft) => {
   if (draft.platform === "apple") {
     const profiles = draft.selections.filter((selection) => selection.kind === "profile");
     const declarations = draft.selections.filter((selection) => selection.kind === "declaration");
-    const configurations: Record<string, unknown> = {};
+    const configurations: PolicyConfigurations = {};
     const draftWithTime: Draft = { ...draft, savedAt: draft.savedAt ?? Date.now() };
 
     if (profiles.length > 0) {
@@ -595,12 +690,17 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       // declaration must not rename every other configuration.
       const duplicate = declarationCounts.get(selection.identifier) ?? 0;
       declarationCounts.set(selection.identifier, duplicate + 1);
-      configurations[declarationConfigKind(selection.identifier, duplicate)] = {
+
+      const base = {
         kind: selection.identifier,
         configuration: payloadValues(selection),
         designer: true,
-        ...(profiles.length === 0 && index === 0 ? { draft: draftWithTime } : {}),
-      };
+      } satisfies Omit<AppleDeclarationConfiguration, "draft">;
+
+      const configuration: AppleDeclarationConfiguration =
+        profiles.length === 0 && index === 0 ? { ...base, draft: draftWithTime } : base;
+
+      configurations[declarationConfigKind(selection.identifier, duplicate)] = configuration;
     });
 
     return configurations;
@@ -609,11 +709,7 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
   if (draft.platform === "windows") {
     return {
       "mttx.windows.custom.designer": {
-        nodes: buildWindowsNodes(draft).map((node) => ({
-          omaUri: node.omaUri,
-          value: node.value,
-          format: node.format,
-        })),
+        nodes: buildWindowsNodes(draft),
         draft: { ...draft, savedAt: draft.savedAt ?? Date.now() },
       },
     };
@@ -651,52 +747,83 @@ export const emptyPolicyDraft = (name = "My policy"): PolicyDraft => ({
   platforms: { apple: [], windows: [], android: [] },
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const SelectionSchema = Schema.Struct({
+  collectionId: Schema.String,
+  identifier: Schema.String,
+  kind: Schema.Literals(["profile", "declaration", "policy", "csp"]),
+  surface: Schema.String,
+  name: Schema.String,
+  properties: Schema.Array(PropertySchema),
+  values: Schema.Record(Schema.String, Schema.Json),
+});
+
+const decodeJson = Schema.decodeUnknownOption(Schema.Json);
+
+const decodeSelection = Schema.decodeUnknownOption(SelectionSchema);
+
+const parseJson = (value: string): Schema.Json | undefined => {
+  try {
+    return Option.getOrUndefined(decodeJson(JSON.parse(value)));
+  } catch {
+    return undefined;
+  }
+};
+
+const selectionsOf = (value: Schema.Json | readonly Selection[] | undefined): Selection[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    const selection = Option.getOrUndefined(decodeSelection(item));
+
+    return selection === undefined ? [] : [selection];
+  });
+};
 
 /**
  * Accept both the persisted v1 draft (one platform) and the multi-platform v2
  * draft. Anything that cannot be trusted is ignored rather than half-loaded.
  */
-export const parsePolicyDraft = (value: unknown): PolicyDraft | undefined => {
-  if (!value) return undefined;
-  let parsed = value;
+export const parsePolicyDraft = (
+  source: string | Schema.Json | Draft | PolicyDraft | null | undefined,
+): PolicyDraft | undefined => {
+  if (source === null || source === undefined) return undefined;
+  const parsed = isString(source) ? parseJson(source) : source;
 
-  if (typeof value === "string") {
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      return undefined;
-    }
-  }
+  if (!isJsonObject(parsed)) return undefined;
+  const name = isString(parsed.name) ? parsed.name : "My policy";
+  const savedAt = isNumber(parsed.savedAt) ? parsed.savedAt : undefined;
 
-  if (!isRecord(parsed)) return undefined;
-  const name = typeof parsed.name === "string" ? parsed.name : "My policy";
-  const savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : undefined;
-
-  if (parsed.version === 1 && Array.isArray(parsed.selections)) {
+  if (parsed.version === 1) {
     const platform = parsed.platform;
 
     if (platform !== "apple" && platform !== "windows" && platform !== "android") return undefined;
 
-    return {
-      version: 2,
-      name,
-      platforms: { [platform]: parsed.selections as Selection[] },
-      ...(savedAt ? { savedAt } : {}),
+    const platforms: Partial<Record<PlatformId, Selection[]>> = {
+      [platform]: selectionsOf(parsed.selections),
     };
+
+    const result: PolicyDraft = { version: 2, name, platforms };
+
+    if (savedAt !== undefined) result.savedAt = savedAt;
+
+    return result;
   }
 
-  if (parsed.version !== 2 || !isRecord(parsed.platforms)) return undefined;
+  if (parsed.version !== 2 || !isJsonObject(parsed.platforms)) return undefined;
+
   const platforms: Partial<Record<PlatformId, Selection[]>> = {};
 
   for (const platform of PLATFORM_ORDER) {
     const selections = parsed.platforms[platform];
 
-    if (Array.isArray(selections)) platforms[platform] = selections as Selection[];
+    if (Array.isArray(selections)) platforms[platform] = selectionsOf(selections);
   }
 
-  return { version: 2, name, platforms, ...(savedAt ? { savedAt } : {}) };
+  const result: PolicyDraft = { version: 2, name, platforms };
+
+  if (savedAt !== undefined) result.savedAt = savedAt;
+
+  return result;
 };
 
 export const policyPlatforms = (policy: PolicyDraft): PlatformId[] =>
@@ -705,13 +832,18 @@ export const policyPlatforms = (policy: PolicyDraft): PlatformId[] =>
 export const policySelectionCount = (policy: PolicyDraft) =>
   PLATFORM_ORDER.reduce((total, platform) => total + (policy.platforms[platform]?.length ?? 0), 0);
 
-export const draftForPlatform = (policy: PolicyDraft, platform: PlatformId): Draft => ({
-  version: 1,
-  platform,
-  name: policy.name,
-  selections: policy.platforms[platform] ?? [],
-  ...(policy.savedAt ? { savedAt: policy.savedAt } : {}),
-});
+export const draftForPlatform = (policy: PolicyDraft, platform: PlatformId): Draft => {
+  const draft: Draft = {
+    version: 1,
+    platform,
+    name: policy.name,
+    selections: policy.platforms[platform] ?? [],
+  };
+
+  if (policy.savedAt !== undefined) draft.savedAt = policy.savedAt;
+
+  return draft;
+};
 
 /** Every artifact represented by the policy, in platform order. */
 export const buildArtifacts = (policy: PolicyDraft): ExportArtifact[] =>
@@ -720,7 +852,7 @@ export const buildArtifacts = (policy: PolicyDraft): ExportArtifact[] =>
 export type PolicyBundle = {
   readonly fileName: string;
   readonly contentType: string;
-  readonly content: string | Uint8Array;
+  readonly content: string | Uint8Array<ArrayBuffer>;
   readonly artifactCount: number;
 };
 
@@ -759,7 +891,7 @@ export const buildPolicyBundle = (policy: PolicyDraft): PolicyBundle | null => {
 /** Which configuration row carries the full multi-platform draft. */
 const draftAnchor = (
   platform: PlatformId,
-  configurations: Record<string, unknown>,
+  configurations: PolicyConfigurations,
 ): string | undefined => {
   if (platform === "windows")
     return "mttx.windows.custom.designer" in configurations
@@ -776,11 +908,23 @@ const draftAnchor = (
   return Object.keys(configurations).find((kind) => kind.startsWith("mttx.apple.declaration."));
 };
 
+const DraftAnchor = Schema.Struct({
+  content: Schema.optional(Schema.String),
+  kind: Schema.optional(Schema.String),
+  configuration: Schema.optional(Schema.Unknown),
+  designer: Schema.optional(Schema.Boolean),
+  nodes: Schema.optional(Schema.Unknown),
+  policy: Schema.optional(Schema.Unknown),
+  draft: Schema.optional(Schema.Unknown),
+});
+
+const isDraftAnchor = Schema.is(DraftAnchor);
+
 /** Build the configuration map for every platform in one policy. */
-export const policyToConfigurations = (policy: PolicyDraft): Record<string, unknown> => {
+export const policyToConfigurations = (policy: PolicyDraft) => {
   const savedAt = policy.savedAt ?? Date.now();
   const snapshot: PolicyDraft = { ...policy, savedAt };
-  const configurations: Record<string, unknown> = {};
+  const configurations: PolicyConfigurations = {};
 
   for (const platform of policyPlatforms(policy)) {
     Object.assign(configurations, artifactToConfigurations(draftForPlatform(policy, platform)));
@@ -790,10 +934,12 @@ export const policyToConfigurations = (policy: PolicyDraft): Record<string, unkn
     const kind = draftAnchor(platform, configurations);
 
     if (!kind) continue;
+
     const current = configurations[kind];
 
-    if (!isRecord(current)) continue;
-    configurations[kind] = { ...current, draft: snapshot };
+    if (!isDraftAnchor(current)) continue;
+
+    Object.assign(current, { draft: snapshot });
   }
 
   return configurations;

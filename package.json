@@ -22,18 +22,24 @@
     "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod",
     "doc:preview": "rspress preview docs --port 9060",
     "lint": "vp lint",
-    "lint:fix": "vp lint --fix"
+    "lint:fix": "vp lint --fix",
+    "bundle:check": "node scripts/bundle-budget.mjs",
+    "lighthouse": "lhci autorun"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
     "@fontsource-variable/geist": "^5.3.0",
+    "@lhci/cli": "catalog:",
+    "@oxlint/plugins": "1.91.0",
     "@playwright/test": "catalog:",
     "@rspress/core": "catalog:",
     "@rspress/plugin-llms": "catalog:",
+    "@types/react": "catalog:",
+    "oxlint": "1.91.0",
+    "react": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "^5.1.0",
-    "@oxlint/plugins": "1.91.0",
-    "oxlint": "1.91.0"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": ">=22.12.0"

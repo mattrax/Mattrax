@@ -43,10 +43,10 @@ const timingSafeEqual = (left: string, right: string) => {
   return difference === 0;
 };
 
-const verifySignature = (
+const verifySignature = <Payload>(
   request: HttpServerRequest,
   operation: string,
-  payload: unknown,
+  payload: Payload,
   secret: string | undefined,
 ): Effect.Effect<void, InternalServerError> =>
   Effect.gen(function* () {

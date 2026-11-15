@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
-export const PASSWORD = "Correct-Horse-Battery-Staple-123!";
+type DebugEmail = { readonly to: string; readonly text: string };
 
 /** RFC 6238 SHA-1, six digits, thirty-second steps. */
 export function totpCode(secret: string, offset = 0) {
@@ -53,6 +53,7 @@ export async function register(page: Page, options: { name?: string; email?: str
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(`console: ${message.text()}`);
   });
+  await installVirtualAuthenticator(page);
   await page.goto("/register", { waitUntil: "networkidle" });
 
   try {
@@ -72,18 +73,16 @@ export async function register(page: Page, options: { name?: string; email?: str
   await expect(page.locator("#name")).toBeVisible();
   await page.locator("#name").fill(options.name ?? "E2E User");
   await page.locator("#email").fill(email);
-  await page.locator("#password").fill(PASSWORD);
-  await page.locator("#confirm-password").fill(PASSWORD);
   await expect(page.locator("#email")).toHaveValue(email);
-  await expect(page.locator("#password")).toHaveValue(PASSWORD);
 
   const registration = page.waitForResponse(
     (response) =>
-      response.request().method() === "POST" && response.url().includes("/api/v1/register"),
+      response.request().method() === "POST" &&
+      response.url().includes("/api/v1/completePasskeyRegistration"),
     { timeout: 20_000 },
   );
 
-  await page.getByRole("button", { name: /create account/i }).click();
+  await page.getByRole("button", { name: /create account with a passkey/i }).click();
   const response = await registration.catch(() => undefined);
 
   if (!response) throw new Error("Registration request was never sent");
@@ -91,7 +90,8 @@ export async function register(page: Page, options: { name?: string; email?: str
   if (!response.ok())
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
 
-  // Registration ends on the code step until the address is proven.
+  // Registration signs in with the new passkey, then waits on the code step
+  // until the address is proven.
   await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
   const code = await verificationCode(page, email);
   await page.locator("#verification-code").fill(code);
@@ -100,7 +100,7 @@ export async function register(page: Page, options: { name?: string; email?: str
   // which can take longer than the default test timeout.
   await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
-  return { email, password: PASSWORD };
+  return { email };
 }
 
 /** Read the six-digit code from the dev mailbox used by browser tests. */
@@ -112,7 +112,7 @@ export async function verificationCode(page: Page, email: string) {
         const response = await page.request.get("/api/debug/emails");
 
         if (!response.ok()) return "";
-        const messages = (await response.json()) as Array<{ to: string; text: string }>;
+        const messages: ReadonlyArray<DebugEmail> = await response.json();
         const message = messages.find((item) => item.to === email);
         code = message?.text.match(/code is (\d{6})/)?.[1] ?? "";
 
@@ -134,7 +134,7 @@ export async function verifyEmail(page: Page, email: string) {
         const response = await page.request.get("/api/debug/emails");
 
         if (!response.ok()) return "";
-        const messages = (await response.json()) as Array<{ to: string; text: string }>;
+        const messages: ReadonlyArray<DebugEmail> = await response.json();
         const message = messages.find((item) => item.to === email);
         token = message?.text.match(/verify-email\?token=([^\s]+)/)?.[1] ?? "";
 
@@ -153,19 +153,24 @@ export async function verifyEmail(page: Page, email: string) {
     throw new Error(`Email verification failed (${response.status()}): ${await response.text()}`);
 }
 
-export async function signIn(page: Page, email: string, password = PASSWORD) {
+export async function signIn(page: Page, _email?: string) {
+  await installVirtualAuthenticator(page);
   await page.goto("/login", { waitUntil: "networkidle" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
     undefined,
     { timeout: 20_000 },
   );
-  await page.locator("#email").fill(email);
-  await page.getByRole("button", { name: /^continue$/i }).click();
-  await page.locator("#password").fill(password);
-  await expect(page.locator("#password")).toHaveValue(password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
+  await page.getByRole("button", { name: /sign in with a passkey/i }).click();
+  // A passkey signs in directly unless TOTP is enabled, in which case the
+  // pending step appears on the same page.
+  await Promise.race([
+    page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 }).catch(() => undefined),
+    page
+      .getByText(/two-factor authentication required/i)
+      .waitFor({ timeout: 45_000 })
+      .catch(() => undefined),
+  ]);
 }
 
 export async function createTenant(page: Page, name: string) {
@@ -186,7 +191,9 @@ export async function createTenant(page: Page, name: string) {
 
       if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
 
-      return ((await response.json()) as { id: string }).id;
+      const created: { id: string } = await response.json();
+
+      return created.id;
     },
     { name, slug },
   );
@@ -214,15 +221,13 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
 
 export async function api<T = unknown>(page: Page, path: string, init?: RequestInit): Promise<T> {
   return page.evaluate(
-    async ({ path, init }: { path: string; init?: any }) => {
-      const response = await fetch(path, {
-        ...init,
-        headers: {
-          "content-type": "application/json",
-          "x-effect-auth-csrf": "1",
-          ...(init?.headers as Record<string, string> | undefined),
-        },
-      });
+    async ({ path, init }: { path: string; init?: RequestInit }) => {
+      const headers = new Headers(init?.headers);
+
+      if (!headers.has("content-type")) headers.set("content-type", "application/json");
+      headers.set("x-effect-auth-csrf", "1");
+
+      const response = await fetch(path, { ...init, headers });
 
       const text = await response.text();
 
@@ -235,43 +240,125 @@ export async function api<T = unknown>(page: Page, path: string, init?: RequestI
 }
 
 /**
- * Complete the step-up dialog for a sensitive action. The password factor is
- * always available to accounts created by `register`, and the grant is cached
- * for subsequent actions in the same session.
+ * Complete the step-up dialog for a sensitive action. Accounts created by
+ * `register` always have a passkey, so the passkey factor is used.
  */
-export async function confirmStepUp(page: Page, password = PASSWORD) {
+export async function confirmStepUp(page: Page) {
   const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
   await expect(dialog).toBeVisible({ timeout: 15_000 });
-  await dialog.locator("#step-up-password").fill(password);
-  await dialog.getByRole("button", { name: /^confirm$/i }).click();
+  await dialog.getByRole("button", { name: /^passkey$/i }).click();
+  await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 }
 
 /**
  * Obtain a step-up grant directly for API-driven tests that bypass the UI.
- * `action` must match the sensitive endpoint's StepUpAction.
+ * The browser already owns the virtual authenticator from `register`.
  */
-export async function stepUpGrant(
-  page: Page,
-  action: string,
-  password = PASSWORD,
-): Promise<string> {
-  const response = await page.request.post("/api/v1/account/step-up/password", {
-    data: { password, action },
-    headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
-  });
+export async function stepUpGrant(page: Page, action: string): Promise<string> {
+  return page.evaluate(async (action) => {
+    const toBase64Url = (buffer: ArrayBuffer) =>
+      btoa(String.fromCharCode(...new Uint8Array(buffer)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
 
-  if (!response.ok())
-    throw new Error(`Step-up failed (${response.status()}): ${await response.text()}`);
+    const fromBase64Url = (value: string) => {
+      const padded = value.replaceAll("-", "+").replaceAll("_", "/");
+      const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, "="));
+      const bytes = new Uint8Array(binary.length);
 
-  return ((await response.json()) as { grant: string }).grant;
+      for (let index = 0; index < binary.length; index++)
+        bytes[index] = binary.charCodeAt(index);
+
+      return bytes.buffer;
+    };
+
+    const headers = {
+      "content-type": "application/json",
+      "x-effect-auth-csrf": "1",
+    };
+
+    const startedResponse = await fetch("/api/v1/account/step-up/passkey/begin", {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({ action }),
+    });
+
+    if (!startedResponse.ok)
+      throw new Error(`Step-up begin failed (${startedResponse.status})`);
+
+    const started = await startedResponse.json();
+    // SAFETY: the step-up endpoint returns @simplewebauthn request options,
+    // which the browser WebAuthn API accepts with this field shape.
+    const options = started.options as any;
+
+    // SAFETY: `publicKey` is the browser WebAuthn request shape; the cast
+    // narrows the DOM union returned by `navigator.credentials.get`.
+    const credential = (await navigator.credentials.get({
+      publicKey: {
+        challenge: fromBase64Url(options.challenge),
+        rpId: options.rpId,
+        allowCredentials: (options.allowCredentials ?? []).map((item: any) => ({
+          ...item,
+          id: fromBase64Url(item.id),
+        })),
+        timeout: options.timeout,
+        userVerification: options.userVerification,
+      },
+    })) as PublicKeyCredential | null;
+
+    if (!credential) throw new Error("Passkey assertion was not created");
+
+    // SAFETY: a public-key credential response is an assertion response.
+    const assertion = credential.response as AuthenticatorAssertionResponse;
+
+    const response = {
+      id: credential.id,
+      rawId: toBase64Url(credential.rawId),
+      type: credential.type,
+      response: {
+        authenticatorData: toBase64Url(assertion.authenticatorData),
+        clientDataJSON: toBase64Url(assertion.clientDataJSON),
+        signature: toBase64Url(assertion.signature),
+        userHandle: assertion.userHandle ? toBase64Url(assertion.userHandle) : undefined,
+      },
+      clientExtensionResults: credential.getClientExtensionResults(),
+    };
+
+    const completeResponse = await fetch("/api/v1/account/step-up/passkey/complete", {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({
+        stepUpToken: started.stepUpToken,
+        response: JSON.stringify(response),
+      }),
+    });
+
+    if (!completeResponse.ok)
+      throw new Error(`Step-up completion failed (${completeResponse.status})`);
+
+    const body: { grant: string } = await completeResponse.json();
+
+    return body.grant;
+  }, action);
 }
+
+type VirtualAuthenticator = { client: any; authenticatorId: string };
+
+const authenticators = new WeakMap<Page, VirtualAuthenticator>();
 
 /**
  * Install a CTAP2 virtual authenticator on the page target. WebAuthn then runs
  * entirely in software, so passkey tests do not need a hardware key.
  */
 export async function installVirtualAuthenticator(page: Page) {
+  const existing = authenticators.get(page);
+
+  if (existing) return existing;
+
   const client = await page.context().newCDPSession(page);
   await client.send("WebAuthn.enable");
 
@@ -286,5 +373,43 @@ export async function installVirtualAuthenticator(page: Page) {
     },
   });
 
-  return { client, authenticatorId };
+  const value = { client, authenticatorId };
+  authenticators.set(page, value);
+
+  return value;
+}
+
+/**
+ * Add another virtual authenticator without removing the existing one. Tests use
+ * this to simulate a second device; Chrome picks the credential it has.
+ */
+export async function addVirtualAuthenticator(page: Page) {
+  const current = await installVirtualAuthenticator(page);
+
+  const { authenticatorId } = await current.client.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "usb",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+
+  return { client: current.client, authenticatorId };
+}
+
+/**
+ * Toggle whether a virtual authenticator answers WebAuthn prompts. Tests use
+ * this to choose which simulated device performs a ceremony.
+ */
+export async function setVirtualAuthenticatorPresence(
+  authenticator: VirtualAuthenticator,
+  enabled: boolean,
+) {
+  await authenticator.client.send("WebAuthn.setAutomaticPresenceSimulation", {
+    authenticatorId: authenticator.authenticatorId,
+    enabled,
+  });
 }

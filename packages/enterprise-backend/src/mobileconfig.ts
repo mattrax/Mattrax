@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import { parsePlist } from "@mattrax/plist";
+import { Effect, Option, Schema } from "effect";
+import { PlistValue, parsePlist } from "@mattrax/plist";
 import type { MobileconfigPreview, MobileconfigPayloadPreview } from "@mattrax/enterprise-domain";
 
 /**
@@ -118,8 +118,14 @@ export const payloadCategory = (payloadType: string): string => {
   }
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const PlistRecord = Schema.Record(Schema.String, PlistValue);
+
+type PlistDictionary = Schema.Schema.Type<typeof PlistRecord>;
+
+const isRecord = (value: PlistValue): value is PlistDictionary => Schema.is(PlistRecord)(value);
+
+const plistString = (value: PlistValue | undefined) =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
 
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
@@ -137,25 +143,18 @@ const extractSignedContent = async (bytes: Uint8Array): Promise<Uint8Array | nul
   try {
     const pkijs = await import("pkijs");
 
-    const contentInfo = pkijs.ContentInfo.fromBER(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    );
+    const der = new Uint8Array(bytes.byteLength);
+    der.set(bytes);
+
+    const contentInfo = pkijs.ContentInfo.fromBER(der.buffer);
 
     if (contentInfo.contentType !== pkijs.ContentInfo.SIGNED_DATA) return null;
     const signedData = new pkijs.SignedData({ schema: contentInfo.content });
-
-    const content = signedData.encapContentInfo.eContent as unknown as {
-      getValue?: () => ArrayBuffer;
-    };
+    const content = signedData.encapContentInfo.eContent;
 
     if (!content) return null;
 
-    const value =
-      typeof content.getValue === "function"
-        ? content.getValue()
-        : (
-            content as unknown as { valueBlock?: { valueHexView?: Uint8Array } }
-          ).valueBlock?.valueHexView?.slice().buffer;
+    const value = content.getValue();
 
     return value ? new Uint8Array(value) : null;
   } catch {
@@ -179,17 +178,14 @@ const textFromBytes = async (bytes: Uint8Array): Promise<string> => {
   return extracted ? decoder.decode(extracted) : text;
 };
 
-const payloadPreview = (payload: Record<string, unknown>): MobileconfigPayloadPreview => {
-  const type = typeof payload.PayloadType === "string" ? payload.PayloadType : "Unknown";
+const payloadPreview = (payload: PlistDictionary): MobileconfigPayloadPreview => {
+  const type = plistString(payload.PayloadType) ?? "Unknown";
 
   return {
     type,
-    identifier:
-      typeof payload.PayloadIdentifier === "string" ? payload.PayloadIdentifier : undefined,
-    displayName:
-      typeof payload.PayloadDisplayName === "string" ? payload.PayloadDisplayName : undefined,
-    description:
-      typeof payload.PayloadDescription === "string" ? payload.PayloadDescription : undefined,
+    identifier: plistString(payload.PayloadIdentifier),
+    displayName: plistString(payload.PayloadDisplayName),
+    description: plistString(payload.PayloadDescription),
     category: payloadCategory(type),
   };
 };
@@ -199,7 +195,7 @@ const payloadPreview = (payload: Record<string, unknown>): MobileconfigPayloadPr
  * policy editor. Throws an Error with a user-facing message on invalid input.
  */
 export const parseMobileconfigPreview = async (base64: string): Promise<MobileconfigPreview> => {
-  if (typeof base64 !== "string" || base64.trim().length === 0) {
+  if (base64.trim().length === 0) {
     throw new Error("The mobileconfig is empty");
   }
 
@@ -234,21 +230,15 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
   }
 
   return {
-    displayName:
-      typeof plist.PayloadDisplayName === "string" ? plist.PayloadDisplayName : undefined,
-    description:
-      typeof plist.PayloadDescription === "string" ? plist.PayloadDescription : undefined,
-    organization:
-      typeof plist.PayloadOrganization === "string" ? plist.PayloadOrganization : undefined,
-    identifier: typeof plist.PayloadIdentifier === "string" ? plist.PayloadIdentifier : undefined,
-    uuid: typeof plist.PayloadUUID === "string" ? plist.PayloadUUID : undefined,
-    type: typeof plist.PayloadType === "string" ? plist.PayloadType : undefined,
-    payloadDisplayName:
-      typeof plist.PayloadDisplayName === "string" ? plist.PayloadDisplayName : undefined,
-    payloadDescription:
-      typeof plist.PayloadDescription === "string" ? plist.PayloadDescription : undefined,
-    payloadOrganization:
-      typeof plist.PayloadOrganization === "string" ? plist.PayloadOrganization : undefined,
+    displayName: plistString(plist.PayloadDisplayName),
+    description: plistString(plist.PayloadDescription),
+    organization: plistString(plist.PayloadOrganization),
+    identifier: plistString(plist.PayloadIdentifier),
+    uuid: plistString(plist.PayloadUUID),
+    type: plistString(plist.PayloadType),
+    payloadDisplayName: plistString(plist.PayloadDisplayName),
+    payloadDescription: plistString(plist.PayloadDescription),
+    payloadOrganization: plistString(plist.PayloadOrganization),
     payloads: payloads.map(payloadPreview),
   };
 };

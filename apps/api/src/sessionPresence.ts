@@ -11,14 +11,7 @@ const PREFIX = "v1.";
 const DEFAULT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const CLEARED = "Thu, 01 Jan 1970 00:00:00 GMT";
 
-const getSetCookies = (headers: Headers): ReadonlyArray<string> => {
-  const withCookies = headers as Headers & { getSetCookie?: () => string[] };
-
-  if (typeof withCookies.getSetCookie === "function") return withCookies.getSetCookie();
-  const combined = headers.get("set-cookie");
-
-  return combined ? [combined] : [];
-};
+const getSetCookies = (headers: Headers): ReadonlyArray<string> => headers.getSetCookie();
 
 const maxAgeSeconds = (setCookie: string): number | undefined => {
   const match = /;\s*max-age=(-?\d+)/i.exec(setCookie);

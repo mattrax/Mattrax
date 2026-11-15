@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import {
   resolveEffectivePolicy,
   type PolicyResolutionInput,
@@ -11,7 +12,11 @@ const policy = (
   updatedAt = "2026-01-01T00:00:00.000Z",
 ): PolicyResolutionPolicy => ({ id, name: id, priority, updatedAt });
 
-const configuration = (policyId: string, kind = "mttx.apple.device", data: unknown = {}) => ({
+const configuration = (
+  policyId: string,
+  kind = "mttx.apple.device",
+  data: Schema.Json = {},
+) => ({
   policyId,
   kind,
   data,
@@ -244,5 +249,201 @@ describe("policy resolution", () => {
         reason: "device-exclude",
       }),
     ]);
+  });
+});
+
+describe("user-assigned policies", () => {
+  const user = (id: string) => ({ id, name: `User ${id}`, email: `${id}@example.test` });
+  const directoryGroup = (id: string) => ({ id, name: `Directory ${id}` });
+
+  it("applies a direct user policy to the device", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+      policies: [policy("user-policy")],
+      configurations: [configuration("user-policy")],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        policyId: "user-policy",
+        scope: "user",
+        userIds: ["user-a"],
+      }),
+    ]);
+  });
+
+  it("does not override a device policy for the same kind", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+      deviceAssignments: [{ policyId: "device-policy" }],
+      policies: [policy("device-policy"), policy("user-policy", 100)],
+      configurations: [configuration("device-policy"), configuration("user-policy")],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({ policyId: "device-policy", scope: "direct" }),
+    ]);
+    expect(result.overridden).toContainEqual(
+      expect.objectContaining({
+        policyId: "user-policy",
+        scope: "user",
+        reason: "device-scope",
+      }),
+    );
+  });
+
+  it("prefers a user policy over a user group policy", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userGroups: [directoryGroup("group-a")],
+      userGroupMembers: [{ groupId: "group-a", userId: "user-a" }],
+      userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+      userGroupAssignments: [{ groupId: "group-a", policyId: "group-policy" }],
+      policies: [policy("group-policy", 100), policy("user-policy", 0)],
+      configurations: [configuration("group-policy"), configuration("user-policy")],
+    });
+
+    expect(result.configurations[0]).toMatchObject({
+      policyId: "user-policy",
+      scope: "user",
+    });
+    expect(result.overridden).toContainEqual(
+      expect.objectContaining({
+        policyId: "group-policy",
+        scope: "user-group",
+      }),
+    );
+  });
+
+  it("keeps a policy one linked user includes when another is excluded", () => {
+    const result = resolve({
+      users: [user("user-a"), user("user-b")],
+      userAssignments: [
+        { userId: "user-a", policyId: "shared-policy", mode: "include" },
+        { userId: "user-b", policyId: "shared-policy", mode: "exclude" },
+      ],
+      policies: [policy("shared-policy")],
+      configurations: [configuration("shared-policy")],
+    });
+
+    // Delivery is device-wide, so excluding one user must not strip the policy
+    // from the device that another linked user still needs.
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        policyId: "shared-policy",
+        userIds: ["user-a"],
+      }),
+    ]);
+    expect(result.exclusions).toContainEqual(
+      expect.objectContaining({
+        policyId: "shared-policy",
+        scope: "user",
+        userIds: ["user-b"],
+        reason: "user-exclude",
+        effective: false,
+      }),
+    );
+  });
+
+  it("drops a policy when every linked user is excluded", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userAssignments: [
+        { userId: "user-a", policyId: "shared-policy", mode: "include" },
+        { userId: "user-a", policyId: "shared-policy", mode: "exclude" },
+      ],
+      policies: [policy("shared-policy")],
+      configurations: [configuration("shared-policy")],
+    });
+
+    expect(result.configurations).toEqual([]);
+  });
+
+  it("removes only the excluded user from a directory-group policy", () => {
+    const result = resolve({
+      users: [user("user-a"), user("user-b")],
+      userGroups: [directoryGroup("group-a")],
+      userGroupMembers: [
+        { groupId: "group-a", userId: "user-a" },
+        { groupId: "group-a", userId: "user-b" },
+      ],
+      userAssignments: [{ userId: "user-b", policyId: "group-policy", mode: "exclude" }],
+      userGroupAssignments: [{ groupId: "group-a", policyId: "group-policy" }],
+      policies: [policy("group-policy")],
+      configurations: [configuration("group-policy")],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        policyId: "group-policy",
+        scope: "user-group",
+        userIds: ["user-a"],
+      }),
+    ]);
+    expect(result.exclusions).toContainEqual(
+      expect.objectContaining({
+        policyId: "group-policy",
+        userIds: ["user-b"],
+        reason: "user-exclude",
+        effective: true,
+      }),
+    );
+  });
+
+  it("fills kinds not covered by device policies and merges contributing users", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+      deviceAssignments: [{ policyId: "device-policy" }],
+      policies: [policy("device-policy"), policy("user-policy")],
+      configurations: [
+        configuration("device-policy", "mttx.apple.device"),
+        configuration("user-policy", "mttx.apple.custom.wifi"),
+      ],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({ kind: "mttx.apple.custom.wifi", scope: "user" }),
+      expect.objectContaining({ kind: "mttx.apple.device", scope: "direct" }),
+    ]);
+    expect(result.policies).toHaveLength(2);
+  });
+
+  it("lets a device group exclusion veto a user include", () => {
+    const result = resolve({
+      groups: [{ id: "group-1", name: "Engineering" }],
+      groupAssignments: [{ groupId: "group-1", policyId: "user-policy", mode: "exclude" }],
+      users: [user("user-a")],
+      userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+      policies: [policy("user-policy")],
+      configurations: [configuration("user-policy")],
+    });
+
+    expect(result.configurations).toEqual([]);
+  });
+
+  it("reports a user group exclusion", () => {
+    const result = resolve({
+      users: [user("user-a")],
+      userGroups: [directoryGroup("group-a")],
+      userGroupMembers: [{ groupId: "group-a", userId: "user-a" }],
+      userGroupAssignments: [
+        { groupId: "group-a", policyId: "policy-a", mode: "exclude" },
+      ],
+      policies: [policy("policy-a")],
+      configurations: [configuration("policy-a")],
+    });
+
+    expect(result.configurations).toEqual([]);
+    expect(result.exclusions).toContainEqual(
+      expect.objectContaining({
+        policyId: "policy-a",
+        scope: "user-group",
+        userGroupId: "group-a",
+        reason: "user-group-exclude",
+      }),
+    );
   });
 });

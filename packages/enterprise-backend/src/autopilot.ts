@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { and, asc, eq } from "drizzle-orm";
 import type {
   AutopilotDeploymentProfileInput,
@@ -22,9 +22,11 @@ export class AutopilotError extends Data.TaggedError("AutopilotError")<{
 }> {}
 
 const fail = (reason: AutopilotFailureReason, message: string, cause?: unknown) =>
-  new AutopilotError({ reason, message, ...(cause !== undefined ? { cause } : {}) });
+  new AutopilotError({ reason, message, cause });
 
-export type AutopilotImportRow = {
+export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+type AutopilotImportRow = {
   readonly serial: string;
   readonly hardwareHash: string;
   readonly groupTag?: string;
@@ -177,11 +179,11 @@ export const parseAutopilotCsv = (
     }
 
     seen.add(serial);
-    rows.push({
-      serial,
-      hardwareHash,
-      ...(groupTag ? { groupTag: groupTag.slice(0, 255) } : {}),
-    });
+    const row: Mutable<AutopilotImportRow> = { serial, hardwareHash };
+
+    if (groupTag) row.groupTag = groupTag.slice(0, 255);
+
+    rows.push(row);
   }
 
   return { rows, errors, skipped, truncated };
@@ -203,8 +205,6 @@ export type AutopilotProfileValidation =
   | { readonly ok: true; readonly value: AutopilotProfileValues }
   | { readonly ok: false; readonly message: string };
 
-const DEPLOYMENT_MODES = new Set(["userDriven", "selfDeploying", "preProvisioned"]);
-const JOIN_TYPES = new Set(["azureADJoin", "azureADJoinUsingDeviceAuth", "hybridAzureADJoin"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 const TIMEZONE_PATTERN = /^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/;
@@ -214,36 +214,55 @@ const DEVICE_NAME_PATTERN = /^[A-Za-z0-9%_\- ]+$/;
  * Validate Autopilot profile settings before any Graph call. Invalid input
  * never reaches Graph and never creates a local row.
  */
+const AutopilotProfileInput = Schema.Struct({
+  name: Schema.optional(Schema.Json),
+  description: Schema.optional(Schema.Json),
+  deploymentMode: Schema.optional(Schema.Json),
+  joinType: Schema.optional(Schema.Json),
+  deviceNameTemplate: Schema.optional(Schema.Json),
+  locale: Schema.optional(Schema.Json),
+  timezone: Schema.optional(Schema.Json),
+  enableDevicePreparation: Schema.optional(Schema.Json),
+  assignedGroupId: Schema.optional(Schema.Json),
+});
+
+const textValue = (value: Schema.Json | undefined) =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim();
+
 export const validateAutopilotProfileInput = (
-  input: Partial<Record<keyof AutopilotProfileValues, unknown>>,
+  input: Schema.Schema.Type<typeof AutopilotProfileInput>,
 ): AutopilotProfileValidation => {
-  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const name = textValue(input.name) ?? "";
 
   if (!name) return { ok: false, message: "Profile name is required." };
 
   if (name.length > 255)
     return { ok: false, message: "Profile name must be 255 characters or fewer." };
 
-  const description =
-    typeof input.description === "string" && input.description.trim()
-      ? input.description.trim()
-      : undefined;
+  const description = textValue(input.description) || undefined;
 
   if (description && description.length > 2_000)
     return { ok: false, message: "Profile description must be 2000 characters or fewer." };
 
-  const deploymentMode =
-    typeof input.deploymentMode === "string" ? input.deploymentMode : "userDriven";
+  const deploymentMode = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.Literals(["userDriven", "selfDeploying", "preProvisioned"]))(
+      input.deploymentMode ?? "userDriven",
+    ),
+  );
 
-  if (!DEPLOYMENT_MODES.has(deploymentMode))
+  if (!deploymentMode)
     return {
       ok: false,
       message: "Deployment mode must be userDriven, selfDeploying or preProvisioned.",
     };
 
-  const joinType = typeof input.joinType === "string" ? input.joinType : "azureADJoin";
+  const joinType = Option.getOrUndefined(
+    Schema.decodeUnknownOption(
+      Schema.Literals(["azureADJoin", "azureADJoinUsingDeviceAuth", "hybridAzureADJoin"]),
+    )(input.joinType ?? "azureADJoin"),
+  );
 
-  if (!JOIN_TYPES.has(joinType))
+  if (!joinType)
     return {
       ok: false,
       message: "Join type must be azureADJoin, azureADJoinUsingDeviceAuth or hybridAzureADJoin.",
@@ -263,10 +282,7 @@ export const validateAutopilotProfileInput = (
       message: "Pre-provisioned deployment requires device preparation to be enabled.",
     };
 
-  const deviceNameTemplate =
-    typeof input.deviceNameTemplate === "string" && input.deviceNameTemplate.trim()
-      ? input.deviceNameTemplate.trim()
-      : undefined;
+  const deviceNameTemplate = textValue(input.deviceNameTemplate) || undefined;
 
   if (deviceNameTemplate) {
     if (deviceNameTemplate.length > 60)
@@ -280,61 +296,62 @@ export const validateAutopilotProfileInput = (
       };
   }
 
-  const locale =
-    typeof input.locale === "string" && input.locale.trim() ? input.locale.trim() : undefined;
+  const locale = textValue(input.locale) || undefined;
 
   if (locale && !LOCALE_PATTERN.test(locale))
     return { ok: false, message: "Locale must look like en-US." };
 
-  const timezone =
-    typeof input.timezone === "string" && input.timezone.trim() ? input.timezone.trim() : undefined;
+  const timezone = textValue(input.timezone) || undefined;
 
   if (timezone && !TIMEZONE_PATTERN.test(timezone))
     return { ok: false, message: "Timezone must be an IANA name such as Australia/Sydney." };
 
-  const assignedGroupId =
-    typeof input.assignedGroupId === "string" && input.assignedGroupId.trim()
-      ? input.assignedGroupId.trim()
-      : undefined;
+  const assignedGroupId = textValue(input.assignedGroupId) || undefined;
 
   if (assignedGroupId && !UUID_PATTERN.test(assignedGroupId))
     return { ok: false, message: "Assigned group must be an Entra group object id." };
 
-  return {
-    ok: true,
-    value: {
-      name,
-      ...(description ? { description } : {}),
-      deploymentMode: deploymentMode as AutopilotProfileValues["deploymentMode"],
-      joinType: joinType as AutopilotProfileValues["joinType"],
-      ...(deviceNameTemplate ? { deviceNameTemplate } : {}),
-      ...(locale ? { locale } : {}),
-      ...(timezone ? { timezone } : {}),
-      enableDevicePreparation,
-      ...(assignedGroupId ? { assignedGroupId } : {}),
-    },
+  const value: Mutable<AutopilotProfileValues> = {
+    name,
+    deploymentMode,
+    joinType,
+    enableDevicePreparation,
   };
+
+  if (description) value.description = description;
+
+  if (deviceNameTemplate) value.deviceNameTemplate = deviceNameTemplate;
+
+  if (locale) value.locale = locale;
+
+  if (timezone) value.timezone = timezone;
+
+  if (assignedGroupId) value.assignedGroupId = assignedGroupId;
+
+  return { ok: true, value };
 };
 
 export const graphProfileInput = (
   values: AutopilotProfileValues,
 ): AutopilotDeploymentProfileInput => ({
   displayName: values.name,
-  ...(values.description !== undefined ? { description: values.description } : {}),
+  description: values.description,
   deploymentMode: values.deploymentMode,
   joinType: values.joinType,
-  ...(values.deviceNameTemplate !== undefined
-    ? { deviceNameTemplate: values.deviceNameTemplate }
-    : {}),
-  ...(values.locale !== undefined ? { locale: values.locale } : {}),
+  deviceNameTemplate: values.deviceNameTemplate,
+  locale: values.locale,
   enableDevicePreparation: values.enableDevicePreparation,
 });
 
-const graphFailure = (cause: unknown): AutopilotError => {
+type AutopilotFailureCause = Error | Schema.Json | null | undefined;
+
+const graphFailure = (cause: AutopilotFailureCause): AutopilotError => {
   const message =
-    typeof cause === "object" && cause !== null && "message" in cause
-      ? String((cause as { message: unknown }).message)
-      : String(cause);
+    cause instanceof Error
+      ? cause.message
+      : (Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Struct({ message: Schema.String }))(cause),
+          )?.message ?? String(cause));
 
   return fail("graph", message, cause);
 };
@@ -397,7 +414,7 @@ export const importAutopilotDevices = (options: {
         rows.map((row) => ({
           serialNumber: row.serial,
           hardwareIdentifier: row.hardwareHash,
-          ...(row.groupTag ? { groupTag: row.groupTag } : {}),
+          groupTag: row.groupTag,
           orderIdentifier: `mattrax-${organizationId.slice(0, 24)}`,
         })),
       )
@@ -426,22 +443,25 @@ export const importAutopilotDevices = (options: {
         updatedAt: timestamp,
       };
 
+      const set = {
+        hardwareHash: values.hardwareHash,
+        profileStatus: values.profileStatus,
+        enrollmentState: values.enrollmentState,
+        lastSyncedAt: timestamp,
+        raw: values.raw,
+        updatedAt: timestamp,
+      };
+
+      if (values.groupTag) Object.assign(set, { groupTag: values.groupTag });
+
+      if (values.model) Object.assign(set, { model: values.model });
+
+      if (values.manufacturer) Object.assign(set, { manufacturer: values.manufacturer });
+
       yield* db
         .insert(schema.autopilotDevice)
         .values(values)
-        .onDuplicateKeyUpdate({
-          set: {
-            hardwareHash: values.hardwareHash,
-            ...(values.groupTag ? { groupTag: values.groupTag } : {}),
-            ...(values.model ? { model: values.model } : {}),
-            ...(values.manufacturer ? { manufacturer: values.manufacturer } : {}),
-            profileStatus: values.profileStatus,
-            enrollmentState: values.enrollmentState,
-            lastSyncedAt: timestamp,
-            raw: values.raw,
-            updatedAt: timestamp,
-          },
-        });
+        .onDuplicateKeyUpdate({ set });
     }
 
     return {
@@ -534,25 +554,33 @@ export const syncAutopilotDevices = (options: {
         updatedAt: timestamp,
       };
 
+      const set = {
+        profileStatus: values.profileStatus,
+        enrollmentState: values.enrollmentState,
+        lastSyncedAt: timestamp,
+        raw: values.raw,
+        updatedAt: timestamp,
+      };
+
+      if (values.hardwareHash) Object.assign(set, { hardwareHash: values.hardwareHash });
+
+      if (values.graphId) Object.assign(set, { graphId: values.graphId });
+
+      if (values.azureAdDeviceId)
+        Object.assign(set, { azureAdDeviceId: values.azureAdDeviceId });
+
+      if (values.groupTag) Object.assign(set, { groupTag: values.groupTag });
+
+      if (values.model) Object.assign(set, { model: values.model });
+
+      if (values.manufacturer) Object.assign(set, { manufacturer: values.manufacturer });
+
+      if (values.deviceId) Object.assign(set, { deviceId: values.deviceId });
+
       yield* db
         .insert(schema.autopilotDevice)
         .values(values)
-        .onDuplicateKeyUpdate({
-          set: {
-            ...(values.hardwareHash ? { hardwareHash: values.hardwareHash } : {}),
-            ...(values.graphId ? { graphId: values.graphId } : {}),
-            ...(values.azureAdDeviceId ? { azureAdDeviceId: values.azureAdDeviceId } : {}),
-            ...(values.groupTag ? { groupTag: values.groupTag } : {}),
-            ...(values.model ? { model: values.model } : {}),
-            ...(values.manufacturer ? { manufacturer: values.manufacturer } : {}),
-            profileStatus: values.profileStatus,
-            enrollmentState: values.enrollmentState,
-            ...(values.deviceId ? { deviceId: values.deviceId } : {}),
-            lastSyncedAt: timestamp,
-            raw: values.raw,
-            updatedAt: timestamp,
-          },
-        });
+        .onDuplicateKeyUpdate({ set });
     }
 
     return { synced: graphDevices.length, linked, pages };

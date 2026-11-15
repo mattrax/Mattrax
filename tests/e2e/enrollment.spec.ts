@@ -12,10 +12,10 @@ test.describe("device enrollment", () => {
 
     // Every platform is explained; Windows is available even before APNs is set up.
     for (const platform of ["Apple", "Windows", "Android"]) {
-      await expect(page.getByRole("button", { name: new RegExp(`^${platform}$`) })).toBeVisible();
+      await expect(page.getByRole("tab", { name: new RegExp(`^${platform}$`) })).toBeVisible();
     }
 
-    await page.getByRole("button", { name: /^Apple$/ }).click();
+    await page.getByRole("tab", { name: /^Apple$/ }).click();
     await expect(
       page.getByText(/Apple management is not configured|Apple enrollment is disabled/i),
     ).toBeVisible();
@@ -30,10 +30,10 @@ test.describe("device enrollment", () => {
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
-    await expect(page.getByText(/enrollment password/i)).toBeVisible();
-    await page.locator('input[placeholder*="Enrollment password"]').fill("wrong");
+    await expect(page.getByText(/administrator has set an enrollment password/i)).toBeVisible();
+    await page.getByLabel("Enrollment password").fill("wrong");
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await expect(page.getByText(/invalid/i)).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText(/invalid/i);
   });
 
   test("shows a tenant-scoped Windows discovery URL and marks Android unavailable", async ({
@@ -76,17 +76,19 @@ test.describe("device enrollment", () => {
     });
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
-    await page.getByRole("button", { name: /^Windows$/ }).click();
-    await expect(page.locator("input[readonly]")).toHaveValue(
+    await page.getByRole("tab", { name: /^Windows$/ }).click();
+    await expect(page.locator("#windows-discovery-url")).toHaveText(
       /\/mdm\/windows\/discovery\?tenant=mttxw1\./,
     );
     await expect(page.getByText(/deployment-wide/i)).toHaveCount(0);
     await expect(page.getByText(/scoped to this tenant/i)).toBeVisible();
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-    await page.getByRole("button", { name: /^Copy$/ }).click();
-    await expect(page.getByRole("button", { name: /^Copied$/ })).toBeVisible();
+    await page.getByRole("button", { name: "Copy Windows discovery URL" }).click();
+    await expect(page.getByRole("button", { name: "Copy Windows discovery URL" })).toHaveText(
+      "Copied",
+    );
 
-    await page.getByRole("button", { name: /^Android$/ }).click();
+    await page.getByRole("tab", { name: /^Android$/ }).click();
     await expect(page.getByText(/Android Enterprise is not configured/i)).toBeVisible();
   });
 
@@ -169,10 +171,10 @@ test.describe("device enrollment", () => {
     await expect(page.getByText("Bad password")).toBeVisible();
   });
 
-  test("health cards open the matching device filter", async ({ page }) => {
+  test("the health filter narrows the device list", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Health Tenant");
-    await gotoHydrated(page, `/t/${tenant.id}`);
-    await page.getByRole("button", { name: /Critical/ }).click();
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await page.getByLabel("Filter by health").selectOption("critical");
     await expect(page).toHaveURL(/health=critical/);
     await expect(page.getByLabel("Filter by health")).toHaveValue("critical");
   });

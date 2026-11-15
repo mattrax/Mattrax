@@ -6,7 +6,6 @@ import {
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
   hasDynamicGroupConditions,
-  type DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
 
 export type DynamicGroupSyncOptions = {
@@ -29,6 +28,33 @@ type DeviceRow = typeof s.device.$inferSelect;
 type DeclarationRow = typeof s.deviceDeclaration.$inferSelect;
 
 type ApplicationRow = typeof s.deviceApplication.$inferSelect;
+
+type HealthInput = Parameters<typeof deriveDeviceHealth>[0];
+
+const healthForDevice = (
+  device: DeviceRow,
+  declarations: ReadonlyArray<DeclarationRow>,
+  now: Date,
+  staleAfterDays: number | undefined,
+): ReturnType<typeof deriveDeviceHealth> => {
+  const input: HealthInput = {
+    status: device.status,
+    lastSeenAt: device.lastSeenAt,
+    declarations,
+    diskTotal: device.diskTotal,
+    diskUsed: device.diskUsed,
+    proto: device.proto,
+    model: device.model,
+    osEdition: device.osEdition,
+    fileVaultEnabled: device.fileVaultEnabled,
+    batteryHealth: device.batteryHealth,
+    now,
+  };
+
+  return deriveDeviceHealth(
+    staleAfterDays === undefined ? input : { ...input, staleAfterDays },
+  );
+};
 
 const deviceSnapshot = (
   device: DeviceRow,
@@ -162,7 +188,7 @@ export const syncDynamicGroup = (
       };
     }
 
-    const rules = group.rules as DynamicGroupRules | null;
+    const rules = group.rules;
 
     // Invalid rules should have been rejected on write. Leave the existing
     // membership untouched rather than silently removing baselines. A
@@ -194,20 +220,12 @@ export const syncDynamicGroup = (
     const matching = new Set<string>();
 
     for (const device of devices) {
-      const health = deriveDeviceHealth({
-        status: device.status,
-        lastSeenAt: device.lastSeenAt,
-        declarations: declarationsFor.get(device.id) ?? [],
-        diskTotal: device.diskTotal,
-        diskUsed: device.diskUsed,
-        proto: device.proto,
-        model: device.model,
-        osEdition: device.osEdition,
-        fileVaultEnabled: device.fileVaultEnabled,
-        batteryHealth: device.batteryHealth,
+      const health = healthForDevice(
+        device,
+        declarationsFor.get(device.id) ?? [],
         now,
-        ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
-      });
+        options.staleAfterDays,
+      );
 
       if (
         evaluateDynamicGroupRules(
@@ -338,20 +356,7 @@ export const syncDynamicGroupsForDevice = (
       yield* loadApplications(db, organizationId, [device.id]),
     );
 
-    const health = deriveDeviceHealth({
-      status: device.status,
-      lastSeenAt: device.lastSeenAt,
-      declarations,
-      diskTotal: device.diskTotal,
-      diskUsed: device.diskUsed,
-      proto: device.proto,
-      model: device.model,
-      osEdition: device.osEdition,
-      fileVaultEnabled: device.fileVaultEnabled,
-      batteryHealth: device.batteryHealth,
-      now,
-      ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
-    });
+    const health = healthForDevice(device, declarations, now, options.staleAfterDays);
 
     const links = yield* db
       .select()
@@ -372,7 +377,7 @@ export const syncDynamicGroupsForDevice = (
     const evaluated: string[] = [];
 
     for (const group of groups) {
-      const rules = group.rules as DynamicGroupRules | null;
+      const rules = group.rules;
 
       if (!rules || rules.version !== 1) continue;
 
@@ -485,7 +490,7 @@ export const previewDynamicGroup = (
       return { groupId, kind: "manual", count: members.length, devices: members, evaluatedAt: now };
     }
 
-    const rules = group.rules as DynamicGroupRules | null;
+    const rules = group.rules;
 
     if (!rules || rules.version !== 1)
       return { groupId, kind: "dynamic", count: 0, devices: [], evaluatedAt: now };
@@ -511,20 +516,12 @@ export const previewDynamicGroup = (
     const matched: Array<{ id: string; name: string }> = [];
 
     for (const device of devices) {
-      const health = deriveDeviceHealth({
-        status: device.status,
-        lastSeenAt: device.lastSeenAt,
-        declarations: declarationsFor.get(device.id) ?? [],
-        diskTotal: device.diskTotal,
-        diskUsed: device.diskUsed,
-        proto: device.proto,
-        model: device.model,
-        osEdition: device.osEdition,
-        fileVaultEnabled: device.fileVaultEnabled,
-        batteryHealth: device.batteryHealth,
+      const health = healthForDevice(
+        device,
+        declarationsFor.get(device.id) ?? [],
         now,
-        ...(options.staleAfterDays === undefined ? {} : { staleAfterDays: options.staleAfterDays }),
-      });
+        options.staleAfterDays,
+      );
 
       if (
         evaluateDynamicGroupRules(

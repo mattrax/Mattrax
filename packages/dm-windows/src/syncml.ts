@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import {
   deserializeSoapElement,
   serializeSoapElement,
@@ -10,22 +10,19 @@ import type {
   WindowsManagementResponse,
 } from "@mattrax/management-backend";
 
-export class SyncMLError {
-  readonly _tag = "SyncMLError";
-  constructor(
-    readonly message: string,
-    readonly cause?: unknown,
-  ) {}
-}
+export class SyncMLError extends Data.TaggedError("SyncMLError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
 export const parseSyncML = (xml: string): Effect.Effect<SyncMLType, SyncMLError> =>
   deserializeSoapElement(xml, SyncML).pipe(
-    Effect.mapError((cause) => new SyncMLError("Failed to parse SyncML", cause)),
+    Effect.mapError((cause) => new SyncMLError({ message: "Failed to parse SyncML", cause })),
   );
 
 export const serializeSyncML = (message: SyncMLType): Effect.Effect<string, SyncMLError> =>
   serializeSoapElement(SyncML, message).pipe(
-    Effect.mapError((cause) => new SyncMLError("Failed to serialize SyncML", cause)),
+    Effect.mapError((cause) => new SyncMLError({ message: "Failed to serialize SyncML", cause })),
   );
 
 export function toManagementRequest(message: SyncMLType): WindowsManagementRequest {
@@ -36,6 +33,7 @@ export function toManagementRequest(message: SyncMLType): WindowsManagementReque
     target: message.syncHdr.target.locURI,
     statuses: [...(message.syncBody.status ?? [])],
     alerts: [...(message.syncBody.alert ?? [])],
+    results: [...(message.syncBody.results ?? [])],
   };
 }
 
@@ -85,7 +83,7 @@ export function fromManagementResponse(
           items: [
             {
               target: { locURI: c.locURI ?? "" },
-              ...(c.format ? { meta: { format: c.format, type: "text/plain" } } : {}),
+              meta: c.format ? { format: c.format, type: "text/plain" } : undefined,
               data: c.data,
             },
           ],
@@ -97,7 +95,7 @@ export function fromManagementResponse(
           items: [
             {
               target: { locURI: c.locURI ?? "" },
-              ...(c.format ? { meta: { format: c.format, type: "text/plain" } } : {}),
+              meta: c.format ? { format: c.format, type: "text/plain" } : undefined,
               data: c.data,
             },
           ],

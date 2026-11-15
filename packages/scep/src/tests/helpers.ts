@@ -19,7 +19,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   }
 }
 
-const ALGORITHM = {
+const ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
@@ -27,10 +27,7 @@ const ALGORITHM = {
 };
 
 export async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM as any, true, [
-    "sign",
-    "verify",
-  ]) as Promise<CryptoKeyPair>;
+  return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"] as const);
 }
 
 export async function createTestCaCert(
@@ -197,10 +194,7 @@ export async function encryptEnvelopedData(
       algorithmParams: new asn1js.Null(),
     }),
     encryptedKey: new asn1js.OctetString({
-      valueHex: encryptedSessionKey.buffer.slice(
-        encryptedSessionKey.byteOffset,
-        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
-      ) as ArrayBuffer,
+      valueHex: new Uint8Array(encryptedSessionKey).buffer,
     }),
   });
 
@@ -211,7 +205,7 @@ export async function encryptEnvelopedData(
       contentType: pkijs.ContentInfo.DATA,
       contentEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
         algorithmId: "2.16.840.1.101.3.4.1.2",
-        algorithmParams: new asn1js.OctetString({ valueHex: iv.buffer as ArrayBuffer }),
+        algorithmParams: new asn1js.OctetString({ valueHex: new Uint8Array(iv).buffer }),
       }),
       encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
     }),
@@ -238,9 +232,7 @@ export async function buildPkcsReq(
   const csrDer = csr.toSchema().toBER(false);
   const innerContent = encryptCsr ? await encryptEnvelopedData(csrDer, caCert) : csrDer;
 
-  const innerDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", innerContent as ArrayBuffer),
-  );
+  const innerDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", innerContent));
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -289,7 +281,7 @@ export async function buildPkcsReq(
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5",
-          values: [new asn1js.OctetString({ valueHex: senderNonce.buffer as ArrayBuffer })],
+          values: [new asn1js.OctetString({ valueHex: new Uint8Array(senderNonce).buffer })],
         }),
       ],
     }),
@@ -328,12 +320,8 @@ export function mockScepRepository(
       getCa: overrides?.getCa ?? (() => Effect.succeed(null)),
       saveCa: overrides?.saveCa ?? (() => Effect.void),
       authenticatePkcsReq: overrides?.authenticatePkcsReq ?? (() => Effect.void),
-      ...(overrides?.recordIssuedCertificate
-        ? { recordIssuedCertificate: overrides.recordIssuedCertificate }
-        : {}),
-      ...(overrides?.findIssuedCertificate
-        ? { findIssuedCertificate: overrides.findIssuedCertificate }
-        : {}),
+      recordIssuedCertificate: overrides?.recordIssuedCertificate,
+      findIssuedCertificate: overrides?.findIssuedCertificate,
     }),
   );
 }

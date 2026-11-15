@@ -1,11 +1,11 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { eq } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { sessionCookie } from "./auth.ts";
 
-const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
+const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {
     status,
     headers: {
@@ -90,6 +90,15 @@ const clientAndRedirect = (
     return uris.includes(redirectUri) ? client : null;
   });
 
+type McpSessionView = {
+  readonly user: { readonly id: string; readonly name: string; readonly email: string };
+  readonly tenants: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly role: string;
+  }>;
+};
+
 const resolveUser = (request: HttpServerRequest.HttpServerRequest) =>
   Effect.gen(function* () {
     // Consent must come from a browser session, never from an existing MCP
@@ -97,20 +106,14 @@ const resolveUser = (request: HttpServerRequest.HttpServerRequest) =>
     if (!request.cookies[sessionCookie]) return null;
     const service = yield* EnterpriseService;
 
-    return yield* (
-      service.me(request) as Effect.Effect<
-        {
-          user: { id: string; name: string; email: string };
-          tenants: Array<{ id: string; name: string; role: string }>;
-        },
-        unknown
-      >
-    ).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("MCP OAuth session lookup failed", cause).pipe(Effect.as(null)),
-      ),
-    );
-  });
+    const session: McpSessionView = yield* service.me(request);
+
+    return session;
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("MCP OAuth session lookup failed", cause).pipe(Effect.as(null)),
+    ),
+  );
 
 const tokenResponse = (accessToken: string, refreshToken: string, expiresIn: number) =>
   json({
@@ -225,25 +228,38 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
     Effect.gen(function* () {
       const db = yield* Db;
 
-      let body: {
-        client_name?: unknown;
-        redirect_uris?: unknown;
-        token_endpoint_auth_method?: unknown;
-      };
+      const registrationBody = Schema.Struct({
+        client_name: Schema.optional(Schema.Json),
+        redirect_uris: Schema.optional(Schema.Json),
+        token_endpoint_auth_method: Schema.optional(Schema.Json),
+      });
+
+      let body: Schema.Schema.Type<typeof registrationBody>;
 
       try {
-        body = JSON.parse((yield* request.text) || "{}");
+        const decoded = Schema.decodeUnknownOption(registrationBody)(
+          JSON.parse((yield* request.text) || "{}"),
+        );
+
+        if (Option.isNone(decoded))
+          return errorResponse("invalid_client_metadata", "Registration body must be JSON");
+        body = decoded.value;
       } catch {
         return errorResponse("invalid_client_metadata", "Registration body must be JSON");
       }
 
-      const name =
-        typeof body.client_name === "string" && body.client_name.trim()
-          ? body.client_name.trim().slice(0, 120)
-          : "MCP client";
+      const requestedName = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.String)(body.client_name),
+      )?.trim();
+
+      const name = requestedName ? requestedName.slice(0, 120) : "MCP client";
 
       const redirectUris = Array.isArray(body.redirect_uris)
-        ? body.redirect_uris.filter((value): value is string => typeof value === "string")
+        ? body.redirect_uris.flatMap((value) => {
+            const uri = Schema.decodeUnknownOption(Schema.String)(value);
+
+            return Option.isSome(uri) ? [uri.value] : [];
+          })
         : [];
 
       if (

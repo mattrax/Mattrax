@@ -207,7 +207,7 @@ Included:
 Excluded:
 
 - APNs and SCEP private keys.
-- Token hashes and passwords.
+- Token hashes and passkey credentials.
 - Sessions and auth proofs.
 - R2 object bytes.
 - Members, devices and audit history in the import path.

@@ -169,6 +169,12 @@
   @apply bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30;
 }
 
+/* The tinted destructive background lowers the contrast of the already-red
+   label. A lighter foreground keeps destructive buttons at AA in dark mode. */
+.dark .z-button-variant-destructive {
+  color: #ffb4ab;
+}
+
 .z-button-variant-link {
   @apply text-primary underline-offset-4 hover:underline;
 }
@@ -1319,4 +1325,23 @@
 
 .z-input-group-textarea {
   @apply rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent;
+}
+
+/* MARK: Validation state */
+/* Native constraint validation feedback after the user has interacted with a
+ * control. This is visual only: `aria-invalid` remains the source of truth for
+ * assistive technology and is set explicitly by forms that announce errors. */
+:where(input, select, textarea):user-invalid {
+  @apply border-destructive;
+}
+
+:where(input, select, textarea):user-invalid:focus-visible {
+  @apply border-destructive ring-destructive/20;
+}
+
+/* Decorative pulses are non-functional; stop them for reduced-motion users. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
 }

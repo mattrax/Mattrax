@@ -11,6 +11,7 @@
  * binds the signer to the certificate the device presented over mTLS. Callers
  * decide what to do on failure; nothing here touches the request pipeline.
  */
+import { Schema } from "effect";
 import * as pkijs from "pkijs";
 
 // ─── PKIjs Crypto Engine Setup ───────────────────────────────────
@@ -19,7 +20,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -99,8 +100,7 @@ export type SubjectDnAttribute = {
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
-  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
 const toBytes = (value: ArrayBuffer | Uint8Array): Uint8Array =>
   value instanceof Uint8Array ? value : new Uint8Array(value);
@@ -152,23 +152,24 @@ const errorMessage = (cause: unknown): string =>
 
 // ─── Subject DN Parsing ──────────────────────────────────────────
 
-const DN_OID_TO_NAME: Record<string, string> = {
-  "2.5.4.3": "CN",
-  "2.5.4.5": "SERIALNUMBER",
-  "2.5.4.6": "C",
-  "2.5.4.7": "L",
-  "2.5.4.8": "ST",
-  "2.5.4.9": "STREET",
-  "2.5.4.10": "O",
-  "2.5.4.11": "OU",
-  "2.5.4.12": "T",
-  "2.5.4.42": "GIVENNAME",
-  "2.5.4.4": "SN",
-  "0.9.2342.19200300.100.1.1": "UID",
-  "1.2.840.113549.1.9.1": "EMAILADDRESS",
-};
+const DN_OID_TO_NAME = new Map<string, string>([
+  ["2.5.4.3", "CN"],
+  ["2.5.4.5", "SERIALNUMBER"],
+  ["2.5.4.6", "C"],
+  ["2.5.4.7", "L"],
+  ["2.5.4.8", "ST"],
+  ["2.5.4.9", "STREET"],
+  ["2.5.4.10", "O"],
+  ["2.5.4.11", "OU"],
+  ["2.5.4.12", "T"],
+  ["2.5.4.42", "GIVENNAME"],
+  ["2.5.4.4", "SN"],
+  ["0.9.2342.19200300.100.1.1", "UID"],
+  ["1.2.840.113549.1.9.1", "EMAILADDRESS"],
+]);
 
-const normalizeAttributeType = (type: string): string => DN_OID_TO_NAME[type] ?? type.toUpperCase();
+const normalizeAttributeType = (type: string): string =>
+  DN_OID_TO_NAME.get(type) ?? type.toUpperCase();
 
 const normalizeDnValue = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -239,14 +240,36 @@ export function parseSubjectDn(dn: string): SubjectDnAttribute[] {
   return attributes;
 }
 
+type AttributeValueBlock = {
+  readonly value?: unknown;
+  readonly valueHexView?: Uint8Array<ArrayBuffer>;
+};
+
+function hasAttributeValueBlock(
+  value: pkijs.AttributeValueType,
+): value is pkijs.AttributeValueType & { readonly valueBlock: AttributeValueBlock } {
+  const block: unknown = value.valueBlock;
+
+  return typeof block === "object" && block !== null;
+}
+
+function hasValueHexView(node: unknown): node is { valueHexView: Uint8Array<ArrayBuffer> } {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    "valueHexView" in node &&
+    node.valueHexView instanceof Uint8Array
+  );
+}
+
 const attributeValueToString = (value: pkijs.AttributeValueType): string => {
-  const block = (
-    value as unknown as { valueBlock?: { value?: unknown; valueHexView?: Uint8Array } }
-  ).valueBlock;
+  if (!hasAttributeValueBlock(value)) return "";
 
-  if (typeof block?.value === "string") return block.value;
+  const block = value.valueBlock;
 
-  if (block?.valueHexView) return new TextDecoder().decode(block.valueHexView);
+  if (Schema.is(Schema.String)(block.value)) return block.value;
+
+  if (block.valueHexView !== undefined) return new TextDecoder().decode(block.valueHexView);
 
   return "";
 };
@@ -282,9 +305,9 @@ const identitySubjectMatches = (
   }
 
   for (const attribute of provided) {
-    const signerValues = signerSubject
-      .filter((candidate) => candidate.type === attribute.type)
-      .map((candidate) => normalizeDnValue(candidate.value));
+    const signerValues = signerSubject.flatMap((candidate) =>
+      candidate.type === attribute.type ? [normalizeDnValue(candidate.value)] : [],
+    );
 
     if (!signerValues.includes(normalizeDnValue(attribute.value))) return false;
   }
@@ -305,9 +328,9 @@ const normalizeFingerprint = (value: string): string =>
   value.replace(/[^0-9a-f]/gi, "").toLowerCase();
 
 const certificateSerialHex = (cert: pkijs.Certificate): string => {
-  const serial = cert.serialNumber.valueBlock as unknown as { valueHexView?: Uint8Array };
+  const block: unknown = cert.serialNumber.valueBlock;
 
-  if (serial.valueHexView) return bytesToHex(serial.valueHexView);
+  if (hasValueHexView(block)) return bytesToHex(block.valueHexView);
 
   return normalizeSerial(cert.serialNumber.valueBlock.toString());
 };
@@ -503,7 +526,7 @@ export async function verifyMdmSignature(
 ): Promise<VerifiedMdmSignature> {
   const { signature, body, caCertPems } = options;
 
-  if (typeof signature !== "string" || signature.length === 0) {
+  if (!Schema.is(Schema.String)(signature) || signature.length === 0) {
     throw new Error("Mdm-Signature is empty");
   }
 
@@ -581,7 +604,7 @@ export async function verifyScepPkcsReqSignature(
   const input = options.signature;
   let cmsBytes: Uint8Array;
 
-  if (typeof input === "string") {
+  if (Schema.is(Schema.String)(input)) {
     if (input.length > MAX_SCEP_CMS_BASE64_LENGTH) {
       throw new Error("SCEP PKCSReq signature is too large");
     }

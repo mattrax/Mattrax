@@ -34,6 +34,15 @@ export default defineConfig({
     https,
     allowedHosts: ["dev.otbeaumont.me"],
   },
+  // Rolldown's build report feeds `@rolldown/perf-kit` and the module-graph
+  // commands. It is opt-in: the client sourcemaps land in the served asset
+  // directory, so a normal production build must not emit them.
+  build: process.env.MATTRAX_PERF_REPORT === "1"
+    ? {
+        sourcemap: true,
+        rolldownOptions: { devtools: { mode: "report" as const } },
+      }
+    : {},
   resolve: {
     tsconfigPaths: true,
   },
@@ -54,7 +63,6 @@ export default defineConfig({
       "effect",
       "posthog-js",
       "@yielded/auth",
-      "@yielded/auth/EmailDelivery",
     ],
   },
   plugins: [
@@ -83,18 +91,23 @@ export default defineConfig({
         ssr: new PageFileSystemRouter({ dir: routesDir, extensions, httpMethods: true }),
       },
       buildInputs: "client",
-      // Eagerly import route modules instead of wrapping every page in
-      // `lazy()`. The streaming SSR manifest in this Vite/Solid RC combination
-      // does not always serialize the `?pick=` module id the client needs, which
-      // leaves hydration detached and duplicates the signed-in shell. One
-      // dashboard bundle is a fair trade for deterministic hydration.
-      codeSplitting: false,
+      // Split each route into its own client chunk. The earlier single-bundle
+      // workaround was for a streaming-SSR manifest bug that dropped the
+      // `?pick=` module id during hydration; the route chunks now ship the
+      // same manifest shape and the navigation/account Playwright suites cover
+      // the signed-in shell.
+      codeSplitting: true,
     }),
     // Map the Worker to Solid's `ssr` environment so the server render and the
     // API proxies run in workerd, with service bindings available.
     cloudflare({
       viteEnvironment: { name: "ssr" },
       auxiliaryWorkers: [{ config: apiWorker }],
+      // Apply `public/_redirects` and the non-hashed `public/_headers` rules in
+      // dev so legacy redirects and the docs/icon policy can be exercised
+      // without a production deploy. Hashed build assets (and therefore the
+      // immutable /assets/* rules) only exist after `vp build`.
+      experimental: { headersAndRedirectsDevModeSupport: true },
     }),
     tailwindcss(),
     {
@@ -115,7 +128,6 @@ export default defineConfig({
               exclude: [
                 "effect",
                 "@yielded/auth",
-                "@yielded/auth/EmailDelivery",
                 // Keep the WebAuthn verifier in the same module graph as
                 // `@yielded/auth`: its `PasskeyProtocol` service is an Effect
                 // Context key, and a second prebundled copy never satisfies it.

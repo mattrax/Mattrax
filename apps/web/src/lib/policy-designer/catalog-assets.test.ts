@@ -2,14 +2,15 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   collectionFileKey,
   collectionProperties,
-  type Collection,
+  Collection,
+  SearchIndex,
+  WindowsPlatformIndex,
   type CollectionSummary,
-  type PlatformIndex,
-  type SearchIndex,
 } from "./catalog";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,15 +18,20 @@ const webRoot = path.resolve(here, "../../..");
 const repoRoot = path.resolve(webRoot, "../..");
 const catalogDir = path.join(webRoot, "public/catalog/windows");
 
-const readJson = <T>(name: string) =>
-  JSON.parse(readFileSync(path.join(catalogDir, name), "utf8")) as T;
+const readJson = <S extends Schema.ConstraintDecoder<unknown>>(schema: S, name: string): S["Type"] =>
+  Schema.decodeUnknownSync(schema)(JSON.parse(readFileSync(path.join(catalogDir, name), "utf8")));
 
-const index = readJson<PlatformIndex>("index.json");
-const search = readJson<SearchIndex>("search.json");
-const summaries = index.collections as Array<CollectionSummary & { key: string }>;
+const index = readJson(WindowsPlatformIndex, "index.json");
+const search = readJson(SearchIndex, "search.json");
+
+const summaries = index.collections.flatMap((summary) => {
+  if (summary.key === undefined) throw new Error(`Missing file key for ${summary.id}`);
+
+  return [{ ...summary, platform: summary.platform ?? "windows", key: summary.key }];
+});
 
 const collectionFile = (summary: CollectionSummary & { key: string }) =>
-  readJson<Collection>(`${summary.key}.json`);
+  readJson(Collection, `${summary.key}.json`);
 
 describe("split Windows policy catalogue", () => {
   it("keeps the 17 MB source out of the served assets", () => {

@@ -1,5 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import {
+  EnterpriseBadRequest,
+  EnterpriseNotConfigured,
+  EnterpriseNotFound,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -44,7 +50,7 @@ const vppToken = () =>
     }),
   );
 
-const jsonResponse = (body: unknown, status = 200) =>
+const jsonResponse = (body: Schema.Json, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -120,7 +126,7 @@ const makeFetch = () => {
       });
 
     return jsonResponse({ errors: [{ detail: `Unexpected ${url}` }] }, 500);
-  }) as typeof globalThis.fetch;
+  }) satisfies typeof globalThis.fetch;
 
   return { fetchImpl, calls };
 };
@@ -202,7 +208,7 @@ const makeContext = async () => {
 
       return headers.cookie
         ? Effect.succeed({ user, apiToken: undefined })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -215,10 +221,14 @@ const makeContext = async () => {
   const { fetchImpl } = makeFetch();
 
   const service = createEnterpriseService({
-    db: db as any,
+    // SAFETY: the in-memory fake implements the query/insert/update surface the
+    // service uses at runtime, but not the full `Db` service type.
+    db,
     schema,
     origin: "https://enterprise.test",
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods this test exercises.
     auth: auth as any,
     authSecret,
     appleApi: { fetch: fetchImpl },
@@ -262,20 +272,22 @@ describe("Apple Business Manager API flow", () => {
 
     const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]!);
     const profile = await runEffect(service.getAdeEnrollmentProfile(token));
+    const plist = new TextDecoder().decode(profile.profile);
+
     expect(profile.filename).toBe("serial-1.mobileconfig");
-    expect(profile.plist).toContain("com.apple.mgmt.External.acme");
-    expect(profile.plist).toContain(`com.mattrax.ade.${link.profileUuid}`);
-    expect(profile.plist).toContain("com.apple.security.scep");
+    expect(plist).toContain("com.apple.mgmt.External.acme");
+    expect(plist).toContain(`com.mattrax.ade.${link.profileUuid}`);
+    expect(plist).toContain("com.apple.security.scep");
   });
 
   it("scopes ABM reads and writes to the tenant", async () => {
     const { service, headers } = await makeContext();
     await expect(
       runEffect(service.getAbmDevice(request(headers), otherOrganizationId, "SERIAL-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
     await expect(
       runEffect(service.syncAppleBusinessManager(request(headers), otherOrganizationId)),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotConfigured" });
+    ).rejects.toBeInstanceOf(EnterpriseNotConfigured);
   });
 
   it("uploads and syncs Apps and Books, then installs with a consumed licence", async () => {
@@ -306,7 +318,7 @@ describe("Apple Business Manager API flow", () => {
       requestType: "InstallApplication",
       deviceId: "device-1",
     });
-    expect((db.store.device_command[0].payload as any).iTunesStoreID).toBe(361309726);
+    expect(db.store.device_command[0].payload.iTunesStoreID).toBe(361309726);
   });
 
   it("installs and releases a VPP app through the asset endpoint", async () => {
@@ -347,6 +359,6 @@ describe("Apple Business Manager API flow", () => {
     });
     await expect(
       runEffect(service.installApplication(request(headers), organizationId, "app-1")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 });

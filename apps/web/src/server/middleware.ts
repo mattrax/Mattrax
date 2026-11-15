@@ -1,62 +1,81 @@
 import { env } from "cloudflare:workers";
 import type { StartMiddleware } from "@solidjs/vite-plugin";
+import { Option, Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import {
   getPreloadedSession,
-  type PreloadedSession,
   setPreloadedSession,
 } from "~/lib/session-store";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { setPostHogConfig } from "~/lib/posthog-config-store";
+import { preloadSession, redactBootstrapResponse, ssrClearCookie } from "./preload";
+import { isBootstrapPath } from "./security";
+import { verifySsrToken } from "./ssr-token";
 
 const api = createAPIHandler(routes);
 
+// Per-isolate one-shot reports. The SSR token is an optimisation: with a
+// missing or mismatched secret the page still renders from bootstrap, but every
+// navigation pays the API round trip. `console.error` makes Workers Issues
+// group the misconfiguration instead of hiding it among warnings.
+let reportedMissingAuthSecret = false;
+let reportedSsrTokenRejected = false;
+
+const reportMissingAuthSecret = (): void => {
+  if (reportedMissingAuthSecret) return;
+
+  reportedMissingAuthSecret = true;
+  console.error(
+    "[ssr] AUTH_SECRET is not configured on the mattrax Worker; SSR tokens cannot be verified, so every authenticated page render calls bootstrap. Set the same AUTH_SECRET on mattrax and mattrax-api.",
+  );
+};
+
+const reportSsrTokenRejected = (): void => {
+  if (reportedSsrTokenRejected) return;
+
+  reportedSsrTokenRejected = true;
+  console.error(
+    "[ssr] A bootstrap token failed edge verification; falling back to bootstrap. mattrax and mattrax-api must share the same AUTH_SECRET. The secret itself is never logged.",
+  );
+};
+
+const PostHogEnv = Schema.Struct({
+  POSTHOG_KEY: Schema.optional(Schema.String),
+  POSTHOG_HOST: Schema.optional(Schema.String),
+});
+
 /**
- * Load the signed-in session before the page renders.
- *
- * The API Worker owns auth, so ask it over the service binding with the
- * request's cookies. An answer lets the server render the signed-in shell
- * instead of flashing signed-out; a failure just leaves the client to ask
- * after hydration. The timeout stops a slow API from holding the document.
+ * Ask the API for the session, `/me` shell and a fresh SSR token in one call.
+ * The request's cookies travel with it; the caller's IP is forwarded when the
+ * edge exposed it so the API's own rate limiting sees the real client.
  */
-async function preloadSession(request: Request): Promise<void> {
-  if (request.method !== "GET") return;
-
-  if (!(request.headers.get("accept") ?? "").includes("text/html")) return;
-
+async function fetchBootstrap(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
   const headers = new Headers({
     "content-type": "application/json",
-    "x-effect-auth-csrf": "1",
     origin: url.origin,
   });
 
   const cookie = request.headers.get("cookie");
+  const ip = request.headers.get("cf-connecting-ip");
 
   if (cookie) headers.set("cookie", cookie);
 
-  try {
-    const response = await env.API.fetch(
-      new Request(new URL("/api/v1/getSession", url), {
-        method: "POST",
-        headers,
-        body: "{}",
-        signal: AbortSignal.timeout(2_000),
-      }),
-    );
+  if (ip) headers.set("cf-connecting-ip", ip);
 
-    if (!response.ok) return;
-    const data = (await response.json()) as { _tag?: string; value?: unknown } | null;
-
-    if (data?._tag === "Success") {
-      setPreloadedSession(request, (data.value ?? null) as PreloadedSession);
-    }
-  } catch {
-    // The client will fetch the session after hydration.
-  }
+  return env.API.fetch(
+    new Request(new URL("/api/v1/bootstrap", url), {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    }),
+  );
 }
+
+const isHtml = (response: Response): boolean =>
+  (response.headers.get("content-type") ?? "").includes("text/html");
 
 /**
  * Server middleware for the file-based HTTP routes.
@@ -67,7 +86,7 @@ async function preloadSession(request: Request): Promise<void> {
 const oauthMetadata = (url: URL): Response | undefined => {
   const origin = url.origin;
 
-  const json = (body: unknown) =>
+  const json = (body: Schema.Json) =>
     Response.json(body, {
       headers: {
         "cache-control": "no-store",
@@ -113,39 +132,65 @@ const middleware: StartMiddleware = async (event, next) => {
   const metadata = oauthMetadata(new URL(event.request.url));
 
   if (metadata) return metadata;
-  const posthogKey = (env as { POSTHOG_KEY?: string }).POSTHOG_KEY?.trim();
+  const posthogEnv = Option.getOrUndefined(Schema.decodeUnknownOption(PostHogEnv)(env));
+  const posthogKey = posthogEnv?.POSTHOG_KEY?.trim();
 
   if (posthogKey)
     setPostHogConfig(event.request, {
       key: posthogKey,
-      host: (env as { POSTHOG_HOST?: string }).POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
+      host: posthogEnv?.POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
     });
-  await preloadSession(event.request);
+
+  if (!env.AUTH_SECRET) reportMissingAuthSecret();
+
+  const outcome = await preloadSession(event.request, {
+    secret: env.AUTH_SECRET,
+    verifyToken: verifySsrToken,
+    fetchBootstrap,
+  });
+
+  if (outcome.ssrTokenRejected) reportSsrTokenRejected();
+
+  if (outcome.session !== undefined) setPreloadedSession(event.request, outcome.session);
+
   const response = await api(event, next);
+
+  // The SSR token is consumed by the web Worker itself. A browser reaching the
+  // same endpoint through the /api proxy must never receive it. Compare the
+  // normalised path because the API router accepts trailing and duplicate
+  // slashes, percent-encoding and any case; matching the raw spelling would
+  // let a variant proxy the token to browser JavaScript.
+  const proxied = isBootstrapPath(new URL(event.request.url).pathname)
+    ? await redactBootstrapResponse(response)
+    : response;
 
   // Seed the client-visible presence cookie from the server's session check.
   // API responses already mirror session cookie rotations themselves.
-  if (
-    event.request.method !== "GET" ||
-    !(response.headers.get("content-type") ?? "").includes("text/html")
-  )
-    return response;
+  if (event.request.method !== "GET" || !isHtml(proxied)) return proxied;
   const presence = getPreloadedSession(event.request);
 
-  if (presence === undefined) return response;
-  const secure = new URL(event.request.url).protocol === "https:";
-  const headers = new Headers(response.headers);
-  headers.append(
-    "set-cookie",
-    sessionPresenceSetCookie(
-      presence === null ? null : Date.now() + SESSION_PRESENCE_MAX_AGE_SECONDS * 1000,
-      secure,
-    ),
-  );
+  if (presence === undefined && outcome.setSsrCookie === undefined && !outcome.clearSsrCookie)
+    return proxied;
 
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
+  const secure = new URL(event.request.url).protocol === "https:";
+  const headers = new Headers(proxied.headers);
+
+  if (outcome.setSsrCookie) headers.append("set-cookie", outcome.setSsrCookie);
+
+  if (outcome.clearSsrCookie) headers.append("set-cookie", ssrClearCookie());
+
+  if (presence !== undefined)
+    headers.append(
+      "set-cookie",
+      sessionPresenceSetCookie(
+        presence === null ? null : Date.now() + SESSION_PRESENCE_MAX_AGE_SECONDS * 1000,
+        secure,
+      ),
+    );
+
+  return new Response(proxied.body, {
+    status: proxied.status,
+    statusText: proxied.statusText,
     headers,
   });
 };

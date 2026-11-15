@@ -5,6 +5,8 @@ import { cn } from "~/lib/utils";
 type CardProps = ComponentProps<"div"> & { size?: "default" | "sm" };
 
 const Card = (props: CardProps) => {
+  // SAFETY: the default props object is described by the component props type;
+  // `merge` combines it with the caller's props under that same contract.
   const mergedProps = mergeProps({ size: "default" } as const, props);
   const [local, others] = splitProps(mergedProps, ["class", "size"]);
 

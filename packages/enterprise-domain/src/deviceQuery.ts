@@ -113,7 +113,7 @@ export const deviceQueryProblem = (query: DeviceQuery | null | undefined): strin
 
   for (const list of [query.all ?? [], query.any ?? [], query.none ?? []])
     for (const condition of list) {
-      if (typeof condition.value === "string" && condition.value.trim() === "")
+      if (Schema.is(Schema.String)(condition.value) && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
 
       if (
@@ -469,100 +469,97 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
 
   switch (field) {
     case "platform":
-    case "proto":
-      return op === "is not"
-        ? ({ field, op: "ne", value: value as "apple" | "win" | "android" } as DeviceCondition)
-        : op === "is"
-          ? ({ field, op: "eq", value: value as "apple" | "win" | "android" } as DeviceCondition)
-          : null;
-    case "status":
-      return op === "is not"
-        ? ({
-            field,
-            op: "ne",
-            value: value as DeviceCondition extends { field: "status"; value: infer V } ? V : never,
-          } as DeviceCondition)
-        : op === "is"
-          ? ({
-              field,
-              op: "eq",
-              value: value as DeviceCondition extends { field: "status"; value: infer V }
-                ? V
-                : never,
-            } as DeviceCondition)
-          : null;
-    case "health":
-      return op === "is not"
-        ? ({ field, op: "ne", value: value as never } as DeviceCondition)
-        : op === "is"
-          ? ({ field, op: "eq", value: value as never } as DeviceCondition)
-          : null;
-    case "osVersion": {
-      const versionOp =
-        op === "older than"
-          ? "lt"
-          : op === "at most"
-            ? "lte"
-            : op === "newer than"
-              ? "gt"
-              : op === "at least"
-                ? "gte"
-                : op === "is"
-                  ? "eq"
-                  : null;
+    case "proto": {
+      if (!Schema.is(DevicePlatform)(value)) return null;
 
-      return versionOp ? ({ field, op: versionOp, value } as DeviceCondition) : null;
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
+    }
+
+    case "status": {
+      if (!Schema.is(DeviceStatusValue)(value)) return null;
+
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
+    }
+
+    case "health": {
+      if (!Schema.is(DeviceHealthLevel)(value) && value !== "stale") return null;
+
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
+    }
+
+    case "osVersion": {
+      if (op === "older than") return { field, op: "lt", value };
+
+      if (op === "at most") return { field, op: "lte", value };
+
+      if (op === "newer than") return { field, op: "gt", value };
+
+      if (op === "at least") return { field, op: "gte", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
     }
 
     case "staleDays":
     case "enrolledDays": {
-      const daysOp =
-        op === "older than" || op === "more than"
-          ? "gt"
-          : op === "at most"
-            ? "lte"
-            : op === "newer than" || op === "less than"
-              ? "lt"
-              : op === "at least"
-                ? "gte"
-                : op === "is"
-                  ? "eq"
-                  : null;
+      const days = Number(value);
 
-      const number = Number(value);
+      if (!Number.isFinite(days)) return null;
 
-      return daysOp && Number.isFinite(number)
-        ? ({ field, op: daysOp, value: number } as DeviceCondition)
-        : null;
+      if (op === "older than" || op === "more than") return { field, op: "gt", value: days };
+
+      if (op === "at most") return { field, op: "lte", value: days };
+
+      if (op === "newer than" || op === "less than") return { field, op: "lt", value: days };
+
+      if (op === "at least") return { field, op: "gte", value: days };
+
+      if (op === "is") return { field, op: "eq", value: days };
+
+      return null;
     }
 
-    case "fileVault":
-      return op === "is" ? ({ field, op: "eq", value: value as never } as DeviceCondition) : null;
+    case "fileVault": {
+      if (!Schema.is(DeviceFileVault)(value)) return null;
+
+      return op === "is" ? { field, op: "eq", value } : null;
+    }
+
     case "application":
-      return op === "has"
-        ? ({ field, op: "has", value } as DeviceCondition)
-        : op === "lacks"
-          ? ({ field, op: "lacks", value } as DeviceCondition)
-          : null;
+      if (op === "has") return { field, op: "has", value };
+
+      if (op === "lacks") return { field, op: "lacks", value };
+
+      return null;
+
     case "name":
     case "model":
     case "serial":
     case "assetTag":
     case "osEdition":
-    case "batteryHealth": {
-      const textOp =
-        op === "is"
-          ? "eq"
-          : op === "is not"
-            ? "ne"
-            : op === "starts with"
-              ? "prefix"
-              : op === "contains"
-                ? "contains"
-                : null;
+    case "batteryHealth":
+      if (op === "is") return { field, op: "eq", value };
 
-      return textOp ? ({ field, op: textOp, value } as DeviceCondition) : null;
-    }
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "starts with") return { field, op: "prefix", value };
+
+      if (op === "contains") return { field, op: "contains", value };
+
+      return null;
 
     default:
       return null;

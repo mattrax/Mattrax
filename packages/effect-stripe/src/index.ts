@@ -1,6 +1,18 @@
-import { Context, Data, Effect, Layer } from "effect";
-import Stripe from "stripe";
+import { Context, Data, Effect, Layer, Option, Schema } from "effect";
+import type Stripe from "stripe";
 import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
+import { HttpStripeClient, verifyStripeSignature } from "./http.ts";
+import type { StripeClientConfig, StripeClientLike } from "./http.ts";
+
+export {
+  HttpStripeClient,
+  verifyStripeSignature,
+  type StripeClientConfig,
+  type StripeClientLike,
+  type StripeCustomer,
+  type StripeList,
+  type StripePortalSession,
+} from "./http.ts";
 
 export interface StripeErrorDetails {
   readonly message: string;
@@ -45,9 +57,7 @@ export class StripeSignatureVerificationError extends Data.TaggedError(
   "StripeSignatureVerificationError",
 )<StripeErrorDetails> {}
 
-export class StripeUnknownError extends Data.TaggedError(
-  "StripeUnknownError",
-)<StripeErrorDetails> {}
+export class StripeUnknownError extends Data.TaggedError("StripeUnknownError")<StripeErrorDetails> {}
 
 export type StripeError =
   | StripeCardError
@@ -61,22 +71,18 @@ export type StripeError =
   | StripeSignatureVerificationError
   | StripeUnknownError;
 
-type StripeClient = Stripe;
+type CustomerCreate = StripeClientLike["customers"]["create"];
 
-type StripeConfig = ConstructorParameters<typeof Stripe>[1];
+type CustomerSearch = StripeClientLike["customers"]["search"];
 
-type CustomerCreate = StripeClient["customers"]["create"];
+type CustomerList = StripeClientLike["customers"]["list"];
 
-type CustomerSearch = StripeClient["customers"]["search"];
-
-type CustomerList = StripeClient["customers"]["list"];
-
-type BillingPortalSessionCreate = StripeClient["billingPortal"]["sessions"]["create"];
+type BillingPortalSessionCreate = StripeClientLike["billingPortal"]["sessions"]["create"];
 
 export interface EffectStripeClient {
-  readonly client: StripeClient;
+  readonly client: StripeClientLike;
   readonly effect: <A>(
-    f: (client: StripeClient) => PromiseLike<A>,
+    f: (client: StripeClientLike) => PromiseLike<A>,
   ) => Effect.Effect<A, StripeError>;
   readonly customers: {
     readonly create: (
@@ -98,53 +104,48 @@ export interface EffectStripeClient {
   };
 }
 
-const getString = (value: Record<string, unknown>, key: string) => {
-  const field = value[key];
+const StripeErrorPayload = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.String),
+  code: Schema.optional(Schema.String),
+  decline_code: Schema.optional(Schema.String),
+  declineCode: Schema.optional(Schema.String),
+  param: Schema.optional(Schema.String),
+  requestId: Schema.optional(Schema.String),
+  request_id: Schema.optional(Schema.String),
+  statusCode: Schema.optional(Schema.Number),
+  raw: Schema.optional(
+    Schema.Struct({
+      type: Schema.optional(Schema.String),
+      code: Schema.optional(Schema.String),
+      decline_code: Schema.optional(Schema.String),
+      param: Schema.optional(Schema.String),
+      requestId: Schema.optional(Schema.String),
+      request_id: Schema.optional(Schema.String),
+      statusCode: Schema.optional(Schema.Number),
+    }),
+  ),
+});
 
-  return typeof field === "string" ? field : undefined;
-};
-
-const getNumber = (value: Record<string, unknown>, key: string) => {
-  const field = value[key];
-
-  return typeof field === "number" ? field : undefined;
-};
-
-const errorDetails = (error: unknown): StripeErrorDetails => {
-  if (typeof error !== "object" || error === null) {
-    return { message: typeof error === "string" ? error : "Unknown Stripe error", cause: error };
-  }
-
-  const value = error as Record<string, unknown>;
-
-  const raw =
-    typeof value.raw === "object" && value.raw !== null
-      ? (value.raw as Record<string, unknown>)
-      : undefined;
+const errorDetails = (cause: unknown): StripeErrorDetails => {
+  const value = Option.getOrUndefined(Schema.decodeUnknownOption(StripeErrorPayload)(cause));
+  const raw = value?.raw;
+  const text = Schema.is(Schema.String)(cause) ? cause : "Unknown Stripe error";
 
   return {
-    message:
-      error instanceof Error
-        ? error.message
-        : (getString(value, "message") ?? "Unknown Stripe error"),
-    type: getString(value, "type") ?? (raw ? getString(raw, "type") : undefined),
-    code: getString(value, "code") ?? (raw ? getString(raw, "code") : undefined),
-    declineCode:
-      getString(value, "decline_code") ??
-      getString(value, "declineCode") ??
-      (raw ? getString(raw, "decline_code") : undefined),
-    param: getString(value, "param") ?? (raw ? getString(raw, "param") : undefined),
-    requestId:
-      getString(value, "requestId") ??
-      getString(value, "request_id") ??
-      (raw ? getString(raw, "request_id") : undefined),
-    statusCode: getNumber(value, "statusCode") ?? (raw ? getNumber(raw, "statusCode") : undefined),
-    cause: error,
+    message: cause instanceof Error ? cause.message : (value?.message ?? text),
+    type: value?.type ?? raw?.type,
+    code: value?.code ?? raw?.code,
+    declineCode: value?.decline_code ?? value?.declineCode ?? raw?.decline_code,
+    param: value?.param ?? raw?.param,
+    requestId: value?.requestId ?? value?.request_id ?? raw?.requestId ?? raw?.request_id,
+    statusCode: value?.statusCode ?? raw?.statusCode,
+    cause,
   };
 };
 
-export const toStripeError = (error: unknown): StripeError => {
-  const details = errorDetails(error);
+export const toStripeError = (cause: unknown): StripeError => {
+  const details = errorDetails(cause);
 
   switch (details.type) {
     case "StripeCardError":
@@ -176,8 +177,8 @@ export const tryStripe = <A>(try_: () => PromiseLike<A>): Effect.Effect<A, Strip
     catch: toStripeError,
   });
 
-export const makeEffectStripeClient = (client: StripeClient): EffectStripeClient => {
-  const effect = <A>(f: (client: StripeClient) => PromiseLike<A>) => tryStripe(() => f(client));
+export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeClient => {
+  const effect = <A>(f: (client: StripeClientLike) => PromiseLike<A>) => tryStripe(() => f(client));
 
   return {
     client,
@@ -199,33 +200,28 @@ export class StripeService extends Context.Service<StripeService, EffectStripeCl
   "StripeService",
 ) {
   /**
-   * Build a client with explicit outbound bounds. Stripe's SDK retries network
-   * failures and 5xx/429 responses itself, so `maxNetworkRetries` is the only
-   * retry loop we want; callers may still override both values (e.g. tests).
+   * Build a client with explicit outbound bounds. The fetch client retries
+   * network failures and 409/429/5xx responses itself, so
+   * `maxNetworkRetries` is the only retry loop we want; callers may still
+   * override both values (e.g. tests).
    */
-  static readonly make = (apiKey: string, config?: StripeConfig): EffectStripeClient =>
-    makeEffectStripeClient(
-      new Stripe(apiKey, {
-        timeout: OUTBOUND_TIMEOUTS.stripe,
-        maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
-        ...config,
-      }),
-    );
+  static readonly make = (apiKey: string, config?: StripeClientConfig): EffectStripeClient =>
+    makeEffectStripeClient(new HttpStripeClient(apiKey, config));
 
-  static readonly layer = (apiKey: string, config?: StripeConfig): Layer.Layer<StripeService> =>
+  static readonly layer = (apiKey: string, config?: StripeClientConfig): Layer.Layer<StripeService> =>
     Layer.succeed(StripeService, StripeService.make(apiKey, config));
 }
 
-export const StripeServiceLive = (apiKey: string, config?: StripeConfig) =>
+export const StripeServiceLive = (apiKey: string, config?: StripeClientConfig) =>
   StripeService.layer(apiKey, config);
 
-export const StripeServiceFromClient = (client: StripeClient) =>
+export const StripeServiceFromClient = (client: StripeClientLike) =>
   Layer.succeed(StripeService, makeEffectStripeClient(client));
 
 /**
  * Verify a webhook payload against the `Stripe-Signature` header and return the
- * parsed event. Uses the async constructor so it works on Workers/WebCrypto
- * without Node's synchronous crypto primitives.
+ * parsed event. Uses WebCrypto so it works on Workers without Node's
+ * synchronous crypto primitives.
  */
 export const verifyStripeWebhookSignature = (
   payload: string,
@@ -233,11 +229,11 @@ export const verifyStripeWebhookSignature = (
   secret: string,
 ): Effect.Effect<Stripe.Event, StripeError> =>
   Effect.tryPromise({
-    try: () => Stripe.webhooks.constructEventAsync(payload, signature, secret),
+    try: () => verifyStripeSignature(payload, signature, secret),
     catch: toStripeError,
   });
 
-/** Exposed for tests that need to generate signature headers without a network call. */
-export { default as StripeClient } from "stripe";
-
-export type { Stripe };
+export const STRIPE_DEFAULTS = {
+  timeout: OUTBOUND_TIMEOUTS.stripe,
+  maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
+} as const;

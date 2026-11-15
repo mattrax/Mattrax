@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { ENTRA_SYNC_STALE_MS, acquireEntraSyncLock } from "../src/entraSync.js";
 
-type Row = Record<string, any>;
+/** A value a fake sync row can hold. */
+type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;
+
+type Row = { readonly [column: string]: RowValue };
+
+/** Row values the fake recorded for each write path. */
+type LockCalls = { readonly inserts: Row[]; readonly updates: Row[] };
 
 const makeLockDb = (initial?: Row) => {
   const rows: Row[] = initial ? [{ ...initial }] : [];
-  const calls = { inserts: [] as Row[], updates: [] as Row[] };
+  const calls: LockCalls = { inserts: [], updates: [] };
 
   const tx = {
     query: {
@@ -28,13 +34,17 @@ const makeLockDb = (initial?: Row) => {
             calls.updates.push(value);
 
             if (rows[0]) Object.assign(rows[0], value);
+
+            return { affectedRows: rows[0] ? 1 : 0 };
           }),
       }),
     }),
     transaction: <A, E>(work: (tx: any) => Effect.Effect<A, E>) => work(tx),
   };
 
-  return { db: tx, calls, rows };
+  // SAFETY: the fake transaction exposes only the query/insert/update calls the
+  // lock helper makes, not the full Drizzle `EnterpriseDb` surface.
+  return { db: tx as any, calls, rows };
 };
 
 const now = new Date("2026-11-11T12:00:00.000Z");
@@ -44,7 +54,7 @@ describe("Entra directory sync lock", () => {
     const fake = makeLockDb();
 
     const result = await Effect.runPromise(
-      acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
+      acquireEntraSyncLock({ db: fake.db, organizationId: "org-1", now }),
     );
 
     expect(result).toEqual({
@@ -71,7 +81,7 @@ describe("Entra directory sync lock", () => {
     });
 
     const result = await Effect.runPromise(
-      acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
+      acquireEntraSyncLock({ db: fake.db, organizationId: "org-1", now }),
     );
 
     expect(result.acquired).toBe(false);
@@ -89,7 +99,7 @@ describe("Entra directory sync lock", () => {
     });
 
     const result = await Effect.runPromise(
-      acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
+      acquireEntraSyncLock({ db: fake.db, organizationId: "org-1", now }),
     );
 
     expect(result.acquired).toBe(true);
@@ -107,7 +117,7 @@ describe("Entra directory sync lock", () => {
     });
 
     const result = await Effect.runPromise(
-      acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
+      acquireEntraSyncLock({ db: fake.db, organizationId: "org-1", now }),
     );
 
     expect(result.acquired).toBe(true);
@@ -125,7 +135,7 @@ describe("Entra directory sync lock", () => {
       });
 
       const result = await Effect.runPromise(
-        acquireEntraSyncLock({ db: fake.db as never, organizationId: "org-1", now }),
+        acquireEntraSyncLock({ db: fake.db, organizationId: "org-1", now }),
       );
 
       expect(result.acquired).toBe(true);
@@ -145,7 +155,7 @@ describe("Entra directory sync lock", () => {
 
     const result = await Effect.runPromise(
       acquireEntraSyncLock({
-        db: fake.db as never,
+        db: fake.db,
         organizationId: "org-1",
         now,
         staleAfterMs: 1_000,

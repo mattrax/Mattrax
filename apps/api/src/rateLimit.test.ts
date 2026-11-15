@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clientKey,
-  makeRateLimiter,
+  createRateLimiter,
   rateLimitBindingsFromEnv,
   rateLimitResponse,
   rateLimitRuleFor,
@@ -13,8 +13,8 @@ const request = (path: string, init: RequestInit = {}) =>
 
 describe("rate limit rule selection", () => {
   it("covers auth, enrollment, billing, SCIM and MDM/SCEP", () => {
-    expect(rateLimitRuleFor(request("/api/v1/signIn", { method: "POST" }))?.bucket).toBe("auth");
-    expect(rateLimitRuleFor(request("/api/v1/signIn", { method: "GET" }))).toBeUndefined();
+    expect(rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "POST" }))?.bucket).toBe("auth");
+    expect(rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "GET" }))).toBeUndefined();
     expect(rateLimitRuleFor(request("/api/v1/enrollment/abc"))?.bucket).toBe("enrollment");
     expect(rateLimitRuleFor(request("/api/v1/billing/webhook", { method: "POST" }))?.bucket).toBe(
       "billing",
@@ -23,32 +23,49 @@ describe("rate limit rule selection", () => {
     expect(rateLimitRuleFor(request("/mdm/apple/mdm", { method: "PUT" }))?.bucket).toBe("mdm");
     expect(rateLimitRuleFor(request("/mdm/apple/scep"))?.bucket).toBe("scep");
     expect(rateLimitRuleFor(request("/api/v1/me", { method: "POST" }))).toBeUndefined();
+    // Account-scoped feeds stay out of the credential-stuffing buckets.
+    expect(rateLimitRuleFor(request("/api/v1/bootstrap"))).toBeUndefined();
+    expect(rateLimitRuleFor(request("/api/v1/bootstrap", { method: "POST" }))).toBeUndefined();
+    expect(
+      rateLimitRuleFor(request("/api/v1/invitations/accept", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(request("/api/v1/invitations/preview?token=x", { method: "GET" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(request("/api/v1/tenants/acme/invitations", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(
+        request("/api/v1/tenants/acme/invitations/inv-1/resend", { method: "POST" }),
+      )?.bucket,
+    ).toBe("auth");
   });
 
   it("prefers the connecting IP for the limiter key", () => {
     expect(
       clientKey(
-        request("/api/v1/signIn", {
+        request("/api/v1/completePasskeySignIn", {
           headers: { "cf-connecting-ip": "203.0.113.4", "x-forwarded-for": "198.51.100.9" },
         }),
       ),
     ).toBe("203.0.113.4");
     expect(
       clientKey(
-        request("/api/v1/signIn", { headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" } }),
+        request("/api/v1/completePasskeySignIn", { headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" } }),
       ),
     ).toBe("198.51.100.9");
-    expect(clientKey(request("/api/v1/signIn"))).toBe("local");
+    expect(clientKey(request("/api/v1/completePasskeySignIn"))).toBe("local");
   });
 });
 
 describe("per-isolate fallback limiter", () => {
   it("allows up to the limit and then returns Retry-After", async () => {
     let now = 1_000;
-    const limiter = makeRateLimiter({ now: () => now });
+    const limiter = createRateLimiter({ now: () => now });
 
     const req = () =>
-      request("/api/v1/signIn", {
+      request("/api/v1/completePasskeySignIn", {
         method: "POST",
         headers: { "cf-connecting-ip": "203.0.113.4" },
       });
@@ -69,7 +86,7 @@ describe("per-isolate fallback limiter", () => {
   });
 
   it("keeps buckets and clients independent", async () => {
-    const limiter = makeRateLimiter({ now: () => 1_000 });
+    const limiter = createRateLimiter({ now: () => 1_000 });
 
     const ipA = request("/api/v1/enrollment/a", {
       headers: { "cf-connecting-ip": "203.0.113.4" },
@@ -99,10 +116,10 @@ describe("shared limiter bindings", () => {
       },
     };
 
-    const limiter = makeRateLimiter();
+    const limiter = createRateLimiter();
 
     const outcome = await limiter.check(
-      request("/api/v1/signIn", {
+      request("/api/v1/completePasskeySignIn", {
         method: "POST",
         headers: { "cf-connecting-ip": "203.0.113.4" },
       }),
@@ -124,7 +141,7 @@ describe("shared limiter bindings", () => {
       },
     };
 
-    const limiter = makeRateLimiter({
+    const limiter = createRateLimiter({
       now: () => 1_000,
       warn: (message) => warnings.push(message),
     });
@@ -159,7 +176,8 @@ describe("rate limit bindings from env", () => {
     ]);
     expect(rateLimitBindingsFromEnv({ RATE_LIMITER_AUTH: limiter })).toEqual({ auth: limiter });
     // Unknown keys are ignored rather than leaking into the bucket map.
-    expect(rateLimitBindingsFromEnv({ RATE_LIMITER_OTHER: limiter })).toEqual({});
+    const otherEnv = { RATE_LIMITER_AUTH: limiter, RATE_LIMITER_OTHER: limiter };
+    expect(rateLimitBindingsFromEnv(otherEnv)).toEqual({ auth: limiter });
   });
 
   it("selects the matching bucket binding for MDM, SCIM, billing and SCEP", async () => {
@@ -180,7 +198,7 @@ describe("rate limit bindings from env", () => {
       scep: bindingFor("scep"),
     };
 
-    const limiter = makeRateLimiter();
+    const limiter = createRateLimiter();
     await limiter.check(request("/mdm/apple/mdm", { method: "PUT" }), bindings);
     await limiter.check(request("/scim/v2/org/Users"), bindings);
     await limiter.check(request("/api/v1/billing/webhook", { method: "POST" }), bindings);

@@ -2,7 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { Effect, Layer, Schema } from "effect";
 import {
   ANDROID_MANAGEMENT_SCOPE,
+  GoogleApiError,
   GoogleAuth,
+  GoogleAuthError,
   GoogleAuthLive,
   buildServiceAccountJwt,
   type ServiceAccountConfig,
@@ -141,7 +143,8 @@ describe("google service account auth", () => {
     });
 
     const error = await Effect.runPromise(Effect.flip(program).pipe(Effect.provide(layer)));
-    expect(error).toMatchObject({ _tag: "GoogleApiError", status: 401 });
+    expect(error).toBeInstanceOf(GoogleApiError);
+    expect(error).toMatchObject({ status: 401 });
     expect(error.message).toContain("invalid_grant");
   });
 
@@ -203,7 +206,8 @@ describe("google service account auth", () => {
     });
 
     const error = await Effect.runPromise(Effect.flip(program).pipe(Effect.provide(layer)));
-    expect(error).toMatchObject({ _tag: "GoogleApiError", status: 403 });
+    expect(error).toBeInstanceOf(GoogleApiError);
+    expect(error).toMatchObject({ status: 403 });
     expect(error.message).toContain("Caller is not authorized");
   });
 
@@ -227,7 +231,7 @@ describe("google service account auth", () => {
     });
 
     const error = await Effect.runPromise(Effect.flip(program).pipe(Effect.provide(layer)));
-    expect(error).toMatchObject({ _tag: "GoogleApiError" });
+    expect(error).toBeInstanceOf(GoogleApiError);
     expect(error.message).toContain("empty body");
   });
 
@@ -262,6 +266,6 @@ describe("google service account auth", () => {
       ),
     );
 
-    expect(result).toMatchObject({ _tag: "GoogleAuthError" });
+    expect(result).toBeInstanceOf(GoogleAuthError);
   });
 });

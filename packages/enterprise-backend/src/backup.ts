@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { schema, type R2Bucket } from "@mattrax/enterprise-core";
 import { buildTenantExport } from "./tenantExport.ts";
@@ -20,7 +20,7 @@ const chunk = <T>(values: ReadonlyArray<T>, size: number): T[][] => {
   const chunks: T[][] = [];
 
   for (let index = 0; index < values.length; index += size)
-    chunks.push(values.slice(index, index + size) as T[]);
+    chunks.push(values.slice(index, index + size));
 
   return chunks;
 };
@@ -86,7 +86,7 @@ const recordAudit = (
   db: EnterpriseDb,
   organizationId: string,
   action: string,
-  metadata: Record<string, unknown>,
+  metadata: Record<string, Schema.Json>,
   actor?: BackupActor,
 ): Effect.Effect<void, never> =>
   Effect.gen(function* () {
@@ -107,7 +107,8 @@ const recordAudit = (
     Effect.catch((cause) =>
       Effect.sync(() => console.error("Backup audit write failed", organizationId, cause)),
     ),
-  ) as Effect.Effect<void, never>;
+    Effect.asVoid,
+  );
 
 /**
  * Back up one tenant by reusing the versioned export bundle builder and writing
@@ -277,7 +278,7 @@ export const runTenantBackup = (
     );
 
     return result;
-  }) as Effect.Effect<TenantBackupResult, unknown, never>;
+  });
 
 export type PruneBackupsResult = {
   /** Backup rows deleted by age. */
@@ -303,12 +304,12 @@ export const pruneBackups = (
 
     const cutoff = new Date((options.now ?? new Date()).getTime() - retentionDays * day);
 
-    const stale = (yield* db
+    const stale = yield* db
       .select()
       .from(schema.backupRun)
       .where(
         and(lt(schema.backupRun.startedAt, cutoff), eq(schema.backupRun.retention, "default")),
-      )) as Array<{ id: string; r2Key: string | null }>;
+      );
 
     if (stale.length === 0) return { runsDeleted: 0, objectsDeleted: 0 };
 
@@ -350,7 +351,7 @@ export const pruneBackups = (
       yield* db.delete(schema.backupRun).where(inArray(schema.backupRun.id, deletable));
 
     return { runsDeleted: deletable.length, objectsDeleted };
-  }) as Effect.Effect<PruneBackupsResult, unknown, never>;
+  });
 
 export type ScheduledBackupsResult = {
   readonly tenants: number;
@@ -391,9 +392,9 @@ export const runScheduledBackups = (
         and(eq(schema.backupRun.status, "running"), lt(schema.backupRun.startedAt, runningCutoff)),
       );
 
-    const organizations = (yield* db
+    const organizations = yield* db
       .select({ id: schema.organization.id })
-      .from(schema.organization)) as Array<{ id: string }>;
+      .from(schema.organization);
 
     const results = yield* Effect.forEach(
       organizations,
@@ -427,7 +428,7 @@ export const runScheduledBackups = (
       purgedRuns: pruned.runsDeleted,
       purgedObjects: pruned.objectsDeleted,
     };
-  }) as Effect.Effect<ScheduledBackupsResult, unknown, never>;
+  });
 
 /**
  * Recent runs for one tenant, newest first. The API only needs a bounded list;
@@ -453,22 +454,12 @@ export const listTenantBackups = (
   any
 > =>
   Effect.gen(function* () {
-    const rows = (yield* db
+    const rows = yield* db
       .select()
       .from(schema.backupRun)
       .where(eq(schema.backupRun.organizationId, organizationId))
       .orderBy(desc(schema.backupRun.startedAt))
-      .limit(Math.max(1, Math.min(limit, 100)))) as Array<{
-      id: string;
-      status: BackupStatus;
-      trigger: BackupTrigger;
-      retention: BackupRetention;
-      r2Key: string | null;
-      sizeBytes: number | null;
-      startedAt: Date;
-      completedAt: Date | null;
-      error: string | null;
-    }>;
+      .limit(Math.max(1, Math.min(limit, 100)));
 
     return rows.map((row) => ({
       id: row.id,

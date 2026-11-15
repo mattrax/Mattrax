@@ -17,3 +17,5 @@ export * from "./handlers.js";
 export * from "./trust.js";
 
 export * from "./signature.js";
+
+export * from "./profile-signing.js";

@@ -1,5 +1,6 @@
 export type DevEmail = {
   readonly to: string;
+  readonly replyTo?: string;
   readonly subject: string;
   readonly text: string;
   readonly html?: string;

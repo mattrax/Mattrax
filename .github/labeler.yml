@@ -1,0 +1,73 @@
+# Labels applied to pull requests based on the files they change.
+#
+# Area labels only fire on the files that belong to that area, so a
+# cross-cutting PR picks up several labels and a docs-only PR picks up just
+# `documentation`. Add new labels here only after creating them in the
+# repository, otherwise the labeler run logs a warning for that label.
+#
+# Keep globs in sync with the layout in `apps/` and `packages/`.
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "**/*.md"
+          - rspress.config.ts
+
+design:
+  - changed-files:
+      - any-glob-to-any-file:
+          - design/**
+          - "**/*.pen"
+          - apps/web/src/styles/**
+          - apps/web/src/app.css
+          - apps/web/src/components/ui/**
+          - apps/web/public/assets/brand/**
+
+appledm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/dm-apple/**
+          - packages/policy-apple/**
+          - packages/apns/**
+          - packages/scep/**
+          - packages/plist/**
+          - apps/apns-relay/**
+          - packages/management-backend-enterprise/src/index.ts
+          - packages/management-backend-enterprise/src/inventory.ts
+          - packages/management-backend-enterprise/src/securityInfo.ts
+          - packages/management-backend-enterprise/src/scep.ts
+          - packages/enterprise-backend/src/appleBusinessManager.ts
+          - packages/enterprise-backend/src/volumePurchase.ts
+
+windm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/dm-windows/**
+          - packages/soap/**
+          - packages/management-backend-enterprise/src/windows.ts
+          - packages/management-backend-enterprise/src/windowsInventory.ts
+          - packages/management-backend-enterprise/src/federated.ts
+          - packages/enterprise-backend/src/autopilot.ts
+          - data/catalog/windows.json
+          - apps/web/public/catalog/windows/**
+
+androiddm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/dm-android/**
+          - apps/api/src/android.ts
+          - packages/enterprise-backend/src/android.ts
+          - packages/enterprise-backend/src/androidRoutes.ts
+
+tech-debt:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - scripts/**
+          - tools/**
+          - pnpm-lock.yaml
+          - pnpm-workspace.yaml
+          - tsconfig.json
+          - oxlint.config.ts
+          - vite.config.ts

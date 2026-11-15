@@ -1,7 +1,11 @@
 import { Effect, Layer } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
-import { EnterpriseAuth } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseAuth,
+  EnterpriseBadRequest,
+  EnterpriseForbidden,
+} from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
 import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
@@ -15,7 +19,10 @@ const sha256 = async (value: string) =>
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 
-const makeContext = (initial: Record<string, any[]> = {}) => {
+const makeContext = (
+  initial: Record<string, any[]> = {},
+  options: { readonly email?: any } = {},
+) => {
   const db = makeDb(initial);
 
   const appAuth = {
@@ -30,10 +37,13 @@ const makeContext = (initial: Record<string, any[]> = {}) => {
   });
 
   const Live = makeEnterpriseAuthLive({
+    // SAFETY: the fake carries only `verifySession` and the strategy metadata the
+    // provisioning path reads, not the full auth definition.
     appAuth: appAuthService as any,
     origin,
     authSecret,
-  }).pipe(Layer.provide(Layer.succeed(Db, db as any)));
+    email: options.email,
+  }).pipe(Layer.provide(Layer.succeed(Db, db)));
 
   const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>) =>
     runEffect(
@@ -58,6 +68,8 @@ const seedUserAndTenant = () => {
         email: "owner@example.com",
         emailVerified: true,
         disabled: false,
+        source: "manual",
+        welcomeEmailSentAt: null,
         createdAt: now,
         updatedAt: now,
       },
@@ -85,13 +97,13 @@ const bearer = (token: string) =>
     headers: { authorization: `Bearer ${token}` },
   });
 
-const session = (grant?: string) =>
-  new Request(`${origin}/api/v1/account/api-tokens`, {
-    headers: {
-      cookie: "__Host-mattrax_session=test",
-      ...(grant ? { "x-mattrax-step-up": grant } : {}),
-    },
-  });
+const session = (grant?: string) => {
+  const headers = new Headers({ cookie: "__Host-mattrax_session=test" });
+
+  if (grant !== undefined) headers.set("x-mattrax-step-up", grant);
+
+  return new Request(`${origin}/api/v1/account/api-tokens`, { headers });
+};
 
 /** Mint a grant for a browser session, as the step-up endpoints would. */
 const grantFor = (action: "api-token-create" | "api-token-revoke") =>
@@ -175,20 +187,20 @@ describe("enterprise API tokens", () => {
           tenantId: "tenant-2",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
       run((auth) => auth.createApiToken(session(grant), { name: "Empty", scopes: [] })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
       run((auth) =>
         auth.createApiToken(session(grant), {
           name: "Unknown",
-          scopes: ["admin" as any],
+          scopes: ["admin"],
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("stops an API token from minting a broader or cross-tenant token", async () => {
@@ -223,7 +235,7 @@ describe("enterprise API tokens", () => {
           tenantId: "tenant-1",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     await expect(
       context.run((auth) =>
@@ -233,7 +245,7 @@ describe("enterprise API tokens", () => {
           tenantId: "tenant-2",
         }),
       ),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     // A narrower token in the same tenant is allowed.
     await expect(
@@ -263,7 +275,7 @@ describe("email verification", () => {
     try {
       const requested = await run((auth) => auth.requestEmailVerification(session()));
       const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
-      const code = call?.[2] as string;
+      const code = call?.[2];
       expect(code).toMatch(/^\d{6}$/);
       expect(requested.challenge).toEqual(expect.any(String));
 
@@ -278,6 +290,62 @@ describe("email verification", () => {
     }
   });
 
+  it("sends one welcome email after code verification", async () => {
+    const sent: Array<{
+      to: string;
+      from: { name: string; email: string };
+      replyTo?: string;
+      subject: string;
+      text: string;
+    }> = [];
+
+    const { db, run } = makeContext(unverified(), {
+      email: { send: async (message: any) => void sent.push(message) },
+    });
+
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
+    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    expect(code).toMatch(/^\d{6}$/);
+
+    await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
+
+    const welcome = sent.filter((message) => message.subject === "Welcome to Mattrax");
+    expect(welcome).toHaveLength(1);
+    expect(welcome[0]).toMatchObject({
+      to: "owner@example.com",
+      from: { name: "Oscar from Mattrax", email: "hello@mattrax.cloud" },
+      replyTo: "oscar@otbeaumont.me",
+    });
+    expect(welcome[0]!.text).toContain("Hey Owner,");
+    expect(db.store.user[0]!.welcomeEmailSentAt).toBeInstanceOf(Date);
+
+    // A retried verification (or a duplicate hook) must not send again.
+    await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
+
+    expect(sent.filter((message) => message.subject === "Welcome to Mattrax")).toHaveLength(1);
+  });
+
+  it("sends one welcome email after link verification", async () => {
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+
+    const { run } = makeContext(unverified(), {
+      email: { send: async (message: any) => void sent.push(message) },
+    });
+
+    await run((auth) => auth.requestEmailVerification(session()));
+    const token = sent[0]!.text.match(/verify-email\?token=([^\s]+)/)?.[1];
+    expect(token).toBeTruthy();
+
+    await run((auth) =>
+      auth.verifyEmail(session(), { token: decodeURIComponent(token!) }),
+    );
+    await run((auth) =>
+      auth.verifyEmail(session(), { token: decodeURIComponent(token!) }),
+    );
+
+    expect(sent.filter((message) => message.subject === "Welcome to Mattrax")).toHaveLength(1);
+  });
+
   it("rejects a wrong code and counts the attempt", async () => {
     const { db, run } = makeContext(unverified());
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -285,11 +353,11 @@ describe("email verification", () => {
     try {
       const requested = await run((auth) => auth.requestEmailVerification(session()));
       const call = log.mock.calls.find((entry) => entry[0] === "VERIFY EMAIL CODE");
-      const code = call?.[2] as string;
+      const code = call?.[2];
       const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
       await expect(
         run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
-      ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+      ).rejects.toBeInstanceOf(EnterpriseBadRequest);
       expect(db.store.user[0]!.emailVerified).toBe(false);
     } finally {
       log.mockRestore();
@@ -300,7 +368,7 @@ describe("email verification", () => {
     const { run } = makeContext(unverified());
     await expect(
       run((auth) => auth.requestEmailChange(session(), { newEmail: "new@example.com" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("will not issue API tokens to an unverified account", async () => {
@@ -308,6 +376,6 @@ describe("email verification", () => {
     const grant = await grantFor("api-token-create");
     await expect(
       run((auth) => auth.createApiToken(session(grant), { name: "CLI" })),
-    ).rejects.toMatchObject({ _tag: "EnterpriseForbidden" });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
   });
 });

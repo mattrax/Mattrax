@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { serializePlist } from "@mattrax/plist";
@@ -41,7 +41,7 @@ const makePrivateKeyPem = async (): Promise<string> => {
   return `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g)!.join("\n")}\n-----END PRIVATE KEY-----`;
 };
 
-const credentialJson = async (overrides: Record<string, unknown> = {}) => ({
+const credentialJson = async (overrides: Schema.JsonObject = {}) => ({
   clientId: "BUSINESSAPI.11111111-2222-3333-4444-555555555555",
   keyId: "key-1",
   teamId: "BUSINESSAPI.11111111-2222-3333-4444-555555555555",
@@ -52,7 +52,7 @@ const credentialJson = async (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const jsonResponse = (body: unknown, status = 200) =>
+const jsonResponse = (body: Schema.Json, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
@@ -60,7 +60,7 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const makeFetch = (
   options: {
-    devices?: Array<Record<string, unknown>>;
+    devices?: Array<Schema.JsonObject>;
     next?: string;
     tokenStatus?: number;
     devicesStatus?: number;
@@ -88,9 +88,11 @@ const makeFetch = (
       if (options.devicesStatus && options.devicesStatus !== 200)
         return jsonResponse({ errors: [{ detail: "Not authorized" }] }, options.devicesStatus);
 
+      const links = options.next ? { links: { next: options.next } } : undefined;
+
       return jsonResponse({
         data: options.devices ?? [],
-        ...(options.next ? { links: { next: options.next } } : {}),
+        ...links,
       });
     }
 
@@ -116,7 +118,7 @@ const makeFetch = (
       });
 
     return jsonResponse({ errors: [{ detail: `Unexpected URL ${url}` }] }, 500);
-  }) as typeof globalThis.fetch;
+  }) satisfies typeof globalThis.fetch;
 
   return { fetchImpl, calls };
 };
@@ -169,9 +171,9 @@ describe("Apple Business Manager credentials", () => {
   });
 
   it("fails closed when ids or a valid EC P-256 key are missing", async () => {
-    await expect(parseAbmTokenUpload({ content: await makePrivateKeyPem() })).rejects.toMatchObject(
-      { _tag: "AppleBusinessManagerError", kind: "invalid_token" },
-    );
+    const missing = parseAbmTokenUpload({ content: await makePrivateKeyPem() });
+    await expect(missing).rejects.toBeInstanceOf(AppleBusinessManagerError);
+    await expect(missing).rejects.toMatchObject({ kind: "invalid_token" });
 
     await expect(
       parseAbmTokenUpload({
@@ -259,15 +261,17 @@ describe("Apple Business Manager credentials", () => {
 describe("Apple Business Manager sync", () => {
   it("fails closed when the tenant has no ABM credential", async () => {
     const db = makeDbWithTenant();
-    await expect(
-      runEffect(
-        syncAppleBusinessManagerDevices({
-          db,
-          organizationId,
-          authSecret,
-        }),
-      ),
-    ).rejects.toMatchObject({ _tag: "AppleBusinessManagerError", kind: "not_configured" });
+
+    const sync = runEffect(
+      syncAppleBusinessManagerDevices({
+        db,
+        organizationId,
+        authSecret,
+      }),
+    );
+
+    await expect(sync).rejects.toBeInstanceOf(AppleBusinessManagerError);
+    await expect(sync).rejects.toMatchObject({ kind: "not_configured" });
     expect((await runEffect(appleBusinessManagerInfo(db, organizationId))).configured).toBe(false);
   });
 

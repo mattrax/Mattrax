@@ -1,10 +1,11 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
   signAppleAssetToken,
   signAppleProfileToken,
   verifyAppleAssetToken,
 } from "@mattrax/dm-apple";
+import { isPlistObject, plistText, type PlistObject } from "./internal/plistValue.js";
 
 /**
  * Apple policy compiler for the enterprise management backend.
@@ -20,7 +21,7 @@ import {
 export type PolicyConfigurationRow = {
   readonly policyId: string;
   readonly kind: string;
-  readonly data: unknown;
+  readonly data: Schema.Json | undefined;
   /** Content hash stored with the configuration row. */
   readonly hash: string;
   /** Owning tenant. Optional for older call sites. */
@@ -38,7 +39,7 @@ export type CompiledDeclaration = {
   readonly Type: string;
   readonly Identifier: string;
   readonly ServerToken: string;
-  readonly Payload: Record<string, unknown>;
+  readonly Payload: Schema.JsonObject;
 };
 
 export type ConfigurationKind =
@@ -125,8 +126,8 @@ export const splitConfigurationAssetIdentifier = (
   };
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isJsonObject = Schema.is(Schema.JsonObject);
+const JsonArray = Schema.Array(Schema.Json);
 
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
@@ -136,8 +137,10 @@ const decodeBase64 = (value: string): Uint8Array => {
 };
 
 const sha256Hex = async (value: string | Uint8Array): Promise<string> => {
-  const bytes = typeof value === "string" ? encoder.encode(value) : value;
-  const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+  const bytes = Schema.is(Schema.String)(value) ? encoder.encode(value) : value;
+  // SAFETY: WebCrypto accepts Uint8Array as a BufferSource; the TypeScript DOM
+  // libs model the buffer backing separately from the view.
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
 
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
@@ -150,8 +153,8 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  isRecord(value) ? value : undefined;
+const asRecord = (value: Schema.Json | undefined): Schema.JsonObject | undefined =>
+  isJsonObject(value) ? value : undefined;
 
 /** Signed profiles are CMS/PKCS#7 DER or PEM with an embedded plist. */
 const isSignedMobileconfig = (bytes: Uint8Array, text: string): boolean => {
@@ -167,14 +170,12 @@ const isSignedMobileconfig = (bytes: Uint8Array, text: string): boolean => {
   return (pem || der) && embedded;
 };
 
-const payloadsFromMobileconfig = (
-  root: Record<string, unknown>,
-): Array<Record<string, unknown>> => {
+const payloadsFromMobileconfig = (root: PlistObject): Array<PlistObject> => {
   const content = root.PayloadContent;
 
-  if (Array.isArray(content)) return content.filter(isRecord);
+  if (Array.isArray(content)) return content.filter(isPlistObject);
 
-  if (isRecord(content)) return [content];
+  if (isPlistObject(content)) return [content];
 
   return [];
 };
@@ -184,7 +185,10 @@ const payloadsFromMobileconfig = (
  * deployed by an Apple device is rejected at patch time (rather than being
  * stored and silently ignored during declaration sync).
  */
-export const validateConfiguration = (kind: string, data: unknown): Effect.Effect<void, string> =>
+export const validateConfiguration = (
+  kind: string,
+  data: Schema.Json,
+): Effect.Effect<void, string> =>
   Effect.gen(function* () {
     const parsed = parseConfigurationKind(kind);
 
@@ -202,7 +206,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
 
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
 
-        if (record.camera !== undefined && typeof record.camera !== "boolean")
+        if (record.camera !== undefined && !Schema.is(Schema.Boolean)(record.camera))
           return yield* Effect.fail(`"${kind}.camera" must be a boolean`);
 
         return;
@@ -211,7 +215,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
       case "custom": {
         const record = asRecord(data);
 
-        if (!record || typeof record.content !== "string" || record.content.length === 0)
+        if (!record || !Schema.is(Schema.String)(record.content) || record.content.length === 0)
           return yield* Effect.fail(`"${kind}" requires a base64 encoded "content" string`);
         let bytes: Uint8Array;
 
@@ -238,7 +242,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
 
         const plist = parsed.value;
 
-        if (!isRecord(plist))
+        if (!isPlistObject(plist))
           return yield* Effect.fail(`"${kind}.content" must contain a plist dictionary`);
 
         if (plist.PayloadType !== "Configuration")
@@ -246,15 +250,23 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
             `"${kind}.content" must have a top-level PayloadType of Configuration`,
           );
 
-        if (typeof plist.PayloadIdentifier !== "string" || plist.PayloadIdentifier.length === 0)
+        if (
+          !Schema.is(Schema.String)(plist.PayloadIdentifier) ||
+          plist.PayloadIdentifier.length === 0
+        )
           return yield* Effect.fail(`"${kind}.content" must have a PayloadIdentifier`);
 
-        if (typeof plist.PayloadDisplayName !== "string" || plist.PayloadDisplayName.length === 0)
+        if (
+          !Schema.is(Schema.String)(plist.PayloadDisplayName) ||
+          plist.PayloadDisplayName.length === 0
+        )
           return yield* Effect.fail(`"${kind}.content" must have a PayloadDisplayName`);
+
+        const payloadScope = plistText(plist.PayloadScope);
 
         if (
           plist.PayloadScope !== undefined &&
-          !["System", "User"].includes(String(plist.PayloadScope))
+          (payloadScope === undefined || !["System", "User"].includes(payloadScope))
         )
           return yield* Effect.fail(`"${kind}.content" PayloadScope must be System or User`);
         const payloads = payloadsFromMobileconfig(plist);
@@ -291,15 +303,16 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
         const record = asRecord(data);
 
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
-        const nodes = Array.isArray(record.nodes) ? record.nodes : [record];
+        const nodes = Schema.is(JsonArray)(record.nodes) ? record.nodes : [record];
 
         if (nodes.length === 0)
           return yield* Effect.fail(`"${kind}" must contain at least one OMA-URI node`);
 
         for (const node of nodes) {
-          if (!isRecord(node)) return yield* Effect.fail(`Every "${kind}" node must be an object`);
+          if (!isJsonObject(node))
+            return yield* Effect.fail(`Every "${kind}" node must be an object`);
 
-          if (typeof node.omaUri !== "string" || !node.omaUri.startsWith("./"))
+          if (!Schema.is(Schema.String)(node.omaUri) || !node.omaUri.startsWith("./"))
             return yield* Effect.fail(
               `"${kind}.omaUri" must be a Windows OMA-URI starting with "./"`,
             );
@@ -309,7 +322,10 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
 
           if (
             node.format !== undefined &&
-            !["int", "chr", "bool", "xml", "b64", "node"].includes(node.format as string)
+            !(
+              Schema.is(Schema.String)(node.format) &&
+              ["int", "chr", "bool", "xml", "b64", "node"].includes(node.format)
+            )
           )
             return yield* Effect.fail(`"${kind}.format" must be int, chr, bool, xml, b64 or node`);
         }
@@ -320,7 +336,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
       case "certificate": {
         const record = asRecord(data);
 
-        if (!record || typeof record.pem !== "string" || record.pem.length === 0)
+        if (!record || !Schema.is(Schema.String)(record.pem) || record.pem.length === 0)
           return yield* Effect.fail(`"${kind}" requires a PEM "pem" string`);
         const begins = record.pem.match(/-----BEGIN CERTIFICATE-----/g)?.length ?? 0;
         const ends = record.pem.match(/-----END CERTIFICATE-----/g)?.length ?? 0;
@@ -334,7 +350,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
       case "declaration": {
         const record = asRecord(data);
 
-        if (!record || typeof record.kind !== "string" || record.kind.length === 0)
+        if (!record || !Schema.is(Schema.String)(record.kind) || record.kind.length === 0)
           return yield* Effect.fail(`"${kind}" requires a declaration "kind" string`);
 
         if (!record.kind.startsWith("com.apple."))
@@ -342,7 +358,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
             `"${kind}.kind" must be an Apple declaration type (for example com.apple.configuration.services.configuration-files)`,
           );
 
-        if (!isRecord(record.configuration))
+        if (!isJsonObject(record.configuration))
           return yield* Effect.fail(`"${kind}" requires a "configuration" object`);
 
         return;
@@ -359,10 +375,13 @@ const declarationTypeFor = (row: PolicyConfigurationRow): string | null => {
       return "com.apple.configuration.legacy";
     case "certificate":
       return "com.apple.configuration.security.certificate";
-    case "declaration":
-      return typeof (row.data as Record<string, unknown>).kind === "string"
-        ? ((row.data as Record<string, unknown>).kind as string)
-        : null;
+    case "declaration": {
+      const data = asRecord(row.data);
+      const kind = data?.kind;
+
+      return Schema.is(Schema.String)(kind) ? kind : null;
+    }
+
     default:
       return null;
   }
@@ -443,13 +462,14 @@ export const buildConfigurationDeclaration = async (
         },
       };
     case "declaration": {
-      const data = row.data as Record<string, unknown>;
+      const data = asRecord(row.data);
+      const payload = data?.configuration;
 
       return {
         Type: type,
         Identifier: identifier,
         ServerToken: serverToken,
-        Payload: data.configuration as Record<string, unknown>,
+        Payload: isJsonObject(payload) ? payload : {},
       };
     }
 
@@ -465,9 +485,9 @@ export const buildAssetDeclaration = async (
   const parsed = parseConfigurationKind(row.kind);
 
   if (parsed.type !== "certificate") return null;
-  const data = row.data as Record<string, unknown>;
+  const data = asRecord(row.data);
 
-  if (typeof data.pem !== "string") return null;
+  if (!Schema.is(Schema.String)(data?.pem)) return null;
 
   const identifier = configurationAssetIdentifier(row.policyId, row.kind);
   const serverToken = await configurationAssetServerToken(row, context);
@@ -505,8 +525,8 @@ const stableUuid = async (value: string): Promise<string> => {
 };
 
 const legacyDeviceProfile = async (row: PolicyConfigurationRow) => {
-  const data = row.data as Record<string, unknown>;
-  const allowCamera = data.camera !== false;
+  const data = asRecord(row.data);
+  const allowCamera = data?.camera !== false;
   const uuid = await stableUuid(`mattrax:${row.policyId}:${row.kind}`);
 
   return {
@@ -538,9 +558,9 @@ export const buildLegacyProfile = async (
   const parsed = parseConfigurationKind(row.kind);
 
   if (parsed.type === "custom") {
-    const content = (row.data as Record<string, unknown>).content;
+    const content = asRecord(row.data)?.content;
 
-    if (typeof content !== "string") return null;
+    if (!Schema.is(Schema.String)(content)) return null;
 
     return {
       content: decodeBase64(content),
@@ -564,9 +584,9 @@ export const buildAssetContent = (
   row: PolicyConfigurationRow,
 ): { content: Uint8Array; contentType: string } | null => {
   if (!isCertificateKind(row.kind)) return null;
-  const pem = (row.data as Record<string, unknown>).pem;
+  const pem = asRecord(row.data)?.pem;
 
-  if (typeof pem !== "string") return null;
+  if (!Schema.is(Schema.String)(pem)) return null;
 
   return { content: encoder.encode(pem), contentType: "application/pem" };
 };
@@ -604,29 +624,28 @@ export const verifyAssetRequestToken = (
   token ? verifyAppleAssetToken(authSecret, token, row.policyId, row.kind) : Promise.resolve(false);
 
 export type WindowsPolicyNode = {
-  readonly omaUri: string;
-  readonly value: unknown;
-  readonly format?: string;
+  omaUri: string;
+  value: Schema.Json;
+  format?: string;
 };
 
 /** Extract OMA-URI nodes from a Windows custom policy configuration. */
 export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPolicyNode> => {
   if (parseConfigurationKind(row.kind).type !== "windows") return [];
-  const data = row.data as Record<string, unknown>;
-  const nodes = Array.isArray(data.nodes) ? data.nodes : [data];
+  const data = asRecord(row.data);
+  const nodes = data === undefined ? [] : Schema.is(JsonArray)(data.nodes) ? data.nodes : [data];
 
   return nodes.flatMap((node) => {
-    if (!node || typeof node !== "object") return [];
-    const record = node as Record<string, unknown>;
+    if (!isJsonObject(node)) return [];
 
-    if (typeof record.omaUri !== "string") return [];
+    const omaUri = node.omaUri;
 
-    return [
-      {
-        omaUri: record.omaUri,
-        value: record.value,
-        ...(typeof record.format === "string" ? { format: record.format } : {}),
-      },
-    ];
+    if (!Schema.is(Schema.String)(omaUri)) return [];
+
+    const result: WindowsPolicyNode = { omaUri, value: node.value };
+
+    if (Schema.is(Schema.String)(node.format)) result.format = node.format;
+
+    return [result];
   });
 };

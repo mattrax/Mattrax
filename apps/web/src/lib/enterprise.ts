@@ -1,16 +1,18 @@
 import { queryOptions } from "@tanstack/solid-query";
-import type { MeResponse } from "@mattrax/enterprise-domain";
-import { Effect } from "effect";
-import { FetchHttpClient } from "effect/http";
+import type { MeResponse } from "@mattrax/enterprise-domain/client";
+import { Effect, Option, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
-import { errorField, errorTag } from "~/lib/errors";
+import { errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
 import { readMeCache, writeMeCache } from "~/lib/me-cache";
+import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
 import {
   requestStepUp,
   stepUpGrant,
+  StepUpActionSchema,
+  StepUpMethodSchema,
   type StepUpAction,
-  type StepUpMethod,
 } from "~/lib/step-up-bus";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
@@ -18,7 +20,6 @@ import {
   enterpriseHttpApi,
   formatDeviceQueryText,
   parseDeviceQueryText,
-  type AndroidEnrollment,
   type AndroidEnterpriseInfo,
   type AndroidSignupResponse,
   type AndroidSyncResponse,
@@ -30,56 +31,36 @@ import {
   type AppleBusinessManagerSyncResponse,
   type ApplicationInventoryQuery,
   type AuditSearchQuery,
-  type AutopilotDeploymentMode,
-  type AutopilotDeviceInfo,
   type AutopilotImportRequest,
-  type AutopilotJoinType,
-  type AutopilotProfileInfo,
-  type AutopilotSettingsResponse,
   type CreateAutopilotProfileRequest,
-  type DeviceCondition,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
-  type DeviceQuery,
   type DeviceSearchQuery,
-  type DeviceSearchRow,
-  type McpConnectionInfo,
-  type McpConnectionsResponse,
-  type Dashboard,
-  type DashboardDataset,
   type DashboardQueryRequest,
-  type DashboardQueryResponse,
   type DashboardSummary,
-  type DashboardWidget,
+  type PatchDashboardWidgetRequest,
   type DashboardWidgetType,
-  type DynamicGroupCondition,
   type DynamicGroupKind,
   type DynamicGroupRules,
-  type EffectivePolicyResponse,
   type Entity,
   type GroupNode,
-  type GroupPreviewResponse,
   type GroupRow,
   type PolicyRow,
   type RowFor,
   type TenantEnrollmentInfo,
   type TenantImportRequest,
   type TenantInfo,
-  type TenantRole,
-  type TenantRolesResponse,
   type CreateTenantRoleRequest,
+  type ListTenantInvitationsQuery,
   type PatchTenantRoleRequest,
   type UpdateAutopilotProfileRequest,
-  type VppAssetInfo,
   type VppAssetsResponse,
-  type VppAssignmentInfo,
   type VppInfo,
   type VppInstallResponse,
   type VppReleaseResponse,
   type VppSyncResponse,
   type WebhookEndpointInfo,
-  type WindowsEnrollment,
-} from "@mattrax/enterprise-domain";
+} from "@mattrax/enterprise-domain/client";
 
 export type {
   AndroidEnrollment,
@@ -98,6 +79,7 @@ export type {
   ApplicationNode,
   ApplicationRow,
   ApnsInfo,
+  AcceptInvitationResponse,
   AuditLogEntry,
   AuditSearchQuery,
   AuditSearchResponse,
@@ -109,6 +91,14 @@ export type {
   AutopilotSettingsResponse,
   CreateAutopilotProfileRequest,
   UpdateAutopilotProfileRequest,
+  CreateInvitationResponse,
+  InvitationOptionsResponse,
+  InvitationPreviewResponse,
+  InvitationPreviewState,
+  InvitationRoleOption,
+  InvitationStatus,
+  ListTenantInvitationsQuery,
+  ResendTenantInvitationResponse,
   BillingSummary,
   CredentialHealthResponse,
   BackupRunInfo,
@@ -196,7 +186,7 @@ export type {
   WebhookEndpointInfo,
   WebhookTestResponse,
   WindowsEnrollment,
-} from "@mattrax/enterprise-domain";
+} from "@mattrax/enterprise-domain/client";
 
 export { formatDeviceQueryText, parseDeviceQueryText };
 
@@ -204,13 +194,7 @@ type RouteParam = string | undefined;
 
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
-type EndpointData<T> = T extends EndpointPromise<infer A, unknown> ? A : never;
-
-type EndpointError<T> = T extends EndpointPromise<unknown, infer E> ? E : never;
-
-type EnterpriseApiClient = Effect.Success<
-  ReturnType<typeof clientEffect>
->["client"]["EnterpriseApi"];
+type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"];
 
 export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
@@ -237,6 +221,8 @@ export const enterpriseKeys = {
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", tenantId ?? ""] as const,
   invitations: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
+  invitationOptions: (tenantId: RouteParam) =>
+    ["enterprise", "tenant-invitation-options", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
   android: (tenantId: RouteParam) => ["enterprise", "android", tenantId ?? ""] as const,
   abm: (tenantId: RouteParam) => ["enterprise", "abm", tenantId ?? ""] as const,
@@ -280,6 +266,9 @@ export const enterpriseKeys = {
     ["enterprise", "policy-assignments", tenantId ?? "", id ?? ""] as const,
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-effective-policy", tenantId ?? "", id ?? ""] as const,
+  directory: (tenantId: RouteParam) => ["enterprise", "directory", tenantId ?? ""] as const,
+  deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-users", tenantId ?? "", id ?? ""] as const,
   directorySync: (tenantId: RouteParam) =>
     ["enterprise", "directory-sync", tenantId ?? ""] as const,
   domains: (tenantId: RouteParam) => ["enterprise", "domains", tenantId ?? ""] as const,
@@ -296,13 +285,15 @@ const required = (value: RouteParam, name: string) => {
   return value;
 };
 
-const clientEffect = () => {
+const clientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
   const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
 
-  return HttpApiClient.make(enterpriseHttpApi, { baseUrl }).pipe(
-    Effect.map((client) => ({ client, event })),
-  );
+  return HttpApiClient.make(enterpriseHttpApi, {
+    baseUrl,
+    transformClient: (client) =>
+      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+  });
 };
 
 type EndpointStepUp =
@@ -321,66 +312,59 @@ function endpoint<A, E>(
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   const action = options.stepUp === false ? undefined : options.stepUp;
 
+  const requestHeaders = (grant?: string) => {
+    const event = isServer ? getRequestEvent() : undefined;
+    const cookie = event?.request.headers.get("cookie");
+    const headers: Record<string, string> = {};
+
+    if (grant) headers["x-mattrax-step-up"] = grant;
+
+    if (cookie) headers.cookie = cookie;
+
+    return headers;
+  };
+
   const attempt = (grant?: string) => {
-    const extraHeaders: Record<string, string> = (grant ? { "x-mattrax-step-up": grant } : {});
-
-    const effect = clientEffect().pipe(
-      Effect.flatMap(({ client, event }) => {
-        const cookie = event?.request.headers.get("cookie");
-        const api = client.EnterpriseApi;
-
-        const headers = {
-          ...extraHeaders,
-          ...(cookie ? { cookie } : {}),
-        };
-
-        if (Object.keys(headers).length === 0) return call(api);
-
-        return call(
-          new Proxy(api, {
-            get(target, property, receiver) {
-              const value = Reflect.get(target, property, receiver);
-
-              if (typeof value !== "function") return value;
-
-              return (input: Record<string, unknown> = {}) =>
-                value({
-                  ...input,
-                  headers: { ...headers, ...(input.headers as object | undefined) },
-                });
-            },
-          }) as EnterpriseApiClient,
-        );
-      }),
+    const effect = clientEffect(requestHeaders(grant)).pipe(
+      Effect.flatMap((client) => call(client.EnterpriseApi)),
     );
 
+    // SAFETY: `Effect.runPromise` resolves with the effect's success value `A`;
+    // the assertion restores the generic success type the client erases.
     return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
   };
+
+  const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
+  const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
 
   const run = async (): Promise<A> => {
     try {
       return await attempt(stepUpGrant(action));
     } catch (error) {
-      if (errorTag(error) !== "StepUpRequired") throw error;
+      const failure = raisedFailure(error);
 
-      const required =
-        (errorField(error, "action") as StepUpAction | undefined) ??
-        (action as StepUpAction | undefined);
+      if (errorTag(failure) !== "StepUpRequired") throw error;
+
+      const fields = stepUpFailure(failure);
+      const required = Option.getOrUndefined(decodeAction(fields.action)) ?? action;
 
       if (!required) throw error;
-      const methods = errorField(error, "methods");
 
-      const grant = await requestStepUp(
-        required,
-        Array.isArray(methods) ? (methods as StepUpMethod[]) : undefined,
-      );
+      const methods = Option.getOrUndefined(decodeMethods(fields.methods));
+      const grant = await requestStepUp(required, methods);
 
       return await attempt(grant);
     }
   };
 
+  // SAFETY: `EndpointPromise` only adds the phantom `__error` field that carries
+  // the endpoint error type; the runtime value is the plain promise from `run`.
   return run() as EndpointPromise<A, E | EnterpriseBadRequest>;
 }
+
+type EndpointData<T> = T extends EndpointPromise<infer A, unknown> ? A : never;
+
+type EndpointError<T> = T extends EndpointPromise<unknown, infer E> ? E : never;
 
 const enterpriseQueryOptions = <
   A,
@@ -391,12 +375,19 @@ const enterpriseQueryOptions = <
   queryKey: TQueryKey;
   queryFn: () => T;
   enabled?: boolean;
+  /** Leave endpoint failures in state instead of throwing to the error boundary. */
+  throwOnError?: boolean;
+  suspense?: boolean;
 }) =>
   queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>({
+    // SAFETY: `T` is the endpoint promise for this key; its resolved value is
+    // `EndpointData<T>` and the phantom `__error` field never exists at runtime.
     ...(options as {
       queryKey: TQueryKey;
       queryFn: () => Promise<EndpointData<T>>;
       enabled?: boolean;
+      throwOnError?: boolean;
+      suspense?: boolean;
     }),
     // The API Worker authenticates with the browser's cookie; a server render
     // has no reliable way to forward it through every endpoint. Keep all
@@ -416,7 +407,7 @@ export const enterprise = {
     displayName?: string | null;
     supportEmail?: string | null;
     brandColor?: string | null;
-    metadata?: Record<string, unknown>;
+    metadata?: Record<string, Schema.Json>;
   }) => endpoint((api) => api.createTenant({ payload })),
   /** Returns the versioned JSON bundle; callers turn it into a file download. */
   exportTenant: (tenantId: RouteParam, query: { includeAudit?: boolean } = {}) =>
@@ -449,7 +440,7 @@ export const enterprise = {
       displayName: string | null;
       supportEmail: string | null;
       brandColor: string | null;
-      metadata: Record<string, unknown> | null;
+      metadata: Record<string, Schema.Json> | null;
     }>,
   ) =>
     endpoint((api) =>
@@ -464,6 +455,8 @@ export const enterprise = {
       const params = { tenantId: required(tenantId, "tenantId") };
 
       if (entity === "device")
+        // SAFETY: the `"device"` branch selects the device endpoint, so its rows
+        // are exactly `RowFor<E>` for the caller's entity type parameter.
         return api.listDevices({ params }) as Effect.Effect<
           { rows: RowFor<E>[] },
           Effect.Error<ReturnType<typeof api.listDevices>>,
@@ -471,12 +464,16 @@ export const enterprise = {
         >;
 
       if (entity === "group")
+        // SAFETY: the `"group"` branch selects the group endpoint, so its rows
+        // are exactly `RowFor<E>` for the caller's entity type parameter.
         return api.listGroups({ params }) as Effect.Effect<
           { rows: RowFor<E>[] },
           Effect.Error<ReturnType<typeof api.listGroups>>,
           never
         >;
 
+      // SAFETY: the remaining branch selects the policy endpoint, so its rows
+      // are exactly `RowFor<E>` for the caller's entity type parameter.
       return api.listPolicies({ params }) as Effect.Effect<
         { rows: RowFor<E>[] },
         Effect.Error<ReturnType<typeof api.listPolicies>>,
@@ -564,7 +561,7 @@ export const enterprise = {
     tenantId: RouteParam,
     dashboardId: RouteParam,
     widgetId: RouteParam,
-    payload: Partial<Pick<DashboardWidget, "type" | "title" | "config" | "x" | "y" | "w" | "h">>,
+    payload: PatchDashboardWidgetRequest,
   ) =>
     endpoint((api) =>
       api.patchDashboardWidget({
@@ -573,7 +570,7 @@ export const enterprise = {
           dashboardId: required(dashboardId, "dashboardId"),
           widgetId: required(widgetId, "widgetId"),
         },
-        payload: payload as any,
+        payload,
       }),
     ),
   deleteDashboardWidget: (tenantId: RouteParam, dashboardId: RouteParam, widgetId: RouteParam) =>
@@ -614,6 +611,8 @@ export const enterprise = {
       const params = { tenantId: required(tenantId, "tenantId"), id: required(id, "id") };
 
       if (entity === "device")
+        // SAFETY: the `"device"` branch selects the device endpoint, so its row
+        // is exactly `RowFor<E>` for the caller's entity type parameter.
         return api.getDevice({ params }) as Effect.Effect<
           RowFor<E> | GroupNode,
           Effect.Error<ReturnType<typeof api.getDevice>>,
@@ -621,12 +620,16 @@ export const enterprise = {
         >;
 
       if (entity === "group")
+        // SAFETY: the `"group"` branch selects the group endpoint, so its row is
+        // exactly `RowFor<E>` for the caller's entity type parameter.
         return api.getGroup({ params }) as Effect.Effect<
           RowFor<E> | GroupNode,
           Effect.Error<ReturnType<typeof api.getGroup>>,
           never
         >;
 
+      // SAFETY: the remaining branch selects the policy endpoint, so its row is
+      // exactly `RowFor<E>` for the caller's entity type parameter.
       return api.getPolicy({ params }) as Effect.Effect<
         RowFor<E> | GroupNode,
         Effect.Error<ReturnType<typeof api.getPolicy>>,
@@ -892,6 +895,10 @@ export const enterprise = {
     payload: {
       assign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
       unassign?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      assignUsers?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      unassignUsers?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      assignUserGroups?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+      unassignUserGroups?: Array<string | { id: string; mode?: "include" | "exclude" }>;
     },
   ) =>
     endpoint((api) =>
@@ -903,6 +910,21 @@ export const enterprise = {
   listApplications: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listApplications({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listDirectory: (tenantId: RouteParam) =>
+    endpoint((api) => api.listDirectory({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getDeviceUsers: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceUsers({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  setDeviceUsers: (tenantId: RouteParam, id: RouteParam, userIds: ReadonlyArray<string>) =>
+    endpoint((api) =>
+      api.setDeviceUsers({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload: { userIds: [...userIds] },
+      }),
     ),
   getApplication: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
@@ -1381,14 +1403,30 @@ export const enterprise = {
     ),
   inviteUser: (
     tenantId: RouteParam,
-    payload: { email: string; role?: string; roleId?: string | null; resend?: boolean },
+    payload: { email: string; role?: string; roleId?: string | null },
   ) =>
     endpoint((api) =>
       api.inviteTenantUser({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
-  listInvitations: (tenantId: RouteParam) =>
+  listInvitations: (tenantId: RouteParam, query: ListTenantInvitationsQuery = {}) =>
     endpoint((api) =>
-      api.listTenantInvitations({ params: { tenantId: required(tenantId, "tenantId") } }),
+      api.listTenantInvitations({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
+      }),
+    ),
+  invitationOptions: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getTenantInvitationOptions({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  resendInvitation: (tenantId: RouteParam, invitationId: RouteParam) =>
+    endpoint((api) =>
+      api.resendTenantInvitation({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          invitationId: required(invitationId, "invitationId"),
+        },
+      }),
     ),
   cancelInvitation: (tenantId: RouteParam, invitationId: RouteParam) =>
     endpoint((api) =>
@@ -1399,6 +1437,12 @@ export const enterprise = {
         },
       }),
     ),
+  /** Public preview of an invitation token; safe to call while signed out. */
+  previewInvitation: (token: string) =>
+    endpoint((api) => api.previewInvitation({ query: { token } })),
+  /** Accept an invitation for the signed-in account. */
+  acceptInvitation: (token: string) =>
+    endpoint((api) => api.acceptInvitation({ payload: { token } })),
   patchUser: (
     tenantId: RouteParam,
     memberId: RouteParam,
@@ -1461,8 +1505,6 @@ export const enterprise = {
       { stepUp: "billing-portal" },
     ),
   stepUpMethods: () => endpoint((api) => api.stepUpMethods({})),
-  stepUpPassword: (payload: { password: string; action: StepUpAction }) =>
-    endpoint((api) => api.stepUpPassword({ payload })),
   stepUpTotp: (payload: { code: string; action: StepUpAction }) =>
     endpoint((api) => api.stepUpTotp({ payload })),
   beginStepUpPasskey: (payload: { action: StepUpAction }) =>
@@ -1474,10 +1516,23 @@ export const enterprise = {
 export const meQueryOptions = (userId?: string, enabled = true) => {
   const cached = readMeCache(userId);
 
-  return queryOptions<MeResponse, unknown, MeResponse, ReturnType<typeof enterpriseKeys.me>>({
+  // The SSR preload carries the same `/me` payload, so the first paint can
+  // render the tenant shell, guard and permission-aware navigation without a
+  // second request. Only data for the signed-in account is accepted.
+  const event = isServer ? getRequestEvent() : undefined;
+  const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
+
+  const initialData: MeResponse | undefined =
+    preloaded && (!userId || preloaded.user.id === userId) ? preloaded : undefined;
+
+  // The SSR preload skips the queryFn, which is normally what refreshes the
+  // local cache. Persist it here so the next cold load still paints instantly.
+  if (!isServer && initialData) writeMeCache(initialData);
+
+  const options = {
     queryKey: enterpriseKeys.me(),
     queryFn: async () => {
-      const data = (await enterprise.me()) as MeResponse;
+      const data = await enterprise.me();
       writeMeCache(data);
 
       return data;
@@ -1485,9 +1540,21 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
     enabled: !isServer && enabled,
     // A cold load paints the last known shell immediately; the query still
     // refreshes in the background.
-    placeholderData: cached?.data,
-    staleTime: 2 * 60_000,
-  });
+    placeholderData: initialData ?? cached?.data,
+    // Paint from the SSR/cached shell immediately, but always revalidate on
+    // mount: tenant creation, invitations and role changes must show up without
+    // waiting for the five-minute SSR token to expire.
+    staleTime: 0,
+  };
+
+  // TanStack renders this observer snapshot immediately without writing it into
+  // the shared cache. On the server that is essential: the module-level query
+  // client outlives a request, so `initialData` there could show one account's
+  // shell to the next visitor. In the browser the client is per-tab and we also
+  // seed the cache so the query is considered fresh.
+  if (!isServer && initialData !== undefined) Object.assign(options, { initialData });
+
+  return queryOptions(options);
 };
 
 export const enterpriseQueries = {
@@ -1578,6 +1645,18 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.getDeviceEffectivePolicy(tenantId, id),
       enabled: Boolean(tenantId && id) && !isServer,
     }),
+  directory: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.directory(tenantId),
+      queryFn: () => enterprise.listDirectory(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceUsers(tenantId, id),
+      queryFn: () => enterprise.getDeviceUsers(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
   directorySync: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.directorySync(tenantId),
@@ -1626,6 +1705,12 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listInvitations(tenantId),
       enabled: Boolean(tenantId),
     }),
+  invitationOptions: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.invitationOptions(tenantId),
+      queryFn: () => enterprise.invitationOptions(tenantId),
+      enabled: Boolean(tenantId),
+    }),
   apns: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.apns(tenantId),
@@ -1655,6 +1740,10 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.abmDevice(tenantId, serial),
       queryFn: () => enterprise.getAbmDevice(tenantId, serial),
       enabled: Boolean(tenantId) && Boolean(serial),
+      // A serial that has not been synced from ABM is an expected empty state,
+      // not a page-level failure.
+      throwOnError: false,
+      suspense: false,
     }),
   vpp: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
@@ -1698,8 +1787,9 @@ export const enabledTenant = (tenantId: Accessor<string | undefined>) => () => B
 
 /**
  * Pick the tenant the UI should show. Tenant-scoped APIs always take the
- * tenant id from the URL; the first membership is only a fallback for
- * non-tenant routes (for example the tenant picker or account page).
+ * tenant id from the URL, so an explicit id only matches a real membership;
+ * the first membership is a fallback for non-tenant routes (for example the
+ * tenant picker or account page).
  */
 export function resolveActiveTenant(
   me: { tenants: readonly TenantInfo[] } | undefined,
@@ -1707,5 +1797,7 @@ export function resolveActiveTenant(
 ) {
   if (!me) return undefined;
 
-  return me.tenants.find((tenant) => tenant.id === tenantId) ?? me.tenants[0];
+  if (tenantId) return me.tenants.find((tenant) => tenant.id === tenantId);
+
+  return me.tenants[0];
 }

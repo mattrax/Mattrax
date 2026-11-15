@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import { Layer, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { pemEncode } from "@mattrax/crypto";
 
@@ -17,10 +17,7 @@ const ALGORITHM: RsaHashedKeyGenParams = {
 };
 
 export async function makeServiceAccount(): Promise<ServiceAccountFixture> {
-  const pair = (await crypto.subtle.generateKey(ALGORITHM, true, [
-    "sign",
-    "verify",
-  ])) as CryptoKeyPair;
+  const pair = await crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"] as const);
 
   const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
 
@@ -32,7 +29,7 @@ export async function makeServiceAccount(): Promise<ServiceAccountFixture> {
   };
 }
 
-export function base64UrlToBytes(input: string): Uint8Array {
+export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const binary = atob(
     input
       .replace(/-/g, "+")
@@ -43,22 +40,33 @@ export function base64UrlToBytes(input: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-export function decodeJwt(token: string): {
-  header: Record<string, unknown>;
-  claims: Record<string, unknown>;
-  signingInput: string;
-  signature: Uint8Array;
-} {
+export type DecodedJwt = {
+  readonly header: Schema.JsonObject;
+  readonly claims: Schema.JsonObject;
+  readonly signingInput: string;
+  readonly signature: Uint8Array<ArrayBuffer>;
+};
+
+export function decodeJwt(token: string): DecodedJwt {
   const parts = token.split(".");
 
   if (parts.length !== 3) throw new Error("JWT must have three parts");
-  const decode = (part: string) => JSON.parse(new TextDecoder().decode(base64UrlToBytes(part)));
+
+  const decode = (part: string): Schema.JsonObject => {
+    const value = Schema.decodeUnknownSync(Schema.Json)(
+      JSON.parse(new TextDecoder().decode(base64UrlToBytes(part))),
+    );
+
+    if (!Schema.is(Schema.JsonObject)(value)) throw new Error("JWT part must be a JSON object");
+
+    return value;
+  };
 
   return {
-    header: decode(parts[0]!),
-    claims: decode(parts[1]!),
+    header: decode(parts[0] ?? ""),
+    claims: decode(parts[1] ?? ""),
     signingInput: `${parts[0]}.${parts[1]}`,
-    signature: base64UrlToBytes(parts[2]!),
+    signature: base64UrlToBytes(parts[2] ?? ""),
   };
 }
 
@@ -68,8 +76,8 @@ export async function verifyJwt(token: string, publicKey: CryptoKey): Promise<bo
   return crypto.subtle.verify(
     { name: "RSASSA-PKCS1-v1_5" },
     publicKey,
-    decoded.signature as BufferSource,
-    new TextEncoder().encode(decoded.signingInput) as BufferSource,
+    decoded.signature,
+    new TextEncoder().encode(decoded.signingInput),
   );
 }
 
@@ -82,7 +90,7 @@ export type RecordedRequest = {
   readonly body: string | undefined;
 };
 
-export function jsonResponse(value: unknown, status = 200): Response {
+export function jsonResponse(value: Schema.Json, status = 200): Response {
   return new Response(JSON.stringify(value), {
     status,
     headers: { "content-type": "application/json" },
@@ -128,8 +136,8 @@ export function mockFetch(handler: (request: RecordedRequest) => Response | Prom
   };
 }
 
-export function jsonBody(request: RecordedRequest): unknown {
+export function jsonBody(request: RecordedRequest): Schema.Json | undefined {
   if (request.body === undefined || request.body === "") return undefined;
 
-  return JSON.parse(request.body) as unknown;
+  return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(request.body));
 }

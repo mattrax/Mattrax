@@ -1,11 +1,12 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import {
   AndroidManagement,
   base64UrlEncode,
   clearJwksCache,
   verifyPubSubOidcToken,
-  type AndroidManagementShape,
+  type AndroidManagementService,
+  type CreateEnterpriseInput,
   type PubSubOidcClaims,
   type PubSubOidcVerifierConfig,
 } from "@mattrax/dm-android";
@@ -18,20 +19,42 @@ import {
   type AndroidPubSubResult,
 } from "@mattrax/enterprise-backend";
 
-type Row = Record<string, any>;
+type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;
 
-const tableName = (table: any): string => {
+interface Row {
+  [key: string]: RowValue;
+}
+
+interface DrizzleTable {
+  readonly __table?: never;
+}
+
+function isDrizzleTable(value: unknown): value is DrizzleTable {
+  if (typeof value !== "object" || value === null) return false;
+
+  return Object.getOwnPropertySymbols(value).some(
+    (symbol) => symbol.description === "drizzle:Name",
+  );
+}
+
+const tableName = (table: DrizzleTable): string => {
   const symbol = Object.getOwnPropertySymbols(table).find(
     (candidate) => candidate.description === "drizzle:Name",
   );
 
-  return table?.[symbol!] as string;
+  if (!symbol) throw new Error("Drizzle table has no drizzle:Name symbol");
+
+  const name: unknown = Object.getOwnPropertyDescriptor(table, symbol)?.value;
+
+  if (!Schema.is(Schema.String)(name)) throw new Error("Drizzle table name is not a string");
+
+  return name;
 };
 
-const matches = (row: Row, where: unknown): boolean => {
-  if (!where || typeof where !== "object") return true;
+const matches = (row: Row, where: Schema.JsonObject | undefined): boolean => {
+  if (!where) return true;
 
-  return Object.entries(where as Record<string, unknown>).every(([key, value]) =>
+  return Object.entries(where).every(([key, value]) =>
     value === undefined ? true : row[key] === value,
   );
 };
@@ -129,41 +152,70 @@ class FakeDelete implements Iterable<Effect.Effect<Row[]>> {
   }
 }
 
-export const createFakeDb = (seed: Record<string, Row[]> = {}) => {
-  const store: Record<string, Row[]> = Object.fromEntries(
-    Object.keys(schema).map((key) => [tableName((schema as any)[key]), []]),
-  );
+type FakeQuery = {
+  readonly findFirst: (
+    options?: { readonly where?: Schema.JsonObject },
+  ) => Effect.Effect<Row | undefined>;
+  readonly findMany: (options?: {
+    readonly where?: Schema.JsonObject;
+  }) => Effect.Effect<Array<Row>>;
+};
+
+export type FakeDb = {
+  readonly store: Record<string, Row[]>;
+  readonly query: Record<string, FakeQuery>;
+  readonly insert: (table: DrizzleTable) => FakeInsert;
+  readonly update: (table: DrizzleTable) => FakeUpdate;
+  readonly delete: (table: DrizzleTable) => FakeDelete;
+  readonly select: () => EmptySelect;
+  readonly transaction: <T>(work: (tx: FakeDb) => T) => T;
+};
+
+export const createFakeDb = (seed: Record<string, Row[]> = {}): FakeDb => {
+  const store: Record<string, Row[]> = {};
+
+  for (const value of Object.values(schema)) {
+    if (!isDrizzleTable(value)) continue;
+
+    store[tableName(value)] = [];
+  }
 
   for (const [table, rows] of Object.entries(seed)) store[table] = rows.map((row) => ({ ...row }));
 
-  const query = Object.fromEntries(
-    Object.keys(schema).map((key) => {
-      const table = tableName((schema as any)[key]);
+  const query: Record<string, FakeQuery> = {};
 
-      return [
-        key,
-        {
-          findFirst: ({ where }: { where?: unknown } = {}) =>
-            Effect.succeed(store[table]!.find((row) => matches(row, where))),
-          findMany: ({ where }: { where?: unknown } = {}) =>
-            Effect.succeed(store[table]!.filter((row) => matches(row, where))),
-        },
-      ];
-    }),
-  );
+  for (const [key, value] of Object.entries(schema)) {
+    if (!isDrizzleTable(value)) continue;
 
-  const db = {
+    const table = tableName(value);
+
+    query[key] = {
+      findFirst: ({ where }: { where?: Schema.JsonObject } = {}) =>
+        Effect.succeed(store[table]!.find((row) => matches(row, where))),
+      findMany: ({ where }: { where?: Schema.JsonObject } = {}) =>
+        Effect.succeed(store[table]!.filter((row) => matches(row, where))),
+    };
+  }
+
+  const db: FakeDb = {
     store,
     query,
-    insert: (table: any) => new FakeInsert(store, tableName(table)),
-    update: (table: any) => new FakeUpdate(store, tableName(table)),
-    delete: (table: any) => new FakeDelete(store, tableName(table)),
+    insert: (table: DrizzleTable) => new FakeInsert(store, tableName(table)),
+    update: (table: DrizzleTable) => new FakeUpdate(store, tableName(table)),
+    delete: (table: DrizzleTable) => new FakeDelete(store, tableName(table)),
     select: () => new EmptySelect(),
-    transaction: (work: (tx: unknown) => unknown) => work(db),
+    transaction: <T>(work: (tx: FakeDb) => T): T => work(db),
   };
 
   return db;
 };
+
+const coerceFakeDb = <T>(database: FakeDb): T => {
+  // SAFETY: the fake implements the Drizzle query surface used by the Android delivery paths.
+  return database as T;
+};
+
+const enterpriseDb = (database: FakeDb): EnterpriseDb => coerceFakeDb(database);
 
 export type AndroidHarness = {
   readonly db: ReturnType<typeof createFakeDb>;
@@ -174,19 +226,23 @@ export type AndroidHarness = {
     readonly name: string;
   }) => Promise<{ url: string }>;
   readonly handlePubSub: (options: {
-    readonly body: unknown;
+    readonly body: Schema.Json;
     readonly authorization?: string;
   }) => Promise<AndroidPubSubResult>;
-  readonly signToken: (overrides?: Record<string, unknown>) => Promise<string>;
+  readonly signToken: (overrides?: Schema.JsonObject) => Promise<string>;
   readonly verifyOidc: (
     token: string,
     overrides?: Partial<PubSubOidcVerifierConfig>,
   ) => Promise<PubSubOidcClaims>;
-  readonly pushBody: (data: unknown, notificationType: string, messageId?: string) => unknown;
+  readonly pushBody: (
+    data: Schema.Json,
+    notificationType: string,
+    messageId?: string,
+  ) => Schema.Json;
   readonly calls: {
     signupUrls: Array<{ callbackUrl: string }>;
-    enterprises: Array<Record<string, unknown>>;
-    policies: Array<{ enterpriseName: string; policyId: string; policy: Record<string, unknown> }>;
+    enterprises: Array<CreateEnterpriseInput>;
+    policies: Array<{ enterpriseName: string; policyId: string; policy: Schema.JsonObject }>;
     devices: Array<{ deviceName: string; policyName: string }>;
     commands: Array<{ deviceName: string; type: string }>;
   };
@@ -202,22 +258,26 @@ const encoder = new TextEncoder();
 
 const signJwt = async (
   privateKey: CryptoKey,
-  overrides: Record<string, unknown> = {},
+  overrides: Schema.JsonObject = {},
 ): Promise<string> => {
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "compliance" }));
 
   const payload = base64UrlEncode(
-    JSON.stringify({
-      iss: "https://accounts.google.com",
-      aud: audience,
-      sub: "compliance",
-      email: serviceAccountEmail,
-      email_verified: true,
-      iat: now - 5,
-      exp: now + 600,
-      ...overrides,
-    }),
+    JSON.stringify(
+      Object.assign(
+        {
+          iss: "https://accounts.google.com",
+          aud: audience,
+          sub: "compliance",
+          email: serviceAccountEmail,
+          email_verified: true,
+          iat: now - 5,
+          exp: now + 600,
+        },
+        overrides,
+      ),
+    ),
   );
 
   const signature = await crypto.subtle.sign(
@@ -229,7 +289,7 @@ const signJwt = async (
   return `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
 };
 
-const base64Json = (value: unknown): string => {
+const base64Json = (value: Schema.Json): string => {
   const bytes = encoder.encode(JSON.stringify(value));
   let binary = "";
 
@@ -241,16 +301,14 @@ const base64Json = (value: unknown): string => {
 export const createAndroidHarness = async (): Promise<AndroidHarness> => {
   clearJwksCache();
 
-  const keyPair = (await crypto.subtle.generateKey(
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      hash: "SHA-256",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-    },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
+  const algorithm: RsaHashedKeyGenParams = {
+    name: "RSASSA-PKCS1-v1_5",
+    hash: "SHA-256",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+  };
+
+  const keyPair = await crypto.subtle.generateKey(algorithm, true, ["sign", "verify"] as const);
 
   const publicJwk = {
     ...(await crypto.subtle.exportKey("jwk", keyPair.publicKey)),
@@ -259,11 +317,11 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     use: "sig",
   };
 
-  const jwksFetch = (async () =>
+  const jwksFetch: typeof globalThis.fetch = async () =>
     new Response(JSON.stringify({ keys: [publicJwk] }), {
       status: 200,
       headers: { "content-type": "application/json" },
-    })) as typeof globalThis.fetch;
+    });
 
   const config: AndroidDeliveryConfig = {
     serviceAccount: {
@@ -295,7 +353,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
       });
     },
     createEnterprise: (input) => {
-      calls.enterprises.push(input as unknown as Record<string, unknown>);
+      calls.enterprises.push(input);
 
       return Effect.succeed({ name: enterpriseName });
     },
@@ -329,7 +387,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
       return Effect.succeed({ operationName: `${enterpriseName}/operations/compliance` });
     },
     deleteDevice: () => Effect.void,
-  } satisfies AndroidManagementShape);
+  } satisfies AndroidManagementService);
 
   const db = createFakeDb({
     android_enterprise: [
@@ -376,12 +434,12 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
   });
 
   const handlePubSub = async (options: {
-    readonly body: unknown;
+    readonly body: Schema.Json;
     readonly authorization?: string;
   }): Promise<AndroidPubSubResult> =>
     Effect.runPromise(
       handleAndroidPubSub({
-        db: db as unknown as EnterpriseDb,
+        db: enterpriseDb(db),
         config,
         authSecret: "compliance-auth-secret",
         origin: "https://mdm.example.test",
@@ -395,7 +453,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
   const createSignup = async (organization: { id: string; name: string }) =>
     Effect.runPromise(
       createAndroidSignup({
-        db: db as unknown as EnterpriseDb,
+        db: enterpriseDb(db),
         config,
         authSecret: "compliance-auth-secret",
         origin: "https://mdm.example.test",
@@ -408,7 +466,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     authSecret: "compliance-auth-secret",
     config,
   }).pipe(
-    Layer.provideMerge(Layer.succeed(Db, db as unknown as EnterpriseDb)),
+    Layer.provideMerge(Layer.succeed(Db, enterpriseDb(db))),
     Layer.provideMerge(Layer.succeed(AndroidManagement, androidService)),
   );
 

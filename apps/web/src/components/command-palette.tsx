@@ -1,16 +1,21 @@
+import * as DialogPrimitive from "@kobalte/core/dialog";
 import { useLocation, useNavigate, useParams } from "@solidjs/router";
+import { Option, Schema } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import {
+  Dialog,
+  DialogBackgroundIsolation,
+  DialogOverlay,
+  DialogPortal,
+} from "~/components/ui/dialog";
+import {
   Activity,
   BookOpen,
-  Boxes,
   Laptop,
   LayoutDashboard,
-  LinkIcon,
   LogOut,
-  Package,
   Plus,
   Search,
   Settings,
@@ -30,8 +35,14 @@ import {
   type CommandShortcut,
 } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { reportGlobalError } from "~/lib/global-errors";
+import {
+  SETTINGS_READ_PERMISSIONS,
+  settingsTabPermission,
+  tenantSectionPermission,
+  useCan,
+} from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
 const RECENTS_KEY = "mattrax:recents";
@@ -39,11 +50,24 @@ const SEARCH_LIMIT = 30;
 
 type Recent = { id: string; title: string; hint?: string; group: string; href: string };
 
+const StoredRecent = Schema.Struct({
+  id: Schema.String,
+  title: Schema.optional(Schema.String),
+  label: Schema.optional(Schema.String),
+  hint: Schema.optional(Schema.String),
+  group: Schema.String,
+  href: Schema.String,
+});
+
+const decodeRecents = Schema.decodeUnknownOption(Schema.Array(StoredRecent));
+
 function readRecents(): Recent[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]") as Array<
-      Recent & { label?: string }
-    >;
+    const parsed = Option.getOrUndefined(
+      decodeRecents(JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]")),
+    );
+
+    if (parsed === undefined) return [];
 
     return parsed.map((item) => ({
       id: item.id,
@@ -99,10 +123,10 @@ export function CommandPalette() {
   const location = useLocation();
   const params = useParams();
   const [open, setOpen] = createSignal(false);
+  const { can, canAny } = useCan();
   const [query, setQuery] = createSignal("");
   const [debouncedQuery, setDebouncedQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
-  let card: HTMLDivElement | undefined;
   let opener: HTMLElement | null = null;
   const [recents, setRecents] = createSignal(readRecents());
   const tenantId = () => params.tenantId;
@@ -206,7 +230,7 @@ export function CommandPalette() {
               return;
             }
           } catch (error) {
-            reportGlobalError(error);
+            reportGlobalError(raisedFailure(error));
 
             return;
           }
@@ -244,19 +268,30 @@ export function CommandPalette() {
       nav(navigable("nav-settings", "Settings", `${base()}/settings`, go(`${base()}/settings`))),
     ];
 
-    const shortcuts: Record<string, CommandShortcut> = {
-      "nav-overview": sequence("g", "o"),
-      "nav-dashboards": sequence("g", "b"),
-      "nav-devices": sequence("g", "d"),
-      "nav-groups": sequence("g", "g"),
-      "nav-policies": sequence("g", "p"),
-      "nav-applications": sequence("g", "a"),
-      "nav-settings": sequence("g", "t"),
-    };
+    const shortcuts = new Map<string, CommandShortcut>([
+      ["nav-overview", sequence("g", "o")],
+      ["nav-dashboards", sequence("g", "b")],
+      ["nav-devices", sequence("g", "d")],
+      ["nav-groups", sequence("g", "g")],
+      ["nav-policies", sequence("g", "p")],
+      ["nav-applications", sequence("g", "a")],
+      ["nav-settings", sequence("g", "t")],
+    ]);
 
-    const withShortcuts = navigation.map((command) =>
-      shortcuts[command.id] ? { ...command, shortcut: shortcuts[command.id]! } : command,
-    );
+    const withShortcuts = navigation.flatMap((command) => {
+      if (command.id === "nav-settings") {
+        if (!canAny(SETTINGS_READ_PERMISSIONS)) return [];
+      } else {
+        const section = command.id.replace("nav-", "");
+        const required = tenantSectionPermission(section);
+
+        if (required && !can(required)) return [];
+      }
+
+      const shortcut = shortcuts.get(command.id);
+
+      return [shortcut ? { ...command, shortcut } : command];
+    });
 
     const create: Command[] = [
       {
@@ -301,43 +336,75 @@ export function CommandPalette() {
       },
     ];
 
-    const settings: Command[] = [
-      ["general", "General settings", ["profile", "branding", "name", "slug"], "general"],
+    const settings: Command[] = (
       [
-        "members",
-        "Members",
-        ["people", "users", "invite", "roles", "administrators"],
-        "administrators",
-      ],
-      [
-        "identity",
-        "Identity & SSO",
-        ["sso", "scim", "entra", "directory", "single sign-on"],
-        "identity",
-      ],
-      ["enrollment", "Enrollment settings", ["enroll", "onboarding", "link"], "enrollment"],
-      [
-        "management",
-        "Device management",
-        ["apns", "apple push", "scep", "android", "certificate"],
-        "management",
-      ],
-      [
-        "delivery",
-        "Apple push delivery",
-        ["apns", "push", "failing", "invalid token", "diagnostics"],
-        "delivery",
-      ],
-      ["integrations", "Integrations", ["webhooks", "events", "api"], "integrations"],
-      ["audit", "Audit log", ["events", "history", "export"], "audit"],
-      ["billing", "Billing", ["plan", "invoice", "stripe", "usage"], "billing"],
-    ].map(([key, title, keywords, path]) => ({
+        {
+          key: "general",
+          title: "General settings",
+          keywords: ["profile", "branding", "name", "slug"],
+          path: "general",
+        },
+        {
+          key: "members",
+          title: "Members",
+          keywords: ["people", "users", "invite", "roles", "administrators"],
+          path: "administrators",
+        },
+        {
+          key: "identity",
+          title: "Identity & SSO",
+          keywords: ["sso", "scim", "entra", "directory", "single sign-on"],
+          path: "identity",
+        },
+        {
+          key: "enrollment",
+          title: "Enrollment settings",
+          keywords: ["enroll", "onboarding", "link"],
+          path: "enrollment",
+        },
+        {
+          key: "management",
+          title: "Device management",
+          keywords: ["apns", "apple push", "scep", "android", "certificate"],
+          path: "management",
+        },
+        {
+          key: "delivery",
+          title: "Apple push delivery",
+          keywords: ["apns", "push", "failing", "invalid token", "diagnostics"],
+          path: "delivery",
+        },
+        {
+          key: "integrations",
+          title: "Integrations",
+          keywords: ["webhooks", "events", "api"],
+          path: "integrations",
+        },
+        {
+          key: "audit",
+          title: "Audit log",
+          keywords: ["events", "history", "export"],
+          path: "audit",
+        },
+        {
+          key: "billing",
+          title: "Billing",
+          keywords: ["plan", "invoice", "stripe", "usage"],
+          path: "billing",
+        },
+      ] satisfies ReadonlyArray<{
+        key: string;
+        title: string;
+        keywords: ReadonlyArray<string>;
+        path: string;
+      }>
+    ).map(({ key, title, keywords, path }) => ({
       id: `settings-${key}`,
-      title: title as string,
+      title,
       group: "Settings",
       icon: Settings,
       href: `${base()}/settings/${path === "general" ? "" : path}`.replace(/\/$/, ""),
-      keywords: keywords as string[],
+      keywords,
       run: go(`${base()}/settings/${path === "general" ? "" : path}`.replace(/\/$/, "")),
     }));
 
@@ -407,14 +474,32 @@ export function CommandPalette() {
       },
     ];
 
-    return [...actions, ...create, ...withShortcuts, ...settings, ...queries];
+    return [
+      ...actions,
+      ...create.filter((command) => {
+        if (command.id === "new-policy") return can("policies.write");
+
+        if (command.id === "new-group") return can("groups.write");
+
+        if (command.id === "new-dashboard") return can("dashboards.write");
+
+        return true;
+      }),
+      ...withShortcuts,
+      ...settings.filter((command) => {
+        const key = command.id.replace("settings-", "");
+
+        return can(settingsTabPermission(key));
+      }),
+      ...(can("devices.read") ? queries : []),
+    ];
   });
 
   /** Turn "devices critical apple" into a filtered device table command. */
   const deviceQuery = createMemo<Command | undefined>(() => {
     const id = tenantId();
 
-    if (!id) return undefined;
+    if (!id || !can("devices.read")) return undefined;
     const term = query().trim().toLowerCase();
     const match = /^devices?\b\s*(.*)$/.exec(term);
 
@@ -487,49 +572,68 @@ export function CommandPalette() {
 
     if (!id || results.status !== "success") return [];
 
-    return (results.data?.rows ?? []).map((row) => {
-      if ("proto" in row)
-        return {
-          id: `device-${row.id}`,
-          title: row.name,
-          subtitle: [row.serial, row.model].filter(Boolean).join(" · ") || "Device",
-          group: "Devices",
-          icon: Laptop,
-          href: `/t/${id}/devices/${row.id}`,
-          run: () => navigate(`/t/${id}/devices/${row.id}`),
-        };
+    return (results.data?.rows ?? []).flatMap((row): Command[] => {
+      if ("proto" in row) {
+        if (!can("devices.read")) return [];
 
-      if ("email" in row)
-        return {
-          id: `person-${row.id}`,
-          title: row.name,
-          subtitle: `${row.email} · ${row.role}`,
-          group: "People",
-          icon: User,
-          href: `/t/${id}/settings/administrators`,
-          run: () => navigate(`/t/${id}/settings/administrators`),
-        };
+        return [
+          {
+            id: `device-${row.id}`,
+            title: row.name,
+            subtitle: [row.serial, row.model].filter(Boolean).join(" · ") || "Device",
+            group: "Devices",
+            icon: Laptop,
+            href: `/t/${id}/devices/${row.id}`,
+            run: () => navigate(`/t/${id}/devices/${row.id}`),
+          },
+        ];
+      }
 
-      if ("devicesCount" in row)
-        return {
-          id: `group-${row.id}`,
-          title: row.name,
-          subtitle: `${row.devicesCount ?? 0} devices`,
-          group: "Groups",
-          icon: UsersRound,
-          href: `/t/${id}/groups/${row.id}`,
-          run: () => navigate(`/t/${id}/groups/${row.id}`),
-        };
+      if ("email" in row) {
+        if (!can("members.read")) return [];
 
-      return {
-        id: `policy-${row.id}`,
-        title: row.name,
-        subtitle: "Policy",
-        group: "Policies",
-        icon: ShieldCheck,
-        href: `/t/${id}/policies/${row.id}`,
-        run: () => navigate(`/t/${id}/policies/${row.id}`),
-      };
+        return [
+          {
+            id: `person-${row.id}`,
+            title: row.name,
+            subtitle: `${row.email} · ${row.role}`,
+            group: "People",
+            icon: User,
+            href: `/t/${id}/settings/administrators`,
+            run: () => navigate(`/t/${id}/settings/administrators`),
+          },
+        ];
+      }
+
+      if ("devicesCount" in row) {
+        if (!can("groups.read")) return [];
+
+        return [
+          {
+            id: `group-${row.id}`,
+            title: row.name,
+            subtitle: `${row.devicesCount ?? 0} devices`,
+            group: "Groups",
+            icon: UsersRound,
+            href: `/t/${id}/groups/${row.id}`,
+            run: () => navigate(`/t/${id}/groups/${row.id}`),
+          },
+        ];
+      }
+
+      if (!can("policies.read")) return [];
+
+      return [
+        {
+          id: `policy-${row.id}`,
+          title: row.name,
+          subtitle: "Policy",
+          group: "Policies",
+          icon: ShieldCheck,
+          href: `/t/${id}/policies/${row.id}`,
+          run: () => navigate(`/t/${id}/policies/${row.id}`),
+        },
+      ];
     });
   });
 
@@ -622,20 +726,120 @@ export function CommandPalette() {
     opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   };
 
+  /**
+   * Close and restore focus. The dialog is mounted only while open (see the
+   * render), so the primitive's own close-auto-focus cannot run; we return to
+   * the element that opened the palette, falling back to the main landmark
+   * when that element has left the page (for example after a navigation).
+   */
+  let focusMainOnClose = false;
+
+  const close = () => {
+    setOpen(false);
+
+    const target = focusMainOnClose ? undefined : opener;
+
+    focusMainOnClose = false;
+    requestAnimationFrame(() => {
+      (target?.isConnected ? target : document.getElementById("main"))?.focus({
+        preventScroll: true,
+      });
+    });
+  };
+
   const run = (item: Command | undefined) => {
     if (!item) return;
-    remember(item);
-    setOpen(false);
+
+    const href = item.href;
+
+    try {
+      remember(item);
+    } catch {
+      // Recents are a convenience; storage may be unavailable or full.
+    }
+
     setQuery("");
     setDebouncedQuery("");
     setTruncated(false);
+
+    // Programmatic navigation from inside the modal is dropped by the router
+    // in this Solid Router/Kobalte combination. Use a document navigation;
+    // in-page links and filters outside the palette remain SPA.
+    if (href) {
+      window.location.assign(href);
+
+      return;
+    }
+
     void item.run();
+    close();
   };
+
+  /**
+   * One polite announcement for the search lifecycle. It is derived from the
+   * debounced term and the query state, so typing does not produce a message
+   * per keystroke.
+   */
+  const statusText = createMemo(() => {
+    if (!debouncedQuery()) return "";
+
+    if (results.isFetching) return "Searching…";
+
+    if (results.error) return "Search failed.";
+
+    const count = items().length;
+
+    if (count === 0) return "No results.";
+
+    return `${count} result${count === 1 ? "" : "s"}${
+      truncated() ? `, showing the first ${SEARCH_LIMIT}` : ""
+    }.`;
+  });
 
   createEffect(
     () => ({ path: location.pathname, open: open() }),
     ({ open }) => {
       if (!open) setActive(0);
+    },
+  );
+
+  createEffect(
+    () => items().length,
+    (length) => {
+      if (length > 0 && active() >= length) setActive(length - 1);
+
+      if (length === 0 && active() !== 0) setActive(0);
+    },
+  );
+
+  // Close after the router commits a navigation. Closing in the command
+  // handler's own tick cancels the transition in Solid Router 2.
+  createEffect(
+    () => ({ path: location.pathname, search: location.search }),
+    (next, previous) => {
+      if (!previous || !open()) return;
+
+      if (next.path !== previous.path || next.search !== previous.search) close();
+    },
+  );
+
+  // Kobalte's dismissable layer stops Escape in the capture phase before it
+  // reaches the combobox in this RC. Close from the window capture handler.
+  createEffect(
+    () => open(),
+    (isOpen) => {
+      if (!isOpen || typeof window === "undefined") return;
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      };
+
+      window.addEventListener("keydown", onKeyDown, true);
+      onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
     },
   );
 
@@ -740,38 +944,19 @@ export function CommandPalette() {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-
-        if (!open()) rememberOpener();
         clearSequence();
-        setOpen((value) => !value);
+
+        if (open()) {
+          close();
+        } else {
+          rememberOpener();
+          setOpen(true);
+        }
 
         return;
       }
 
       if (!open() && runShortcut(event)) return;
-
-      if (!open()) return;
-
-      if (event.key === "Escape") {
-        setOpen(false);
-        clearSequence();
-        queueMicrotask(() => opener?.focus({ preventScroll: true }));
-      }
-
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setActive((value) => Math.min(value + 1, items().length - 1));
-      }
-
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setActive((value) => Math.max(value - 1, 0));
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        run(items()[active()]);
-      }
     };
 
     const openEvent = () => {
@@ -790,86 +975,123 @@ export function CommandPalette() {
   });
 
   let input: HTMLInputElement | undefined;
+
+  // Kobalte's focus scope mounts the portal before it can take focus, so the
+  // input is focused on the next frame; the dialog remains the trap owner.
   createEffect(
     () => open(),
     (isOpen) => {
-      if (isOpen) queueMicrotask(() => input?.focus());
+      if (!isOpen) return;
+
+      requestAnimationFrame(() => input?.focus({ preventScroll: true }));
     },
   );
 
-  createEffect(
-    () => open(),
-    (isOpen) => {
-      if (typeof document === "undefined") return;
-      const root = document.documentElement;
-      const previous = root.style.overflow;
+  /** Keys belong to the dialog while it is open, so they run in the event. */
+  const onContentKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
 
-      if (isOpen) root.style.overflow = "hidden";
+      return;
+    }
 
-      return () => {
-        root.style.overflow = previous;
-      };
-    },
-  );
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActive((value) => Math.min(value + 1, Math.max(0, items().length - 1)));
+
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActive((value) => Math.max(value - 1, 0));
+
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      run(items()[active()]);
+    }
+  };
+
+  const groupDomId = (group: string) =>
+    `command-palette-group-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
   return (
     <Show when={open()}>
-      <div
-        class="palette-overlay fixed inset-0 z-[60] flex items-start justify-center bg-black/60 px-4 pt-[10vh] backdrop-blur-sm"
-        onClick={() => setOpen(false)}
-      >
-        <div
-          ref={card}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Search Mattrax"
-          class="palette-card dark w-full max-w-2xl overflow-hidden rounded-lg border border-white/[0.09] bg-popover shadow-2xl shadow-black/70"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => {
-            if (event.key !== "Tab" || !card) return;
+      {/*
+        A fresh uncontrolled dialog per open. The window shortcut and the header
+        button both flip `open`, and mounting the primitive fresh keeps its own
+        open state authoritative while it is on screen (Escape, light dismiss and
+        command selection all unmount it).
+      */}
+      <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
+        <DialogPortal>
+          <DialogOverlay
+            class="palette-overlay bg-black/60 backdrop-blur-sm"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) close();
+            }}
+          />
+          <DialogPrimitive.Content
+            data-slot="command-palette"
+            aria-modal="true"
+            class="palette-card dark fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-white/[0.09] bg-popover text-foreground shadow-2xl shadow-black/70 outline-none"
+            onKeyDown={onContentKeyDown}
+          >
+            <DialogBackgroundIsolation />
+            <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
+            <DialogPrimitive.Description class="sr-only">
+              Search settings, devices, policies, people, and commands. Use the arrow keys to move
+              through results and Enter to run the highlighted one.
+            </DialogPrimitive.Description>
 
-            const focusable = Array.from(
-              card.querySelectorAll<HTMLElement>("input, button, a[href]"),
-            );
+            <div class="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+              <Search class="size-4 text-muted-foreground" />
+              <input
+                ref={(element) => {
+                  input = element;
+                }}
+                role="combobox"
+                aria-expanded={items().length > 0 ? "true" : "false"}
+                aria-controls="command-palette-list"
+                aria-autocomplete="list"
+                aria-label="Search settings, devices, policies, people or commands"
+                aria-activedescendant={
+                  items()[active()] ? `command-palette-option-${active()}` : undefined
+                }
+                value={query()}
+                onInput={(event) => updateQuery(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    close();
 
-            if (focusable.length === 0) return;
-            event.preventDefault();
-            const current = focusable.indexOf(document.activeElement as HTMLElement);
+                    return;
+                  }
 
-            const next = event.shiftKey
-              ? (current - 1 + focusable.length) % focusable.length
-              : (current + 1) % focusable.length;
+                  if (event.key !== "Enter" || event.isComposing) return;
 
-            focusable[next]?.focus();
-          }}
-        >
-          <div class="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-            <Search class="size-4 text-muted-foreground" />
-            <input
-              ref={input}
-              role="combobox"
-              aria-expanded="true"
-              aria-controls="command-palette-list"
-              aria-autocomplete="list"
-              aria-label="Search settings, devices, policies, people or commands"
-              aria-activedescendant={
-                items()[active()] ? `command-palette-option-${active()}` : undefined
-              }
-              value={query()}
-              onInput={(event) => updateQuery(event.currentTarget.value)}
-              placeholder="Search settings, devices, people, or run a command…"
-              class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
-            />
-            <kbd class="rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              esc
-            </kbd>
-          </div>
-          <div id="command-palette-list" role="listbox" class="max-h-[60vh] overflow-auto p-2">
+                  // Some primitives stop Enter before it bubbles to the dialog,
+                  // so run the active item directly from the combobox.
+                  event.preventDefault();
+                  run(items()[active()]);
+                }}
+                placeholder="Search or run a command…"
+                class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
+              />
+              <kbd class="hidden rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+                esc
+              </kbd>
+            </div>
+
             <Show when={results.error}>
               {(error) => (
                 <div
                   role="alert"
-                  class="mx-1 mb-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
+                  class="mx-3 mt-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -890,81 +1112,99 @@ export function CommandPalette() {
                 </div>
               )}
             </Show>
-            <Show
-              when={items().length > 0}
-              fallback={
-                <Show when={!results.error}>
-                  <div class="px-3 py-8 text-center">
-                    <p class="text-[13px] text-muted-foreground">No results.</p>
-                    <p class="mt-1 text-[11px] text-muted-foreground/70">
-                      Try a device, policy, person, setting or a query like “devices critical”.
-                    </p>
-                  </div>
-                </Show>
-              }
-            >
-              <For each={grouped()}>
-                {([group, groupItems]) => (
-                  <div class="mb-1">
-                    <p class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground">{group}</p>
-                    <For each={groupItems}>
-                      {(item) => {
-                        const index = () => items().indexOf(item);
 
-                        return (
-                          <button
-                            type="button"
-                            role="option"
-                            id={`command-palette-option-${index()}`}
-                            aria-selected={active() === index() ? "true" : "false"}
-                            onMouseEnter={() => setActive(index())}
-                            onClick={() => run(item)}
-                            class={cn(
-                              "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
-                              active() === index() ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
-                            )}
-                          >
-                            <Show when={item.icon}>
-                              {(icon) => {
-                                const Icon = icon();
+            <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
+              <div
+                id="command-palette-list"
+                role="listbox"
+                aria-label="Search results"
+                aria-busy={results.isFetching ? "true" : undefined}
+              >
+                <For each={grouped()}>
+                  {([group, groupItems]) => (
+                    <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
+                      <p
+                        id={groupDomId(group)}
+                        class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
+                      >
+                        {group}
+                      </p>
+                      <For each={groupItems}>
+                        {(item) => {
+                          const index = () => items().indexOf(item);
 
-                                return <Icon class="size-4 shrink-0 text-muted-foreground" />;
-                              }}
-                            </Show>
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate font-[450] text-foreground">
-                                {item.title}
-                              </span>
-                              <Show when={item.subtitle}>
-                                <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
-                                  {item.subtitle}
-                                </span>
-                              </Show>
-                            </span>
-                            <Show when={item.shortcut}>
-                              {(shortcut) => (
-                                <kbd class="shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground">
-                                  {shortcutLabel(shortcut())}
-                                </kbd>
+                          return (
+                            <button
+                              type="button"
+                              role="option"
+                              tabindex="-1"
+                              id={`command-palette-option-${index()}`}
+                              aria-selected={active() === index() ? "true" : "false"}
+                              onClick={() => run(item)}
+                              class={cn(
+                                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
+                                active() === index() ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
                               )}
-                            </Show>
-                          </button>
-                        );
-                      }}
-                    </For>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </div>
-          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] px-4 py-2 text-[11px] text-muted-foreground">
-            <span>↑↓ navigate · ↵ run · esc close</span>
-            <Show when={truncated()} fallback={<span>Shortcuts work outside this menu</span>}>
-              <span>Showing first {SEARCH_LIMIT} matches</span>
-            </Show>
-          </div>
-        </div>
-      </div>
+                            >
+                              <Show when={item.icon}>
+                                {(icon) => {
+                                  const Icon = icon();
+
+                                  return <Icon class="size-4 shrink-0 text-muted-foreground" />;
+                                }}
+                              </Show>
+                              <span class="min-w-0 flex-1">
+                                <span class="block truncate font-[450] text-foreground">
+                                  {item.title}
+                                </span>
+                                <Show when={item.subtitle}>
+                                  <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+                                    {item.subtitle}
+                                  </span>
+                                </Show>
+                              </span>
+                              <Show when={item.shortcut}>
+                                {(shortcut) => (
+                                  <kbd class="hidden shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
+                                    {shortcutLabel(shortcut())}
+                                  </kbd>
+                                )}
+                              </Show>
+                            </button>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  )}
+                </For>
+              </div>
+
+              <Show when={items().length === 0 && !results.error}>
+                <div class="px-3 py-8 text-center">
+                  <p class="text-[13px] text-muted-foreground">No results.</p>
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    Try a device, policy, person, setting or a query like “devices critical”.
+                  </p>
+                </div>
+              </Show>
+            </div>
+
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+              {statusText()}
+            </div>
+
+            <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+              <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
+              <Show
+                when={truncated()}
+                fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
+              >
+                <span>Showing first {SEARCH_LIMIT} matches</span>
+              </Show>
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPortal>
+      </Dialog>
     </Show>
   );
 }

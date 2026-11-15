@@ -1,5 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { PolicyRow } from "@mattrax/enterprise-domain/client";
+import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import {
   ErrorText,
@@ -26,20 +28,138 @@ import {
 import {
   Activity,
   CircleAlert,
-  Laptop,
   Plus,
   ShieldCheck,
   SlidersHorizontal,
   Wifi,
 } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
-import { parsePolicyDraft } from "~/lib/policy-designer/build";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import {
+  parsePolicyDraft,
+  type PolicyConfiguration,
+  type PolicyConfigurations,
+} from "~/lib/policy-designer/build";
 import {
   applePasscodeConfiguration,
   appleWifiConfiguration,
   windowsWifiConfiguration,
   type WifiSecurity,
 } from "~/lib/policy-designer/presets";
+
+const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
+
+const decodeJsonObject = Schema.decodeUnknownOption(Schema.JsonObject);
+
+const isString = Schema.is(Schema.String);
+
+const WifiSecuritySchema = Schema.Literals(["wpa2", "wpa3", "open"]);
+
+const decodeWifiSecurity = Schema.decodeUnknownOption(WifiSecuritySchema);
+
+const platformLabel = (platform: string) =>
+  Match.value(platform).pipe(
+    Match.when("apple", () => "Apple"),
+    Match.when("windows", () => "Windows"),
+    Match.orElse(() => "Android"),
+  );
+
+const platformForKind = (kind: string) =>
+  kind.startsWith("mttx.windows")
+    ? "windows"
+    : kind.startsWith("mttx.android")
+      ? "android"
+      : "apple";
+
+const isRecord = (value: Schema.Json | undefined): value is Schema.JsonObject =>
+  value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
+
+/** Friendly description for a stored configuration, without raw JSON. */
+const describe = (kind: string, data: Schema.Json | undefined) => {
+  const record: Schema.JsonObject = isRecord(data) ? data : {};
+  const draft = parsePolicyDraft(record.draft);
+
+  if (draft) {
+    const target = platformForKind(kind);
+    const selections = draft.platforms[target] ?? [];
+
+    return {
+      title: draft.name || kindLabel(kind),
+      subtitle: `${kindLabel(kind)} · ${selections.length} collection${
+        selections.length === 1 ? "" : "s"
+      }`,
+      collections: selections.map((selection) => ({ label: selection.name, platform: target })),
+      platforms: [target],
+    };
+  }
+
+  if (Array.isArray(record.nodes)) {
+    return {
+      title: isString(record.ssid) ? `Wi-Fi: ${record.ssid}` : kindLabel(kind),
+      subtitle: `${record.nodes.length} OMA-URI node${record.nodes.length === 1 ? "" : "s"}`,
+      collections: record.nodes
+        .filter(isRecord)
+        .slice(0, 8)
+        .map((node) => ({ label: String(node.omaUri ?? "Node"), platform: "windows" })),
+      platforms: ["windows"],
+    };
+  }
+
+  if (isRecord(record.policy)) {
+    const keys = Object.keys(record.policy);
+
+    return {
+      title: kindLabel(kind),
+      subtitle: `${keys.length} Android setting${keys.length === 1 ? "" : "s"}`,
+      collections: keys.slice(0, 8).map((key) => ({ label: key, platform: "android" })),
+      platforms: ["android"],
+    };
+  }
+
+  if (isString(record.content)) {
+    const signed =
+      record.signed === true ||
+      (!record.content.startsWith("PD94bWw") && !record.content.startsWith("PHBsaXN0"));
+
+    const security = Match.value(record.security).pipe(
+      Match.when("wpa3", () => "WPA3 Personal"),
+      Match.when("wpa2", () => "WPA2 Personal"),
+      Match.when("open", () => "Open network"),
+      Match.orElse(() => undefined),
+    );
+
+    return {
+      title: isString(record.ssid)
+        ? `Wi-Fi: ${record.ssid}`
+        : String(record.fileName ?? kindLabel(kind)),
+      subtitle: signed
+        ? "Signed profile · deployed exactly as uploaded"
+        : security
+          ? `${security} · custom profile`
+          : "Custom profile",
+      collections: [],
+      platforms: ["apple"],
+      signed,
+    };
+  }
+
+  if (isString(record.pem))
+    return {
+      title: "Certificate",
+      subtitle: "PEM certificate attached to this policy",
+      collections: [],
+      platforms: ["apple"],
+    };
+
+  return {
+    title: kindLabel(kind),
+    subtitle: Object.keys(record).length
+      ? `${Object.keys(record).length} field${Object.keys(record).length === 1 ? "" : "s"}`
+      : "No settings",
+    collections: [],
+    platforms: [],
+  };
+};
 
 const textareaClass =
   "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -70,109 +190,6 @@ const kindLabel = (kind: string) => {
   if (kind.startsWith("mttx.android.policy")) return "Android policy";
 
   return kind;
-};
-
-const platformLabel = (platform: string) =>
-  platform === "apple" ? "Apple" : platform === "windows" ? "Windows" : "Android";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const platformForKind = (kind: string) =>
-  kind.startsWith("mttx.windows")
-    ? "windows"
-    : kind.startsWith("mttx.android")
-      ? "android"
-      : "apple";
-
-/** Friendly description for a stored configuration, without raw JSON. */
-const describe = (kind: string, data: unknown) => {
-  const record = isRecord(data) ? data : {};
-  const draft = parsePolicyDraft(record.draft);
-
-  if (draft) {
-    const target = platformForKind(kind);
-    const selections = draft.platforms[target] ?? [];
-
-    return {
-      title: draft.name || kindLabel(kind),
-      subtitle: `${kindLabel(kind)} · ${selections.length} collection${
-        selections.length === 1 ? "" : "s"
-      }`,
-      collections: selections.map((selection) => ({ label: selection.name, platform: target })),
-      platforms: [target],
-    };
-  }
-
-  if (Array.isArray(record.nodes)) {
-    return {
-      title: typeof record.ssid === "string" ? `Wi-Fi: ${record.ssid}` : kindLabel(kind),
-      subtitle: `${record.nodes.length} OMA-URI node${record.nodes.length === 1 ? "" : "s"}`,
-      collections: record.nodes
-        .filter(isRecord)
-        .slice(0, 8)
-        .map((node) => ({ label: String(node.omaUri ?? "Node"), platform: "windows" })),
-      platforms: ["windows"],
-    };
-  }
-
-  if (isRecord(record.policy)) {
-    const keys = Object.keys(record.policy);
-
-    return {
-      title: kindLabel(kind),
-      subtitle: `${keys.length} Android setting${keys.length === 1 ? "" : "s"}`,
-      collections: keys.slice(0, 8).map((key) => ({ label: key, platform: "android" })),
-      platforms: ["android"],
-    };
-  }
-
-  if (typeof record.content === "string") {
-    const signed =
-      record.signed === true ||
-      (!record.content.startsWith("PD94bWw") && !record.content.startsWith("PHBsaXN0"));
-
-    const security =
-      record.security === "wpa3"
-        ? "WPA3 Personal"
-        : record.security === "wpa2"
-          ? "WPA2 Personal"
-          : record.security === "open"
-            ? "Open network"
-            : undefined;
-
-    return {
-      title:
-        typeof record.ssid === "string"
-          ? `Wi-Fi: ${record.ssid}`
-          : String(record.fileName ?? kindLabel(kind)),
-      subtitle: signed
-        ? "Signed profile · deployed exactly as uploaded"
-        : security
-          ? `${security} · custom profile`
-          : "Custom profile",
-      collections: [] as Array<{ label: string; platform: string }>,
-      platforms: ["apple"],
-      signed,
-    };
-  }
-
-  if (typeof record.pem === "string")
-    return {
-      title: "Certificate",
-      subtitle: "PEM certificate attached to this policy",
-      collections: [],
-      platforms: ["apple"],
-    };
-
-  return {
-    title: kindLabel(kind),
-    subtitle: Object.keys(record).length
-      ? `${Object.keys(record).length} field${Object.keys(record).length === 1 ? "" : "s"}`
-      : "No settings",
-    collections: [],
-    platforms: [],
-  };
 };
 
 /** Links to the alternate policy surfaces, styled as a console tab strip. */
@@ -215,13 +232,15 @@ export default function PolicyDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("policies.write");
 
   const policy = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => policy.data as PolicyRow | undefined;
+  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
   const [priority, setPriority] = createSignal("0");
@@ -259,7 +278,7 @@ export default function PolicyDetailPage() {
   }));
 
   const addConfigurations = useMutation(() => ({
-    mutationFn: (configurations: Record<string, unknown>) =>
+    mutationFn: (configurations: PolicyConfigurations) =>
       enterprise.patchPolicy(params.tenantId, params.policyId, { configurations }),
     onSuccess: async () => {
       setAddOpen(false);
@@ -307,7 +326,8 @@ export default function PolicyDetailPage() {
     mutationFn: () => enterprise.syncPolicies(params.tenantId, [params.policyId!]),
   }));
 
-  const configurations = () => Object.entries(row()?.configurations ?? {});
+  const configurations = () =>
+    Object.entries(Option.getOrUndefined(decodeJsonObject(row()?.configurations)) ?? {});
 
   return (
     <Page>
@@ -329,17 +349,19 @@ export default function PolicyDetailPage() {
           </Show>
         }
         actions={
-          <>
-            <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
-              {sync.isPending ? "Syncing…" : "Sync"}
-            </Button>
-            <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
-              Duplicate
-            </Button>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              Delete
-            </Button>
-          </>
+          <Show when={writable()}>
+            <>
+              <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
+                {sync.isPending ? "Syncing…" : "Sync"}
+              </Button>
+              <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
+                Duplicate
+              </Button>
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                Delete
+              </Button>
+            </>
+          </Show>
         }
       />
 
@@ -358,10 +380,15 @@ export default function PolicyDetailPage() {
             }}
           >
             <Field label="Name">
-              <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+              <Input
+                disabled={!writable()}
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
+              />
             </Field>
             <Field label="Notes">
               <textarea
+                disabled={!writable()}
                 class={textareaClass}
                 value={notes()}
                 onInput={(e) => setNotes(e.currentTarget.value)}
@@ -371,9 +398,15 @@ export default function PolicyDetailPage() {
             <Field label="Conflict priority">
               <Input
                 type="number"
+                min="0"
                 step="1"
+                disabled={!writable()}
                 value={priority()}
-                onInput={(e) => setPriority(e.currentTarget.value)}
+                onInput={(e) => {
+                  const next = e.currentTarget.value;
+
+                  if (next === "" || /^\d+$/.test(next)) setPriority(next);
+                }}
               />
               <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
                 Higher numbers win when included policies provide the same configuration kind.
@@ -382,9 +415,18 @@ export default function PolicyDetailPage() {
               </p>
             </Field>
             <ErrorText error={save.error} />
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save changes"}
-            </Button>
+            <Show
+              when={writable()}
+              fallback={
+                <ReadOnlyNotice class="mt-1">
+                  Your role can view this policy but not edit it.
+                </ReadOnlyNotice>
+              }
+            >
+              <Button type="submit" disabled={save.isPending}>
+                {save.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </Show>
           </form>
         </Panel>
 
@@ -404,9 +446,11 @@ export default function PolicyDetailPage() {
               >
                 Policy editor
               </Button>
-              <Button size="sm" onClick={() => setAddOpen(true)}>
-                <Plus class="mr-1 size-3.5" /> Add
-              </Button>
+              <Show when={writable()}>
+                <Button size="sm" onClick={() => setAddOpen(true)}>
+                  <Plus class="mr-1 size-3.5" /> Add
+                </Button>
+              </Show>
             </div>
           }
         >
@@ -419,9 +463,11 @@ export default function PolicyDetailPage() {
                   editor for the full catalogue.
                 </p>
                 <div class="flex gap-2">
-                  <Button size="sm" onClick={() => setAddOpen(true)}>
-                    <Plus class="mr-1 size-3.5" /> Add configuration
-                  </Button>
+                  <Show when={writable()}>
+                    <Button size="sm" onClick={() => setAddOpen(true)}>
+                      <Plus class="mr-1 size-3.5" /> Add configuration
+                    </Button>
+                  </Show>
                   <Button
                     as="a"
                     size="sm"
@@ -493,14 +539,16 @@ export default function PolicyDetailPage() {
                         {formatDate(deployment.createdAt)}
                       </span>
                     </span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={rollback.isPending}
-                      onClick={() => rollback.mutate(deployment.id)}
-                    >
-                      Restore
-                    </Button>
+                    <Show when={writable()}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={rollback.isPending}
+                        onClick={() => rollback.mutate(deployment.id)}
+                      >
+                        Restore
+                      </Button>
+                    </Show>
                   </div>
                 )}
               </For>
@@ -548,15 +596,18 @@ export default function PolicyDetailPage() {
 
 function ConfigurationCard(props: {
   kind: string;
-  data: unknown;
+  data: Schema.Json;
   tenantId: string;
   policyId: string;
 }) {
   const [opened, setOpened] = createSignal(false);
   const info = () => describe(props.kind, props.data);
 
-  const content = () =>
-    isRecord(props.data) && typeof props.data.content === "string" ? props.data.content : undefined;
+  const content = () => {
+    const record = isRecord(props.data) ? props.data : undefined;
+
+    return isString(record?.content) ? record.content : undefined;
+  };
 
   return (
     <details
@@ -653,8 +704,8 @@ function AddConfigurationDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   saving: boolean;
-  existing: Array<[string, unknown]>;
-  onAdd: (configurations: Record<string, unknown>) => void;
+  existing: Array<[string, PolicyConfiguration | undefined]>;
+  onAdd: (configurations: PolicyConfigurations) => void;
 }) {
   const [preset, setPreset] = createSignal<"wifi" | "passcode">("wifi");
   const [ssid, setSsid] = createSignal("");
@@ -685,7 +736,7 @@ function AddConfigurationDialog(props: {
 
   const submit = () => {
     setError(null);
-    const next: Record<string, unknown> = Object.fromEntries(props.existing);
+    const next: PolicyConfigurations = Object.fromEntries(props.existing);
 
     if (preset() === "wifi") {
       if (!ssid().trim()) return setError("Enter the network name (SSID).");
@@ -789,7 +840,13 @@ function AddConfigurationDialog(props: {
                 <select
                   class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
                   value={security()}
-                  onChange={(event) => setSecurity(event.currentTarget.value as WifiSecurity)}
+                  onChange={(event) => {
+                    const value = Option.getOrUndefined(
+                      decodeWifiSecurity(event.currentTarget.value),
+                    );
+
+                    if (value !== undefined) setSecurity(value);
+                  }}
                 >
                   <option value="wpa2">WPA2 Personal</option>
                   <option value="wpa3">WPA3 Personal</option>

@@ -16,13 +16,15 @@ export const registerPostHogReader = (next: PostHogReader): void => {
  * The API trusts its authenticated session for authorization; these headers are
  * analytics context only and let server events join the browser session.
  */
-export const analyticsHeaders = (): Record<string, string> => {
+export const analyticsHeaders = () => {
   const context = reader?.();
 
   if (!context) return {};
+  const headers: Record<string, string> = {};
 
-  return {
-    ...(context.distinctId ? { "x-posthog-distinct-id": context.distinctId } : {}),
-    ...(context.sessionId ? { "x-posthog-session-id": context.sessionId } : {}),
-  };
+  if (context.distinctId) headers["x-posthog-distinct-id"] = context.distinctId;
+
+  if (context.sessionId) headers["x-posthog-session-id"] = context.sessionId;
+
+  return headers;
 };

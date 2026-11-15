@@ -1,3 +1,5 @@
+import { Schema } from "effect";
+
 /**
  * Policy precedence resolution.
  *
@@ -13,12 +15,21 @@
  * 2. A direct device *include* beats every group include and group exclude for
  *    the same policy. This is the only way to explicitly override a group
  *    exclusion.
- * 3. A group *exclude* vetoes that policy for all group delivery to the device,
+ * 3. A device assignment (direct or group) beats a user assignment for the
+ *    same configuration kind. A user policy therefore fills kinds the device
+ *    policies do not provide; it does not replace them.
+ * 4. A group *exclude* vetoes that policy for all group delivery to the device,
  *    so another group cannot reintroduce it. Direct includes (rule 2) still
  *    win.
- * 4. Among included policies in the winning scope, the highest `priority`
+ * 5. Among included policies in the winning scope, the highest `priority`
  *    wins. Equal priorities break by most recent `updatedAt`, then by
  *    ascending policy id so the result is stable across check-ins.
+ *
+ * User assignments are device-channel delivery: there is no per-user payload
+ * isolation today, so a policy is kept when at least one linked user includes
+ * it. User exclusions are applied per user; excluding one linked user never
+ * removes a policy that another linked user includes. A direct user include
+ * beats that user's directory-group assignments.
  *
  * Exclusions are policy-level and therefore remove every configuration kind
  * that policy provides. A policy only participates in a kind it actually
@@ -27,15 +38,21 @@
 
 export type PolicyAssignmentMode = "include" | "exclude";
 
-export type PolicyResolutionScope = "direct" | "group";
+export type PolicyResolutionScope = "direct" | "group" | "user" | "user-group";
 
 export type PolicyOverrideReason =
   | "direct-device-include"
+  | "direct-user-include"
+  | "device-scope"
   | "lower-priority"
   | "older-updated-at"
   | "lexicographic-id";
 
-export type PolicyExclusionReason = "device-exclude" | "group-exclude";
+export type PolicyExclusionReason =
+  | "device-exclude"
+  | "group-exclude"
+  | "user-exclude"
+  | "user-group-exclude";
 
 export type PolicyResolutionPolicy = {
   readonly id: string;
@@ -49,7 +66,7 @@ export type PolicyResolutionConfiguration = {
   readonly policyId: string;
   readonly kind: string;
   /** Full configuration payload. Delivery needs it to build declarations. */
-  readonly data?: unknown;
+  readonly data?: Schema.Json;
   readonly hash?: string;
 };
 
@@ -69,11 +86,47 @@ export type PolicyResolutionDeviceAssignment = {
   readonly mode?: PolicyAssignmentMode;
 };
 
+export type PolicyResolutionUser = {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly email?: string | null;
+};
+
+export type PolicyResolutionUserGroup = {
+  readonly id: string;
+  readonly name: string;
+};
+
+/** A policy assigned directly to a directory user linked to the device. */
+export type PolicyResolutionUserAssignment = {
+  readonly userId: string;
+  readonly policyId: string;
+  readonly mode?: PolicyAssignmentMode;
+};
+
+/** A policy assigned to a directory group a linked user belongs to. */
+export type PolicyResolutionUserGroupAssignment = {
+  readonly groupId: string;
+  readonly policyId: string;
+  readonly mode?: PolicyAssignmentMode;
+};
+
 export type PolicyResolutionInput = {
   readonly deviceId: string;
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
   readonly groupAssignments: ReadonlyArray<PolicyResolutionGroupAssignment>;
   readonly deviceAssignments: ReadonlyArray<PolicyResolutionDeviceAssignment>;
+  /** Directory users linked to this device. */
+  readonly users?: ReadonlyArray<PolicyResolutionUser>;
+  /** Directory groups those users belong to. */
+  readonly userGroups?: ReadonlyArray<PolicyResolutionUserGroup>;
+  /** Which linked users belong to each directory group. */
+  readonly userGroupMembers?: ReadonlyArray<{
+    readonly groupId: string;
+    readonly userId: string;
+  }>;
+  readonly userAssignments?: ReadonlyArray<PolicyResolutionUserAssignment>;
+  readonly userGroupAssignments?: ReadonlyArray<PolicyResolutionUserGroupAssignment>;
   readonly policies: ReadonlyArray<PolicyResolutionPolicy>;
   readonly configurations: ReadonlyArray<PolicyResolutionConfiguration>;
 };
@@ -87,7 +140,12 @@ export type ResolvedConfiguration = {
   /** Empty for direct assignments; sorted group ids for group assignments. */
   readonly groupIds: ReadonlyArray<string>;
   readonly groupNames: ReadonlyArray<string>;
-  readonly data?: unknown;
+  /** Set for user-assigned configurations. */
+  readonly userIds?: ReadonlyArray<string>;
+  readonly userNames?: ReadonlyArray<string>;
+  readonly userGroupIds?: ReadonlyArray<string>;
+  readonly userGroupNames?: ReadonlyArray<string>;
+  readonly data?: Schema.Json;
   readonly hash?: string;
 };
 
@@ -98,6 +156,10 @@ export type ContributingPolicy = {
   readonly scope: PolicyResolutionScope;
   readonly groupIds: ReadonlyArray<string>;
   readonly groupNames: ReadonlyArray<string>;
+  readonly userIds?: ReadonlyArray<string>;
+  readonly userNames?: ReadonlyArray<string>;
+  readonly userGroupIds?: ReadonlyArray<string>;
+  readonly userGroupNames?: ReadonlyArray<string>;
   readonly kinds: ReadonlyArray<string>;
 };
 
@@ -109,6 +171,10 @@ export type OverriddenPolicy = {
   readonly scope: PolicyResolutionScope;
   readonly groupIds: ReadonlyArray<string>;
   readonly groupNames: ReadonlyArray<string>;
+  readonly userIds?: ReadonlyArray<string>;
+  readonly userNames?: ReadonlyArray<string>;
+  readonly userGroupIds?: ReadonlyArray<string>;
+  readonly userGroupNames?: ReadonlyArray<string>;
   readonly reason: PolicyOverrideReason;
 };
 
@@ -118,6 +184,10 @@ export type PolicyExclusion = {
   readonly scope: PolicyResolutionScope;
   readonly groupId: string | null;
   readonly groupName: string | null;
+  readonly userIds?: ReadonlyArray<string>;
+  readonly userNames?: ReadonlyArray<string>;
+  readonly userGroupId?: string | null;
+  readonly userGroupName?: string | null;
   /** Configuration kinds the excluded policy would have contributed. */
   readonly kinds: ReadonlyArray<string>;
   /**
@@ -141,9 +211,14 @@ type InternalCandidate = {
   readonly configuration: PolicyResolutionConfiguration;
   readonly scope: PolicyResolutionScope;
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
+  readonly users: ReadonlyArray<PolicyResolutionUser>;
+  readonly userGroups: ReadonlyArray<PolicyResolutionUserGroup>;
 };
 
 const compareText = (left: string, right: string) => left.localeCompare(right);
+
+/** Code-unit ordering keeps tie-breaks identical across runtimes and locales. */
+const compareId = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
 const timestamp = (value: Date | string): number => {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
@@ -164,7 +239,7 @@ const compareCandidates = (left: InternalCandidate, right: InternalCandidate): n
 
   if (updated !== 0) return updated;
 
-  return compareText(left.policy.id, right.policy.id);
+  return compareId(left.policy.id, right.policy.id);
 };
 
 const overrideReason = (
@@ -180,6 +255,11 @@ const overrideReason = (
 };
 
 const sortedGroups = (groups: ReadonlyArray<PolicyResolutionGroup>) =>
+  [...groups].sort(
+    (left, right) => compareText(left.name, right.name) || compareText(left.id, right.id),
+  );
+
+const sortedUserGroups = (groups: ReadonlyArray<PolicyResolutionUserGroup>) =>
   [...groups].sort(
     (left, right) => compareText(left.name, right.name) || compareText(left.id, right.id),
   );
@@ -257,6 +337,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
         configuration,
         scope: "direct",
         groups: [],
+        users: [],
+        userGroups: [],
       });
     }
 
@@ -274,6 +356,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
         configuration,
         scope: "group",
         groups: sortedGroups(includedGroups),
+        users: [],
+        userGroups: [],
       });
     }
 
@@ -282,6 +366,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     if (candidates.length === 0) continue;
 
     const sorted = [...candidates].sort(compareCandidates);
+
     const winner = sorted[0]!;
     resolved.push({
       kind,
@@ -326,6 +411,308 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     }
   }
 
+  const exclusions: Array<PolicyExclusion> = [];
+
+  // --- User-assigned policies -------------------------------------------
+  // A policy assigned to a linked user (directly or through a directory group)
+  // applies to the device. Delivery is device-wide, so an exclusion is applied
+  // per user: excluding one linked user never removes a policy another linked
+  // user includes. A direct user assignment beats that user's group
+  // assignments, and a device exclude still removes the policy entirely.
+  const linkedUsers = new Map((input.users ?? []).map((user) => [user.id, user]));
+  const linkedUserGroups = new Map((input.userGroups ?? []).map((group) => [group.id, group]));
+  const membership = new Map<string, Set<string>>();
+
+  for (const row of input.userGroupMembers ?? []) {
+    if (!linkedUsers.has(row.userId) || !linkedUserGroups.has(row.groupId)) continue;
+    const members = membership.get(row.groupId) ?? new Set<string>();
+    members.add(row.userId);
+    membership.set(row.groupId, members);
+  }
+
+  type UserContribution = {
+    readonly user: PolicyResolutionUser;
+    direct: boolean;
+    readonly groups: Array<PolicyResolutionUserGroup>;
+  };
+
+  const userContributions = new Map<string, Map<string, UserContribution>>();
+  const userExcluded = new Map<string, Set<string>>();
+  const groupExcludedUsers = new Map<string, Set<string>>();
+  const excludedUserGroups = new Map<string, Array<PolicyResolutionUserGroup>>();
+
+  const addContribution = (
+    policyId: string,
+    user: PolicyResolutionUser,
+    direct: boolean,
+    group?: PolicyResolutionUserGroup,
+  ) => {
+    const byUser = userContributions.get(policyId) ?? new Map<string, UserContribution>();
+    const existing = byUser.get(user.id) ?? { user, direct: false, groups: [] };
+
+    if (direct) existing.direct = true;
+
+    if (group && !existing.groups.some((item) => item.id === group.id)) existing.groups.push(group);
+    byUser.set(user.id, existing);
+    userContributions.set(policyId, byUser);
+  };
+
+  for (const assignment of input.userAssignments ?? []) {
+    if (!policies.has(assignment.policyId)) continue;
+
+    const user = linkedUsers.get(assignment.userId);
+
+    if (!user) continue;
+
+    if ((assignment.mode ?? "include") === "exclude") {
+      const excluded = userExcluded.get(assignment.policyId) ?? new Set<string>();
+      excluded.add(user.id);
+      userExcluded.set(assignment.policyId, excluded);
+      continue;
+    }
+
+    addContribution(assignment.policyId, user, true);
+  }
+
+  for (const assignment of input.userGroupAssignments ?? []) {
+    if (!policies.has(assignment.policyId)) continue;
+
+    const group = linkedUserGroups.get(assignment.groupId);
+
+    if (!group) continue;
+
+    const members = [...(membership.get(group.id) ?? [])];
+
+    if ((assignment.mode ?? "include") === "exclude") {
+      const excluded = groupExcludedUsers.get(assignment.policyId) ?? new Set<string>();
+
+      for (const userId of members) excluded.add(userId);
+      groupExcludedUsers.set(assignment.policyId, excluded);
+      const groups = excludedUserGroups.get(assignment.policyId) ?? [];
+      groups.push(group);
+      excludedUserGroups.set(assignment.policyId, groups);
+      continue;
+    }
+
+    for (const userId of members) {
+      const user = linkedUsers.get(userId);
+
+      if (!user) continue;
+      addContribution(assignment.policyId, user, false, group);
+    }
+  }
+
+  const effectiveUsers = (policyId: string) => {
+    const contributions = [...(userContributions.get(policyId)?.values() ?? [])];
+    const directExcluded = userExcluded.get(policyId) ?? new Set<string>();
+    const groupExcluded = groupExcludedUsers.get(policyId) ?? new Set<string>();
+
+    return contributions.filter((contribution) => {
+      if (directExcluded.has(contribution.user.id)) return false;
+
+      if (contribution.direct) return true;
+
+      return !groupExcluded.has(contribution.user.id);
+    });
+  };
+
+  const deviceKinds = new Set(resolved.map((configuration) => configuration.kind));
+  const userResolved: Array<ResolvedConfiguration> = [];
+
+  for (const kind of kinds) {
+    const withKind = (policyId: string) =>
+      (configurations.get(policyId) ?? []).find((configuration) => configuration.kind === kind);
+
+    const directCandidates: Array<InternalCandidate> = [];
+    const groupCandidates: Array<InternalCandidate> = [];
+
+    for (const policyId of userContributions.keys()) {
+      // Device exclusions are absolute: a direct exclude always removes the
+      // policy, and a group exclude removes it for devices in that group even
+      // when a linked user includes it.
+      if (directExcludes.has(policyId) || groupExcludes.has(policyId)) continue;
+      const configuration = withKind(policyId);
+
+      if (!configuration) continue;
+
+      const included = effectiveUsers(policyId);
+
+      if (included.length === 0) continue;
+
+      const directUsers = included.filter((contribution) => contribution.direct);
+      const candidateUsers = directUsers.length > 0 ? directUsers : included;
+      const groups = new Map<string, PolicyResolutionUserGroup>();
+
+      for (const contribution of candidateUsers)
+        for (const group of contribution.groups) groups.set(group.id, group);
+
+      const candidate: InternalCandidate = {
+        policy: policies.get(policyId)!,
+        configuration,
+        scope: directUsers.length > 0 ? "user" : "user-group",
+        groups: [],
+        users: candidateUsers
+          .map((contribution) => contribution.user)
+          .sort((left, right) => compareId(left.id, right.id)),
+        userGroups: directUsers.length > 0 ? [] : sortedUserGroups([...groups.values()]),
+      };
+
+      if (directUsers.length > 0) directCandidates.push(candidate);
+      else groupCandidates.push(candidate);
+    }
+
+    const candidates = directCandidates.length > 0 ? directCandidates : groupCandidates;
+
+    if (candidates.length === 0) continue;
+
+    const sorted = [...candidates].sort(compareCandidates);
+
+    const winner = sorted[0]!;
+
+    const result: ResolvedConfiguration = {
+      kind,
+      policyId: winner.policy.id,
+      policyName: winner.policy.name,
+      priority: winner.policy.priority ?? 0,
+      scope: winner.scope,
+      groupIds: [],
+      groupNames: [],
+      userIds: winner.users.map((user) => user.id),
+      userNames: winner.users.map((user) => user.name ?? user.email ?? user.id),
+      userGroupIds: winner.userGroups.map((group) => group.id),
+      userGroupNames: winner.userGroups.map((group) => group.name),
+      data: winner.configuration.data,
+      hash: winner.configuration.hash,
+    };
+
+    if (deviceKinds.has(kind)) {
+      for (const candidate of [...directCandidates, ...groupCandidates])
+        overridden.push({
+          kind,
+          policyId: candidate.policy.id,
+          policyName: candidate.policy.name,
+          priority: candidate.policy.priority ?? 0,
+          scope: candidate.scope,
+          groupIds: [],
+          groupNames: [],
+          userIds: candidate.users.map((user) => user.id),
+          userNames: candidate.users.map((user) => user.name ?? user.email ?? user.id),
+          userGroupIds: candidate.userGroups.map((group) => group.id),
+          userGroupNames: candidate.userGroups.map((group) => group.name),
+          reason: "device-scope",
+        });
+      continue;
+    }
+
+    userResolved.push(result);
+
+    const losers: Array<{
+      readonly candidate: InternalCandidate;
+      readonly reason: PolicyOverrideReason;
+    }> =
+      directCandidates.length > 0
+        ? [
+            ...sorted
+              .slice(1)
+              .map((candidate) => ({ candidate, reason: overrideReason(winner, candidate) })),
+            ...groupCandidates.map((candidate) => ({
+              candidate,
+              reason: "direct-user-include" as const,
+            })),
+          ]
+        : sorted
+            .slice(1)
+            .map((candidate) => ({ candidate, reason: overrideReason(winner, candidate) }));
+
+    for (const { candidate, reason } of losers)
+      overridden.push({
+        kind,
+        policyId: candidate.policy.id,
+        policyName: candidate.policy.name,
+        priority: candidate.policy.priority ?? 0,
+        scope: candidate.scope,
+        groupIds: [],
+        groupNames: [],
+        userIds: candidate.users.map((user) => user.id),
+        userNames: candidate.users.map((user) => user.name ?? user.email ?? user.id),
+        userGroupIds: candidate.userGroups.map((group) => group.id),
+        userGroupNames: candidate.userGroups.map((group) => group.name),
+        reason,
+      });
+  }
+
+  resolved.push(...userResolved);
+
+  for (const [policyId, excludedUserIds] of userExcluded) {
+    const policy = policies.get(policyId);
+
+    if (!policy) continue;
+
+    const excludedUsers = [...excludedUserIds]
+      .flatMap((userId) => {
+        const user = linkedUsers.get(userId);
+
+        return user ? [user] : [];
+      })
+      .sort((left, right) => compareId(left.id, right.id));
+
+    if (excludedUsers.length === 0) continue;
+
+    const contributions = userContributions.get(policyId);
+
+    const effective = excludedUsers.some((user) => {
+      const contribution = contributions?.get(user.id);
+
+      return contribution !== undefined && contribution.groups.length > 0;
+    });
+
+    exclusions.push({
+      policyId,
+      policyName: policy.name,
+      scope: "user",
+      groupId: null,
+      groupName: null,
+      userIds: excludedUsers.map((user) => user.id),
+      userNames: excludedUsers.map((user) => user.name ?? user.email ?? user.id),
+      kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareId),
+      effective,
+      reason: "user-exclude",
+    });
+  }
+
+  for (const [policyId, excludedGroups] of excludedUserGroups) {
+    const policy = policies.get(policyId);
+
+    if (!policy) continue;
+
+    const members = (group: PolicyResolutionUserGroup) => membership.get(group.id) ?? new Set();
+
+    for (const group of sortedUserGroups(excludedGroups)) {
+      const contributions = userContributions.get(policyId);
+
+      const effective = [...members(group)].some((userId) => {
+        const contribution = contributions?.get(userId);
+
+        return (
+          contribution !== undefined && contribution.groups.length > 0 && !contribution.direct
+        );
+      });
+
+      exclusions.push({
+        policyId,
+        policyName: policy.name,
+        scope: "user-group",
+        groupId: null,
+        groupName: null,
+        userGroupId: group.id,
+        userGroupName: group.name,
+        kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareId),
+        effective,
+        reason: "user-group-exclude",
+      });
+    }
+  }
+
   const contributing = new Map<string, ContributingPolicy & { kinds: string[] }>();
 
   for (const configuration of resolved) {
@@ -336,18 +723,22 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       continue;
     }
 
-    contributing.set(configuration.policyId, {
+    const contributor = {
       policyId: configuration.policyId,
       policyName: configuration.policyName,
       priority: configuration.priority,
       scope: configuration.scope,
       groupIds: configuration.groupIds,
       groupNames: configuration.groupNames,
+      userIds: configuration.userIds ?? [],
+      userNames: configuration.userNames ?? [],
+      userGroupIds: configuration.userGroupIds ?? [],
+      userGroupNames: configuration.userGroupNames ?? [],
       kinds: [configuration.kind],
-    });
-  }
+    };
 
-  const exclusions: Array<PolicyExclusion> = [];
+    contributing.set(configuration.policyId, contributor);
+  }
 
   for (const policyId of directExcludes) {
     const policy = policies.get(policyId);
@@ -359,8 +750,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       scope: "direct",
       groupId: null,
       groupName: null,
-      kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareText),
-      effective: groupIncludes.has(policyId),
+      kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareId),
+      // A device exclude also suppresses user-sourced delivery, so it is
+      // effective when either a group or a linked user included the policy.
+      effective: groupIncludes.has(policyId) || userContributions.has(policyId),
       reason: "device-exclude",
     });
   }
@@ -377,8 +770,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
         scope: "group",
         groupId: group.id,
         groupName: group.name,
-        kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareText),
-        effective: groupIncludes.has(policyId),
+        kinds: (configurations.get(policyId) ?? []).map((row) => row.kind).sort(compareId),
+        effective: groupIncludes.has(policyId) || userContributions.has(policyId),
         reason: "group-exclude",
       });
     }

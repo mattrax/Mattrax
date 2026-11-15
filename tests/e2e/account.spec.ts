@@ -14,7 +14,7 @@ test.describe("account", () => {
     await expect
       .poll(async () =>
         page.evaluate(async () => {
-          const body = (await (await fetch("/api/v1/me")).json()) as { user: { name: string } };
+          const body: { user: { name: string } } = await (await fetch("/api/v1/me")).json();
 
           return body.user.name;
         }),

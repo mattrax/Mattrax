@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   base64UrlEncode,
   clearJwksCache,
@@ -13,18 +13,20 @@ const jwksUri = "https://keys.test/jwks";
 const kid = "test-key-1";
 
 let privateKey: CryptoKey;
-let publicJwk: JsonWebKey;
+let publicJwk: JsonWebKey & { kid?: string };
 let jwksResponse: () => Response;
 
 const encoder = new TextEncoder();
 
 function sign(
-  claims: Record<string, unknown>,
-  options: { kid?: string; header?: Record<string, unknown> } = {},
+  claims: Schema.JsonObject,
+  options: { kid?: string; header?: Schema.JsonObject } = {},
 ): Promise<string> {
   return (async () => {
     const header = base64UrlEncode(
-      JSON.stringify({ alg: "RS256", typ: "JWT", kid: options.kid ?? kid, ...options.header }),
+      JSON.stringify(
+        Object.assign({ alg: "RS256", typ: "JWT", kid: options.kid ?? kid }, options.header),
+      ),
     );
 
     const payload = base64UrlEncode(JSON.stringify(claims));
@@ -39,19 +41,21 @@ function sign(
   })();
 }
 
-function claims(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function claims(overrides: Schema.JsonObject = {}): Schema.JsonObject {
   const now = Math.floor(Date.now() / 1000);
 
-  return {
-    iss: "https://accounts.google.com",
-    aud: audience,
-    sub: "1234567890",
-    email: serviceAccountEmail,
-    email_verified: true,
-    iat: now - 10,
-    exp: now + 600,
-    ...overrides,
-  };
+  return Object.assign(
+    {
+      iss: "https://accounts.google.com",
+      aud: audience,
+      sub: "1234567890",
+      email: serviceAccountEmail,
+      email_verified: true,
+      iat: now - 10,
+      exp: now + 600,
+    },
+    overrides,
+  );
 }
 
 function config(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVerifierConfig {
@@ -59,7 +63,7 @@ function config(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVe
     audience,
     serviceAccountEmail,
     jwksUri,
-    fetch: (async () => jwksResponse()) as typeof globalThis.fetch,
+    fetch: async () => jwksResponse(),
     ...overrides,
   };
 }
@@ -72,7 +76,7 @@ const rejection = (token: string, overrides: Partial<PubSubOidcVerifierConfig> =
 
 describe("verifyPubSubOidcToken", () => {
   beforeAll(async () => {
-    const pair = (await crypto.subtle.generateKey(
+    const pair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -80,15 +84,14 @@ describe("verifyPubSubOidcToken", () => {
         publicExponent: new Uint8Array([1, 0, 1]),
       },
       true,
-      ["sign", "verify"],
-    )) as CryptoKeyPair;
+      ["sign", "verify"] as const,
+    );
 
     privateKey = pair.privateKey;
     publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-    const jwk = publicJwk as Record<string, unknown>;
-    jwk["kid"] = kid;
-    jwk["alg"] = "RS256";
-    jwk["use"] = "sig";
+    publicJwk.kid = kid;
+    publicJwk.alg = "RS256";
+    publicJwk.use = "sig";
     jwksResponse = () =>
       new Response(JSON.stringify({ keys: [publicJwk] }), {
         status: 200,
@@ -135,7 +138,7 @@ describe("verifyPubSubOidcToken", () => {
   });
 
   it("rejects a token signed by a different key", async () => {
-    const pair = (await crypto.subtle.generateKey(
+    const pair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -143,8 +146,8 @@ describe("verifyPubSubOidcToken", () => {
         publicExponent: new Uint8Array([1, 0, 1]),
       },
       true,
-      ["sign", "verify"],
-    )) as CryptoKeyPair;
+      ["sign", "verify"] as const,
+    );
 
     const header = base64UrlEncode(JSON.stringify({ alg: "RS256", kid }));
     const payload = base64UrlEncode(JSON.stringify(claims()));

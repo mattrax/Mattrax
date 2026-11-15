@@ -36,6 +36,29 @@ https://<gateway>/api/openapi.json
 
 It has no Scalar UI. Import the document into your own tooling.
 
+## Management webhook contract
+
+A customer management backend implements the routes under `/webhook/`. The contract is
+published as its own document because the Mattrax Cloud API never serves those routes:
+
+```text
+https://e.mattrax.app/api/webhooks/openapi.json
+https://<your-origin>/api/webhooks/openapi.json
+```
+
+Every request carries two headers:
+
+- `x-mattrax-timestamp`: Unix timestamp in seconds.
+- `x-mattrax-signature`: HMAC-SHA256, lowercase hex, over the canonical string:
+
+```text
+${operation}.${timestamp}.${sha256hex(JSON.stringify(body ?? null))}
+```
+
+`operation` is the bare endpoint identifier (`appleManagementCheckin`), not the prefixed
+OpenAPI operation id (`ManagementWebhook.appleManagementCheckin`). The timestamp must be
+within 300 seconds of the server clock.
+
 ## Generating a client
 
 ```bash
@@ -43,8 +66,15 @@ curl -s https://e.mattrax.app/api/openapi.json -o openapi.json
 npx openapi-typescript openapi.json -o src/mattrax-api.d.ts
 ```
 
-The document includes request and response schemas for the Enterprise API. Protocol routes
-(`/mdm/*`) and the management webhook contract are separate:
+For the management webhook:
+
+```bash
+curl -s https://e.mattrax.app/api/webhooks/openapi.json -o management-webhook.json
+npx openapi-typescript management-webhook.json -o src/management-webhook.d.ts
+```
+
+The Cloud document includes request and response schemas for the Enterprise API. Protocol
+routes (`/mdm/*`) are documented separately:
 
 - Protocol routes are documented in [Apple](/platforms/apple/), [Windows](/platforms/windows/)
   and [Android](/platforms/android/).

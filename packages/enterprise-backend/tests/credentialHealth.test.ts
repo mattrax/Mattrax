@@ -20,7 +20,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -191,7 +191,7 @@ const build = async () => {
 describe("loadCredentialHealth", () => {
   it("scopes APNs and identity counts to the tenant", async () => {
     const db = await build();
-    const a = await runEffect(loadCredentialHealth(db as any, "org-a", now));
+    const a = await runEffect(loadCredentialHealth(db, "org-a", now));
     expect(a.apns.level).toBe("warning");
     expect(a.apns.daysLeft).toBe(10);
     expect(a.deviceCertificates).toEqual({
@@ -201,7 +201,7 @@ describe("loadCredentialHealth", () => {
       revoked: 0,
     });
 
-    const b = await runEffect(loadCredentialHealth(db as any, "org-b", now));
+    const b = await runEffect(loadCredentialHealth(db, "org-b", now));
     expect(b.apns.level).toBe("ok");
     expect(b.apns.daysLeft).toBe(90);
     expect(b.deviceCertificates).toEqual({
@@ -214,7 +214,7 @@ describe("loadCredentialHealth", () => {
 
   it("reports missing and unparseable credentials without throwing", async () => {
     const db = makeDb();
-    const missing = await runEffect(loadCredentialHealth(db as any, "org-a", now));
+    const missing = await runEffect(loadCredentialHealth(db, "org-a", now));
     expect(missing.apns).toEqual({
       configured: false,
       expiresAt: null,
@@ -230,7 +230,7 @@ describe("loadCredentialHealth", () => {
       certPem: "garbage",
       updatedAt: now,
     });
-    const broken = await runEffect(loadCredentialHealth(db as any, "org-a", now));
+    const broken = await runEffect(loadCredentialHealth(db, "org-a", now));
     expect(broken.apns.configured).toBe(true);
     expect(broken.apns.level).toBe("unknown");
     expect(broken.apns.daysLeft).toBeNull();
@@ -243,9 +243,7 @@ describe("loadCredentialHealth", () => {
       runEffect(
         // Retention is disabled so the fake database's `lt` predicate cannot
         // interfere with the audit-dedupe assertions.
-        runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(
-          Effect.provideService(Db, db as unknown as Db["Service"]),
-        ),
+        runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(Effect.provideService(Db, db)),
       );
 
     const first = await run(now);
@@ -268,9 +266,7 @@ describe("loadCredentialHealth", () => {
 
     const run = (at: Date) =>
       runEffect(
-        runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(
-          Effect.provideService(Db, db as unknown as Db["Service"]),
-        ),
+        runMaintenance({ now: at, auditRetentionDays: 0 }).pipe(Effect.provideService(Db, db)),
       );
 
     // 23:30 UTC: alerts are written for the 30d and 7d thresholds.
@@ -319,8 +315,8 @@ describe("credential expiry notifications", () => {
       runMaintenance({
         now: at,
         auditRetentionDays: 0,
-        ...(notifyCredentialExpiry ? { notifyCredentialExpiry } : {}),
-      }).pipe(Effect.provideService(Db, db as unknown as Db["Service"])),
+        notifyCredentialExpiry,
+      }).pipe(Effect.provideService(Db, db)),
     );
 
   it("notifies once per new alert with enabled owner/admin recipients only", async () => {
@@ -374,9 +370,9 @@ describe("credential expiry notifications", () => {
       // Next day, a synchronously throwing notifier must be isolated too.
       const thrown = await run(
         db,
-        (() => {
+        () => {
           throw new Error("transport crashed");
-        }) as any,
+        },
         new Date(now.getTime() + DAY),
       );
 

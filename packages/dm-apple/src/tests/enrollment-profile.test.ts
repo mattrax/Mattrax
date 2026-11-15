@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 import { buildAppleEnrollmentProfile } from "../enrollment.js";
 
 /**
@@ -110,9 +111,16 @@ describe("Apple enrollment profile", () => {
     expect(profile.PayloadDescription).toBe(
       "Enrollment profile for Acme. Contact help@acme.test for support.",
     );
-    expect((profile.PayloadContent[0]!.PayloadContent as Record<string, unknown>).URL).toBe(
-      "https://mdm.example.com/mdm/apple/scep",
-    );
+    const scepPayload = profile.PayloadContent[0];
+
+    if (!scepPayload) throw new Error("profile must have an SCEP payload");
+
+    const scepContent = scepPayload["PayloadContent"];
+
+    if (!Schema.is(Schema.JsonObject)(scepContent))
+      throw new Error("SCEP payload must have content");
+
+    expect(scepContent["URL"]).toBe("https://mdm.example.com/mdm/apple/scep");
   });
 
   it("keeps stable identifiers when only the branding changes", () => {

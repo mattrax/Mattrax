@@ -1,7 +1,14 @@
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Option, Predicate, Schema } from "effect";
 import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
-import type { AzureGraphService, GraphGroup, GraphUser } from "@mattrax/azure-graph";
+import type {
+  AzureGraphError,
+  AzureGraphService,
+  GraphGroup,
+  GraphUser,
+} from "@mattrax/azure-graph";
 import { schema, type EnterpriseDb } from "./schema.ts";
+import { isBuiltInOwnerMember } from "./rbac.ts";
+import { settlePendingInvitations } from "./invitations.ts";
 
 const newId = () => crypto.randomUUID();
 const now = () => new Date();
@@ -61,7 +68,9 @@ export const acquireEntraSyncLock = (options: {
         return { acquired: true, stale: false, previousStatus: null, enabled: true };
       }
 
-      const previousStatus = state.status as "idle" | "running" | "error";
+      const previousStatus = Schema.decodeUnknownSync(
+        Schema.Literals(["idle", "running", "error"]),
+      )(state.status);
 
       if (previousStatus === "running") {
         const updatedAt =
@@ -93,7 +102,7 @@ export const acquireEntraSyncLock = (options: {
             ),
           );
 
-        if ((takeover as any)?.[0]?.affectedRows === 0)
+        if (takeover.affectedRows === 0)
           return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
 
         return { acquired: true, stale: true, previousStatus, enabled: state.enabled };
@@ -114,7 +123,7 @@ export const acquireEntraSyncLock = (options: {
           ),
         );
 
-      if ((claimed as any)?.[0]?.affectedRows === 0)
+      if (claimed.affectedRows === 0)
         return { acquired: false, stale: false, previousStatus, enabled: state.enabled };
 
       return { acquired: true, stale: false, previousStatus, enabled: state.enabled };
@@ -130,19 +139,28 @@ export type EntraSyncProgress = {
   readonly groupsDelta?: string;
 };
 
-const isOwnerRole = (role: string) => role.split(",").includes("owner");
+type EntraSyncDatabase = Pick<
+  EnterpriseDb,
+  "query" | "select" | "insert" | "update" | "delete"
+>;
 
-const ownerCount = (database: EnterpriseDb, organizationId: string) =>
+const ownerCount = (database: EntraSyncDatabase, organizationId: string) =>
   Effect.gen(function* () {
     const rows = yield* database
-      .select({ role: schema.member.role })
+      .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
       .from(schema.member)
       .where(eq(schema.member.organizationId, organizationId));
 
-    return rows.filter((row: { role: string }) => isOwnerRole(row.role)).length;
+    return rows.filter((row: { role: string; customRoleId?: string | null }) =>
+      isBuiltInOwnerMember(row),
+    ).length;
   });
 
-const findIdentity = (database: EnterpriseDb, organizationId: string, objectId: string) =>
+const findIdentity = (
+  database: EntraSyncDatabase,
+  organizationId: string,
+  objectId: string,
+) =>
   database.query.ssoIdentity.findFirst({
     where: { organizationId, objectId },
   });
@@ -151,6 +169,7 @@ type UserPageContext = {
   readonly organizationId: string;
   readonly autoProvision: boolean;
   readonly seenObjectIds: Set<string>;
+  readonly changedUserIds: Set<string>;
   readonly onUser: () => void;
 };
 
@@ -160,7 +179,7 @@ type UserPageContext = {
  * membership/identity link.
  */
 const syncUsersPage = (
-  database: EnterpriseDb,
+  database: EntraSyncDatabase,
   users: ReadonlyArray<GraphUser>,
   context: UserPageContext,
 ): Effect.Effect<void, unknown> =>
@@ -203,7 +222,7 @@ const syncUsersPage = (
 
           if (
             membership &&
-            isOwnerRole(membership.role) &&
+            isBuiltInOwnerMember(membership) &&
             (yield* ownerCount(database, organizationId)) <= 1
           )
             continue;
@@ -242,6 +261,7 @@ const syncUsersPage = (
               .update(schema.user)
               .set({ disabled: true, updatedAt: now() })
               .where(eq(schema.user.id, existing.id));
+          context.changedUserIds.add(existing.id);
         }
 
         if (user.id)
@@ -268,6 +288,7 @@ const syncUsersPage = (
           email,
           emailVerified: true,
           disabled: false,
+          source: "graph",
           authRevision: newId(),
           createdAt: now(),
           updatedAt: now(),
@@ -288,11 +309,16 @@ const syncUsersPage = (
           updatedAt: now(),
         });
 
-      if (existing?.disabled)
+      // A directory-provisioned membership closes any matching invitation.
+      yield* settlePendingInvitations(database, organizationId, email, now());
+
+      if (existing?.disabled) {
         yield* database
           .update(schema.user)
           .set({ disabled: false, updatedAt: now() })
           .where(eq(schema.user.id, userId));
+        context.changedUserIds.add(userId);
+      }
 
       if (!identity)
         yield* database.insert(schema.ssoIdentity).values({
@@ -309,12 +335,13 @@ const syncUsersPage = (
 type GroupPageContext = {
   readonly organizationId: string;
   readonly seenGroupIds: Set<string>;
+  readonly changedUserIds: Set<string>;
   readonly onGroup: () => void;
 };
 
 /** Apply one `/groups/delta` page inside a transaction. */
 const syncGroupsPage = (
-  database: EnterpriseDb,
+  database: EntraSyncDatabase,
   groups: ReadonlyArray<GraphGroup>,
   context: GroupPageContext,
 ): Effect.Effect<void, unknown> =>
@@ -373,16 +400,32 @@ const syncGroupsPage = (
                 eq(schema.userGroupMember.userId, identity.userId),
               ),
             );
+          context.changedUserIds.add(identity.userId);
         } else {
           const membership = yield* database.query.member.findFirst({
             where: { organizationId, userId: identity.userId },
           });
 
           if (!membership) continue;
-          yield* database
-            .insert(schema.userGroupMember)
-            .ignore()
-            .values({ groupId, userId: identity.userId });
+
+          const alreadyLinked = yield* database
+            .select({ userId: schema.userGroupMember.userId })
+            .from(schema.userGroupMember)
+            .where(
+              and(
+                eq(schema.userGroupMember.groupId, groupId),
+                eq(schema.userGroupMember.userId, identity.userId),
+              ),
+            )
+            .limit(1);
+
+          if (alreadyLinked.length === 0) {
+            yield* database
+              .insert(schema.userGroupMember)
+              .ignore()
+              .values({ groupId, userId: identity.userId });
+            context.changedUserIds.add(identity.userId);
+          }
         }
       }
 
@@ -486,16 +529,12 @@ export const syncEntraDirectory = (options: {
     if (stale.length)
       yield* db.delete(schema.ssoDomain).where(inArray(schema.ssoDomain.domain, stale));
 
-    if (!options.syncUsersAndGroups) return { ...counts, usersDelta, groupsDelta };
+    if (!options.syncUsersAndGroups)
+      return { ...counts, usersDelta, groupsDelta, changedUserIds: [] };
 
-    const isExpiredDelta = (error: unknown) => {
-      const value = error as { _tag?: string; status?: number; body?: string };
-
-      return (
-        value?._tag === "RequestFailed" &&
-        (value.status === 410 || /syncStateNotFound|resyncRequired|resync/i.test(value.body ?? ""))
-      );
-    };
+    const isExpiredDelta = (error: AzureGraphError) =>
+      Predicate.isTagged(error, "RequestFailed") &&
+      (error.status === 410 || /syncStateNotFound|resyncRequired|resync/i.test(error.body ?? ""));
 
     // A full listing (first sync, or after Graph expires the delta cursor)
     // is authoritative: identities and groups that no longer appear must be
@@ -522,11 +561,13 @@ export const syncEntraDirectory = (options: {
       );
 
     const seenObjectIds = new Set<string>();
+    const changedUserIds = new Set<string>();
 
     const userContext: UserPageContext = {
       organizationId,
       autoProvision,
       seenObjectIds,
+      changedUserIds,
       onUser: () => {
         counts.users++;
       },
@@ -540,7 +581,7 @@ export const syncEntraDirectory = (options: {
       // `tx` has the same query/builders as the outer db; the cast keeps the
       // page helpers usable from both.
       yield* db.transaction((tx) =>
-        syncUsersPage(tx as unknown as EnterpriseDb, result.items, userContext),
+        syncUsersPage(tx, result.items, userContext),
       );
 
       if (!result.nextLink) {
@@ -560,7 +601,7 @@ export const syncEntraDirectory = (options: {
         users: counts.users,
         groups: counts.groups,
         domains: counts.domains,
-        ...(usersDelta ? { usersDelta } : {}),
+        usersDelta,
       });
 
     if (!options.usersDeltaLink || usersReset) {
@@ -574,7 +615,7 @@ export const syncEntraDirectory = (options: {
         .from(schema.userGroup)
         .where(eq(schema.userGroup.organizationId, organizationId));
 
-      for (const identity of identities as Array<{ objectId: string; userId: string }>) {
+      for (const identity of identities) {
         if (seenObjectIds.has(identity.objectId)) continue;
 
         const membership = yield* db.query.member.findFirst({
@@ -583,7 +624,7 @@ export const syncEntraDirectory = (options: {
 
         if (membership) {
           // Never strand a tenant without an owner during reconciliation.
-          if (isOwnerRole(membership.role) && (yield* ownerCount(db, organizationId)) <= 1)
+          if (isBuiltInOwnerMember(membership) && (yield* ownerCount(db, organizationId)) <= 1)
             continue;
           yield* db
             .delete(schema.member)
@@ -615,6 +656,7 @@ export const syncEntraDirectory = (options: {
               .update(schema.user)
               .set({ disabled: true, updatedAt: now() })
               .where(eq(schema.user.id, identity.userId));
+          changedUserIds.add(identity.userId);
         }
 
         yield* db
@@ -633,6 +675,7 @@ export const syncEntraDirectory = (options: {
     const groupContext: GroupPageContext = {
       organizationId,
       seenGroupIds,
+      changedUserIds,
       onGroup: () => {
         counts.groups++;
       },
@@ -644,7 +687,7 @@ export const syncEntraDirectory = (options: {
     for (let page = 0; page < 1000; page++) {
       const result = yield* groupsDeltaPage(groupsLink);
       yield* db.transaction((tx) =>
-        syncGroupsPage(tx as unknown as EnterpriseDb, result.items, groupContext),
+        syncGroupsPage(tx, result.items, groupContext),
       );
 
       if (!result.nextLink) {
@@ -664,8 +707,8 @@ export const syncEntraDirectory = (options: {
         users: counts.users,
         groups: counts.groups,
         domains: counts.domains,
-        ...(usersDelta ? { usersDelta } : {}),
-        ...(groupsDelta ? { groupsDelta } : {}),
+        usersDelta,
+        groupsDelta,
       });
 
     if (!options.groupsDeltaLink || groupsReset) {
@@ -679,7 +722,7 @@ export const syncEntraDirectory = (options: {
           ),
         );
 
-      const staleGroups = (graphGroups as Array<{ id: string; externalId: string | null }>)
+      const staleGroups = graphGroups
         .filter((group) => group.externalId && !seenGroupIds.has(group.externalId))
         .map((group) => group.id);
 
@@ -687,7 +730,7 @@ export const syncEntraDirectory = (options: {
         yield* db.delete(schema.userGroup).where(inArray(schema.userGroup.id, staleGroups));
     }
 
-    return { ...counts, usersDelta, groupsDelta };
+    return { ...counts, usersDelta, groupsDelta, changedUserIds: [...changedUserIds] };
   });
 
 /** How many tenants a scheduled sweep may sync at once. Graph is rate limited. */
@@ -718,18 +761,12 @@ export type EntraSyncScheduleState = {
   readonly lastAttemptedAt?: Date | string | null;
 };
 
-const toTime = (value: unknown): number | null => {
-  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+const toTime = (value: Schema.Json | Date | null | undefined): number | null => {
+  const date = Schema.is(Schema.Date)(value)
+    ? value
+    : Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Date)(value));
 
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
+  return date === undefined || !Number.isFinite(date.getTime()) ? null : date.getTime();
 };
 
 /**
@@ -769,13 +806,44 @@ const nextSyncAtFor = (intervalMinutes: number, at: Date): Date | null =>
  * Manual callers should check `status` to map `not_configured`/`locked`/`error`
  * onto their HTTP error contract.
  */
-export const runEntraDirectorySyncForTenant = (options: {
+/** Resolve the devices linked to directory users, scoped to one tenant. */
+export const linkedDeviceIdsForUsers = (
+  db: EnterpriseDb,
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.gen(function* () {
+    const ids = [...new Set(userIds)];
+
+    if (ids.length === 0) return [];
+
+    const links = yield* db
+      .select({ deviceId: schema.deviceUser.deviceId })
+      .from(schema.deviceUser)
+      .where(
+        and(
+          eq(schema.deviceUser.organizationId, organizationId),
+          inArray(schema.deviceUser.userId, ids),
+        ),
+      );
+
+    return [...new Set(links.map((link) => link.deviceId))];
+  });
+
+export type EntraMembershipChangeHandler<R = never> = (
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+) => Effect.Effect<void, unknown, R>;
+
+export const runEntraDirectorySyncForTenant = <R = never>(options: {
   readonly db: EnterpriseDb;
   readonly graph?: AzureGraphService;
   readonly organizationId: string;
   readonly trigger?: EntraSyncTrigger;
   readonly now?: Date;
-}): Effect.Effect<EntraDirectorySyncOutcome, never> =>
+  /** Called with users whose group membership or enabled state changed. */
+  readonly onMembershipsChanged?: EntraMembershipChangeHandler<R>;
+}): Effect.Effect<EntraDirectorySyncOutcome, never, R> =>
   Effect.gen(function* () {
     const { db, graph, organizationId } = options;
     const timestamp = options.now ?? now();
@@ -820,8 +888,8 @@ export const runEntraDirectorySyncForTenant = (options: {
           db
             .update(schema.entraDirectorySync)
             .set({
-              ...(progress.usersDelta ? { usersDeltaLink: progress.usersDelta } : {}),
-              ...(progress.groupsDelta ? { groupsDeltaLink: progress.groupsDelta } : {}),
+              usersDeltaLink: progress.usersDelta,
+              groupsDeltaLink: progress.groupsDelta,
               lastCounts: {
                 users: progress.users,
                 groups: progress.groups,
@@ -851,14 +919,28 @@ export const runEntraDirectorySyncForTenant = (options: {
     }
 
     const result = exit.value;
+
+    if (result.changedUserIds.length > 0 && options.onMembershipsChanged)
+      yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            console.error(
+              "Entra directory membership refresh failed",
+              organizationId,
+              cause,
+            );
+          }),
+        ),
+      );
+
     yield* db
       .update(schema.entraDirectorySync)
       .set({
         status: "idle",
         lastError: null,
         lastSyncedAt: timestamp,
-        ...(result.usersDelta ? { usersDeltaLink: result.usersDelta } : {}),
-        ...(result.groupsDelta ? { groupsDeltaLink: result.groupsDelta } : {}),
+        usersDeltaLink: result.usersDelta,
+        groupsDeltaLink: result.groupsDelta,
         lastCounts: {
           users: result.users,
           groups: result.groups,
@@ -875,8 +957,8 @@ export const runEntraDirectorySyncForTenant = (options: {
       users: result.users,
       groups: result.groups,
       domains: result.domains,
-      ...(result.usersDelta ? { usersDelta: result.usersDelta } : {}),
-      ...(result.groupsDelta ? { groupsDelta: result.groupsDelta } : {}),
+      usersDelta: result.usersDelta,
+      groupsDelta: result.groupsDelta,
     } as const;
   }).pipe(
     Effect.catch((cause) =>
@@ -909,12 +991,13 @@ export type ScheduledEntraSyncResult = {
  * and sync them with bounded concurrency. A failure or lock conflict for one
  * tenant never aborts the rest.
  */
-export const runScheduledEntraSync = (options: {
+export const runScheduledEntraSync = <R = never>(options: {
   readonly db: EnterpriseDb;
   readonly graph?: AzureGraphService;
   readonly now?: Date;
   readonly concurrency?: number;
-}): Effect.Effect<ScheduledEntraSyncResult, unknown, never> => {
+  readonly onMembershipsChanged?: EntraMembershipChangeHandler<R>;
+}): Effect.Effect<ScheduledEntraSyncResult, unknown, R> => {
   const { db, graph } = options;
   const timestamp = options.now ?? now();
 
@@ -930,7 +1013,7 @@ export const runScheduledEntraSync = (options: {
   if (!graph) return Effect.succeed(empty);
 
   return Effect.gen(function* () {
-    const rows = (yield* db
+    const rows = yield* db
       .select()
       .from(schema.entraDirectorySync)
       .where(
@@ -938,13 +1021,7 @@ export const runScheduledEntraSync = (options: {
           eq(schema.entraDirectorySync.enabled, true),
           gt(schema.entraDirectorySync.syncIntervalMinutes, 0),
         ),
-      )) as Array<{
-      organizationId: string;
-      enabled: boolean;
-      syncIntervalMinutes: number;
-      nextSyncAt: Date | null;
-      lastAttemptedAt: Date | null;
-    }>;
+      );
 
     const due = rows.filter((row) => isEntraSyncDue(row, timestamp));
 
@@ -957,6 +1034,7 @@ export const runScheduledEntraSync = (options: {
           organizationId: row.organizationId,
           trigger: "scheduled",
           now: timestamp,
+          onMembershipsChanged: options.onMembershipsChanged,
         }).pipe(
           Effect.catch((cause) =>
             Effect.sync(() => {
@@ -977,5 +1055,5 @@ export const runScheduledEntraSync = (options: {
       skipped: outcomes.filter((outcome) => outcome.status === "not_configured").length,
       locked: outcomes.filter((outcome) => outcome.status === "locked").length,
     };
-  }) as Effect.Effect<ScheduledEntraSyncResult, unknown, never>;
+  });
 };

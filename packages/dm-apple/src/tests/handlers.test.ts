@@ -1,13 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Predicate } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
-import { ManagementBackend } from "@mattrax/management-backend";
+import {
+  AppleDeviceEvent,
+  CheckinScope,
+  ManagementBackend,
+  ManagementManifest,
+} from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
+
+function expectScope(scope: CheckinScope | undefined): CheckinScope {
+  if (!scope) throw new Error("expected a check-in scope");
+
+  return scope;
+}
 
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
@@ -82,10 +93,10 @@ describe("Apple MDM handlers", () => {
     });
 
     it("forwards the mTLS identity certificate serial in the check-in scope", async () => {
-      let receivedScope: unknown;
+      let receivedScope: CheckinScope | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (scope: unknown) =>
+        appleDeviceEvent: (scope: CheckinScope) =>
           Effect.sync(() => {
             receivedScope = scope;
           }),
@@ -116,8 +127,10 @@ describe("Apple MDM handlers", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(receivedScope).toMatchObject({
-        _tag: "device",
+      const scope = expectScope(receivedScope);
+
+      expect(Predicate.isTagged(scope, "device")).toBe(true);
+      expect(scope).toMatchObject({
         udid: "udid-auth-002",
         identityCertificateSerial: "A1:B2:C3",
       });
@@ -243,12 +256,14 @@ describe("Apple MDM handlers", () => {
 
       expect(response.status).toBe(200);
 
-      const body = (await response.json()) as {
-        SyncTokens: { DeclarationsToken: string; Timestamp: string };
-      };
+      const body = await response.json();
 
-      expect(body.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
-      expect(body.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(body).toMatchObject({
+        SyncTokens: {
+          DeclarationsToken: expect.stringMatching(/^[A-F0-9]{64}$/),
+          Timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        },
+      });
     });
   });
 
@@ -287,32 +302,32 @@ describe("Apple MDM handlers", () => {
 
       expect(response.status).toBe(200);
 
-      const body = (await response.json()) as {
-        Declarations: { Activations: Array<{ Identifier: string }> };
-        DeclarationsToken: string;
-      };
+      const body = await response.json();
 
-      expect(body.Declarations.Activations[0]?.Identifier).toBe("act-1");
-      expect(body.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
+      expect(body).toMatchObject({
+        Declarations: { Activations: [{ Identifier: "act-1" }] },
+        DeclarationsToken: expect.stringMatching(/^[A-F0-9]{64}$/),
+      });
     });
   });
 
   describe("PUT /mdm/apple/mdm - command result polling", () => {
     it("returns the next command after an Idle result", async () => {
-      const events: Array<unknown> = [];
+      const events: Array<AppleDeviceEvent> = [];
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             events.push(event);
           }),
         appleManagementCheckin: () =>
-          Effect.succeed({
-            _tag: "Command" as const,
-            commandUUID: "cmd-next",
-            requestType: "DeviceInformation",
-            payload: {},
-          }),
+          Effect.succeed(
+            ManagementManifest.members[1].make({
+              commandUUID: "cmd-next",
+              requestType: "DeviceInformation",
+              payload: {},
+            }),
+          ),
       });
 
       const handler = await makeMdmHandler(backend);
@@ -343,10 +358,10 @@ describe("Apple MDM handlers", () => {
 
   describe("PUT /mdm/apple/mdm - DDM status", () => {
     it("decodes the base64 JSON status report and forwards it", async () => {
-      let report: unknown;
+      let report: AppleDeviceEvent | undefined;
 
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
           Effect.sync(() => {
             report = event;
           }),
@@ -379,10 +394,11 @@ describe("Apple MDM handlers", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(report).toMatchObject({
-        _tag: "DeclarationStatus",
-        statusItems: { "device.identifier.serial-number": "SN-1" },
-      });
+
+      if (!report || !Predicate.isTagged(report, "DeclarationStatus"))
+        throw new Error("expected a DeclarationStatus event");
+
+      expect(report.statusItems).toEqual({ "device.identifier.serial-number": "SN-1" });
     });
   });
 
@@ -424,7 +440,8 @@ describe("Apple MDM handlers", () => {
 
     it("returns an empty plist when idle", async () => {
       const backend = mockManagementBackend({
-        appleManagementCheckin: () => Effect.succeed({ _tag: "Idle" } as const),
+        appleManagementCheckin: () =>
+          Effect.succeed(ManagementManifest.members[0].make({})),
       });
 
       const handler = await makeMdmHandler(backend);

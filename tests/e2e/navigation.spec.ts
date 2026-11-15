@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, createTenant, gotoHydrated, PASSWORD, uniqueEmail } from "./helpers";
+import {
+  bootstrapTenant,
+  createTenant,
+  gotoHydrated,
+  installVirtualAuthenticator,
+  uniqueEmail,
+} from "./helpers";
 
 const primaryNav = (page: import("@playwright/test").Page) =>
   page.getByRole("navigation", { name: "Primary" });
@@ -16,18 +22,12 @@ test.describe("top navigation", () => {
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],
       ["Applications", `${base}/applications`, "Applications"],
-      ["Settings", `${base}/settings`, "Settings"],
+      ["Settings", `${base}/settings`, "General"],
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();
       await expect(page).toHaveURL(new RegExp(path.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
 
-      if (typeof heading === "string") {
-        await expect(
-          page.getByRole("heading", { name: heading, exact: true }).first(),
-        ).toBeVisible();
-      } else {
-        await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
-      }
+      await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
     }
   });
 
@@ -45,14 +45,28 @@ test.describe("top navigation", () => {
     await expect(page.locator("header")).toHaveCount(1);
   });
 
+  test("sends an unknown tenant back to the dashboard", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Unknown Tenant");
+    await gotoHydrated(page, "/t/not-a-tenant/devices");
+
+    // The tenant guard replaces the invalid URL with /dashboard, which then
+    // forwards to the remembered tenant. Checking the transient /dashboard URL
+    // would race that second redirect, so assert the outcome the user sees:
+    // the unknown id is gone and a real tenant (or the dashboard) is shown.
+    await expect(page).not.toHaveURL(/not-a-tenant/, { timeout: 20_000 });
+    await expect(page).toHaveURL(new RegExp(`/dashboard|/t/${tenant.id}`));
+
+    // A missing tenant is a redirect, not an error state.
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
   test("keeps unverified accounts out of the dashboard", async ({ page }) => {
+    await installVirtualAuthenticator(page);
     await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#name").fill("Unverified User");
     await page.locator("#email").fill(uniqueEmail("unverified"));
-    await page.locator("#password").fill(PASSWORD);
-    await page.locator("#confirm-password").fill(PASSWORD);
-    await page.getByRole("button", { name: /create account/i }).click();
+    await page.getByRole("button", { name: /create account with a passkey/i }).click();
     await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
 
     // The API refuses tenant work until the address is verified.
@@ -87,7 +101,7 @@ test.describe("top navigation", () => {
 
     await gotoHydrated(page, "/account");
     await page.getByRole("button", { name: "Switch tenant" }).click();
-    const item = page.getByRole("menuitem", { name: /Second Tenant/i });
+    const item = page.getByRole("menuitemradio", { name: /Second Tenant/i });
     await expect(item).toBeVisible();
     await item.click();
     await expect(page).toHaveURL(new RegExp(`/t/${second.id}`));
@@ -107,8 +121,8 @@ test.describe("top navigation", () => {
     await gotoHydrated(page, `/t/${second.id}/devices`);
     await gotoHydrated(page, "/dashboard");
     await page.getByRole("button", { name: "Switch tenant" }).click();
-    await expect(page.getByRole("menuitem", { name: /Remember One/i })).toBeVisible();
-    await page.getByRole("menuitem", { name: /Remember One/i }).click();
+    await expect(page.getByRole("menuitemradio", { name: /Remember One/i })).toBeVisible();
+    await page.getByRole("menuitemradio", { name: /Remember One/i }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${first.id}`));
   });
 });

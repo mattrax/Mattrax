@@ -1,3 +1,5 @@
+import { PlistValue } from "@mattrax/plist";
+
 /**
  * Apple MDM enrollment profile builder.
  *
@@ -23,8 +25,12 @@ export type AppleEnrollmentProfileOptions = {
   readonly profileUuid?: string;
 };
 
+export type AppleEnrollmentPayload = {
+  readonly [key: string]: PlistValue;
+};
+
 export type AppleEnrollmentProfile = {
-  PayloadContent: Array<Record<string, unknown>>;
+  PayloadContent: Array<AppleEnrollmentPayload>;
   PayloadDescription?: string;
   PayloadDisplayName: string;
   PayloadIdentifier: string;
@@ -47,7 +53,7 @@ export const buildAppleEnrollmentProfile = (
   const profileUuid = options.profileUuid ?? "F0E1D2C3-B4A5-4968-8776-655443322110";
   const displayName = options.displayName ?? `${options.organizationName} Enrollment`;
 
-  return {
+  const profile: AppleEnrollmentProfile = {
     PayloadContent: [
       {
         PayloadContent: {
@@ -88,11 +94,6 @@ export const buildAppleEnrollmentProfile = (
         Topic: options.topic,
       },
     ],
-    ...(options.supportEmail
-      ? {
-          PayloadDescription: `Enrollment profile for ${options.organizationName}. Contact ${options.supportEmail} for support.`,
-        }
-      : {}),
     PayloadDisplayName: displayName,
     PayloadIdentifier: options.identifier ?? "com.mattrax.enrollment",
     PayloadOrganization: options.organizationName,
@@ -100,4 +101,9 @@ export const buildAppleEnrollmentProfile = (
     PayloadUUID: profileUuid,
     PayloadVersion: 1,
   };
+
+  if (options.supportEmail)
+    profile.PayloadDescription = `Enrollment profile for ${options.organizationName}. Contact ${options.supportEmail} for support.`;
+
+  return profile;
 };

@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import { arrayBufferToBase64, pemDecode } from "@mattrax/crypto";
+import { Data, Effect } from "effect";
+import { arrayBufferToBase64, pemDecode, toArrayBuffer, uint8ArrayToBase64 } from "@mattrax/crypto";
 import {
   serializeSoapElement,
   WapProvisioningDoc,
@@ -7,13 +7,10 @@ import {
 } from "@mattrax/soap";
 import type { WindowsEnrollmentResult } from "@mattrax/management-backend";
 
-export class WstepError {
-  readonly _tag = "WstepError";
-  constructor(
-    readonly message: string,
-    readonly cause?: unknown,
-  ) {}
-}
+export class WstepError extends Data.TaggedError("WstepError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
 export const TOKEN_TYPE =
   "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken";
@@ -46,14 +43,14 @@ export function certificateFingerprint(certificate: string): Effect.Effect<strin
   return Effect.tryPromise({
     try: async () => {
       const der = certificateDer(certificate);
-      const bytes = der ?? (new TextEncoder().encode(certificate).buffer as ArrayBuffer);
+      const bytes = der ?? toArrayBuffer(new TextEncoder().encode(certificate));
       const digest = await crypto.subtle.digest("SHA-1", bytes);
 
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
         .join("")
         .toUpperCase();
     },
-    catch: (cause) => new WstepError("Failed to fingerprint certificate", cause),
+    catch: (cause) => new WstepError({ message: "Failed to fingerprint certificate", cause }),
   });
 }
 
@@ -198,12 +195,12 @@ export function buildProvisioningDoc(
 
     return yield* serializeSoapElement(WapProvisioningDoc, doc).pipe(
       Effect.mapError(
-        (cause) => new WstepError("Failed to serialize provisioning document", cause),
+        (cause) => new WstepError({ message: "Failed to serialize provisioning document", cause }),
       ),
     );
   });
 }
 
 export function encodeProvisioningDoc(xml: string): string {
-  return arrayBufferToBase64(new TextEncoder().encode(xml).buffer as ArrayBuffer);
+  return uint8ArrayToBase64(new TextEncoder().encode(xml));
 }

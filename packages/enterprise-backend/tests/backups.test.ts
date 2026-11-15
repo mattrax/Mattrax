@@ -1,5 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import type { R2Bucket } from "@mattrax/enterprise-core";
+import {
+  EnterpriseNotFound,
+  EnterprisePermissionDenied,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 import {
   runScheduledBackups,
   runTenantBackup,
@@ -16,20 +22,30 @@ const headers = { cookie: "mattrax_session=test" };
 const DAY = 24 * 60 * 60 * 1000;
 const now = new Date("2026-11-11T03:17:00.000Z");
 
-type FakeStorage = ReturnType<typeof makeStorage>;
+type R2PutValue = Parameters<R2Bucket["put"]>[1];
 
-const makeStorage = () => {
+/**
+ * The fake bucket, plus the controls and observation points tests need. The
+ * mapped type drops `readonly` because one test swaps `put` to fail a tenant.
+ */
+type FakeStorage = { -readonly [Key in keyof R2Bucket]: R2Bucket[Key] } & {
+  readonly objects: Map<string, string>;
+  readonly deleted: string[];
+  failNextPut(): void;
+};
+
+const makeStorage = (): FakeStorage => {
   const objects = new Map<string, string>();
   const deleted: string[] = [];
   let failPuts = false;
 
-  const storage = {
+  const storage: FakeStorage = {
     objects,
     deleted,
     failNextPut() {
       failPuts = true;
     },
-    put: async (key: string, value: unknown) => {
+    put: async (key: string, value: R2PutValue) => {
       if (failPuts) {
         failPuts = false;
         throw new Error("R2 unavailable");
@@ -68,7 +84,7 @@ const makeStorage = () => {
     },
     head: async () => null,
     delete: async (keys: string | ReadonlyArray<string>) => {
-      for (const key of typeof keys === "string" ? [keys] : keys) {
+      for (const key of Schema.is(Schema.String)(keys) ? [keys] : keys) {
         deleted.push(key);
         objects.delete(key);
       }
@@ -124,7 +140,7 @@ const makeContext = (role = "owner") => {
 
       return inputHeaders.cookie
         ? Effect.succeed({ user: db.store.user[0] })
-        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+        : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -135,11 +151,16 @@ const makeContext = (role = "owner") => {
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    // SAFETY: the in-memory fake implements the query/insert/update surface the
+    // service uses at runtime, but not the full `Db` service type.
+    db,
     schema,
     origin,
     stripeClient: makeStripeClient(),
-    storage: storage as any,
+    // SAFETY: the fake exposes the R2 methods backups call; it is not a full
+    // `R2Bucket` (no signing, no metadata).
+    storage: storage,
+    // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret: "backup-test-secret",
   });
@@ -152,7 +173,7 @@ describe("tenant backup runs", () => {
     const { db, storage } = makeContext();
 
     const result = await runEffect(
-      runTenantBackup(db as any, storage as any, "org-1", "manual", {
+      runTenantBackup(db, storage, "org-1", "manual", {
         now,
         actor: { userId: "user-1", email: "owner@example.com" },
       }),
@@ -187,9 +208,7 @@ describe("tenant backup runs", () => {
     const { db, storage } = makeContext();
     storage.failNextPut();
 
-    const result = await runEffect(
-      runTenantBackup(db as any, storage as any, "org-1", "scheduled", { now }),
-    );
+    const result = await runEffect(runTenantBackup(db, storage, "org-1", "scheduled", { now }));
 
     expect(result.status).toBe("failed");
     expect(result.r2Key).toBeNull();
@@ -221,15 +240,15 @@ describe("tenant backup runs", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    await runEffect(runTenantBackup(db as any, storage as any, "org-1", "manual", { now }));
+    await runEffect(runTenantBackup(db, storage, "org-1", "manual", { now }));
     await runEffect(
-      runTenantBackup(db as any, storage as any, "org-2", "manual", {
+      runTenantBackup(db, storage, "org-2", "manual", {
         now: new Date(now.getTime() + 1_000),
       }),
     );
 
-    const first = await runEffect(listTenantBackups(db as any, "org-1"));
-    const second = await runEffect(listTenantBackups(db as any, "org-2"));
+    const first = await runEffect(listTenantBackups(db, "org-1"));
+    const second = await runEffect(listTenantBackups(db, "org-2"));
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
     expect(first[0].startedAt).not.toEqual(second[0].startedAt);
@@ -286,9 +305,7 @@ describe("backup retention", () => {
       },
     );
 
-    const pruned = await runEffect(
-      pruneBackups(db as any, storage as any, { now, retentionDays: 30 }),
-    );
+    const pruned = await runEffect(pruneBackups(db, storage, { now, retentionDays: 30 }));
 
     expect(pruned).toEqual({ runsDeleted: 1, objectsDeleted: 1 });
     expect(storage.objects.has(oldKey)).toBe(false);
@@ -312,9 +329,7 @@ describe("backup retention", () => {
       retention: "default",
     });
 
-    const pruned = await runEffect(
-      pruneBackups(db as any, storage as any, { now, retentionDays: 0 }),
-    );
+    const pruned = await runEffect(pruneBackups(db, storage, { now, retentionDays: 0 }));
 
     expect(pruned).toEqual({ runsDeleted: 0, objectsDeleted: 0 });
     expect(db.store.backup_run).toHaveLength(1);
@@ -333,14 +348,14 @@ describe("scheduled backup sweep", () => {
     });
     // Make org-2 fail without affecting org-1.
     const originalPut = storage.put;
-    storage.put = async (key: string, value: unknown) => {
+    storage.put = async (key: string, value: R2PutValue) => {
       if (key.startsWith("backups/org-2/")) throw new Error("tenant storage broken");
 
       return originalPut(key, value);
     };
 
     const result = await runEffect(
-      runScheduledBackups(db as any, storage as any, { now, concurrency: 2, retentionDays: 30 }),
+      runScheduledBackups(db, storage, { now, concurrency: 2, retentionDays: 30 }),
     );
 
     expect(result).toEqual({
@@ -382,10 +397,10 @@ describe("backup API", () => {
     const { service } = makeContext("admin");
     await expect(
       runEffect(service.runTenantBackup(request(headers), "org-1")),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
     await expect(
       runEffect(service.listTenantBackups(request(headers), "org-1")),
-    ).rejects.toMatchObject({ _tag: "EnterprisePermissionDenied" });
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 
   it("does not expose another tenant's backup by id", async () => {
@@ -404,6 +419,6 @@ describe("backup API", () => {
     });
     await expect(
       runEffect(service.downloadTenantBackup(request(headers), "org-1", "foreign")),
-    ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 });

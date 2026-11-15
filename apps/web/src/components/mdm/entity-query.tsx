@@ -1,7 +1,7 @@
+import { Match, Schema } from "effect";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { cn } from "~/lib/utils";
 
 type FieldKind = "text" | "number" | "select";
 
@@ -35,18 +35,27 @@ const selectOps = [
   { value: "is not", label: "is not" },
 ];
 
-const opsFor = (field: EntityField<unknown> | undefined) =>
-  field?.kind === "number" ? numberOps : field?.kind === "select" ? selectOps : textOps;
+const opsFor = <T,>(field: EntityField<T> | undefined) =>
+  Match.value(field?.kind).pipe(
+    Match.when("number", () => numberOps),
+    Match.when("select", () => selectOps),
+    Match.orElse(() => textOps),
+  );
+
+const isNumber = Schema.is(Schema.Number);
 
 const defaultFor = <T,>(field: EntityField<T>): EntityCondition => ({
   field: field.id,
-  op: field.kind === "number" ? "at least" : field.kind === "select" ? "is" : "contains",
-  value:
-    field.kind === "select"
-      ? (field.options?.[0]?.value ?? "")
-      : field.kind === "number"
-        ? "1"
-        : "",
+  op: Match.value(field.kind).pipe(
+    Match.when("number", () => "at least"),
+    Match.when("select", () => "is"),
+    Match.orElse(() => "contains"),
+  ),
+  value: Match.value(field.kind).pipe(
+    Match.when("select", () => field.options?.[0]?.value ?? ""),
+    Match.when("number", () => "1"),
+    Match.orElse(() => ""),
+  ),
 });
 
 const quote = (value: string) =>
@@ -105,7 +114,7 @@ export const parseEntityQuery = <T,>(
     if (!field) continue;
     const op = match[2]!.toLowerCase();
 
-    if (!opsFor(field as EntityField<unknown>).some((option) => option.value === op)) continue;
+    if (!opsFor(field).some((option) => option.value === op)) continue;
     conditions.push({ field: field.id, op, value: unquote(match[3]!.trim()) });
   }
 
@@ -141,7 +150,7 @@ export const matchesEntityQuery = <T,>(
     const raw = field.get(row);
 
     if (field.kind === "number") {
-      const actual = typeof raw === "number" ? raw : Number(raw ?? 0);
+      const actual = isNumber(raw) ? raw : Number(raw ?? 0);
       const expected = Number(condition.value);
 
       if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
@@ -202,7 +211,7 @@ export function EntityQueryBar<T>(props: {
           >
             Filter
           </Button>
-          <span class="text-[10.5px] text-muted-foreground/70">
+          <span class="text-[10.5px] text-muted-foreground">
             Add conditions to narrow this table. The query is stored in the URL.
           </span>
         </div>
@@ -273,7 +282,7 @@ export function EntityQueryBar<T>(props: {
                       props.onChange(next);
                     }}
                   >
-                    <For each={opsFor(field() as EntityField<unknown>)}>
+                    <For each={opsFor(field())}>
                       {(item) => <option value={item.value}>{item.label}</option>}
                     </For>
                   </select>
@@ -339,7 +348,7 @@ export function EntityQueryBar<T>(props: {
             onInput={(event) => setText(event.currentTarget.value)}
             onBlur={applyText}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
+              if (event.key === "Enter" && !event.isComposing) {
                 event.preventDefault();
                 applyText();
               }

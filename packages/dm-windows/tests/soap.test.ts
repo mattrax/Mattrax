@@ -59,4 +59,18 @@ describe("Windows SOAP schemas", () => {
     const result = await run(deserializeSoapElement(xml, SyncML));
     expect(result.syncHdr.source.locURI).toBe("device-1");
   });
+
+  it("parses SyncML Results returned for a Get", async () => {
+    const xml = `<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>1</SessionID><MsgID>2</MsgID><Target><LocURI>server</LocURI></Target><Source><LocURI>device-1</LocURI></Source></SyncHdr><SyncBody><Status><CmdID>1</CmdID><MsgRef>1</MsgRef><CmdRef>0</CmdRef><Cmd>SyncHdr</Cmd><Data>200</Data></Status><Results><CmdID>2</CmdID><MsgRef>1</MsgRef><CmdRef>3</CmdRef><Item><Source><LocURI>./DevDetail/SwV</LocURI></Source><Data>10.0.19045.3803</Data></Item><Item><Source><LocURI>./DevDetail/Ext/Microsoft/DeviceName</LocURI></Source><Data>DESKTOP-ABC</Data></Item></Results><Final/></SyncBody></SyncML>`;
+    const result = await run(deserializeSoapElement(xml, SyncML));
+
+    expect(result.syncBody.results).toHaveLength(1);
+    expect(result.syncBody.results?.[0]?.cmdRef).toBe("3");
+    expect(result.syncBody.results?.[0]?.items?.map((item) => item.data)).toEqual([
+      "10.0.19045.3803",
+      "DESKTOP-ABC",
+    ]);
+    expect(result.syncBody.results?.[0]?.items?.[0]?.source?.locURI).toBe("./DevDetail/SwV");
+    expect(result.syncBody.status?.[0]?.data).toBe("200");
+  });
 });

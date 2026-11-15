@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   artifactToConfigurations,
@@ -8,6 +9,7 @@ import {
   policyToConfigurations,
   validateDraft,
   type Draft,
+  type PolicyValueMap,
   type Selection,
 } from "./build";
 import type { Property } from "./catalog";
@@ -20,7 +22,7 @@ const property = (overrides: Partial<Property>): Property => ({
   ...overrides,
 });
 
-const selection = (properties: Property[], values: Record<string, unknown>): Selection => ({
+const selection = (properties: Property[], values: PolicyValueMap): Selection => ({
   collectionId: "test#Test",
   identifier: "test",
   kind: "csp",
@@ -197,8 +199,12 @@ describe("multi-platform policy drafts", () => {
       "mttx.windows.custom.designer",
     ]);
 
+    const DraftedConfiguration = Schema.Struct({ draft: Schema.optional(Schema.Json) });
+
     for (const value of Object.values(configurations)) {
-      expect(parsePolicyDraft((value as { draft?: unknown }).draft)).toMatchObject({
+      const draft = Schema.is(DraftedConfiguration)(value) ? value.draft : undefined;
+
+      expect(parsePolicyDraft(draft)).toMatchObject({
         version: 2,
         platforms: { apple: [appleSelection], windows: [windowsSelection] },
       });
@@ -209,10 +215,14 @@ describe("multi-platform policy drafts", () => {
     const bundle = buildPolicyBundle(policy);
     expect(bundle?.contentType).toBe("application/zip");
     expect(bundle?.artifactCount).toBe(2);
-    const text = new TextDecoder().decode(bundle!.content as Uint8Array);
+
+    if (bundle === null || !(bundle.content instanceof Uint8Array))
+      throw new Error("expected a binary bundle");
+
+    const text = new TextDecoder().decode(bundle.content);
     expect(text).toContain("Cross-platform.mobileconfig");
     expect(text).toContain("Cross-platform.syncml.xml");
     // A store-only ZIP starts with two local file headers.
-    expect(bundle?.content).toBeInstanceOf(Uint8Array);
+    expect(bundle.content).toBeInstanceOf(Uint8Array);
   });
 });

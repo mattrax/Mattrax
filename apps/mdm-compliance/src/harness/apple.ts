@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, appleMdmRoutes } from "@mattrax/dm-apple";
 import type { AppleMdmTrustService } from "@mattrax/dm-apple";
@@ -6,14 +6,15 @@ import {
   DdmDeclarationItems,
   DdmTokens,
   ManagementBackend,
+  InternalServerError,
   ManagementManifest,
   ManagementNotSupported,
   ServerInitiatedUnenrollment,
+  MdmOrigin,
   type AppleDeviceEvent,
   type CheckinScope,
-  type MdmOrigin,
 } from "@mattrax/management-backend";
-import { parsePlist, serializePlist } from "@mattrax/plist";
+import { parsePlist, PlistValue, serializePlist } from "@mattrax/plist";
 
 export type RecordedAppleEvent = {
   readonly scope: CheckinScope;
@@ -26,7 +27,7 @@ export type AppleHarnessState = {
   checkinError: "unenrolled" | "unknown" | "internal" | null;
   tokens: DdmTokens;
   items: DdmDeclarationItems;
-  declarations: Map<string, Record<string, unknown>>;
+  declarations: Map<string, Schema.JsonObject>;
   assets: Map<string, { content: Uint8Array; contentType: string }>;
   profile: { content: Uint8Array; contentType: string } | null;
   bootstrapToken: string | null;
@@ -69,7 +70,7 @@ export const createAppleHarness = (
       assets: [{ identifier: "asset.one", serverToken: "s1" }],
       management: [{ identifier: "management.one", serverToken: "m1" }],
     },
-    declarations: new Map([
+    declarations: new Map<string, Schema.JsonObject>([
       [
         "configuration/configuration.one",
         {
@@ -101,7 +102,7 @@ export const createAppleHarness = (
     assets: new Map(),
     profile: null,
     bootstrapToken: "Ym9vdHN0cmFwLXRva2Vu",
-    mdmOrigin: { url: origin } as MdmOrigin,
+    mdmOrigin: new MdmOrigin({ url: origin }),
   };
 
   const config = {
@@ -124,11 +125,11 @@ export const createAppleHarness = (
 
       if (state.checkinError === "unknown") return Effect.fail(new ManagementNotSupported());
 
-      if (state.checkinError === "internal")
-        return Effect.fail({ _tag: "InternalServerError" } as never);
+      if (state.checkinError === "internal") return Effect.fail(new InternalServerError());
+
       const next = state.checkinQueue.shift();
 
-      return Effect.succeed(next ?? ({ _tag: "Idle" } as ManagementManifest));
+      return Effect.succeed(next ?? ManagementManifest.members[0].make({}));
     },
     getAppleDeclarationTokens: () => Effect.succeed(state.tokens),
     getAppleDeclarationItems: () => Effect.succeed(state.items),
@@ -148,7 +149,7 @@ export const createAppleHarness = (
     backend,
     config,
     topic: "com.apple.mgmt.External.compliance",
-    ...(options.trust ? { trust: options.trust } : {}),
+    trust: options.trust,
   });
 
   const layer = appleMdmRoutes.pipe(Layer.provideMerge(Layer.succeed(AppleMdmService, service)));
@@ -157,14 +158,14 @@ export const createAppleHarness = (
   return { handler, state, service, config };
 };
 
-export const serializeAppleBody = (body: unknown): Promise<string> =>
+export const serializeAppleBody = (body: PlistValue): Promise<string> =>
   Effect.runPromise(serializePlist(body));
 
-export const parseAppleBody = (body: string): Promise<unknown> =>
+export const parseAppleBody = (body: string): Promise<PlistValue> =>
   Effect.runPromise(parsePlist(body));
 
 export const appleMdmRequest = async (
-  body: unknown,
+  body: PlistValue,
   options: { headers?: Record<string, string>; path?: string; method?: string } = {},
 ): Promise<Request> =>
   new Request(`${origin}${options.path ?? "/mdm/apple/mdm"}`, {
@@ -176,7 +177,7 @@ export const appleMdmRequest = async (
     body: await serializeAppleBody(body),
   });
 
-export const applePlistResponse = async (response: Response): Promise<any> =>
+export const applePlistResponse = async (response: Response): Promise<PlistValue> =>
   parseAppleBody(await response.text());
 
 export const base64Utf8 = (value: string): string => {

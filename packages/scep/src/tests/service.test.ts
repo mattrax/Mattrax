@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { ScepService, ScepServiceTag } from "../service.js";
-import { ScepRepository } from "../repository.js";
+import { ScepRepository, type ScepIssuedCertificate } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import {
@@ -22,6 +22,27 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
     pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
+
+function attributeText(attribute: pkijs.AttributeTypeAndValue | undefined): string | undefined {
+  if (!attribute || !(attribute.value instanceof asn1js.Utf8String)) return undefined;
+
+  return attribute.value.valueBlock.value;
+}
+
+function printableAttributeValue(attributes: Map<string, pkijs.Attribute>, oid: string): string {
+  const attribute = attributes.get(oid);
+
+  if (!attribute) throw new Error(`Missing SCEP attribute ${oid}`);
+
+  const value = attribute.values[0];
+
+  if (!(value instanceof asn1js.PrintableString))
+    throw new Error(`SCEP attribute ${oid} is not a PrintableString`);
+
+  return value.valueBlock.value;
+}
+
+type SavedCa = { certPem: string; privateKeyJwk: JsonWebKey };
 
 function runWithService<A, E>(
   repoLayer: Layer.Layer<ScepRepository>,
@@ -54,7 +75,7 @@ describe("ScepService", () => {
 
   describe("getCaCert", () => {
     it("generates a new CA when repository returns null", async () => {
-      const saved = { certPem: "", privateKeyJwk: {} as JsonWebKey };
+      const saved: SavedCa = { certPem: "", privateKeyJwk: {} };
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed(null),
@@ -88,7 +109,7 @@ describe("ScepService", () => {
       const privateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         keyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       let saveCount = 0;
 
@@ -118,7 +139,7 @@ describe("ScepService", () => {
       let saveCount = 0;
 
       const repo = mockScepRepository({
-        getCa: () => Effect.succeed({ certPem: "invalid-pem", privateKeyJwk: {} as JsonWebKey }),
+        getCa: () => Effect.succeed({ certPem: "invalid-pem", privateKeyJwk: {} }),
         saveCa: () =>
           Effect.sync(() => {
             saveCount++;
@@ -161,7 +182,7 @@ describe("ScepService", () => {
             return yield* scep.getCaCert();
           }),
         ),
-      ).rejects.toMatchObject({ _tag: "ScepError", message: expect.stringContaining("decrypt") });
+      ).rejects.toMatchObject({ message: expect.stringContaining("decrypt") });
       // Issuing a fresh CA here would invalidate every existing device identity.
       expect(saveCount).toBe(0);
     });
@@ -176,7 +197,7 @@ describe("ScepService", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
@@ -232,7 +253,7 @@ describe("ScepService", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
@@ -275,7 +296,7 @@ describe("ScepService", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "Device");
@@ -309,10 +330,13 @@ describe("ScepService", () => {
 
       const contentInfo = pkijs.ContentInfo.fromBER(response);
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
-      const deviceCert = signedData.certificates![0] as pkijs.Certificate;
+      const deviceCert = signedData.certificates?.[0];
+
+      if (!(deviceCert instanceof pkijs.Certificate))
+        throw new Error("response did not contain a certificate");
 
       const cnAttr = deviceCert.subject.typesAndValues.find((a) => a.type === "2.5.4.3");
-      expect((cnAttr?.value as any).valueBlock.value).toBe("MyTestDevice");
+      expect(attributeText(cnAttr)).toBe("MyTestDevice");
     });
 
     const renewalFixture = async () => {
@@ -323,7 +347,7 @@ describe("ScepService", () => {
       const caPrivateKeyJwk = (await crypto.subtle.exportKey(
         "jwk",
         caKeyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const deviceKeyPair = await generateKeyPair();
       const now = new Date();
@@ -365,7 +389,7 @@ describe("ScepService", () => {
 
     it("keeps deviceId on renewed certificates so they remain revocable", async () => {
       const fixture = await renewalFixture();
-      const recorded: Array<Record<string, unknown>> = [];
+      const recorded: Array<ScepIssuedCertificate> = [];
 
       const repo = mockScepRepository({
         getCa: () =>
@@ -388,7 +412,7 @@ describe("ScepService", () => {
           ),
         recordIssuedCertificate: (certificate) =>
           Effect.sync(() => {
-            recorded.push(certificate as unknown as Record<string, unknown>);
+            recorded.push(certificate);
           }),
       });
 
@@ -447,14 +471,8 @@ describe("ScepService", () => {
         ]),
       );
 
-      const pkiStatus = attributes.get("2.16.840.1.113733.1.9.3")!
-        .values[0] as asn1js.PrintableString;
-
-      const failInfo = attributes.get("2.16.840.1.113733.1.9.4")!
-        .values[0] as asn1js.PrintableString;
-
-      expect(pkiStatus.valueBlock.value).toBe("2");
-      expect(failInfo.valueBlock.value).toBe("4");
+      expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.3")).toBe("2");
+      expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.4")).toBe("4");
     });
   });
 });

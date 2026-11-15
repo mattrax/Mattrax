@@ -61,12 +61,11 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 
 /** Base64url-encode a string or raw bytes (no padding), as JWT requires. */
 export function base64UrlEncode(input: string | Uint8Array | ArrayBuffer): string {
-  const bytes =
-    typeof input === "string"
-      ? textEncoder.encode(input)
-      : input instanceof Uint8Array
-        ? input
-        : new Uint8Array(input);
+  const bytes = Schema.is(Schema.String)(input)
+    ? textEncoder.encode(input)
+    : input instanceof Uint8Array
+      ? input
+      : new Uint8Array(input);
 
   return bytesToBase64Url(bytes);
 }
@@ -144,22 +143,21 @@ const TokenResponse = Schema.Struct({
 
 function errorDetail(text: string): string {
   try {
-    const json = JSON.parse(text) as unknown;
+    const json: Schema.Json = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
 
-    if (typeof json === "object" && json !== null) {
-      const record = json as Record<string, unknown>;
-      const error = record["error"];
+    if (Schema.is(Schema.JsonObject)(json)) {
+      const error = json["error"];
 
-      if (typeof error === "string") {
-        const description = record["error_description"];
+      if (Schema.is(Schema.String)(error)) {
+        const description = json["error_description"];
 
-        return typeof description === "string" ? `${error}: ${description}` : error;
+        return Schema.is(Schema.String)(description) ? `${error}: ${description}` : error;
       }
 
-      if (typeof error === "object" && error !== null) {
-        const message = (error as Record<string, unknown>)["message"];
+      if (Schema.is(Schema.JsonObject)(error)) {
+        const message = error["message"];
 
-        if (typeof message === "string") return message;
+        if (Schema.is(Schema.String)(message)) return message;
       }
     }
   } catch {
@@ -213,16 +211,11 @@ export function exchangeServiceAccountJwt(options: {
     }
 
     const json = yield* Effect.try({
-      try: () => JSON.parse(text) as unknown,
+      try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text)),
       catch: (cause) => new GoogleApiError({ message: "Invalid Google token JSON", cause }),
     });
 
-    const decoded = yield* (
-      Schema.decodeUnknownEffect(TokenResponse)(json) as Effect.Effect<
-        typeof TokenResponse.Type,
-        unknown
-      >
-    ).pipe(
+    const decoded = yield* Schema.decodeUnknownEffect(TokenResponse)(json).pipe(
       Effect.mapError(
         (cause) => new GoogleApiError({ message: "Invalid Google token response shape", cause }),
       ),
@@ -247,14 +240,14 @@ export type AuthorizedRequest<A> = {
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
   /** Schema used to decode the JSON response body. */
-  readonly schema: Schema.Schema<A>;
+  readonly schema: Schema.Codec<A>;
   /** Human-readable name used in error messages. */
   readonly label?: string;
 };
 
 export type AuthorizedVoidRequest = Omit<AuthorizedRequest<never>, "schema">;
 
-export interface GoogleAuthShape {
+export interface GoogleAuthService {
   /** Returns a cached access token, refreshing when it is within 60s of expiry. */
   readonly accessToken: () => Effect.Effect<AccessToken, GoogleError>;
   /** Performs an authorized request and decodes the JSON response. */
@@ -265,7 +258,7 @@ export interface GoogleAuthShape {
   ) => Effect.Effect<void, GoogleError>;
 }
 
-export class GoogleAuth extends Context.Service<GoogleAuth, GoogleAuthShape>()("GoogleAuth") {}
+export class GoogleAuth extends Context.Service<GoogleAuth, GoogleAuthService>()("GoogleAuth") {}
 
 export const GoogleAuthLive = (config: ServiceAccountConfig) =>
   Layer.effect(
@@ -339,7 +332,7 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
 
       const decodeJson = <A>(
         text: string,
-        schema: Schema.Schema<A>,
+        schema: Schema.Codec<A>,
         label: string,
       ): Effect.Effect<A, GoogleApiError> =>
         Effect.gen(function* () {
@@ -350,13 +343,11 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
           }
 
           const json = yield* Effect.try({
-            try: () => JSON.parse(text) as unknown,
+            try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text)),
             catch: (cause) => new GoogleApiError({ message: `Invalid ${label} JSON`, cause }),
           });
 
-          return yield* (
-            Schema.decodeUnknownEffect(schema)(json) as Effect.Effect<A, unknown>
-          ).pipe(
+          return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
             Effect.mapError(
               (cause) => new GoogleApiError({ message: `Invalid ${label} shape`, cause }),
             ),

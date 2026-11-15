@@ -6,10 +6,12 @@ import {
 } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
+import type { AppleProfileSigningConfig } from "@mattrax/dm-apple";
 import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseHandlers.ts";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "./android.ts";
 import type { AppleApiConfig } from "./appleBusinessManager.ts";
+import type { EmailReplyTo } from "./email.ts";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
@@ -27,17 +29,26 @@ export type EnterpriseServiceOptions = {
   readonly appleApi?: AppleApiConfig;
   /** Deployment plan catalogue; omit for unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
-  /** Optional product analytics sink for successful API operations. */
+  /** Optional static analytics sink, used when the request has no sink. */
   readonly analytics?: EnterpriseAnalytics;
+  /**
+   * Deployment identity used to CMS-sign Apple enrollment profiles. When it is
+   * omitted the global SCEP CA signs downloads (or they stay unsigned until the
+   * CA exists).
+   */
+  readonly appleProfileSigning?: AppleProfileSigningConfig;
   readonly email?: {
     send(message: {
       to: string;
       from: { name: string; email: string };
+      replyTo?: EmailReplyTo;
       subject: string;
       text?: string;
       html?: string;
-    }): Promise<unknown>;
+    }): Promise<void>;
   };
+  /** Verified invitation sender; defaults to `hello@mattrax.cloud`. */
+  readonly invitationFromEmail?: string;
 };
 
 export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
@@ -79,12 +90,24 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           authSecret: env.authSecret,
           cloudAppleVendorCert: env.cloudAppleVendorCert,
           cloudAppleVendorKey: env.cloudAppleVendorKey,
+          appleProfileSigning:
+            options.appleProfileSigning ??
+            (env.appleProfileSigningCert ||
+            env.appleProfileSigningKey ||
+            env.appleProfileSigningChain
+              ? {
+                  certificatePem: env.appleProfileSigningCert,
+                  privateKeyPem: env.appleProfileSigningKey,
+                  chainPem: env.appleProfileSigningChain,
+                }
+              : undefined),
           apns,
           android: options.android,
           appleApi: options.appleApi,
           planLimits: options.planLimits,
           analytics: options.analytics,
           email: options.email,
+          invitationFromEmail: options.invitationFromEmail,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,
           windowsFederated: options.windowsFederated,

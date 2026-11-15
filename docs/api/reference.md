@@ -15,7 +15,6 @@ All paths are relative to `/api/v1` unless noted. Authentication and conventions
 | `POST`   | `/account/api-tokens`               | Create a token (step-up)              |
 | `DELETE` | `/account/api-tokens/:tokenId`      | Revoke a token (step-up)              |
 | `GET`    | `/account/step-up`                  | Available step-up factors             |
-| `POST`   | `/account/step-up/password`         | Password step-up grant                |
 | `POST`   | `/account/step-up/totp`             | TOTP step-up grant                    |
 | `POST`   | `/account/step-up/passkey/begin`    | Begin passkey step-up                 |
 | `POST`   | `/account/step-up/passkey/complete` | Complete passkey step-up              |
@@ -35,8 +34,7 @@ All paths are relative to `/api/v1` unless noted. Authentication and conventions
 
 `/api/v1/<action>`:
 
-`signIn`, `register`, `requestReset`, `completeReset`, `beginEmailSignIn`,
-`requestEmailCode`, `completeEmailCode`, `ssoSignIn`, `changePassword`,
+`ssoSignIn`, `beginPasskeyRegistration`, `completePasskeyRegistration`,
 `beginTotpEnrollment`, `confirmTotpEnrollment`, `disableTotp`,
 `regenerateTotpRecoveryCodes`, `verifyTotpPending`, `recoverTotpPending`,
 `beginPasskeySignIn`, `completePasskeySignIn`, `beginPasskeyPending`,

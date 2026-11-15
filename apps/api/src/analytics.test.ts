@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Schema } from "effect";
 import {
   authEventForRequest,
   authOutcomeFromResponse,
@@ -10,6 +11,8 @@ import {
   shouldReportError,
   shouldTrackApiRequest,
   type AnalyticsClient,
+  type AnalyticsConfig,
+  type AnalyticsProperties,
 } from "./analytics.js";
 
 const sessionId = "0193f0b2-6f2a-7c3e-8b1d-2c4a5e6f7a8b";
@@ -20,17 +23,17 @@ const fakeClient = () => {
   const events: Captured[] = [];
 
   const exceptions: Array<{
-    error: unknown;
+    cause: unknown;
     distinctId?: string;
-    properties?: Record<string, unknown>;
+    properties?: AnalyticsProperties;
   }> = [];
 
   const client: AnalyticsClient = {
     capture: (message) => {
       events.push(message);
     },
-    captureException: (error, distinctId, properties) => {
-      exceptions.push({ error, distinctId, properties });
+    captureException: (cause, distinctId, properties) => {
+      exceptions.push({ cause, distinctId, properties });
     },
     flush: vi.fn(async () => {}),
   };
@@ -38,7 +41,7 @@ const fakeClient = () => {
   return { client, events, exceptions };
 };
 
-const analytics = (client: AnalyticsClient, overrides: Record<string, unknown> = {}) =>
+const analytics = (client: AnalyticsClient, overrides: Partial<AnalyticsConfig> = {}) =>
   createRequestAnalytics({
     key: "phc_test",
     client,
@@ -142,8 +145,13 @@ describe("PostHog analytics", () => {
 
     expect(fake.exceptions).toHaveLength(1);
     const [captured] = fake.exceptions;
-    expect((captured!.error as Error).message).toContain("[email]");
-    expect((captured!.error as Error).message).toContain("[redacted]");
+    expect(captured!.cause).toBeInstanceOf(Error);
+
+    if (captured!.cause instanceof Error) {
+      expect(captured!.cause.message).toContain("[email]");
+      expect(captured!.cause.message).toContain("[redacted]");
+    }
+
     expect(captured?.distinctId).toBe("anon-1");
     expect(captured?.properties).toMatchObject({
       $session_id: sessionId,
@@ -196,29 +204,42 @@ describe("PostHog analytics", () => {
   });
 
   it("maps auth conversions and skips non-product traffic", () => {
-    expect(authEventForRequest("/api/v1/signIn", "POST", 200)).toBe("auth_signed_in");
-    expect(authEventForRequest("/api/v1/register", "POST", 200)).toBe("auth_register_submitted");
-    expect(authEventForRequest("/api/v1/signIn", "POST", 401)).toBeUndefined();
-    expect(authEventForRequest("/api/v1/signIn", "GET", 200)).toBeUndefined();
+    expect(authEventForRequest("/api/v1/completePasskeySignIn", "POST", 200)).toBe(
+      "auth_signed_in",
+    );
+    expect(authEventForRequest("/api/v1/completePasskeyRegistration", "POST", 200)).toBe(
+      "auth_register_submitted",
+    );
+    expect(authEventForRequest("/api/v1/completePasskeySignIn", "POST", 401)).toBeUndefined();
+    expect(authEventForRequest("/api/v1/completePasskeySignIn", "GET", 200)).toBeUndefined();
     expect(authEventForRequest("/api/v1/tenants/1/policies", "POST", 200)).toBeUndefined();
 
     expect(shouldTrackApiRequest("/api/v1/me", "GET")).toBe(true);
     expect(shouldTrackApiRequest("/api/health", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/ready", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/openapi.json", "GET")).toBe(false);
+    expect(shouldTrackApiRequest("/api/webhooks/openapi.json", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/getSession", "POST")).toBe(false);
+    expect(shouldTrackApiRequest("/api/v1/bootstrap", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/docs", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/me", "OPTIONS")).toBe(false);
   });
 
   it("distinguishes a completed sign-in from an MFA challenge", async () => {
+    const Authenticated = Schema.TaggedStruct("Authenticated", {});
+    const PendingAuthentication = Schema.TaggedStruct("PendingAuthentication", {});
+
+    const SuccessResponse = Schema.TaggedStruct("Success", {
+      value: Schema.Union([Authenticated, PendingAuthentication]),
+    });
+
     const authenticated = new Response(
-      JSON.stringify({ _tag: "Success", value: { _tag: "Authenticated" } }),
+      JSON.stringify(SuccessResponse.make({ value: Authenticated.make({}) })),
       { headers: { "content-type": "application/json" } },
     );
 
     const pending = new Response(
-      JSON.stringify({ _tag: "Success", value: { _tag: "PendingAuthentication" } }),
+      JSON.stringify(SuccessResponse.make({ value: PendingAuthentication.make({}) })),
       { headers: { "content-type": "application/json" } },
     );
 

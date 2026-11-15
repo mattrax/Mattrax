@@ -108,7 +108,16 @@ valid JSON. Android stays unavailable until it is set.
 
 ## MFA and passkey lockout
 
-If an administrator loses every factor, another owner can reset it after verifying identity.
+Passkeys cannot be reset by email. Keep at least two passkeys per administrator and
+store TOTP recovery codes safely.
+
+If an administrator still has a signed-in session, add a new passkey from **Account →
+Security** before removing the lost one.
+
+If they have no session and no passkey, another owner must re-provision the account
+after verifying identity. There is no server-side way to mint a passkey: delete the
+account's credential state, remove the account, and send a fresh invitation so the user
+can register a new passkey. Audit the operation.
 
 Authenticator app:
 
@@ -123,14 +132,35 @@ UPDATE `user` SET totp_enabled = false, auth_revision = UUID() WHERE id = :user_
 Passkeys:
 
 ```sql
--- Deactivate rather than delete so the audit trail and counters remain.
+-- Inspect and deactivate every credential before re-provisioning the account.
 UPDATE auth_passkeyCredentials SET active = false WHERE subject_id = :user_id;
 DELETE FROM auth_passkeyFlows
  WHERE JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.context.target.revision.subjectId')) = :user_id;
 UPDATE `user` SET passkey_enabled = false, auth_revision = UUID() WHERE id = :user_id;
 ```
 
-Audit the operation and have the user enroll a new factor immediately.
+Audit the operation and have the user register a new passkey immediately.
+
+## SSR shell and bootstrap
+
+Every authenticated page render should reuse `__Host-mattrax_ssr` for five minutes. If
+Workers Issues is full of `[ssr] AUTH_SECRET is not configured…` or `[ssr] A bootstrap
+token failed edge verification…`, the two Workers disagree:
+
+- `AUTH_SECRET` is missing on `mattrax`, or its value differs from `mattrax-api`.
+  Re-set both from the same secret and redeploy; the log never includes the value.
+- The dashboard still renders correctly while this is wrong — bootstrap is the authority —
+  but each navigation repeats membership/role queries and reissues a token. Treat the
+  error as a performance and configuration defect, not a security bypass.
+- The web Worker holds the platform root secret for verification. Keep its environment
+  as restricted as the API Worker's until a dedicated `SSR_TOKEN_SECRET` exists.
+
+Placement verification: `mattrax-api` must be pinned to the region nearest the database
+(`placement.region = aws:us-east-1` for the hosted DigitalOcean MySQL instance), and
+`mattrax` must stay `placement.mode = off` so static assets and HTML are served at the
+nearest edge. If `/api/ready` (a single `SELECT 1`) is slow from the deployment region,
+the API isolate is not landing in its pinned region: check the deployment's placement
+metadata and the database origin's location before changing anything else.
 
 ## Database and migrations
 
@@ -151,7 +181,7 @@ globally.
 
 | Symptom                    | Check                                                                      |
 | -------------------------- | -------------------------------------------------------------------------- |
-| `/webhook/*` returns 401   | `--webhook-secret` matches; timestamp within 300s                          |
+| `/webhook/*` returns 500   | `--webhook-secret` matches; timestamp within 300s                          |
 | SCEP fails                 | `--auth-secret` set; challenge minted with the same secret                 |
 | Enrollment profile missing | The gateway returns 410 at `/mdm/apple/enroll`; serve the profile yourself |
 | Apple push not delivered   | The gateway never pushes; your backend owns push                           |

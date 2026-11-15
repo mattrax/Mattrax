@@ -66,7 +66,7 @@ export type CreateEnrollmentTokenInput = {
 export type PatchPolicyInput = {
   readonly enterpriseName: string;
   readonly policyId: string;
-  readonly policy: Record<string, unknown>;
+  readonly policy: Schema.JsonObject;
   /** Defaults to `"*"` (replace every modifiable field). */
   readonly updateMask?: string;
 };
@@ -93,8 +93,8 @@ export type IssueCommandParams = {
   readonly clearAppsDataParams?: {
     readonly packageNames?: ReadonlyArray<string>;
   };
-  readonly startLostModeParams?: Readonly<Record<string, unknown>>;
-  readonly stopLostModeParams?: Readonly<Record<string, unknown>>;
+  readonly startLostModeParams?: Readonly<Record<string, Schema.Json>>;
+  readonly stopLostModeParams?: Readonly<Record<string, Schema.Json>>;
   readonly addEsimParams?: {
     readonly activationCode: string;
     readonly activationState?: string;
@@ -107,7 +107,7 @@ export type IssueCommandParams = {
   };
   readonly wipeParams?: {
     readonly wipeDataFlags?: ReadonlyArray<string>;
-    readonly wipeReason?: Readonly<Record<string, unknown>>;
+    readonly wipeReason?: Readonly<Record<string, Schema.Json>>;
   };
 };
 
@@ -124,7 +124,7 @@ export type ListDevicesResult = {
   readonly nextPageToken?: string;
 };
 
-export interface AndroidManagementShape {
+export interface AndroidManagementService {
   readonly createSignupUrl: (
     input: CreateSignupUrlInput,
   ) => Effect.Effect<SignupUrl, AndroidManagementError>;
@@ -147,7 +147,7 @@ export interface AndroidManagementShape {
   }) => Effect.Effect<void, AndroidManagementError>;
 }
 
-export class AndroidManagement extends Context.Service<AndroidManagement, AndroidManagementShape>()(
+export class AndroidManagement extends Context.Service<AndroidManagement, AndroidManagementService>()(
   "AndroidManagement",
 ) {}
 
@@ -239,15 +239,10 @@ function policyResourceName(
  * request body. `mergeAndroidPolicies` rejects these keys; direct callers may
  * pass a policy fetched from Google, so drop the read-only names here.
  */
-function policyBody(policy: Record<string, unknown>): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(policy)) {
-    if (key === "name" || key === "policyName") continue;
-    body[key] = value;
-  }
-
-  return body;
+function policyBody(policy: Schema.JsonObject): Schema.JsonObject {
+  return Object.fromEntries(
+    Object.entries(policy).filter(([key]) => key !== "name" && key !== "policyName"),
+  );
 }
 
 export const AndroidManagementLive = (config: AndroidManagementConfig) => {
@@ -272,7 +267,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
     Effect.gen(function* () {
       const auth = yield* GoogleAuth;
 
-      const createSignupUrl: AndroidManagementShape["createSignupUrl"] = (input) =>
+      const createSignupUrl: AndroidManagementService["createSignupUrl"] = (input) =>
         Effect.gen(function* () {
           const projectId = input.projectId ?? defaultProjectId;
 
@@ -295,7 +290,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           });
         });
 
-      const createEnterprise: AndroidManagementShape["createEnterprise"] = (input) =>
+      const createEnterprise: AndroidManagementService["createEnterprise"] = (input) =>
         Effect.gen(function* () {
           const projectId = input.projectId ?? defaultProjectId;
 
@@ -325,7 +320,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           return { name: enterprise.name };
         });
 
-      const createEnrollmentToken: AndroidManagementShape["createEnrollmentToken"] = (input) =>
+      const createEnrollmentToken: AndroidManagementService["createEnrollmentToken"] = (input) =>
         Effect.gen(function* () {
           const enterpriseName = yield* enterpriseResourceName(
             input.enterpriseName,
@@ -354,7 +349,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           };
         });
 
-      const patchPolicy: AndroidManagementShape["patchPolicy"] = (input) =>
+      const patchPolicy: AndroidManagementService["patchPolicy"] = (input) =>
         Effect.gen(function* () {
           const enterpriseName = yield* enterpriseResourceName(
             input.enterpriseName,
@@ -369,12 +364,9 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             );
           }
 
-          const body = yield* (
-            Schema.decodeUnknownEffect(Policy)(policyBody(input.policy)) as Effect.Effect<
-              Policy,
-              unknown
-            >
-          ).pipe(Effect.mapError(() => invalid("policy", "policy must be a JSON object")));
+          const body = yield* Schema.decodeUnknownEffect(Policy)(policyBody(input.policy)).pipe(
+            Effect.mapError(() => invalid("policy", "policy must be a JSON object")),
+          );
 
           return yield* auth.authorizedFetch({
             method: "PATCH",
@@ -387,7 +379,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           });
         });
 
-      const patchDevice: AndroidManagementShape["patchDevice"] = (input) =>
+      const patchDevice: AndroidManagementService["patchDevice"] = (input) =>
         Effect.gen(function* () {
           const deviceName = yield* deviceResourceName(input.deviceName);
           const enterpriseName = deviceName.split("/").slice(0, 2).join("/");
@@ -402,7 +394,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           });
         });
 
-      const listDevices: AndroidManagementShape["listDevices"] = (input) =>
+      const listDevices: AndroidManagementService["listDevices"] = (input) =>
         Effect.gen(function* () {
           const enterpriseName = yield* enterpriseResourceName(
             input.enterpriseName,
@@ -425,7 +417,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           };
         });
 
-      const issueCommand: AndroidManagementShape["issueCommand"] = (input) =>
+      const issueCommand: AndroidManagementService["issueCommand"] = (input) =>
         Effect.gen(function* () {
           const deviceName = yield* deviceResourceName(input.deviceName);
 
@@ -456,7 +448,7 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           return { operationName: operation.name };
         });
 
-      const deleteDevice: AndroidManagementShape["deleteDevice"] = (input) =>
+      const deleteDevice: AndroidManagementService["deleteDevice"] = (input) =>
         Effect.gen(function* () {
           const deviceName = yield* deviceResourceName(input.deviceName);
           yield* auth.authorizedFetchVoid({

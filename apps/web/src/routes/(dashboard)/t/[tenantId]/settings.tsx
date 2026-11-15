@@ -1,6 +1,7 @@
 import { useLocation, useParams } from "@solidjs/router";
 import { createEffect, For, type ParentProps } from "solid-js";
 import { PageHeader } from "~/components/mdm/common";
+import { settingsTabPermission, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
 const tabs = [
@@ -15,15 +16,35 @@ const tabs = [
   { id: "billing", label: "Billing" },
 ];
 
+const sectionDescriptions = new Map([
+  ["", "Rename the tenant, set the branding people see, and export or delete it."],
+  ["administrators", "Invite people, assign roles, and review pending invitations."],
+  ["identity", "Single sign-on, SCIM provisioning, and the domains that route sign-in."],
+  ["enrollment", "Choose which platforms can enroll, and control the enrollment link."],
+  ["management", "Fleet integrations: Apple push, ABM, Apps and Books, Android and Windows."],
+  ["delivery", "Check that notification delivery to devices is healthy."],
+  ["integrations", "Send tenant events to webhooks you control."],
+  ["audit", "Every change made in this tenant, newest first."],
+  ["billing", "Plan, usage and invoices for this tenant."],
+]);
+
 export default function TenantSettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
+  const { can } = useCan();
   const base = () => `/t/${params.tenantId}/settings`;
+  const visibleTabs = () => tabs.filter((tab) => can(settingsTabPermission(tab.id)));
 
   const active = () => {
     const rest = location.pathname.slice(base().length).replace(/^\//, "");
 
     return rest.split("/")[0] ?? "";
+  };
+
+  const section = () => {
+    const id = active();
+
+    return tabs.find((tab) => tab.id === id) ?? tabs[0]!;
   };
 
   let tabNav: HTMLElement | undefined;
@@ -41,16 +62,18 @@ export default function TenantSettingsLayout(props: ParentProps) {
   return (
     <div class="mx-auto flex w-full max-w-[1180px] flex-1 flex-col px-4 pb-8 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
       <PageHeader
-        eyebrow="Tenant"
-        title="Settings"
-        description="Manage your tenant, enrollment, identity and integrations."
+        eyebrow="Settings"
+        title={section().label}
+        description={sectionDescriptions.get(section().id) ?? "Manage this tenant's settings."}
       />
       <nav
-        ref={tabNav}
+        ref={(element) => {
+          tabNav = element;
+        }}
         class="no-scrollbar -mb-px mt-5 flex gap-0.5 overflow-x-auto border-b border-white/[0.07]"
         aria-label="Tenant settings sections"
       >
-        <For each={tabs}>
+        <For each={visibleTabs()}>
           {(tab) => {
             const href = tab.id ? `${base()}/${tab.id}` : base();
             const isActive = () => active() === tab.id;

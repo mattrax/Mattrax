@@ -28,6 +28,9 @@ type BadgeProps<T extends ValidComponent = "span"> = PolymorphicProps<T, BadgeRo
   VariantProps<typeof badgeVariants>;
 
 const Badge = <T extends ValidComponent = "span">(props: BadgeProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as BadgeProps, ["class", "variant"]);
 
   return (

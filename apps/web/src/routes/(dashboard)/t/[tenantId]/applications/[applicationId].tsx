@@ -1,4 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
+import { Match, Option, Schema } from "effect";
+import { ApplicationNode } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import {
@@ -13,23 +15,28 @@ import {
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { CircleAlert } from "~/components/ui/icons";
 import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
-  type ApplicationNode,
   type DeviceRow,
   type GroupRow,
 } from "~/lib/enterprise";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
 const sourceLabel = (source: ApplicationNode["source"]) =>
-  source === "manifest" ? "Manifest URL" : source === "store" ? "App Store" : "Uploaded file";
+  Match.value(source).pipe(
+    Match.when("manifest", () => "Manifest URL"),
+    Match.when("store", () => "App Store"),
+    Match.orElse(() => "Uploaded file"),
+  );
 
 const formatBytes = (value?: number | null) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
@@ -51,6 +58,8 @@ export default function ApplicationDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { can } = useCan();
+  const writable = () => can("applications.write");
   const app = useQuery(() => enterpriseQueries.application(params.tenantId, params.applicationId));
 
   const groups = useQuery(() => ({
@@ -65,7 +74,9 @@ export default function ApplicationDetailPage() {
 
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
-  const row = () => app.data as ApplicationNode | undefined;
+
+  const row = () => Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(app.data));
+
   const [name, setName] = createSignal("");
   const [bundleId, setBundleId] = createSignal("");
   const [version, setVersion] = createSignal("");
@@ -135,11 +146,30 @@ export default function ApplicationDetailPage() {
     },
   }));
 
+  const [installNotice, setInstallNotice] = createSignal<
+    { tone: "success" | "warning"; text: string } | undefined
+  >();
+
   const install = useMutation(() => ({
     mutationFn: () => enterprise.installApplication(params.tenantId, params.applicationId),
+    onMutate: () => setInstallNotice(undefined),
+    // Nothing queued is not a success: report why instead of showing a green
+    // panel that looks like the install worked.
     onSuccess: (result) =>
-      setMessage(
-        result.message ?? `Queued ${result.queued} install command(s); skipped ${result.skipped}.`,
+      setInstallNotice(
+        result.queued > 0
+          ? {
+              tone: "success",
+              text:
+                result.message ??
+                `Queued ${result.queued} install command(s); skipped ${result.skipped}.`,
+            }
+          : {
+              tone: "warning",
+              text:
+                result.message ??
+                "No devices were eligible. Assign this application to a device or group first.",
+            },
       ),
   }));
 
@@ -158,6 +188,8 @@ export default function ApplicationDetailPage() {
       await invalidate();
     },
   }));
+
+  const [confirmDelete, setConfirmDelete] = createSignal(false);
 
   const remove = useMutation(() => ({
     mutationFn: () => enterprise.deleteApplications(params.tenantId, [params.applicationId!]),
@@ -210,22 +242,26 @@ export default function ApplicationDetailPage() {
             <LinkButton href={`/t/${params.tenantId}/applications`} variant="outline">
               Back to applications
             </LinkButton>
-            <Button
-              variant="outline"
-              disabled={!canInstall() || install.isPending}
-              title={
-                canInstall()
-                  ? undefined
-                  : "Install is only implemented for Apple applications today."
-              }
-              onClick={() => install.mutate()}
-            >
-              {install.isPending
-                ? "Queueing…"
-                : vppAsset()
-                  ? "Install via VPP on assigned devices"
-                  : "Install on assigned devices"}
-            </Button>
+            <Show when={writable()}>
+              <Button
+                variant="outline"
+                disabled={!canInstall() || install.isPending || assignedCount() === 0}
+                title={
+                  !canInstall()
+                    ? "Install is only implemented for Apple applications today."
+                    : assignedCount() === 0
+                      ? "Assign this application to a device or group first."
+                      : undefined
+                }
+                onClick={() => install.mutate()}
+              >
+                {install.isPending
+                  ? "Queueing…"
+                  : vppAsset()
+                    ? "Install via VPP on assigned devices"
+                    : "Install on assigned devices"}
+              </Button>
+            </Show>
           </>
         }
       />
@@ -256,6 +292,11 @@ export default function ApplicationDetailPage() {
                 description="Metadata, installer source and the upload attached to this app."
               >
                 <div class="space-y-4">
+                  <Show when={!writable()}>
+                    <ReadOnlyNotice>
+                      Your role can view this application but not change it.
+                    </ReadOnlyNotice>
+                  </Show>
                   <div class="flex flex-wrap items-center gap-2 text-[12px]">
                     <PlatformBadge proto={application().platform} />
                     <Badge variant="outline" class="text-muted-foreground">
@@ -263,7 +304,7 @@ export default function ApplicationDetailPage() {
                     </Badge>
                     <Show when={application().sha256}>
                       {(sha) => (
-                        <span class="truncate font-mono text-[11px] text-muted-foreground/80">
+                        <span class="truncate font-mono text-[11px] text-muted-foreground">
                           sha256 {sha().slice(0, 16)}…
                         </span>
                       )}
@@ -318,57 +359,75 @@ export default function ApplicationDetailPage() {
                   </Show>
 
                   <Field label="Name">
-                    <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+                    <Input
+                      disabled={!writable()}
+                      value={name()}
+                      onInput={(e) => setName(e.currentTarget.value)}
+                    />
                   </Field>
                   <div class="grid gap-4 sm:grid-cols-2">
                     <Field label="Bundle / package ID">
                       <Input
+                        disabled={!writable()}
                         value={bundleId()}
                         onInput={(e) => setBundleId(e.currentTarget.value)}
                       />
                     </Field>
                     <Field label="Version">
-                      <Input value={version()} onInput={(e) => setVersion(e.currentTarget.value)} />
+                      <Input
+                        disabled={!writable()}
+                        value={version()}
+                        onInput={(e) => setVersion(e.currentTarget.value)}
+                      />
                     </Field>
                     <Field label="Manifest URL">
                       <Input
+                        disabled={!writable()}
                         value={manifestUrl()}
                         onInput={(e) => setManifestUrl(e.currentTarget.value)}
                       />
                     </Field>
                     <Field label="App Store ID">
-                      <Input value={storeId()} onInput={(e) => setStoreId(e.currentTarget.value)} />
+                      <Input
+                        disabled={!writable()}
+                        value={storeId()}
+                        onInput={(e) => setStoreId(e.currentTarget.value)}
+                      />
                     </Field>
                   </div>
                   <Field label="Notes">
                     <textarea
+                      disabled={!writable()}
                       class={textareaClass}
                       value={notes()}
                       onInput={(e) => setNotes(e.currentTarget.value)}
                     />
                   </Field>
                   <div class="flex flex-wrap items-center gap-2 pt-1">
-                    <Button disabled={save.isPending} onClick={() => save.mutate()}>
-                      {save.isPending ? "Saving…" : "Save changes"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={upload.isPending}
-                      onClick={() => upload.mutate()}
-                    >
-                      {upload.isPending ? "Uploading…" : "Upload file"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      class="ml-auto text-destructive hover:text-destructive"
-                      disabled={remove.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Delete ${application().name}?`)) remove.mutate();
-                      }}
-                    >
-                      Delete
-                    </Button>
+                    <Show when={writable()}>
+                      <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                        {save.isPending ? "Saving…" : "Save changes"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={upload.isPending}
+                        onClick={() => upload.mutate()}
+                      >
+                        {upload.isPending ? "Uploading…" : "Upload file"}
+                      </Button>
+                    </Show>
                   </div>
+                  <Show when={writable()}>
+                    <div class="mt-3 border-t border-white/[0.06] pt-3">
+                      <Button
+                        variant="destructive"
+                        disabled={remove.isPending}
+                        onClick={() => setConfirmDelete(true)}
+                      >
+                        Delete application
+                      </Button>
+                    </div>
+                  </Show>
                   <ErrorText error={save.error ?? upload.error ?? remove.error ?? install.error} />
                   <Show when={message()}>
                     {(text) => (
@@ -377,6 +436,20 @@ export default function ApplicationDetailPage() {
                         class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
                       >
                         {text()}
+                      </p>
+                    )}
+                  </Show>
+                  <Show when={installNotice()}>
+                    {(notice) => (
+                      <p
+                        role="status"
+                        class={
+                          notice().tone === "success"
+                            ? "rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                            : "rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning-foreground"
+                        }
+                      >
+                        {notice().text}
                       </p>
                     )}
                   </Show>
@@ -418,6 +491,7 @@ export default function ApplicationDetailPage() {
                                 type="checkbox"
                                 class="size-3.5 shrink-0 accent-[var(--brand)]"
                                 checked={groupIds().has(group.id)}
+                                disabled={!writable()}
                                 onChange={() => toggle(groupIds, setGroupIds, group.id)}
                               />
                               <span class="min-w-0 truncate">{group.name}</span>
@@ -446,6 +520,7 @@ export default function ApplicationDetailPage() {
                                 type="checkbox"
                                 class="size-3.5 shrink-0 accent-[var(--brand)]"
                                 checked={deviceIds().has(device.id)}
+                                disabled={!writable()}
                                 onChange={() => toggle(deviceIds, setDeviceIds, device.id)}
                               />
                               <span class="min-w-0 flex-1 truncate">{device.name}</span>
@@ -503,6 +578,17 @@ export default function ApplicationDetailPage() {
           </div>
         )}
       </Show>
+
+      <ConfirmDialog
+        open={confirmDelete()}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${row()?.name ?? "this application"}?`}
+        description="This removes the application and its assignments. This cannot be undone."
+        confirmLabel="Delete application"
+        destructive
+        pending={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
     </Page>
   );
 }

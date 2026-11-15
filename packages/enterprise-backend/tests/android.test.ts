@@ -1,10 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   AndroidManagement,
   base64UrlEncode,
   clearJwksCache,
-  type AndroidManagementShape,
+  GoogleApiError,
+  type AndroidManagementService,
 } from "@mattrax/dm-android";
 import {
   AndroidDeliveryError,
@@ -46,7 +47,10 @@ const config: AndroidDeliveryConfig = {
   jwksUri,
 };
 
-async function sign(overrides: Record<string, unknown> = {}): Promise<string> {
+/** Claim overrides layered onto the signed push token. */
+type JwtClaimOverrides = Readonly<Record<string, Schema.Json>>;
+
+async function sign(overrides: JwtClaimOverrides = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT", kid }));
 
@@ -76,9 +80,9 @@ const jwksFetch = (async () =>
   new Response(JSON.stringify({ keys: [publicJwk] }), {
     status: 200,
     headers: { "content-type": "application/json" },
-  })) as typeof globalThis.fetch;
+  })) satisfies typeof globalThis.fetch;
 
-function base64Json(value: unknown): string {
+function base64Json(value: Schema.Json): string {
   const bytes = encoder.encode(JSON.stringify(value));
   let binary = "";
 
@@ -87,14 +91,7 @@ function base64Json(value: unknown): string {
   return btoa(binary);
 }
 
-function pushBody(
-  data: unknown,
-  type: string,
-  messageId = "message-1",
-): {
-  message: { data: string; attributes: Record<string, string>; messageId: string };
-  subscription: string;
-} {
+function pushBody(data: Schema.Json, type: string, messageId = "message-1") {
   return {
     message: {
       data: base64Json(data),
@@ -105,15 +102,20 @@ function pushBody(
   };
 }
 
+/** Inputs the fake Android Management service recorded, by call site. */
+type CreateEnterpriseInput = Parameters<AndroidManagementService["createEnterprise"]>[0];
+
+type PatchPolicyInput = Parameters<AndroidManagementService["patchPolicy"]>[0];
+
 type AndroidCalls = {
   signupUrls: Array<{ callbackUrl: string }>;
-  enterprises: Array<Record<string, unknown>>;
-  policies: Array<{ enterpriseName: string; policyId: string; policy: Record<string, unknown> }>;
+  enterprises: Array<CreateEnterpriseInput>;
+  policies: Array<{ enterpriseName: string; policyId: string; policy: PatchPolicyInput["policy"] }>;
   devices: Array<{ deviceName: string; policyName: string }>;
   commands: Array<{ deviceName: string; type: string }>;
 };
 
-function makeAndroid(overrides: Partial<AndroidManagementShape> = {}) {
+function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
   const calls: AndroidCalls = {
     signupUrls: [],
     enterprises: [],
@@ -173,7 +175,7 @@ function makeAndroid(overrides: Partial<AndroidManagementShape> = {}) {
 
 const provideAndroid = <A, E>(
   effect: Effect.Effect<A, E, AndroidManagement>,
-  service: AndroidManagementShape,
+  service: AndroidManagementService,
 ) => Effect.runPromise(effect.pipe(Effect.provideService(AndroidManagement, service)));
 
 function organizationRow(id: string, name: string) {
@@ -241,6 +243,8 @@ function androidDeviceRow() {
 
 describe("Android Enterprise delivery", () => {
   beforeAll(async () => {
+    // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
+    // asked to generate; the DOM runtime type is wider than that overload.
     const pair = (await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
@@ -753,10 +757,9 @@ describe("Android Enterprise delivery", () => {
 
     const { service } = makeAndroid({
       createSignupUrl: () =>
-        Effect.fail({
-          _tag: "GoogleApiError",
-          message: `permission denied for ${serviceAccountEmail}`,
-        } as never),
+        Effect.fail(
+          new GoogleApiError({ message: `permission denied for ${serviceAccountEmail}` }),
+        ),
     });
 
     const error = await Effect.runPromise(

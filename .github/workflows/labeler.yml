@@ -1,0 +1,26 @@
+name: Label pull requests
+
+# Runs on the base repository with the base branch's labeler.yml, so a fork
+# cannot change how its own PR is labelled. The action only reads the changed
+# file list; it never checks out or executes pull request code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Apply area labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v7
+        with:
+          # Remove labels that no longer match the files in the PR.
+          sync-labels: true

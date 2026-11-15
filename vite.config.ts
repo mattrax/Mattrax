@@ -31,6 +31,10 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   test: {
-    projects: ["apps/*/vitest.config.ts", "packages/*/vitest.config.ts"],
+    projects: [
+      "apps/*/vitest.config.ts",
+      "packages/*/vitest.config.ts",
+      "tools/**/vitest.config.ts",
+    ],
   },
 });

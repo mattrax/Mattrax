@@ -36,10 +36,6 @@ export class EnterpriseAuth extends Context.Service<
     readonly stepUpMethods: (
       requestLike: Request | { readonly headers: HeadersRecord },
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly stepUpPassword: (
-      request: Request,
-      payload: Dynamic,
-    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly stepUpTotp: (
       request: Request,
       payload: Dynamic,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
+import { EnterpriseBadRequest } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -42,12 +43,16 @@ const makeContext = () => {
   };
 
   const service = createEnterpriseService({
-    db: db as any,
+    db,
     schema,
     origin,
+    // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
+    // SAFETY: the fake only implements the auth methods this test exercises.
     auth: auth as any,
     authSecret: "enterprise-test-secret",
+    // SAFETY: only the four Graph reads below are produced; the directory-sync
+    // paths this test drives never call the remaining members.
     azureGraph: {
       domains: () => Effect.succeed([]),
       usersDelta: () => Effect.succeed({ items: [], nextLink: null, deltaLink: null }),
@@ -122,7 +127,7 @@ describe("Entra directory schedule settings", () => {
             syncIntervalMinutes: value,
           }),
         ),
-      ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+      ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     }
   });
 });

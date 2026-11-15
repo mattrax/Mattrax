@@ -408,6 +408,13 @@ const SyncMLCommand = (identifier: string) =>
 
 export const SyncMLStatus = SyncMLCommand("Status");
 export const SyncMLAlert = SyncMLCommand("Alert");
+
+/**
+ * A device's response to a server `Get`. Each `Item` echoes the requested
+ * `Source` OMA-URI and carries the value in `Data`.
+ */
+export const SyncMLResults = SyncMLCommand("Results");
+
 export const SyncMLGet = SyncMLCommand("Get");
 export const SyncMLAdd = SyncMLCommand("Add");
 export const SyncMLReplace = SyncMLCommand("Replace");
@@ -444,6 +451,9 @@ export const SyncML = Schema.Struct({
     ),
     alert: Schema.optional(
       Schema.Array(SyncMLAlert).pipe(Schema.annotateKey({ soapElementName: "Alert" })),
+    ),
+    results: Schema.optional(
+      Schema.Array(SyncMLResults).pipe(Schema.annotateKey({ soapElementName: "Results" })),
     ),
     get: Schema.optional(
       Schema.Array(SyncMLGet).pipe(Schema.annotateKey({ soapElementName: "Get" })),

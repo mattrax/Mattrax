@@ -40,13 +40,41 @@ legacy `.mobileconfig` profiles where DDM does not cover the setting.
 The enrollment profile contains two payloads:
 
 - `com.apple.security.scep` — points at `<origin>/mdm/apple/scep`, requests an RSA 2048
-  key with key usage 5, and carries a per-enrollment challenge.
+  key with key usage 5, and carries a per-enrollment, one-time challenge that expires
+  after seven days.
 - `com.apple.mdm` — points check-in and command URLs at `<origin>/mdm/apple/mdm`, requires
   signed messages, references the SCEP identity, supplies the tenant APNs topic and asks
   the device to check out when the profile is removed.
 
 Payload UUIDs are stable, so re-downloading the profile replaces the previous one instead
 of creating a duplicate.
+
+### Profile signing
+
+Profile downloads are CMS (PKCS#7) `SignedData` messages with the plist encapsulated,
+SHA-256, and the standard `contentType`/`messageDigest` signed attributes. The response is
+still served as `application/x-apple-aspen-config` with `Cache-Control: no-store`.
+
+A dedicated deployment signing identity is configured with:
+
+| Variable                      | Purpose                                            |
+| ----------------------------- | -------------------------------------------------- |
+| `APPLE_PROFILE_SIGNING_CERT`  | Leaf signing certificate, PEM                      |
+| `APPLE_PROFILE_SIGNING_KEY`   | Unencrypted RSA PKCS#8 private key, PEM            |
+| `APPLE_PROFILE_SIGNING_CHAIN` | Optional intermediate/root certificate bundle, PEM |
+
+When no dedicated identity is configured, Mattrax signs with the deployment-global SCEP CA
+(`scep_ca` id 1) if it already exists. The download handler never generates a CA; before
+the CA has bootstrapped the plist is served unsigned and a warning is logged. A configured
+identity that cannot be loaded or used fails the download with an internal error rather
+than falling back to an unsigned profile.
+
+**Signed is not the same as verified.** A CMS signature proves the profile body was not
+modified and identifies the signing certificate. Apple shows the profile as _verified_ only
+when that certificate chains to a CA the device already trusts. The SCEP CA fallback is
+not an Apple-trusted root, so a profile signed with it is integrity-checked but still
+displayed as unverified. Use a certificate issued by a CA distributed to managed devices
+for a verified install prompt.
 
 ### Enrollment link
 
@@ -77,6 +105,9 @@ fingerprint.
 ### SCEP
 
 - One global SCEP CA per deployment, RSA-2048, ten-year validity.
+- Enrollment challenges are one-time: the digest is stored and consumed before the
+  certificate is issued, so a captured PKCSReq cannot be replayed. A failed issuance
+  burns the challenge and the device must fetch a fresh profile.
 - Device certificates are valid for 365 days with the client-auth EKU.
 - The CA private key is sealed with `AUTH_SECRET`. A missing or wrong secret fails closed;
   Mattrax never silently generates a new CA.

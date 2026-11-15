@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as pkijs from "pkijs";
 import { parsePlist } from "@mattrax/plist";
-import { pemEncode } from "@mattrax/crypto";
+import { pemEncode, toArrayBuffer } from "@mattrax/crypto";
 import {
   APPLE_ROOT_CA,
   APPLE_WORLDWIDE_DEVELOPER_RELATIONS_CERTIFICATION_AUTHORITY,
@@ -10,10 +10,16 @@ import {
 import { buildApnsCsr, createApnsCsrDer, exportApnsKeyJwk } from "../csr.js";
 import { createTestApnsCertificate, createTestApnsKeys } from "./helpers.js";
 
+const CsrPlist = Schema.Struct({
+  PushCertCertificateChain: Schema.String,
+  PushCertRequestCSR: Schema.String,
+  PushCertSignature: Schema.String,
+});
+
 const decodePlist = async (base64: string) => {
   const xml = atob(base64);
 
-  return (await Effect.runPromise(parsePlist(xml))) as Record<string, unknown>;
+  return Schema.decodeUnknownSync(CsrPlist)(await Effect.runPromise(parsePlist(xml)));
 };
 
 describe("APNs CSR generation", () => {
@@ -43,10 +49,9 @@ describe("APNs CSR generation", () => {
     const plist = await decodePlist(result.plist);
     expect(plist.PushCertCertificateChain).toBe("");
     expect(plist.PushCertSignature).toBe("");
-    expect(typeof plist.PushCertRequestCSR).toBe("string");
 
-    const der = Uint8Array.from(atob(plist.PushCertRequestCSR as string), (c) => c.charCodeAt(0));
-    const csr = pkijs.CertificationRequest.fromBER(der.buffer as ArrayBuffer);
+    const der = Uint8Array.from(atob(plist.PushCertRequestCSR), (c) => c.charCodeAt(0));
+    const csr = pkijs.CertificationRequest.fromBER(toArrayBuffer(der));
     expect(csr.subject.typesAndValues.length).toBeGreaterThan(0);
 
     // The key returned alongside the CSR is the one that must be stored.
@@ -83,13 +88,9 @@ describe("APNs CSR generation", () => {
     expect(plist.PushCertCertificateChain).toContain(APPLE_ROOT_CA.split("\n")[0]!.trim());
     expect(plist.PushCertCertificateChain).toContain(vendor.pem.trim().split("\n")[0]!);
 
-    const signature = Uint8Array.from(atob(plist.PushCertSignature as string), (c) =>
-      c.charCodeAt(0),
-    );
+    const signature = Uint8Array.from(atob(plist.PushCertSignature), (c) => c.charCodeAt(0));
 
-    const csrDer = Uint8Array.from(atob(plist.PushCertRequestCSR as string), (c) =>
-      c.charCodeAt(0),
-    );
+    const csrDer = Uint8Array.from(atob(plist.PushCertRequestCSR), (c) => c.charCodeAt(0));
 
     const publicKey = await vendor.certificate.getPublicKey();
 

@@ -26,10 +26,11 @@ const categories = (value: string): ReadonlyArray<CheckCategory> => {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  for (const category of parsed)
+  return parsed.flatMap((category) => {
     if (!isCheckCategory(category)) throw new Error(`Unknown category: ${category}`);
 
-  return parsed as ReadonlyArray<CheckCategory>;
+    return [category];
+  });
 };
 
 const platform = (value: string): ReadonlyArray<Platform> => {

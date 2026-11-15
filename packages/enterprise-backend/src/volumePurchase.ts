@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { parsePlist } from "@mattrax/plist";
@@ -38,7 +38,7 @@ export class VppError extends Data.TaggedError("VppError")<{
 }> {}
 
 const fail = (kind: VppErrorKind, message: string, cause?: unknown) =>
-  new VppError({ kind, message, ...(cause === undefined ? {} : { cause }) });
+  new VppError({ kind, message, cause });
 
 const notConfigured = () =>
   fail("not_configured", "Apple Apps and Books (VPP) is not configured for this tenant.");
@@ -52,25 +52,25 @@ const mapVppError = <A, R>(effect: Effect.Effect<A, unknown, R>) =>
 
 const now = () => new Date();
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
-const text = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
+const text = (value: Schema.Json | undefined): string | undefined => {
+  const string = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim();
 
-    return trimmed === "" ? undefined : trimmed;
-  }
+  if (string) return string;
 
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  const number = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Number)(value));
 
-  return undefined;
+  return number !== undefined && Number.isFinite(number) ? String(number) : undefined;
 };
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+const record = (value: Schema.Json | undefined): Record<string, Schema.Json> | undefined =>
+  Schema.is(JsonObject)(value) ? value : undefined;
 
 const base64ToBytes = (value: string): Uint8Array => {
   const cleaned = value.replace(/\s/g, "");
@@ -87,16 +87,16 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const jsonToBase64 = (value: unknown) =>
+const jsonToBase64 = (value: Schema.Json) =>
   bytesToBase64(new TextEncoder().encode(JSON.stringify(value)));
 
-const tryJson = (value: string): unknown => {
+const tryJson = (value: string): Schema.Json | undefined => {
   const trimmed = value.trim();
 
   if (!trimmed.startsWith("{")) return undefined;
 
   try {
-    return JSON.parse(trimmed);
+    return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(trimmed)));
   } catch {
     return undefined;
   }
@@ -136,7 +136,7 @@ export const parseVppTokenUpload = async (input: {
 
   candidates.push(raw);
 
-  let decoded: Record<string, unknown> | undefined;
+  let decoded: Record<string, Schema.Json> | undefined;
   let contentToken: string | undefined;
 
   for (const candidate of candidates) {
@@ -167,7 +167,10 @@ export const parseVppTokenUpload = async (input: {
 
   if (!decoded && (raw.startsWith("<?xml") || raw.startsWith("<plist"))) {
     const parsed = await Effect.runPromise(parsePlist(raw)).catch(() => undefined);
-    const value = record(parsed);
+
+    const value = record(
+      Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parsed)),
+    );
 
     if (value) {
       decoded = value;
@@ -212,7 +215,7 @@ export const openVppToken = async (
   authSecret: string,
   sealed: string,
 ): Promise<VppContentToken> => {
-  let parsed: unknown;
+  let parsed: Schema.Json | undefined;
 
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
@@ -320,21 +323,18 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     path: string,
     contentToken: string,
     init: RequestInit = {},
-  ): Promise<T> => {
+  ): Promise<T | undefined> => {
     let response: Response;
+    const headers = new Headers(init.headers);
+    headers.set("accept", "application/json");
+    headers.set("authorization", `Bearer ${contentToken}`);
+
+    if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
 
     try {
       response = await fetchWithTimeout(
         `${baseUrl}${path}`,
-        {
-          ...init,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${contentToken}`,
-            ...(init.body ? { "content-type": "application/json" } : {}),
-            ...(init.headers as Record<string, string> | undefined),
-          },
-        },
+        { ...init, headers },
         { fetch: doFetch, timeoutMs },
       );
     } catch (cause) {
@@ -342,9 +342,9 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     }
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => undefined)) as
-        | { errorMessage?: string; errorNumber?: number }
-        | undefined;
+      const body: { errorMessage?: string; errorNumber?: number } | undefined = await response
+        .json()
+        .catch(() => undefined);
 
       throw fail(
         vppErrorKind(response.status),
@@ -354,30 +354,38 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
       );
     }
 
-    if (response.status === 204) return undefined as T;
+    if (response.status === 204) return undefined;
 
     try {
-      return (await response.json()) as T;
+      return await response.json();
     } catch (cause) {
       throw fail("invalid_response", "Apple Apps and Books returned invalid JSON.", cause);
     }
   };
 
-  const paged = async <T>(path: string, contentToken: string, key: string): Promise<T[]> => {
+  const paged = async <T extends Schema.Json>(
+    path: string,
+    contentToken: string,
+    key: string,
+    valueSchema: Schema.Decoder<T>,
+  ): Promise<T[]> => {
     const items: T[] = [];
     let pageIndex = 0;
     let totalPages = 1;
 
     do {
-      const page = await request<Record<string, unknown>>(
+      const page = await request<Record<string, Schema.Json>>(
         `${path}${path.includes("?") ? "&" : "?"}pageIndex=${pageIndex}`,
         contentToken,
       );
 
-      const values = page[key];
+      const values = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Array(valueSchema))(page?.[key]),
+      );
 
-      if (Array.isArray(values)) items.push(...(values as T[]));
-      const total = Number(page.totalPages);
+      if (values) items.push(...values);
+
+      const total = Number(page?.totalPages);
       totalPages = Number.isFinite(total) && total > 0 ? total : 1;
       pageIndex++;
 
@@ -390,39 +398,67 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
   return {
     listAssets: async (contentToken) => {
-      const assets = await paged<Record<string, unknown>>("/v2/assets", contentToken, "assets");
+      const assets = await paged(
+        "/v2/assets",
+        contentToken,
+        "assets",
+        JsonObject,
+      );
 
-      return assets.map((asset) => ({
-        adamId: text(asset.adamId) ?? "",
-        ...(text(asset.name) ? { name: text(asset.name)! } : {}),
-        ...(text(asset.bundleId) ? { bundleId: text(asset.bundleId)! } : {}),
-        totalCount: Number(asset.totalCount) || 0,
-        availableCount: Number(asset.availableCount) || 0,
-        assignedCount: Number(asset.assignedCount) || 0,
-        retiredCount: Number(asset.retiredCount) || 0,
-        ...(text(asset.pricingParam) ? { pricingParam: text(asset.pricingParam)! } : {}),
-        deviceAssignable: asset.deviceAssignable === true,
-        revocable: asset.revocable === true,
-        ...(text(asset.productType) ? { productType: text(asset.productType)! } : {}),
-        supportedPlatforms: Array.isArray(asset.supportedPlatforms)
-          ? asset.supportedPlatforms.filter((value): value is string => typeof value === "string")
-          : [],
-      }));
+      return assets.map((asset) => {
+        const result: Mutable<VppAsset> = {
+          adamId: text(asset.adamId) ?? "",
+          totalCount: Number(asset.totalCount) || 0,
+          availableCount: Number(asset.availableCount) || 0,
+          assignedCount: Number(asset.assignedCount) || 0,
+          retiredCount: Number(asset.retiredCount) || 0,
+          deviceAssignable: asset.deviceAssignable === true,
+          revocable: asset.revocable === true,
+          supportedPlatforms:
+            Option.getOrUndefined(
+              Schema.decodeUnknownOption(Schema.Array(Schema.String))(asset.supportedPlatforms),
+            ) ?? [],
+        };
+
+        const name = text(asset.name);
+        const bundleId = text(asset.bundleId);
+        const pricingParam = text(asset.pricingParam);
+        const productType = text(asset.productType);
+
+        if (name) result.name = name;
+
+        if (bundleId) result.bundleId = bundleId;
+
+        if (pricingParam) result.pricingParam = pricingParam;
+
+        if (productType) result.productType = productType;
+
+        return result;
+      });
     },
 
     listAssignments: async (contentToken) => {
-      const assignments = await paged<Record<string, unknown>>(
+      const assignments = await paged(
         "/v2/assignments",
         contentToken,
         "assignments",
+        JsonObject,
       );
 
-      return assignments.map((assignment) => ({
-        adamId: text(assignment.adamId) ?? "",
-        ...(text(assignment.serialNumber) ? { serialNumber: text(assignment.serialNumber)! } : {}),
-        ...(text(assignment.clientUserId) ? { clientUserId: text(assignment.clientUserId)! } : {}),
-        ...(text(assignment.pricingParam) ? { pricingParam: text(assignment.pricingParam)! } : {}),
-      }));
+      return assignments.map((assignment) => {
+        const result: Mutable<VppAssignment> = { adamId: text(assignment.adamId) ?? "" };
+        const serialNumber = text(assignment.serialNumber);
+        const clientUserId = text(assignment.clientUserId);
+        const pricingParam = text(assignment.pricingParam);
+
+        if (serialNumber) result.serialNumber = serialNumber;
+
+        if (clientUserId) result.clientUserId = clientUserId;
+
+        if (pricingParam) result.pricingParam = pricingParam;
+
+        return result;
+      });
     },
 
     associateAssets: async (contentToken, input) => {
@@ -432,14 +468,14 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
           assets: [
             {
               adamId: input.adamId,
-              ...(input.pricingParam ? { pricingParam: input.pricingParam } : {}),
+              pricingParam: input.pricingParam,
             },
           ],
           serialNumbers: [...input.serialNumbers],
         }),
       });
 
-      return response.eventId ? { eventId: response.eventId } : {};
+      return response?.eventId ? { eventId: response.eventId } : {};
     },
 
     disassociateAssets: async (contentToken, input) => {
@@ -452,7 +488,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
             assets: [
               {
                 adamId: input.adamId,
-                ...(input.pricingParam ? { pricingParam: input.pricingParam } : {}),
+                pricingParam: input.pricingParam,
               },
             ],
             serialNumbers: [...input.serialNumbers],
@@ -460,7 +496,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         },
       );
 
-      return response.eventId ? { eventId: response.eventId } : {};
+      return response?.eventId ? { eventId: response.eventId } : {};
     },
 
     revokeAssets: async (contentToken, input) => {
@@ -469,7 +505,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         body: JSON.stringify({ serialNumbers: [...input.serialNumbers] }),
       });
 
-      return response.eventId ? { eventId: response.eventId } : {};
+      return response?.eventId ? { eventId: response.eventId } : {};
     },
 
     getEventStatus: async (contentToken, eventId) => {
@@ -479,8 +515,8 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
       );
 
       return {
-        ...(response.eventStatus ? { eventStatus: response.eventStatus } : {}),
-        ...(response.eventType ? { eventType: response.eventType } : {}),
+        eventStatus: response?.eventStatus,
+        eventType: response?.eventType,
       };
     },
   };
@@ -498,10 +534,7 @@ export const loadVppToken = (
   db: EnterpriseDb,
   organizationId: string,
 ): Effect.Effect<VppTokenRow | undefined, unknown> =>
-  db.query.vppToken.findFirst({ where: { organizationId } }) as Effect.Effect<
-    VppTokenRow | undefined,
-    unknown
-  >;
+  db.query.vppToken.findFirst({ where: { organizationId } });
 
 export type VppInfo = {
   readonly configured: boolean;
@@ -525,10 +558,10 @@ export const vppInfo = (
   Effect.gen(function* () {
     const row = yield* loadVppToken(db, organizationId);
 
-    const assets = (yield* db
+    const assets = yield* db
       .select()
       .from(schema.vppAsset)
-      .where(eq(schema.vppAsset.organizationId, organizationId))) as VppAssetRow[];
+      .where(eq(schema.vppAsset.organizationId, organizationId));
 
     return {
       configured: Boolean(row),
@@ -564,7 +597,7 @@ const upsertVppRow = (
         ...patch,
         createdAt: now(),
         updatedAt: now(),
-      } as typeof schema.vppToken.$inferInsert);
+      } satisfies typeof schema.vppToken.$inferInsert);
 
 export const saveVppToken = (input: {
   readonly db: EnterpriseDb;
@@ -614,7 +647,7 @@ export const saveVppToken = (input: {
         cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
     }).pipe(Effect.result);
 
-    if (validation._tag === "Failure") {
+    if (Predicate.isTagged(validation, "Failure")) {
       yield* upsertVppRow(
         input.db,
         input.organizationId,
@@ -690,23 +723,19 @@ export const syncVppAssets = (input: {
         cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
     });
 
-    const catalogue = (yield* input.db
+    const catalogue = yield* input.db
       .select()
       .from(schema.application)
-      .where(eq(schema.application.organizationId, input.organizationId))) as Array<{
-      name: string;
-      storeId: string | null;
-      bundleId: string | null;
-    }>;
+      .where(eq(schema.application.organizationId, input.organizationId));
 
     const catalogueByStoreId = new Map(
-      catalogue.filter((app) => app.storeId).map((app) => [app.storeId!, app] as const),
+      catalogue.flatMap((app) => (app.storeId ? [[app.storeId, app] as const] : [])),
     );
 
-    const local = (yield* input.db
+    const local = yield* input.db
       .select()
       .from(schema.vppAsset)
-      .where(eq(schema.vppAsset.organizationId, input.organizationId))) as VppAssetRow[];
+      .where(eq(schema.vppAsset.organizationId, input.organizationId));
 
     const localByAdamId = new Map(local.map((asset) => [asset.adamId, asset]));
     const remoteIds = new Set(remote.map((asset) => asset.adamId));
@@ -815,10 +844,7 @@ export const findVppAsset = (
   organizationId: string,
   adamId: string,
 ): Effect.Effect<VppAssetRow | undefined, unknown> =>
-  db.query.vppAsset.findFirst({ where: { organizationId, adamId } }) as Effect.Effect<
-    VppAssetRow | undefined,
-    unknown
-  >;
+  db.query.vppAsset.findFirst({ where: { organizationId, adamId } });
 
 export const findVppAssetByStoreId = (
   db: EnterpriseDb,
@@ -833,7 +859,7 @@ const updateAssetCounts = (
   direction: "consume" | "release",
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
-    const asset = (yield* findVppAsset(db, organizationId, adamId)) as VppAssetRow | undefined;
+    const asset = yield* findVppAsset(db, organizationId, adamId);
 
     if (!asset) return;
 
@@ -884,9 +910,9 @@ export const assignVppLicence = (input: {
         fail("not_configured", "AUTH_SECRET is required to decrypt the Apps and Books token."),
       );
 
-    const device = (yield* input.db.query.device.findFirst({
+    const device = yield* input.db.query.device.findFirst({
       where: { id: input.deviceId, organizationId: input.organizationId },
-    })) as { id: string; serial: string | null } | undefined;
+    });
 
     if (!device) return yield* Effect.fail(fail("not_found", "Device not found in this tenant."));
 
@@ -901,9 +927,7 @@ export const assignVppLicence = (input: {
 
     if (!assetId) return yield* Effect.fail(fail("invalid_token", "No VPP asset was selected."));
 
-    const asset = (yield* findVppAsset(input.db, input.organizationId, assetId)) as
-      | VppAssetRow
-      | undefined;
+    const asset = yield* findVppAsset(input.db, input.organizationId, assetId);
 
     if (!asset)
       return yield* Effect.fail(fail("not_found", "No VPP licence pool exists for this app."));
@@ -919,20 +943,20 @@ export const assignVppLicence = (input: {
     if (asset.availableLicenses <= 0)
       return yield* Effect.fail(fail("no_license", "No VPP licences are available for this app."));
 
-    const existing = (yield* input.db.query.deviceVppAssignment.findFirst({
+    const existing = yield* input.db.query.deviceVppAssignment.findFirst({
       where: {
         organizationId: input.organizationId,
         deviceId: device.id,
         adamId: assetId,
       },
-    })) as DeviceVppAssignmentRow | undefined;
+    });
 
     if (existing?.state === "assigned")
       return {
         deviceId: device.id,
         serial: device.serial,
         adamId: assetId,
-        ...(existing.eventId ? { eventId: existing.eventId } : {}),
+        eventId: existing.eventId ?? undefined,
       };
 
     const token = yield* Effect.tryPromise({
@@ -950,7 +974,7 @@ export const assignVppLicence = (input: {
       try: () =>
         client.associateAssets(token.contentToken, {
           adamId: assetId,
-          ...(asset.pricingParam ? { pricingParam: asset.pricingParam } : {}),
+          pricingParam: asset.pricingParam ?? undefined,
           serialNumbers: [device.serial!],
         }),
       catch: (cause) =>
@@ -995,27 +1019,27 @@ export const assignVppLicence = (input: {
       deviceId: device.id,
       serial: device.serial,
       adamId: assetId,
-      ...(associated.eventId ? { eventId: associated.eventId } : {}),
+      eventId: associated.eventId,
     };
   }).pipe(
     Effect.catch((error) =>
       Effect.gen(function* () {
         // Record a failed attempt so the device UI can explain why no licence
         // was consumed. Do not decrement counts on failure.
-        const device = (yield* input.db.query.device.findFirst({
+        const device = yield* input.db.query.device.findFirst({
           where: { id: input.deviceId, organizationId: input.organizationId },
-        })) as { id: string; serial: string | null } | undefined;
+        });
 
         const assetId = input.adamId;
 
         if (device && assetId) {
-          const existing = (yield* input.db.query.deviceVppAssignment.findFirst({
+          const existing = yield* input.db.query.deviceVppAssignment.findFirst({
             where: {
               organizationId: input.organizationId,
               deviceId: device.id,
               adamId: assetId,
             },
-          })) as DeviceVppAssignmentRow | undefined;
+          });
 
           const patch = {
             serial: device.serial ?? "",
@@ -1070,16 +1094,14 @@ export const releaseVppLicence = (input: {
         fail("not_configured", "AUTH_SECRET is required to decrypt the Apps and Books token."),
       );
 
-    const device = (yield* input.db.query.device.findFirst({
+    const device = yield* input.db.query.device.findFirst({
       where: { id: input.deviceId, organizationId: input.organizationId },
-    })) as { id: string; serial: string | null } | undefined;
+    });
 
     if (!device?.serial)
       return yield* Effect.fail(fail("not_found", "Device not found in this tenant."));
 
-    const asset = (yield* findVppAsset(input.db, input.organizationId, input.adamId)) as
-      | VppAssetRow
-      | undefined;
+    const asset = yield* findVppAsset(input.db, input.organizationId, input.adamId);
 
     if (!asset)
       return yield* Effect.fail(fail("not_found", "No VPP licence pool exists for this app."));
@@ -1089,13 +1111,13 @@ export const releaseVppLicence = (input: {
         fail("conflict", "This VPP licence is irrevocable and cannot be returned to the pool."),
       );
 
-    const assignment = (yield* input.db.query.deviceVppAssignment.findFirst({
+    const assignment = yield* input.db.query.deviceVppAssignment.findFirst({
       where: {
         organizationId: input.organizationId,
         deviceId: device.id,
         adamId: input.adamId,
       },
-    })) as DeviceVppAssignmentRow | undefined;
+    });
 
     if (assignment?.state !== "assigned")
       return yield* Effect.fail(
@@ -1114,7 +1136,7 @@ export const releaseVppLicence = (input: {
       try: () =>
         client.disassociateAssets(token.contentToken, {
           adamId: input.adamId,
-          ...(asset.pricingParam ? { pricingParam: asset.pricingParam } : {}),
+          pricingParam: asset.pricingParam ?? undefined,
           serialNumbers: [device.serial!],
         }),
       catch: (cause) =>
@@ -1138,8 +1160,5 @@ export const releaseVppLicence = (input: {
       );
     yield* updateAssetCounts(input.db, input.organizationId, input.adamId, "release");
 
-    return {
-      released: true,
-      ...(result.eventId ? { eventId: result.eventId } : {}),
-    };
+    return { released: true, eventId: result.eventId };
   }).pipe(mapVppError);

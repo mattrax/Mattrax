@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
-import { parsePlist } from "@mattrax/plist";
+import { PlistValue, parsePlist } from "@mattrax/plist";
 import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "./tokens.ts";
 
@@ -49,7 +49,7 @@ export const describeAppleError = (cause: unknown): string => {
   const text =
     cause instanceof Error
       ? cause.message
-      : typeof cause === "string"
+      : Schema.is(Schema.String)(cause)
         ? cause
         : (() => {
             try {
@@ -66,7 +66,7 @@ export const describeAppleError = (cause: unknown): string => {
 };
 
 const fail = (kind: AppleBusinessManagerErrorKind, message: string, cause?: unknown) =>
-  new AppleBusinessManagerError({ kind, message, ...(cause === undefined ? {} : { cause }) });
+  new AppleBusinessManagerError({ kind, message, cause });
 
 const notConfigured = () =>
   fail("not_configured", "Apple Business Manager is not configured for this tenant.");
@@ -117,22 +117,21 @@ export type AbmTokenUpload = {
   readonly scope?: "business.api" | "school.api";
 };
 
-const text = (value: unknown): string | undefined => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-    return trimmed === "" ? undefined : trimmed;
-  }
+type CredentialValue = Schema.Json | PlistValue | undefined;
 
-  return undefined;
-};
+type CredentialRecord = Record<string, CredentialValue>;
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
 
-const firstText = (value: Record<string, unknown>, keys: ReadonlyArray<string>) => {
+const text = (value: CredentialValue): string | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim() || undefined;
+
+const record = (value: CredentialValue): CredentialRecord | undefined =>
+  Schema.is(JsonObject)(value) ? value : undefined;
+
+const firstText = (value: CredentialRecord, keys: ReadonlyArray<string>) => {
   for (const key of keys) {
     const found = text(value[key]);
 
@@ -143,7 +142,7 @@ const firstText = (value: Record<string, unknown>, keys: ReadonlyArray<string>) 
 };
 
 /** Parse Apple's `YYYY-MM-DDTHH:MM:SS+0000` and ISO-8601 dates. */
-export const parseAppleDate = (value: unknown): Date | null => {
+export const parseAppleDate = (value: CredentialValue): Date | null => {
   const raw = text(value);
 
   if (!raw) return null;
@@ -182,19 +181,19 @@ const decodeUpload = (upload: AbmTokenUpload): string => {
   }
 };
 
-const tryJson = (value: string): unknown => {
+const tryJson = (value: string): Schema.Json | undefined => {
   const trimmed = value.trim();
 
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
 
   try {
-    return JSON.parse(trimmed);
+    return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(trimmed)));
   } catch {
     return undefined;
   }
 };
 
-const tryBase64Json = (value: string): unknown => {
+const tryBase64Json = (value: string): Schema.Json | undefined => {
   const trimmed = value.replace(/\s/g, "");
 
   if (!/^[A-Za-z0-9+/=]+$/.test(trimmed) || trimmed.length < 8) return undefined;
@@ -240,7 +239,7 @@ export const validateAbmPrivateKey = async (pem: string): Promise<void> => {
   try {
     await crypto.subtle.importKey(
       "pkcs8",
-      der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength) as ArrayBuffer,
+      new Uint8Array(der).buffer,
       { name: "ECDSA", namedCurve: "P-256" },
       false,
       ["sign"],
@@ -255,28 +254,20 @@ export const validateAbmPrivateKey = async (pem: string): Promise<void> => {
 };
 
 /** Extract the plist payload from a legacy PKCS#7 `.p7m` DEP server token. */
-const extractPkcs7Plist = async (bytes: Uint8Array): Promise<Record<string, unknown>> => {
+const extractPkcs7Plist = async (bytes: Uint8Array): Promise<CredentialRecord> => {
   try {
     const pkijs = await import("pkijs");
+    const der = new Uint8Array(bytes.byteLength);
+    der.set(bytes);
 
-    const contentInfo = pkijs.ContentInfo.fromBER(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    );
+    const contentInfo = pkijs.ContentInfo.fromBER(der.buffer);
 
     if (contentInfo.contentType !== pkijs.ContentInfo.SIGNED_DATA)
       throw new Error("The token is not a PKCS#7 signed payload");
     const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
-    const content = signedData.encapContentInfo.eContent as unknown as {
-      getValue?: () => ArrayBuffer;
-    };
-
-    const value =
-      typeof content?.getValue === "function"
-        ? content.getValue()
-        : (
-            content as unknown as { valueBlock?: { valueHexView?: Uint8Array } }
-          ).valueBlock?.valueHexView?.slice().buffer;
+    const content = signedData.encapContentInfo.eContent;
+    const value = content?.getValue();
 
     if (!value) throw new Error("The token has no signed content");
     const parsed = await Effect.runPromise(parsePlist(new TextDecoder().decode(value)));
@@ -294,7 +285,7 @@ const extractPkcs7Plist = async (bytes: Uint8Array): Promise<Record<string, unkn
   }
 };
 
-const legacyCredentialFrom = (value: Record<string, unknown>): LegacyDepCredential => {
+const legacyCredentialFrom = (value: CredentialRecord): LegacyDepCredential => {
   const consumerKey = firstText(value, ["consumer_key", "consumerKey", "ConsumerKey"]);
   const consumerSecret = firstText(value, ["consumer_secret", "consumerSecret", "ConsumerSecret"]);
   const orgId = firstText(value, ["org_id", "orgId", "OrgId", "orgIdStr"]);
@@ -335,7 +326,7 @@ const legacyCredentialFrom = (value: Record<string, unknown>): LegacyDepCredenti
 };
 
 const apiCredentialFrom = (
-  value: Record<string, unknown>,
+  value: CredentialRecord,
   upload: AbmTokenUpload,
   privateKeyPem?: string,
 ): AbmApiCredential => {
@@ -388,17 +379,21 @@ const apiCredentialFrom = (
   if (expiresAt && expiresAt.getTime() <= Date.now())
     throw fail("expired", "The ABM API credential has expired.");
 
-  return {
+  const credential: Mutable<AbmApiCredential> = {
     kind: "abm_api",
     clientId,
     teamId: teamId ?? clientId,
     keyId,
     privateKeyPem: pem,
     scope,
-    ...(orgId ? { orgId } : {}),
-    ...(orgName ? { orgName } : {}),
     expiresAt,
   };
+
+  if (orgId) credential.orgId = orgId;
+
+  if (orgName) credential.orgName = orgName;
+
+  return credential;
 };
 
 /**
@@ -453,7 +448,11 @@ export const parseAbmTokenUpload = async (upload: AbmTokenUpload): Promise<AbmCr
     if (value) return legacyCredentialFrom(value);
   } else if (upload.encoding === "base64") {
     bytes = base64ToBytes(upload.content);
-  } else if (/^[\x00-\xff]+$/.test(decoded) && decoded.charCodeAt(0) === 0x30) {
+  } else if (
+    decoded.length > 0 &&
+    decoded.split("").every((char) => char.charCodeAt(0) <= 0xff) &&
+    decoded.charCodeAt(0) === 0x30
+  ) {
     bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
   }
 
@@ -485,7 +484,7 @@ export const openAbmCredential = async (
   authSecret: string,
   sealed: string,
 ): Promise<AbmCredential> => {
-  let parsed: unknown;
+  let parsed: CredentialValue;
 
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
@@ -528,17 +527,24 @@ export const openAbmCredential = async (
   if (!clientId || !keyId || !privateKeyPem)
     throw fail("invalid_token", "The stored ABM API credential is incomplete.");
 
-  return {
+  const credential: Mutable<AbmApiCredential> = {
     kind: "abm_api",
     clientId,
     teamId: text(value.teamId) ?? clientId,
     keyId,
     privateKeyPem,
     scope: value.scope === "school.api" ? "school.api" : "business.api",
-    ...(text(value.orgId) ? { orgId: text(value.orgId)! } : {}),
-    ...(text(value.orgName) ? { orgName: text(value.orgName)! } : {}),
     expiresAt,
   };
+
+  const orgId = text(value.orgId);
+  const orgName = text(value.orgName);
+
+  if (orgId) credential.orgId = orgId;
+
+  if (orgName) credential.orgName = orgName;
+
+  return credential;
 };
 
 // ─── OAuth + typed API client ────────────────────────────────────
@@ -564,7 +570,7 @@ export type AppleApiConfig = {
 const bytesToBase64Url = (bytes: Uint8Array) =>
   bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 
-const base64UrlJson = (value: unknown) =>
+const base64UrlJson = (value: Schema.Json) =>
   bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value)));
 
 const importAbmSigningKey = async (pem: string): Promise<CryptoKey> => {
@@ -577,7 +583,7 @@ const importAbmSigningKey = async (pem: string): Promise<CryptoKey> => {
 
   return crypto.subtle.importKey(
     "pkcs8",
-    der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength) as ArrayBuffer,
+    new Uint8Array(der).buffer,
     { name: "ECDSA", namedCurve: "P-256" },
     false,
     ["sign"],
@@ -631,7 +637,7 @@ export type AbmOrgDevice = {
   readonly status: "ASSIGNED" | "UNASSIGNED" | string;
   readonly updatedDateTime?: string;
   readonly addedToOrgDateTime?: string;
-  readonly raw: Record<string, unknown>;
+  readonly raw: Record<string, Schema.Json>;
 };
 
 export type AbmMdmServer = {
@@ -669,6 +675,26 @@ export type AbmClient = {
   readonly listApps: (accessToken: string) => Promise<AbmApp[]>;
 };
 
+type ClientAssertionInput = {
+  credential: AbmApiCredential;
+  audience?: string;
+  now?: () => number;
+};
+
+type AssignedDevicesActivity = { activityId?: string; status?: string };
+
+type EnsureMdmServerInput = {
+  existingId: string | null;
+  serverName: string;
+  certificatePem?: string;
+};
+
+type AssignedAppleDevice = {
+  serial: string;
+  mdmServerId: string;
+  activityId?: string;
+};
+
 type AppleErrorBody = {
   errors?: Array<{ title?: string; detail?: string; status?: string; code?: string }>;
 };
@@ -692,7 +718,7 @@ const apiErrorKind = (status: number): AppleBusinessManagerErrorKind => {
   return "upstream";
 };
 
-export const makeAbmClient = (
+export const createAbmClient = (
   config: AppleApiConfig = {},
   defaultScope: "business.api" | "school.api" = "business.api",
 ): AbmClient => {
@@ -709,21 +735,18 @@ export const makeAbmClient = (
     url: string,
     accessToken: string,
     init: RequestInit = {},
-  ): Promise<T> => {
+  ): Promise<T | undefined> => {
     let response: Response;
+    const headers = new Headers(init.headers);
+    headers.set("accept", "application/json");
+    headers.set("authorization", `Bearer ${accessToken}`);
+
+    if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
 
     try {
       response = await fetchWithTimeout(
         url,
-        {
-          ...init,
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${accessToken}`,
-            ...(init.body ? { "content-type": "application/json" } : {}),
-            ...(init.headers as Record<string, string> | undefined),
-          },
-        },
+        { ...init, headers },
         { fetch: doFetch, timeoutMs },
       );
     } catch (cause) {
@@ -735,17 +758,20 @@ export const makeAbmClient = (
     }
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => undefined)) as AppleErrorBody | undefined;
+      const body: AppleErrorBody | undefined = await response
+        .json()
+        .catch(() => undefined);
+
       throw fail(
         apiErrorKind(response.status),
         appleErrorMessage(body, `Apple Business API returned HTTP ${response.status}`),
       );
     }
 
-    if (response.status === 204) return undefined as T;
+    if (response.status === 204) return undefined;
 
     try {
-      return (await response.json()) as T;
+      return await response.json();
     } catch (cause) {
       throw fail("invalid_response", "Apple Business API returned invalid JSON.", cause);
     }
@@ -760,10 +786,12 @@ export const makeAbmClient = (
       if (pages++ >= 100)
         throw fail("invalid_response", "Apple Business API pagination exceeded 100 pages.");
 
-      const page: {
+      const page = await request<{
         data?: T[];
         links?: { next?: string };
-      } = await request(url, accessToken);
+      }>(url, accessToken);
+
+      if (!page) break;
 
       if (Array.isArray(page.data)) items.push(...page.data);
       const next = page.links?.next;
@@ -787,11 +815,13 @@ export const makeAbmClient = (
 
   return {
     exchangeAccessToken: async (credential) => {
-      const assertion = await buildClientAssertion({
-        credential,
-        ...(config.assertionAudience ? { audience: config.assertionAudience } : {}),
-        ...(config.now ? { now: config.now } : {}),
-      });
+      const assertionInput: ClientAssertionInput = { credential };
+
+      if (config.assertionAudience) assertionInput.audience = config.assertionAudience;
+
+      if (config.now) assertionInput.now = config.now;
+
+      const assertion = await buildClientAssertion(assertionInput);
 
       const params = new URLSearchParams({
         grant_type: "client_credentials",
@@ -818,9 +848,9 @@ export const makeAbmClient = (
       }
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => undefined)) as
-          | { error?: string; error_description?: string }
-          | undefined;
+        const body: { error?: string; error_description?: string } | undefined = await response
+          .json()
+          .catch(() => undefined);
 
         throw fail(
           response.status === 400 || response.status === 401 ? "unauthorized" : "upstream",
@@ -830,21 +860,28 @@ export const makeAbmClient = (
         );
       }
 
-      const body = (await response.json().catch(() => undefined)) as
-        | { access_token?: string; token_type?: string; expires_in?: number; scope?: string }
-        | undefined;
+      const body: {
+        access_token?: string;
+        token_type?: string;
+        expires_in?: number;
+        scope?: string;
+      } = (await response.json().catch(() => ({}))) ?? {};
 
-      if (!body?.access_token)
+      if (!body.access_token)
         throw fail("invalid_response", "Apple OAuth response did not include an access token.");
+
       const expiresIn = Number.isFinite(body.expires_in) ? Number(body.expires_in) : 3600;
 
-      return {
+      const token: Mutable<AbmAccessToken> = {
         accessToken: body.access_token,
         tokenType: "Bearer",
         expiresIn,
         expiresAt: new Date((config.now?.() ?? Date.now()) + expiresIn * 1000),
-        ...(body.scope ? { scope: body.scope } : {}),
       };
+
+      if (body.scope) token.scope = body.scope;
+
+      return token;
     },
 
     listOrgDevices: async (accessToken, options = {}) => {
@@ -857,54 +894,68 @@ export const makeAbmClient = (
 
       const data = await paged<{
         id: string;
-        attributes?: Record<string, unknown>;
+        attributes?: Record<string, Schema.Json>;
       }>(`${base}/orgDevices?${params.toString()}`, accessToken, base);
 
       return data.map((item) => {
-        const attributes = item.attributes ?? {};
+        const attributes: Record<string, Schema.Json> = item.attributes ?? {};
 
-        return {
+        const device: Mutable<AbmOrgDevice> = {
           id: item.id,
           serialNumber: text(attributes.serialNumber) ?? item.id,
-          ...(text(attributes.deviceModel) ? { model: text(attributes.deviceModel)! } : {}),
-          ...(text(attributes.productFamily)
-            ? { productFamily: text(attributes.productFamily)! }
-            : {}),
-          ...(text(attributes.productType) ? { productType: text(attributes.productType)! } : {}),
           status: text(attributes.status) ?? "UNASSIGNED",
-          ...(text(attributes.updatedDateTime)
-            ? { updatedDateTime: text(attributes.updatedDateTime)! }
-            : {}),
-          ...(text(attributes.addedToOrgDateTime)
-            ? { addedToOrgDateTime: text(attributes.addedToOrgDateTime)! }
-            : {}),
           raw: attributes,
         };
+
+        const model = text(attributes.deviceModel);
+        const productFamily = text(attributes.productFamily);
+        const productType = text(attributes.productType);
+        const updatedDateTime = text(attributes.updatedDateTime);
+        const addedToOrgDateTime = text(attributes.addedToOrgDateTime);
+
+        if (model) device.model = model;
+
+        if (productFamily) device.productFamily = productFamily;
+
+        if (productType) device.productType = productType;
+
+        if (updatedDateTime) device.updatedDateTime = updatedDateTime;
+
+        if (addedToOrgDateTime) device.addedToOrgDateTime = addedToOrgDateTime;
+
+        return device;
       });
     },
 
     listMdmServers: async (accessToken) => {
       const base = baseUrl();
 
-      const data = await paged<{ id: string; attributes?: Record<string, unknown> }>(
+      const data = await paged<{ id: string; attributes?: Record<string, Schema.Json> }>(
         `${base}/mdmServers?limit=1000`,
         accessToken,
         base,
       );
 
-      return data.map((item) => ({
-        id: item.id,
-        ...(text(item.attributes?.serverName)
-          ? { serverName: text(item.attributes?.serverName)! }
-          : {}),
-        ...(text(item.attributes?.serverType)
-          ? { serverType: text(item.attributes?.serverType)! }
-          : {}),
-        ...(text(item.attributes?.status) ? { status: text(item.attributes?.status)! } : {}),
-        ...(typeof item.attributes?.deviceCount === "number"
-          ? { deviceCount: item.attributes.deviceCount }
-          : {}),
-      }));
+      return data.map((item) => {
+        const server: Mutable<AbmMdmServer> = { id: item.id };
+        const serverName = text(item.attributes?.serverName);
+        const serverType = text(item.attributes?.serverType);
+        const status = text(item.attributes?.status);
+
+        const deviceCount = Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.Number)(item.attributes?.deviceCount),
+        );
+
+        if (serverName) server.serverName = serverName;
+
+        if (serverType) server.serverType = serverType;
+
+        if (status) server.status = status;
+
+        if (deviceCount !== undefined) server.deviceCount = deviceCount;
+
+        return server;
+      });
     },
 
     createMdmServer: async (accessToken, input) => {
@@ -916,7 +967,7 @@ export const makeAbmClient = (
         .replace(/\s/g, "");
 
       const response = await request<{
-        data?: { id?: string; attributes?: Record<string, unknown> };
+        data?: { id?: string; attributes?: Record<string, Schema.Json> };
       }>(`${base}/mdmServers`, accessToken, {
         method: "POST",
         body: JSON.stringify({
@@ -931,19 +982,19 @@ export const makeAbmClient = (
         }),
       });
 
-      const id = response.data?.id;
+      const id = response?.data?.id;
 
       if (!id) throw fail("invalid_response", "Apple did not return an MDM server id.");
 
-      return {
-        id,
-        ...(text(response.data?.attributes?.serverName)
-          ? { serverName: text(response.data?.attributes?.serverName)! }
-          : {}),
-        ...(text(response.data?.attributes?.status)
-          ? { status: text(response.data?.attributes?.status)! }
-          : {}),
-      };
+      const server: Mutable<AbmMdmServer> = { id };
+      const serverName = text(response?.data?.attributes?.serverName);
+      const status = text(response?.data?.attributes?.status);
+
+      if (serverName) server.serverName = serverName;
+
+      if (status) server.status = status;
+
+      return server;
     },
 
     assignDevices: async (accessToken, input) => {
@@ -967,10 +1018,13 @@ export const makeAbmClient = (
         }),
       });
 
-      return {
-        ...(response.data?.id ? { activityId: response.data.id } : {}),
-        ...(response.data?.attributes?.status ? { status: response.data.attributes.status } : {}),
-      };
+      const result: AssignedDevicesActivity = {};
+
+      if (response?.data?.id) result.activityId = response.data.id;
+
+      if (response?.data?.attributes?.status) result.status = response.data.attributes.status;
+
+      return result;
     },
 
     getAssignedServerId: async (accessToken, deviceId) => {
@@ -981,7 +1035,7 @@ export const makeAbmClient = (
         accessToken,
       );
 
-      return response.data?.id ?? null;
+      return response?.data?.id ?? null;
     },
 
     listMdmServerDeviceIds: async (accessToken, mdmServerId) => {
@@ -999,21 +1053,31 @@ export const makeAbmClient = (
     listApps: async (accessToken) => {
       const base = baseUrl();
 
-      const data = await paged<{ id: string; attributes?: Record<string, unknown> }>(
+      const data = await paged<{ id: string; attributes?: Record<string, Schema.Json> }>(
         `${base}/apps?limit=1000`,
         accessToken,
         base,
       );
 
-      return data.map((item) => ({
-        id: item.id,
-        ...(text(item.attributes?.name) ? { name: text(item.attributes?.name)! } : {}),
-        ...(text(item.attributes?.bundleId) ? { bundleId: text(item.attributes?.bundleId)! } : {}),
-        ...(text(item.attributes?.version) ? { version: text(item.attributes?.version)! } : {}),
-      }));
+      return data.map((item) => {
+        const app: Mutable<AbmApp> = { id: item.id };
+        const name = text(item.attributes?.name);
+        const bundleId = text(item.attributes?.bundleId);
+        const version = text(item.attributes?.version);
+
+        if (name) app.name = name;
+
+        if (bundleId) app.bundleId = bundleId;
+
+        if (version) app.version = version;
+
+        return app;
+      });
     },
   };
 };
+
+export const makeAbmClient = createAbmClient;
 
 // ─── Persistence and tenant-scoped service operations ────────────
 
@@ -1025,15 +1089,12 @@ export const loadAppleBusinessManager = (
   db: EnterpriseDb,
   organizationId: string,
 ): Effect.Effect<AppleBusinessManagerRow | undefined, unknown> =>
-  db.query.appleBusinessManager.findFirst({ where: { organizationId } }) as Effect.Effect<
-    AppleBusinessManagerRow | undefined,
-    unknown
-  >;
+  db.query.appleBusinessManager.findFirst({ where: { organizationId } });
 
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
-const OS_BY_FAMILY: Record<string, string> = {
+const OS_BY_FAMILY = {
   Mac: "macOS",
   iPhone: "iOS",
   iPad: "iPadOS",
@@ -1041,7 +1102,9 @@ const OS_BY_FAMILY: Record<string, string> = {
   AppleTV: "tvOS",
   Watch: "watchOS",
   Vision: "visionOS",
-};
+} satisfies Record<string, string>;
+
+const OS_FAMILY = new Map(Object.entries(OS_BY_FAMILY));
 
 export type AppleBusinessManagerInfo = {
   readonly configured: boolean;
@@ -1067,10 +1130,10 @@ export const appleBusinessManagerInfo = (
   Effect.gen(function* () {
     const row = yield* loadAppleBusinessManager(db, organizationId);
 
-    const devices = (yield* db
+    const devices = yield* db
       .select()
       .from(schema.abmDevice)
-      .where(eq(schema.abmDevice.organizationId, organizationId))) as AbmDeviceRow[];
+      .where(eq(schema.abmDevice.organizationId, organizationId));
 
     return {
       configured: Boolean(row),
@@ -1111,7 +1174,7 @@ const upsertAbmRow = (
         ...patch,
         createdAt: now(),
         updatedAt: now(),
-      } as typeof schema.appleBusinessManager.$inferInsert);
+      } satisfies typeof schema.appleBusinessManager.$inferInsert);
 
 export const saveAppleBusinessManagerToken = (input: {
   readonly db: EnterpriseDb;
@@ -1187,7 +1250,7 @@ export const saveAppleBusinessManagerToken = (input: {
             : fail("upstream", describeAppleError(cause), cause),
       }).pipe(Effect.result);
 
-      if (validation._tag === "Failure") {
+      if (Predicate.isTagged(validation, "Failure")) {
         yield* upsertAbmRow(
           input.db,
           input.organizationId,
@@ -1221,15 +1284,14 @@ const resolveDeviceIds = (
   serials: ReadonlyArray<string>,
 ): Effect.Effect<Array<{ serial: string; deviceId: string | null }>, unknown> =>
   Effect.gen(function* () {
-    const rows = (yield* db
+    const rows = yield* db
       .select()
       .from(schema.device)
-      .where(eq(schema.device.organizationId, organizationId))) as Array<{
-      id: string;
-      serial: string | null;
-    }>;
+      .where(eq(schema.device.organizationId, organizationId));
 
-    const bySerial = new Map(rows.filter((row) => row.serial).map((row) => [row.serial!, row.id]));
+    const bySerial = new Map(
+      rows.flatMap((row) => (row.serial ? ([[row.serial, row.id]] as const) : [])),
+    );
 
     return serials.map((serial) => ({ serial, deviceId: bySerial.get(serial) ?? null }));
   });
@@ -1306,10 +1368,10 @@ export const syncAppleBusinessManagerDevices = (input: {
         fail("invalid_response", "Apple returned more than 5000 ABM devices; sync is bounded."),
       );
 
-    const local = (yield* input.db
+    const local = yield* input.db
       .select()
       .from(schema.abmDevice)
-      .where(eq(schema.abmDevice.organizationId, input.organizationId))) as AbmDeviceRow[];
+      .where(eq(schema.abmDevice.organizationId, input.organizationId));
 
     const localBySerial = new Map(local.map((device) => [device.serial, device]));
     const remoteSerials = new Set(remote.map((device) => device.serialNumber));
@@ -1321,9 +1383,7 @@ export const syncAppleBusinessManagerDevices = (input: {
     );
 
     const deviceIdBySerial = new Map(
-      resolved
-        .filter((entry) => entry.deviceId)
-        .map((entry) => [entry.serial, entry.deviceId!] as const),
+      resolved.flatMap((entry) => (entry.deviceId ? [[entry.serial, entry.deviceId]] : [])),
     );
 
     let assigned = 0;
@@ -1340,7 +1400,7 @@ export const syncAppleBusinessManagerDevices = (input: {
         abmDeviceId: device.id,
         model: device.model ?? null,
         deviceFamily: device.productFamily ?? null,
-        os: device.productFamily ? (OS_BY_FAMILY[device.productFamily] ?? null) : null,
+        os: device.productFamily ? (OS_FAMILY.get(device.productFamily) ?? null) : null,
         profileStatus: isAssigned ? ("assigned" as const) : ("unassigned" as const),
         enrollmentState: isAssigned ? ("ASSIGNED" as const) : ("UNASSIGNED" as const),
         assignedProfileUuid: isAssigned ? (existing?.assignedProfileUuid ?? row.profileUuid) : null,
@@ -1492,9 +1552,9 @@ export const assignAppleBusinessManagerDevice = (input: {
         ),
       );
 
-    const device = (yield* input.db.query.abmDevice.findFirst({
+    const device = yield* input.db.query.abmDevice.findFirst({
       where: { organizationId: input.organizationId, serial: input.serial },
-    })) as AbmDeviceRow | undefined;
+    });
 
     if (!device)
       return yield* Effect.fail(
@@ -1515,11 +1575,14 @@ export const assignAppleBusinessManagerDevice = (input: {
       try: async () => {
         const token = await client.exchangeAccessToken(credential);
 
-        const mdmServerId = await ensureMdmServer(client, token.accessToken, {
+        const serverInput: EnsureMdmServerInput = {
           existingId: row.mdmServerId,
           serverName: input.serverName,
-          ...(input.certificatePem ? { certificatePem: input.certificatePem } : {}),
-        });
+        };
+
+        if (input.certificatePem) serverInput.certificatePem = input.certificatePem;
+
+        const mdmServerId = await ensureMdmServer(client, token.accessToken, serverInput);
 
         const activity = await client.assignDevices(token.accessToken, {
           mdmServerId,
@@ -1555,11 +1618,14 @@ export const assignAppleBusinessManagerDevice = (input: {
         ),
       );
 
-    return {
+    const assignment: AssignedAppleDevice = {
       serial: input.serial,
       mdmServerId: result.mdmServerId,
-      ...(result.activity.activityId ? { activityId: result.activity.activityId } : {}),
     };
+
+    if (result.activity.activityId) assignment.activityId = result.activity.activityId;
+
+    return assignment;
   }).pipe(mapAppleError);
 
 // ─── Signed ADE profile URLs ─────────────────────────────────────

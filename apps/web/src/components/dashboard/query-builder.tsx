@@ -1,12 +1,9 @@
+import { DeviceCondition, DeviceQuery } from "@mattrax/enterprise-domain/client";
+import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  formatDeviceQueryText,
-  parseDeviceQueryText,
-  type DeviceCondition,
-  type DeviceQuery,
-} from "~/lib/enterprise";
+import { formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 
 type FieldKind = "text" | "number" | "select";
@@ -215,19 +212,20 @@ const defaultDraft = (fieldId: string): Draft => {
 /** Build a typed condition from the generic editor values. */
 export const draftToCondition = (draft: Draft): DeviceCondition => {
   const field = fieldById(draft.field);
+  const value = field.kind === "number" ? Number(draft.value || 0) : draft.value;
 
-  const value =
-    field.kind === "number"
-      ? Number(draft.value || 0)
-      : field.kind === "select"
-        ? draft.value
-        : draft.value;
+  const condition = Option.getOrUndefined(
+    Schema.decodeUnknownOption(DeviceCondition)({
+      field: field.id,
+      op: draft.op || field.defaultOp,
+      value,
+    }),
+  );
 
-  return {
-    field: field.id,
-    op: draft.op || field.defaultOp,
-    value,
-  } as unknown as DeviceCondition;
+  if (condition === undefined)
+    throw new Error(`The query builder produced an invalid ${field.id} condition`);
+
+  return condition;
 };
 
 export const queryConditions = (
@@ -244,17 +242,20 @@ export function DeviceQueryBuilder(props: {
 }) {
   const drafts = () => queryConditions(props.query).map(toDraft);
 
-  const update = (next: Draft[]) =>
-    props.onChange(
-      next.length
-        ? {
-            version: 1,
-            all: next.map(draftToCondition),
-            ...(props.query?.any ? { any: props.query.any } : {}),
-            ...(props.query?.none ? { none: props.query.none } : {}),
-          }
-        : null,
-    );
+  const update = (next: Draft[]) => {
+    if (next.length === 0) {
+      props.onChange(null);
+
+      return;
+    }
+
+    props.onChange({
+      version: 1,
+      all: next.map(draftToCondition),
+      any: props.query?.any,
+      none: props.query?.none,
+    });
+  };
 
   const [text, setText] = createSignal(formatDeviceQueryText(props.query));
   createEffect(
@@ -345,13 +346,11 @@ export function DeviceQueryBuilder(props: {
                         class="h-8 w-44 min-w-0 flex-1"
                         type={field().kind === "number" ? "number" : "text"}
                         min={field().kind === "number" ? 0 : undefined}
-                        placeholder={
-                          field().id === "osVersion"
-                            ? "14.4"
-                            : field().id === "application"
-                              ? "com.apple.Safari"
-                              : "Value"
-                        }
+                        placeholder={Match.value(field().id).pipe(
+                          Match.when("osVersion", () => "14.4"),
+                          Match.when("application", () => "com.apple.Safari"),
+                          Match.orElse(() => "Value"),
+                        )}
                         disabled={props.disabled}
                         value={draft.value}
                         onInput={(event) => {
@@ -409,13 +408,13 @@ export function DeviceQueryBuilder(props: {
           onInput={(event) => setText(event.currentTarget.value)}
           onBlur={applyText}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (event.key === "Enter" && !event.isComposing) {
               event.preventDefault();
               applyText();
             }
           }}
         />
-        <p class="text-[11px] text-muted-foreground/80">
+        <p class="text-[11px] text-muted-foreground">
           Shareable syntax: <code class="font-mono">field operator value</code>, joined with{" "}
           <code class="font-mono">and</code>.
         </p>

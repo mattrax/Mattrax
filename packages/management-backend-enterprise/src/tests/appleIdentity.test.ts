@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import {   dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -23,7 +23,7 @@ const organization = (id: string, slug: string) => ({
   updatedAt: now,
 });
 
-const issuedCertificate = (overrides: Record<string, unknown> = {}) => ({
+const issuedCertificate = (overrides: Row = {}) => ({
   serial: "a1b2c3",
   organizationId: "org-1",
   enrollmentId: "enrollment-1",
@@ -38,20 +38,25 @@ const setup = (
   certificates: Array<ReturnType<typeof issuedCertificate>> = [],
   options: {
     planLimits?: ReturnType<typeof parsePlanLimits>;
-    subscription?: Record<string, unknown>;
-    devices?: Array<Record<string, unknown>>;
+    subscription?: Row;
+    devices?: Array<Row>;
   } = {},
 ) => {
-  const db = makeDb({
+  const initial: Store = {
     [tableName(schema.organization)]: [
       organization("org-1", "first"),
       organization("org-2", "second"),
     ],
     [tableName(schema.scepIssuedCertificate)]: certificates,
-    ...(options.subscription ? { [tableName(schema.subscription)]: [options.subscription] } : {}),
-    ...(options.devices ? { [tableName(schema.device)]: options.devices } : {}),
-  });
+  };
 
+  if (options.subscription) initial[tableName(schema.subscription)] = [options.subscription];
+
+  if (options.devices) initial[tableName(schema.device)] = options.devices;
+
+  const db = makeDb(initial);
+
+  // SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({
     db: db as any,
     origin,
@@ -85,7 +90,7 @@ const deviceRow = (id: string, udid: string) => ({
   lastSeenAt: now,
 });
 
-const scope = (overrides: Record<string, unknown> = {}) => ({
+const scope = (overrides: Row = {}) => ({
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
@@ -96,7 +101,7 @@ const scope = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const authenticate = (overrides: Record<string, unknown> = {}) => ({
+const authenticate = (overrides: Row = {}) => ({
   _tag: "Authenticate" as const,
   serialNumber: "C02A",
   model: "MacBookPro18,3",
@@ -126,7 +131,7 @@ describe("Apple per-device SCEP identity binding", () => {
     const [device] = dbRows(db, tableName(schema.device));
     await run(
       backend.appleDeviceEvent(scope(), {
-        _tag: "TokenUpdate",
+        _tag: "TokenUpdate" as const,
         pushToken: "746f6b656e",
         pushMagic: "magic-1",
         topic: "com.apple.mgmt.External.test",
@@ -149,7 +154,7 @@ describe("Apple per-device SCEP identity binding", () => {
 
     await run(
       backend.appleDeviceEvent(scope(), {
-        _tag: "CheckOut",
+        _tag: "CheckOut" as const,
       }),
     );
 
@@ -198,7 +203,7 @@ describe("Apple per-device SCEP identity binding", () => {
 
     await expect(
       run(backend.appleDeviceEvent(scope({ udid: "udid-new" }), authenticate())),
-    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
     expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
   });
 

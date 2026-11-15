@@ -9,9 +9,14 @@ export type CredentialExpiryEmail = {
   readonly html: string;
 };
 
+type CredentialThresholdLabel = {
+  readonly subject: string;
+  readonly summary: string;
+};
+
 const thresholdLabel = (
   threshold: CredentialExpiryNotification["threshold"],
-): { subject: string; summary: string } => {
+): CredentialThresholdLabel => {
   if (threshold === "expired")
     return {
       subject: "credential expired",

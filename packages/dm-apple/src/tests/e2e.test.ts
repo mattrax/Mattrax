@@ -1,14 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Predicate, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
-import { ManagementBackend } from "@mattrax/management-backend";
+import {
+  AppleDeviceEvent,
+  CheckinScope,
+  ManagementBackend,
+  ManagementManifest,
+} from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
-import { parsePlist } from "@mattrax/plist";
+import { parsePlist, PlistValue } from "@mattrax/plist";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
+const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
+
 
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
@@ -27,20 +35,21 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
 
 describe("Apple MDM E2E", () => {
   it("simulates a full device enrollment lifecycle", async () => {
-    const events: Array<{ type: string; payload: unknown }> = [];
+    const events: Array<AppleDeviceEvent> = [];
 
     const backend = mockManagementBackend({
-      appleDeviceEvent: (_scope: unknown, event: unknown) =>
+      appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
         Effect.sync(() => {
-          events.push({ type: (event as any)._tag, payload: event });
+          events.push(event);
         }),
       appleManagementCheckin: () =>
-        Effect.succeed({
-          _tag: "Command" as const,
-          commandUUID: "cmd-enroll-001",
-          requestType: "DeviceInformation",
-          payload: { Queries: ["DeviceName", "SerialNumber"] },
-        }),
+        Effect.succeed(
+          ManagementManifest.members[1].make({
+            commandUUID: "cmd-enroll-001",
+            requestType: "DeviceInformation",
+            payload: { Queries: ["DeviceName", "SerialNumber"] },
+          }),
+        ),
     });
 
     const handler = await makeMdmHandler(backend);
@@ -114,13 +123,18 @@ describe("Apple MDM E2E", () => {
 
     const checkinBody = await checkinRes.text();
 
-    const commandPlist = (await parsePlist(checkinBody).pipe(Effect.runPromise)) as Record<
-      string,
-      unknown
-    >;
+    const commandPlist = await parsePlist(checkinBody).pipe(Effect.runPromise);
 
-    expect(commandPlist.CommandUUID).toBe("cmd-enroll-001");
-    expect((commandPlist.Command as any).RequestType).toBe("DeviceInformation");
+    if (!Schema.is(PlistDictionary)(commandPlist))
+      throw new Error("check-in response must be a plist dictionary");
+
+    expect(commandPlist["CommandUUID"]).toBe("cmd-enroll-001");
+
+    const command = commandPlist["Command"];
+
+    if (!Schema.is(PlistDictionary)(command)) throw new Error("command must be a plist dictionary");
+
+    expect(command["RequestType"]).toBe("DeviceInformation");
 
     // ── Step 4: CommandResult ─────────────────────────────────────────
     const resultPlist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -171,20 +185,34 @@ describe("Apple MDM E2E", () => {
 
     // ── Verify events were recorded in order ──────────────────────────
     expect(events).toHaveLength(4);
-    expect(events[0].type).toBe("Authenticate");
-    expect(events[1].type).toBe("TokenUpdate");
-    expect(events[2].type).toBe("CommandResult");
-    expect(events[3].type).toBe("CheckOut");
+    expect(events.map((event) => event._tag)).toEqual([
+      "Authenticate",
+      "TokenUpdate",
+      "CommandResult",
+      "CheckOut",
+    ]);
 
-    const authEvent = events[0].payload as any;
+    const authEvent = events[0];
+
+    if (!authEvent || !Predicate.isTagged(authEvent, "Authenticate"))
+      throw new Error("expected an Authenticate event");
+
     expect(authEvent.serialNumber).toBe("E2ESN001");
 
-    const tokenEvent = events[1].payload as any;
+    const tokenEvent = events[1];
+
+    if (!tokenEvent || !Predicate.isTagged(tokenEvent, "TokenUpdate"))
+      throw new Error("expected a TokenUpdate event");
+
     expect(tokenEvent.pushMagic).toBe("magic-e2e-001");
 
-    const resultEvent = events[2].payload as any;
+    const resultEvent = events[2];
+
+    if (!resultEvent || !Predicate.isTagged(resultEvent, "CommandResult"))
+      throw new Error("expected a CommandResult event");
+
     expect(resultEvent.status).toBe("Acknowledged");
-    expect(resultEvent.queryResponses.DeviceName).toBe("E2E-MacBook");
+    expect(resultEvent.queryResponses?.["DeviceName"]).toBe("E2E-MacBook");
   });
 
   it("handles DDM tokens and declaration-items flow", async () => {
@@ -230,7 +258,7 @@ describe("Apple MDM E2E", () => {
     );
 
     expect(tokensRes.status).toBe(200);
-    const tokensData = (await tokensRes.json()) as Record<string, any>;
+    const tokensData = await tokensRes.json();
     expect(tokensData.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
     expect(tokensData.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
@@ -255,7 +283,7 @@ describe("Apple MDM E2E", () => {
     );
 
     expect(itemsRes.status).toBe(200);
-    const itemsData = (await itemsRes.json()) as Record<string, any>;
+    const itemsData = await itemsRes.json();
     expect(itemsData.Declarations.Activations).toHaveLength(1);
     expect(itemsData.Declarations.Configurations).toHaveLength(1);
     expect(itemsData.Declarations.Assets).toHaveLength(1);

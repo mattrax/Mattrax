@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
@@ -19,7 +19,7 @@ export const CLIENT_AUTH_EKU_OID = "1.3.6.1.5.5.7.3.2";
 export const MS_DEVICE_ID_OID = "1.3.6.1.4.1.311.66.1.0";
 
 const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
-  if (typeof csr !== "string") return csr;
+  if (!Schema.is(Schema.String)(csr)) return csr;
   const input = csr.trim();
 
   if (input.includes("CERTIFICATE REQUEST")) {
@@ -36,15 +36,27 @@ const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
   return base64ToArrayBuffer(input.replace(/\s/g, ""));
 };
 
+type AttributeValueBlock = { readonly value?: unknown };
+
+function hasAttributeValue(node: unknown): node is AttributeValueBlock {
+  return typeof node === "object" && node !== null && "value" in node;
+}
+
+function attributeValue(attribute: pkijs.AttributeTypeAndValue): string | undefined {
+  const block: unknown = attribute.value.valueBlock;
+
+  if (!hasAttributeValue(block)) return undefined;
+
+  return Schema.is(Schema.String)(block.value) ? block.value : undefined;
+}
+
 const subjectFromCsr = (csr: pkijs.CertificationRequest, fallback: string) => {
   const subject: Array<{ type: string; value: string }> = [];
 
   for (const rdn of csr.subject.typesAndValues) {
-    const value = rdn.value.valueBlock as { value?: unknown } | undefined;
+    const value = attributeValue(rdn);
 
-    if (typeof value?.value === "string") {
-      subject.push({ type: rdn.type, value: value.value });
-    }
+    if (value !== undefined) subject.push({ type: rdn.type, value });
   }
 
   if (!subject.some((item) => item.type === "2.5.4.3")) {

@@ -13,10 +13,21 @@ const migrationNames = () =>
 const readMigration = (name: string) =>
   readFileSync(join(migrationsDir, name, "migration.sql"), "utf8");
 
-const readSnapshot = (name: string) =>
-  JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8")) as {
-    ddl: Array<Record<string, any>>;
-  };
+type MigrationDdlEntry = {
+  readonly entityType?: string;
+  readonly name?: string;
+  readonly table?: string;
+  readonly type?: string;
+  readonly notNull?: boolean;
+  readonly default?: string;
+};
+
+type MigrationSnapshot = {
+  readonly ddl: ReadonlyArray<MigrationDdlEntry>;
+};
+
+const readSnapshot = (name: string): MigrationSnapshot =>
+  JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8"));
 
 const DEVICE_INVENTORY_COLUMNS = [
   "filevault_enabled",
@@ -267,6 +278,44 @@ describe("MFA migration", () => {
   });
 });
 
+describe("SCEP challenge migration", () => {
+  const names = migrationNames();
+
+  const challengeMigrations = names.filter((name) =>
+    readMigration(name).includes("CREATE TABLE `scep_challenge`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(challengeMigrations).toHaveLength(1);
+  });
+
+  it("creates a tenant-scoped one-time challenge table", () => {
+    const sql = readMigration(challengeMigrations[0]!);
+    expect(sql).toContain("`id` varchar(255) PRIMARY KEY");
+    expect(sql).toContain("`organization_id` varchar(255) NOT NULL");
+    expect(sql).toContain("`enrollment_id` varchar(255) NOT NULL");
+    expect(sql).toContain("`expires_at` datetime(3) NOT NULL");
+    expect(sql).toContain("`consumed_at` datetime(3)");
+    expect(sql).toContain("`created_at` datetime(3) NOT NULL");
+    expect(sql).toContain("ON DELETE CASCADE");
+  });
+
+  it("ships a snapshot with the expected columns", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "scep_challenge")
+        .map((entry) => [entry.name, entry]),
+    );
+
+    expect(columns.get("id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(columns.get("organization_id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(columns.get("expires_at")).toMatchObject({ type: "datetime(3)", notNull: true });
+    expect(columns.get("consumed_at")).toMatchObject({ type: "datetime(3)", notNull: false });
+  });
+});
+
 describe("dynamic groups migration", () => {
   const names = migrationNames();
 
@@ -314,6 +363,48 @@ describe("dynamic groups migration", () => {
       type: "varchar(16)",
       notNull: true,
       default: "'manual'",
+    });
+  });
+});
+
+describe("onboarding email marker migration", () => {
+  const names = migrationNames();
+
+  const markerMigrations = names.filter(
+    (name) =>
+      readMigration(name).includes("`welcome_email_sent_at`") &&
+      readMigration(name).includes("`onboarding_follow_up_sent_at`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(markerMigrations).toHaveLength(1);
+  });
+
+  it("adds nullable one-time markers to user and organization", () => {
+    const sql = readMigration(markerMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `user` ADD `welcome_email_sent_at` datetime(3)");
+    expect(sql).toContain(
+      "ALTER TABLE `organization` ADD `onboarding_follow_up_sent_at` datetime(3)",
+    );
+    expect(sql).not.toContain("NOT NULL");
+  });
+
+  it("ships a snapshot with nullable datetime markers", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns")
+        .map((entry) => [`${entry.table}.${entry.name}`, entry]),
+    );
+
+    expect(columns.get("user.welcome_email_sent_at")).toMatchObject({
+      type: "datetime(3)",
+      notNull: false,
+    });
+    expect(columns.get("organization.onboarding_follow_up_sent_at")).toMatchObject({
+      type: "datetime(3)",
+      notNull: false,
     });
   });
 });

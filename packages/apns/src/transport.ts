@@ -30,7 +30,7 @@ export type ApnsPushTransport = {
 export const apnsDeviceUrl = (pushToken: string) =>
   `${APNS_PRODUCTION_ENDPOINT}/3/device/${pushToken}`;
 
-export const apnsHeaders = (topic: string): Record<string, string> => ({
+export const apnsHeaders = (topic: string) => ({
   "apns-topic": topic,
   "apns-push-type": "mdm",
   "apns-priority": "10",
@@ -119,13 +119,13 @@ export function NodePushTransport(defaults?: {
               } catch {}
             };
 
-            const fail = (error: unknown) => {
+            const fail = (cause: unknown) => {
               if (settled) return;
               settled = true;
 
               if (timer !== undefined) clearTimeout(timer);
               close();
-              reject(error);
+              reject(cause);
             };
 
             timer = setTimeout(() => fail(timeoutError()), timeoutMs);
@@ -184,6 +184,9 @@ export function MtlsPushTransport(options: {
 }): ApnsPushTransport {
   const timeoutMs = options.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
 
+  const fetch: typeof globalThis.fetch = (input, init) =>
+    options.fetch(new Request(input, init));
+
   return {
     name: "mtls",
     available: true,
@@ -199,7 +202,7 @@ export function MtlsPushTransport(options: {
               body: request.body,
             }),
             {},
-            { timeoutMs, fetch: options.fetch as typeof globalThis.fetch },
+            { timeoutMs, fetch },
           );
 
           if (response.status !== 200)

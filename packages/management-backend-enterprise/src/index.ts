@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import {
   Db,
@@ -9,6 +9,7 @@ import {
 import { deriveDeviceHealth, resolveTenantBranding } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
+import { PlistValue } from "@mattrax/plist";
 import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
 import {
   InternalServerError,
@@ -21,8 +22,9 @@ import {
   type DdmTokens,
   type ManagementManifest,
 } from "@mattrax/management-backend";
-import { certificateDeviceIdsFor, makeWindowsBackend } from "./windows.ts";
+import { certificateDeviceIdsFor, createWindowsBackend } from "./windows.ts";
 import { normalizeIssuedCertificateSerial } from "./scep.ts";
+import { isPlistObject, type PlistInput, type PlistObject } from "./internal/plistValue.js";
 import { parseDeviceInventory } from "./inventory.ts";
 import { parseSecurityInfo } from "./securityInfo.ts";
 import { parseInstalledApplications } from "./applications.ts";
@@ -83,15 +85,15 @@ export const DEVICE_INFORMATION_STATUS_ITEMS = [
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
 
-const internal = (_cause: unknown) => new InternalServerError();
+const internal = () => new InternalServerError();
 
-const record = (value: unknown) =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+const record = (value: PlistInput): PlistObject | undefined =>
+  isPlistObject(value) ? value : undefined;
 
-const stringField = (value: unknown, key: string) => {
+const stringField = (value: PlistInput, key: string) => {
   const field = record(value)?.[key];
 
-  return typeof field === "string" ? field : undefined;
+  return Schema.is(Schema.String)(field) ? field : undefined;
 };
 
 const decodeHeader = (value: string) => {
@@ -129,7 +131,7 @@ const hashToken = async (parts: Iterable<string>) => {
     .toUpperCase();
 };
 
-const jsonHash = async (value: unknown) => hashToken([JSON.stringify(value)]);
+const jsonHash = async (value: Schema.Json) => hashToken([JSON.stringify(value)]);
 
 /**
  * The status-subscription declaration's server token must change whenever the
@@ -242,7 +244,11 @@ const bindAppleIdentityCertificate = (
       );
   });
 
-const scopedConfigurations = (deviceId: string) =>
+type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
+
+const scopedConfigurations = (
+  deviceId: string,
+): Effect.Effect<ReadonlyArray<ScopedConfiguration>, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
 
@@ -284,15 +290,13 @@ const deviceTokenFor = (deviceId: string) =>
     return apple?.deviceToken ?? deviceId;
   }).pipe(Effect.mapError(internal));
 
-type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
-
 const declarationItemsForDevice = (
   deviceId: string,
   deviceToken: string,
   context: Pick<DeclarationContext, "origin" | "authSecret">,
 ): Effect.Effect<DdmDeclarationItems, unknown, Db> =>
   Effect.gen(function* () {
-    const rows = (yield* scopedConfigurations(deviceId)) as Array<ScopedConfiguration>;
+    const rows = yield* scopedConfigurations(deviceId);
     const groups = new Map<string, Array<{ kind: string; policyId: string }>>();
 
     for (const row of rows) {
@@ -348,15 +352,19 @@ const declarationItemsForDevice = (
 
     const assets = yield* Effect.promise(() =>
       Promise.all(
-        [...uniqueConfigurations.values()]
-          .filter((row) => isCertificateKind(row.kind))
-          .map(async (row) => ({
-            identifier: configurationAssetIdentifier(row.policyId, row.kind),
-            serverToken: await configurationAssetServerToken(row, {
-              origin: context.origin,
-              deviceToken,
-            }),
-          })),
+        [...uniqueConfigurations.values()].flatMap((row) =>
+          isCertificateKind(row.kind)
+            ? [
+                configurationAssetServerToken(row, {
+                  origin: context.origin,
+                  deviceToken,
+                }).then((serverToken) => ({
+                  identifier: configurationAssetIdentifier(row.policyId, row.kind),
+                  serverToken,
+                })),
+              ]
+            : [],
+        ),
       ),
     );
 
@@ -373,30 +381,29 @@ const declarationItemsForDevice = (
 const updateInventoryFromStatus = (
   deviceId: string,
   organizationId: string,
-  statusItems: unknown,
+  statusItems: PlistInput,
   options: { readonly authSecret?: string } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
-    if (!statusItems || typeof statusItems !== "object") return;
+    const root = record(statusItems);
+
+    if (!root) return;
     const db = yield* Db;
-    const root = statusItems as Record<string, unknown>;
     const inventory = parseDeviceInventory(root);
 
     // Compliance is derived, not stored. Capture the rollup before the write
     // so a level transition can be audited (and mirrored to webhooks) even
     // when it comes from inventory rather than declaration validity.
-    const [deviceBefore] = (yield* db
+    const [deviceBefore] = yield* db
       .select()
       .from(s.device)
       .where(eq(s.device.id, deviceId))
-      .limit(1)) as Array<typeof s.device.$inferSelect>;
+      .limit(1);
 
-    const declarationsBefore = (yield* db
+    const declarationsBefore = yield* db
       .select()
       .from(s.deviceDeclaration)
-      .where(eq(s.deviceDeclaration.deviceId, deviceId))) as Array<
-      typeof s.deviceDeclaration.$inferSelect
-    >;
+      .where(eq(s.deviceDeclaration.deviceId, deviceId));
 
     const healthInput = (
       device: typeof s.device.$inferSelect,
@@ -439,7 +446,7 @@ const updateInventoryFromStatus = (
           )
         : Effect.void;
 
-    const update: Record<string, unknown> = { lastSeenAt: now() };
+    const update: Partial<typeof s.device.$inferInsert> = { lastSeenAt: now() };
 
     if (inventory.serial) update.serial = inventory.serial;
 
@@ -497,7 +504,7 @@ const updateInventoryFromStatus = (
       if (deviceBefore)
         yield* auditComplianceChange(
           deriveDeviceHealth(
-            healthInput({ ...deviceBefore, ...update } as typeof deviceBefore, declarationsBefore),
+            healthInput({ ...deviceBefore, ...update }, declarationsBefore),
           ),
         );
 
@@ -585,16 +592,14 @@ const updateInventoryFromStatus = (
       );
 
     if (deviceBefore) {
-      const declarationsAfter = (yield* db
+      const declarationsAfter = yield* db
         .select()
         .from(s.deviceDeclaration)
-        .where(eq(s.deviceDeclaration.deviceId, deviceId))) as Array<
-        typeof s.deviceDeclaration.$inferSelect
-      >;
+        .where(eq(s.deviceDeclaration.deviceId, deviceId));
 
       yield* auditComplianceChange(
         deriveDeviceHealth(
-          healthInput({ ...deviceBefore, ...update } as typeof deviceBefore, declarationsAfter),
+          healthInput({ ...deviceBefore, ...update }, declarationsAfter),
         ),
       );
     }
@@ -657,13 +662,16 @@ const writeDeviceSecret = (
         .catch(() => false),
     );
 
+    const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
+      sealedValue: sealed,
+      updatedAt: timestamp,
+    };
+
+    if (!unchanged) secretUpdate.rotatedAt = timestamp;
+
     yield* db
       .update(s.deviceSecret)
-      .set({
-        sealedValue: sealed,
-        updatedAt: timestamp,
-        ...(unchanged ? {} : { rotatedAt: timestamp }),
-      })
+      .set(secretUpdate)
       .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)));
   });
 
@@ -673,7 +681,7 @@ const writeDeviceSecret = (
  */
 const applySecurityInfo = (
   device: Pick<DeviceRow, "id" | "organizationId">,
-  queryResponses: unknown,
+  queryResponses: PlistInput,
   options: { readonly authSecret?: string },
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
@@ -715,7 +723,7 @@ const applySecurityInfo = (
  */
 const applyInstalledApplications = (
   device: Pick<DeviceRow, "id" | "organizationId">,
-  queryResponses: unknown,
+  queryResponses: PlistInput,
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     const applications = parseInstalledApplications(queryResponses);
@@ -724,12 +732,10 @@ const applyInstalledApplications = (
     const db = yield* Db;
     const timestamp = now();
 
-    const existing = (yield* db
+    const existing = yield* db
       .select()
       .from(s.deviceApplication)
-      .where(eq(s.deviceApplication.deviceId, device.id))) as Array<
-      typeof s.deviceApplication.$inferSelect
-    >;
+      .where(eq(s.deviceApplication.deviceId, device.id));
 
     const byBundle = new Map(existing.map((row) => [row.bundleId, row]));
 
@@ -810,7 +816,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     /** Deployment plan catalogue; omitted means unlimited plans. */
     readonly planLimits?: PlanLimitsConfig;
     /** Federated Entra WSTEP options; omitted disables Federated discovery. */
-    readonly windowsFederated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
+    readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret } = options;
 
@@ -842,6 +848,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (!certificate?.encryptedKey) return;
 
+        // SAFETY: The APNs key is stored as a JWK by the settings writer, and
+        // importPrivateKeyJwk validates the key material before use.
         const jwk = JSON.parse(
           yield* Effect.tryPromise({
             try: () => openSecret(authSecret, certificate.encryptedKey!),
@@ -877,7 +885,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         Effect.flatMap((device) =>
           device ? Effect.succeed(device) : Effect.fail(new UnknownDevice()),
         ),
-        Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal(cause))),
+        Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
       );
 
     /**
@@ -890,12 +898,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         Effect.catch(() => Effect.void),
       );
 
+    const windowsBackendOptions: Parameters<typeof createWindowsBackend>[0] = {
+      db,
+      origin,
+      authSecret,
+      windowsOrganizationId: options.windowsOrganizationId,
+      requireDeviceIdentity: options.requireWindowsDeviceIdentity,
+      planLimits: options.planLimits,
+      federated: options.windowsFederated,
+    };
+
     return ManagementBackend.of({
       appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
         provideDb(
           Effect.gen(function* () {
             return yield* Effect.gen(function* () {
-              if (event._tag === "Authenticate") {
+              if (Predicate.isTagged("Authenticate")(event)) {
                 const organizationId = certificateOu(scope.identityCertificate);
 
                 if (!organizationId) return yield* Effect.fail(new UnknownDevice());
@@ -982,17 +1000,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   return yield* Effect.fail(new UnknownDevice());
                 const deviceId = existing?.id ?? id();
 
-                const preRegistrationMetadata = preRegistration
-                  ? {
-                      ...(preRegistration.name?.trim()
-                        ? { name: preRegistration.name.trim() }
-                        : {}),
-                      ...(preRegistration.assetTag != null
-                        ? { assetTag: preRegistration.assetTag }
-                        : {}),
-                      ...(preRegistration.notes != null ? { notes: preRegistration.notes } : {}),
-                    }
-                  : {};
+                const preRegistrationMetadata: Partial<typeof s.device.$inferInsert> = {};
+
+                if (preRegistration) {
+                  const name = preRegistration.name?.trim();
+
+                  if (name) preRegistrationMetadata.name = name;
+
+                  if (preRegistration.assetTag != null)
+                    preRegistrationMetadata.assetTag = preRegistration.assetTag;
+
+                  if (preRegistration.notes != null)
+                    preRegistrationMetadata.notes = preRegistration.notes;
+                }
 
                 const common = {
                   organizationId,
@@ -1087,7 +1107,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               if (!device) return yield* Effect.fail(new UnknownDevice());
               yield* bindAppleIdentityCertificate(device, scope);
 
-              if (event._tag === "TokenUpdate") {
+              if (Predicate.isTagged("TokenUpdate")(event)) {
                 if (event.channel === "user" && event.userId) {
                   yield* db
                     .insert(s.deviceAppleUser)
@@ -1110,19 +1130,23 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       },
                     });
                 } else {
+                  const appleUpdate: Partial<typeof s.deviceApple.$inferInsert> = {
+                    token: event.pushToken,
+                    pushMagic: event.pushMagic,
+                    topic: event.topic,
+                    tokenUpdatedAt: now(),
+                  };
+
+                  if (event.unlockToken) appleUpdate.unlockToken = event.unlockToken;
+
+                  if (event.enrollmentId) appleUpdate.enrollmentId = event.enrollmentId;
+
+                  if (event.awaitingConfiguration !== undefined)
+                    appleUpdate.configured = !event.awaitingConfiguration;
+
                   yield* db
                     .update(s.deviceApple)
-                    .set({
-                      token: event.pushToken,
-                      pushMagic: event.pushMagic,
-                      topic: event.topic,
-                      ...(event.unlockToken ? { unlockToken: event.unlockToken } : {}),
-                      ...(event.enrollmentId ? { enrollmentId: event.enrollmentId } : {}),
-                      ...(event.awaitingConfiguration !== undefined
-                        ? { configured: !event.awaitingConfiguration }
-                        : {}),
-                      tokenUpdatedAt: now(),
-                    })
+                    .set(appleUpdate)
                     .where(eq(s.deviceApple.deviceId, device.id));
                 }
 
@@ -1153,7 +1177,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
-              if (event._tag === "BootstrapToken") {
+              if (Predicate.isTagged("BootstrapToken")(event)) {
                 // Keep the plaintext column for pre-sealing rows only. New
                 // tokens are sealed in `device_secret` and the clear copy is
                 // cleared, so the escrowed secret has one at-rest location.
@@ -1174,7 +1198,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
-              if (event._tag === "CheckOut") {
+              if (Predicate.isTagged("CheckOut")(event)) {
                 if (event.userId) {
                   yield* db
                     .delete(s.deviceAppleUser)
@@ -1238,7 +1262,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
-              if (event._tag === "CommandResult") {
+              if (Predicate.isTagged("CommandResult")(event)) {
                 const [command] = yield* db
                   .select()
                   .from(s.deviceCommand)
@@ -1250,14 +1274,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   )
                   .limit(1);
 
-                const nextStatus =
-                  event.status === "Acknowledged"
-                    ? "succeeded"
-                    : event.status === "NotNow"
-                      ? "not-now"
-                      : event.status === "Idle"
-                        ? "sent"
-                        : "failed";
+                const nextStatus = Match.value(event.status).pipe(
+                  Match.when("Acknowledged", () => "succeeded"),
+                  Match.when("NotNow", () => "not-now"),
+                  Match.when("Idle", () => "sent"),
+                  Match.orElse(() => "failed"),
+                );
 
                 yield* db
                   .update(s.deviceCommand)
@@ -1299,8 +1321,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // SecurityInfo and InstalledApplicationList responses are
                 // attached to the same command result envelope. Persist both
                 // idempotently so retries cannot duplicate rows.
-                yield* applySecurityInfo(device, event.queryResponses, { authSecret });
-                yield* applyInstalledApplications(device, event.queryResponses);
+
+                const queryResponses = Option.getOrUndefined(
+                  Schema.decodeUnknownOption(PlistValue)(event.queryResponses),
+                );
+
+                yield* applySecurityInfo(device, queryResponses, { authSecret });
+                yield* applyInstalledApplications(device, queryResponses);
                 yield* db
                   .update(s.device)
                   .set({ lastSeenAt: now() })
@@ -1310,11 +1337,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
-              if (event._tag === "DeclarationStatus") {
+              if (Predicate.isTagged("DeclarationStatus")(event)) {
                 yield* updateInventoryFromStatus(
                   device.id,
                   device.organizationId,
-                  event.statusItems,
+                  Option.getOrUndefined(
+                    Schema.decodeUnknownOption(PlistValue)(event.statusItems),
+                  ),
                   { authSecret },
                 );
                 yield* syncDeviceGroups(device.organizationId, device.id);
@@ -1329,7 +1358,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               yield* syncDeviceGroups(device.organizationId, device.id);
             }).pipe(
               Effect.mapError((cause) =>
-                cause instanceof UnknownDevice ? cause : internal(cause),
+                cause instanceof UnknownDevice ? cause : internal(),
               ),
             );
           }),
@@ -1428,7 +1457,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             Effect.mapError((cause) =>
               cause instanceof UnknownDevice || cause instanceof ServerInitiatedUnenrollment
                 ? cause
-                : internal(cause),
+                : internal(),
             ),
           ),
         ),
@@ -1467,7 +1496,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             return apple?.bootstrapToken ?? null;
           }).pipe(
-            Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal(cause))),
+            Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
           ),
         ),
 
@@ -1577,9 +1606,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             }
 
             if (type === "activation") {
-              const rows = (yield* scopedConfigurations(device.id).pipe(
-                Effect.mapError(internal),
-              )) as Array<ScopedConfiguration>;
+              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
 
               const configurations = rows
                 .filter((row) => row.groupId === identifier)
@@ -1610,9 +1637,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (type === "configuration") {
               const { policyId, kind } = splitConfigurationDeclarationIdentifier(identifier);
 
-              const rows = (yield* scopedConfigurations(device.id).pipe(
-                Effect.mapError(internal),
-              )) as Array<ScopedConfiguration>;
+              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
 
               const row = rows.find((item) => item.policyId === policyId && item.kind === kind);
 
@@ -1629,9 +1654,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               if (!parsed) return null;
 
-              const rows = (yield* scopedConfigurations(device.id).pipe(
-                Effect.mapError(internal),
-              )) as Array<ScopedConfiguration>;
+              const rows = yield* scopedConfigurations(device.id).pipe(Effect.mapError(internal));
 
               const row = rows.find(
                 (item) => item.policyId === parsed.policyId && item.kind === parsed.kind,
@@ -1680,7 +1703,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (!parsed) return null;
 
-            const [row] = (yield* db
+            const [row] = yield* db
               .select()
               .from(s.configuration)
               .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
@@ -1691,17 +1714,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ),
               )
               .limit(1)
-              .pipe(Effect.mapError(internal))) as Array<{
-              configuration: typeof s.configuration.$inferSelect;
-              policy: typeof s.policy.$inferSelect;
-            }>;
+              .pipe(Effect.mapError(internal));
 
             if (!row || !isCertificateKind(row.configuration.kind)) return null;
+
+            const data = Schema.decodeUnknownOption(Schema.Json)(row.configuration.data);
+
+            if (Option.isNone(data)) return null;
 
             const configRow: PolicyConfigurationRow = {
               policyId: row.configuration.policyId,
               kind: row.configuration.kind,
-              data: row.configuration.data,
+              data: data.value,
               hash: row.configuration.hash,
               organizationId: row.policy.organizationId,
             };
@@ -1727,24 +1751,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       getAppleProfile: (policyId, kind) =>
         provideDb(
           Effect.gen(function* () {
-            const [row] = (yield* db
+            const [row] = yield* db
               .select()
               .from(s.configuration)
               .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
               .limit(1)
-              .pipe(Effect.mapError(internal))) as Array<typeof s.configuration.$inferSelect>;
+              .pipe(Effect.mapError(internal));
 
             if (!row) return null;
             const parsed = parseConfigurationKind(row.kind);
 
             if (parsed.type !== "device" && parsed.type !== "custom") return null;
 
+            const data = Schema.decodeUnknownOption(Schema.Json)(row.data);
+
+            if (Option.isNone(data)) return null;
+
             return yield* Effect.tryPromise({
               try: () =>
                 buildLegacyProfile({
                   policyId: row.policyId,
                   kind: row.kind,
-                  data: row.data,
+                  data: data.value,
                   hash: row.hash,
                 }),
               catch: internal,
@@ -1752,15 +1780,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
-      ...makeWindowsBackend({
-        db,
-        origin,
-        authSecret,
-        windowsOrganizationId: options.windowsOrganizationId,
-        requireDeviceIdentity: options.requireWindowsDeviceIdentity,
-        planLimits: options.planLimits,
-        ...(options.windowsFederated ? { federated: options.windowsFederated } : {}),
-      }),
+      ...createWindowsBackend(windowsBackendOptions),
     });
   };
 
@@ -1773,7 +1793,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly requireWindowsDeviceIdentity?: boolean;
       readonly requireAppleDeviceIdentity?: boolean;
       readonly planLimits?: PlanLimitsConfig;
-      readonly windowsFederated?: Parameters<typeof makeWindowsBackend>[0]["federated"];
+      readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
     },
   ) =>
     Layer.effect(
@@ -1849,7 +1869,13 @@ export {
 
 export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
 
-export { ScepRepositoryLive } from "./scep.ts";
+export {
+  ScepRepositoryLive,
+  issueScepChallenge,
+  scepChallengeId,
+  type IssueScepChallengeOptions,
+  type IssuedScepChallenge,
+} from "./scep.ts";
 
 export * from "./policy.ts";
 

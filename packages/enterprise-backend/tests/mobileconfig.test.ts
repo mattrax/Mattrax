@@ -7,7 +7,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
 }
 
@@ -92,13 +92,15 @@ describe("mobileconfig preview", () => {
   });
 
   it("extracts the embedded plist from a PKCS#7 signed mobileconfig", async () => {
+    // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
+    // asked to generate; the DOM runtime type is wider than that overload.
     const keyPair = (await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
         modulusLength: 2048,
         publicExponent: new Uint8Array([1, 0, 1]),
-      } as RsaHashedKeyGenParams,
+      } satisfies RsaHashedKeyGenParams,
       true,
       ["sign", "verify"],
     )) as CryptoKeyPair;

@@ -1,13 +1,18 @@
-import type { MeResponse } from "@mattrax/enterprise-domain";
+import { MeResponse } from "@mattrax/enterprise-domain/client";
+import { Option, Schema } from "effect";
 
 const ME_CACHE_KEY = "mattrax:me-cache:v1";
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-type CachedMe = {
-  readonly userId: string;
-  readonly updatedAt: number;
-  readonly data: MeResponse;
-};
+const CachedMe = Schema.Struct({
+  userId: Schema.String,
+  updatedAt: Schema.Number,
+  data: MeResponse,
+});
+
+type CachedMe = typeof CachedMe.Type;
+
+const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
 
 /**
  * The dashboard shell needs the user and tenant list on every page. Cache it
@@ -22,7 +27,10 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
     const raw = localStorage.getItem(ME_CACHE_KEY);
 
     if (!raw) return undefined;
-    const cached = JSON.parse(raw) as CachedMe;
+
+    const cached = Option.getOrUndefined(decodeCachedMe(JSON.parse(raw)));
+
+    if (cached === undefined) return undefined;
 
     if (
       cached.userId !== userId ||

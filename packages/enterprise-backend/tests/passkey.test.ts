@@ -71,7 +71,7 @@ describe("passkey as an MFA factor", () => {
     expect(hasMfaFactor({})).toBe(false);
   });
 
-  it("puts passkey-only accounts on the MFA requirement", () => {
+  it("keeps passkey-only accounts on the single passkey requirement", () => {
     const requirement = authRequirementForSubject({
       totpEnabled: false,
       passkeyEnabled: true,
@@ -89,18 +89,20 @@ describe("passkey as an MFA factor", () => {
     ).toBe(true);
   });
 
-  it("keeps TOTP accounts on password plus authenticator", () => {
+  it("requires a second credential once TOTP is enabled", () => {
     const requirement = authRequirementForSubject({
       totpEnabled: true,
-      passkeyEnabled: false,
+      passkeyEnabled: true,
     });
 
     expect(
       requirement.alternatives.some(
         (item) =>
           item.minimumCredentials === 2 &&
-          item.factors.includes("knowledge") &&
-          item.factors.includes("possession"),
+          item.factors.length === 1 &&
+          item.factors[0] === "possession" &&
+          item.userVerified &&
+          item.phishingResistant,
       ),
     ).toBe(true);
   });

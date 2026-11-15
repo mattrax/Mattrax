@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { useQuery, useQueryClient } from "@tanstack/solid-query";
+import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createEffect, createSignal, type ParentProps, onSettled, Show } from "solid-js";
 import { AppShell } from "~/components/app-shell";
@@ -7,11 +7,12 @@ import { QueryError } from "~/components/mdm/common";
 import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
+import { queryClient } from "~/lib/query-client";
 import { meQueryOptions } from "~/lib/enterprise";
-import { errorTag } from "~/lib/errors";
+import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
 import { reportGlobalError } from "~/lib/global-errors";
-import { syncPostHogTenant } from "~/lib/posthog";
+import { syncPostHogTenant, syncPostHogUser } from "~/lib/posthog";
 import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
 
 function DashboardBootScreen() {
@@ -27,7 +28,7 @@ function DashboardBootScreen() {
   );
 }
 
-export default function DashboardLayout(props: ParentProps) {
+function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,7 +62,7 @@ export default function DashboardLayout(props: ParentProps) {
     meQueryOptions(session().data?.user?.id, !isServer && canLoadSession()),
   );
 
-  const unauthorized = () => me.isError && errorTag(me.error) === "EnterpriseUnauthorized";
+  const unauthorized = () => me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
 
   const shellUser = () =>
     session().data?.user ?? (session().isPending && presenceActive() ? me.data?.user : undefined);
@@ -134,7 +135,7 @@ export default function DashboardLayout(props: ParentProps) {
         return;
       }
     } catch (error) {
-      reportGlobalError(error);
+      reportGlobalError(raisedFailure(error));
 
       return;
     }
@@ -173,5 +174,35 @@ export default function DashboardLayout(props: ParentProps) {
         </Show>
       )}
     </Show>
+  );
+}
+
+/**
+ * Keep browser analytics identity aligned with the dashboard session. The
+ * server-side API capture uses the authenticated id; this makes browser
+ * pageviews, session ids and server events resolve to the same person.
+ */
+function PostHogIdentity() {
+  const session = authClient.useSession();
+  createEffect(
+    () => {
+      const state = session();
+
+      return state.isPending ? undefined : (state.data?.user ?? null);
+    },
+    (user) => {
+      if (user !== undefined) syncPostHogUser(user);
+    },
+  );
+
+  return null;
+}
+
+export default function DashboardRoute(props: ParentProps) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PostHogIdentity />
+      <DashboardLayout {...props} />
+    </QueryClientProvider>
   );
 }

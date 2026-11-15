@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:net";
 import { pemEncode } from "@mattrax/crypto";
@@ -95,11 +95,11 @@ describe("APNs relay transport", () => {
       url: "https://relay.test/apns",
       secret: "relay-secret",
       now: () => 1_700_000_000,
-      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         captured = { url: String(input), init: init ?? {} };
 
         return new Response("", { status: 200 });
-      }) as typeof fetch,
+      },
     });
 
     await Effect.runPromise(
@@ -114,10 +114,10 @@ describe("APNs relay transport", () => {
 
     expect(captured?.url).toBe("https://relay.test/apns");
     expect(captured?.init.method).toBe("POST");
-    const headers = captured?.init.headers as Record<string, string>;
-    expect(headers["content-type"]).toBe("application/json");
+    const headers = new Headers(captured?.init.headers);
+    expect(headers.get("content-type")).toBe("application/json");
 
-    const body = captured?.init.body as string;
+    const body = String(captured?.init.body ?? "");
     expect(JSON.parse(body)).toEqual({
       pushToken: "abcd1234",
       pushMagic: "magic-1",
@@ -130,15 +130,15 @@ describe("APNs relay transport", () => {
       .update(`1700000000.${body}`)
       .digest("hex");
 
-    expect(headers["x-apns-timestamp"]).toBe("1700000000");
-    expect(headers["x-apns-signature"]).toBe(expected);
+    expect(headers.get("x-apns-timestamp")).toBe("1700000000");
+    expect(headers.get("x-apns-signature")).toBe(expected);
   });
 
   it("reports failures from the relay", async () => {
     const transport = RelayPushTransport({
       url: "https://relay.test/apns",
       secret: "relay-secret",
-      fetch: (async () => new Response("nope", { status: 502 })) as typeof fetch,
+      fetch: async () => new Response("nope", { status: 502 }),
     });
 
     const error = await Effect.runPromise(
@@ -172,13 +172,13 @@ describe("APNs outbound timeouts", () => {
 
     const transport = MtlsPushTransport({
       timeoutMs: 25,
-      fetch: ((_request: Request, init?: RequestInit) =>
+      fetch: (request: Request) =>
         new Promise<Response>((_resolve, reject) => {
-          aborted = init?.signal ?? undefined;
-          init?.signal?.addEventListener("abort", () =>
+          aborted = request.signal;
+          request.signal.addEventListener("abort", () =>
             reject(new DOMException("aborted", "AbortError")),
           );
-        })) as unknown as (request: Request) => Promise<Response>,
+        }),
     });
 
     const started = Date.now();
@@ -194,15 +194,15 @@ describe("APNs outbound timeouts", () => {
       url: "https://relay.test/apns",
       secret: "relay-secret",
       timeoutMs: 25,
-      fetch: ((_input: RequestInfo | URL, init?: RequestInit) =>
+      fetch: (_input: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () =>
             reject(new DOMException("aborted", "AbortError")),
           );
-        })) as typeof fetch,
+        }),
     });
 
-    const error = await push(transport as ReturnType<typeof MtlsPushTransport>);
+    const error = await push(transport);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
   });
@@ -218,7 +218,7 @@ describe("APNs outbound timeouts", () => {
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
-    const port = typeof address === "object" && address ? address.port : 0;
+    const port = Schema.is(Schema.Struct({ port: Schema.Number }))(address) ? address.port : 0;
 
     const keys = await createTestApnsKeys();
 

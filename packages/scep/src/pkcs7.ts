@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { privateDecrypt, publicEncrypt, constants, createDecipheriv } from "node:crypto";
@@ -52,6 +52,23 @@ const SCEP_FAIL_INFO = "2.16.840.1.113733.1.9.4";
 
 // ─── EnvelopedData Decryption ─────────────────────────────────────
 
+/** Narrow an ASN.1 node to one that carries a primitive hex value. */
+function hasHexValue(
+  node: unknown,
+): node is { valueBlock: { valueHexView: Uint8Array<ArrayBuffer> } } {
+  if (typeof node !== "object" || node === null || !("valueBlock" in node)) return false;
+  const block = node.valueBlock;
+
+  if (typeof block !== "object" || block === null || !("valueHexView" in block)) return false;
+
+  return block.valueHexView instanceof Uint8Array;
+}
+
+/** Narrow an ASN.1 node to an OCTET STRING. */
+function isOctetStringNode(node: unknown): node is asn1js.OctetString {
+  return node instanceof asn1js.OctetString;
+}
+
 // Decrypt a CMS EnvelopedData using PKCS#1 v1.5 RSA key transport.
 // WebCrypto omits RSAES-PKCS1-v1_5, so we use Node.js native crypto for the
 // RSA step and WebCrypto for AES content decryption.
@@ -59,11 +76,12 @@ async function decryptEnvelopedData(
   envelopedData: pkijs.EnvelopedData,
   privateKeyJwk: JsonWebKey,
 ): Promise<ArrayBuffer> {
-  const recipientInfo = envelopedData.recipientInfos[0]?.value as
-    | pkijs.KeyTransRecipientInfo
-    | undefined;
+  const recipient = envelopedData.recipientInfos[0]?.value;
 
-  if (!recipientInfo) throw new Error("No recipient info in EnvelopedData");
+  if (!recipient || !("encryptedKey" in recipient))
+    throw new Error("No key-transport recipient info in EnvelopedData");
+
+  const recipientInfo = recipient;
 
   // Export JWK → PKCS8 DER so Node.js privateDecrypt can use it for PKCS#1 v1.5.
   // We can't use a KeyObject here because Vite's module context causes instanceof
@@ -76,10 +94,14 @@ async function decryptEnvelopedData(
     ["sign"],
   );
 
-  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
+  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey);
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
-  const encryptedSessionKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
+  const encryptedKey = recipientInfo.encryptedKey;
+
+  if (!hasHexValue(encryptedKey)) throw new Error("Recipient encrypted key has no bytes");
+
+  const encryptedSessionKey = Buffer.from(encryptedKey.valueBlock.valueHexView);
 
   const sessionKeyBytes = privateDecrypt(
     { key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING },
@@ -88,12 +110,13 @@ async function decryptEnvelopedData(
 
   const contentEncAlgId = envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
 
-  const ivHex = (
-    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
-  )?.valueBlock?.valueHex as ArrayBuffer | undefined;
+  const algorithmParams =
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams;
 
-  if (!ivHex) throw new Error("Missing IV in content encryption algorithm params");
-  const iv = Buffer.from(ivHex);
+  if (!hasHexValue(algorithmParams))
+    throw new Error("Missing IV in content encryption algorithm params");
+
+  const iv = Buffer.from(algorithmParams.valueBlock.valueHexView);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
   if (
@@ -115,8 +138,9 @@ async function decryptEnvelopedData(
   if (contentEncAlgId === DES3_CBC_OID) {
     const decipher = createDecipheriv("des-ede3-cbc", sessionKeyBytes, iv);
 
-    return Buffer.concat([decipher.update(Buffer.from(encryptedContent)), decipher.final()])
-      .buffer as ArrayBuffer;
+    return new Uint8Array(
+      Buffer.concat([decipher.update(Buffer.from(encryptedContent)), decipher.final()]),
+    ).buffer;
   }
 
   throw new Error(`Unsupported content encryption algorithm: ${contentEncAlgId}`);
@@ -160,10 +184,7 @@ async function encryptForDevice(
       algorithmParams: new asn1js.Null(),
     }),
     encryptedKey: new asn1js.OctetString({
-      valueHex: encryptedSessionKey.buffer.slice(
-        encryptedSessionKey.byteOffset,
-        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
-      ) as ArrayBuffer,
+      valueHex: new Uint8Array(encryptedSessionKey).buffer,
     }),
   });
 
@@ -174,7 +195,7 @@ async function encryptForDevice(
       contentType: pkijs.ContentInfo.DATA,
       contentEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
         algorithmId: AES_128_CBC_OID,
-        algorithmParams: new asn1js.OctetString({ valueHex: iv.buffer as ArrayBuffer }),
+        algorithmParams: new asn1js.OctetString({ valueHex: new Uint8Array(iv).buffer }),
       }),
       encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
     }),
@@ -365,7 +386,11 @@ export async function buildScepCertRep(
   // (not the OCTET STRING TLV). pkijs stores eContent as a CONSTRUCTED OctetString
   // (chunked BER), so getValue() reassembles the raw content bytes correctly.
   const cryptoEngine = pkijs.getCrypto(true);
-  const eContentValue = (signedData.encapContentInfo.eContent! as asn1js.OctetString).getValue();
+  const eContent = signedData.encapContentInfo.eContent;
+
+  if (!isOctetStringNode(eContent)) throw new Error("CertRep eContent is not an OCTET STRING");
+
+  const eContentValue = eContent.getValue();
   const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, eContentValue);
 
   const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
@@ -644,8 +669,7 @@ function getOctetStringValue(node: any): ArrayBuffer {
 }
 
 function extractChallengePassword(csr: pkijs.CertificationRequest): string | undefined {
-  const attributes = (csr as unknown as { attributes?: Array<{ type: string; values?: any[] }> })
-    .attributes;
+  const attributes = csr.attributes;
 
   if (!Array.isArray(attributes)) return undefined;
 
@@ -679,12 +703,10 @@ function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
     try {
       const parsed = asn1js.fromBER(bytes);
 
-      if (parsed.result && parsed.result.idBlock && parsed.result.idBlock.tagNumber === 4) {
-        const octet = parsed.result as asn1js.OctetString;
+      if (parsed.result && isOctetStringNode(parsed.result)) {
+        const octet = parsed.result;
 
-        const inner = octet.valueBlock.valueHexView
-          ? octet.valueBlock.valueHexView.slice().buffer
-          : octet.valueBlock.valueHex;
+        const inner = octet.valueBlock.valueHexView.slice().buffer;
 
         return pkijs.CertificationRequest.fromBER(inner);
       }
@@ -735,8 +757,7 @@ export function parseScepPkcsReq(
         throw new Error("SCEP request CMS signature is invalid");
       }
 
-      const verifiedSigner = (verification as { signerCertificate?: pkijs.Certificate })
-        .signerCertificate;
+      const verifiedSigner = verification.signerCertificate ?? undefined;
 
       let transactionId = "";
       let senderNonce = new ArrayBuffer(0);
@@ -772,9 +793,7 @@ export function parseScepPkcsReq(
       const signerCerts: pkijs.Certificate[] = verifiedSigner
         ? [verifiedSigner]
         : signedData.certificates
-          ? (signedData.certificates as pkijs.Certificate[]).filter(
-              (c) => c instanceof pkijs.Certificate,
-            )
+          ? signedData.certificates.filter((c) => c instanceof pkijs.Certificate)
           : [];
 
       // Extract eContent
@@ -911,15 +930,14 @@ export async function createDeviceCertificate(
 ): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
-  cert.serialNumber =
-    typeof serial === "number"
-      ? new asn1js.Integer({ value: serial })
-      : new asn1js.Integer({ valueHex: serial });
+  cert.serialNumber = Schema.is(Schema.Number)(serial)
+    ? new asn1js.Integer({ value: serial })
+    : new asn1js.Integer({ valueHex: serial });
 
   cert.issuer = caCert.subject;
 
   cert.subject = new pkijs.RelativeDistinguishedNames({
-    typesAndValues: (typeof subject === "string"
+    typesAndValues: (Schema.is(Schema.String)(subject)
       ? [{ type: "2.5.4.3", value: subject }]
       : subject
     ).map(

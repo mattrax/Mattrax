@@ -20,6 +20,9 @@ type BreadcrumbProps<T extends ValidComponent = "nav"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const Breadcrumb = <T extends ValidComponent = "nav">(props: BreadcrumbProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as BreadcrumbProps, ["class"]);
 
   return (
@@ -67,6 +70,9 @@ type BreadcrumbLinkProps<T extends ValidComponent = "a"> = PolymorphicProps<
   Pick<ComponentProps<T>, "class">;
 
 const BreadcrumbLink = <T extends ValidComponent = "a">(props: BreadcrumbLinkProps<T>) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as BreadcrumbLinkProps, ["class"]);
 
   return (
@@ -102,6 +108,9 @@ type BreadcrumbSeparatorProps<T extends ValidComponent = "span"> = PolymorphicPr
 const BreadcrumbSeparator = <T extends ValidComponent = "span">(
   props: BreadcrumbSeparatorProps<T>,
 ) => {
+  // SAFETY: `splitProps` must see the concrete component props type to remove
+  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
+  // change those keys.
   const [local, others] = splitProps(props as BreadcrumbSeparatorProps, ["class"]);
 
   return (

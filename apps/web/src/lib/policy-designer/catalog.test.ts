@@ -12,6 +12,8 @@ import {
   type CatalogManifest,
   type Collection,
   type PlatformData,
+  type PlatformIndex,
+  type SearchIndex,
 } from "./catalog";
 
 const windowsCollection = (id: string, name: string): Collection => ({
@@ -104,58 +106,69 @@ const manifest: CatalogManifest = {
   collections: [],
 };
 
-const responses: Record<string, unknown> = {
-  "/catalog/manifest.json": manifest,
-  "/catalog/apple.json": appleData,
-  "/catalog/android.json": androidData,
-  "/catalog/windows/index.json": {
-    platform: "windows",
-    stats: { collections: 2, properties: 4 },
-    collections: [
-      {
-        key: collectionFileKey("windows/settings/above-lock"),
-        id: "windows/settings/above-lock",
-        kind: "csp",
-        surface: "settings",
-        identifier: "above-lock",
-        name: "Above Lock",
-        propertyCount: 2,
-      },
-      {
-        key: collectionFileKey("windows/settings/defender"),
-        id: "windows/settings/defender",
-        kind: "csp",
-        surface: "settings",
-        identifier: "defender",
-        name: "Defender",
-        group: "Security",
-        deprecated: true,
-        propertyCount: 2,
-      },
-    ],
-  },
-  [`/catalog/windows/${collectionFileKey("windows/settings/above-lock")}.json`]: windowsCollection(
-    "windows/settings/above-lock",
-    "Above Lock",
-  ),
-  "/catalog/windows/search.json": {
-    platform: "windows",
-    collections: {
-      "windows/settings/above-lock": [
-        [
-          "./Device/Vendor/MSFT/Policy/Config/AboveLock/AllowCortanaAboveLock",
-          "allow cortana above lock ./device/vendor/msft/policy/config/abovelock/allowcortanaabovelock added in windows 10. specifies whether cortana works while locked.",
-        ],
-      ],
-      "windows/settings/defender": [
-        [
-          "./Device/Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring",
-          "allow realtime monitoring ./device/vendor/msft/policy/config/defender/allowrealtimemonitoring defender antivirus",
-        ],
+const responses = new Map<
+  string,
+  CatalogManifest | PlatformData | Collection | PlatformIndex | SearchIndex
+>([
+  ["/catalog/manifest.json", manifest],
+  ["/catalog/apple.json", appleData],
+  ["/catalog/android.json", androidData],
+  [
+    "/catalog/windows/index.json",
+    {
+      platform: "windows",
+      stats: { collections: 2, properties: 4 },
+      collections: [
+        {
+          key: collectionFileKey("windows/settings/above-lock"),
+          id: "windows/settings/above-lock",
+          platform: "windows",
+          kind: "csp",
+          surface: "settings",
+          identifier: "above-lock",
+          name: "Above Lock",
+          propertyCount: 2,
+        },
+        {
+          key: collectionFileKey("windows/settings/defender"),
+          id: "windows/settings/defender",
+          platform: "windows",
+          kind: "csp",
+          surface: "settings",
+          identifier: "defender",
+          name: "Defender",
+          group: "Security",
+          deprecated: true,
+          propertyCount: 2,
+        },
       ],
     },
-  },
-};
+  ],
+  [
+    `/catalog/windows/${collectionFileKey("windows/settings/above-lock")}.json`,
+    windowsCollection("windows/settings/above-lock", "Above Lock"),
+  ],
+  [
+    "/catalog/windows/search.json",
+    {
+      platform: "windows",
+      collections: {
+        "windows/settings/above-lock": [
+          [
+            "./Device/Vendor/MSFT/Policy/Config/AboveLock/AllowCortanaAboveLock",
+            "allow cortana above lock ./device/vendor/msft/policy/config/abovelock/allowcortanaabovelock added in windows 10. specifies whether cortana works while locked.",
+          ],
+        ],
+        "windows/settings/defender": [
+          [
+            "./Device/Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring",
+            "allow realtime monitoring ./device/vendor/msft/policy/config/defender/allowrealtimemonitoring defender antivirus",
+          ],
+        ],
+      },
+    },
+  ],
+]);
 
 const installFetch = (overrides: Record<string, () => Response | Promise<Response>> = {}) => {
   const calls: string[] = [];
@@ -166,7 +179,7 @@ const installFetch = (overrides: Record<string, () => Response | Promise<Respons
     const override = overrides[url];
 
     if (override) return override();
-    const body = responses[url];
+    const body = responses.get(url);
 
     if (body === undefined) return new Response("not found", { status: 404 });
 
@@ -270,7 +283,7 @@ describe("policy catalogue loaders", () => {
 
         if (attempts === 1) return new Response("boom", { status: 503 });
 
-        return new Response(JSON.stringify(responses["/catalog/windows/index.json"]), {
+        return new Response(JSON.stringify(responses.get("/catalog/windows/index.json")), {
           status: 200,
         });
       },

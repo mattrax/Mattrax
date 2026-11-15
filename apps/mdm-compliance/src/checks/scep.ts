@@ -15,6 +15,10 @@ import {
   parseCertRep,
 } from "../fixtures/pki.ts";
 
+
+const withDayN = (result: Check, dayN: boolean): Check =>
+  dayN ? { ...result, dayN: true } : result;
+
 const check = (
   id: string,
   category: Check["category"],
@@ -22,15 +26,18 @@ const check = (
   description: string,
   run: Check["run"],
   dayN = false,
-): Check => ({
-  id: `scep.${id}`,
-  platform: "scep",
-  category,
-  name,
-  description,
-  ...(dayN ? { dayN: true } : {}),
-  run,
-});
+): Check =>
+  withDayN(
+    {
+      id: `scep.${id}`,
+      platform: "scep",
+      category,
+      name,
+      description,
+      run,
+    },
+    dayN,
+  );
 
 const nonce = () => crypto.getRandomValues(new Uint8Array(16));
 
@@ -133,7 +140,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       assert.ok(sameBytes(certRep.recipientNonce, senderNonce));
       assert.equal(certRep.signerVerified, true);
       assert.equal(certRep.certificates.length, 2);
-      const deviceJwk = (await crypto.subtle.exportKey("jwk", deviceKeys.privateKey)) as JsonWebKey;
+      const deviceJwk = (await crypto.subtle.exportKey("jwk", deviceKeys.privateKey));
       const issued = await decryptCertRep(certRep, deviceJwk);
       assert.equal(certificateValue(issued, "2.5.4.3"), "Compliance Device");
       assert.equal(certificateValue(issued, "2.5.4.11"), "tenant-authenticated");
@@ -275,7 +282,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       const deviceJwk = (await crypto.subtle.exportKey(
         "jwk",
         identity.keyPair.privateKey,
-      )) as JsonWebKey;
+      ));
 
       const renewed = await decryptCertRep(certRep, deviceJwk);
       assert.notEqual(

@@ -1,9 +1,10 @@
-import { Effect } from "effect";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   compareVersionStrings,
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
+  type DeviceQueryDevice,
   type DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
 import {
@@ -16,7 +17,7 @@ import { makeDb, runEffect } from "./helpers.js";
 const now = new Date("2026-11-10T12:00:00.000Z");
 const at = (daysAgo: number) => new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
 
-const device = (overrides: Record<string, unknown> = {}) => ({
+const device = (overrides: Partial<DeviceQueryDevice> = {}): DeviceQueryDevice => ({
   proto: "apple",
   model: "MacBook Pro",
   osVersion: "14.4.1",
@@ -219,7 +220,7 @@ describe("dynamic group evaluator", () => {
 });
 
 describe("dynamic group materialisation", () => {
-  const seedGroup = (db: ReturnType<typeof makeDb>, overrides: Record<string, unknown> = {}) => {
+  const seedGroup = (db: ReturnType<typeof makeDb>, overrides: Schema.JsonObject = {}) => {
     db.store.enterprise_group.push({
       id: "group-1",
       organizationId: "org-1",
@@ -238,7 +239,7 @@ describe("dynamic group materialisation", () => {
     db: ReturnType<typeof makeDb>,
     id: string,
     organizationId = "org-1",
-    overrides: Record<string, unknown> = {},
+    overrides: Schema.JsonObject = {},
   ) => {
     db.store.device.push({
       id,

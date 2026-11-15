@@ -1,4 +1,4 @@
-import { Passkey, Password, Totp } from "@yielded/auth";
+import { Passkey, Totp } from "@yielded/auth";
 import {
   PASSKEY_MODULE_ID,
   STEP_UP_ACTIONS,
@@ -8,11 +8,19 @@ import {
   TOTP_MODULE_ID,
   TOTP_POLICY,
   type StepUpAction,
+  type StepUpMethod,
 } from "@mattrax/enterprise-domain";
-import { Db, schema } from "@mattrax/enterprise-core";
-import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
+import {
+  Data,
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  Predicate,
+  Redacted,
+  Schema,
+} from "effect";
 import { Schema as AuthSchema } from "@yielded/auth";
-import { eq } from "drizzle-orm";
 import { signToken, verifyToken } from "./tokens.ts";
 
 const base64Url = (bytes: Uint8Array) =>
@@ -22,6 +30,10 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("=", "");
 
 const randomBytes = (length: number) => base64Url(crypto.getRandomValues(new Uint8Array(length)));
+
+class StepUpPasskeyContext extends Data.TaggedClass("StepUp")<{
+  readonly target: Schema.Schema.Type<typeof Passkey.PasskeyTarget>;
+}> {}
 
 /**
  * Sign a step-up grant. Grants are bound to the account, the exact session and
@@ -35,6 +47,8 @@ export const signStepUpGrant = (
     readonly email: string;
     readonly sessionId: string;
     readonly action: StepUpAction;
+    readonly method: StepUpMethod;
+    readonly credentialId?: string;
     readonly expiresAtMillis: number;
   },
 ) =>
@@ -43,12 +57,18 @@ export const signStepUpGrant = (
     email: input.email,
     sid: input.sessionId,
     action: input.action,
+    method: input.method,
+    credentialId: input.credentialId,
     exp: input.expiresAtMillis,
     purpose: "step-up-grant",
   });
 
-/** Verify a grant for this exact account, session and action. */
-export const verifyStepUpGrant = (
+/**
+ * Read a grant without trusting request input. Returns the verified method and
+ * credential so callers can require a specific factor instead of a bare
+ * boolean.
+ */
+export const readStepUpGrant = (
   secret: string,
   token: string,
   expected: {
@@ -58,15 +78,38 @@ export const verifyStepUpGrant = (
   },
 ) =>
   verifyToken(secret, token).pipe(
-    Effect.map(
-      (payload) =>
-        payload.purpose === "step-up-grant" &&
-        payload.sub === expected.subjectId &&
-        payload.sid === expected.sessionId &&
-        payload.action === expected.action &&
-        payload.exp > Date.now(),
+    Effect.map((payload) =>
+      payload.purpose === "step-up-grant" &&
+      payload.sub === expected.subjectId &&
+      payload.sid === expected.sessionId &&
+      payload.action === expected.action &&
+      payload.exp > Date.now()
+        ? {
+            method: payload.method,
+            credentialId: payload.credentialId,
+          }
+        : undefined,
     ),
-    Effect.catch(() => Effect.succeed(false)),
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
+
+/** Verify a grant for this exact account, session and action. */
+export const verifyStepUpGrant = (
+  secret: string,
+  token: string,
+  expected: {
+    readonly subjectId: string;
+    readonly sessionId: string;
+    readonly action: StepUpAction;
+    readonly method?: StepUpMethod;
+  },
+) =>
+  readStepUpGrant(secret, token, expected).pipe(
+    Effect.map(
+      (grant) =>
+        grant !== undefined &&
+        (expected.method === undefined || grant.method === expected.method),
+    ),
   );
 
 /** Sign the binding token for an in-flight WebAuthn step-up ceremony. */
@@ -94,6 +137,10 @@ export const signStepUpFlow = (
     purpose: "step-up-flow",
   });
 
+const PasskeyAssertionResponse = Schema.Struct({
+  rawId: Schema.optional(Schema.String),
+});
+
 export const verifyStepUpFlow = (
   secret: string,
   token: string,
@@ -111,9 +158,9 @@ export const verifyStepUpFlow = (
         payload.sid !== expected.sessionId ||
         payload.action !== expected.action ||
         payload.exp <= Date.now() ||
-        typeof payload.flowId !== "string" ||
-        typeof payload.verifier !== "string" ||
-        typeof payload.requestBindingExpiresAtMillis !== "number"
+        payload.flowId === undefined ||
+        payload.verifier === undefined ||
+        payload.requestBindingExpiresAtMillis === undefined
       )
         return undefined;
 
@@ -151,17 +198,10 @@ export const verifyAnyStepUpFlow = (
  * It deliberately exposes no "issue grant" operation: the grant is a signature
  * over a verified result, not another credential store.
  */
-export const makeStepUpServiceLive = (options: {
-  readonly appAuth: any;
-  readonly authSecret?: string;
-}) =>
+export const stepUpServiceLayer = () =>
   Layer.effect(
     StepUpService,
     Effect.gen(function* () {
-      const db = yield* Db;
-      const passwords = yield* Password.PasswordPersistence;
-      const passwordHashing = yield* Password.PasswordHashing;
-      const passwordModuleId = options.appAuth.strategies.password.persistence.moduleId as string;
       const totpPersistence = yield* Totp.TotpPersistence;
       const totpCryptography = yield* Totp.TotpCryptography;
       const passkeyConfig = yield* Passkey.PasskeyConfig;
@@ -172,17 +212,6 @@ export const makeStepUpServiceLive = (options: {
       const profile = passkeyConfig.profiles[0];
 
       const subject = (subjectId: string) => AuthSchema.SubjectId.make(subjectId);
-
-      const hasPassword = (subjectId: string) =>
-        db
-          .select({ credentialId: schema.authPasswords.credentialId })
-          .from(schema.authPasswords)
-          .where(eq(schema.authPasswords.subjectId, subjectId))
-          .limit(1)
-          .pipe(
-            Effect.map((rows) => rows.length > 0),
-            Effect.catch(() => Effect.succeed(false)),
-          );
 
       const passkeyCount = (subjectId: string) =>
         profile === undefined
@@ -208,27 +237,9 @@ export const makeStepUpServiceLive = (options: {
         methods: (subjectId) =>
           Effect.gen(function* () {
             return {
-              password: yield* hasPassword(subjectId),
               totp: yield* hasTotp(subjectId),
               passkey: (yield* passkeyCount(subjectId)) > 0,
             };
-          }),
-
-        verifyPassword: (subjectId, password) =>
-          Effect.gen(function* () {
-            if (password.length === 0 || password.length > 4096) return false;
-
-            const candidate = yield* passwords
-              .readForSubject({ moduleId: passwordModuleId, subjectId: subject(subjectId) })
-              .pipe(Effect.catch(() => Effect.succeed({ _tag: "None" as const })));
-
-            if (candidate._tag === "None") return false;
-
-            const verified = yield* passwordHashing
-              .verify(Redacted.make(password), candidate.value.verifier)
-              .pipe(Effect.catch(() => Effect.succeed({ matches: false })));
-
-            return verified.matches;
           }),
 
         verifyTotp: (subjectId, code) =>
@@ -299,6 +310,22 @@ export const makeStepUpServiceLive = (options: {
             const issuedAtMillis = Date.now();
             const expiresAtMillis = issuedAtMillis + STEP_UP_WINDOW_MILLIS;
 
+            const target = yield* Schema.decodeUnknownEffect(Passkey.PasskeyTarget)({
+              moduleId: PASSKEY_MODULE_ID,
+              kind: "step-up",
+              commandId: flowId,
+              flowId,
+              bindingDigest: verifier,
+              revision: snapshot.revision,
+              expiresAtMillis,
+            }).pipe(
+              Effect.catch(() =>
+                Effect.fail(
+                  StepUpUnavailable.make({ message: "Could not start a passkey ceremony" }),
+                ),
+              ),
+            );
+
             const ceremony = yield* Schema.decodeUnknownEffect(Passkey.PasskeyCeremony)({
               moduleId: PASSKEY_MODULE_ID,
               flowId,
@@ -311,18 +338,7 @@ export const makeStepUpServiceLive = (options: {
               issuedAtMillis,
               expiresAtMillis,
               allowedCredentials: snapshot.credentials,
-              context: {
-                _tag: "StepUp",
-                target: {
-                  moduleId: PASSKEY_MODULE_ID,
-                  kind: "step-up",
-                  commandId: flowId,
-                  flowId,
-                  bindingDigest: verifier,
-                  revision: snapshot.revision,
-                  expiresAtMillis,
-                },
-              },
+              context: new StepUpPasskeyContext({ target }),
             }).pipe(
               Effect.catch(() =>
                 Effect.fail(
@@ -349,7 +365,7 @@ export const makeStepUpServiceLive = (options: {
               ),
             );
 
-            if (decision._tag !== "Issued")
+            if (!Predicate.isTagged(decision, "Issued"))
               return yield* StepUpUnavailable.make({
                 message: "Could not start a passkey ceremony",
               });
@@ -380,7 +396,7 @@ export const makeStepUpServiceLive = (options: {
 
         completePasskey: (input) =>
           Effect.gen(function* () {
-            if (profile === undefined) return false;
+            if (profile === undefined) return undefined;
 
             const access = yield* Schema.decodeUnknownEffect(Passkey.PasskeyAccess)({
               moduleId: PASSKEY_MODULE_ID,
@@ -390,37 +406,45 @@ export const makeStepUpServiceLive = (options: {
               requestBindingExpiresAtMillis: input.requestBindingExpiresAtMillis,
             }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-            if (access === undefined) return false;
+            if (access === undefined) return undefined;
 
             const ceremony = yield* passkeyPersistence
               .context(access)
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-            if (ceremony === undefined || ceremony.purpose !== "step-up") return false;
+            if (ceremony === undefined || ceremony.purpose !== "step-up") return undefined;
 
             // The assertion's `rawId` is the base64url protocol credential id.
             const rawId = yield* Effect.sync(() => {
               try {
-                const parsed = JSON.parse(input.response) as { rawId?: unknown };
+                const parsed: Schema.Schema.Type<typeof PasskeyAssertionResponse> = Schema.decodeUnknownSync(
+                  PasskeyAssertionResponse,
+                )(JSON.parse(input.response));
 
-                return typeof parsed.rawId === "string" ? parsed.rawId : undefined;
+                return parsed.rawId;
               } catch {
                 return undefined;
               }
             });
 
-            if (rawId === undefined) return false;
+            if (rawId === undefined) return undefined;
+
+            const protocolCredentialId = Option.getOrUndefined(
+              Schema.decodeUnknownOption(Passkey.PasskeyProtocolCredentialId)(rawId),
+            );
+
+            if (protocolCredentialId === undefined) return undefined;
 
             const credential = yield* passkeyCredentials
               .lookup({
                 rpId: ceremony.profile.rpId,
-                protocolCredentialId: rawId as unknown as Passkey.PasskeyProtocolCredentialId,
+                protocolCredentialId,
               })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-            if (!credential || !credential.active) return false;
+            if (!credential || !credential.active) return undefined;
 
-            if (credential.revision.subjectId !== input.subjectId) return false;
+            if (credential.revision.subjectId !== input.subjectId) return undefined;
 
             const assertion = yield* passkeyProtocol
               .verifyAuthentication({
@@ -430,7 +454,7 @@ export const makeStepUpServiceLive = (options: {
               })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-            if (assertion === undefined) return false;
+            if (assertion === undefined) return undefined;
 
             const receipt = yield* passkeyPersistence
               .consume({ access, ceremony, credential, assertion }, (value, journal) =>
@@ -438,13 +462,13 @@ export const makeStepUpServiceLive = (options: {
               )
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-            if (receipt === undefined) return false;
+            if (receipt === undefined) return undefined;
 
             const decision = yield* receipt.read.pipe(
               Effect.catch(() => Effect.succeed("Rejected" as const)),
             );
 
-            return decision === "Verified";
+            return decision === "Verified" ? credential.credentialId : undefined;
           }),
       });
     }),

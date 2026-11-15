@@ -60,6 +60,14 @@ function normalizeTenantId(tenantId: string): string {
   return tenantId.trim();
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+
+  new Uint8Array(buffer).set(bytes);
+
+  return buffer;
+}
+
 function base64UrlToBytes(input: string): Uint8Array {
   const padded = input
     .replace(/-/g, "+")
@@ -74,8 +82,8 @@ function base64UrlToBytes(input: string): Uint8Array {
   return bytes;
 }
 
-function base64UrlJson(input: string): unknown {
-  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(input))) as unknown;
+function base64UrlJson(input: string): Schema.Json {
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(input)));
 }
 
 function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
@@ -88,23 +96,13 @@ function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
       );
     }
 
-    const header = yield* (
-      Schema.decodeUnknownEffect(JwtHeader)(base64UrlJson(parts[0])) as Effect.Effect<
-        JwtHeader,
-        unknown
-      >
-    ).pipe(
-      Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT header", cause })),
-    );
+    const header = yield* Schema.decodeUnknownEffect(JwtHeader)(
+      base64UrlJson(parts[0]),
+    ).pipe(Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT header", cause })));
 
-    const claims = yield* (
-      Schema.decodeUnknownEffect(AzureJwtClaims)(base64UrlJson(parts[1])) as Effect.Effect<
-        AzureJwtClaims,
-        unknown
-      >
-    ).pipe(
-      Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT claims", cause })),
-    );
+    const claims = yield* Schema.decodeUnknownEffect(AzureJwtClaims)(
+      base64UrlJson(parts[1]),
+    ).pipe(Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT claims", cause })));
 
     return {
       header,
@@ -180,8 +178,8 @@ function verifyRs256(decoded: DecodedJwt, jwk: JsonWebKey): Effect.Effect<void, 
       const valid = await crypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
         key,
-        decoded.signature as BufferSource,
-        textEncoder.encode(decoded.signingInput) as BufferSource,
+        toArrayBuffer(decoded.signature),
+        toArrayBuffer(textEncoder.encode(decoded.signingInput)),
       );
 
       if (!valid) throw new Error("Invalid JWT signature");
@@ -201,7 +199,7 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
 
       const getJson = <A>(
         url: string,
-        schema: Schema.Schema<A>,
+        schema: Schema.Decoder<A>,
         label: string,
       ): Effect.Effect<A, AzureOidcError> =>
         Effect.gen(function* () {
@@ -229,14 +227,12 @@ export const AzureOidcLive = (config?: { readonly cacheTtlMs?: number }) =>
             );
           }
 
-          const json = yield* Effect.try({
-            try: () => JSON.parse(text) as unknown,
+          const json: Schema.Json = yield* Effect.try({
+            try: () => JSON.parse(text),
             catch: (cause) => new AzureOidcError({ message: `Invalid ${label} JSON`, cause }),
           });
 
-          return yield* (
-            Schema.decodeUnknownEffect(schema)(json) as Effect.Effect<A, unknown>
-          ).pipe(
+          return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
             Effect.mapError(
               (cause) => new AzureOidcError({ message: `Invalid ${label} shape`, cause }),
             ),

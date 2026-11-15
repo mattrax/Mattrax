@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
+import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { createScepChallenge, verifyScepChallenge } from "../challenge.js";
 import { ScepService } from "../service.js";
@@ -19,8 +20,14 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {
     pkijs.getEngine();
   } catch {
-    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
+}
+
+function attributeText(attribute: pkijs.AttributeTypeAndValue | undefined): string | undefined {
+  if (!attribute || !(attribute.value instanceof asn1js.Utf8String)) return undefined;
+
+  return attribute.value.valueBlock.value;
 }
 
 const SECRET = "test-auth-secret";
@@ -56,6 +63,159 @@ describe("SCEP challenge", () => {
       verifyScepChallenge(challenge, SECRET, { now: (now + 120) * 1000 }),
     ).resolves.toBeNull();
   });
+
+  it("binds a challenge to the enrollment id embedded in it", async () => {
+    const challenge = await createScepChallenge("enrollment-a", SECRET);
+
+    await expect(verifyScepChallenge(challenge, SECRET)).resolves.toEqual({
+      enrollmentId: "enrollment-a",
+    });
+
+    // The id is part of the signed message, so renaming it to another
+    // enrollment invalidates the signature.
+    await expect(
+      verifyScepChallenge(challenge.replace("enrollment-a", "enrollment-b"), SECRET),
+    ).resolves.toBeNull();
+  });
+
+  it("binds an expiry-bearing challenge to the enrollment id and expiry", async () => {
+    const now = 1_700_000_000;
+
+    const challenge = await createScepChallenge("enrollment-a", SECRET, {
+      ttlSeconds: 300,
+      now: now * 1000,
+    });
+
+    expect(challenge.split(".")).toHaveLength(3);
+    await expect(
+      verifyScepChallenge(challenge.replace("enrollment-a", "enrollment-b"), SECRET, {
+        now: now * 1000,
+      }),
+    ).resolves.toBeNull();
+
+    // Rewriting the expiry must also break the signature.
+    const [enrollmentId, expiresAt, signature] = challenge.split(".");
+    await expect(
+      verifyScepChallenge(`${enrollmentId}.${Number(expiresAt) + 1}.${signature}`, SECRET, {
+        now: now * 1000,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("invalidates challenges after the auth secret rotates", async () => {
+    const now = 1_700_000_000;
+    const simple = await createScepChallenge("enrollment-1", SECRET);
+
+    const expiring = await createScepChallenge("enrollment-1", SECRET, {
+      ttlSeconds: 300,
+      now: now * 1000,
+    });
+
+    await expect(verifyScepChallenge(simple, "rotated-secret")).resolves.toBeNull();
+    await expect(
+      verifyScepChallenge(expiring, "rotated-secret", { now: now * 1000 }),
+    ).resolves.toBeNull();
+  });
+
+  it("accepts a challenge at exactly its expiry and rejects it one second later", async () => {
+    const now = 1_700_000_000;
+    const expiresAt = now + 60;
+
+    const challenge = await createScepChallenge("enrollment-1", SECRET, {
+      ttlSeconds: 60,
+      now: now * 1000,
+    });
+
+    await expect(
+      verifyScepChallenge(challenge, SECRET, { now: expiresAt * 1000 }),
+    ).resolves.toEqual({ enrollmentId: "enrollment-1", expiresAt });
+    await expect(
+      verifyScepChallenge(challenge, SECRET, { now: (expiresAt + 1) * 1000 }),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    ["a one-part value", "enrollment-1"],
+    ["a two-part value with an empty signature", "enrollment-1."],
+    ["a three-part value with a non-numeric expiry", "enrollment-1.not-a-number.signature"],
+    ["a three-part value with an empty expiry", "enrollment-1.."],
+    ["a four-part value", `enrollment-1.${1_700_000_000}.signature.extra`],
+    ["a four-part value with an empty nonce", `enrollment-1.${1_700_000_000}..signature`],
+    ["an empty value", ""],
+  ])("rejects %s", async (_name, challenge) => {
+    await expect(verifyScepChallenge(challenge, SECRET)).resolves.toBeNull();
+  });
+
+  // Characterisation: this helper is deliberately stateless, so it can only
+  // prove a value was minted for an enrollment. One-time use is enforced by the
+  // persisted challenge store in `@mattrax/management-backend-enterprise`, which
+  // is covered by that package's `scep.test.ts`.
+  it("can verify the same challenge more than once", async () => {
+    const now = 1_700_000_000;
+
+    const challenge = await createScepChallenge("enrollment-1", SECRET, {
+      ttlSeconds: 60,
+      now: now * 1000,
+    });
+
+    const verification = { enrollmentId: "enrollment-1", expiresAt: now + 60 };
+
+    await expect(verifyScepChallenge(challenge, SECRET, { now: now * 1000 })).resolves.toEqual(
+      verification,
+    );
+    await expect(
+      verifyScepChallenge(challenge, SECRET, { now: (now + 1) * 1000 }),
+    ).resolves.toEqual(verification);
+  });
+
+  it("carries and verifies a one-time nonce", async () => {
+    const now = 1_700_000_000;
+
+    const challenge = await createScepChallenge("enrollment-1", SECRET, {
+      ttlSeconds: 60,
+      now: now * 1000,
+      nonce: "nonce-a",
+    });
+
+    expect(challenge.split(".")).toHaveLength(4);
+    await expect(verifyScepChallenge(challenge, SECRET, { now: now * 1000 })).resolves.toEqual({
+      enrollmentId: "enrollment-1",
+      expiresAt: now + 60,
+      nonce: "nonce-a",
+    });
+  });
+
+  it("binds the nonce and expiry of a one-time challenge", async () => {
+    const now = 1_700_000_000;
+
+    const challenge = await createScepChallenge("enrollment-1", SECRET, {
+      ttlSeconds: 60,
+      now: now * 1000,
+      nonce: "nonce-a",
+    });
+
+    const [enrollmentId, expiresAt, nonce, signature] = challenge.split(".");
+
+    await expect(
+      verifyScepChallenge(`${enrollmentId}.${expiresAt}.nonce-b.${signature}`, SECRET, {
+        now: now * 1000,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      verifyScepChallenge(`${enrollmentId}.${Number(expiresAt) + 1}.${nonce}.${signature}`, SECRET, {
+        now: now * 1000,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      verifyScepChallenge(challenge, SECRET, { now: (now + 61) * 1000 }),
+    ).resolves.toBeNull();
+  });
+
+  it("requires a lifetime for a one-time nonce", async () => {
+    await expect(createScepChallenge("enrollment-1", SECRET, { nonce: "nonce-a" })).rejects.toThrow(
+      "ttlSeconds",
+    );
+  });
 });
 
 async function makeScepHandler(secret: string) {
@@ -66,7 +226,7 @@ async function makeScepHandler(secret: string) {
   const caPrivateKeyJwk = (await crypto.subtle.exportKey(
     "jwk",
     caKeyPair.privateKey,
-  )) as JsonWebKey;
+  ));
 
   const repoLayer: Layer.Layer<ScepRepository> = mockScepRepository({
     getCa: () => Effect.succeed({ certPem: certToPem(caCert), privateKeyJwk: caPrivateKeyJwk }),
@@ -142,13 +302,15 @@ describe("SCEP PKCSReq authentication", () => {
       (certificate): certificate is pkijs.Certificate =>
         certificate instanceof pkijs.Certificate &&
         certificate.subject.typesAndValues.some((attribute) => attribute.type === "2.5.4.3"),
-    )!;
+    );
+
+    if (!issued) throw new Error("CertRep did not contain an issued certificate");
 
     const ou = issued.subject.typesAndValues.find((attribute) => attribute.type === "2.5.4.11");
-    expect((ou?.value as any).valueBlock.value).toBe("tenant-from-challenge");
+    expect(attributeText(ou)).toBe("tenant-from-challenge");
     expect(
       issued.subject.typesAndValues.some(
-        (attribute) => (attribute.value as any).valueBlock.value === "attacker-tenant",
+        (attribute) => attributeText(attribute) === "attacker-tenant",
       ),
     ).toBe(false);
   });
