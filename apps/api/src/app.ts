@@ -529,6 +529,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // checked against its own URL, so a loopback ORIGIN does not expose the
   // mailbox when the deployment is reachable from a public host.
   const devMailbox = env.DEV_MAILBOX === "true";
+  // Effect's request URL is usually a path; the mailbox check needs the
+  // request host, so resolve it against the deployment origin.
+  const mailboxAllowed = (request: { readonly url: string }) =>
+    isDevMailboxEnabled(env, env.ORIGIN, new URL(request.url, env.ORIGIN).toString());
 
   const devMailboxSecret = env.DEV_MAILBOX_SECRET;
 
@@ -713,7 +717,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
             const supplied = debugRequest.headers["x-dev-mailbox-secret"];
 
             if (
-              !isDevMailboxEnabled(env, env.ORIGIN, debugRequest.url) ||
+              !mailboxAllowed(debugRequest) ||
               (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
             )
               return Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }));
@@ -729,7 +733,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
               const supplied = debugRequest.headers["x-dev-mailbox-secret"];
 
               if (
-                !isDevMailboxEnabled(env, env.ORIGIN, debugRequest.url) ||
+                !mailboxAllowed(debugRequest) ||
                 (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
               )
                 return HttpServerResponse.text("Not Found", { status: 404 });
