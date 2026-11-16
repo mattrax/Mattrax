@@ -16,6 +16,7 @@ type SsoAssertionClaims = {
   readonly exp: number;
   readonly purpose: string;
   readonly tenantId: string;
+  readonly jti: string;
 };
 
 const sign = (secret: string, payload: SsoAssertionClaims) => {
@@ -52,6 +53,7 @@ test.describe("single sign-on", () => {
       exp: Date.now() + 60_000,
       purpose: "sso-assertion",
       tenantId: tenant.id,
+      jti: crypto.randomUUID(),
     });
 
     const response = await page.request.post(`${origin}/api/v1/ssoSignIn`, {

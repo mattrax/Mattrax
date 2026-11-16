@@ -4321,7 +4321,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("createScimToken", "/v1/tenants/:tenantId/scim-tokens", {
-      error: EnterpriseTenantWriteErrors,
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: CreateScimTokenRequest,
       success: CreateScimTokenResponse,

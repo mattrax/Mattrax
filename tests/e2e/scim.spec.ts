@@ -1,23 +1,31 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, uniqueEmail } from "./helpers";
+import { bootstrapTenant, stepUpGrant, uniqueEmail } from "./helpers";
 
 test.describe("SCIM provisioning", () => {
   test("provisions users and groups with a tenant token", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "SCIM Tenant");
+    const grant = await stepUpGrant(page, "scim-token-create");
 
-    const created = await page.evaluate(async (tenantId) => {
-      const response = await fetch(`/api/v1/tenants/${tenantId}/scim-tokens`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ name: "Browser test" }),
-      });
+    const created = await page.evaluate(
+      async ({ tenantId, grant }) => {
+        const response = await fetch(`/api/v1/tenants/${tenantId}/scim-tokens`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-effect-auth-csrf": "1",
+            "x-mattrax-step-up": grant,
+          },
+          body: JSON.stringify({ name: "Browser test" }),
+        });
 
-      if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) throw new Error(await response.text());
 
-      const body: { token: string; baseUrl: string } = await response.json();
+        const body: { token: string; baseUrl: string } = await response.json();
 
-      return body;
-    }, tenant.id);
+        return body;
+      },
+      { tenantId: tenant.id, grant },
+    );
 
     const scim = async (path: string, init?: RequestInit) => {
       const extraHeaders = init?.headers ? Object.fromEntries(new Headers(init.headers)) : {};
