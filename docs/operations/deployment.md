@@ -35,6 +35,7 @@ Repository variables (Settings → Secrets and variables → Actions → Variabl
 | `PREVIEW_HYPERDRIVE_ID`  | Hyperdrive config for the preview database.                                            |
 | `PREVIEW_STORAGE_BUCKET` | R2 bucket for preview uploads and backups. Must exist before the first preview deploy. |
 | `PRODUCTION_ORIGIN`      | Optional. Defaults to `https://e.mattrax.app`.                                         |
+| `STRIPE_LICENSE_PRICE_ID` | Optional. Per-device price for self-hosted deployment licences.                        |
 
 The Workers' own secrets are shared by production and every Preview of that
 Worker, so they only need to be set once (for example with `cf secrets put`):
