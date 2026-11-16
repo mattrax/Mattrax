@@ -23,18 +23,16 @@ export const antiSlopLint = {
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
-    "tools/oxlint/anti-slop/**",
+    "packages/config/oxlint/**",
   ],
   jsPlugins: [
     {
       name: "anti-slop",
-      specifier: fileURLToPath(new URL("../../tools/oxlint/anti-slop/index.ts", import.meta.url)),
+      specifier: fileURLToPath(new URL("./oxlint/index.ts", import.meta.url)),
     },
     {
       name: "anti-slop-effect",
-      specifier: fileURLToPath(
-        new URL("../../tools/oxlint/anti-slop/effect/index.ts", import.meta.url),
-      ),
+      specifier: fileURLToPath(new URL("./oxlint/effect/index.ts", import.meta.url)),
     },
   ],
   // `plugins` replaces oxlint's default set, so the defaults are listed again.

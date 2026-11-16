@@ -17,7 +17,7 @@ export default defineConfig({
       "**/playwright-report/**",
       "pnpm-lock.yaml",
       "apps/web/public/catalog/windows/**",
-      "tools/oxlint/anti-slop/**",
+      "packages/config/oxlint/**",
     ],
   },
   lint: {
@@ -38,7 +38,7 @@ export default defineConfig({
     projects: [
       `${repository}/apps/*/vitest.config.ts`,
       `${repository}/packages/*/vitest.config.ts`,
-      `${repository}/tools/**/vitest.config.ts`,
+      `${repository}/packages/config/oxlint/vitest.config.ts`,
     ],
   },
 });

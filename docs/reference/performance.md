@@ -83,7 +83,7 @@ assets (or the job targets a deployed preview environment).
 
 ## Static guards
 
-`tools/oxlint/anti-slop` runs through `pnpm lint` (and `vp lint`). Two rules
+`packages/config/oxlint` runs through `pnpm lint` (and `vp lint`). Two rules
 target the layout-shift and jank sources directly:
 
 - `anti-slop/no-layout-animating-transition` rejects `transition-all`,
@@ -99,7 +99,7 @@ target the layout-shift and jank sources directly:
   statically.
 
 Both rules have table-driven tests under
-`tools/oxlint/anti-slop/rules/*.test.ts`; `pnpm test` includes them.
+`packages/config/oxlint/rules/*.test.ts`; `pnpm test` includes them.
 
 ### Accessibility rules
 
