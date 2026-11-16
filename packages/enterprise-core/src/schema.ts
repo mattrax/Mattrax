@@ -191,6 +191,43 @@ export const authPasskeyCredentials: any = authSchema.passkeyCredentials;
 /* oxlint-enable typescript/no-explicit-any */
 
 /**
+ * Consumed SSO assertion ids.
+ *
+ * The assertion token is carried in a redirect URL, so it can leak through
+ * history or proxy logs. Recording its id makes each link single-use for the
+ * lifetime of the assertion, rather than a replayable session credential.
+ */
+export const ssoAssertion = mysqlTable(
+  "sso_assertion",
+  {
+    jti: shortText("jti").primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [index("sso_assertion_expires_idx").on(table.expiresAt)],
+);
+
+/**
+ * Step-up TOTP replay and brute-force state.
+ *
+ * A six-digit code stays valid for several 30-second steps; without recording
+ * the step that was accepted, one observed code can mint several grants. The
+ * failure counter also gives step-up the same lockout the library applies to
+ * its own TOTP actions.
+ */
+export const stepUpTotpState = mysqlTable(
+  "step_up_totp_state",
+  {
+    subjectId: id("subject_id").primaryKey(),
+    lastAcceptedStep: int("last_accepted_step").notNull().default(0),
+    failures: int("failures").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("step_up_totp_state_locked_idx").on(table.lockedUntil)],
+);
+
+/**
  * TOTP factor state. `state` is the JSON record produced by the library; its
  * secret is an AES-GCM envelope sealed with a key derived from AUTH_SECRET.
  * Recovery codes are stored only as SHA-256 digests inside that record.
@@ -3247,6 +3284,7 @@ export const relations = defineRelations(
     accountSessionContext,
     accountEmailChange,
     accountRecovery,
+    stepUpTotpState,
     registrationVerification,
     invitation,
     subscription,

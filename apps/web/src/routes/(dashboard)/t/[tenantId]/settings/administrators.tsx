@@ -374,6 +374,12 @@ export default function AdministratorsSettingsPage() {
       setRowError(null);
 
       if (copied() === item.id) setCopied(null);
+
+      // A cancelled invitation must not leave a copyable, already-dead link
+      // on screen as if it still worked.
+      if (inviteResult()?.id === item.id) setInviteResult(null);
+
+      if (resendNotice()?.email === item.email) setResendNotice(null);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
     onError: (error, item) => setRowError({ id: item.id, error }),

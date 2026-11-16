@@ -872,15 +872,19 @@ export const configurationProfileUrl = async (
   row: PolicyConfigurationRow,
   context: DeclarationContext,
 ): Promise<string> => {
+  const expiresAt = appleAssetTokenExpiresAt(context.now);
+
   const token = await signAppleProfileToken(context.authSecret, {
     policyId: row.policyId,
     kind: row.kind,
     deviceToken: context.deviceToken,
+    deviceId: context.deviceId,
+    expiresAt,
   });
 
   const origin = trimTrailingSlash(context.origin);
 
-  return `${origin}/mdm/apple/profiles/${encodeURIComponent(context.deviceToken)}/${encodeURIComponent(row.policyId)}/${encodeURIComponent(row.kind)}?token=${encodeURIComponent(token)}`;
+  return `${origin}/mdm/apple/profiles/${encodeURIComponent(context.deviceToken)}/${encodeURIComponent(row.policyId)}/${encodeURIComponent(row.kind)}?token=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(context.deviceId)}&expiresAt=${expiresAt}`;
 };
 
 export const buildConfigurationDeclaration = async (

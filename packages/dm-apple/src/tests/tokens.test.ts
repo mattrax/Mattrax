@@ -102,26 +102,28 @@ describe("Apple asset URL tokens", () => {
     expect(appleAssetTokenEpoch(NOW + APPLE_ASSET_TOKEN_REFRESH_SECONDS * 1000)).toBe(epoch + 1);
   });
 
-  it("keeps profile tokens device-bound and unchanged", async () => {
-    const token = await signAppleProfileToken(SECRET, {
+  it("keeps profile tokens device-bound and expiring", async () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
+    const context = {
       policyId: "policy-1",
       kind: "mttx.apple.device",
       deviceToken: "device-token-1",
-    });
+      deviceId: "device-1",
+      expiresAt,
+    };
 
+    const token = await signAppleProfileToken(SECRET, context);
+
+    await expect(verifyAppleProfileToken(SECRET, token, context)).resolves.toBe(true);
     await expect(
-      verifyAppleProfileToken(SECRET, token, {
-        policyId: "policy-1",
-        kind: "mttx.apple.device",
-        deviceToken: "device-token-1",
-      }),
-    ).resolves.toBe(true);
+      verifyAppleProfileToken(SECRET, token, { ...context, deviceToken: "device-token-2" }),
+    ).resolves.toBe(false);
     await expect(
-      verifyAppleProfileToken(SECRET, token, {
-        policyId: "policy-1",
-        kind: "mttx.apple.device",
-        deviceToken: "device-token-2",
-      }),
+      verifyAppleProfileToken(SECRET, token, { ...context, deviceId: "device-2" }),
+    ).resolves.toBe(false);
+    await expect(
+      verifyAppleProfileToken(SECRET, token, { ...context, expiresAt: expiresAt + 60 }),
     ).resolves.toBe(false);
 
     // A profile token must never be accepted as an asset token.

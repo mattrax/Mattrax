@@ -45,6 +45,8 @@ export type TokenPayload = {
   emailVerified?: boolean;
   /** Fingerprint of the session cookie an SSR token is bound to. */
   ch?: string;
+  /** One-time id consumed when the token is redeemed (SSO assertions). */
+  jti?: string;
   iat?: number;
   ver?: string;
   user?: unknown;
@@ -74,6 +76,7 @@ export const TokenPayloadSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
   emailVerified: Schema.optional(Schema.Boolean),
   ch: Schema.optional(Schema.String),
+  jti: Schema.optional(Schema.String),
   iat: Schema.optional(Schema.Number),
   ver: Schema.optional(Schema.String),
   user: Schema.optional(Schema.Unknown),

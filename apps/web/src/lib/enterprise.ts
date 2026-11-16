@@ -1813,8 +1813,10 @@ export const enterprise = {
   listScimTokens: (tenantId: RouteParam) =>
     endpoint((api) => api.listScimTokens({ params: { tenantId: required(tenantId, "tenantId") } })),
   createScimToken: (tenantId: RouteParam, payload: { name: string; expiresAt?: string | null }) =>
-    endpoint((api) =>
-      api.createScimToken({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    endpoint(
+      (api) =>
+        api.createScimToken({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+      { stepUp: "scim-token-create" },
     ),
   revokeScimToken: (tenantId: RouteParam, tokenId: string) =>
     endpoint((api) =>

@@ -9,6 +9,7 @@ export const STEP_UP_ACTIONS = [
   "tenant-delete",
   "api-token-create",
   "api-token-revoke",
+  "scim-token-create",
   "mfa-enroll",
   "mfa-disable",
   "mfa-regenerate",

@@ -13,7 +13,7 @@ import {
 import { AuthClaims, RecoveryRejected } from "@mattrax/enterprise-domain";
 import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
 import type { EmailTransport } from "./email.ts";
-import { hasOwnerRole } from "./rbac.ts";
+import { isBuiltInOwnerMember } from "./rbac.ts";
 
 /**
  * Break-glass account recovery.
@@ -102,12 +102,16 @@ export const recoveryApprovalTenant = (
 ): Effect.Effect<string | null, unknown> =>
   Effect.gen(function* () {
     const memberships = yield* db
-      .select({ organizationId: schema.member.organizationId, role: schema.member.role })
+      .select({
+        organizationId: schema.member.organizationId,
+        role: schema.member.role,
+        customRoleId: schema.member.customRoleId,
+      })
       .from(schema.member)
       .where(eq(schema.member.userId, userId));
 
     const ownerTenants = memberships
-      .filter((membership) => hasOwnerRole(membership.role))
+      .filter(isBuiltInOwnerMember)
       .map((membership) => membership.organizationId);
 
     if (ownerTenants.length === 0) return null;
@@ -117,12 +121,13 @@ export const recoveryApprovalTenant = (
         organizationId: schema.member.organizationId,
         userId: schema.member.userId,
         role: schema.member.role,
+        customRoleId: schema.member.customRoleId,
       })
       .from(schema.member)
       .where(inArray(schema.member.organizationId, ownerTenants));
 
     const shared = colleagues.find(
-      (member) => member.userId !== userId && hasOwnerRole(member.role),
+      (member) => member.userId !== userId && isBuiltInOwnerMember(member),
     );
 
     return shared?.organizationId ?? null;
@@ -136,6 +141,7 @@ const ownerRecipients = (db: EnterpriseDb, organizationId: string, excludeUserId
         userId: schema.member.userId,
         email: schema.user.email,
         role: schema.member.role,
+        customRoleId: schema.member.customRoleId,
         disabled: schema.user.disabled,
         emailVerified: schema.user.emailVerified,
       })
@@ -147,7 +153,7 @@ const ownerRecipients = (db: EnterpriseDb, organizationId: string, excludeUserId
       .filter(
         (row) =>
           row.userId !== excludeUserId &&
-          hasOwnerRole(row.role) &&
+          isBuiltInOwnerMember(row) &&
           !row.disabled &&
           row.emailVerified,
       )
@@ -402,7 +408,7 @@ export const approveAccountRecovery = (
       where: { userId: input.approverUserId, organizationId: input.organizationId },
     });
 
-    if (!approver || !hasOwnerRole(approver.role)) return yield* Effect.fail(invalid);
+    if (!approver || !isBuiltInOwnerMember(approver)) return yield* Effect.fail(invalid);
 
     const approved = yield* deps.db
       .update(schema.accountRecovery)

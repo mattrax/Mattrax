@@ -145,7 +145,7 @@ export const createAppleHarness = (
       Effect.succeed(state.declarations.get(`${type}/${identifier}`) ?? null),
     getAppleAsset: (_certificate, identifier) =>
       Effect.succeed(state.assets.get(identifier) ?? null),
-    getAppleProfile: (_policyId, _kind) => Effect.succeed(state.profile),
+    getAppleProfile: (_policyId, _kind, _deviceId) => Effect.succeed(state.profile),
     windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
     getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
     windowsEnroll: () => Effect.fail(new ManagementNotSupported()),

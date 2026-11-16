@@ -160,8 +160,10 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
             }),
           ),
 
-        getAppleProfile: (policyId, kind) =>
-          normalize(client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind } })),
+        getAppleProfile: (policyId, kind, deviceId) =>
+          normalize(
+            client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind, deviceId } }),
+          ),
 
         windowsDiscovery: (request) =>
           normalize(client.ManagementWebhook.windowsDiscovery({ payload: request })),

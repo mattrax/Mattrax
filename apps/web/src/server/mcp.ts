@@ -279,6 +279,22 @@ const shouldExpose = (path: string) => {
 
   if (path.includes("/answers")) return false;
 
+  // Credentials, secret material and member administration are not part of
+  // the consent grant an MCP client receives, even when the signed-in user
+  // happens to hold the underlying permission.
+  for (const blocked of [
+    "/scim-tokens",
+    "/webhooks",
+    "/roles",
+    "/invitations",
+    "/members",
+    "/abm",
+    "/vpp",
+    "/api-tokens",
+    "/backups",
+  ])
+    if (path.includes(blocked)) return false;
+
   return true;
 };
 

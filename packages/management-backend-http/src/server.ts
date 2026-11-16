@@ -164,7 +164,7 @@ export const managementWebhookHandlers = (
 
         if (!backend.getAppleProfile) return null;
 
-        return yield* backend.getAppleProfile(payload.policyId, payload.kind);
+        return yield* backend.getAppleProfile(payload.policyId, payload.kind, payload.deviceId);
       }),
     )
     .handle("windowsDiscovery", ({ request, payload }) =>

@@ -230,6 +230,8 @@ export type EnterpriseAuthOptions = {
   readonly onboardingReplyTo?: EmailReplyTo;
   /** Support address in the welcome footer. Defaults to the sender address. */
   readonly onboardingSupportEmail?: string | null;
+  /** Extra origins allowed to make cookie-authenticated writes. */
+  readonly trustedOrigins?: ReadonlyArray<string>;
 };
 
 export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
@@ -258,6 +260,17 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           };
 
       const { origin, authSecret, email } = options;
+
+      /** Normalise an Origin header so trailing slashes or default ports match. */
+      const sameOrigin = (left: string, right: string) => {
+        try {
+          return new URL(left).origin === new URL(right).origin;
+        } catch {
+          return false;
+        }
+      };
+
+      const allowedWriteOrigins = [origin, ...(options.trustedOrigins ?? [])];
 
       const emailFrom = options.emailFrom ?? DEFAULT_EMAIL_FROM;
 
@@ -478,6 +491,29 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const session = yield* resolveSession(request);
           const apiToken = session ? undefined : yield* resolveApiToken(request);
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
+
+          // Cookie-authenticated mutations need the same Origin + CSRF guard
+          // the library applies to its own routes. Bearer tokens are exempt:
+          // they are not attached automatically by a browser.
+          if (
+            session &&
+            request.method.toUpperCase() !== "GET" &&
+            request.method.toUpperCase() !== "HEAD"
+          ) {
+            const requestOrigin = request.headers.get("origin");
+
+            if (
+              request.headers.get("x-effect-auth-csrf") !== "1" ||
+              !requestOrigin ||
+              !allowedWriteOrigins.some((allowed) => sameOrigin(allowed, requestOrigin))
+            )
+              return yield* Effect.fail(
+                diagnoseError(
+                  new EnterpriseForbidden({ message: "Request origin could not be verified." }),
+                  { code: "csrf", reason: "origin_mismatch" },
+                ),
+              );
+          }
 
           if (oauth) {
             const path = new URL(request.url).pathname;

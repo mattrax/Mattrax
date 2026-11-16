@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -73,6 +73,8 @@ type GroupRow = typeof schema.userGroup.$inferSelect;
 const ScimGroupMemberRef = Schema.Struct({ value: Schema.String });
 
 const ScimPatchOperation = Schema.Struct({
+  /** SCIM operation verb: `add`, `remove` or `replace`. */
+  op: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
   value: Schema.optional(Schema.Json),
 });
@@ -506,8 +508,7 @@ const findGroup = (ctx: ScimContext, groupId: string) =>
       .select({ userId: schema.user.id, email: schema.user.email })
       .from(schema.userGroupMember)
       .innerJoin(schema.user, eq(schema.user.id, schema.userGroupMember.userId))
-      .where(eq(schema.userGroupMember.groupId, groupId))
-      .limit(1000);
+      .where(eq(schema.userGroupMember.groupId, groupId));
 
     return { group, members: rows };
   });
@@ -566,8 +567,7 @@ const replaceGroupMembers = (
       const valid = yield* db
         .select({ userId: schema.member.userId })
         .from(schema.member)
-        .where(eq(schema.member.organizationId, ctx.organizationId))
-        .limit(1000);
+        .where(eq(schema.member.organizationId, ctx.organizationId));
 
       const allowed = new Set(valid.map((row) => row.userId));
       const rows = ids.filter((userId) => allowed.has(userId));
@@ -586,6 +586,110 @@ const replaceGroupMembers = (
       .update(schema.userGroup)
       .set({ updatedAt: now() })
       .where(eq(schema.userGroup.id, groupId));
+    const updated = yield* findGroup(ctx, groupId);
+
+    return updated
+      ? json(groupResource(updated.group, updated.members))
+      : scimError(404, "Group not found");
+  });
+
+/**
+ * Apply one SCIM group membership operation.
+ *
+ * `add` and `remove` touch only the listed users; `replace` is the only verb
+ * that rewrites the whole collection. Treating every operation as a replace is
+ * what previously made a standard IdP `add` drop the rest of the group.
+ */
+const applyGroupMembershipOperation = (
+  ctx: ScimContext,
+  groupId: string,
+  operation: { readonly op?: string; readonly value?: Schema.Json },
+) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const op = operation.op?.trim().toLowerCase() ?? "replace";
+
+    const refs = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(operation.value),
+    );
+
+    if (!refs) return scimError(400, "A members operation needs an array value", "invalidValue");
+
+    if (op === "replace") return yield* replaceGroupMembers(ctx, groupId, refs);
+
+    if (op !== "add" && op !== "remove")
+      return scimError(400, `Unsupported group patch operation "${operation.op}"`, "invalidValue");
+
+    // Resolve the group inside this tenant before touching membership.
+    const group = yield* db.query.userGroup.findFirst({
+      where: { id: groupId, organizationId: ctx.organizationId },
+    });
+
+    if (!group) return scimError(404, "Group not found");
+
+    const ids = [...new Set(refs.map((member) => member.value))];
+
+    if (ids.length === 0) {
+      const unchanged = yield* findGroup(ctx, groupId);
+
+      return unchanged
+        ? json(groupResource(unchanged.group, unchanged.members))
+        : scimError(404, "Group not found");
+    }
+
+    if (op === "add") {
+      const valid = yield* db
+        .select({ userId: schema.member.userId })
+        .from(schema.member)
+        .where(
+          and(
+            eq(schema.member.organizationId, ctx.organizationId),
+            inArray(schema.member.userId, ids),
+          ),
+        );
+
+      const allowed = new Set(valid.map((row) => row.userId));
+      const rows = ids.filter((userId) => allowed.has(userId));
+
+      if (rows.length > 0) {
+        yield* db
+          .insert(schema.userGroupMember)
+          .ignore()
+          .values(rows.map((userId) => ({ groupId, userId })));
+
+        for (const userId of rows) ctx.changedUserIds.add(userId);
+      }
+    } else {
+      const removed = yield* db
+        .select({ userId: schema.userGroupMember.userId })
+        .from(schema.userGroupMember)
+        .where(
+          and(
+            eq(schema.userGroupMember.groupId, groupId),
+            inArray(schema.userGroupMember.userId, ids),
+          ),
+        );
+
+      if (removed.length > 0) {
+        yield* db.delete(schema.userGroupMember).where(
+          and(
+            eq(schema.userGroupMember.groupId, groupId),
+            inArray(
+              schema.userGroupMember.userId,
+              removed.map((row) => row.userId),
+            ),
+          ),
+        );
+
+        for (const row of removed) ctx.changedUserIds.add(row.userId);
+      }
+    }
+
+    yield* db
+      .update(schema.userGroup)
+      .set({ updatedAt: now() })
+      .where(eq(schema.userGroup.id, groupId));
+
     const updated = yield* findGroup(ctx, groupId);
 
     return updated
@@ -738,19 +842,31 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
             Schema.decodeUnknownOption(ScimPatch)(parsedBody.body),
           );
 
-          const members = Option.getOrUndefined(
-            Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(
-              patch?.Operations?.find((operation) => operation.path === "members")?.value,
-            ),
-          );
+          const operations = (patch?.Operations ?? []).filter((operation) => {
+            if (operation.path?.toLowerCase() === "members") return true;
 
-          if (members) return yield* replaceGroupMembers(ctx, parsed.id, members);
+            // Some IdPs omit `path` for a members update. Only treat a value
+            // that actually decodes as a membership list that way, so an
+            // unrelated valueless operation is not rejected.
+            if (operation.path !== undefined && operation.path !== null) return false;
+
+            return Option.isSome(
+              Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(operation.value),
+            );
+          });
+
+          for (const operation of operations) {
+            const result = yield* applyGroupMembershipOperation(ctx, parsed.id, operation);
+
+            // Apply every operation, then answer with the final state.
+            if (result instanceof Response && result.status >= 400) return result;
+          }
 
           const found = yield* findGroup(ctx, parsed.id);
 
           if (!found) return scimError(404, "Group not found");
 
-          return json(groupResource(found.group, []));
+          return json(groupResource(found.group, found.members));
         }
 
         if (method === "DELETE") return yield* deleteGroup(ctx, parsed.id);

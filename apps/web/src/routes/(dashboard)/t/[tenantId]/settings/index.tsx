@@ -538,7 +538,7 @@ export default function GeneralSettingsPage() {
               <Input
                 disabled={!canWrite()}
                 value={slug()}
-                pattern="[a-z0-9-]+"
+                pattern="[a-z0-9\\-]+"
                 onInput={(e) => setSlug(e.currentTarget.value.toLowerCase())}
                 required
               />

@@ -211,8 +211,9 @@ const postWebhook = async (input: {
       },
       body,
       // Never follow a redirect: a public URL could redirect to an internal
-      // address that the static guard cannot see.
-      redirect: "error",
+      // address that the static guard cannot see. `manual` is the runtime's
+      // supported spelling; a 3xx is then reported as a failed delivery.
+      redirect: "manual",
     },
     { timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS, fetch: input.fetch },
   );

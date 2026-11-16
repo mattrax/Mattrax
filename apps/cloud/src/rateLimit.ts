@@ -113,6 +113,10 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
 
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname)) return authRule();
 
+  // SSO discovery is public and reveals whether an address belongs to a
+  // tenant; keep it in the credential bucket so it cannot be enumerated.
+  if (request.method === "GET" && pathname === "/api/v1/sso/azure/start") return authRule();
+
   // Invitation links are bearer credentials: preview and accept are public, so
   // they share the auth bucket's credential-stuffing ceiling.
   if (

@@ -3197,6 +3197,7 @@ function DeviceAttributesPanel(props: {
                         <Input
                           class="h-8 text-[12.5px]"
                           type={attributeInputType(definition.type)}
+                          aria-label={definition.label}
                           disabled={!props.writable}
                           value={value()}
                           onInput={(event) => setValue(event.currentTarget.value)}
@@ -3205,6 +3206,7 @@ function DeviceAttributesPanel(props: {
                     >
                       <select
                         class="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                        aria-label={definition.label}
                         disabled={!props.writable}
                         value={value()}
                         onChange={(event) => setValue(event.currentTarget.value)}

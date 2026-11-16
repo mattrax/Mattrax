@@ -246,6 +246,8 @@ export type PolicyDesignerProps = {
   readonly persistedDraft?: PolicyDraft;
   readonly saving?: boolean;
   readonly saveDisabled?: boolean;
+  /** Dashboard viewers without `policies.write` cannot create a policy either. */
+  readonly canDeploy?: boolean;
   readonly error?: unknown;
   readonly storageKey?: string;
   readonly onSave?: (draft: PolicyDraft) => Promise<void> | void;
@@ -1832,12 +1834,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     size="sm"
                     onClick={deploy}
                     disabled={
-                      policySelectionCount(policyDraft()) === 0 || blockingIssues().length > 0
+                      props.canDeploy === false ||
+                      policySelectionCount(policyDraft()) === 0 ||
+                      blockingIssues().length > 0
                     }
                     title={
-                      blockingIssues().length > 0
-                        ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
-                        : undefined
+                      props.canDeploy === false
+                        ? "Your role cannot save policies"
+                        : blockingIssues().length > 0
+                          ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
+                          : undefined
                     }
                   >
                     Deploy in Mattrax →

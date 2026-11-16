@@ -223,6 +223,7 @@ export default function PolicyDesignerPage() {
             storageKey={storageKey()}
             saving={save.isPending}
             saveDisabled={!writable()}
+            canDeploy={writable()}
             error={save.error}
             onSave={
               writable()

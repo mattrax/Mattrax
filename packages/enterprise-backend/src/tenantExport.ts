@@ -16,6 +16,8 @@ import {
   type TenantExportPolicy,
   type TenantExportPreRegistration,
   type TenantExportProfile,
+  type TenantExportUserAssignment,
+  type TenantExportUserGroupAssignment,
 } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb, EnterpriseOrganization } from "./schema.ts";
 
@@ -106,6 +108,30 @@ export const buildTenantExport = (
       .where(eq(schema.policy.organizationId, organizationId));
 
     const policyIds = policies.map((policy) => policy.id);
+
+    const userPolicyRows = policyIds.length
+      ? yield* db
+          .select()
+          .from(schema.userPolicy)
+          .where(
+            and(
+              eq(schema.userPolicy.organizationId, organizationId),
+              inArray(schema.userPolicy.policyId, policyIds),
+            ),
+          )
+      : [];
+
+    const userGroupPolicyRows = policyIds.length
+      ? yield* db
+          .select()
+          .from(schema.userGroupPolicy)
+          .where(
+            and(
+              eq(schema.userGroupPolicy.organizationId, organizationId),
+              inArray(schema.userGroupPolicy.policyId, policyIds),
+            ),
+          )
+      : [];
 
     const applications = yield* db
       .select()
@@ -297,16 +323,73 @@ export const buildTenantExport = (
       key: group.id,
       name: group.name,
       notes: group.notes,
+      kind: group.kind,
+      rules: group.rules ?? null,
       devices: groupDevices.flatMap((link) => {
         if (link.groupId !== group.id) return [];
         const device = devicesById.get(link.deviceId);
 
         if (!device) return [];
 
-        return [{ key: device.id, name: device.name, serial: device.serial }];
+        return [
+          {
+            key: device.id,
+            name: device.name,
+            serial: device.serial,
+            source: link.source,
+          },
+        ];
       }),
       policyKeys: groupPolicyKeys.get(group.id) ?? [],
     }));
+
+    const userAssignments = new Map<
+      string,
+      { policyKeys: string[]; excludedPolicyKeys: string[] }
+    >();
+
+    for (const row of userPolicyRows) {
+      const entry = userAssignments.get(row.userId) ?? {
+        policyKeys: [],
+        excludedPolicyKeys: [],
+      };
+
+      (row.mode === "exclude" ? entry.excludedPolicyKeys : entry.policyKeys).push(row.policyId);
+      userAssignments.set(row.userId, entry);
+    }
+
+    const exportedUserAssignments: TenantExportUserAssignment[] = [];
+
+    for (const [userId, entry] of userAssignments) {
+      const user = usersById.get(userId);
+
+      if (!user) continue;
+
+      exportedUserAssignments.push({
+        email: user.email,
+        policyKeys: entry.policyKeys,
+        excludedPolicyKeys: entry.excludedPolicyKeys,
+      });
+    }
+
+    const userGroupAssignments = new Map<
+      string,
+      { policyKeys: string[]; excludedPolicyKeys: string[] }
+    >();
+
+    for (const row of userGroupPolicyRows) {
+      const entry = userGroupAssignments.get(row.groupId) ?? {
+        policyKeys: [],
+        excludedPolicyKeys: [],
+      };
+
+      (row.mode === "exclude" ? entry.excludedPolicyKeys : entry.policyKeys).push(row.policyId);
+      userGroupAssignments.set(row.groupId, entry);
+    }
+
+    const exportedUserGroupAssignments: TenantExportUserGroupAssignment[] = [
+      ...userGroupAssignments,
+    ].map(([groupId, entry]) => ({ groupId, ...entry }));
 
     const exportedPolicies: TenantExportPolicy[] = policies.map((policy) => ({
       key: policy.id,
@@ -438,6 +521,8 @@ export const buildTenantExport = (
       policies: exportedPolicies,
       applications: exportedApplications,
       deviceAssignments: exportedDeviceAssignments,
+      userAssignments: exportedUserAssignments,
+      userGroupAssignments: exportedUserGroupAssignments,
       enrollment: exportedEnrollment,
       preRegistrations: exportedPreRegistrations,
       scepCertificates: exportedCertificates,

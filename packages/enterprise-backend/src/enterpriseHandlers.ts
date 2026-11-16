@@ -5064,9 +5064,37 @@ export const createEnterpriseService = ({
             .where(eq(schema.member.organizationId, membership.organizationId));
 
           if ((members?.value ?? 0) <= 1) {
-            yield* db
-              .delete(schema.organization)
-              .where(eq(schema.organization.id, membership.organizationId));
+            // A solo tenant is deleted with the account, so its subscription,
+            // devices and objects must be reclaimed exactly as the explicit
+            // tenant delete does. A failed teardown keeps both rows so the
+            // operator can retry instead of silently leaving Stripe billing.
+            const [organization] = yield* db
+              .select()
+              .from(schema.organization)
+              .where(eq(schema.organization.id, membership.organizationId))
+              .limit(1);
+
+            if (!organization)
+              return yield* Effect.fail(
+                new EnterpriseDbError({ message: "The tenant could not be loaded for deletion" }),
+              );
+
+            yield* teardownTenant(db, storage, {
+              organizationId: organization.id,
+              actor: { id: user.id, email: user.email },
+              deps: {
+                preflight: () => preflightTeardown(organization),
+                unenrollDevices: teardownDevices,
+                cancelSubscription: teardownSubscription,
+              },
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new EnterpriseDbError({
+                    message: `${cause.message} The account was kept so the deletion can be retried.`,
+                  }),
+              ),
+            );
           } else {
             if (
               isBuiltInOwnerMember(membership) &&
@@ -6882,6 +6910,36 @@ export const createEnterpriseService = ({
           body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
 
         if (nextAzureTenantId) {
+          if (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              nextAzureTenantId,
+            )
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Enter a valid Entra tenant ID (a GUID from the Entra admin centre)",
+              }),
+            );
+        } else if (body.enabled === true)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Enter the Entra tenant ID before enabling single sign-on",
+            }),
+          );
+
+        // Linking a different Entra tenant changes which identities can claim
+        // member accounts, so only a built-in owner may change it.
+        if (
+          nextAzureTenantId !== (existing?.azureTenantId ?? null) &&
+          !isBuiltInOwnerMember(ctx.member)
+        )
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only an owner can change the linked Entra tenant",
+            }),
+          );
+
+        if (nextAzureTenantId) {
           const claimed = yield* db.query.ssoConfig.findFirst({
             where: { azureTenantId: nextAzureTenantId },
           });
@@ -6997,6 +7055,8 @@ export const createEnterpriseService = ({
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "scim-token-create");
+
         const body: { name: string; expiresAt?: string | null } = payload;
         const name = body.name.trim();
 
@@ -9172,6 +9232,13 @@ export const createEnterpriseService = ({
           enabledAssetTag?: boolean;
           maxDevices?: number;
         } = payload;
+
+        if (body.code != null && body.code.trim().length > 0 && body.code.trim().length < 8)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "The enrollment password must be at least 8 characters, or left blank",
+            }),
+          );
 
         yield* db
           .update(schema.enterpriseEnrollment)
@@ -14680,22 +14747,26 @@ export const createEnterpriseService = ({
           )
           .limit(limit);
 
-        const users = yield* db
-          .select({
-            id: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
-            role: schema.member.role,
-          })
-          .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-          .where(
-            and(
-              eq(schema.member.organizationId, ctx.organization.id),
-              or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
-            ),
-          )
-          .limit(limit);
+        // Member names and addresses are the same data `listDirectory` gates
+        // behind `members.read`; tenant-level read must not bypass it.
+        const users = hasPermission(ctx.role.permissions, "members.read")
+          ? yield* db
+              .select({
+                id: schema.user.id,
+                name: schema.user.name,
+                email: schema.user.email,
+                role: schema.member.role,
+              })
+              .from(schema.member)
+              .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+              .where(
+                and(
+                  eq(schema.member.organizationId, ctx.organization.id),
+                  or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
+                ),
+              )
+              .limit(limit)
+          : [];
 
         return {
           rows: [

@@ -607,6 +607,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     emailFrom: mailer.sender,
     onboardingReplyTo: onboardingReplyTo(),
     onboardingSupportEmail: onboardingSupportEmail(),
+    trustedOrigins: (apiEnv.TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
   });
 
   const storageBucket: Parameters<typeof R2.layer>[0] = storageBucketFor(env);

@@ -127,8 +127,15 @@ const isRecord = (value: PlistValue): value is PlistDictionary => Schema.is(Plis
 const plistString = (value: PlistValue | undefined) =>
   Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
 
+/** A profile larger than this cannot reasonably be a configuration profile. */
+const MAX_MOBILECONFIG_CHARS = 8 * 1024 * 1024;
+
 const decodeBase64 = (value: string): Uint8Array => {
   const cleaned = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+
+  if (cleaned.length > MAX_MOBILECONFIG_CHARS)
+    throw new Error("The mobileconfig is too large to preview");
+
   const binary = atob(cleaned);
 
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));

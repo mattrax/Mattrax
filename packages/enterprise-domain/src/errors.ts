@@ -30,6 +30,7 @@ export const ENTERPRISE_ERROR_CODES = [
   "token_scope",
   "mcp_connection_revoked",
   "mcp_account_scope",
+  "csrf",
   "sso_not_configured",
   "sso_tenant_missing",
   "sso_disabled",

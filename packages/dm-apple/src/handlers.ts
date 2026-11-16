@@ -254,6 +254,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             identityCertificate,
             token.UDID ?? token.EnrollmentID,
             identitySerial,
+            identityFingerprint,
           );
 
           return HttpServerResponse.empty({ status: 200 });
@@ -270,6 +271,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             identityCertificate,
             request.UDID ?? request.EnrollmentID,
             identitySerial,
+            identityFingerprint,
           );
 
           if (!value) return HttpServerResponse.empty({ status: 200 });
@@ -462,11 +464,16 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
 
     if (!deviceToken || !policyId || !kind) return HttpServerResponse.empty({ status: 404 });
 
+    const expiresAtRaw = url.searchParams.get("expiresAt");
+    const expiresAt = expiresAtRaw && /^\d+$/.test(expiresAtRaw) ? Number(expiresAtRaw) : undefined;
+
     const profile = yield* service.handleProfile(
       deviceToken,
       policyId,
       kind,
       url.searchParams.get("token") ?? undefined,
+      url.searchParams.get("deviceId") ?? undefined,
+      expiresAt,
     );
 
     if (!profile) return HttpServerResponse.empty({ status: 404 });

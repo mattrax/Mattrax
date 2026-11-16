@@ -161,6 +161,7 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       payload: Schema.Struct({
         policyId: Schema.String,
         kind: Schema.String,
+        deviceId: Schema.String,
       }),
       success: Schema.NullOr(
         Schema.Struct({

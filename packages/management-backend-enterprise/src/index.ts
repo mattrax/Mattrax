@@ -4192,16 +4192,31 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
-      getAppleProfile: (policyId, kind) =>
+      getAppleProfile: (policyId, kind, deviceId) =>
         provideDb(
           Effect.gen(function* () {
             const [row] = yield* db
-              .select({ configuration: s.configuration, organizationId: s.policy.organizationId })
+              .select({
+                configuration: s.configuration,
+                organizationId: s.policy.organizationId,
+                deviceOrganizationId: s.device.organizationId,
+                deviceStatus: s.device.status,
+              })
               .from(s.configuration)
               .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+              .innerJoin(s.device, eq(s.device.id, deviceId))
               .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
               .limit(1)
               .pipe(Effect.mapError(internal));
+
+            // The signed link is device-bound; a leaked URL for a device that
+            // was removed, unenrolled or belongs to another tenant must fail.
+            if (
+              !row ||
+              row.deviceStatus !== "enrolled" ||
+              row.deviceOrganizationId !== row.organizationId
+            )
+              return null;
 
             if (!row) return null;
             const parsed = parseConfigurationKind(row.configuration.kind);

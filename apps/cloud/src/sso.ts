@@ -310,6 +310,30 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
             { error: "This account belongs to multiple tenants; ask an administrator to link SSO" },
             403,
           );
+
+        // Only a domain the tenant has proven it controls may claim an
+        // existing account by email. Otherwise an administrator could link an
+        // Entra tenant they own and sign in as an owner of this tenant.
+        const emailDomain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+
+        const verifiedDomain = yield* db.query.ssoDomain.findFirst({
+          where: {
+            domain: emailDomain,
+            organizationId: tenantId,
+            isVerified: true,
+            source: "entra",
+          },
+        });
+
+        if (!verifiedDomain)
+          return json(
+            {
+              error:
+                "This email domain is not verified for this tenant yet; ask an administrator to finish directory sync",
+            },
+            403,
+          );
+
         yield* db.insert(schema.ssoIdentity).ignore().values({
           organizationId: tenantId,
           objectId,
@@ -362,6 +386,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         exp: Date.now() + 2 * 60 * 1000,
         purpose: "sso-assertion",
         tenantId,
+        jti: crypto.randomUUID(),
       });
 
       const afterSignIn = safeReturnTo(payload.returnTo);

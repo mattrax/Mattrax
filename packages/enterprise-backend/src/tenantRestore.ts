@@ -5,11 +5,13 @@ import {
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest,
+  isSupportedDynamicGroupRulesVersion,
   validateTenantBranding,
   type TenantExportGroup,
 } from "@mattrax/enterprise-domain";
 import { validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { schema } from "@mattrax/enterprise-core";
+import { loadTenantEscrowKey } from "./fdeEscrow.ts";
 import {
   readTenantBackup,
   runTenantBackup,
@@ -117,6 +119,16 @@ type ParsedBundle = {
     excludedPolicyKeys: ReadonlyArray<string>;
     applicationKeys: ReadonlyArray<string>;
   }>;
+  userAssignments: ReadonlyArray<{
+    email: string;
+    policyKeys: ReadonlyArray<string>;
+    excludedPolicyKeys: ReadonlyArray<string>;
+  }>;
+  userGroupAssignments: ReadonlyArray<{
+    groupId: string;
+    policyKeys: ReadonlyArray<string>;
+    excludedPolicyKeys: ReadonlyArray<string>;
+  }>;
   preRegistrations: ReadonlyArray<{
     serial: string;
     name: string | null;
@@ -148,6 +160,7 @@ const text = (value: string | null | undefined, max: number): string | null => {
  */
 export const parseTenantRestoreBundle = (
   text_: string,
+  options: { readonly escrowCertificateFingerprintSha256?: string | null } = {},
 ): Effect.Effect<ParsedBundle, TenantRestoreError, never> =>
   Effect.gen(function* () {
     if (new TextEncoder().encode(text_).byteLength > TENANT_RESTORE_MAX_BYTES)
@@ -227,6 +240,20 @@ export const parseTenantRestoreBundle = (
         return yield* Effect.fail(
           invalid(`Group "${group.name}" must list its policy assignments`),
         );
+
+      if (group.kind === "dynamic") {
+        if (!group.rules)
+          return yield* Effect.fail(
+            invalid(`Dynamic group "${group.name}" has no membership rules`),
+          );
+
+        if (!isSupportedDynamicGroupRulesVersion(group.rules.version))
+          return yield* Effect.fail(
+            invalid(
+              `Dynamic group "${group.name}" uses an unsupported rules version (${group.rules.version})`,
+            ),
+          );
+      }
     }
 
     const policyKeys = new Set<string>();
@@ -264,9 +291,15 @@ export const parseTenantRestoreBundle = (
             invalid(`Policy "${policyName}" has invalid configuration data`),
           );
 
-        yield* validateConfiguration(kind, configuration).pipe(
-          Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)),
-        );
+        yield* validateConfiguration(
+          kind,
+          configuration,
+          options.escrowCertificateFingerprintSha256 === undefined
+            ? undefined
+            : {
+                escrowCertificateFingerprintSha256: options.escrowCertificateFingerprintSha256,
+              },
+        ).pipe(Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)));
         entries.push([kind, configuration]);
       }
 
@@ -388,6 +421,70 @@ export const parseTenantRestoreBundle = (
       });
     }
 
+    const parsedUserAssignments: Array<ParsedBundle["userAssignments"][number]> = [];
+    const parsedUserGroupAssignments: Array<ParsedBundle["userGroupAssignments"][number]> = [];
+
+    const validPolicyLists = (
+      label: string,
+      included: ReadonlyArray<string>,
+      excluded: ReadonlyArray<string>,
+    ) =>
+      Effect.gen(function* () {
+        for (const policyKey of included) {
+          if (!policyKeys.has(policyKey))
+            return yield* Effect.fail(
+              invalid(`${label} references policy "${policyKey}", which is not in this backup`),
+            );
+
+          if (excluded.includes(policyKey))
+            return yield* Effect.fail(invalid(`${label} includes and excludes the same policy`));
+        }
+
+        for (const policyKey of excluded)
+          if (!policyKeys.has(policyKey))
+            return yield* Effect.fail(
+              invalid(`${label} references policy "${policyKey}", which is not in this backup`),
+            );
+      });
+
+    for (const assignment of bundle.userAssignments ?? []) {
+      const email = text(assignment.email, 320)?.toLowerCase();
+
+      if (!email || !email.includes("@"))
+        return yield* Effect.fail(invalid("Every user assignment needs a valid email"));
+
+      yield* validPolicyLists(
+        `User assignment "${email}"`,
+        assignment.policyKeys,
+        assignment.excludedPolicyKeys,
+      );
+
+      parsedUserAssignments.push({
+        email,
+        policyKeys: [...new Set(assignment.policyKeys)],
+        excludedPolicyKeys: [...new Set(assignment.excludedPolicyKeys)],
+      });
+    }
+
+    for (const assignment of bundle.userGroupAssignments ?? []) {
+      const groupId = text(assignment.groupId, 255);
+
+      if (!groupId)
+        return yield* Effect.fail(invalid("Every user-group assignment needs a group id"));
+
+      yield* validPolicyLists(
+        `User-group assignment "${groupId}"`,
+        assignment.policyKeys,
+        assignment.excludedPolicyKeys,
+      );
+
+      parsedUserGroupAssignments.push({
+        groupId,
+        policyKeys: [...new Set(assignment.policyKeys)],
+        excludedPolicyKeys: [...new Set(assignment.excludedPolicyKeys)],
+      });
+    }
+
     const serials = new Set<string>();
 
     for (const row of preRegistrations) {
@@ -478,6 +575,8 @@ export const parseTenantRestoreBundle = (
         groupKey: row.groupKey ?? null,
       })),
       deviceAssignments: parsedDeviceAssignments,
+      userAssignments: parsedUserAssignments,
+      userGroupAssignments: parsedUserGroupAssignments,
       members: bundle.members?.length ?? 0,
       certificates: bundle.scepCertificates?.length ?? 0,
       auditLog: bundle.auditLog?.length ?? 0,
@@ -677,6 +776,8 @@ const applyBundle = (
             organizationId: organization.id,
             name: text(group.name, 255)!,
             notes: text(group.notes, 10_000),
+            kind: group.kind === "dynamic" ? "dynamic" : "manual",
+            rules: group.kind === "dynamic" ? (group.rules ?? null) : null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -697,8 +798,118 @@ const applyBundle = (
         if (groupPolicyValues.length > 0)
           yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
 
+        // Deleting and recreating policies cascades their user and user-group
+        // assignments away. Restore them from the bundle by the stable user
+        // email and the directory group id, which the restore does not replace.
+        const tenantUsers = yield* db
+          .select({ id: schema.user.id, email: schema.user.email })
+          .from(schema.user)
+          .innerJoin(schema.member, eq(schema.member.userId, schema.user.id))
+          .where(eq(schema.member.organizationId, organization.id));
+
+        const userIdByEmail = new Map(
+          tenantUsers.map((user) => [user.email.toLowerCase(), user.id]),
+        );
+
+        const userPolicyValues: Array<{
+          organizationId: string;
+          userId: string;
+          policyId: string;
+          mode: "include" | "exclude";
+          createdAt: Date;
+        }> = [];
+
+        for (const assignment of bundle.userAssignments) {
+          const userId = userIdByEmail.get(assignment.email);
+
+          if (!userId) continue;
+
+          for (const policyKey of assignment.policyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userPolicyValues.push({
+                organizationId: organization.id,
+                userId,
+                policyId,
+                mode: "include",
+                createdAt: timestamp,
+              });
+          }
+
+          for (const policyKey of assignment.excludedPolicyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userPolicyValues.push({
+                organizationId: organization.id,
+                userId,
+                policyId,
+                mode: "exclude",
+                createdAt: timestamp,
+              });
+          }
+        }
+
+        if (userPolicyValues.length > 0)
+          yield* tx.insert(schema.userPolicy).ignore().values(userPolicyValues);
+
+        const directoryGroups = yield* db
+          .select({ id: schema.userGroup.id })
+          .from(schema.userGroup)
+          .where(eq(schema.userGroup.organizationId, organization.id));
+
+        const directoryGroupIds = new Set(directoryGroups.map((group) => group.id));
+
+        const userGroupPolicyValues: Array<{
+          organizationId: string;
+          groupId: string;
+          policyId: string;
+          mode: "include" | "exclude";
+          createdAt: Date;
+        }> = [];
+
+        for (const assignment of bundle.userGroupAssignments) {
+          if (!directoryGroupIds.has(assignment.groupId)) continue;
+
+          for (const policyKey of assignment.policyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userGroupPolicyValues.push({
+                organizationId: organization.id,
+                groupId: assignment.groupId,
+                policyId,
+                mode: "include",
+                createdAt: timestamp,
+              });
+          }
+
+          for (const policyKey of assignment.excludedPolicyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userGroupPolicyValues.push({
+                organizationId: organization.id,
+                groupId: assignment.groupId,
+                policyId,
+                mode: "exclude",
+                createdAt: timestamp,
+              });
+          }
+        }
+
+        if (userGroupPolicyValues.length > 0)
+          yield* tx.insert(schema.userGroupPolicy).ignore().values(userGroupPolicyValues);
+
         let skippedDevices = 0;
-        const groupDeviceValues: Array<{ groupId: string; deviceId: string }> = [];
+
+        const groupDeviceValues: Array<{
+          groupId: string;
+          deviceId: string;
+          source: "manual" | "dynamic";
+        }> = [];
+
         const seenMemberships = new Set<string>();
 
         for (const group of bundle.groups) {
@@ -716,7 +927,11 @@ const applyBundle = (
 
             if (seenMemberships.has(membership)) continue;
             seenMemberships.add(membership);
-            groupDeviceValues.push({ groupId, deviceId });
+            groupDeviceValues.push({
+              groupId,
+              deviceId,
+              source: group.kind === "dynamic" ? "dynamic" : (device.source ?? "manual"),
+            });
           }
         }
 
@@ -959,7 +1174,16 @@ export const restoreTenantFromBackup = (
 
     const loaded = yield* readTenantBackup(db, storage, organization.id, options.backupId);
 
-    const bundle = yield* parseTenantRestoreBundle(loaded.text);
+    // Restoring into the same tenant keeps its escrow key, so a policy that
+    // escrows FileVault keys must validate against that key rather than the
+    // "new tenant" null used by import.
+    const escrowKey = yield* loadTenantEscrowKey(db, organization.id).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+
+    const bundle = yield* parseTenantRestoreBundle(loaded.text, {
+      escrowCertificateFingerprintSha256: escrowKey?.certificateFingerprintSha256 ?? null,
+    });
 
     // A bundle can only reference objects this tenant owns. Accepting an
     // arbitrary key would make the download endpoint read another tenant's

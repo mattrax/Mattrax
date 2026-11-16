@@ -878,15 +878,19 @@ export const appleChecks: ReadonlyArray<Check> = [
         contentType: "application/x-apple-aspen-config",
       };
 
+      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
       const token = await signAppleProfileToken(harness.config.authSecret, {
         deviceToken: "device-token",
         policyId: "policy-1",
         kind: "configuration",
+        deviceId: "device-1",
+        expiresAt,
       });
 
       const response = await harness.handler(
         new Request(
-          `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}`,
+          `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}&deviceId=device-1&expiresAt=${expiresAt}`,
         ),
       );
 

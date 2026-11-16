@@ -2294,6 +2294,8 @@ export const TenantExportDeviceRef = Schema.Struct({
   key: Schema.String,
   name: Schema.optional(NullableString),
   serial: Schema.optional(NullableString),
+  /** How the device joined: manual rows survive a dynamic recompute. */
+  source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
 });
 
 export type TenantExportDeviceRef = typeof TenantExportDeviceRef.Type;
@@ -2302,6 +2304,9 @@ export const TenantExportGroup = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** A dynamic group keeps its rules and is no longer restored as manual. */
+  kind: Schema.optional(DynamicGroupKind),
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
   /** Device members are metadata only; devices themselves are never imported. */
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
   policyKeys: Schema.Array(Schema.String),
@@ -2422,6 +2427,22 @@ export const TenantExportAuditEntry = Schema.Struct({
 
 export type TenantExportAuditEntry = typeof TenantExportAuditEntry.Type;
 
+export const TenantExportUserAssignment = Schema.Struct({
+  email: Schema.String,
+  policyKeys: Schema.Array(Schema.String),
+  excludedPolicyKeys: Schema.Array(Schema.String),
+});
+
+export type TenantExportUserAssignment = typeof TenantExportUserAssignment.Type;
+
+export const TenantExportUserGroupAssignment = Schema.Struct({
+  groupId: Schema.String,
+  policyKeys: Schema.Array(Schema.String),
+  excludedPolicyKeys: Schema.Array(Schema.String),
+});
+
+export type TenantExportUserGroupAssignment = typeof TenantExportUserGroupAssignment.Type;
+
 export const TenantExportEnvelope = Schema.Struct({
   version: Schema.Literal(TENANT_EXPORT_VERSION),
   exportedAt: Schema.String,
@@ -2432,6 +2453,9 @@ export const TenantExportEnvelope = Schema.Struct({
   applications: Schema.Array(TenantExportApplication),
   /** Direct device-to-policy/application assignments (restore only). */
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  /** Policy assignments to directory users and user groups. */
+  userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
+  userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.Array(TenantExportPreRegistration),
   scepCertificates: Schema.Array(TenantExportCertificate),
@@ -2544,6 +2568,8 @@ export const TenantImportRequest = Schema.Struct({
   policies: Schema.optional(Schema.Array(TenantExportPolicy)),
   applications: Schema.optional(Schema.Array(TenantExportApplication)),
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
+  userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.optional(Schema.Array(TenantExportPreRegistration)),
   scepCertificates: Schema.optional(Schema.Array(TenantExportCertificate)),

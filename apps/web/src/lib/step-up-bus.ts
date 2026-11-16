@@ -11,6 +11,7 @@ export const STEP_UP_ACTIONS = [
   "tenant-delete",
   "api-token-create",
   "api-token-revoke",
+  "scim-token-create",
   "mfa-enroll",
   "mfa-disable",
   "mfa-regenerate",
@@ -150,6 +151,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "create an API token";
     case "api-token-revoke":
       return "revoke this API token";
+    case "scim-token-create":
+      return "create a SCIM provisioning token";
     case "mfa-enroll":
       return "set up an authenticator app";
     case "mfa-disable":

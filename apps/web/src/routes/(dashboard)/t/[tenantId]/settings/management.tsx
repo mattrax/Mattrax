@@ -432,15 +432,25 @@ export default function ManagementSettingsPage() {
           />
         </ol>
 
-        <div class="mt-4 flex flex-wrap gap-2">
-          <Button variant="outline" onClick={downloadCsr}>
-            <Download class="size-4" />
-            Download CSR
-          </Button>
-          <Button variant="outline" onClick={() => setStep(3)}>
-            I already have a certificate
-          </Button>
-        </div>
+        <Show
+          when={writable()}
+          fallback={
+            <p class="mt-4 text-[13px] text-muted-foreground">
+              Your role cannot manage push certificates. Ask an administrator to download the CSR
+              and upload the signed certificate.
+            </p>
+          }
+        >
+          <div class="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" onClick={downloadCsr}>
+              <Download class="size-4" />
+              Download CSR
+            </Button>
+            <Button variant="outline" onClick={() => setStep(3)}>
+              I already have a certificate
+            </Button>
+          </div>
+        </Show>
         <Show when={csrError()}>
           <p class="mt-3 text-[13px] text-destructive">{csrError()}</p>
         </Show>
