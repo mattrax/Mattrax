@@ -695,7 +695,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     ? StripeService.layer(env.STRIPE_SECRET_KEY)
     : Layer.empty;
 
-  const remoteBilling = remoteBillingConfig();
+  // A hosted deployment bills through its own Stripe account; remote billing is
+  // the self-hosted path and must not shadow a configured Stripe deployment.
+  const remoteBilling = env.STRIPE_SECRET_KEY ? undefined : remoteBillingConfig();
 
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
