@@ -1,0 +1,100 @@
+name: Bug report
+description: Something in the dashboard, API, devices or protocols is not working as documented.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Before you continue, please
+        search the existing issues — a duplicate is closed as soon as it is found.
+
+        Do not report security vulnerabilities here. Use the private advisory
+        link in the sidebar instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the failure, including the page or endpoint.
+      placeholder: Enrolling a Mac from ABM leaves the device on the "Remote Management" screen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem. Include URLs, tenant role and command names where relevant.
+      placeholder: |
+        1. Enrol a Mac through ABM with the ADE profile.
+        2. Open the device page.
+        3. The status never leaves "Awaiting setup".
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you expected to happen instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Hosted (mattrax.app)
+        - Self-hosted
+        - Local development
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The dashboard footer version, the container tag, or the commit you built.
+      placeholder: aed0118 or v0.1.0
+    validations:
+      required: false
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Where the problem appears. Choose the closest match.
+      multiple: true
+      options:
+        - Dashboard / web app
+        - API / CLI
+        - Apple (macOS, iOS, iPadOS, tvOS, visionOS)
+        - Windows
+        - Android
+        - Enrollment / ABM / Autopilot
+        - Billing / email / webhooks
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Paste relevant logs, error ids or screenshots. Remove secrets, tokens, serial numbers and personal data first.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I removed credentials, device identifiers and personal data from the report.
+          required: true
