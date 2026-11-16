@@ -20,8 +20,7 @@ import {
   type EnterpriseDb,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { shouldApplyReportedName } from "@mattrax/enterprise-domain";
-import { selectInstaller } from "./applicationInstallers.ts";
+import { selectInstaller, shouldApplyReportedName } from "@mattrax/enterprise-domain";
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([

@@ -378,10 +378,6 @@ export type {
   TransactionalEmailOutcome,
 } from "./emailOutbox.js";
 
-export { compareVersions, installerSkipReason, selectInstaller } from "./applicationInstallers.js";
-
-export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
-
 export { settlePendingInvitations } from "./invitations.js";
 
 export { makeAuthLive, sessionCookie } from "./auth.js";

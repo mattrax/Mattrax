@@ -3,7 +3,7 @@ import {
   compareVersions,
   installerSkipReason,
   selectInstaller,
-} from "../src/applicationInstallers.ts";
+} from "@mattrax/enterprise-domain";
 
 const installer = (overrides: {
   id: string;

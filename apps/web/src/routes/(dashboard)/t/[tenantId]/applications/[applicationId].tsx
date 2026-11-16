@@ -156,7 +156,9 @@ export default function ApplicationDetailPage() {
   const [message, setMessage] = createSignal<string | null>(null);
 
   createEffect(
-    () => row()?.id,
+    // Re-sync after a save assigns ids to newly created installers, not only
+    // when a different application is opened.
+    () => `${row()?.id ?? ""}:${row()?.updatedAt ?? ""}`,
     () => {
       const value = row();
 

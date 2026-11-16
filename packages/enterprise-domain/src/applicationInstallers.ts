@@ -85,6 +85,15 @@ const hasCapability = (device: DeviceCapabilities, capability: string) =>
   );
 
 /**
+ * Preference order shared by selection and catalogue listings: priority, then
+ * the highest version, then id for a deterministic result.
+ */
+export const compareInstallerPreference = <T extends InstallerCandidate>(left: T, right: T) =>
+  right.priority - left.priority ||
+  compareVersions(right.version, left.version) ||
+  left.id.localeCompare(right.id);
+
+/**
  * Choose the best installer for one device.
  *
  * Order: installer priority (descending), then version (descending), then id
@@ -102,12 +111,7 @@ export const selectInstaller = <T extends InstallerCandidate>(
         meetsMinimum(device.osVersion, installer.minOsVersion) &&
         (!installer.requiredCapability || hasCapability(device, installer.requiredCapability)),
     )
-    .sort(
-      (left, right) =>
-        right.priority - left.priority ||
-        compareVersions(right.version, left.version) ||
-        left.id.localeCompare(right.id),
-    )[0];
+    .sort(compareInstallerPreference)[0];
 
 /** Human-readable reason a device cannot use any of an application's installers. */
 export const installerSkipReason = (

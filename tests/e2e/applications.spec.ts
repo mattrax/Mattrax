@@ -23,10 +23,26 @@ test.describe("application catalogue", () => {
     await expect(page.getByRole("heading", { name: "Example app" })).toBeVisible();
     await expect(page.getByLabel("Bundle / package ID")).toHaveValue("com.example.app");
 
+    await expect(page.getByText("Installer 1")).toBeVisible();
+    await page.getByRole("button", { name: "Add installer" }).click();
+    await expect(page.getByText("Installer 2")).toBeVisible();
+    await page.getByLabel("Version").nth(1).fill("2.0.0");
+    await page
+      .getByLabel("Manifest / installer URL")
+      .nth(1)
+      .fill("https://example.com/app/manifest-2.plist");
+    await page.getByLabel("Minimum OS").nth(1).fill("14.0");
+
     await page.getByLabel("Name", { exact: true }).fill("Example app renamed");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Application and assignments saved.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Example app renamed" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText("Installer 2")).toBeVisible();
+    // Installers are listed by priority and version, so the newer one leads.
+    await expect(page.getByLabel("Version").nth(0)).toHaveValue("2.0.0");
+    await expect(page.getByLabel("Version").nth(1)).toHaveValue("1.0.0");
 
     await page.getByRole("link", { name: "Back to applications" }).click();
     await expect(page.getByRole("link", { name: "Example app renamed" })).toBeVisible();

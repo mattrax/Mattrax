@@ -60,3 +60,12 @@ export * from "./stepUp.ts";
 export * from "./stepUpServer.ts";
 
 export * from "./ssr.ts";
+
+export {
+  compareInstallerPreference,
+  compareVersions,
+  installerSkipReason,
+  selectInstaller,
+} from "./applicationInstallers.js";
+
+export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";

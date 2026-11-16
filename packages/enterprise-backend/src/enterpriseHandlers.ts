@@ -278,7 +278,11 @@ import {
   type AuditExportEntry,
   type AuditSearchFilters,
 } from "./auditLog.ts";
-import { installerSkipReason, selectInstaller } from "./applicationInstallers.ts";
+import {
+  compareInstallerPreference,
+  installerSkipReason,
+  selectInstaller,
+} from "@mattrax/enterprise-domain";
 import { reconcileSubscriptionQuantity } from "./billing.ts";
 // oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- this is the composition fallback for a deployment with a Stripe client but no remote billing layer.
 import { makeStripeBillingService, type BillingOperations } from "./billingService.ts";
@@ -3495,11 +3499,7 @@ export const createEnterpriseService = ({
           eq(schema.applicationInstaller.applicationId, applicationId),
         ),
       )
-      .orderBy(
-        desc(schema.applicationInstaller.priority),
-        desc(schema.applicationInstaller.version),
-        asc(schema.applicationInstaller.createdAt),
-      );
+      .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
 
   /** Keep the legacy flat columns on `application` aligned with its best installer. */
   const syncLegacyApplicationInstaller = (organizationId: string, applicationId: string) =>
@@ -3574,11 +3574,24 @@ export const createEnterpriseService = ({
         }
       }
 
-      for (const row of existing)
-        if (!keep.has(row.id))
-          yield* db
-            .delete(schema.applicationInstaller)
-            .where(eq(schema.applicationInstaller.id, row.id));
+      const removed = existing.filter((row) => !keep.has(row.id));
+
+      for (const row of removed)
+        yield* db
+          .delete(schema.applicationInstaller)
+          .where(eq(schema.applicationInstaller.id, row.id));
+
+      // Remove the objects only after their rows are gone, so a failed delete
+      // leaves an orphan rather than a row pointing at a missing file.
+      for (const row of removed)
+        if (row.r2Key)
+          yield* Effect.tryPromise(() => storage.delete(row.r2Key!)).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                `Failed to delete application installer object ${row.r2Key}: ${String(cause)}`,
+              ),
+            ),
+          );
 
       yield* syncLegacyApplicationInstaller(input.organizationId, input.applicationId);
     });
@@ -13523,11 +13536,7 @@ export const createEnterpriseService = ({
           .select()
           .from(schema.applicationInstaller)
           .where(inArray(schema.applicationInstaller.applicationId, ids))
-          .orderBy(
-            desc(schema.applicationInstaller.priority),
-            desc(schema.applicationInstaller.version),
-            asc(schema.applicationInstaller.createdAt),
-          );
+          .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
 
         return {
           applications: apps.map((app) =>

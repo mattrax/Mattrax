@@ -54,6 +54,7 @@ const setup = (
     readonly configurationData?: Schema.Json;
     readonly device?: ReturnType<typeof device>;
     readonly applications?: Store[string];
+    readonly installers?: Store[string];
     readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
     readonly vpp?: boolean;
   } = {},
@@ -87,6 +88,7 @@ const setup = (
       },
     ],
     [tableName(schema.application)]: options.applications ?? [],
+    [tableName(schema.applicationInstaller)]: options.installers ?? [],
     [tableName(schema.vppToken)]: options.vpp
       ? [{ organizationId: "org-1", status: "active", encryptedToken: "sealed" }]
       : [],
@@ -248,6 +250,87 @@ describe("Apple policy application delivery", () => {
     });
   });
 
+  it("delivers the installer that matches the device OS and signs its own asset", async () => {
+    const catalogue = {
+      id: "app-1",
+      organizationId: "org-1",
+      name: "Slack",
+      platform: "apple" as const,
+      bundleId: "com.tinyspeck.slackmacgap",
+      version: "4.0",
+      source: "upload" as const,
+      manifestUrl: null,
+      storeId: null,
+      fileName: "Slack.pkg",
+      contentType: "application/vnd.apple.installer+xml",
+      size: pkg.byteLength,
+      sha256,
+      r2Key: "a/org-1/installer-14/sha",
+      notes: null,
+      createdAt: at,
+      updatedAt: at,
+    };
+
+    const installer = (id: string, minOsVersion: string, priority: number, key: string) => ({
+      id,
+      organizationId: "org-1",
+      applicationId: "app-1",
+      platform: "apple" as const,
+      source: "upload" as const,
+      bundleId: "com.tinyspeck.slackmacgap",
+      version: minOsVersion,
+      manifestUrl: null,
+      storeId: null,
+      fileName: "Slack.pkg",
+      contentType: "application/vnd.apple.installer+xml",
+      size: pkg.byteLength,
+      sha256,
+      r2Key: key,
+      minOsVersion,
+      requiredCapability: null,
+      priority,
+      createdAt: at,
+      updatedAt: at,
+    });
+
+    const options = {
+      configurationData: { applicationId: "app-1" },
+      applications: [catalogue],
+      installers: [
+        installer("installer-14", "14.0", 0, "a/org-1/installer-14/sha"),
+        installer("installer-15", "15.0", 10, "a/org-1/installer-15/sha"),
+      ],
+      readApplicationObject: async (key: string) => (key.startsWith("a/org-1/") ? pkg : null),
+    };
+
+    const first = setup({ ...options, device: device({ osVersion: "14.6" }) });
+    await run(first.backend.appleManagementCheckin(scope));
+
+    const [command] = commands(first.db, "InstallEnterpriseApplication");
+    expect(command).toBeTruthy();
+
+    // SAFETY: the upload path queues this exact payload shape; the helper
+    // decodes the manifest URL it contains.
+    const url = manifestAssetUrl(command!.payload as Schema.Json);
+    expect(url).toContain(
+      `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-14"))}`,
+    );
+    await expect(fetchAsset(first.backend, url)).resolves.toMatchObject({ content: pkg });
+
+    const second = setup({ ...options, device: device({ osVersion: "15.1" }) });
+    await run(second.backend.appleManagementCheckin(scope));
+
+    const [newer] = commands(second.db, "InstallEnterpriseApplication");
+
+    // SAFETY: the upload path queues this exact payload shape; the helper
+    // decodes the manifest URL it contains.
+    const newerUrl = manifestAssetUrl(newer!.payload as Schema.Json);
+    expect(newerUrl).toContain(
+      `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-15"))}`,
+    );
+    await expect(fetchAsset(second.backend, newerUrl)).resolves.toMatchObject({ content: pkg });
+  });
+
   it("does not send a .pkg install to an iOS device", async () => {
     const { db, backend } = setup({
       device: device({ osEdition: "iOS", osVersion: "17.0" }),
@@ -256,6 +339,88 @@ describe("Apple policy application delivery", () => {
 
     await run(backend.appleManagementCheckin(scope));
 
+    expect(commands(db, "InstallEnterpriseApplication")).toHaveLength(0);
+  });
+
+  it("falls back to a matching manifest installer for an iPhone", async () => {
+    const { db, backend } = setup({
+      device: device({ osEdition: "iOS", osVersion: "17.0" }),
+      configurationData: { applicationId: "app-1" },
+      applications: [
+        {
+          id: "app-1",
+          organizationId: "org-1",
+          name: "Slack",
+          platform: "apple",
+          bundleId: "com.tinyspeck.slackmacgap",
+          version: "4.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Slack.pkg",
+          contentType: "application/vnd.apple.installer+xml",
+          size: pkg.byteLength,
+          sha256,
+          r2Key: "a/org-1/app-1/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      installers: [
+        {
+          id: "installer-mac",
+          organizationId: "org-1",
+          applicationId: "app-1",
+          platform: "apple",
+          source: "upload",
+          bundleId: "com.tinyspeck.slackmacgap",
+          version: "4.0",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Slack.pkg",
+          contentType: "application/vnd.apple.installer+xml",
+          size: pkg.byteLength,
+          sha256,
+          r2Key: "a/org-1/app-1/sha",
+          minOsVersion: null,
+          requiredCapability: null,
+          priority: 10,
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: "installer-ios",
+          organizationId: "org-1",
+          applicationId: "app-1",
+          platform: "apple",
+          source: "manifest",
+          bundleId: "com.tinyspeck.slackmacgap",
+          version: "4.0",
+          manifestUrl: "https://example.com/slack.plist",
+          storeId: null,
+          fileName: null,
+          contentType: null,
+          size: null,
+          sha256: null,
+          r2Key: null,
+          minOsVersion: "16.0",
+          requiredCapability: null,
+          priority: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    const [command] = commands(db, "InstallApplication");
+    expect(command).toBeTruthy();
+    // SAFETY: the manifest path builds this exact payload shape.
+    expect((command!.payload as Record<string, Schema.Json>).ManifestURL).toBe(
+      "https://example.com/slack.plist",
+    );
     expect(commands(db, "InstallEnterpriseApplication")).toHaveLength(0);
   });
 
