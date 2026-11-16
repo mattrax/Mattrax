@@ -28,6 +28,9 @@
     { "path": "./apps/api" },
     { "path": "./apps/api/tsconfig.tooling.json" },
     { "path": "./apps/cli" },
+    { "path": "./apps/selfhost" },
+    { "path": "./apps/mail-relay" },
+    { "path": "./scripts" },
     { "path": "./apps/mdm-compliance" },
     { "path": "./apps/web" }
   ]

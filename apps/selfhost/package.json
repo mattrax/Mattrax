@@ -4,15 +4,18 @@
   "private": true,
   "description": "Self-hosted Mattrax runtime: hosts the built API and web Workers on workerd via Miniflare.",
   "type": "module",
-  "main": "src/server.mjs",
+  "main": "src/server.ts",
   "scripts": {
-    "start": "node src/server.mjs"
+    "start": "node src/server.ts"
   },
   "dependencies": {
     "miniflare": "catalog:",
     "mysql2": "catalog:"
   },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24"
   }
 }

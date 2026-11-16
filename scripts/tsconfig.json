@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../packages/enterprise-domain" },
+    { "path": "../packages/management-backend-http" }
+  ],
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import net from "node:net";
-import tls from "node:tls";
+import { connect as connectNet } from "node:net";
+import type { Socket } from "node:net";
+import { connect as connectTls } from "node:tls";
 
 /**
  * Minimal SMTP client for the mail relay.
@@ -16,21 +17,65 @@ const CRLF = "\r\n";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 /* oxlint-disable anti-slop/no-runtime-typeof -- messages arrive as JSON from the relay's HTTP boundary; the SMTP client validates them before opening a socket. */
-const isText = (value) => typeof value === "string";
+const isText = (value: unknown): value is string => typeof value === "string";
 /* oxlint-enable anti-slop/no-runtime-typeof */
+
+/** The envelope and bodies the relay hands to the SMTP client. */
+export interface MailAddress {
+  name: string;
+  email: string;
+}
+
+export interface MailMessage {
+  to: string[];
+  from: MailAddress;
+  replyTo?: string | MailAddress;
+  subject: string;
+  text?: string;
+  html?: string;
+}
+
+/** Everything needed to reach and authenticate against the operator's SMTP server. */
+export interface SmtpTransportOptions {
+  host: string;
+  port?: number;
+  secure?: boolean;
+  user?: string;
+  password?: string;
+  rejectUnauthorized?: boolean;
+  helo?: string;
+  timeoutMs?: number;
+}
+
+export interface SmtpResponse {
+  code: number;
+  text: string;
+}
+
+interface PendingResponse {
+  resolve: (response: SmtpResponse) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+}
 
 /** SMTP line-oriented reader. One response may span several lines. */
 class Channel {
-  constructor(socket, timeoutMs) {
-    this.buffer = "";
-    this.pending = null;
-    this.failure = null;
+  private buffer = "";
+  private pending: PendingResponse | null = null;
+  private failure: Error | null = null;
+  private readonly timeoutMs: number;
+  private socket!: Socket;
+  private onData!: (chunk: string) => void;
+  private onError!: (error: Error) => void;
+  private onClose!: () => void;
+
+  constructor(socket: Socket, timeoutMs: number) {
     this.timeoutMs = timeoutMs;
 
     this.attach(socket);
   }
 
-  attach(socket) {
+  attach(socket: Socket): void {
     this.socket = socket;
     socket.setEncoding("utf8");
     socket.setTimeout(this.timeoutMs, () => {
@@ -38,12 +83,12 @@ class Channel {
       socket.destroy();
     });
 
-    this.onData = (chunk) => {
+    this.onData = (chunk: string) => {
       this.buffer += chunk;
       this.pump();
     };
 
-    this.onError = (error) => this.fail(error);
+    this.onError = (error: Error) => this.fail(error);
     this.onClose = () => this.fail(new Error("SMTP connection closed"));
 
     socket.on("data", this.onData);
@@ -51,7 +96,7 @@ class Channel {
     socket.on("close", this.onClose);
   }
 
-  detach() {
+  detach(): void {
     const socket = this.socket;
 
     if (!socket) return;
@@ -61,7 +106,7 @@ class Channel {
     socket.off("close", this.onClose);
   }
 
-  fail(error) {
+  fail(error: Error): void {
     this.failure ??= error;
 
     const pending = this.pending;
@@ -74,11 +119,13 @@ class Channel {
   }
 
   /** Complete the oldest response once its terminating line has arrived. */
-  pump() {
-    if (!this.pending) return;
+  private pump(): void {
+    const pending = this.pending;
+
+    if (!pending) return;
 
     let offset = 0;
-    const lines = [];
+    const lines: string[] = [];
 
     while (true) {
       const end = this.buffer.indexOf(CRLF, offset);
@@ -93,9 +140,6 @@ class Channel {
       if (!/^\d{3} /.test(line)) continue;
 
       this.buffer = this.buffer.slice(offset);
-
-      const pending = this.pending;
-
       this.pending = null;
       clearTimeout(pending.timer);
       pending.resolve({
@@ -107,30 +151,30 @@ class Channel {
     }
   }
 
-  read() {
+  read(): Promise<SmtpResponse> {
     if (this.failure) return Promise.reject(this.failure);
 
     if (this.pending) return Promise.reject(new Error("SMTP command already in flight"));
 
-    return new Promise((resolve, reject) => {
+    return new Promise<SmtpResponse>((resolve, reject) => {
       const timer = setTimeout(
         () => this.fail(new Error("SMTP server did not respond")),
         this.timeoutMs,
       );
 
-      timer.unref?.();
+      timer.unref();
       this.pending = { resolve, reject, timer };
       this.pump();
     });
   }
 
-  write(line) {
-    return new Promise((resolve, reject) => {
+  write(line: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       this.socket.write(line + CRLF, (error) => (error ? reject(error) : resolve()));
     });
   }
 
-  async command(line, expected) {
+  async command(line: string, expected: number[]): Promise<SmtpResponse> {
     await this.write(line);
 
     const response = await this.read();
@@ -142,22 +186,22 @@ class Channel {
   }
 }
 
-const connect = (options) => {
+const connect = (options: SmtpTransportOptions): Socket => {
   const port = options.port ?? (options.secure ? 465 : 587);
   const rejectUnauthorized = options.rejectUnauthorized !== false;
 
   if (options.secure)
-    return tls.connect({
+    return connectTls({
       host: options.host,
       port,
       servername: options.host,
       rejectUnauthorized,
     });
 
-  return net.connect({ host: options.host, port });
+  return connectNet({ host: options.host, port });
 };
 
-const greeting = async (channel, options) => {
+const greeting = async (channel: Channel, options: SmtpTransportOptions): Promise<SmtpResponse> => {
   const response = await channel.read();
 
   if (response.code !== 220) throw new Error(`SMTP greeting failed with status ${response.code}`);
@@ -172,7 +216,11 @@ const greeting = async (channel, options) => {
   return helo;
 };
 
-const authenticate = async (channel, options, capabilities) => {
+const authenticate = async (
+  channel: Channel,
+  options: SmtpTransportOptions,
+  capabilities: SmtpResponse,
+): Promise<void> => {
   if (!options.user) return;
 
   const authLine = capabilities.text
@@ -204,12 +252,12 @@ const authenticate = async (channel, options, capabilities) => {
   throw new Error("SMTP server offers no supported AUTH mechanism");
 };
 
-const sanitizeHeader = (value) =>
+const sanitizeHeader = (value: string | null | undefined): string =>
   String(value ?? "")
     .replaceAll(/[\r\n]+/g, " ")
     .trim();
 
-const formatAddress = (address) => {
+const formatAddress = (address: { name?: string; email?: string } | null | undefined): string => {
   const email = sanitizeHeader(address?.email);
   const name = sanitizeHeader(address?.name);
 
@@ -220,7 +268,7 @@ const formatAddress = (address) => {
   return `"${name.replaceAll(/(["\\])/g, "\\$1")}" <${email}>`;
 };
 
-const encodeSubject = (value) => {
+const encodeSubject = (value: string | undefined): string => {
   const subject = sanitizeHeader(value);
 
   if (/^[\x20-\x7e]*$/.test(subject)) return subject;
@@ -228,9 +276,9 @@ const encodeSubject = (value) => {
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 };
 
-const base64Body = (value) => {
+const base64Body = (value: string): string => {
   const encoded = Buffer.from(String(value), "utf8").toString("base64");
-  const lines = [];
+  const lines: string[] = [];
 
   for (let index = 0; index < encoded.length; index += 76)
     lines.push(encoded.slice(index, index + 76));
@@ -242,7 +290,7 @@ const base64Body = (value) => {
  * Render the RFC 5322 message. Pure so the relay's wire format is unit-tested
  * without a server.
  */
-export const buildMimeMessage = (message, now = new Date()) => {
+export const buildMimeMessage = (message: MailMessage, now: Date = new Date()): string => {
   const from = formatAddress(message.from);
   const to = message.to.map((address) => sanitizeHeader(address));
 
@@ -305,13 +353,15 @@ export const buildMimeMessage = (message, now = new Date()) => {
     "Content-Transfer-Encoding: base64",
   );
 
-  return [...headers, "", base64Body(html ?? text)].join(CRLF);
+  // The check above guarantees one of the two bodies is present; `?? ""` only
+  // satisfies the type of the nullable pair.
+  return [...headers, "", base64Body(html ?? text ?? "")].join(CRLF);
 };
 
 /** RFC 5321 transparency: a body line beginning with `.` is sent with two. */
-export const dotStuff = (body) => body.replaceAll(/(^|\r\n)\./g, "$1..");
+export const dotStuff = (body: string): string => body.replaceAll(/(^|\r\n)\./g, "$1..");
 
-const sendBody = async (channel, message) => {
+const sendBody = async (channel: Channel, message: string): Promise<void> => {
   await channel.write(dotStuff(message) + CRLF + ".");
 
   const response = await channel.read();
@@ -323,7 +373,10 @@ const sendBody = async (channel, message) => {
  * Deliver one message. Throws on any protocol or transport failure; the caller
  * turns that into a 502 without echoing the recipient.
  */
-export const sendSmtpMail = async (options, message) => {
+export const sendSmtpMail = async (
+  options: SmtpTransportOptions,
+  message: MailMessage,
+): Promise<{ recipients: number }> => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // Validate the envelope and render the body before opening a connection, so a
   // malformed request cannot leave SMTP in the middle of a transaction.
@@ -331,7 +384,7 @@ export const sendSmtpMail = async (options, message) => {
   const socket = connect(options);
   const channel = new Channel(socket, timeoutMs);
 
-  let current = socket;
+  let current: Socket = socket;
 
   try {
     let capabilities = await greeting(channel, options);
@@ -341,7 +394,7 @@ export const sendSmtpMail = async (options, message) => {
 
       channel.detach();
 
-      const secure = tls.connect({
+      const secure = connectTls({
         socket: current,
         servername: options.host,
         rejectUnauthorized: options.rejectUnauthorized !== false,

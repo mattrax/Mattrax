@@ -3,12 +3,12 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/generate-licences.mjs && vp dev",
-    "build": "node ../../scripts/generate-licences.mjs && vp build",
+    "dev": "tsx ../../scripts/generate-licences.ts && vp dev",
+    "build": "tsx ../../scripts/generate-licences.ts && vp build",
     "preview": "vp preview",
     "typecheck": "cf workers types && tsc",
     "deploy": "cf deploy --prebuilt",
-    "deploy:prod": "pnpm --dir ../.. doc:build && pnpm build && node ../../scripts/copy-docs.mjs && node ../../scripts/bundle-budget.mjs web && cf deploy --prebuilt",
+    "deploy:prod": "pnpm --dir ../.. doc:build && pnpm build && tsx ../../scripts/copy-docs.ts && tsx ../../scripts/bundle-budget.ts web && cf deploy --prebuilt",
     "cf:types": "cf workers types"
   },
   "dependencies": {

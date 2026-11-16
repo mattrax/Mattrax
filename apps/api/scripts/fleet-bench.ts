@@ -14,14 +14,17 @@ import mysql from "mysql2/promise";
 
 const args = process.argv.slice(2);
 
-const numberArg = (name, fallback) => {
+const numberArg = (name: string, fallback: number): number => {
   const index = args.indexOf(`--${name}`);
+
   if (index === -1) return fallback;
+
   const value = Number(args[index + 1]);
+
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
-const flag = (name) => args.includes(`--${name}`);
+const flag = (name: string): boolean => args.includes(`--${name}`);
 
 const deviceCount = numberArg("devices", 50_000);
 const keep = flag("keep");
@@ -38,17 +41,47 @@ const connection = await mysql.createConnection({
   multipleStatements: true,
 });
 
-const time = async (label, sql, params = []) => {
+/** The scalar placeholders this benchmark binds. */
+type SqlParameter = string | number | boolean | Date | null;
+
+const time = async (
+  label: string,
+  sql: string,
+  params: SqlParameter[] = [],
+): Promise<{ rows: unknown; duration: number }> => {
   const started = performance.now();
   const [rows] = await connection.execute(sql, params);
   const duration = performance.now() - started;
   console.log(
     `${label.padEnd(42)} ${duration.toFixed(1).padStart(9)} ms  ${Array.isArray(rows) ? `${rows.length} row(s)` : ""}`,
   );
+
   return { rows, duration };
 };
 
-const seed = async () => {
+const deviceModel = (proto: string): string => {
+  switch (proto) {
+    case "apple":
+      return "MacBook Pro (16-inch, 2021)";
+    case "win":
+      return "Surface Laptop 5";
+    default:
+      return "Pixel 8";
+  }
+};
+
+const deviceOsVersion = (proto: string): string => {
+  switch (proto) {
+    case "apple":
+      return "14.2";
+    case "win":
+      return "10.0.22631";
+    default:
+      return "14";
+  }
+};
+
+const seed = async (): Promise<void> => {
   await connection.execute(
     `INSERT INTO organization (id, name, slug, require_mfa, created_at, updated_at)
      VALUES (?, ?, ?, 0, NOW(3), NOW(3))
@@ -60,8 +93,8 @@ const seed = async () => {
   const now = Date.now();
 
   for (let start = 0; start < deviceCount; start += batchSize) {
-    const rows = [];
-    const values = [];
+    const rows: string[] = [];
+    const values: SqlParameter[] = [];
     const end = Math.min(start + batchSize, deviceCount);
 
     for (let index = start; index < end; index++) {
@@ -77,17 +110,13 @@ const seed = async () => {
         proto,
         status,
         `Device ${String(index).padStart(6, "0")}`,
-        proto === "apple"
-          ? "MacBook Pro (16-inch, 2021)"
-          : proto === "win"
-            ? "Surface Laptop 5"
-            : "Pixel 8",
+        deviceModel(proto),
         `SERIAL${String(index).padStart(10, "0")}`,
         `bench-${index % 400}-${index}`,
         `bench-${index}`,
         enrolled,
         seen,
-        proto === "apple" ? "14.2" : proto === "win" ? "10.0.22631" : "14",
+        deviceOsVersion(proto),
       );
     }
 
@@ -105,11 +134,11 @@ const seed = async () => {
   await connection.query("ANALYZE TABLE device");
 };
 
-const cleanup = async () => {
+const cleanup = async (): Promise<void> => {
   await connection.execute("DELETE FROM organization WHERE id = ?", [organizationId]);
 };
 
-const bench = async () => {
+const bench = async (): Promise<void> => {
   // Warm the buffer pool once so the first statement is not the outlier.
   await connection.execute("SELECT COUNT(*) FROM device WHERE organization_id = ?", [
     organizationId,
@@ -178,6 +207,7 @@ const bench = async () => {
     `EXPLAIN SELECT id FROM device WHERE organization_id = ? ORDER BY name LIMIT 50`,
     [organizationId],
   );
+
   console.log("\nEXPLAIN (first page by name):");
   console.table(plan);
 };
@@ -192,5 +222,6 @@ try {
   } else {
     console.log(`\nKept tenant ${organizationId} (${organizationSlug}).`);
   }
+
   await connection.end();
 }

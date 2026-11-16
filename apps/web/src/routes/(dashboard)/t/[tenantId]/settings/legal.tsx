@@ -8,7 +8,7 @@ import { Input } from "~/components/ui/input";
 /**
  * Settings → Legal: the open-source licence inventory.
  *
- * `scripts/generate-licences.mjs` walks the pnpm production dependency graph on
+ * `scripts/generate-licences.ts` walks the pnpm production dependency graph on
  * every web build and writes `public/licenses.json`. The notices are served as
  * a static asset so the settings page can stay out of the Worker bundle and the
  * data can be inspected directly at `/licenses.json`.

@@ -12,14 +12,14 @@ const child = spawn("pnpm", ["web", "dev"], {
   env: { ...process.env, NO_COLOR: "1" },
 });
 
-child.on("error", (error) => {
+child.on("error", (error: Error) => {
   console.error("Failed to start the dev server", error);
   process.exit(1);
 });
 
-child.on("exit", (code) => process.exit(code ?? 1));
+child.on("exit", (code: number | null) => process.exit(code ?? 1));
 
-const stop = () => {
+const stop = (): void => {
   if (child.exitCode === null) child.kill("SIGTERM");
 };
 
@@ -27,7 +27,7 @@ process.on("SIGINT", stop);
 
 process.on("SIGTERM", stop);
 
-const waitForServer = async (timeoutMs = 90_000) => {
+const waitForServer = async (timeoutMs = 90_000): Promise<void> => {
   const started = Date.now();
 
   while (Date.now() - started < timeoutMs) {

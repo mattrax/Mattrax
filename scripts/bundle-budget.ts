@@ -15,16 +15,16 @@ import { gzipSync } from "node:zlib";
 const BUDGET = 2.5 * 1024 * 1024;
 const root = path.resolve(import.meta.dirname, "..");
 
-const workers = {
-  api: path.join(root, "apps/api/.cloudflare/output/v0/workers/default/bundle"),
-  web: path.join(root, "apps/web/.cloudflare/output/v0/workers/default/bundle"),
-};
+const workers = new Map<string, string>([
+  ["api", path.join(root, "apps/api/.cloudflare/output/v0/workers/default/bundle")],
+  ["web", path.join(root, "apps/web/.cloudflare/output/v0/workers/default/bundle")],
+]);
 
 const selected = process.argv.slice(2);
 
-if (selected.length === 0) selected.push(...Object.keys(workers));
+if (selected.length === 0) selected.push(...workers.keys());
 
-const compressedSize = async (directory) => {
+const compressedSize = async (directory: string): Promise<number> => {
   const entries = await readdir(directory, { withFileTypes: true, recursive: true });
   let total = 0;
 
@@ -40,7 +40,7 @@ const compressedSize = async (directory) => {
 let failed = false;
 
 for (const name of selected) {
-  const directory = workers[name];
+  const directory = workers.get(name);
 
   if (!directory) {
     console.error(`bundle-budget: unknown worker "${name}"`);

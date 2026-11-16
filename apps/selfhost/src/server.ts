@@ -5,9 +5,18 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Log, LogLevel, Miniflare } from "miniflare";
-import { findBinding, readWorkerConfig } from "./config.mjs";
-import { startCronScheduler } from "./cron.mjs";
-import { migrate } from "./migrate.mjs";
+import type { MiniflareOptions } from "miniflare";
+import type {
+  AssetsOptions,
+  Binding,
+  WorkerConfig,
+  WorkerDeployment,
+  WorkerModule,
+  WorkerTrigger,
+} from "./config.ts";
+import { findBinding, readWorkerConfig } from "./config.ts";
+import { startCronScheduler } from "./cron.ts";
+import { migrate } from "./migrate.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,26 +32,26 @@ const dataDirectory = path.resolve(process.env.DATA_DIR ?? path.join(here, "..",
 const port = Number(process.env.PORT ?? 8080);
 const host = process.env.HOST ?? "0.0.0.0";
 
-const origin = process.env.ORIGIN;
-const authSecret = process.env.AUTH_SECRET;
-const databaseUrl = process.env.DATABASE_URL;
-
-const fail = (message) => {
+function fail(message: string): never {
   console.error(`mattrax self-host: ${message}`);
 
   process.exit(1);
-};
-
-for (const [name, value] of [
-  ["ORIGIN", origin],
-  ["AUTH_SECRET", authSecret],
-  ["DATABASE_URL", databaseUrl],
-]) {
-  if (!value) fail(`${name} is required`);
 }
 
-const requireHttpsOrigin = () => {
-  let url;
+const requireEnv = (name: string): string => {
+  const value = process.env[name];
+
+  if (!value) fail(`${name} is required`);
+
+  return value;
+};
+
+const origin = requireEnv("ORIGIN");
+const authSecret = requireEnv("AUTH_SECRET");
+const databaseUrl = requireEnv("DATABASE_URL");
+
+const requireHttpsOrigin = (): void => {
+  let url: URL;
 
   try {
     url = new URL(origin);
@@ -82,9 +91,13 @@ if (!apiServiceBinding) fail("the web Worker does not declare an API service bin
  * needs the contents inline, so expand it here. Source maps are dropped: they
  * are only useful for a debugger and roughly double the size of the bundle.
  */
-const loadManifest = async (directory, config, { cron = false } = {}) => {
+const loadManifest = async (
+  directory: string,
+  config: WorkerConfig,
+  { cron = false }: { cron?: boolean } = {},
+): Promise<WorkerConfig> => {
   const bundle = path.join(directory, "bundle");
-  const modules = {};
+  const modules: Record<string, WorkerModule> = {};
 
   for (const entry of await readdir(bundle, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
@@ -152,12 +165,17 @@ export default {
  * deployment has no secret store; unset secrets are removed so the Worker sees
  * the same `undefined` it would on Cloudflare before the secret is set.
  */
-const localiseEnvironment = (config, overrides) => {
-  const environment = {};
+const localiseEnvironment = (
+  config: WorkerConfig,
+  overrides: Record<string, Binding | undefined>,
+): Record<string, Binding> => {
+  const environment: Record<string, Binding> = {};
 
   for (const [name, spec] of Object.entries(config.env ?? {})) {
     if (spec.type === "secret" || spec.type === "text") {
-      const value = process.env[name] ?? (spec.type === "text" ? spec.value : undefined);
+      const value =
+        process.env[name] ??
+        (spec.type === "text" && typeof spec.value === "string" ? spec.value : undefined);
 
       if (value !== undefined && value !== "") environment[name] = { type: "text", value };
       continue;
@@ -174,7 +192,11 @@ const localiseEnvironment = (config, overrides) => {
   return environment;
 };
 
-const loadWorker = async (worker, overrides, options) => {
+const loadWorker = async (
+  worker: WorkerDeployment,
+  overrides: Record<string, Binding | undefined>,
+  options?: { cron?: boolean },
+): Promise<WorkerConfig> => {
   const config = await loadManifest(worker.directory, worker.config, options);
 
   config.env = localiseEnvironment(worker.config, overrides);
@@ -199,8 +221,10 @@ const SELF_HOST_BINDINGS = [
 
 const cronSecret = randomBytes(32).toString("base64url");
 
-const extraBindings = () => {
-  const bindings = { MATTRAX_CRON_SECRET: { type: "text", value: cronSecret } };
+const extraBindings = (): Record<string, Binding> => {
+  const bindings: Record<string, Binding> = {
+    MATTRAX_CRON_SECRET: { type: "text", value: cronSecret },
+  };
 
   for (const name of SELF_HOST_BINDINGS) {
     const value = process.env[name];
@@ -220,7 +244,7 @@ const extraBindings = () => {
 const mailTransport = (process.env.MAIL_TRANSPORT ?? "").trim().toLowerCase();
 const mailFrom = (process.env.MAIL_FROM ?? "").trim();
 
-const mailRequired = {
+const mailRequired: Record<string, readonly string[]> = {
   resend: ["RESEND_API_KEY"],
   postmark: ["POSTMARK_SERVER_TOKEN"],
   smtp: ["MAIL_RELAY_URL", "MAIL_RELAY_SECRET"],
@@ -248,7 +272,7 @@ if (mailEnabled) {
     fail("MAIL_RELAY_SECRET must be at least 16 characters");
 }
 
-const apiOverrides = {
+const apiOverrides: Record<string, Binding | undefined> = {
   ...extraBindings(),
   [hyperdriveBinding[0]]: {
     type: "hyperdrive",
@@ -287,7 +311,7 @@ if (existsSync(assetsDirectory))
     directory: assetsDirectory,
     hasUserWorker: true,
     notFoundHandling: "none",
-  };
+  } satisfies AssetsOptions;
 
 /**
  * Apply Drizzle migrations before serving traffic. Self-hosted deployments are
@@ -309,16 +333,28 @@ if (emailBinding && !mailEnabled)
     "mattrax self-host: outbound email is disabled; set MAIL_TRANSPORT (resend, postmark or smtp) and MAIL_FROM to send sign-in codes and invitations (/api/ready reports mailer: skipped)",
   );
 
-const miniflare = new Miniflare({
+const requestedLogLevel = (process.env.LOG_LEVEL ?? "").toUpperCase();
+
+const logLevel = Object.hasOwn(LogLevel, requestedLogLevel)
+  ? (LogLevel[requestedLogLevel as keyof typeof LogLevel] ?? LogLevel.INFO)
+  : LogLevel.INFO;
+
+const miniflareOptions: MiniflareOptions = {
   // The first Worker receives requests from the public listener; the web
   // Worker proxies /api, /mdm and /scim to the API Worker over a service
   // binding, matching the Cloudflare deployment topology.
-  workers: [{ config: webConfig }, { config: apiConfig }],
+  //
+  // `worker.config.json` is validated structurally above, but is narrower than
+  // Miniflare's full schema (triggers and bindings are forwarded as written by
+  // `cf build`), so the workers are narrowed at this library boundary.
+  workers: [{ config: webConfig }, { config: apiConfig }] as MiniflareOptions["workers"],
   host,
   port,
   resourcePersistencePath: dataDirectory,
-  log: new Log(LogLevel[process.env.LOG_LEVEL?.toUpperCase()] ?? LogLevel.INFO),
-});
+  log: new Log(logLevel),
+};
+
+const miniflare = new Miniflare(miniflareOptions);
 
 await miniflare.ready;
 
@@ -327,8 +363,13 @@ await miniflare.ready;
  * has no clock, so the host process fires them through the internal route the
  * API entry module exposes.
  */
+const isScheduledTrigger = (
+  trigger: WorkerTrigger,
+): trigger is WorkerTrigger & { schedule: string } =>
+  trigger.type === "scheduled" && typeof trigger.schedule === "string";
+
 const cronExpressions = (api.config.triggers ?? [])
-  .filter((trigger) => trigger.type === "scheduled")
+  .filter(isScheduledTrigger)
   .map((trigger) => trigger.schedule);
 
 const CRON_LOOPBACK_HOSTS = new Map([
@@ -362,7 +403,7 @@ console.log(`mattrax self-host: data directory ${dataDirectory}`);
 if (cronExpressions.length > 0)
   console.log(`mattrax self-host: cron triggers ${cronExpressions.join(", ")}`);
 
-const shutdown = async (signal) => {
+const shutdown = async (signal: string): Promise<void> => {
   console.log(`mattrax self-host: received ${signal}, shutting down`);
 
   stopCron();

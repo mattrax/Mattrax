@@ -68,7 +68,7 @@ function docsRoutesModule(): Plugin {
 }
 
 // Local dev normally runs over HTTP. Set `DEV_HTTPS=1` to serve HTTPS with the
-// self-signed certificate from `scripts/dev-cert.mjs`; the API's `ORIGIN` must
+// self-signed certificate from `scripts/dev-cert.ts`; the API's `ORIGIN` must
 // then be `https://localhost:9050` as well.
 const certDir = path.resolve(".certs");
 

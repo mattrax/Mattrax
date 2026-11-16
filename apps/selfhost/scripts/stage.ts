@@ -14,7 +14,7 @@ const [repository = path.resolve(import.meta.dirname, "../../.."), output = "dis
 
 const outputDirectory = path.resolve(repository, output);
 
-const workerSources = {
+const workerSources: Record<string, string> = {
   api: path.join(repository, "apps/api/.cloudflare/output/v0/workers/default"),
   web: path.join(repository, "apps/web/.cloudflare/output/v0/workers/default"),
 };
@@ -23,7 +23,10 @@ await rm(outputDirectory, { recursive: true, force: true });
 
 await mkdir(outputDirectory, { recursive: true });
 
-const removeSourceMaps = async (directory) => {
+const hasErrnoCode = (cause: unknown, code: string): boolean =>
+  cause instanceof Error && "code" in cause && cause.code === code;
+
+const removeSourceMaps = async (directory: string): Promise<void> => {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
 
@@ -60,7 +63,7 @@ for (const entry of await readdir(migrationsSource, { withFileTypes: true })) {
     await mkdir(target, { recursive: true });
     await writeFile(path.join(target, "migration.sql"), sql);
   } catch (cause) {
-    if (cause.code !== "ENOENT") throw cause;
+    if (!hasErrnoCode(cause, "ENOENT")) throw cause;
   }
 }
 

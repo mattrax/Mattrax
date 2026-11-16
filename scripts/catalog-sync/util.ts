@@ -9,7 +9,10 @@ const FETCH_TIMEOUT_MS = 60_000;
 
 /** A recoverable failure while fetching or parsing an upstream source. */
 export class SourceError extends Error {
-  constructor(source, detail, cause) {
+  readonly source: string;
+  readonly detail: string;
+
+  constructor(source: string, detail: string, cause?: unknown) {
     super(`${source}: ${detail}`, { cause });
     this.name = "SourceError";
     this.source = source;
@@ -17,13 +20,13 @@ export class SourceError extends Error {
   }
 }
 
-const wait = (milliseconds) =>
+const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
 
-const withRetry = async (operation) => {
-  let lastError;
+const withRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+  let lastError: unknown;
 
   for (let attempt = 1; attempt <= RETRIES; attempt += 1) {
     try {
@@ -38,7 +41,7 @@ const withRetry = async (operation) => {
   throw lastError;
 };
 
-const fetchResponse = (url, source = url) =>
+const fetchResponse = (url: string, source: string = url): Promise<Response> =>
   withRetry(async () => {
     const response = await fetch(url, {
       redirect: "follow",
@@ -50,7 +53,7 @@ const fetchResponse = (url, source = url) =>
     return response;
   });
 
-export const fetchArrayBuffer = async (url, source = url) => {
+export const fetchArrayBuffer = async (url: string, source: string = url): Promise<ArrayBuffer> => {
   const response = await fetchResponse(url, source);
 
   try {
@@ -60,7 +63,7 @@ export const fetchArrayBuffer = async (url, source = url) => {
   }
 };
 
-export const fetchText = async (url, source = url) => {
+export const fetchText = async (url: string, source: string = url): Promise<string> => {
   const response = await fetchResponse(url, source);
 
   try {
@@ -70,18 +73,21 @@ export const fetchText = async (url, source = url) => {
   }
 };
 
-export const fetchJson = async (url, source = url) => {
+/** Parsed JSON is untrusted vendor data; callers narrow the result themselves. */
+export const fetchJson = async (url: string, source: string = url): Promise<unknown> => {
   const text = await fetchText(url, source);
 
   try {
-    return JSON.parse(text);
+    // SAFETY: JSON.parse returns the document the caller narrows; the only
+    // guarantee here is that the body parsed, which the catch reports.
+    return JSON.parse(text) as unknown;
   } catch (cause) {
     throw new SourceError(source, "invalid JSON", cause);
   }
 };
 
 /** Run `use` with a fresh temp directory that is always cleaned up. */
-export const withTempDir = async (use) => {
+export const withTempDir = async <T>(use: (dir: string) => Promise<T>): Promise<T> => {
   const dir = await mkdtemp(join(tmpdir(), "mattrax-catalog-"));
 
   try {
@@ -95,7 +101,11 @@ export const withTempDir = async (use) => {
  * Download a gzipped tarball and extract it into `dir`. The archive contains a
  * single top-level directory (GitHub's `repo-ref/`); its path is returned.
  */
-export const downloadTarball = async (url, dir, source = url) => {
+export const downloadTarball = async (
+  url: string,
+  dir: string,
+  source: string = url,
+): Promise<string> => {
   const file = join(dir, "source.tgz");
   const bytes = await fetchArrayBuffer(url, source);
 
@@ -116,9 +126,12 @@ export const downloadTarball = async (url, dir, source = url) => {
 };
 
 /** Recursively list files under `dir` whose path matches `matches`. */
-export const listFiles = async (dir, matches) => {
+export const listFiles = async (
+  dir: string,
+  matches: (path: string) => boolean,
+): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true });
-  const out = [];
+  const out: string[] = [];
 
   for (const entry of entries) {
     const path = join(dir, entry.name);
@@ -130,10 +143,10 @@ export const listFiles = async (dir, matches) => {
   return out;
 };
 
-export const readFileText = (path) => readFile(path, "utf8");
+export const readFileText = (path: string): Promise<string> => readFile(path, "utf8");
 
 /** Decode the handful of HTML entities that appear in vendor prose. */
-export const decodeEntities = (text) =>
+export const decodeEntities = (text: string): string =>
   text
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
@@ -144,7 +157,7 @@ export const decodeEntities = (text) =>
     .replaceAll("&amp;", "&");
 
 /** Normalise vendor prose: strip tags, decode entities, collapse space. */
-export const cleanText = (input, max = 4000) => {
+export const cleanText = (input: string | number | boolean | null | undefined, max = 4000): string => {
   if (!input) return "";
 
   let text = decodeEntities(String(input));
@@ -160,24 +173,28 @@ export const cleanText = (input, max = 4000) => {
   return text;
 };
 
-export const slugify = (input) =>
+export const slugify = (input: string): string =>
   input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
 /** Write pretty-printed JSON, creating parent directories as needed. */
-export const writeJson = async (path, value) => {
+export const writeJson = async <T>(path: string, value: T): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 };
 
 /** Map with a fixed number of concurrent workers, preserving input order. */
-export const mapLimit = async (items, limit, map) => {
-  const results = Array.from({ length: items.length });
+export const mapLimit = async <T, R>(
+  items: readonly T[],
+  limit: number,
+  map: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results = Array.from<R>({ length: items.length });
   let next = 0;
 
-  const worker = async () => {
+  const worker = async (): Promise<void> => {
     while (next < items.length) {
       const index = next;
       next += 1;

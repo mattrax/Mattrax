@@ -8,11 +8,11 @@ delivers it through the operator's existing mail account. It is the same pattern
 as `apps/apns-relay`, and it has no dependencies beyond Node.
 
 The image already contains it at `/app/mail-relay`; start it with
-`command: ["/app/mail-relay/index.mjs"]` or run it directly:
+`command: ["/app/mail-relay/index.ts"]` or run it directly:
 
 ```bash
 MAIL_RELAY_SECRET=... SMTP_HOST=smtp.example.com SMTP_USER=... SMTP_PASSWORD=... \
-  node src/index.mjs
+  node src/index.ts
 ```
 
 Configuration:

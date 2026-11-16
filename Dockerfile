@@ -35,11 +35,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # The docs are built into the dashboard's assets so a self-hosted install serves
 # the same `/docs/` surface (and sitemap) as the hosted deployment.
 RUN pnpm api build && pnpm web build && pnpm doc:build \
-    && cd apps/web && node ../../scripts/copy-docs.mjs
+    && cd apps/web && tsx ../../scripts/copy-docs.ts
 
 # Collect Workers, static assets and migrations, dropping source maps and
 # editor-only migration snapshots.
-RUN node apps/selfhost/scripts/stage.mjs /repo /out
+RUN node apps/selfhost/scripts/stage.ts /repo /out
 
 # A production-only install of the runtime host. The `workerd` npm package
 # exposes a CLI copy of the platform binary that the runtime never invokes.
@@ -106,7 +106,7 @@ COPY --from=build --chown=1000:1000 /out/selfhost/ ./
 COPY --from=build --chown=1000:1000 /out/workers/ ./workers/
 COPY --from=build --chown=1000:1000 /out/migrations/ ./migrations/
 # The optional SMTP sidecar. It has no dependencies beyond Node, so the same
-# image runs it with `command: ["/app/mail-relay/index.mjs"]`.
+# image runs it with `command: ["/app/mail-relay/index.ts"]`.
 COPY --from=build --chown=1000:1000 /repo/apps/mail-relay/src/ ./mail-relay/
 
 # The `/data` volume and the home directory the `node` user expects. An empty
@@ -123,4 +123,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
   CMD ["/usr/local/bin/node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["/usr/local/bin/node"]
-CMD ["src/server.mjs"]
+CMD ["src/server.ts"]

@@ -124,9 +124,9 @@ describe("split Windows policy catalogue", () => {
   });
 
   it("regenerates byte-for-byte identical output", () => {
-    const script = path.join(repoRoot, "scripts/split-policy-catalog.mjs");
+    const script = path.join(repoRoot, "scripts/split-policy-catalog.ts");
     expect(() =>
-      execFileSync(process.execPath, [script, "--check"], {
+      execFileSync(path.join(repoRoot, "node_modules/.bin/tsx"), [script, "--check"], {
         cwd: repoRoot,
         timeout: 120_000,
         stdio: "pipe",

@@ -6,6 +6,12 @@
     "erasableSyntaxOnly": true,
     "outDir": "./dist/tooling"
   },
-  "include": ["vite.config.ts", "cloudflare.config.ts", "drizzle.config.ts", "vitest.config.ts"],
+  "include": [
+    "vite.config.ts",
+    "cloudflare.config.ts",
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "scripts/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

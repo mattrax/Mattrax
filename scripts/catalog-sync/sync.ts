@@ -13,19 +13,41 @@
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadAndroid } from "./android.mjs";
-import { loadApple } from "./apple.mjs";
-import { countProperties, PLATFORMS } from "./catalog.mjs";
-import { fetchJson, writeJson } from "./util.mjs";
-import { loadWindows } from "./windows.mjs";
-import { writeSplit } from "../split-policy-catalog.mjs";
+import { loadAndroid } from "./android.ts";
+import { loadApple } from "./apple.ts";
+import { countProperties, PLATFORMS, type Collection, type PlatformId } from "./catalog.ts";
+import { fetchJson, writeJson } from "./util.ts";
+import { loadWindows } from "./windows.ts";
+import { writeSplit } from "../split-policy-catalog.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const CATALOG_DIR = path.join(ROOT, "apps/web/public/catalog");
 const WINDOWS_SOURCE = path.join(ROOT, "data/catalog/windows.json");
 const WINDOWS_SPLIT = path.join(CATALOG_DIR, "windows");
 
-const summarize = (collections) =>
+interface SourceRecord {
+  platform: PlatformId;
+  name: string;
+  url: string;
+  license: string;
+  revision: string | undefined;
+}
+
+interface CollectionSummary {
+  id: string;
+  platform: PlatformId;
+  kind: Collection["kind"];
+  surface: string;
+  identifier: string;
+  name: string;
+  group?: string;
+  deprecated?: boolean;
+  minOs?: string;
+  osVersions?: string[];
+  propertyCount: number;
+}
+
+const summarize = (collections: readonly Collection[]): CollectionSummary[] =>
   collections.map((collection) => ({
     id: collection.id,
     platform: collection.platform,
@@ -40,21 +62,26 @@ const summarize = (collections) =>
     propertyCount: countProperties(collection.properties),
   }));
 
-const windowsRevision = async () => {
+const windowsRevision = async (): Promise<string | undefined> => {
   try {
     const data = await fetchJson(
       "https://github.com/royklo/IntuneSettingsCatalogData/releases/download/latest/last-updated.json",
       "windows/last-updated.json",
     );
 
-    return data.updatedAt;
+    return typeof data === "object" &&
+      data !== null &&
+      "updatedAt" in data &&
+      typeof data.updatedAt === "string"
+      ? data.updatedAt
+      : undefined;
   } catch {
     // The revision is provenance only; a missing marker must not fail a sync.
     return undefined;
   }
 };
 
-const main = async () => {
+const main = async (): Promise<void> => {
   console.log("Fetching Apple device-management schemas…");
   const apple = await loadApple();
 
@@ -64,7 +91,7 @@ const main = async () => {
   console.log("Fetching Windows Intune Settings Catalog…");
   const windows = await loadWindows();
 
-  const sources = [
+  const sources: SourceRecord[] = [
     {
       platform: "apple",
       name: "Apple device-management",
@@ -88,13 +115,13 @@ const main = async () => {
     },
   ];
 
-  const platforms = [
+  const platforms: [PlatformId, Collection[]][] = [
     ["apple", apple],
     ["android", android.collections],
     ["windows", windows],
   ];
 
-  const stats = {};
+  const stats: Record<string, { collections: number; properties: number }> = {};
 
   for (const [id, entries] of platforms) {
     const properties = entries.reduce(

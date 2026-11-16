@@ -28,7 +28,7 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "node scripts/e2e-server.mjs",
+        command: "tsx scripts/e2e-server.ts",
         url: "http://localhost:9050",
         reuseExistingServer: true,
         timeout: 180_000,

@@ -71,7 +71,7 @@ services:
     profiles: ["smtp"]
     image: mattrax-selfhost:local
     restart: unless-stopped
-    command: ["/app/mail-relay/index.mjs"]
+    command: ["/app/mail-relay/index.ts"]
     environment:
       MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
       MAIL_FROM: ${MAIL_FROM:-}

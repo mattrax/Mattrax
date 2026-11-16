@@ -1,14 +1,32 @@
-import { createServer } from "node:net";
+import { createServer, type Server } from "node:net";
 import { describe, expect, it } from "vitest";
-import { buildMimeMessage, dotStuff, sendSmtpMail } from "./smtp.mjs";
+import { buildMimeMessage, dotStuff, sendSmtpMail, type MailMessage } from "./smtp.ts";
+
+interface SmtpServerOptions {
+  rejectAuth?: boolean;
+  user?: string;
+  password?: string;
+}
+
+interface CapturedTransaction {
+  lines: string[];
+  auth: string[];
+}
+
+interface RunningSmtpServer {
+  server: Server;
+  port: number;
+  captured: CapturedTransaction;
+  close: () => Promise<void>;
+}
 
 /**
  * Minimal SMTP server for the relay's protocol tests. It advertises AUTH PLAIN
  * and records the DATA section so the test can assert dot-stuffing, headers and
  * the base64 bodies.
  */
-const startSmtpServer = async (options = {}) => {
-  const captured = { lines: [], auth: [] };
+const startSmtpServer = async (options: SmtpServerOptions = {}): Promise<RunningSmtpServer> => {
+  const captured: CapturedTransaction = { lines: [], auth: [] };
 
   const server = createServer((socket) => {
     socket.setEncoding("utf8");
@@ -17,7 +35,7 @@ const startSmtpServer = async (options = {}) => {
 
     socket.write("220 test.example ESMTP\r\n");
 
-    socket.on("data", (chunk) => {
+    socket.on("data", (chunk: string) => {
       buffer += chunk;
 
       let index = buffer.indexOf("\r\n");
@@ -66,13 +84,19 @@ const startSmtpServer = async (options = {}) => {
     });
   });
 
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- address() returns a string only for pipe/net servers; this test always listens on TCP.
+  if (address === null || typeof address === "string")
+    throw new Error("expected the test server to listen on a TCP port");
 
   return {
     server,
-    port: server.address().port,
+    port: address.port,
     captured,
-    close: () => new Promise((resolve) => server.close(resolve)),
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 };
 
@@ -83,7 +107,7 @@ const message = {
   subject: "Join Acme on Mattrax",
   text: "Hello,\n\n.leading dot is preserved",
   html: "<p>Hello</p>",
-};
+} satisfies MailMessage;
 
 describe("mail relay SMTP client", () => {
   it("delivers a multipart message with dot-stuffing and AUTH PLAIN", async () => {

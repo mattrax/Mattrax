@@ -1,13 +1,63 @@
-import { cleanText, fetchJson, slugify, SourceError } from "./util.mjs";
+import type { Collection, Property, PropertyEnumValue, PropertyType } from "./catalog.ts";
+import { cleanText, fetchJson, slugify, SourceError } from "./util.ts";
 
 const RELEASE = "https://github.com/royklo/IntuneSettingsCatalogData/releases/download/latest";
 
-const isChoice = (type) =>
+/**
+ * Entries in the release's `settings.json` / `categories.json`. Both files are
+ * generated from Microsoft Graph, whose schema is the contract for these
+ * optional fields.
+ */
+interface WindowsOption {
+  optionValue?: { value?: unknown };
+  itemId?: string;
+  name?: string;
+  displayName?: string;
+}
+
+interface WindowsSetting {
+  "@odata.type"?: string;
+  name?: string;
+  id?: string;
+  displayName?: string;
+  description?: string;
+  baseUri?: string;
+  offsetUri?: string;
+  valueDefinition?: {
+    "@odata.type"?: string;
+    minimumValue?: number;
+    maximumValue?: number;
+  };
+  options?: WindowsOption[];
+  defaultValue?: { value?: unknown };
+  defaultOptionId?: string;
+  applicability?: {
+    platform?: string;
+    configurationServiceProviderVersion?: string;
+    minimumSupportedVersion?: string;
+  };
+  categoryId?: string;
+  infoUrls?: string[];
+}
+
+interface WindowsCategory {
+  id: string;
+  displayName?: string;
+  rootCategoryId?: string;
+}
+
+interface WindowsGroup {
+  name: string;
+  root: string;
+  properties: Property[];
+}
+
+const isChoice = (type: string): boolean =>
   type.includes("ChoiceSettingDefinition") || type.includes("ChoiceSettingCollectionDefinition");
 
-const isCollection = (type) => type.includes("CollectionDefinition");
+const isCollection = (type: string): boolean => type.includes("CollectionDefinition");
 
-const mapType = (setting) => {
+const mapType = (setting: WindowsSetting): PropertyType => {
   const type = setting["@odata.type"] ?? "";
 
   if (isChoice(type)) return "enum";
@@ -29,7 +79,7 @@ const mapType = (setting) => {
   return "unknown";
 };
 
-const enumValues = (setting) => {
+const enumValues = (setting: WindowsSetting): PropertyEnumValue[] | undefined => {
   if (!setting.options?.length) return undefined;
 
   return setting.options.map((option) => ({
@@ -38,7 +88,7 @@ const enumValues = (setting) => {
   }));
 };
 
-const extractDefault = (setting) => {
+const extractDefault = (setting: WindowsSetting) => {
   const direct = setting.defaultValue;
 
   if (direct?.value !== undefined) return direct.value;
@@ -54,10 +104,11 @@ const extractDefault = (setting) => {
   return undefined;
 };
 
-const omaUri = (setting) => `${setting.baseUri ?? ""}${setting.offsetUri ?? ""}`;
+const omaUri = (setting: WindowsSetting): string =>
+  `${setting.baseUri ?? ""}${setting.offsetUri ?? ""}`;
 
 /** Best-effort Learn documentation link for a native CSP or Policy node. */
-const learnUrl = (address) => {
+const learnUrl = (address: string): string | undefined => {
   const policy = address.match(/Vendor\/MSFT\/Policy\/Config\/([^/~]+)/);
 
   if (policy) {
@@ -73,7 +124,7 @@ const learnUrl = (address) => {
   return undefined;
 };
 
-const toProperty = (setting) => {
+const toProperty = (setting: WindowsSetting): Property | undefined => {
   const address = omaUri(setting);
 
   if (!address) return undefined;
@@ -101,27 +152,38 @@ const toProperty = (setting) => {
   };
 };
 
-const categoryName = (categoryById, id) =>
-  (id && categoryById.get(id)?.displayName) || "Uncategorised";
+const categoryName = (
+  categoryById: Map<string, WindowsCategory>,
+  id: string | undefined,
+): string => (id && categoryById.get(id)?.displayName) || "Uncategorised";
 
-const rootName = (categoryById, id) => {
+const rootName = (categoryById: Map<string, WindowsCategory>, id: string | undefined): string => {
   const category = id ? categoryById.get(id) : undefined;
 
   return categoryName(categoryById, category?.rootCategoryId ?? id);
 };
 
-export const loadWindows = async () => {
-  const [settings, categories] = await Promise.all([
+export const loadWindows = async (): Promise<Collection[]> => {
+  const [settingsRaw, categoriesRaw] = await Promise.all([
     fetchJson(`${RELEASE}/settings.json`, "windows/settings.json"),
     fetchJson(`${RELEASE}/categories.json`, "windows/categories.json"),
   ]);
 
-  if (!Array.isArray(settings) || !Array.isArray(categories)) {
+  if (!Array.isArray(settingsRaw) || !Array.isArray(categoriesRaw)) {
     throw new SourceError(RELEASE, "expected settings and categories arrays");
   }
 
+  // Both entries are typed by the Graph shapes declared above; the array checks
+  // are the parse-boundary guard for the release files.
+  // SAFETY: the settings file is generated from Microsoft Graph, and the array
+  // check above establishes the container being indexed.
+  const settings = settingsRaw as WindowsSetting[];
+
+  // SAFETY: the categories file shares that source and guard.
+  const categories = categoriesRaw as WindowsCategory[];
+
   const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const grouped = new Map();
+  const grouped = new Map<string, WindowsGroup>();
 
   for (const setting of settings) {
     if (setting.applicability?.platform !== "windows10") continue;
@@ -144,8 +206,8 @@ export const loadWindows = async () => {
     group.properties.push(property);
   }
 
-  const used = new Set();
-  const collections = [];
+  const used = new Set<string>();
+  const collections: Collection[] = [];
 
   for (const group of grouped.values()) {
     const properties = group.properties.sort((a, b) => a.name.localeCompare(b.name));

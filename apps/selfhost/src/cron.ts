@@ -3,7 +3,13 @@
  * container has no scheduler, so the host has to provide one. Expressions are
  * the same five-field syntax the Worker config declares.
  */
-const FIELDS = [
+interface CronField {
+  name: string;
+  min: number;
+  max: number;
+}
+
+const FIELDS: readonly CronField[] = [
   { name: "minute", min: 0, max: 59 },
   { name: "hour", min: 0, max: 23 },
   { name: "day of month", min: 1, max: 31 },
@@ -11,7 +17,7 @@ const FIELDS = [
   { name: "day of week", min: 0, max: 6 },
 ];
 
-const parseNumber = (value, field) => {
+const parseNumber = (value: string, field: CronField): number => {
   if (!/^\d+$/.test(value)) throw new Error(`invalid ${field.name} value "${value}"`);
 
   const number = Number(value);
@@ -22,23 +28,24 @@ const parseNumber = (value, field) => {
   return number;
 };
 
-const parseField = (source, field) => {
-  const values = new Set();
+const parseField = (source: string, field: CronField): Set<number> => {
+  const values = new Set<number>();
 
   for (const item of source.split(",")) {
-    const [range, stepSource] = item.split("/");
+    // `split` yields a single element when the step is omitted.
+    const [range, stepSource] = item.split("/") as [string, string | undefined];
     const step = stepSource === undefined ? 1 : parseNumber(stepSource, field);
 
     if (step === 0) throw new Error(`${field.name} step must be greater than zero`);
 
-    let start;
-    let end;
+    let start: number;
+    let end: number;
 
     if (range === "*") {
       start = field.min;
       end = field.max;
     } else if (range.includes("-")) {
-      const [from, to] = range.split("-");
+      const [from, to] = range.split("-") as [string, string];
 
       start = parseNumber(from, field);
       end = parseNumber(to, field);
@@ -54,7 +61,7 @@ const parseField = (source, field) => {
 };
 
 /** Returns a predicate over a local `Date`. */
-export const parseCron = (expression) => {
+export const parseCron = (expression: string): ((date: Date) => boolean) => {
   const fields = expression.trim().split(/\s+/);
 
   if (fields.length !== 5) throw new Error(`cron "${expression}" must have five fields`);
@@ -64,7 +71,7 @@ export const parseCron = (expression) => {
   // Standard cron: when both day fields are restricted either may match.
   const dayRestricted = !fields[2].startsWith("*") && !fields[4].startsWith("*");
 
-  return (date) => {
+  return (date: Date) => {
     if (!minutes.has(date.getMinutes())) return false;
 
     if (!hours.has(date.getHours())) return false;
@@ -80,23 +87,41 @@ export const parseCron = (expression) => {
   };
 };
 
-export const startCronScheduler = ({ expressions, trigger, log = console.log }) => {
-  const schedules = [];
+interface CronSchedule {
+  expression: string;
+  matches: (date: Date) => boolean;
+}
+
+export interface CronSchedulerOptions {
+  expressions: readonly string[];
+  trigger: (expression: string) => Promise<unknown> | unknown;
+  log?: (message: string) => void;
+}
+
+export const startCronScheduler = ({
+  expressions,
+  trigger,
+  log = console.log,
+}: CronSchedulerOptions): (() => void) => {
+  const schedules: CronSchedule[] = [];
 
   for (const expression of expressions) {
     try {
       schedules.push({ expression, matches: parseCron(expression) });
     } catch (cause) {
-      console.error(`mattrax self-host: ignoring cron "${expression}"`, cause.message);
+      console.error(
+        `mattrax self-host: ignoring cron "${expression}"`,
+        cause instanceof Error ? cause.message : cause,
+      );
     }
   }
 
   if (schedules.length === 0) return () => {};
 
-  let lastMinute;
+  let lastMinute: string | undefined;
   let running = false;
 
-  const tick = async () => {
+  const tick = async (): Promise<void> => {
     const now = new Date();
     const minute = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
 

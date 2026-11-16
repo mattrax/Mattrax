@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { timingSafeEqual } from "node:crypto";
-import { createServer } from "node:http";
-import { sendSmtpMail } from "./smtp.mjs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  sendSmtpMail,
+  type MailAddress,
+  type MailMessage,
+  type SmtpTransportOptions,
+} from "./smtp.ts";
 
 /**
  * Self-hosted mail relay.
@@ -35,11 +40,11 @@ const fallbackFrom = process.env.MAIL_FROM?.trim();
 const listenPort = Number(process.env.MAIL_RELAY_PORT ?? 8790);
 const listenHost = process.env.MAIL_RELAY_HOST ?? "0.0.0.0";
 
-const fail = (message) => {
+function fail(message: string): never {
   console.error(`mattrax mail-relay: ${message}`);
 
   process.exit(1);
-};
+}
 
 if (!secret || secret.length < 16) fail("MAIL_RELAY_SECRET must be at least 16 characters");
 
@@ -53,7 +58,7 @@ const maxBodyBytes = 256 * 1024;
 const maxRecipients = 50;
 const maxFieldLength = 200_000;
 
-const transport = {
+const transport: SmtpTransportOptions = {
   host,
   port,
   secure,
@@ -62,12 +67,12 @@ const transport = {
   rejectUnauthorized,
 };
 
-const readBody = (request) =>
-  new Promise((resolve, reject) => {
-    const chunks = [];
+const readBody = (request: IncomingMessage): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
     let size = 0;
 
-    request.on("data", (chunk) => {
+    request.on("data", (chunk: Buffer) => {
       size += chunk.byteLength;
 
       if (size > maxBodyBytes) {
@@ -83,18 +88,55 @@ const readBody = (request) =>
     request.on("error", reject);
   });
 
+/** The untrusted JSON the API posts; every field is validated below. */
+interface RawAddress {
+  readonly name?: unknown;
+  readonly email?: unknown;
+}
+
+interface RawMessage {
+  readonly to?: unknown;
+  readonly from?: unknown;
+  readonly replyTo?: unknown;
+  readonly subject?: unknown;
+  readonly text?: unknown;
+  readonly html?: unknown;
+}
+
+/** The only shapes this sidecar writes back. */
+interface RelayResponse {
+  status: "ok" | "not_found" | "unauthorized" | "invalid_request" | "sent" | "delivery_failed";
+  transport?: "smtp";
+  secure?: boolean;
+  message?: string;
+}
+
 /* oxlint-disable anti-slop/no-runtime-typeof -- JSON from the API is untrusted input; this dependency-free sidecar validates it at the HTTP boundary. */
-const isText = (value) => typeof value === "string";
+const isText = (value: unknown): value is string => typeof value === "string";
+
+const isObject = (value: unknown): value is object =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-const equal = (left, right) => {
+const isRawAddress = (value: unknown): value is RawAddress => isObject(value);
+
+const isRawMessage = (value: unknown): value is RawMessage => isObject(value);
+
+const equal = (left: string, right: string): boolean => {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
 
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
-const text = (value, field, required = true) => {
+/* oxlint-disable anti-slop/no-unknown-parameters -- `text` and `sender` are the decode boundary for the untrusted request body; they validate and narrow each field before anything else sees it. */
+/**
+ * A single opaque JSON value from the request, validated into the string the SMTP
+ * client expects. `unknown` is the honest input type: this is the HTTP boundary.
+ */
+function text(value: unknown, field: string): string;
+function text(value: unknown, field: string, required: false): string | undefined;
+function text(value: unknown, field: string, required = true): string | undefined {
   if (value === undefined || value === null) {
     if (required) throw new Error(`${field} is required`);
 
@@ -108,9 +150,9 @@ const text = (value, field, required = true) => {
   if (required && !trimmed) throw new Error(`${field} is required`);
 
   return trimmed || undefined;
-};
+}
 
-const sender = (value) => {
+const sender = (value: unknown): MailAddress => {
   if (value === undefined) {
     if (!fallbackFrom) throw new Error("from is required");
 
@@ -119,25 +161,38 @@ const sender = (value) => {
 
   if (isText(value)) return { name: "", email: text(value, "from.email") };
 
+  const address = isRawAddress(value) ? value : {};
+
   return {
-    name: text(value.name, "from.name", false) ?? "",
-    email: text(value.email, "from.email"),
+    name: text(address.name, "from.name", false) ?? "",
+    email: text(address.email, "from.email"),
   };
+};
+/* oxlint-enable anti-slop/no-unknown-parameters */
+
+/** Parse the JSON body, keeping the untyped value out of everything downstream. */
+const parseJson = (value: string): RawMessage => {
+  const parsed: unknown = JSON.parse(value);
+
+  if (!isRawMessage(parsed)) throw new Error("request body must be an object");
+
+  return parsed;
 };
 
 /** Normalise the API payload into the strict shape the SMTP client expects. */
-const parseMessage = (body) => {
-  const recipients = isText(body.to) ? [body.to] : body.to;
+const parseMessage = (body: RawMessage): MailMessage => {
+  const recipients: unknown = isText(body.to) ? [body.to] : body.to;
 
   if (!Array.isArray(recipients) || recipients.length === 0)
     throw new Error("to must contain at least one recipient");
 
   if (recipients.length > maxRecipients) throw new Error("too many recipients");
 
+  const list: unknown[] = recipients;
   const replyTo = body.replyTo;
 
   return {
-    to: recipients.map((recipient) => text(recipient, "to")),
+    to: list.map((recipient) => text(recipient, "to")),
     from: sender(body.from),
     replyTo:
       replyTo === undefined
@@ -145,8 +200,9 @@ const parseMessage = (body) => {
         : isText(replyTo)
           ? text(replyTo, "replyTo")
           : {
-              name: text(replyTo.name, "replyTo.name", false) ?? "",
-              email: text(replyTo.email, "replyTo.email"),
+              name:
+                text(isRawAddress(replyTo) ? replyTo.name : undefined, "replyTo.name", false) ?? "",
+              email: text(isRawAddress(replyTo) ? replyTo.email : undefined, "replyTo.email"),
             },
     subject: text(body.subject, "subject"),
     text: text(body.text, "text", false),
@@ -154,7 +210,7 @@ const parseMessage = (body) => {
   };
 };
 
-const json = (response, status, body) => {
+const json = (response: ServerResponse, status: number, body: RelayResponse): void => {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
 };
@@ -181,10 +237,10 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  let message;
+  let message: MailMessage;
 
   try {
-    message = parseMessage(JSON.parse(await readBody(request)));
+    message = parseMessage(parseJson(await readBody(request)));
   } catch (cause) {
     json(response, 400, {
       status: "invalid_request",

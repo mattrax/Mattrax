@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import mysql from "mysql2/promise";
+import type { Connection, RowDataPacket } from "mysql2/promise";
 
 /**
  * Drizzle stores one folder per migration and one row per applied folder.
@@ -11,7 +12,20 @@ import mysql from "mysql2/promise";
  */
 const MIGRATIONS_TABLE = "__drizzle_migrations";
 
-const folderMillis = (name) => {
+interface Migration {
+  name: string;
+  sql: string;
+  statements: string[];
+  hash: string;
+  createdAt: number;
+}
+
+interface MigrationRow extends RowDataPacket {
+  hash: string;
+  created_at: number | string | bigint | null;
+}
+
+const folderMillis = (name: string): number => {
   const stamp = name.slice(0, 14);
   const year = Number(stamp.slice(0, 4));
   const month = Number(stamp.slice(4, 6)) - 1;
@@ -23,9 +37,12 @@ const folderMillis = (name) => {
   return Date.UTC(year, month, day, hour, minute, second);
 };
 
-const readMigrations = async (directory) => {
+const hasErrnoCode = (cause: unknown, code: string): boolean =>
+  cause instanceof Error && "code" in cause && cause.code === code;
+
+const readMigrations = async (directory: string): Promise<Migration[]> => {
   const entries = await readdir(directory, { withFileTypes: true });
-  const migrations = [];
+  const migrations: Migration[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -45,7 +62,7 @@ const readMigrations = async (directory) => {
         createdAt: folderMillis(entry.name),
       });
     } catch (cause) {
-      if (cause.code !== "ENOENT") throw cause;
+      if (!hasErrnoCode(cause, "ENOENT")) throw cause;
     }
   }
 
@@ -54,7 +71,10 @@ const readMigrations = async (directory) => {
   return migrations;
 };
 
-const connect = async (databaseUrl, log) => {
+const connect = async (
+  databaseUrl: string,
+  log: (message: string) => void,
+): Promise<Connection> => {
   // Compose waits for MySQL health before starting the app, but a database
   // that restarts while the container boots should not need a manual restart.
   for (let attempt = 1; ; attempt += 1) {
@@ -74,7 +94,17 @@ const connect = async (databaseUrl, log) => {
   }
 };
 
-export const migrate = async ({ databaseUrl, migrationsDirectory, log = console.log }) => {
+export interface MigrateOptions {
+  databaseUrl: string;
+  migrationsDirectory: string;
+  log?: (message: string) => void;
+}
+
+export const migrate = async ({
+  databaseUrl,
+  migrationsDirectory,
+  log = console.log,
+}: MigrateOptions): Promise<void> => {
   const migrations = await readMigrations(migrationsDirectory);
 
   if (migrations.length === 0) {
@@ -96,11 +126,13 @@ export const migrate = async ({ databaseUrl, migrationsDirectory, log = console.
       )
     `);
 
-    const [rows] = await connection.query(
+    const [rows] = await connection.query<MigrationRow[]>(
       `SELECT hash, created_at FROM \`${MIGRATIONS_TABLE}\``,
     );
 
-    const applied = new Map(rows.map((row) => [String(row.hash), Number(row.created_at)]));
+    const applied = new Map<string, number>(
+      rows.map((row): [string, number] => [String(row.hash), Number(row.created_at)]),
+    );
     const pending = migrations.filter((migration) => !applied.has(migration.hash));
 
     if (pending.length === 0) {
