@@ -70,7 +70,7 @@ jobs:
           cp apps/cloud/.dev.vars apps/web/.dev.vars
           cp apps/cloud/.dev.vars .dev.vars
       - run: pnpm lighthouse
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: lighthouse-report
@@ -130,7 +130,7 @@ jobs:
           cp apps/cloud/.dev.vars .dev.vars
       - run: pnpm cloud db:migrate
       - run: pnpm test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
