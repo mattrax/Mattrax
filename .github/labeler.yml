@@ -12,7 +12,6 @@ documentation:
       - any-glob-to-any-file:
           - docs/**
           - "**/*.md"
-          - rspress.config.ts
 
 design:
   - changed-files:

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "@rspress/core";
 import { pluginLlms } from "@rspress/plugin-llms";
 
@@ -10,9 +11,19 @@ import { pluginLlms } from "@rspress/plugin-llms";
  */
 const origin = process.env.SITE_ORIGIN ?? "https://e.mattrax.app";
 
+/**
+ * Paths are anchored to this file rather than the working directory so the
+ * config can live beside the content: `root` stays `docs/` (the markdown is
+ * not nested), the custom theme stays `docs/theme`, and the build output stays
+ * in the repository-root `doc_build/` consumed by the web Worker.
+ */
+const docsRoot = fileURLToPath(new URL("..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+
 export default defineConfig({
-  root: "docs",
-  outDir: "doc_build",
+  root: docsRoot,
+  outDir: path.join(repoRoot, "doc_build"),
+  themeDir: fileURLToPath(new URL("./theme", import.meta.url)),
   base: "/docs/",
   siteOrigin: origin,
   title: "Mattrax",
@@ -31,7 +42,7 @@ export default defineConfig({
   // separate external "Mattrax" nav item.
   logoHref: "/",
   icon: "/favicon.ico",
-  globalStyles: path.resolve("docs/styles/global.css"),
+  globalStyles: fileURLToPath(new URL("../styles/global.css", import.meta.url)),
   llms: false,
   plugins: [pluginLlms()],
   route: {
@@ -47,7 +58,7 @@ export default defineConfig({
     enableContentAnimation: true,
     enableScrollToTop: true,
     editLink: {
-      docRepoBaseUrl: "https://github.com/oscartbeaumont/mattraxe/tree/main/docs",
+      docRepoBaseUrl: "https://github.com/mattrax/Mattrax/tree/main/docs",
     },
     footer: {
       message:
