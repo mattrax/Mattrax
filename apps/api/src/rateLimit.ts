@@ -54,23 +54,23 @@ const authRule = (): RateLimitRule => ({
 
 /** POST endpoints that issue sessions or mutate authentication factors. */
 export const SENSITIVE_AUTH_PATHS = new Set([
-  "/api/v1/beginPasskeySignIn",
-  "/api/v1/completePasskeySignIn",
-  "/api/v1/beginPasskeyRegistration",
-  "/api/v1/completePasskeyRegistration",
-  "/api/v1/ssoSignIn",
+  "/api/v1/beginpasskeysignin",
+  "/api/v1/completepasskeysignin",
+  "/api/v1/beginpasskeyregistration",
+  "/api/v1/completepasskeyregistration",
+  "/api/v1/ssosignin",
   "/api/v1/verify-email",
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
   "/api/v1/account/email-verification",
   "/api/v1/register/verification",
   "/api/v1/register/verification/verify",
-  "/api/v1/verifyTotpPending",
-  "/api/v1/recoverTotpPending",
-  "/api/v1/beginTotpEnrollment",
-  "/api/v1/confirmTotpEnrollment",
-  "/api/v1/disableTotp",
-  "/api/v1/regenerateTotpRecoveryCodes",
+  "/api/v1/verifytotppending",
+  "/api/v1/recovertotppending",
+  "/api/v1/begintotpenrollment",
+  "/api/v1/confirmtotpenrollment",
+  "/api/v1/disabletotp",
+  "/api/v1/regeneratetotprecoverycodes",
 ]);
 
 /**
@@ -79,8 +79,32 @@ export const SENSITIVE_AUTH_PATHS = new Set([
  * egress IP, so the limiter is a blunt backstop for credential stuffing and
  * accidental hot loops, not a per-user quota.
  */
+/**
+ * Normalise a path the way the Effect router matches it before applying a
+ * rule: decode escapes, drop matrix parameters, collapse duplicate slashes,
+ * strip a trailing slash and fold case. Without this, `/API/V1//completePasskeySignIn/`
+ * would bypass the credential bucket while still reaching the handler.
+ */
+const normalisePath = (pathname: string): string => {
+  let decoded = pathname;
+
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    // A malformed escape cannot match a route; leave it as-is.
+  }
+
+  return (
+    decoded
+      .replaceAll(/;.*?(?=\/|$)/g, "")
+      .replaceAll(/\/+/g, "/")
+      .replace(/\/$/, "")
+      .toLowerCase() || "/"
+  );
+};
+
 export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined => {
-  const { pathname } = new URL(request.url);
+  const pathname = normalisePath(new URL(request.url).pathname);
 
   // Bootstrap is a cheap, authenticated read over the web Worker's service
   // binding. It is account-scoped (no tenant lookup) and deliberately outside
@@ -143,11 +167,39 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   return undefined;
 };
 
-export const clientKey = (request: Request): string =>
-  request.headers.get("cf-connecting-ip") ??
-  request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-  request.headers.get("x-real-ip") ??
-  "local";
+/**
+ * Limiter key.
+ *
+ * Cloudflare requests carry `request.cf`; only then is `cf-connecting-ip`
+ * trustworthy (the edge overwrites it). A Node deployment behind a reverse
+ * proxy must opt in with `TRUST_PROXY_HEADERS=1`, and the key is the **last**
+ * forwarded hop: the nearest proxy appends the address it saw, while earlier
+ * hops may be caller-supplied. Without either, every caller shares one key,
+ * which is blunt but not spoofable.
+ */
+export type ClientKeyOptions = { readonly trustForwarded?: boolean };
+
+export const clientKey = (
+  request: Request,
+  { trustForwarded = false }: ClientKeyOptions = {},
+): string => {
+  const header = (name: string) => request.headers.get(name)?.trim() || undefined;
+  const cloudflare = (request as { cf?: unknown }).cf !== undefined;
+
+  if (cloudflare)
+    return (
+      header("cf-connecting-ip") ?? header("x-forwarded-for")?.split(",")[0]?.trim() ?? "local"
+    );
+
+  if (!trustForwarded) return "local";
+
+  const chain = header("x-forwarded-for")
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return chain?.at(-1) ?? header("x-real-ip") ?? "local";
+};
 
 export type RateLimitBindingLike = {
   limit(options: { key: string }): Promise<{ success: boolean }>;
@@ -194,6 +246,7 @@ export type RateLimiterOptions = {
   readonly store?: RateLimitStore;
   readonly now?: () => number;
   readonly maxEntries?: number;
+  readonly trustForwarded?: boolean;
   readonly warn?: (message: string, cause?: unknown) => void;
 };
 
@@ -203,6 +256,7 @@ export const createRateLimiter = ({
   store = new Map<string, Counter>(),
   now = Date.now,
   maxEntries = DEFAULT_MAX_ENTRIES,
+  trustForwarded = false,
   warn = (message, cause) => console.warn(message, cause),
 }: RateLimiterOptions = {}) => {
   const prune = () => {
@@ -254,7 +308,7 @@ export const createRateLimiter = ({
 
     if (!rule) return { limited: false, retryAfterSeconds: 0 };
 
-    const key = `${rule.bucket}:${clientKey(request)}`;
+    const key = `${rule.bucket}:${clientKey(request, { trustForwarded })}`;
     const binding = bindings[rule.bucket];
 
     if (binding) {

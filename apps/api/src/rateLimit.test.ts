@@ -11,6 +11,15 @@ import {
 const request = (path: string, init: RequestInit = {}) =>
   new Request(`https://e.mattrax.app${path}`, init);
 
+/** A request shaped like one received by a Cloudflare Worker. */
+const cloudflareRequest = (path: string, init: RequestInit = {}) => {
+  const req = request(path, init);
+
+  Object.defineProperty(req, "cf", { value: {} });
+
+  return req;
+};
+
 describe("rate limit rule selection", () => {
   it("covers auth, enrollment, billing, SCIM and MDM/SCEP", () => {
     expect(
@@ -52,21 +61,44 @@ describe("rate limit rule selection", () => {
     expect(rateLimitRuleFor(request("/api/oauth/token", { method: "GET" }))).toBeUndefined();
   });
 
-  it("prefers the connecting IP for the limiter key", () => {
+  it("normalises paths before matching so an equivalent spelling cannot bypass a rule", () => {
+    expect(
+      rateLimitRuleFor(request("/API/V1//completePasskeySignIn/", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(request("/api/v1/complete%50asskeySignIn", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(
+      rateLimitRuleFor(request("/api/v1/completePasskeySignIn;session=x", { method: "POST" }))
+        ?.bucket,
+    ).toBe("auth");
+  });
+
+  it("uses the edge connecting IP on Cloudflare", () => {
+    const cloudflare = (init: RequestInit) => {
+      const req = request("/api/v1/completePasskeySignIn", init);
+
+      Object.defineProperty(req, "cf", { value: {} });
+
+      return req;
+    };
+
     expect(
       clientKey(
-        request("/api/v1/completePasskeySignIn", {
+        cloudflare({
           headers: { "cf-connecting-ip": "203.0.113.4", "x-forwarded-for": "198.51.100.9" },
         }),
       ),
     ).toBe("203.0.113.4");
-    expect(
-      clientKey(
-        request("/api/v1/completePasskeySignIn", {
-          headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" },
-        }),
-      ),
-    ).toBe("198.51.100.9");
+  });
+
+  it("ignores forwarded headers unless the proxy is trusted", () => {
+    const forwarded = request("/api/v1/completePasskeySignIn", {
+      headers: { "x-forwarded-for": "198.51.100.9, 10.0.0.1" },
+    });
+
+    expect(clientKey(forwarded)).toBe("local");
+    expect(clientKey(forwarded, { trustForwarded: true })).toBe("10.0.0.1");
     expect(clientKey(request("/api/v1/completePasskeySignIn"))).toBe("local");
   });
 });
@@ -100,11 +132,11 @@ describe("per-isolate fallback limiter", () => {
   it("keeps buckets and clients independent", async () => {
     const limiter = createRateLimiter({ now: () => 1_000 });
 
-    const ipA = request("/api/v1/enrollment/a", {
+    const ipA = cloudflareRequest("/api/v1/enrollment/a", {
       headers: { "cf-connecting-ip": "203.0.113.4" },
     });
 
-    const ipB = request("/api/v1/enrollment/a", {
+    const ipB = cloudflareRequest("/api/v1/enrollment/a", {
       headers: { "cf-connecting-ip": "198.51.100.9" },
     });
 
@@ -131,7 +163,7 @@ describe("shared limiter bindings", () => {
     const limiter = createRateLimiter();
 
     const outcome = await limiter.check(
-      request("/api/v1/completePasskeySignIn", {
+      cloudflareRequest("/api/v1/completePasskeySignIn", {
         method: "POST",
         headers: { "cf-connecting-ip": "203.0.113.4" },
       }),
@@ -181,7 +213,7 @@ describe("shared limiter bindings", () => {
     });
 
     const outcome = await limiter.check(
-      request("/api/v1/completePasskeySignIn", {
+      cloudflareRequest("/api/v1/completePasskeySignIn", {
         method: "POST",
         headers: { "cf-connecting-ip": "203.0.113.4" },
       }),

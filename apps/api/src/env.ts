@@ -29,7 +29,9 @@ const urlString = Schema.String.check(
 
 const ApiEnvSchema = Schema.Struct({
   ORIGIN: urlString,
-  AUTH_SECRET: nonEmptyString,
+  // Signs sessions, SSR tokens, step-up grants, SSO assertions and email
+  // tokens; a short operator-chosen value makes every artifact forgeable.
+  AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   STRIPE_SECRET_KEY: Schema.optional(nonEmptyString),
   STRIPE_WEBHOOK_SECRET: Schema.optional(nonEmptyString),
   STRIPE_DEVICE_MONTHLY_PRICE_ID: Schema.optional(nonEmptyString),
@@ -164,6 +166,8 @@ const ApiEnvSchema = Schema.Struct({
    * the certificate comes from the mTLS handshake.
    */
   TRUST_DEVICE_IDENTITY_HEADERS: Schema.optional(nonEmptyString),
+  /** Trust `x-forwarded-for`/`x-real-ip`; set only behind a stripping proxy. */
+  TRUST_PROXY_HEADERS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
@@ -240,6 +244,7 @@ const RawApiEnvSchema = Schema.Struct({
   WINDOWS_ORGANIZATION_ID: optionalString,
   WINDOWS_FEDERATED_AUDIENCE: optionalString,
   TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
+  TRUST_PROXY_HEADERS: optionalString,
   MAINTENANCE_STALE_DEVICE_DAYS: optionalString,
   MAINTENANCE_AUDIT_RETENTION_DAYS: optionalString,
   MAINTENANCE_BACKUP_RETENTION_DAYS: optionalString,
@@ -329,6 +334,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined(rawEnv.WINDOWS_ORGANIZATION_ID),
   WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined(rawEnv.WINDOWS_FEDERATED_AUDIENCE),
   TRUST_DEVICE_IDENTITY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_DEVICE_IDENTITY_HEADERS),
+  TRUST_PROXY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_PROXY_HEADERS),
   MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_STALE_DEVICE_DAYS),
   MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
   MAINTENANCE_BACKUP_RETENTION_DAYS: emptyStringAsUndefined(

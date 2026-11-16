@@ -103,7 +103,11 @@ import { clearsSsrShell, withClearedSsrShell } from "./sessionShell.js";
 import { withSessionPresence } from "./sessionPresence.js";
 import { credentialExpiryEmail } from "./credentialEmail.js";
 
-const rateLimiter = createRateLimiter();
+const rateLimiter = createRateLimiter({
+  // Node deployments behind a reverse proxy must opt in before their
+  // forwarded headers are trusted; Cloudflare is detected from `request.cf`.
+  trustForwarded: apiEnv.TRUST_PROXY_HEADERS === "1",
+});
 
 /**
  * Plan limits are deployment configuration, not product pricing. A malformed

@@ -1064,8 +1064,18 @@ const headersFromRequest = (request: HttpServerRequest) => {
   return headers;
 };
 
+/**
+ * Rebuild a Web Request for the auth library from the Effect request.
+ *
+ * The path and method matter: the library's MCP guard decides whether an OAuth
+ * token may touch account settings from them. Rebuilding at the origin root
+ * would make every request look like `GET /`.
+ */
 const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
-  new Request(origin, { headers: headersFromRequest(request) });
+  new Request(new URL(request.url, origin), {
+    method: request.method,
+    headers: headersFromRequest(request),
+  });
 
 /** Require a recent step-up for a sensitive action. */
 const requireStepUp = (
@@ -16166,6 +16176,13 @@ export const createEnterpriseService = ({
     recordMcpActivity: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
+        // Only an MCP OAuth connection may attribute activity to a tool call;
+        // a read-only member must not be able to forge audit entries.
+        if (ctx.credential?.type !== "oauth")
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "MCP activity requires an MCP connection." }),
+          );
 
         const body: {
           tool?: string;

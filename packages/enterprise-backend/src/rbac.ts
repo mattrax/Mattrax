@@ -256,6 +256,10 @@ const EXPLICIT = {
   billingInvoices: "billing.read",
   deviceAction: "devices.command",
   getDeviceRecoveryKey: "devices.recovery_key",
+  // Managed-admin passwords and Activation Lock bypass codes are device
+  // secrets: reading them is as sensitive as the recovery key.
+  getDeviceLocalAdmin: "devices.recovery_key",
+  getDeviceActivationLockBypassCode: "devices.recovery_key",
   extractMobileconfig: "policies.read",
   previewMobileconfig: "policies.read",
 } satisfies Record<string, Permission>;

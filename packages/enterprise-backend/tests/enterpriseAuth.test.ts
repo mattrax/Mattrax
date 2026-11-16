@@ -98,6 +98,7 @@ const seedUserAndTenant = () => {
 
 const bearer = (token: string) =>
   new Request(`${origin}/api/v1/account/api-tokens`, {
+    method: "POST",
     headers: { authorization: `Bearer ${token}` },
   });
 
@@ -208,6 +209,63 @@ describe("enterprise API tokens", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
+  it("stops a read-scoped token from mutating account security", async () => {
+    const now = new Date();
+    const raw = "mtx_read_only_mutation";
+
+    const context = makeContext(
+      {
+        ...seedUserAndTenant(),
+        account_api_token: [
+          {
+            id: "token-read",
+            userId: "user-1",
+            name: "Monitor",
+            tokenPrefix: raw.slice(0, 12),
+            tokenHash: await sha256(raw),
+            scopes: ["read"],
+            tenantId: null,
+            lastUsedAt: null,
+            expiresAt: null,
+            revokedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+      { email: makeEmailTransport(async () => {}) },
+    );
+
+    await expect(
+      context.run((auth) =>
+        auth.requestEmailChange(bearer(raw), { newEmail: "attacker@example.com" }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    // A write token is still a bearer credential and reaches the handler.
+    const writeRaw = "mtx_write_can_mutate";
+    context.db.store.account_api_token.push({
+      id: "token-write",
+      userId: "user-1",
+      name: "Writer",
+      tokenPrefix: writeRaw.slice(0, 12),
+      tokenHash: await sha256(writeRaw),
+      scopes: ["read", "write"],
+      tenantId: null,
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      context.run((auth) =>
+        auth.requestEmailChange(bearer(writeRaw), { newEmail: "next@example.com" }),
+      ),
+    ).resolves.toMatchObject({ status: "ok" });
+  });
+
   it("stops an API token from minting a broader or cross-tenant token", async () => {
     const now = new Date();
     const raw = "mtx_existing_read_token";
@@ -252,7 +310,8 @@ describe("enterprise API tokens", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
-    // A narrower token in the same tenant is allowed.
+    // Read tokens are monitoring credentials: they cannot mint tokens at all,
+    // even at the same scope.
     await expect(
       context.run((auth) =>
         auth.createApiToken(bearer(raw), {
@@ -261,7 +320,7 @@ describe("enterprise API tokens", () => {
           tenantId: "tenant-1",
         }),
       ),
-    ).resolves.toMatchObject({ item: { scopes: ["read"], tenantId: "tenant-1" } });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
   });
 });
 

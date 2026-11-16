@@ -501,6 +501,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
+          // A read-scoped token is a monitoring credential, not a second
+          // factor: reject every mutation before the handler can act. OAuth
+          // connections are separately blocked from account settings above.
+          if (
+            apiToken &&
+            request.method.toUpperCase() !== "GET" &&
+            !tokenScopes(apiToken.scopes).has("write")
+          )
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "This API token only has read access.",
+                }),
+                { code: "token_scope", reason: "write_required" },
+              ),
+            );
+
           const userId = session?.subjectId ?? apiToken?.userId ?? oauth?.userId;
 
           if (!userId)

@@ -18,11 +18,17 @@ export default function SsoCompletePage() {
       ? searchParams.returnTo[0]
       : searchParams.returnTo;
 
-    return value && value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
+    return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+      ? value
+      : "/dashboard";
   };
 
   onSettled(() => {
     const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
+
+    // The assertion is single-use server-side only once consumed; keep it out
+    // of history and Referer headers in the meantime.
+    if (typeof window !== "undefined") window.history.replaceState(null, "", "/sso/complete");
 
     if (!token) {
       setError("This sign-in link is missing its token.");

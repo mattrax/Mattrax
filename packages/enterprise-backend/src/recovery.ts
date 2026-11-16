@@ -82,11 +82,12 @@ const sendEmail = (
   fallbackLog: string,
 ) =>
   email === undefined
-    ? // Self-hosted deployments can run without a mailer; the supported path
-      // there is the operator recovery procedure in docs/admin/operations.md.
-      // The link is never logged in production, where `email` exists.
+    ? // A deployment without a mailer cannot complete recovery: the link is
+      // the whole proof. Log only that the attempt happened (never the URL,
+      // which a log reader could redeem) and point the operator at the manual
+      // procedure in docs/admin/operations.md.
       Effect.sync(() => {
-        console.log(fallbackLog);
+        console.log(`${fallbackLog} (not emailed: no mail transport configured)`);
       })
     : email.send({ from: FROM, ...message }).pipe(Effect.catch(() => Effect.void));
 
@@ -221,7 +222,7 @@ export const requestAccountRecovery = (
         text: `Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:\n\n${proofLink}\n\nThe link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.\n\nNo passkey or account setting has been changed.`,
         html: `<p>Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:</p><p><a href="${proofLink}">${proofLink}</a></p><p>The link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.</p><p>No passkey or account setting has been changed.</p>`,
       },
-      `RECOVERY PROOF ${user.email} ${proofLink}`,
+      `RECOVERY PROOF requested for ${user.email}`,
     );
 
     if (approvalToken && approvalOrganizationId) {
@@ -240,7 +241,7 @@ export const requestAccountRecovery = (
             text: `${user.name} (${user.email}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.\n\nOpen your administrators page to approve it: ${approvalLink}\n\nIf you were not expecting this, do not approve it.`,
             html: `<p>${user.name} (${user.email}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.</p><p><a href="${approvalLink}">Open your administrators page to approve it</a></p><p>If you were not expecting this, do not approve it.</p>`,
           },
-          `RECOVERY APPROVAL ${recipient} ${approvalLink}`,
+          `RECOVERY APPROVAL requested for ${recipient}`,
         );
     }
 
@@ -441,7 +442,7 @@ export const approveAccountRecovery = (
           text: `Another owner approved your account recovery. Open this link to sign in and add a new passkey:\n\n${link}\n\nThe link works once and expires in 15 minutes.`,
           html: `<p>Another owner approved your account recovery. Open this link to sign in and add a new passkey:</p><p><a href="${link}">${link}</a></p><p>The link works once and expires in 15 minutes.</p>`,
         },
-        `RECOVERY COMPLETION ${record.email} ${link}`,
+        `RECOVERY COMPLETION requested for ${record.email}`,
       );
     }
 

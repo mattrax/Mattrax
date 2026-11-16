@@ -62,7 +62,11 @@ server {
   location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Overwrite rather than append: a caller-supplied chain would let the
+    # client choose its own rate-limit key.
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Cf-Connecting-Ip "";
     proxy_set_header X-Forwarded-Proto https;
 
     # Required for Apple MDM certificate authentication. Strip anything the
@@ -92,6 +96,8 @@ the serial number.
 
 The container serves plain HTTP because TLS is the proxy's job. Set
 `TRUSTED_ORIGINS` when the dashboard and API are served from different origins.
+Set `TRUST_PROXY_HEADERS=1` when the proxy overwrites `X-Forwarded-For` as shown:
+rate limits then key on the client address instead of sharing one global bucket.
 
 ## Configuration
 
@@ -101,6 +107,7 @@ The container serves plain HTTP because TLS is the proxy's job. Set
 | `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets. |
 | `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.       |
 | `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.          |
+| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits. |
 | `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                         |
 | `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                      |
 | `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                        |

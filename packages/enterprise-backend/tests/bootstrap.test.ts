@@ -106,6 +106,10 @@ describe("GET /api/v1/bootstrap", () => {
     // The tenant endpoints keep their existing mappings.
     expect(permissionForMethod("listDevices")).toBe("devices.read");
     expect(permissionForMethod("patchTenant")).toBe("tenant.write");
+    // Device secrets are not ordinary reads: a read-only role must not reveal
+    // the managed local-admin password or Activation Lock bypass code.
+    expect(permissionForMethod("getDeviceLocalAdmin")).toBe("devices.recovery_key");
+    expect(permissionForMethod("getDeviceActivationLockBypassCode")).toBe("devices.recovery_key");
   });
 
   it("returns the session, me shell and a verifiable token after one requireUser", async () => {

@@ -378,11 +378,32 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
           .trim()
           .toLowerCase();
 
-        if (email.includes("@"))
-          yield* db
-            .update(schema.user)
-            .set({ email, updatedAt: now() })
-            .where(eq(schema.user.id, userId));
+        if (!email.includes("@") || email === current.user.email) continue;
+
+        // `user` is a deployment-global account row. A tenant token must not
+        // rewrite the address another tenant signs in with, so only a user
+        // provisioned solely by this organisation may be renamed.
+        const memberships = yield* db
+          .select({ organizationId: schema.member.organizationId })
+          .from(schema.member)
+          .where(eq(schema.member.userId, userId));
+
+        if (memberships.length !== 1 || memberships[0]!.organizationId !== ctx.organizationId)
+          return scimError(
+            400,
+            "userName can only be changed for a user provisioned only by this tenant",
+            "invalidValue",
+          );
+
+        const conflict = yield* db.query.user.findFirst({ where: { email } });
+
+        if (conflict && conflict.id !== userId)
+          return scimError(409, "userName is already in use", "uniqueness");
+
+        yield* db
+          .update(schema.user)
+          .set({ email, emailVerified: false, updatedAt: now() })
+          .where(eq(schema.user.id, userId));
       }
     }
 
@@ -523,6 +544,14 @@ const replaceGroupMembers = (
 ) =>
   Effect.gen(function* () {
     const db = yield* Db;
+
+    // Resolve the group inside this tenant before touching membership: the
+    // group id is caller-supplied, and membership rows carry no organisation.
+    const group = yield* db.query.userGroup.findFirst({
+      where: { id: groupId, organizationId: ctx.organizationId },
+    });
+
+    if (!group) return scimError(404, "Group not found");
 
     const previous = yield* db
       .select({ userId: schema.userGroupMember.userId })
