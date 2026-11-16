@@ -1,8 +1,7 @@
 // This component shadows the theme's own `NavTitle`, so the bundler never
 // loads that module and its stylesheet — the only place the light/dark wordmark
-// swap is defined — is dropped from the build. Load it explicitly; the markup
-// below reuses its class names.
-import "@rspress/core/dist/theme/components/NavTitle/index.css";
+// swap is defined — is dropped from the build. The three rules live in
+// `docs/styles/global.css` instead of a deep import into the package's `dist/`.
 import { normalizeImagePath, useSite } from "@rspress/core/runtime";
 import type { ComponentProps } from "react";
 
