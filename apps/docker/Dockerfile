@@ -21,7 +21,7 @@ RUN apt-get update \
 ENV PNPM_HOME=/pnpm \
     PNPM_STORE_DIR=/pnpm/store \
     PATH=/pnpm:$PATH
-RUN npm install --global pnpm@10.33.2
+RUN npm install --global pnpm@12.21.0
 
 WORKDIR /repo
 COPY . .
@@ -42,7 +42,8 @@ RUN node apps/docker/scripts/stage.ts /repo /out
 # carry their own dependencies; the host only needs the migration runner's
 # MySQL client.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @mattrax/docker deploy --prod --legacy /out/selfhost \
+    pnpm --filter @mattrax/docker deploy --prod --legacy \
+      --config.allow-unused-patches=true /out/selfhost \
     && rm -rf /out/selfhost/node_modules/.pnpm/@types+node@* \
       /out/selfhost/node_modules/.pnpm/undici-types@* \
     && find /out/selfhost/node_modules -xtype l -delete

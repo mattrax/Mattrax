@@ -5,19 +5,19 @@ packages:
 catalog:
   "@axe-core/playwright": ^4.14.0
   "@cloudflare/vite-plugin": 2.0.0-beta.v.12
-  "@effect/platform-node": ^4.1.2
-  "@effect/sql-mysql2": ^4.1.2
+  "@effect/platform-node": ^4.1.4
+  "@effect/sql-mysql2": ^4.1.4
   "@fontsource-variable/geist": ^5.3.0
   "@kobalte/core": 2.0.0-alpha.4
   "@lhci/cli": ^0.16.1
-  "@oxlint/plugins": 1.91.0
+  "@oxlint/plugins": 1.93.0
   "@paralleldrive/cuid2": ^3.3.0
-  "@playwright/test": ^1.65.0
+  "@playwright/test": ^1.65.1
   "@rolldown/perf-kit": ^0.1.0
-  "@rspress/core": ^2.1.2
-  "@rspress/plugin-llms": ^2.1.2
+  "@rspress/core": ^2.1.3
+  "@rspress/plugin-llms": ^2.1.3
   "@simplewebauthn/browser": ^14.0.0
-  "@simplewebauthn/server": ^14.0.1
+  "@simplewebauthn/server": ^14.1.0
   "@solidjs/meta": 1.0.0-next.2
   "@solidjs/router": 2.0.0-next.44
   "@solidjs/vite-plugin": 3.0.0-next.57
@@ -32,19 +32,19 @@ catalog:
   "@yielded/auth-platform-workerd": 0.1.0-beta.47
   "@yielded/auth-simplewebauthn": 0.1.0-beta.47
   asn1js: ^4.0.0
-  cf: 1.0.0-beta.28
+  cf: 1.0.0-beta.32
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   drizzle-kit: 1.0.0-rc.5
   drizzle-orm: 1.0.0-rc.5
-  effect: ^4.1.2
+  effect: ^4.1.4
   fast-plist: ^0.1.3
   filesystem-routing: ^0.5.0
   mysql2: ^3.24.6
   oxc-minify: ^0.157.0
-  oxlint: 1.91.0
+  oxlint: 1.93.0
   pkijs: ^4.0.1
-  posthog-js: ^1.448.0
+  posthog-js: ^1.450.0
   posthog-node: ^5.73.0
   react: ^19.3.1
   reflect-metadata: ^0.2.2
@@ -53,21 +53,16 @@ catalog:
   stripe: ^23.1.0
   tailwind-merge: ^3.7.0
   tailwindcss: ^4.3.5
-  tar: ^7.5.22
+  tar: ^7.5.23
   tsx: ^4.23.15
   tw-animate-css: ^1.4.0
   typescript: ~7.0.2
   uqr: ^0.1.3
-  vite: npm:@voidzero-dev/vite-plus-core@^1.5.0
-  vite-plus: ^1.5.0
+  vite: npm:@voidzero-dev/vite-plus-core@^1.6.0
+  vite-plus: ^1.6.0
   vitest: ^5.1.0
-  yaml: ^2.8.3
+  yaml: ^2.9.1
 catalogMode: prefer
-
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - workerd
 
 overrides:
   vite: "catalog:"
@@ -88,3 +83,13 @@ peerDependencyRules:
     solid-js: "2.0.0-rc.21"
     vite: "*"
     vitest: "*"
+
+# The v13 format is JSON-as-YAML with a trailing comma after every entry, so
+# peer-dependency changes touch one line instead of conflicting across branches.
+lockfile:
+  format: v13
+allowBuilds:
+  core-js: true
+  esbuild: true
+  msw: true
+  workerd: true

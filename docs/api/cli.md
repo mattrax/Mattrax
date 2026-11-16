@@ -215,7 +215,7 @@ jobs:
       MATTRAX_TENANT: ${{ vars.MATTRAX_TENANT }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -22,7 +22,7 @@ Mattrax is a TypeScript monorepo for building and operating our device managemen
 Requirements:
 
 - Node.js `>=22.12.0`
-- pnpm `10.33.2`
+- pnpm `>=12.21.0`
 - MySQL 8 (local development uses `mysql://mattrax:mattrax@localhost:3306/mattraxe`)
 
 Install dependencies, apply migrations and start the dashboard + API Worker:

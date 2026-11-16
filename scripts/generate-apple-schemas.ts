@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parse } from "../node_modules/.pnpm/yaml@2.8.3/node_modules/yaml/dist/index.js";
+import { parse } from "yaml";
 
 const APPLE_REPO = "/tmp/apple-device-management";
 

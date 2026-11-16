@@ -3,7 +3,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
-import { parse } from "yaml";
+import { parseAllDocuments } from "yaml";
 
 /**
  * Build the open-source licence inventory for the dashboard.
@@ -41,13 +41,71 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The lockfile is parsed YAML; these helpers narrow each value it reads. */
-const rawLock: unknown = parse(await readFile(path.join(root, "pnpm-lock.yaml"), "utf8"));
+const lockDocuments = parseAllDocuments(
+  await readFile(path.join(root, "pnpm-lock.yaml"), "utf8"),
+).map((document): unknown => document.toJS());
+
+const rawLock = lockDocuments.at(-1);
 
 const lock = isRecord(rawLock) ? rawLock : {};
 
-const importers = isRecord(lock.importers) ? lock.importers : {};
+const settings = isRecord(lock.settings) ? lock.settings : {};
 
-const snapshots = isRecord(lock.snapshots) ? lock.snapshots : {};
+const catalogs = isRecord(settings.catalogs) ? settings.catalogs : {};
+
+const defaultCatalog = isRecord(catalogs.default) ? catalogs.default : {};
+
+const catalogVersion = (name: string): string | undefined => {
+  const entry = defaultCatalog[name];
+
+  return isRecord(entry) && isString(entry.version) ? entry.version : undefined;
+};
+
+/**
+ * v13 lockfiles store workspace projects under `projects` and package data
+ * under `packages`, with catalog references written as `catalog:`. Normalise
+ * those into the v9 shape the licence walk below already understands.
+ */
+const v13Importers = isRecord(lock.projects) ? lock.projects : {};
+
+const v13Packages = isRecord(lock.packages) ? lock.packages : {};
+
+const normaliseProjectDependencies = (value: unknown): Record<string, unknown> => {
+  const dependencies = isRecord(value) ? value : {};
+
+  return Object.fromEntries(
+    Object.entries(dependencies).flatMap(([name, dependency]) => {
+      if (isString(dependency)) {
+        if (dependency.startsWith("workspace:") || dependency.startsWith("link:")) return [];
+
+        const version = dependency === "catalog:" ? catalogVersion(name) : dependency;
+
+        return version ? [[name, { version }]] : [];
+      }
+
+      return [[name, dependency]];
+    }),
+  );
+};
+
+const importers = isRecord(lock.importers)
+  ? lock.importers
+  : Object.fromEntries(
+      Object.entries(v13Importers).map(([project, importer]) => {
+        const record = isRecord(importer) ? importer : {};
+
+        return [
+          project,
+          {
+            ...record,
+            dependencies: normaliseProjectDependencies(record.dependencies),
+            optionalDependencies: normaliseProjectDependencies(record.optionalDependencies),
+          },
+        ];
+      }),
+    );
+
+const snapshots = isRecord(lock.snapshots) ? lock.snapshots : v13Packages;
 
 const dependenciesOf = (importer: unknown): [string, unknown][] => {
   const record = isRecord(importer) ? importer : {};
