@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import {  makeDb, tableName, type Row } from "./fake-db.js";
+import { makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -46,7 +46,7 @@ const setup = (organization: Row) => {
     ],
   });
 
-// SAFETY: The fake store implements only the query chains these tests exercise.
+  // SAFETY: The fake store implements only the query chains these tests exercise.
   return ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 };
 

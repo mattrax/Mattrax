@@ -342,7 +342,12 @@ const matchesCondition = (
     }
 
     case "health": {
-      if (condition.value === "stale") return Boolean(device.health?.stale);
+      if (condition.value === "stale") {
+        const stale = Boolean(device.health?.stale);
+
+        return condition.op === "ne" ? !stale : stale;
+      }
+
       const matches = device.health?.level === condition.value;
 
       return condition.op === "ne" ? !matches : matches;

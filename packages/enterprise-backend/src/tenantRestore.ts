@@ -135,6 +135,7 @@ type ParsedBundle = {
     assetTag: string | null;
     notes: string | null;
     groupKey: string | null;
+    consumedDeviceKey: string | null;
   }>;
   members: number;
   certificates: number;
@@ -573,6 +574,7 @@ export const parseTenantRestoreBundle = (
         assetTag: text(row.assetTag, 255),
         notes: text(row.notes, 10_000),
         groupKey: row.groupKey ?? null,
+        consumedDeviceKey: row.consumedDeviceKey ?? null,
       })),
       deviceAssignments: parsedDeviceAssignments,
       userAssignments: parsedUserAssignments,
@@ -1082,7 +1084,15 @@ const applyBundle = (
         if (applicationDeviceValues.length > 0)
           yield* tx.insert(schema.applicationDevice).ignore().values(applicationDeviceValues);
 
-        for (const row of bundle.preRegistrations)
+        for (const row of bundle.preRegistrations) {
+          // A consumed serial must stay consumed. If its device is gone, drop
+          // the row rather than reopening an enrollment that already happened.
+          const consumedDeviceId = row.consumedDeviceKey
+            ? resolveDevice(row.consumedDeviceKey, null)
+            : undefined;
+
+          if (row.consumedDeviceKey && !consumedDeviceId) continue;
+
           yield* tx.insert(schema.devicePreRegistration).values({
             id: newId(),
             organizationId: organization.id,
@@ -1091,10 +1101,11 @@ const applyBundle = (
             assetTag: row.assetTag,
             notes: row.notes,
             groupId: row.groupKey ? (groupIdByKey.get(row.groupKey) ?? null) : null,
-            consumedDeviceId: null,
+            consumedDeviceId: consumedDeviceId ?? null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
+        }
 
         if (bundle.enrollment) {
           const value = {

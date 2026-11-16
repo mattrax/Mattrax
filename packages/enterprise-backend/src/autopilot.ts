@@ -350,8 +350,8 @@ const graphFailure = (cause: AutopilotFailureCause): AutopilotError => {
     cause instanceof Error
       ? cause.message
       : (Option.getOrUndefined(
-            Schema.decodeUnknownOption(Schema.Struct({ message: Schema.String }))(cause),
-          )?.message ?? String(cause));
+          Schema.decodeUnknownOption(Schema.Struct({ message: Schema.String }))(cause),
+        )?.message ?? String(cause));
 
   return fail("graph", message, cause);
 };
@@ -458,10 +458,7 @@ export const importAutopilotDevices = (options: {
 
       if (values.manufacturer) Object.assign(set, { manufacturer: values.manufacturer });
 
-      yield* db
-        .insert(schema.autopilotDevice)
-        .values(values)
-        .onDuplicateKeyUpdate({ set });
+      yield* db.insert(schema.autopilotDevice).values(values).onDuplicateKeyUpdate({ set });
     }
 
     return {
@@ -566,8 +563,7 @@ export const syncAutopilotDevices = (options: {
 
       if (values.graphId) Object.assign(set, { graphId: values.graphId });
 
-      if (values.azureAdDeviceId)
-        Object.assign(set, { azureAdDeviceId: values.azureAdDeviceId });
+      if (values.azureAdDeviceId) Object.assign(set, { azureAdDeviceId: values.azureAdDeviceId });
 
       if (values.groupTag) Object.assign(set, { groupTag: values.groupTag });
 
@@ -577,10 +573,7 @@ export const syncAutopilotDevices = (options: {
 
       if (values.deviceId) Object.assign(set, { deviceId: values.deviceId });
 
-      yield* db
-        .insert(schema.autopilotDevice)
-        .values(values)
-        .onDuplicateKeyUpdate({ set });
+      yield* db.insert(schema.autopilotDevice).values(values).onDuplicateKeyUpdate({ set });
     }
 
     return { synced: graphDevices.length, linked, pages };

@@ -342,7 +342,14 @@ export async function buildScepCertFailure(
   );
   await signedData.sign(caPrivateKey, 0, "SHA-256");
 
-  return signedData.toSchema(true).toBER(false);
+  // SCEP messages are CMS ContentInfo values, not bare SignedData. A failure
+  // response has to be wrapped exactly like the success response.
+  return new pkijs.ContentInfo({
+    contentType: pkijs.ContentInfo.SIGNED_DATA,
+    content: signedData.toSchema(true),
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 export async function buildScepCertRep(

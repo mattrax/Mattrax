@@ -48,12 +48,20 @@ const healthForDevice = (
     osEdition: device.osEdition,
     fileVaultEnabled: device.fileVaultEnabled,
     batteryHealth: device.batteryHealth,
+    // Keep dynamic-group health aligned with the device table: omitting the
+    // Windows security report made a BitLocker-off device "healthy" here but
+    // "attention" in search and dashboards.
+    bitLockerEnabled: device.bitLockerEnabled,
+    bitLockerStatus: device.bitLockerStatus,
+    tpmVersion: device.tpmVersion,
+    secureBootState: device.secureBootState,
+    domainName: device.domainName,
+    entraDeviceId: device.entraDeviceId,
+    windowsSecurityReported: device.securityUpdatedAt != null,
     now,
   };
 
-  return deriveDeviceHealth(
-    staleAfterDays === undefined ? input : { ...input, staleAfterDays },
-  );
+  return deriveDeviceHealth(staleAfterDays === undefined ? input : { ...input, staleAfterDays });
 };
 
 const deviceSnapshot = (

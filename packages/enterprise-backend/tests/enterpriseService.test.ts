@@ -1935,9 +1935,14 @@ describe("enterprise service APNs", () => {
       topic: "com.apple.mgmt.External.acme",
     });
 
-    // A device that is not enrolled must not be pushed.
+    // A device that is not enrolled must not be pushed, and the action must
+    // fail rather than claim success for a command that was never queued.
     await seedDevice(db, tenant.id, "device-2", { status: "unenrolled" });
-    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2", {}));
+    await expect(
+      runEffect(service.deviceAction(request(headers), tenant.id, "device-2", {})),
+    ).rejects.toMatchObject({
+      message: "This action is only available while the device is enrolled.",
+    });
     expect(pushes).toHaveLength(1);
 
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));

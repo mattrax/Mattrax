@@ -23,9 +23,7 @@ export function isPlistObject(value: PlistInput): value is PlistObject {
   );
 }
 
-export function isPlistArray(
-  value: PlistInput,
-): value is ReadonlyArray<PlistValue> {
+export function isPlistArray(value: PlistInput): value is ReadonlyArray<PlistValue> {
   return Array.isArray(value);
 }
 

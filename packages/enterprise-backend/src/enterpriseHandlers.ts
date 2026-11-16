@@ -105,6 +105,7 @@ import {
   like,
   lt,
   ne,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -2525,6 +2526,8 @@ export const createEnterpriseService = ({
     readonly at: Date;
     /** Apple per-user channel (`UserID`/`EnrollmentUserID`); omit for the device. */
     readonly userId?: string;
+    /** Commands from the same operation that must survive supersede planning. */
+    readonly protectIds?: ReadonlyArray<string>;
   }): Effect.Effect<
     { readonly id: string; readonly payload: CommandPayload; readonly deduplicated: boolean },
     unknown,
@@ -2574,6 +2577,7 @@ export const createEnterpriseService = ({
             expiresAt: row.expiresAt,
           })),
         { requestType: input.requestType, payload: input.payload, now: input.at },
+        new Set(input.protectIds ?? []),
       );
 
       if (plan.duplicate) {
@@ -3947,14 +3951,31 @@ export const createEnterpriseService = ({
       if (filters.setup) {
         // ADE setup state is stored on `device_apple`; the subquery keeps the
         // filter set-based and tenant scoping remains on the outer device query.
+        const appleDevices = db
+          .select({ deviceId: schema.deviceApple.deviceId })
+          .from(schema.deviceApple);
+
         conditions.push(
-          inArray(
-            schema.device.id,
-            db
-              .select({ deviceId: schema.deviceApple.deviceId })
-              .from(schema.deviceApple)
-              .where(eq(schema.deviceApple.awaitingConfiguration, filters.setup === "awaiting")),
-          ),
+          filters.setup === "awaiting"
+            ? inArray(
+                schema.device.id,
+                db
+                  .select({ deviceId: schema.deviceApple.deviceId })
+                  .from(schema.deviceApple)
+                  .where(eq(schema.deviceApple.awaitingConfiguration, true)),
+              )
+            : // "Complete" includes devices with no ADE row (Windows, Android,
+              // and Apple devices that never awaited configuration).
+              (or(
+                inArray(
+                  schema.device.id,
+                  db
+                    .select({ deviceId: schema.deviceApple.deviceId })
+                    .from(schema.deviceApple)
+                    .where(eq(schema.deviceApple.awaitingConfiguration, false)),
+                ),
+                notInArray(schema.device.id, appleDevices),
+              ) ?? sql`false`),
         );
       }
 
@@ -5541,6 +5562,14 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         yield* identifyUser(user);
+
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before importing a tenant.",
+            }),
+          );
+
         const bundle: TenantImportRequest = payload;
 
         // The payload has already been decoded, so this bounds what a caller
@@ -6067,7 +6096,11 @@ export const createEnterpriseService = ({
             if (applicationGroupValues.length > 0)
               yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
 
-            for (const row of preRegistrations)
+            for (const row of preRegistrations) {
+              // Devices are not imported, so a consumed serial can never be
+              // re-linked. Skipping it prevents a second enrollment.
+              if (row.consumedDeviceKey) continue;
+
               yield* tx.insert(schema.devicePreRegistration).values({
                 id: id(),
                 organizationId: tenantId,
@@ -6080,6 +6113,7 @@ export const createEnterpriseService = ({
                 createdAt: timestamp,
                 updatedAt: timestamp,
               });
+            }
 
             yield* tx.insert(schema.auditLog).values({
               id: id(),
@@ -9262,12 +9296,29 @@ export const createEnterpriseService = ({
     resetTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* getOrCreateEnrollment(ctx.organization.id);
+        const existing = yield* getOrCreateEnrollment(ctx.organization.id);
         const newId = id();
+        const timestamp = now();
+
+        // Rotate by replacing the row, not by updating its primary key:
+        // `enrollment_answer` references it with a cascade delete and no
+        // ON UPDATE rule, so a key update fails once a question has been
+        // answered. Deleting the old row clears those answers with it.
+        yield* db.insert(schema.enterpriseEnrollment).values({
+          id: newId,
+          organizationId: ctx.organization.id,
+          code: existing.code,
+          enabledApple: existing.enabledApple,
+          enabledWindows: existing.enabledWindows,
+          enabledAndroid: existing.enabledAndroid,
+          enabledAssetTag: existing.enabledAssetTag,
+          maxDevices: existing.maxDevices,
+          createdAt: existing.createdAt,
+          updatedAt: timestamp,
+        });
         yield* db
-          .update(schema.enterpriseEnrollment)
-          .set({ id: newId, updatedAt: now() })
-          .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+          .delete(schema.enterpriseEnrollment)
+          .where(eq(schema.enterpriseEnrollment.id, existing.id));
         yield* invalidateUnusedScepChallenges(ctx.organization.id);
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
 
@@ -10947,16 +10998,43 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body: { name?: string; notes?: string | null; assetTag?: string | null } = payload;
+
+        const existing = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!existing)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Device name cannot be empty" }),
+          );
+
         yield* db
           .update(schema.device)
-          .set({ name: body.name, notes: body.notes, assetTag: body.assetTag })
+          .set({
+            name: body.name === undefined ? existing.name : body.name.trim(),
+            notes: body.notes === undefined ? existing.notes : body.notes,
+            assetTag: body.assetTag === undefined ? existing.assetTag : body.assetTag,
+          })
           .where(
             and(
               eq(schema.device.id, deviceId),
               eq(schema.device.organizationId, ctx.organization.id),
             ),
           );
-        yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, { now: now() });
+
+        // A rename or asset-tag edit can change dynamic-group membership, and
+        // therefore the device's policies. Push that change instead of only
+        // updating the server-side rows.
+        const groupChanges = yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, {
+          now: now(),
+        }).pipe(Effect.catch(() => Effect.succeed([])));
+
+        if (groupChanges.some((group) => group.added > 0 || group.removed > 0))
+          yield* refreshDevicePolicies(ctx.organization.id, [deviceId]);
+
         yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
 
         return ok;
@@ -11287,8 +11365,8 @@ export const createEnterpriseService = ({
         );
 
         if (
-          device.status === "enrolled" &&
-          (!requestedAction || !deviceAvailableActions(deviceActionInput).includes(requestedAction))
+          !requestedAction ||
+          !deviceAvailableActions(deviceActionInput).includes(requestedAction)
         )
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -11664,6 +11742,8 @@ export const createEnterpriseService = ({
               request.payload = { Password: password };
             }
 
+            let recoveryLockClearId: string | undefined;
+
             if ((action === "wipe" || action === "return-to-service") && device.proto === "apple") {
               // A supervised device must not be able to re-enable Activation
               // Lock after the wipe. This is an MDM setting, not an erase key,
@@ -11692,13 +11772,17 @@ export const createEnterpriseService = ({
               const recoveryLock = yield* resolveRecoveryLockPassword(device);
 
               if (recoveryLock) {
-                yield* queueDeviceCommand({
+                // Protect this command from the erase's supersede pass: it is
+                // queued by the same request and must reach the device first.
+                const clear = yield* queueDeviceCommand({
                   organizationId: ctx.organization.id,
                   deviceId: device.id,
                   requestType: "SetRecoveryLock",
                   payload: { CurrentPassword: recoveryLock, NewPassword: "" },
                   at: new Date(timestamp.getTime() - 1),
                 });
+
+                recoveryLockClearId = clear.id;
               }
 
               const [apple] = yield* db
@@ -11722,6 +11806,7 @@ export const createEnterpriseService = ({
               requestType: request.requestType,
               payload: request.payload,
               at: timestamp,
+              protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
             });
 
             command = { commandId: queued.id, deduplicated: queued.deduplicated };
@@ -12100,7 +12185,9 @@ export const createEnterpriseService = ({
             : undefined;
 
         return {
-          health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
+          health: normalizeDeviceHealth(
+            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null),
+          ),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
           push: rowPushInfo(apple),
@@ -12233,8 +12320,20 @@ export const createEnterpriseService = ({
           byDevice.set(declaration.deviceId, list);
         }
 
+        const setupRows = deviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceApple.deviceId,
+                awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+              })
+              .from(schema.deviceApple)
+              .where(inArray(schema.deviceApple.deviceId, deviceIds))
+          : [];
+
+        const setup = new Map(setupRows.map((row) => [row.deviceId, row.awaitingConfiguration]));
+
         const summaries = devices.map((device: EnterpriseDevice) =>
-          rowDeviceHealth(device, byDevice.get(device.id) ?? []),
+          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null),
         );
 
         const levelRank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
@@ -12997,9 +13096,12 @@ export const createEnterpriseService = ({
             );
         yield* snapshotPolicy(ctx, policyId);
         yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
-        yield* syncAndroidDevices(
+        // Rollback replaces configurations, so both Apple and Android devices
+        // must be woken; previously only Android was resynced.
+        yield* refreshDevicePolicies(
           ctx.organization.id,
           yield* applePush.deviceIdsInPolicies([policyId]),
+          policyId,
         );
 
         return ok;
@@ -14630,8 +14732,12 @@ export const createEnterpriseService = ({
           { concurrency: 10 },
         );
 
-        const pushed = yield* applePush.pushAppleDevices(affected.flat());
+        const deviceIds = affected.flat();
+        const pushed = yield* applePush.pushAppleDevices(deviceIds);
         yield* reportPolicyDeliveryFailure(tenantId, { policyIds: [...ids] }, pushed);
+        // Android has no push channel: the sync endpoint must recompute its
+        // policies explicitly, as every other policy mutation does.
+        yield* syncAndroidDevices(tenantId, deviceIds);
 
         return ok;
       }),
@@ -14840,6 +14946,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.enrolledAt.getTime();
               case "status":
                 return snapshot.row.status;
+              case "health":
+                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
               default:
                 return snapshot.row.name;
             }
@@ -15391,6 +15499,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.enrolledAt.getTime();
               case "status":
                 return snapshot.row.status;
+              case "health":
+                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
               default:
                 return snapshot.row.name;
             }

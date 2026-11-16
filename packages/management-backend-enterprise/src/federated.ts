@@ -163,9 +163,7 @@ function decodeJson(value: string): Schema.Json | null {
   if (!bytes) return null;
 
   try {
-    return Schema.decodeUnknownSync(Schema.Json)(
-      JSON.parse(new TextDecoder().decode(bytes)),
-    );
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(bytes)));
   } catch {
     return null;
   }

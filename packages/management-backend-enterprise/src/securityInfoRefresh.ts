@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, like, lt, or } from "drizzle-orm";
 import { Effect } from "effect";
 import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
 import { isMacOsDevice } from "@mattrax/enterprise-domain";
@@ -110,6 +110,14 @@ export const refreshAppleSecurityInfo = (
           or(
             isNull(s.deviceApple.securityInfoRequestedAt),
             lt(s.deviceApple.securityInfoRequestedAt, requestBefore),
+          ),
+          // Filter Macs before the limit. An iPhone can report FileVault state
+          // but never has a recovery key, so letting iOS rows consume the
+          // batch starves every Mac on a large tenant.
+          or(
+            like(s.device.osEdition, "%mac%"),
+            like(s.device.model, "%mac%"),
+            and(isNull(s.device.osEdition), isNull(s.device.model)),
           ),
         ),
       )

@@ -3822,14 +3822,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               catch: internal,
             });
 
-            // The device has now fetched the sync token, so this version has
-            // been observed. Persist it to stop repeating the DDM sync prompt.
-            yield* db
-              .update(s.device)
-              .set({ ddmDeclarationsToken: tokens.declarationsToken })
-              .where(eq(s.device.id, device.id))
-              .pipe(Effect.mapError(internal));
-
+            // Do not persist the token here: a device can fetch tokens and
+            // then drop before fetching items. The items handler records it
+            // only once the payload has actually been delivered, so the next
+            // check-in retries a failed sync.
             return tokens;
           }),
         ),

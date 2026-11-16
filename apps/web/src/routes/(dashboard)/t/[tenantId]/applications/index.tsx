@@ -1,7 +1,7 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { Match } from "effect";
 import { useQuery } from "@tanstack/solid-query";
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import {
   EmptyState,
   formatDate,
@@ -70,6 +70,16 @@ export default function ApplicationsPage() {
 
   const [conditions, setConditions] = createSignal<EntityCondition[]>(
     parseEntityQuery(param(searchParams.query), fields),
+  );
+
+  // Mirror back/forward and shared links into the query bar. The signal is
+  // seeded once; without this, a URL change while the page stays mounted was
+  // ignored.
+  createEffect(
+    () => param(searchParams.query),
+    (value) => {
+      setConditions(parseEntityQuery(value, fields));
+    },
   );
 
   const updateConditions = (next: EntityCondition[]) => {

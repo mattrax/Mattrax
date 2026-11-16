@@ -697,8 +697,8 @@ export const appleChecks: ReadonlyArray<Check> = [
   check(
     "bootstrap.get-missing-udid",
     "errors",
-    "GetBootstrapToken without UDID is rejected",
-    "Bootstrap token lookup cannot be ambiguous; a missing UDID must return HTTP 400.",
+    "GetBootstrapToken without an identifier returns no token",
+    "EnrollmentID is a valid identifier, so a request with neither identifier cannot resolve a device and answers an empty 200 instead of failing the plist decoder.",
     async () => {
       const harness = createAppleHarness();
 
@@ -706,7 +706,7 @@ export const appleChecks: ReadonlyArray<Check> = [
         await appleMdmRequest({ MessageType: "GetBootstrapToken" }),
       );
 
-      assert.equal(response.status, 400);
+      assert.equal(response.status, 200);
     },
   ),
   check(

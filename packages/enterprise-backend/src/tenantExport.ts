@@ -499,6 +499,8 @@ export const buildTenantExport = (
       assetTag: row.assetTag,
       notes: row.notes,
       groupKey: row.groupId && groupKeys.has(row.groupId) ? row.groupId : null,
+      consumedDeviceKey:
+        row.consumedDeviceId && devicesById.has(row.consumedDeviceId) ? row.consumedDeviceId : null,
     }));
 
     const exportedCertificates: TenantExportCertificate[] = certificates.map((row) => ({

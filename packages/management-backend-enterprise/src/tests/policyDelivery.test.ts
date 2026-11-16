@@ -44,12 +44,7 @@ const policy = (id: string, organizationId: string, priority: number) => ({
   updatedAt: new Date(Date.UTC(2026, 0, 1, 0, priority)),
 });
 
-const configuration = (
-  policyId: string,
-  kind: string,
-  data: Schema.Json,
-  hash: string,
-) => ({
+const configuration = (policyId: string, kind: string, data: Schema.Json, hash: string) => ({
   policyId,
   kind,
   data,
@@ -85,7 +80,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
       ],
     });
 
-// SAFETY: The fake store implements only the query chains these tests exercise.
+    // SAFETY: The fake store implements only the query chains these tests exercise.
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));
@@ -120,7 +115,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
       ],
     });
 
-// SAFETY: The fake store implements only the query chains these tests exercise.
+    // SAFETY: The fake store implements only the query chains these tests exercise.
     const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
     const items = await run(backend.getAppleDeclarationItems(appleScope));

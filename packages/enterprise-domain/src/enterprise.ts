@@ -2400,6 +2400,8 @@ export const TenantExportPreRegistration = Schema.Struct({
   assetTag: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   groupKey: Schema.optional(NullableString),
+  /** Set when the serial already enrolled; restore must not make it reusable. */
+  consumedDeviceKey: Schema.optional(NullableString),
 });
 
 export type TenantExportPreRegistration = typeof TenantExportPreRegistration.Type;
@@ -4865,7 +4867,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("searchDevices", "/v1/tenants/:tenantId/devices/search", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantParam,
       query: DeviceSearchQuery,
       success: DeviceSearchResponse,
@@ -4965,7 +4967,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("exportDevices", "/v1/tenants/:tenantId/devices/export", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantParam,
       query: DeviceSearchQuery,
       success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/csv; charset=utf-8" })),
@@ -5155,7 +5157,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("getDeviceActivity", "/v1/tenants/:tenantId/devices/:id/activity", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantIdParam,
       query: Schema.Struct({
         limit: Schema.optional(Schema.Number),

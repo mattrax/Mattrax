@@ -179,6 +179,9 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@^1.5.0
 
 patchedDependencies:
+  '@tanstack/solid-query@6.0.0-rc.5':
+    hash: 19df8b3c8d5de48347d4fbe7632795c7bb18c7d3a3c816c65a53cb9dfc936e82
+    path: patches/@tanstack__solid-query@6.0.0-rc.5.patch
   '@yielded/auth-persistence-drizzle@0.1.0-beta.47':
     hash: fcf3f32cc72fa134edb304a09a77e7f7484e09151e9108157eccc79d8f10b65d
     path: patches/@yielded__auth-persistence-drizzle@0.1.0-beta.47.patch
@@ -515,7 +518,7 @@ importers:
         version: 4.3.5(@voidzero-dev/vite-plus-core@1.5.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))
       '@tanstack/solid-query':
         specifier: 'catalog:'
-        version: 6.0.0-rc.5(@solidjs/web@2.0.0-rc.21(solid-js@2.0.0-rc.21))(solid-js@2.0.0-rc.21)
+        version: 6.0.0-rc.5(patch_hash=19df8b3c8d5de48347d4fbe7632795c7bb18c7d3a3c816c65a53cb9dfc936e82)(@solidjs/web@2.0.0-rc.21(solid-js@2.0.0-rc.21))(solid-js@2.0.0-rc.21)
       '@yielded/auth':
         specifier: 'catalog:'
         version: 0.1.0-beta.47(effect@4.1.2)
@@ -8773,7 +8776,7 @@ snapshots:
 
   '@tanstack/query-core@5.101.4': {}
 
-  '@tanstack/solid-query@6.0.0-rc.5(@solidjs/web@2.0.0-rc.21(solid-js@2.0.0-rc.21))(solid-js@2.0.0-rc.21)':
+  '@tanstack/solid-query@6.0.0-rc.5(patch_hash=19df8b3c8d5de48347d4fbe7632795c7bb18c7d3a3c816c65a53cb9dfc936e82)(@solidjs/web@2.0.0-rc.21(solid-js@2.0.0-rc.21))(solid-js@2.0.0-rc.21)':
     dependencies:
       '@solidjs/web': 2.0.0-rc.21(solid-js@2.0.0-rc.21)
       '@tanstack/query-core': 5.101.4

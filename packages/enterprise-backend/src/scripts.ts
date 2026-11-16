@@ -225,27 +225,37 @@ const scriptSummaries = (
 
     const tenantDeviceIds = new Set(devices.map((row) => row.id));
 
-    const runs = yield* db
-      .select({
-        scriptId: s.scriptExecution.scriptId,
-        status: s.scriptExecution.status,
-        createdAt: s.scriptExecution.createdAt,
-      })
-      .from(s.scriptExecution)
-      .where(
-        and(
-          eq(s.scriptExecution.organizationId, organizationId),
-          inArray(s.scriptExecution.scriptId, scriptIds),
-        ),
-      )
-      .orderBy(desc(s.scriptExecution.createdAt))
-      .limit(1_000);
+    // One bounded lookup per script. The previous tenant-wide 1,000-row
+    // window made an old script look "never run" once a busy script had more.
+    const lastRuns = yield* Effect.forEach(
+      scriptIds,
+      (scriptId) =>
+        Effect.gen(function* () {
+          return yield* db
+            .select({
+              status: s.scriptExecution.status,
+              createdAt: s.scriptExecution.createdAt,
+            })
+            .from(s.scriptExecution)
+            .where(
+              and(
+                eq(s.scriptExecution.organizationId, organizationId),
+                eq(s.scriptExecution.scriptId, scriptId),
+              ),
+            )
+            .orderBy(desc(s.scriptExecution.createdAt))
+            .limit(1);
+        }),
+      { concurrency: 10 },
+    );
 
     const lastRun = new Map<string, { status: string; at: Date }>();
 
-    for (const run of runs)
-      if (!lastRun.has(run.scriptId))
-        lastRun.set(run.scriptId, { status: run.status, at: run.createdAt });
+    scriptIds.forEach((scriptId, index) => {
+      const run = lastRuns[index]?.[0];
+
+      if (run) lastRun.set(scriptId, { status: run.status, at: run.createdAt });
+    });
 
     return rows.map((row) => {
       const own = assignments.filter((assignment) => assignment.scriptId === row.id);

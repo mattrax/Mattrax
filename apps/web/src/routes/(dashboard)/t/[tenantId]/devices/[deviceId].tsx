@@ -501,7 +501,7 @@ export default function DeviceDetailPage() {
       queryKey: enterpriseKeys.list(params.tenantId, "device"),
     });
     await queryClient.invalidateQueries({
-      queryKey: ["enterprise", "device-search", params.tenantId ?? ""],
+      queryKey: enterpriseKeys.deviceSearch(params.tenantId),
     });
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
@@ -650,6 +650,11 @@ export default function DeviceDetailPage() {
       setTab("overview");
       setEditOpen(false);
       setSelectedGroupId("");
+      // The route component is reused across device ids; user selection is
+      // device-scoped state and must not leak into the next device.
+      setSelectedUsers(new Set<string>());
+      setUsersDirty(false);
+      setUsersMessage(null);
     },
   );
 
@@ -2800,7 +2805,9 @@ export default function DeviceDetailPage() {
 
       <Dialog
         open={confirmAction() !== null}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
+        onOpenChange={(open) => {
+          if (!open) closeConfirm();
+        }}
       >
         <DialogContent class="max-w-md">
           <DialogHeader>
@@ -3069,14 +3076,20 @@ function DeviceAttributesPanel(props: {
 
   const [error, setError] = createSignal<unknown>();
 
+  // Seed once per device. A background refetch produces a new `values`
+  // object and used to wipe an in-progress edit (for example after Sync).
+  let seededDeviceId: string | undefined;
+
   createEffect(
     () => ({ id: props.deviceId, values: props.values }),
-    ({ values }) => {
+    ({ id, values }) => {
+      if (seededDeviceId === id || values === undefined) return;
+
       const next: Record<string, string> = {};
 
-      for (const [key, value] of Object.entries(values ?? {}))
-        if (value !== null) next[key] = value;
+      for (const [key, value] of Object.entries(values)) if (value !== null) next[key] = value;
 
+      seededDeviceId = id;
       setDraft(next);
       setBaseline(next);
       setCleared({});

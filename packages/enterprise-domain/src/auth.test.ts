@@ -51,9 +51,7 @@ describe("sign-in assurance", () => {
           item.phishingResistant,
       ),
     ).toBe(true);
-    expect(
-      requirement.alternatives.some((item) => item.factors.includes("knowledge")),
-    ).toBe(false);
+    expect(requirement.alternatives.some((item) => item.factors.includes("knowledge"))).toBe(false);
   });
 
   it("adds an authenticator code as a second credential", () => {

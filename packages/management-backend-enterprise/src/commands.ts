@@ -355,6 +355,8 @@ export type CommandQueuePlan = {
 export const planCommandQueueing = (
   rows: ReadonlyArray<CommandRow>,
   input: { readonly requestType: string; readonly payload?: CommandPayload; readonly now: Date },
+  /** Commands queued by the same operation that the new one must not cancel. */
+  protectIds: ReadonlySet<string> = new Set(),
 ): CommandQueuePlan => {
   const active = rows
     .filter((row) => commandStatusIsActive(row.status) && !commandIsExpired(row, input.now))
@@ -371,7 +373,9 @@ export const planCommandQueueing = (
 
   return {
     duplicate: null,
-    supersedeIds: active.filter((row) => superseded.includes(row.requestType)).map((row) => row.id),
+    supersedeIds: active
+      .filter((row) => !protectIds.has(row.id) && superseded.includes(row.requestType))
+      .map((row) => row.id),
   };
 };
 

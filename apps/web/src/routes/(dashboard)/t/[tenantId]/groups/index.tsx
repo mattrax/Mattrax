@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import {
@@ -58,6 +58,16 @@ export default function GroupsPage() {
 
   const [conditions, setConditions] = createSignal<EntityCondition[]>(
     parseEntityQuery(param(searchParams.query), fields),
+  );
+
+  // Mirror back/forward and shared links into the query bar. The signal is
+  // seeded once; without this, a URL change while the page stays mounted was
+  // ignored.
+  createEffect(
+    () => param(searchParams.query),
+    (value) => {
+      setConditions(parseEntityQuery(value, fields));
+    },
   );
 
   const updateConditions = (next: EntityCondition[]) => {

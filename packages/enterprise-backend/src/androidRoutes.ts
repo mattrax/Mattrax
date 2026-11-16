@@ -8,8 +8,7 @@ import {
   type AndroidDeliveryConfig,
 } from "./android.ts";
 
-const json = (body: Schema.Json, status = 200) =>
-  HttpServerResponse.jsonUnsafe(body, { status });
+const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
 export type AndroidRoutesOptions = {
   readonly origin: string;

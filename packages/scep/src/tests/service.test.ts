@@ -355,7 +355,8 @@ describe("ScepService", () => {
       );
 
       const parsed = asn1js.fromBER(result);
-      const signedData = new pkijs.SignedData({ schema: parsed.result });
+      const contentInfo = new pkijs.ContentInfo({ schema: parsed.result });
+      const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
       const attributes = new Map(
         signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
@@ -687,7 +688,8 @@ describe("ScepService", () => {
         );
 
         const parsed = asn1js.fromBER(response);
-        const signedData = new pkijs.SignedData({ schema: parsed.result });
+        const contentInfo = new pkijs.ContentInfo({ schema: parsed.result });
+        const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
         const attributes = new Map(
           signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
@@ -728,7 +730,8 @@ describe("ScepService", () => {
       // Renewal failures stay in-protocol as a failure CertRep so the device
       // can distinguish a rejected renewal from a transport outage.
       const parsed = asn1js.fromBER(response);
-      const signedData = new pkijs.SignedData({ schema: parsed.result });
+      const contentInfo = new pkijs.ContentInfo({ schema: parsed.result });
+      const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
       const attributes = new Map(
         signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [

@@ -330,15 +330,21 @@ const applySubscription = (input: ApplySubscriptionInput) =>
 
     const { periodStart, periodEnd } = subscriptionPeriod(subscription);
 
+    // `canceled` is terminal for one Stripe subscription id. A stale invoice
+    // or checkout event must not resurrect it after `subscription.deleted`.
+    const status =
+      byStripeId?.status === "canceled"
+        ? "canceled"
+        : (input.statusOverride ??
+          Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(subscription.status)) ??
+          "incomplete");
+
     const values = {
       plan: planFor(subscription, input.deviceMonthlyPriceId),
       referenceId: organization.id,
       stripeCustomerId: customerId ?? organization.stripeCustomerId ?? null,
       stripeSubscriptionId,
-      status:
-        input.statusOverride ??
-        Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(subscription.status)) ??
-        "incomplete",
+      status,
       periodStart,
       periodEnd,
       cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
@@ -533,6 +539,10 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
 
       if (!license) return yield* Effect.fail(fail("Checkout references an unknown licence"));
 
+      // The subscription event already carries the renewal date and real
+      // status; a late Checkout redelivery must not replace them.
+      if (license.stripeSubscriptionId === stripeSubscriptionId) return { organizationId: null };
+
       yield* input.db
         .update(schema.deploymentLicense)
         .set({
@@ -561,6 +571,16 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
     if (referenceId) metadata.organizationId = referenceId;
 
     if (plan) metadata.plan = plan;
+
+    const [recorded] = yield* input.db
+      .select({ referenceId: schema.subscription.referenceId })
+      .from(schema.subscription)
+      .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
+      .limit(1);
+
+    // `customer.subscription.created/updated` is the higher-fidelity source.
+    // If it already recorded this subscription, keep its period and status.
+    if (recorded) return { organizationId: recorded.referenceId, stripeSubscriptionId };
 
     return yield* applySubscription({
       db: input.db,

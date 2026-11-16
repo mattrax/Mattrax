@@ -135,14 +135,12 @@ describe("webhook signatures", () => {
       },
       {
         name: "accepts when one of several v1 values matches",
-        header: (signature, timestamp) =>
-          `t=${timestamp},v1=${"0".repeat(64)},v1=${signature}`,
+        header: (signature, timestamp) => `t=${timestamp},v1=${"0".repeat(64)},v1=${signature}`,
         expected: true,
       },
       {
         name: "ignores unknown scheme parts",
-        header: (signature, timestamp) =>
-          `t=${timestamp},v2=${"0".repeat(64)},v1=${signature}`,
+        header: (signature, timestamp) => `t=${timestamp},v2=${"0".repeat(64)},v1=${signature}`,
         expected: true,
       },
       {
@@ -239,9 +237,7 @@ describe("webhook delivery", () => {
   it("filters by event and records a successful delivery", async () => {
     const { db, secret } = await setup({ eventFilters: ["device.enrolled"] });
 
-    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
-      new Response("ok", { status: 200 }),
-    );
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
 
     await run(
       dispatchWebhookEvent(

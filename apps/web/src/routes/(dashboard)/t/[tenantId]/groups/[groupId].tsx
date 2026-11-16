@@ -898,7 +898,13 @@ export default function GroupDetailPage() {
         </div>
       </Show>
 
-      <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
+      <Dialog
+        open={deleteOpen()}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirm("");
+          setDeleteOpen(open);
+        }}
+      >
         <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete {row()?.name ?? "group"}?</DialogTitle>

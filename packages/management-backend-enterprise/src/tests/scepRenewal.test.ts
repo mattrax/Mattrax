@@ -10,7 +10,6 @@ import {
   createDeviceCertificate,
   sealCaPrivateKey,
 } from "@mattrax/scep";
-import * as asn1js from "asn1js";
 import {
   buildPkcsReq,
   buildTestCsr,
@@ -197,7 +196,9 @@ describe("SCEP renewal during a CA rotation (management layer)", () => {
       }).pipe(Effect.provide(ScepService.pipe(Layer.provide(repositoryLayer)))),
     );
 
-    const signedData = new pkijs.SignedData({ schema: asn1js.fromBER(response).result });
+    const signedData = new pkijs.SignedData({
+      schema: pkijs.ContentInfo.fromBER(response).content,
+    });
 
     const pkiStatus = signedData.signerInfos[0]!.signedAttrs!.attributes.find(
       (attribute) => attribute.type === "2.16.840.1.113733.1.9.3",
