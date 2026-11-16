@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { fetchApi } from "./api";
 import type { StartMiddleware } from "@solidjs/vite-plugin";
 import { Option, Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
@@ -67,7 +68,7 @@ async function fetchBootstrap(request: Request): Promise<Response> {
 
   if (ip) headers.set("cf-connecting-ip", ip);
 
-  return env.API.fetch(
+  return fetchApi(
     new Request(new URL("/api/v1/bootstrap", url), {
       method: "GET",
       headers,

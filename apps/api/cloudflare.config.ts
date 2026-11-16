@@ -77,9 +77,15 @@ export const apiWorker = {
     triggers.scheduled({ schedule: "47 * * * *" }),
   ],
   env: {
-    // `ORIGIN` is a secret so local dev and whitelabel deployments can set
-    // their own canonical origin. Production sets the hosted Mattrax domain.
-    ORIGIN: bindings.secret(),
+    // The canonical origin is deployment configuration, not a secret: a
+    // Preview supplies its generated host at build time, and a production
+    // deploy supplies its public origin. A plain `pnpm web dev` (and the e2e
+    // suite) gets the local server because the dev runtime ignores `.dev.vars`
+    // for declared text bindings.
+    ORIGIN: bindings.text(
+      process.env.ORIGIN ??
+        (process.env.DEV_HTTPS === "1" ? "https://localhost:9050" : "http://localhost:9050"),
+    ),
     TRUSTED_ORIGINS: bindings.secret(),
     AUTH_SECRET: bindings.secret(),
     STRIPE_SECRET_KEY: bindings.secret(),
@@ -107,8 +113,13 @@ export const apiWorker = {
     ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: bindings.secret(),
     ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: bindings.secret(),
     /** Local-only mailbox flag. Never set in production. */
-    DEV_MAILBOX: bindings.secret(),
-    DEV_MAILBOX_ALLOW_REMOTE: bindings.secret(),
+    // Previews opt into the guarded debug mailbox so verification codes are
+    // readable without sending real mail. The secret itself stays a Worker
+    // secret (shared by every deployment of this Worker).
+    // Safe to default on: `isDevMailboxEnabled` still requires a loopback
+    // origin, or an explicit ALLOW_REMOTE opt-in with a secret.
+    DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX ?? "true"),
+    DEV_MAILBOX_ALLOW_REMOTE: bindings.text(process.env.DEV_MAILBOX_ALLOW_REMOTE ?? ""),
     DEV_MAILBOX_SECRET: bindings.secret(),
     /** Days without a check-in before the maintenance job marks a device unenrolled. */
     MAINTENANCE_STALE_DEVICE_DAYS: bindings.text("30"),
@@ -139,13 +150,13 @@ export const apiWorker = {
      * email. Readiness then reports `mailer: skipped` (degraded) instead of
      * failing while the `EMAIL` binding is absent.
      */
-    MATTRAX_EMAIL_DISABLED: bindings.secret(),
+    MATTRAX_EMAIL_DISABLED: bindings.text(process.env.MATTRAX_EMAIL_DISABLED ?? ""),
     /**
      * Outbound email without the Cloudflare `EMAIL` binding: `resend`,
      * `postmark`, `smtp` (self-hosted mail relay) or `disabled`. Empty leaves
      * the hosted default (the `EMAIL` binding) in place.
      */
-    MAIL_TRANSPORT: bindings.text(""),
+    MAIL_TRANSPORT: bindings.text(process.env.MAIL_TRANSPORT ?? ""),
     /** Verified sender for every transactional email, e.g. `a@example.com`. */
     MAIL_FROM: bindings.text(""),
     /** Base URL of the self-hosted `apps/mail-relay` SMTP sidecar. */
@@ -168,12 +179,14 @@ export const apiWorker = {
     // namespace id. Without them the API keeps its per-isolate fallback.
     ...configuredRateLimitBindings(),
     HYPERDRIVE: bindings.hyperdrive({
-      id: "239e6b5c776b47a2bcdd180e8798ce7a",
+      // Preview deployments bind the shared preview database through their own
+      // Hyperdrive config; production keeps the hosted database by default.
+      id: process.env.MATTRAX_HYPERDRIVE_ID ?? "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/
       // database fields; Hyperdrive's production binding supplies them.
       dev: { connectionString: "mysql://mattrax:mattrax@127.0.0.1:3306/mattraxe" },
     }),
-    STORAGE: bindings.r2({ name: "mattrax" }),
+    STORAGE: bindings.r2({ name: process.env.MATTRAX_STORAGE_BUCKET ?? "mattrax" }),
     EMAIL: bindings.sendEmail({
       allowedSenderAddresses: ["hello@mattrax.cloud"],
       // Keep local test mail in the local explorer instead of the remote service.
@@ -217,16 +230,27 @@ const emailProviderEnv =
     ? { ...apiWorker.env, ...emailProviderSecrets }
     : apiWorker.env;
 
-export default defineConfig({
-  worker: useAppleProfileSigning
-    ? {
-        ...apiWorker,
-        env: {
-          ...emailProviderEnv,
-          APPLE_PROFILE_SIGNING_CERT: bindings.secret(),
-          APPLE_PROFILE_SIGNING_KEY: bindings.secret(),
-          APPLE_PROFILE_SIGNING_CHAIN: bindings.secret(),
-        },
-      }
-    : { ...apiWorker, env: emailProviderEnv },
+export default defineConfig(({ isPreview }) => {
+  const worker = {
+    ...apiWorker,
+    // Previews are reachable on their generated host so the web Preview can
+    // proxy to them over HTTP (service bindings always resolve to the bound
+    // Worker's production deployment). Cron triggers are production-only.
+    previewUrls: isPreview,
+    triggers: isPreview ? [] : apiWorker.triggers,
+  };
+
+  if (!useAppleProfileSigning) return { worker: { ...worker, env: emailProviderEnv } };
+
+  return {
+    worker: {
+      ...worker,
+      env: {
+        ...emailProviderEnv,
+        APPLE_PROFILE_SIGNING_CERT: bindings.secret(),
+        APPLE_PROFILE_SIGNING_KEY: bindings.secret(),
+        APPLE_PROFILE_SIGNING_CHAIN: bindings.secret(),
+      },
+    },
+  };
 });

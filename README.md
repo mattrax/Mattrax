@@ -118,8 +118,17 @@ pnpm api deploy:prod
 To deploy both hosted surfaces:
 
 ```bash
-pnpm deploy:prod:all
+ORIGIN=https://e.mattrax.app pnpm deploy:prod:all
 ```
+
+`ORIGIN` is baked into the API Worker as its canonical origin (passkey RP id,
+cookies, links); leave it unset during local development and CI previews set
+their own. GitHub Actions does this automatically.
+
+GitHub Actions deploys production from `main` and creates a Worker Preview for
+each pull request (posted as a sticky comment, deleted when the PR closes).
+The required secrets, Cloudflare resources and preview limitations are in
+[docs/operations/deployment.md](docs/operations/deployment.md).
 
 Database migrations are managed with Drizzle Kit:
 

@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { fetchApi } from "./api";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
@@ -175,7 +175,7 @@ const apiFetch = async (
   }
 
   try {
-    response = await env.API.fetch(new Request(`${API_BASE}${path}`, requestInit));
+    response = await fetchApi(new Request(`${API_BASE}${path}`, requestInit));
   } catch {
     throw new Error("The Mattrax API could not be reached");
   }
@@ -215,7 +215,7 @@ const recordActivity = async (
   entry: { tool: string; method: string; path: string; status: number },
 ) => {
   try {
-    const response = await env.API.fetch(
+    const response = await fetchApi(
       new Request(`${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`, {
         method: "POST",
         headers: {
@@ -527,7 +527,7 @@ const handleMcp = async (request: Request): Promise<Response> => {
   let meResponse: Response;
 
   try {
-    meResponse = await env.API.fetch(
+    meResponse = await fetchApi(
       new Request("https://api.mattrax.internal/api/v1/me", {
         headers: {
           authorization,

@@ -1,0 +1,208 @@
+name: Deploy
+
+# Continuous deployment for the hosted Workers, modelled on the setup in
+# oscartbeaumont/shell.build:
+#
+# - every push to `main` applies production migrations and deploys both Workers;
+# - every pull request gets a Worker Preview of the API and the dashboard,
+#   posted as a sticky PR comment and deleted when the PR closes.
+#
+# Cloudflare Previews cannot reach another Worker's Preview through a service
+# binding (it always resolves to that Worker's production deployment), so the
+# dashboard Preview is deployed twice: first to learn its generated URL, then
+# with `API_URL` pointing at the API Preview. See `apps/web/src/server/api.ts`.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN      Workers Scripts:Edit, Workers R2 Storage:Edit,
+#                             Workers Routes:Edit and Account Settings:Read
+#   CLOUDFLARE_ACCOUNT_ID     the account that owns both Workers
+#   DATABASE_*                production MySQL connection (host/port/user/
+#                             password/name) used by Drizzle migrations
+#   PREVIEW_DATABASE_*        the shared preview MySQL connection, same names
+#
+# Required repository variables:
+#   PREVIEW_HYPERDRIVE_ID     Hyperdrive config pointing at the preview database
+#   PREVIEW_STORAGE_BUCKET    R2 bucket for preview uploads and backups
+#   PRODUCTION_ORIGIN         optional, defaults to https://e.mattrax.app
+#
+# Preview Workers read the production Worker secrets (AUTH_SECRET, Stripe,
+# Apple/Android credentials, and DEV_MAILBOX_SECRET). Set DEV_MAILBOX_SECRET on
+# both Workers once; previews opt into the guarded remote mailbox so sign-up
+# codes are readable without sending real mail.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# A newer commit cancels the in-flight run for the same PR or branch, so only
+# the most recent commit deploys. PRs are grouped by number: once a PR closes
+# `github.ref` resolves to the base branch, and grouping by ref would have the
+# cleanup run cancel the production deploy it was queued behind.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('deploy-pr-{0}', github.event.pull_request.number) || format('deploy-{0}', github.ref) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CF_SEND_TELEMETRY: "false"
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  deploy:
+    # Fork PRs cannot read the deployment secrets, and Dependabot's grouped
+    # upgrade PRs do not need a preview environment; CI still checks both.
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event_name == 'push' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.actor != 'dependabot[bot]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Rspress `lastUpdated` reads per-file Git history.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Apply production migrations
+        if: github.event_name == 'push'
+        env:
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+        run: pnpm api db:migrate
+
+      - name: Apply preview migrations
+        if: github.event_name == 'pull_request'
+        env:
+          # Every PR shares the preview database; migrations are additive and
+          # run before either Preview is uploaded.
+          DATABASE_HOST: ${{ secrets.PREVIEW_DATABASE_HOST }}
+          DATABASE_PORT: ${{ secrets.PREVIEW_DATABASE_PORT }}
+          DATABASE_USER: ${{ secrets.PREVIEW_DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.PREVIEW_DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.PREVIEW_DATABASE_NAME }}
+        run: pnpm api db:migrate
+
+      - name: Deploy production
+        if: github.event_name == 'push'
+        env:
+          ORIGIN: ${{ vars.PRODUCTION_ORIGIN || 'https://e.mattrax.app' }}
+        run: pnpm deploy:prod:all
+
+      # The first dashboard Preview exists only to learn its generated URL,
+      # which becomes the API Preview's canonical origin (cookies, passkey RP
+      # id, email links).
+      - name: Create the dashboard Preview (bootstrap URL)
+        id: web-bootstrap
+        if: github.event_name == 'pull_request'
+        working-directory: apps/web
+        run: |
+          set -o pipefail
+          output="$(pnpm exec cf previews deploy "$PREVIEW_NAME" 2>&1)" || true
+          printf '%s\n' "$output"
+          json="$(printf '%s\n' "$output" | awk '/^\{/{start=NR} {lines[NR]=$0} END{if (start > 0) for (i=start; i<=NR; i++) print lines[i]}')"
+          url="$(printf '%s' "$json" | jq -r '[(.preview_urls // [])[], (.deployment_urls // [])[]][0] // empty')"
+          if [ -z "$url" ]; then
+            echo "::error::The dashboard Preview deployed without a URL. Enable Worker Preview URLs for the mattrax Worker."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Create the API Preview
+        id: api-preview
+        if: github.event_name == 'pull_request'
+        working-directory: apps/api
+        env:
+          ORIGIN: ${{ steps.web-bootstrap.outputs.url }}
+          MATTRAX_HYPERDRIVE_ID: ${{ vars.PREVIEW_HYPERDRIVE_ID }}
+          MATTRAX_STORAGE_BUCKET: ${{ vars.PREVIEW_STORAGE_BUCKET }}
+          DEV_MAILBOX: "true"
+          DEV_MAILBOX_ALLOW_REMOTE: "true"
+        run: |
+          set -o pipefail
+          output="$(pnpm exec cf previews deploy "$PREVIEW_NAME" 2>&1)" || true
+          printf '%s\n' "$output"
+          json="$(printf '%s\n' "$output" | awk '/^\{/{start=NR} {lines[NR]=$0} END{if (start > 0) for (i=start; i<=NR; i++) print lines[i]}')"
+          url="$(printf '%s' "$json" | jq -r '[(.preview_urls // [])[], (.deployment_urls // [])[]][0] // empty')"
+          if [ -z "$url" ]; then
+            echo "::error::The API Preview deployed without a URL. Enable Worker Preview URLs for the mattrax-api Worker."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Create the dashboard Preview
+        id: web-preview
+        if: github.event_name == 'pull_request'
+        working-directory: apps/web
+        env:
+          API_URL: ${{ steps.api-preview.outputs.url }}
+        run: |
+          set -o pipefail
+          output="$(pnpm exec cf previews deploy "$PREVIEW_NAME" 2>&1)" || true
+          printf '%s\n' "$output"
+          json="$(printf '%s\n' "$output" | awk '/^\{/{start=NR} {lines[NR]=$0} END{if (start > 0) for (i=start; i<=NR; i++) print lines[i]}')"
+          url="$(printf '%s' "$json" | jq -r '[(.preview_urls // [])[], (.deployment_urls // [])[]][0] // empty')"
+          if [ -z "$url" ]; then
+            echo "::error::The dashboard Preview deployed without a URL."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the Preview
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: preview
+          message: |
+            **Preview:** ${{ steps.web-preview.outputs.url }}
+            **API Preview:** ${{ steps.api-preview.outputs.url }}
+
+            Built from ${{ github.event.pull_request.head.sha }} against the shared preview database.
+
+  cleanup:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # `cf` deletes a Preview by Worker name. Best-effort: the Preview may
+      # already be gone, or the token may have expired since the PR opened.
+      - name: Delete the Preview Workers
+        continue-on-error: true
+        run: |
+          pnpm exec cf previews delete "$PREVIEW_NAME" --worker mattrax --force || true
+          pnpm exec cf previews delete "$PREVIEW_NAME" --worker mattrax-api --force || true

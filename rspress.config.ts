@@ -129,6 +129,7 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: "Configuration", link: "/operations/configuration" },
+            { text: "Deployment", link: "/operations/deployment" },
             { text: "Monitoring", link: "/operations/monitoring" },
             { text: "Troubleshooting", link: "/operations/troubleshooting" },
           ],
