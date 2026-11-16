@@ -200,10 +200,7 @@ snapshots:
 					"specifier": "^3.3.0",
 					"version": "3.3.0",
 				},
-				"@playwright/test": {
-					"specifier": "^1.65.1",
-					"version": "1.65.1",
-				},
+				"@playwright/test": "1.65.0",
 				"@rolldown/perf-kit": {
 					"specifier": "^0.1.0",
 					"version": "0.1.0",
@@ -354,7 +351,7 @@ snapshots:
 		"patchedDependencies": {
 			"@tanstack/solid-query@6.0.0-rc.5": "19df8b3c8d5de48347d4fbe7632795c7bb18c7d3a3c816c65a53cb9dfc936e82",
 			"@yielded/auth-persistence-drizzle@0.1.0-beta.47": "fcf3f32cc72fa134edb304a09a77e7f7484e09151e9108157eccc79d8f10b65d",
-			"@yielded/auth-persistence@0.1.0-beta.47": "f9e1205c2cda68c1eace28e64f8f2e005a99430f53f21deeccb81f8c094e49f7",
+			"@yielded/auth-persistence@0.1.0-beta.47": "3b9b977d369ba59e0d03c7c792a69e170f3bf4e153f4ced8e6b564ade377a2ea",
 		},
 	},
 
@@ -801,7 +798,7 @@ snapshots:
 			"peerDependencies": {
 				"playwright-core": {
 					"specifier": ">= 1.0.0",
-					"version": "1.65.1",
+					"version": "1.65.0",
 				},
 			},
 			"dependencies": {
@@ -3308,12 +3305,12 @@ snapshots:
 			},
 		},
 
-		"@playwright/test@1.65.1": {
-			"integrity": "sha512-y+NCIRm2LvY4slUVWvGh1nujJ8RF/hEisIsq2mtUPgdQC4L701bq5hZGMhrpeXjACvwvO9tj5dJqhvM6TP9lbw==",
+		"@playwright/test@1.65.0": {
+			"integrity": "sha512-iGURLGuKDLakSEl7Pgfv8h7f+XLT+V861Wfhz0zlEl5nyFuKUopdkFBPKqTllTUp06aOwPuH8iuUEb3yp3MpbQ==",
 			"engines": {"node": ">=20"},
 			"hasBin": true,
 			"dependencies": {
-				"playwright": "1.65.1",
+				"playwright": "1.65.0",
 			},
 		},
 
@@ -9734,18 +9731,18 @@ snapshots:
 			},
 		},
 
-		"playwright-core@1.65.1": {
-			"integrity": "sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==",
+		"playwright-core@1.65.0": {
+			"integrity": "sha512-vNSKgH6YqtN7cdT/L334zo0a+YwkrpicyrHJlWWPIm/Q+Nn2SWInil01oT0mbu96U4GgoRtCYQD9CzJQgju+lA==",
 			"engines": {"node": ">=20"},
 			"hasBin": true,
 		},
 
-		"playwright@1.65.1": {
-			"integrity": "sha512-vJ1FuoOrNwOKHUIVEvSt3jT1L+wjjDpwhwIstKtfvTh8XIG4FG4bIFuvNdMxi81LGfAhUgUZleVFaOLY4RIUUw==",
+		"playwright@1.65.0": {
+			"integrity": "sha512-F3AMWcR44qMBt4kq+6Kb6mX7bjGXshktKFOPULd7reED6ZJWevjbNRqysP7q+AATE9kdPEZBibex1BYsvpVoeA==",
 			"engines": {"node": ">=20"},
 			"hasBin": true,
 			"dependencies": {
-				"playwright-core": "1.65.1",
+				"playwright-core": "1.65.0",
 			},
 		},
 
@@ -11393,7 +11390,7 @@ snapshots:
 				},
 				"playwright": {
 					"specifier": "*",
-					"version": "1.65.1",
+					"version": "1.65.0",
 					"optional": true,
 				},
 				"tsx": {

@@ -1,3 +1,52 @@
+diff --git a/dist/internal/passkey-managed.mjs b/dist/internal/passkey-managed.mjs
+index ba96281fd7439aa267153ffc54cf1f9d64520aa3..a0fc07ec22ef8ba1f3a033d2ea96702e27025b3a 100644
+--- a/dist/internal/passkey-managed.mjs
++++ b/dist/internal/passkey-managed.mjs
+@@ -88,6 +88,7 @@ const mappings = Effect.fnUntraced(function* (storage, tables, passwordModules,
+ 				decodeInstant: storage.decodeInstantSync,
+ 				engineNowMillis: sql.onDialectOrElse({
+ 					pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
++					mysql: () => sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
+ 					orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`
+ 				}),
+ 				toMillis: (expression) => expression,
+@@ -101,7 +102,10 @@ const mappings = Effect.fnUntraced(function* (storage, tables, passwordModules,
+ 			constraints: requiredPasskeyPersistenceConstraints
+ 		};
+ 	});
+-	const metadata = (nativeId) => sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`;
++	const metadata = (nativeId) => sql.onDialectOrElse({
++		mysql: () => sql`exists(select 1 from (select ${subject.column(s.id)} from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)}) as pk_metadata)`,
++		orElse: () => sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`
++	});
+ 	return {
+ 		base,
+ 		management: Effect.fnUntraced(function* (feature) {
+@@ -151,7 +155,7 @@ const mappings = Effect.fnUntraced(function* (storage, tables, passwordModules,
+ 						removedStatus: false
+ 					},
+ 					policy: {
+-						subjectColumns: subject.keys,
++						subjectColumns: subject.keys.filter((key) => key !== "passkey_enabled" && key !== "passkeyEnabled"),
+ 						management: () => policy,
+ 						requirement: s.actionRequirements,
+ 						metadata,
+diff --git a/dist/internal/passkey-native-registration.mjs b/dist/internal/passkey-native-registration.mjs
+index 6f65f061a515e597412a2a07e8f89039cc73b215..5ee29079aca1bb9f55c42d7e1b2e35f770f55b16 100644
+--- a/dist/internal/passkey-native-registration.mjs
++++ b/dist/internal/passkey-native-registration.mjs
+@@ -102,9 +102,9 @@ const makePasskeyNativeRegistration = (base, mapping) => {
+ 				registration,
+ 				subjectId: nativeId
+ 			}));
+-			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
++			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
+ 			const inserted = yield* insertCredential(nativeId, ceremony, verified, revision, value.displayName, nowMillis, subjectRow);
+-			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
++			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
+ 			return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);
+ 		}))
+ 	} };
 diff --git a/dist/internal/persistence.mjs b/dist/internal/persistence.mjs
 index c87cbe2d35b7c57452097d570694931e1f2352cc..94a512d3e2fbab0ef84962eb60851d8881798dbe 100644
 --- a/dist/internal/persistence.mjs
@@ -10,6 +59,70 @@ index c87cbe2d35b7c57452097d570694931e1f2352cc..94a512d3e2fbab0ef84962eb60851d88
  				sqlite: () => "sqlite",
  				orElse: () => void 0
  			});
+diff --git a/src/internal/passkey-managed.ts b/src/internal/passkey-managed.ts
+index ab314581082b033976dc74f615a8947f0bdf24b2..a6a7af4c439c62af11f93a08afbc6ea4bf833f01 100644
+--- a/src/internal/passkey-managed.ts
++++ b/src/internal/passkey-managed.ts
+@@ -129,6 +129,7 @@ const mappings = Effect.fnUntraced(function* (
+         decodeInstant: storage.decodeInstantSync,
+         engineNowMillis: sql.onDialectOrElse({
+           pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
++          mysql: () => sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
+           orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`,
+         }),
+         toMillis: (expression: Statement.Fragment) => expression,
+@@ -143,8 +144,16 @@ const mappings = Effect.fnUntraced(function* (
+     };
+   });
+ 
++  // MySQL rejects an UPDATE whose subquery reads the target table (error
++  // 1093). The passkey removal updates `user` while this predicate also reads
++  // it, so materialise the lookup in a derived table on that dialect.
+   const metadata = (nativeId: unknown) =>
+-    sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`;
++    sql.onDialectOrElse({
++      mysql: () =>
++        sql`exists(select 1 from (select ${subject.column(s.id)} from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)}) as pk_metadata)`,
++      orElse: () =>
++        sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`,
++    });
+ 
+   const management = Effect.fnUntraced(function* (
+     feature: PasskeyFeature,
+@@ -200,7 +209,10 @@ const mappings = Effect.fnUntraced(function* (
+           removedStatus: false,
+         },
+         policy: {
+-          subjectColumns: subject.keys,
++          // The application mirrors passkey ownership onto its subject row with
++          // a trigger. Exclude it from the "policy unchanged" postcondition so
++          // the credential write is not mistaken for an external policy change.
++          subjectColumns: subject.keys.filter((key) => key !== "passkey_enabled" && key !== "passkeyEnabled"),
+           management: () => policy,
+           requirement: s.actionRequirements,
+           metadata,
+diff --git a/src/internal/passkey-native-registration.ts b/src/internal/passkey-native-registration.ts
+index f0698afad3b57fe2b163a78050af56a454bb9a50..6aa1f94e038d01a79b936f41d89f6e60f773d80a 100644
+--- a/src/internal/passkey-native-registration.ts
++++ b/src/internal/passkey-native-registration.ts
+@@ -193,7 +193,7 @@ export const makePasskeyNativeRegistration = <R>(
+             flow.consume(
+               access,
+               ceremony,
+-              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
++              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
+             ),
+             1,
+           );
+@@ -210,7 +210,7 @@ export const makePasskeyNativeRegistration = <R>(
+ 
+           yield* postcondition(
+             "passkey-registration-subject",
+-            sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
++            sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
+           );
+ 
+           return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);
 diff --git a/src/internal/persistence.ts b/src/internal/persistence.ts
 index aa60bbb1d6e1bb74fb763b2ebf33dea1ba3da018..d73840e465dae2d88645755cefe3273c6c1cd14c 100644
 --- a/src/internal/persistence.ts
@@ -22,97 +135,3 @@ index aa60bbb1d6e1bb74fb763b2ebf33dea1ba3da018..d73840e465dae2d88645755cefe3273c
              sqlite: () => "sqlite" as const,
              orElse: () => undefined,
            });
-diff --git a/dist/internal/passkey-managed.mjs b/dist/internal/passkey-managed.mjs
---- a/dist/internal/passkey-managed.mjs
-+++ b/dist/internal/passkey-managed.mjs
-@@ -89,5 +89,6 @@
- 				engineNowMillis: sql.onDialectOrElse({
- 					pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
-+					mysql: () => sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
- 					orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`
- 				}),
- 				toMillis: (expression) => expression,
-diff --git a/src/internal/passkey-managed.ts b/src/internal/passkey-managed.ts
---- a/src/internal/passkey-managed.ts
-+++ b/src/internal/passkey-managed.ts
-@@ -130,5 +130,6 @@
-         engineNowMillis: sql.onDialectOrElse({
-           pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
-+          mysql: () => sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
-           orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`,
-         }),
-         toMillis: (expression: Statement.Fragment) => expression,
-diff --git a/dist/internal/passkey-managed.mjs b/dist/internal/passkey-managed.mjs
---- a/dist/internal/passkey-managed.mjs
-+++ b/dist/internal/passkey-managed.mjs
-@@ -105,1 +105,4 @@
--	const metadata = (nativeId) => sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`;
-+	const metadata = (nativeId) => sql.onDialectOrElse({
-+		mysql: () => sql`exists(select 1 from (select ${subject.column(s.id)} from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)}) as pk_metadata)`,
-+		orElse: () => sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`
-+	});
-diff --git a/src/internal/passkey-managed.ts b/src/internal/passkey-managed.ts
---- a/src/internal/passkey-managed.ts
-+++ b/src/internal/passkey-managed.ts
-@@ -147,2 +147,10 @@
--  const metadata = (nativeId: unknown) =>
--    sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`;
-+  // MySQL rejects an UPDATE whose subquery reads the target table (error
-+  // 1093). The passkey removal updates `user` while this predicate also reads
-+  // it, so materialise the lookup in a derived table on that dialect.
-+  const metadata = (nativeId: unknown) =>
-+    sql.onDialectOrElse({
-+      mysql: () =>
-+        sql`exists(select 1 from (select ${subject.column(s.id)} from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)}) as pk_metadata)`,
-+      orElse: () =>
-+        sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`,
-+    });
-diff --git a/dist/internal/passkey-managed.mjs b/dist/internal/passkey-managed.mjs
---- a/dist/internal/passkey-managed.mjs
-+++ b/dist/internal/passkey-managed.mjs
-@@ -158,1 +158,1 @@
--						subjectColumns: subject.keys,
-+						subjectColumns: subject.keys.filter((key) => key !== "passkey_enabled" && key !== "passkeyEnabled"),
-diff --git a/src/internal/passkey-managed.ts b/src/internal/passkey-managed.ts
---- a/src/internal/passkey-managed.ts
-+++ b/src/internal/passkey-managed.ts
-@@ -212,1 +212,4 @@
--          subjectColumns: subject.keys,
-+          // The application mirrors passkey ownership onto its subject row with
-+          // a trigger. Exclude it from the "policy unchanged" postcondition so
-+          // the credential write is not mistaken for an external policy change.
-+          subjectColumns: subject.keys.filter((key) => key !== "passkey_enabled" && key !== "passkeyEnabled"),
---- a/dist/internal/passkey-native-registration.mjs
-+++ b/dist/internal/passkey-native-registration.mjs
-@@ -102,9 +102,9 @@
- 				registration,
- 				subjectId: nativeId
- 			}));
--			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
-+			yield* write(flow.consume(access, ceremony, sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`), 1);
- 			const inserted = yield* insertCredential(nativeId, ceremony, verified, revision, value.displayName, nowMillis, subjectRow);
--			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
-+			yield* postcondition("passkey-registration-subject", sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`);
- 			return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);
- 		}))
- 	} };
---- a/src/internal/passkey-native-registration.ts
-+++ b/src/internal/passkey-native-registration.ts
-@@ -193,7 +193,7 @@
-             flow.consume(
-               access,
-               ceremony,
--              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
-+              sql`${flow.exact(mapping.applicationSnapshot, encoded)} and ${yield* subjectCondition(revision)} and ${count} < ${cap} and ${finalEligibility}`,
-             ),
-             1,
-           );
-@@ -210,7 +210,7 @@
- 
-           yield* postcondition(
-             "passkey-registration-subject",
--            sql`${inserted.condition} and ${flow.absent(access)} and ${subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
-+            sql`${inserted.condition} and ${flow.absent(access)} and ${yield* subjectCondition(revision)} and ${count} <= ${cap} and ${finalEligibility} and ${state.now} < ${ceremony.expiresAtMillis}`,
-           );
- 
-           return yield* preparePasskeyNative({ _tag: "RegistrationAccepted" }, prepare);
