@@ -1,3 +1,4 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
 
@@ -6,9 +7,15 @@ import { defineConfig } from "@playwright/test";
  * Chrome. The dev server and MySQL are expected to be running; set
  * `E2E_BASE_URL` to target an already-running deployment (for example staging).
  */
+/** The repository root, which is where `pnpm test:e2e` is invoked. */
+const repository = fileURLToPath(new URL("../..", import.meta.url));
+
 export default defineConfig({
   // Resolve from this package so `pnpm test:e2e` works from the repo root.
-  testDir: fileURLToPath(new URL("../../tests/e2e", import.meta.url)),
+  testDir: path.join(repository, "tests/e2e"),
+  // Playwright defaults these to the config file's directory; both are
+  // repository-level paths (CI uploads `test-results/`).
+  outputDir: path.join(repository, "test-results"),
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -31,6 +38,7 @@ export default defineConfig({
     ? undefined
     : {
         command: "tsx scripts/e2e-server.ts",
+        cwd: repository,
         url: "http://localhost:9050",
         reuseExistingServer: true,
         timeout: 180_000,
