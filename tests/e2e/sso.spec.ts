@@ -27,7 +27,7 @@ const sign = (secret: string, payload: SsoAssertionClaims) => {
 
 const authSecret = () => {
   if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
-  const vars = readFileSync("apps/api/.dev.vars", "utf8");
+  const vars = readFileSync("apps/cloud/.dev.vars", "utf8");
   const match = vars.match(/^AUTH_SECRET=(.+)$/m);
 
   if (!match?.[1]) throw new Error("AUTH_SECRET is not configured for the SSO test");

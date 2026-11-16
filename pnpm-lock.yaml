@@ -245,7 +245,51 @@ importers:
         specifier: 'catalog:'
         version: 2.8.3
 
-  apps/api:
+  apps/apns-relay:
+    dependencies:
+      '@mattrax/apns':
+        specifier: workspace:*
+        version: link:../../packages/apns
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.2
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  apps/cli:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.1.2(effect@4.1.2)(redis@6.3.1(@opentelemetry/api@1.10.0))
+      '@mattrax/enterprise-domain':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-domain
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.2
+      yaml:
+        specifier: 'catalog:'
+        version: 2.8.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  apps/cloud:
     dependencies:
       '@effect/sql-mysql2':
         specifier: 'catalog:'
@@ -351,49 +395,42 @@ importers:
         specifier: 'catalog:'
         version: 1.5.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.1.0(vitest@5.1.0))(esbuild@0.28.2)(jiti@2.7.0)(msw@2.14.6(@types/node@26.6.6)(typescript@7.0.2))(playwright@1.65.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
 
-  apps/apns-relay:
+  apps/docker:
     dependencies:
-      '@mattrax/apns':
-        specifier: workspace:*
-        version: link:../../packages/apns
-      effect:
+      mysql2:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 3.24.6(@types/node@26.6.6)
     devDependencies:
+      '@mattrax/cloud':
+        specifier: workspace:*
+        version: link:../cloud
+      '@mattrax/enterprise-backend':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-backend
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-core
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
-      tsx:
+      '@yielded/auth':
         specifier: 'catalog:'
-        version: 4.23.15
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-
-  apps/cli:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)(redis@6.3.1(@opentelemetry/api@1.10.0))
-      '@mattrax/enterprise-domain':
-        specifier: workspace:*
-        version: link:../../packages/enterprise-domain
+        version: 0.1.0-beta.47(effect@4.1.2)
       effect:
         specifier: 'catalog:'
         version: 4.1.2
-      yaml:
+      reflect-metadata:
         specifier: 'catalog:'
-        version: 2.8.3
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.6.6
-      tsx:
-        specifier: 'catalog:'
-        version: 4.23.15
+        version: 0.2.2
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vite:
+        specifier: npm:@voidzero-dev/vite-plus-core@^1.5.0
+        version: '@voidzero-dev/vite-plus-core@1.5.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)'
+      vite-plus:
+        specifier: 'catalog:'
+        version: 1.5.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.1.0(vitest@5.1.0))(esbuild@0.28.2)(jiti@2.7.0)(msw@2.14.6(@types/node@26.6.6)(typescript@7.0.2))(playwright@1.65.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
 
   apps/mdm-compliance:
     dependencies:
@@ -446,16 +483,6 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
-
-  apps/selfhost:
-    dependencies:
-      mysql2:
-        specifier: 'catalog:'
-        version: 3.24.6(@types/node@26.6.6)
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.6.6
 
   apps/web:
     dependencies:

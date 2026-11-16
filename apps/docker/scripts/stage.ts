@@ -15,7 +15,7 @@ const [repository = path.resolve(import.meta.dirname, "../../.."), output = "dis
 
 const outputDirectory = path.resolve(repository, output);
 
-const apiSource = path.join(repository, "apps/api/dist/node");
+const apiSource = path.join(repository, "apps/docker/dist/node");
 const webServerSource = path.join(repository, "apps/web/dist/server");
 const webClientSource = path.join(repository, "apps/web/dist/client");
 const docsSource = path.join(repository, "doc_build");
@@ -50,7 +50,7 @@ await Promise.all([
  * Only `migration.sql` is needed at runtime. The snapshots next to it are
  * editor state and account for most of the migrations directory.
  */
-const migrationsSource = path.join(repository, "apps/api/migrations");
+const migrationsSource = path.join(repository, "apps/cloud/migrations");
 const migrationsTarget = path.join(outputDirectory, "migrations");
 
 await mkdir(migrationsTarget, { recursive: true });

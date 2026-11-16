@@ -25,7 +25,7 @@ cf workers secrets update AUTH_SECRET --worker mattrax --type secret_text --text
 ```
 
 Self-hosted deployments get it from the same `AUTH_SECRET` environment variable in
-`apps/selfhost`. If the dashboard Worker has no secret, or the two values differ, pages
+`apps/docker`. If the dashboard Worker has no secret, or the two values differ, pages
 still render correctly: the Worker falls back to `GET /api/v1/bootstrap` on every
 authenticated navigation. That costs one membership/role query per tenant, turns every
 warm token into a miss, and logs a one-time `console.error` per isolate (grouped by
@@ -174,7 +174,7 @@ Transport selection is explicit:
 Hosted Mattrax uses the Cloudflare `send_email` binding when `MAIL_TRANSPORT`
 is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
 `MATTRAX_INVITATION_FROM` still overrides the invitation sender. The binding
-only accepts the addresses listed in `apps/api/cloudflare.config.ts`
+only accepts the addresses listed in `apps/cloud/cloudflare.config.ts`
 (`hello@mattrax.cloud`); set `MAIL_TRANSPORT=smtp` to send from
 another verified domain.
 `/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
@@ -272,9 +272,9 @@ Never enable the debug mailbox in production.
 ## Local development
 
 ```bash
-cp .dev.vars.example apps/api/.dev.vars
+cp .dev.vars.example apps/cloud/.dev.vars
 cp .dev.vars.example apps/web/.dev.vars
-pnpm api db:migrate
+pnpm cloud db:migrate
 pnpm web dev
 ```
 

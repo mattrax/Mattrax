@@ -5,7 +5,7 @@ import { Context, Layer, ManagedRuntime } from "effect";
  *
  * The dashboard runs in two places: as a Worker on Cloudflare, where bindings
  * arrive with the request, and as a plain Node server (`MATTRAX_TARGET=node`,
- * used by `apps/selfhost`), where they come from `process.env` and the API is
+ * used by `apps/docker`), where they come from `process.env` and the API is
  * another process on loopback. Application code only ever asks this service for
  * what it needs, so `cloudflare:workers` is not imported anywhere.
  */
@@ -56,7 +56,7 @@ const workerBindings = (env: Env): DeploymentBindings => {
 
 /**
  * Node bindings: the process environment and a loopback client for the API's
- * Node server, which listens on `PORT` like `apps/selfhost` does.
+ * Node server, which listens on `PORT` like `apps/docker` does.
  */
 const nodeBindings = (): DeploymentBindings => {
   const apiUrl =

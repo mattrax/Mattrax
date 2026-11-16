@@ -3,9 +3,9 @@ import path from "node:path";
 import { defineConfig } from "vite";
 
 /**
- * Node build of the API. The Cloudflare build is the default `vite.config.ts`;
- * this one bundles the shared runtime with the Node crypto, filesystem and SMTP
- * adapters so the self-hosted image needs no Worker runtime.
+ * Node build of the API for the self-hosted image. The shared runtime lives in
+ * `@mattrax/cloud`; this bundle supplies the Node crypto, filesystem and SMTP
+ * adapters so the container needs no Worker runtime.
  */
 
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));

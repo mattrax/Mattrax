@@ -8,7 +8,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Plugin, defineConfig } from "vite";
-import { apiWorker } from "../api/cloudflare.config.ts";
+import { apiWorker } from "../cloud/cloudflare.config.ts";
 import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/public-routes.ts";
 
 const routesDir = path.resolve("src/routes");
@@ -16,7 +16,7 @@ const extensions = ["js", "jsx", "ts", "tsx"];
 
 /**
  * Self-host target: build and run the dashboard as plain Solid SSR on Node
- * instead of a Worker on workerd. `apps/selfhost` and the Dockerfile load the
+ * instead of a Worker on workerd. `apps/docker` and the Dockerfile load the
  * `dist/server` bundle directly, so this mode leaves the Cloudflare plugin out
  * and builds the server entry (`src/server/index.ts`) that Cloudflare normally
  * owns. Bindings (secrets, the API client) come from `src/server/bindings.ts`,
@@ -113,7 +113,7 @@ export default defineConfig(({ command }) => ({
           rolldownOptions: { devtools: { mode: "report" as const } },
         }
       : {}),
-    // The self-host build owns its layout because `apps/selfhost` stages
+    // The self-host build owns its layout because `apps/docker` stages
     // `dist/client` and `dist/server` side by side.
     ...(nodeTarget ? { outDir: "dist/client" } : {}),
   },
@@ -121,7 +121,7 @@ export default defineConfig(({ command }) => ({
     ? {
         // `vite build` builds the client and then the SSR bundle.
         builder: {},
-        // The Node SSR build must be self-contained: `apps/selfhost` stages
+        // The Node SSR build must be self-contained: `apps/docker` stages
         // only `dist/`, with no `node_modules`, so every dependency and
         // workspace package is bundled. `environments.ssr.resolve.noExternal`
         // is not honoured by this Vite version for the SSR build.

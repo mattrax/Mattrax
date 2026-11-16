@@ -133,7 +133,7 @@ jobs:
           DATABASE_USER: ${{ secrets.DATABASE_USER }}
           DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
           DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
-        run: pnpm api db:migrate
+        run: pnpm cloud db:migrate
 
       - name: Apply preview migrations
         if: github.event_name == 'pull_request'
@@ -145,7 +145,7 @@ jobs:
           DATABASE_USER: ${{ secrets.PREVIEW_DATABASE_USER }}
           DATABASE_PASSWORD: ${{ secrets.PREVIEW_DATABASE_PASSWORD }}
           DATABASE_NAME: ${{ secrets.PREVIEW_DATABASE_NAME }}
-        run: pnpm api db:migrate
+        run: pnpm cloud db:migrate
 
       - name: Deploy production
         if: github.event_name == 'push'
@@ -176,7 +176,7 @@ jobs:
       - name: Create the API Preview
         id: api-preview
         if: github.event_name == 'pull_request'
-        working-directory: apps/api
+        working-directory: apps/cloud
         env:
           ORIGIN: ${{ steps.web-bootstrap.outputs.url }}
           MATTRAX_HYPERDRIVE_ID: ${{ vars.PREVIEW_HYPERDRIVE_ID }}

@@ -225,7 +225,7 @@ const useAppleProfileSigning = Boolean(process.env.APPLE_PROFILE_SIGNING_CERT);
  * Provider credentials are only declared when the deploy supplies them, for the
  * same reason as the Apple identity above: `cf deploy` refuses a declared
  * secret with no value. A self-hosted container passes them as plain bindings
- * from its own environment instead (see `apps/selfhost`).
+ * from its own environment instead (see `apps/docker`).
  */
 const EMAIL_PROVIDER_SECRETS = ["MAIL_SMTP_PASSWORD"] as const;
 

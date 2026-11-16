@@ -9,6 +9,7 @@ services:
   app:
     build:
       context: .
+      dockerfile: apps/docker/Dockerfile
     image: mattrax-selfhost:local
     restart: unless-stopped
     depends_on:

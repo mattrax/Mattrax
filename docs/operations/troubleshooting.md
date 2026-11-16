@@ -194,7 +194,7 @@ again** (re-renders the failed subtree), **Reload page**, and an **Error ID** su
   credentials.
 - Migrations fail: use the individual `DATABASE_*` variables, not a URL. Apply migrations
   before deploying code that needs them.
-- `db:generate` produces an unexpected diff: check `apps/api/src/db/schema.ts` re-exports
+- `db:generate` produces an unexpected diff: check `apps/cloud/src/db/schema.ts` re-exports
   the enterprise schema and that migration snapshots are committed.
 
 ## Rate limits

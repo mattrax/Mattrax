@@ -31,11 +31,11 @@ jobs:
       - run: pnpm doc:build
       # Production Workers must actually build. Typechecking alone did not
       # catch a layer-wiring bug that made every /mdm route return 500.
-      - run: pnpm api build
+      - run: pnpm cloud build
       - run: pnpm web build
       # Fail when the schema changes without a committed migration snapshot.
-      - run: pnpm api db:generate
-      - run: test -z "$(git status --porcelain -- apps/api/migrations)"
+      - run: pnpm cloud db:generate
+      - run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
 
   lighthouse:
     name: Lighthouse budgets
@@ -58,7 +58,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Write local dev environment
         run: |
-          cat > apps/api/.dev.vars <<'VARS'
+          cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
           STRIPE_SECRET_KEY=sk_test_ci
@@ -66,8 +66,8 @@ jobs:
           STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
-          cp apps/api/.dev.vars apps/web/.dev.vars
-          cp apps/api/.dev.vars .dev.vars
+          cp apps/cloud/.dev.vars apps/web/.dev.vars
+          cp apps/cloud/.dev.vars .dev.vars
       - run: pnpm lighthouse
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -117,7 +117,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Write local dev environment
         run: |
-          cat > apps/api/.dev.vars <<'VARS'
+          cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
           STRIPE_SECRET_KEY=sk_test_ci
@@ -125,9 +125,9 @@ jobs:
           STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
-          cp apps/api/.dev.vars apps/web/.dev.vars
-          cp apps/api/.dev.vars .dev.vars
-      - run: pnpm api db:migrate
+          cp apps/cloud/.dev.vars apps/web/.dev.vars
+          cp apps/cloud/.dev.vars .dev.vars
+      - run: pnpm cloud db:migrate
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()

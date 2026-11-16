@@ -9,11 +9,11 @@ boundary keeps protocol handling independent from product state.
 | ------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
 | Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` | Wire protocols and payloads                    |
 | Management contract | `management-backend`, `management-backend-http`                 | Interface and HMAC webhook binding             |
-| Hosted management   | `management-backend-enterprise`, `apps/api`                     | Enterprise implementation                      |
+| Hosted management   | `management-backend-enterprise`, `apps/cloud`                   | Enterprise implementation                      |
 | Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`                       | Dashboard, API and push relay                  |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                     | Dashboard, API and push relay                  |
 
 ## Cloud topology
 
@@ -36,9 +36,12 @@ for cookies, CSP and WebAuthn.
 
 The container uses the same application code with Node entry points instead of Workers:
 
-- `apps/api` is built with `vite.node.config.ts`. `app.ts` owns the routes, auth,
-  MDM handlers and scheduled jobs; the Cloudflare entry supplies the Workers crypto
-  layer and bindings, the Node entry supplies scrypt and process-environment adapters.
+- `apps/cloud` owns the shared runtime (`app.ts`: routes, auth, MDM handlers and
+  scheduled jobs) and the Cloudflare entry with the Workers crypto layer and
+  bindings.
+- `apps/docker` owns the self-hosted Node entry, its Vite build and the
+  `Dockerfile`; it supplies scrypt, the filesystem R2 adapter, SMTP and
+  process-environment bindings, then hosts the dashboard in the same process.
 - MySQL comes from `DATABASE_URL` (no Hyperdrive), object storage is the `/data`
   volume (no R2) and email is SMTP (no Cloudflare Email binding).
 - The dashboard is built with `MATTRAX_TARGET=node`; `@solidjs/vite-plugin` emits a
@@ -138,7 +141,7 @@ Core tables:
   survives the row) and the retry record for device unenroll, Stripe cancellation, object
   reclamation and the final delete.
 
-Migrations live in `apps/api/migrations` and are applied with Drizzle Kit.
+Migrations live in `apps/cloud/migrations` and are applied with Drizzle Kit.
 
 ## Script execution
 
@@ -186,7 +189,7 @@ so Android devices are skipped with a reason.
 
 | File                                                    | Why                                     |
 | ------------------------------------------------------- | --------------------------------------- |
-| `apps/api/src/index.ts`                                 | Worker composition and request pipeline |
+| `apps/cloud/src/index.ts`                               | Worker composition and request pipeline |
 | `packages/enterprise-domain/src/enterprise.ts`          | REST contract                           |
 | `packages/enterprise-backend/src/enterpriseHandlers.ts` | Enterprise handlers                     |
 | `packages/management-backend-enterprise/src/index.ts`   | Apple/Windows management                |

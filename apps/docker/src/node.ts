@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import "./nodeEnvironment.js";
 import path from "node:path";
-import { createApiRuntime } from "./app.js";
+import { createApiRuntime } from "@mattrax/cloud/runtime";
 import { nodeCryptoLayer } from "./cryptoNode.js";
 import { fileSystemR2 } from "./r2Node.js";
 

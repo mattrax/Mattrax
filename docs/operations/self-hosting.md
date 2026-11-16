@@ -101,18 +101,18 @@ rate limits then key on the client address instead of sharing one global bucket.
 
 ## Configuration
 
-| Variable                        | Required  | Purpose                                                                     |
-| ------------------------------- | --------- | --------------------------------------------------------------------------- |
-| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.      |
-| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets. |
-| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.       |
-| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.          |
+| Variable                        | Required  | Purpose                                                                       |
+| ------------------------------- | --------- | ----------------------------------------------------------------------------- |
+| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.        |
+| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.   |
+| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.         |
+| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.            |
 | `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits. |
-| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                         |
-| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                      |
-| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                        |
-| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                      |
-| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                |
+| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                           |
+| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                        |
+| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                          |
+| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                        |
+| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                  |
 
 Optional integrations use the same names as the hosted deployment. See
 [Configuration](/operations/configuration) for the full list. Anything unset is
@@ -124,18 +124,18 @@ no analytics, and no Stripe billing.
 Self-hosted deployments send mail directly over SMTP. Set the transport, a
 verified sender and the server details:
 
-| Variable             | Purpose                                                                  |
-| -------------------- | ------------------------------------------------------------------------ |
-| `MAIL_TRANSPORT`     | `smtp`.                                                                  |
-| `MAIL_FROM`          | Sender address, e.g. `Mattrax <notifications@example.com>`.              |
-| `MAIL_SMTP_HOST`     | SMTP server hostname, e.g. `smtp.example.com`.                           |
-| `MAIL_SMTP_PORT`     | Port. Defaults to 587, or 465 when `MAIL_SMTP_SECURE` is on.             |
-| `MAIL_SMTP_SECURE`   | `true` connects with implicit TLS; otherwise STARTTLS is used when offered. |
-| `MAIL_SMTP_USER`     | Username for AUTH PLAIN/LOGIN, when the server requires it.              |
-| `MAIL_SMTP_PASSWORD` | Password for the same account.                                           |
-| `MAIL_SMTP_HELO`     | EHLO name; defaults to the runtime hostname.                             |
-| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://e.mattrax.app`.              |
-| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator.                   |
+| Variable              | Purpose                                                                     |
+| --------------------- | --------------------------------------------------------------------------- |
+| `MAIL_TRANSPORT`      | `smtp`.                                                                     |
+| `MAIL_FROM`           | Sender address, e.g. `Mattrax <notifications@example.com>`.                 |
+| `MAIL_SMTP_HOST`      | SMTP server hostname, e.g. `smtp.example.com`.                              |
+| `MAIL_SMTP_PORT`      | Port. Defaults to 587, or 465 when `MAIL_SMTP_SECURE` is on.                |
+| `MAIL_SMTP_SECURE`    | `true` connects with implicit TLS; otherwise STARTTLS is used when offered. |
+| `MAIL_SMTP_USER`      | Username for AUTH PLAIN/LOGIN, when the server requires it.                 |
+| `MAIL_SMTP_PASSWORD`  | Password for the same account.                                              |
+| `MAIL_SMTP_HELO`      | EHLO name; defaults to the runtime hostname.                                |
+| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://e.mattrax.app`.                  |
+| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator.                      |
 
 ```bash
 MAIL_TRANSPORT=smtp

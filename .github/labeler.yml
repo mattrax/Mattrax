@@ -54,7 +54,7 @@ androiddm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-android/**
-          - apps/api/src/android.ts
+          - apps/cloud/src/android.ts
           - packages/enterprise-backend/src/android.ts
           - packages/enterprise-backend/src/androidRoutes.ts
 

@@ -25,7 +25,7 @@ Repository secrets (Settings → Secrets and variables → Actions → Secrets):
 | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `CLOUDFLARE_API_TOKEN`                                                                                                          | Token with Workers Scripts:Edit, Workers R2 Storage:Edit, Workers Routes:Edit and Account Settings:Read on the account. |
 | `CLOUDFLARE_ACCOUNT_ID`                                                                                                         | Account that owns both Workers.                                                                                         |
-| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`                                         | Production MySQL connection used by `pnpm api db:migrate`.                                                              |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`                                         | Production MySQL connection used by `pnpm cloud db:migrate`.                                                              |
 | `PREVIEW_DATABASE_HOST`, `PREVIEW_DATABASE_PORT`, `PREVIEW_DATABASE_USER`, `PREVIEW_DATABASE_PASSWORD`, `PREVIEW_DATABASE_NAME` | The shared preview MySQL database. Every PR migrates and uses it.                                                       |
 
 Repository variables (Settings → Secrets and variables → Actions → Variables):

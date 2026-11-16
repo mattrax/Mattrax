@@ -31,7 +31,7 @@ export const webWorker = {
      * needs no service-binding call on a warm token. A missing or mismatched
      * secret falls back to bootstrap and logs one error per isolate, which
      * Workers Issues groups. Self-hosted deployments inherit it from
-     * `AUTH_SECRET` via `apps/selfhost`.
+     * `AUTH_SECRET` via `apps/docker`.
      */
     /** Public PostHog project key and ingestion host, injected into the HTML shell. */
     POSTHOG_KEY: bindings.secret(),

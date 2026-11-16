@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * is for the Worker. This file is that entry's HTTP host: it serves the client
  * build and dispatches everything else through the server bundle's `fetch`.
  *
- * `apps/selfhost` imports it and drives `listener` from its own server; run
+ * `apps/docker` imports it and drives `listener` from its own server; run
  * directly (`node dist/server/node.js`) it serves on `PORT`/`HOST` itself.
  */
 
@@ -207,7 +207,7 @@ const sendFile = async (
   // Mirrors `public/_headers`: only the content-hashed bundle output (JS, CSS,
   // fonts, WebAssembly) is immutable; brand assets under `/assets/` keep their
   // names and must revalidate. The rest of the `_headers` policy (notably the
-  // docs CSP) is not applied here — `apps/selfhost` serves for a single origin,
+  // docs CSP) is not applied here — `apps/docker` serves for a single origin,
   // so a reverse proxy owns those headers.
   response.setHeader(
     "cache-control",
@@ -248,7 +248,7 @@ const sendStatic = async (
   return false;
 };
 
-/** An `http.createServer` request handler; `apps/selfhost` calls it directly. */
+/** An `http.createServer` request handler; `apps/docker` calls it directly. */
 export const listener = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -289,5 +289,5 @@ export const serve = ({
   return server;
 };
 
-// Only bind a port when run directly; `apps/selfhost` owns the real server.
+// Only bind a port when run directly; `apps/docker` owns the real server.
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(here, "node.js")) serve();

@@ -1,19 +1,26 @@
 {
-  "name": "@mattrax/api",
+  "name": "@mattrax/cloud",
   "version": "0.0.0",
   "private": true,
+  "description": "Mattrax Cloud entry point: Cloudflare API Worker, MDM, billing and deployment migrations.",
   "type": "module",
+  "exports": {
+    "./runtime": {
+      "types": "./dist/app.d.ts",
+      "import": "./src/app.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
     "deploy": "cf deploy --prebuilt",
-    "deploy:prod": "pnpm build && tsx ../../scripts/bundle-budget.ts api && cf deploy --prebuilt",
+    "deploy:prod": "pnpm build && tsx ../../scripts/bundle-budget.ts cloud && cf deploy --prebuilt",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "cf:types": "cf workers types",
     "typecheck": "cf workers types && tsc",
-    "build:node": "vp build --config vite.node.config.ts",
     "license:issue": "tsx scripts/issue-license.ts"
   },
   "dependencies": {

@@ -31,18 +31,18 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # Prebuild every entry point. Nothing is bundled or transpiled at boot. The docs
 # are built into the dashboard's client assets so a self-hosted install serves
 # the same `/docs/` surface (and sitemap) as the hosted deployment.
-RUN pnpm doc:build && pnpm api build:node \
+RUN pnpm doc:build && pnpm docker build:api \
     && pnpm --filter @mattrax/web build:selfhost
 
 # Collect the API bundle, dashboard server/client and migrations, dropping
 # source maps and editor-only migration snapshots.
-RUN node apps/selfhost/scripts/stage.ts /repo /out
+RUN node apps/docker/scripts/stage.ts /repo /out
 
 # A production-only install of the runtime host. The API and dashboard bundles
 # carry their own dependencies; the host only needs the migration runner's
 # MySQL client.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @mattrax/selfhost deploy --prod --legacy /out/selfhost \
+    pnpm --filter @mattrax/docker deploy --prod --legacy /out/selfhost \
     && rm -rf /out/selfhost/node_modules/.pnpm/@types+node@* \
       /out/selfhost/node_modules/.pnpm/undici-types@* \
     && find /out/selfhost/node_modules -xtype l -delete
