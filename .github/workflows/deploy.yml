@@ -82,6 +82,49 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      # Fail with the missing names instead of a driver error deep inside
+      # Drizzle. The full setup is documented in docs/operations/deployment.md.
+      - name: Check deployment configuration
+        env:
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+          PREVIEW_DATABASE_HOST: ${{ secrets.PREVIEW_DATABASE_HOST }}
+          PREVIEW_DATABASE_PORT: ${{ secrets.PREVIEW_DATABASE_PORT }}
+          PREVIEW_DATABASE_USER: ${{ secrets.PREVIEW_DATABASE_USER }}
+          PREVIEW_DATABASE_PASSWORD: ${{ secrets.PREVIEW_DATABASE_PASSWORD }}
+          PREVIEW_DATABASE_NAME: ${{ secrets.PREVIEW_DATABASE_NAME }}
+          PREVIEW_HYPERDRIVE_ID: ${{ vars.PREVIEW_HYPERDRIVE_ID }}
+          PREVIEW_STORAGE_BUCKET: ${{ vars.PREVIEW_STORAGE_BUCKET }}
+        run: |
+          missing=()
+
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+
+          prefix="DATABASE_"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            prefix="PREVIEW_DATABASE_"
+          fi
+
+          for suffix in HOST PORT USER PASSWORD NAME; do
+            name="${prefix}${suffix}"
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            [ -n "$PREVIEW_HYPERDRIVE_ID" ] || missing+=(PREVIEW_HYPERDRIVE_ID)
+            [ -n "$PREVIEW_STORAGE_BUCKET" ] || missing+=(PREVIEW_STORAGE_BUCKET)
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing deployment configuration: ${missing[*]}. See docs/operations/deployment.md."
+            exit 1
+          fi
+
       - name: Apply production migrations
         if: github.event_name == 'push'
         env:
