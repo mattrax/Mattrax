@@ -16177,11 +16177,13 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        // Only an MCP OAuth connection may attribute activity to a tool call;
-        // a read-only member must not be able to forge audit entries.
-        if (ctx.credential?.type !== "oauth")
+        // Only an issued MCP credential (OAuth connection or account API key)
+        // may attribute activity to a tool call. A browser session or a
+        // read-only token must not be able to forge audit entries; the write
+        // scope is enforced in `requireUser`.
+        if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token")
           return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "MCP activity requires an MCP connection." }),
+            new EnterpriseForbidden({ message: "MCP activity requires an MCP credential." }),
           );
 
         const body: {
