@@ -4,6 +4,7 @@ import "virtual:solid-server-function-manifest";
 import { handleRequest } from "virtual:solid-ssr-handler";
 import routes from "virtual:file-routes";
 import docsRoutes from "virtual:docs-routes";
+import { useWorkerBindings } from "./bindings";
 import { compilePagePatterns, guardPath, isKnownPagePath, withSecurityHeaders } from "./security";
 import { createSeoHandler } from "./seo";
 
@@ -45,9 +46,17 @@ const asNotFound = (response: Response): Response =>
  * SPA fallback loop. After SSR, an unknown page path keeps the rendered 404
  * page but reports a 404 status, and every response receives the shared
  * security headers.
+ *
+ * The same bundle runs on Node (`MATTRAX_TARGET=node`, hosted by
+ * `src/server/node.ts`). The only difference is where bindings come from: the
+ * platform hands them to this handler on Cloudflare, while Node resolves
+ * `process.env` and a loopback API client. Nothing below this line needs to
+ * know which runtime it is on.
  */
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env?: Env): Promise<Response> {
+    if (env) useWorkerBindings(env);
+
     const url = new URL(request.url);
 
     if (guardPath(url.pathname) === "not-found") return withSecurityHeaders(request, notFound());

@@ -35,8 +35,14 @@ export {
   R2_IMMUTABLE_CACHE_CONTROL,
   R2_PRIVATE_CACHE_CONTROL,
   type R2Bucket,
+  type R2GetOptions,
+  type R2HttpMetadata,
+  type R2ListOptions,
+  type R2Object,
   type R2ObjectBody,
+  type R2Objects,
   type R2PutOptions,
+  type R2PutValue,
 } from "./r2.ts";
 
 export { Env } from "./env.ts";

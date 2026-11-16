@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import type { OutboundEmailMessage } from "@mattrax/enterprise-backend";
 import { mailerReadiness, selectMailer, type MailerEnv } from "./mailer.js";
 
@@ -69,7 +69,16 @@ describe("mailer selection", () => {
   });
 
   it("reports a binding failure as an EmailFailure", async () => {
-    const selection = selectMailer(environment({ EMAIL: fakeBinding().binding }));
+    const binding = {
+      send: async () => {
+        throw new Error("binding rejected the message");
+      },
+    };
+
+    const selection = selectMailer(
+      // SAFETY: the adapter only calls the structured `send` overload.
+      environment({ EMAIL: binding as unknown as SendEmail }),
+    );
 
     const result = await Effect.runPromiseExit(
       selection.transport!.send({
@@ -80,7 +89,17 @@ describe("mailer selection", () => {
       }),
     );
 
-    expect(result._tag).toBe("Success");
+    expect(result._tag).toBe("Failure");
+
+    if (result._tag === "Failure") {
+      const failure = Cause.squash(result.cause);
+
+      expect(failure).toMatchObject({
+        _tag: "EmailFailure",
+        provider: "Cloudflare Email",
+        message: "binding rejected the message",
+      });
+    }
   });
 
   it("rejects a malformed MAIL_FROM instead of sending as the built-in address", () => {

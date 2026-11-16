@@ -74,8 +74,8 @@ real-vendor validation. It is a status page, not a marketing page.
   `Organization` JSON-LD on the landing page and `BreadcrumbList` JSON-LD on every
   documentation page. Public pages and docs render without JavaScript; the dashboard
   renders a styled notice instead of an empty shell.
-- Cloudflare Workers deployment for the dashboard and API, and a Node gateway for
-  .
+- Cloudflare Workers deployment for the dashboard and API, and a single Node
+  container image for self-hosting.
 
 ## Validation gaps
 

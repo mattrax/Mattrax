@@ -32,6 +32,21 @@ Browser ──► Mattrax web Worker (public)
 The API Worker has no public route. Only the web Worker is exposed, which gives one origin
 for cookies, CSP and WebAuthn.
 
+### Self-hosted runtime
+
+The container uses the same application code with Node entry points instead of Workers:
+
+- `apps/api` is built with `vite.node.config.ts`. `app.ts` owns the routes, auth,
+  MDM handlers and scheduled jobs; the Cloudflare entry supplies the Workers crypto
+  layer and bindings, the Node entry supplies scrypt and process-environment adapters.
+- MySQL comes from `DATABASE_URL` (no Hyperdrive), object storage is the `/data`
+  volume (no R2) and email is SMTP (no Cloudflare Email binding).
+- The dashboard is built with `MATTRAX_TARGET=node`; `@solidjs/vite-plugin` emits a
+  Node SSR server and serves `dist/client` statically. A Node shim replaces
+  `cloudflare:workers` and forwards API calls to the same process over loopback.
+- The host routes `/api`, `/mdm` and `/scim` to the API and everything else to the
+  dashboard, then runs the cron expressions from its own scheduler.
+
 ## Request pipeline
 
 1. Request id resolution.

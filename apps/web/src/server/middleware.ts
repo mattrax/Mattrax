@@ -1,7 +1,7 @@
-import { env } from "cloudflare:workers";
 import { fetchApi } from "./api";
+import { getBindings } from "./bindings";
 import type { StartMiddleware } from "@solidjs/vite-plugin";
-import { Option, Schema } from "effect";
+import { Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
@@ -42,11 +42,6 @@ const reportSsrTokenRejected = (): void => {
     "[ssr] A bootstrap token failed edge verification; falling back to bootstrap. mattrax and mattrax-api must share the same AUTH_SECRET. The secret itself is never logged.",
   );
 };
-
-const PostHogEnv = Schema.Struct({
-  POSTHOG_KEY: Schema.optional(Schema.String),
-  POSTHOG_HOST: Schema.optional(Schema.String),
-});
 
 /**
  * Ask the API for the session, `/me` shell and a fresh SSR token in one call.
@@ -135,19 +130,22 @@ const middleware: StartMiddleware = async (event, next) => {
   const metadata = oauthMetadata(new URL(event.request.url));
 
   if (metadata) return metadata;
-  const posthogEnv = Option.getOrUndefined(Schema.decodeUnknownOption(PostHogEnv)(env));
-  const posthogKey = posthogEnv?.POSTHOG_KEY?.trim();
+
+  // Deployment bindings: secrets and plain-text configuration, plus the API
+  // client. Resolved per isolate; the shape is the same on Cloudflare and Node.
+  const bindings = getBindings();
+  const posthogKey = bindings.POSTHOG_KEY?.trim();
 
   if (posthogKey)
     setPostHogConfig(event.request, {
       key: posthogKey,
-      host: posthogEnv?.POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
+      host: bindings.POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
     });
 
-  if (!env.AUTH_SECRET) reportMissingAuthSecret();
+  if (!bindings.AUTH_SECRET) reportMissingAuthSecret();
 
   const outcome = await preloadSession(event.request, {
-    secret: env.AUTH_SECRET,
+    secret: bindings.AUTH_SECRET,
     verifyToken: verifySsrToken,
     verifyRevision: verifySsrRevision,
     fetchBootstrap,

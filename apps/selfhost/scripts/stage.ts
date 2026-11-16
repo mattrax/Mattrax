@@ -4,8 +4,9 @@ import path from "node:path";
 /**
  * Collect the deployable pieces of a self-hosted install into one directory:
  *
- *   workers/api, workers/web   built Workers and their static assets
- *   migrations                 Drizzle migrations without editor snapshots
+ *   api       Node build of the API (shared runtime, Node adapters)
+ *   web       Solid SSR Node server and its client assets
+ *   migrations Drizzle migrations without editor snapshots
  *
  * Used by the Dockerfile, and runnable locally to reproduce an image layout.
  */
@@ -14,17 +15,14 @@ const [repository = path.resolve(import.meta.dirname, "../../.."), output = "dis
 
 const outputDirectory = path.resolve(repository, output);
 
-const workerSources: Record<string, string> = {
-  api: path.join(repository, "apps/api/.cloudflare/output/v0/workers/default"),
-  web: path.join(repository, "apps/web/.cloudflare/output/v0/workers/default"),
-};
+const apiSource = path.join(repository, "apps/api/dist/node");
+const webServerSource = path.join(repository, "apps/web/dist/server");
+const webClientSource = path.join(repository, "apps/web/dist/client");
+const docsSource = path.join(repository, "doc_build");
 
 await rm(outputDirectory, { recursive: true, force: true });
 
 await mkdir(outputDirectory, { recursive: true });
-
-const hasErrnoCode = (cause: unknown, code: string): boolean =>
-  cause instanceof Error && "code" in cause && cause.code === code;
 
 const removeSourceMaps = async (directory: string): Promise<void> => {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -35,12 +33,15 @@ const removeSourceMaps = async (directory: string): Promise<void> => {
   }
 };
 
-for (const [name, source] of Object.entries(workerSources)) {
-  const target = path.join(outputDirectory, "workers", name);
+await cp(apiSource, path.join(outputDirectory, "api"), { recursive: true });
+await cp(webServerSource, path.join(outputDirectory, "web", "server"), { recursive: true });
+await cp(webClientSource, path.join(outputDirectory, "web", "client"), { recursive: true });
+await cp(docsSource, path.join(outputDirectory, "web", "client", "docs"), { recursive: true });
 
-  await cp(source, target, { recursive: true });
-  await removeSourceMaps(target);
-}
+await Promise.all([
+  removeSourceMaps(path.join(outputDirectory, "api")),
+  removeSourceMaps(path.join(outputDirectory, "web")),
+]);
 
 /**
  * Only `migration.sql` is needed at runtime. The snapshots next to it are
@@ -63,7 +64,7 @@ for (const entry of await readdir(migrationsSource, { withFileTypes: true })) {
     await mkdir(target, { recursive: true });
     await writeFile(path.join(target, "migration.sql"), sql);
   } catch (cause) {
-    if (!hasErrnoCode(cause, "ENOENT")) throw cause;
+    if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
   }
 }
 

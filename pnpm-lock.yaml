@@ -117,9 +117,6 @@ catalogs:
     filesystem-routing:
       specifier: ^0.5.0
       version: 0.5.0
-    miniflare:
-      specifier: 5.20261104.0-beta
-      version: 5.20261104.0-beta
     mysql2:
       specifier: ^3.24.6
       version: 3.24.6
@@ -452,9 +449,6 @@ importers:
 
   apps/selfhost:
     dependencies:
-      miniflare:
-        specifier: 'catalog:'
-        version: 5.20261104.0-beta(@types/node@26.6.6)
       mysql2:
         specifier: 'catalog:'
         version: 3.24.6(@types/node@26.6.6)

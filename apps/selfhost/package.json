@@ -2,14 +2,13 @@
   "name": "@mattrax/selfhost",
   "version": "0.0.0",
   "private": true,
-  "description": "Self-hosted Mattrax runtime: hosts the built API and web Workers on workerd via Miniflare.",
+  "description": "Self-hosted Mattrax runtime: runs the Node API and the Solid SSR dashboard in one process.",
   "type": "module",
   "main": "src/server.ts",
   "scripts": {
     "start": "node src/server.ts"
   },
   "dependencies": {
-    "miniflare": "catalog:",
     "mysql2": "catalog:"
   },
   "devDependencies": {
@@ -17,5 +16,8 @@
   },
   "engines": {
     "node": ">=24"
-  }
+  },
+  "files": [
+    "src"
+  ]
 }

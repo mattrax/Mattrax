@@ -86,8 +86,8 @@ through the web Worker's service binding.
 
 ### Self-hosting
 
-The same two Workers ship as one container running on workerd. It needs MySQL and an
-HTTPS reverse proxy, and nothing else:
+The same dashboard and API run as one Node container. It needs MySQL and an HTTPS
+reverse proxy, and nothing else:
 
 ```bash
 export ORIGIN=https://mdm.example.com

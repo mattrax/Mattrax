@@ -2,21 +2,18 @@
 #
 # Mattrax self-hosted image.
 #
-# The product is two Cloudflare Workers: `mattrax` (the SolidStart dashboard and
-# static assets) and `mattrax-api` (the product API and MDM protocol endpoints).
-# The dashboard proxies /api, /mdm and /scim to the API Worker over a service
-# binding, so the image runs both Workers in one workerd instance behind a
-# single port.
-#
-# `workerd` is the same JavaScript/Wasm runtime Cloudflare runs in production;
-# Miniflare supplies the platform services (R2, Hyperdrive, cron, static assets)
-# that the container has no managed equivalent for.
+# The hosted product is two Cloudflare Workers: `mattrax` (the SolidStart
+# dashboard and static assets) and `mattrax-api` (the product API and MDM
+# endpoints). A container runs the same code on Node instead: the API is a
+# shared Effect runtime with Node adapters for MySQL, filesystem storage and
+# SMTP, and the dashboard is the Solid SSR Node server. One Node process owns
+# both behind a single port, with `/api`, `/mdm` and `/scim` routed to the API.
 
 FROM node:24-bookworm-slim AS build
 
-# workerd validates the system trust store when it starts, even for a build.
-# binutils is used to strip debug symbols from the binaries that reach the
-# runtime; it stays in this stage.
+# Node validates the system trust store when it starts, even for a build.
+# binutils strips debug symbols from the Node binary that reaches the runtime;
+# it stays in this stage.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates binutils \
     && rm -rf /var/lib/apt/lists/*
@@ -31,42 +28,27 @@ COPY . .
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 
-# Prebuild every Worker and module. Nothing is bundled or transpiled at boot.
-# The docs are built into the dashboard's assets so a self-hosted install serves
+# Prebuild every entry point. Nothing is bundled or transpiled at boot. The docs
+# are built into the dashboard's client assets so a self-hosted install serves
 # the same `/docs/` surface (and sitemap) as the hosted deployment.
-RUN pnpm api build && pnpm web build && pnpm doc:build \
-    && cd apps/web && tsx ../../scripts/copy-docs.ts
+RUN pnpm doc:build && pnpm api build:node \
+    && pnpm --filter @mattrax/web build:selfhost
 
-# Collect Workers, static assets and migrations, dropping source maps and
-# editor-only migration snapshots.
+# Collect the API bundle, dashboard server/client and migrations, dropping
+# source maps and editor-only migration snapshots.
 RUN node apps/selfhost/scripts/stage.ts /repo /out
 
-# A production-only install of the runtime host. The `workerd` npm package
-# exposes a CLI copy of the platform binary that the runtime never invokes.
+# A production-only install of the runtime host. The API and dashboard bundles
+# carry their own dependencies; the host only needs the migration runner's
+# MySQL client.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter @mattrax/selfhost deploy --prod --legacy /out/selfhost \
-    && rm -rf /out/selfhost/node_modules/.pnpm/workerd@*/node_modules/workerd/bin
-
-# Miniflare lists `sharp` as an optional dependency for its container-image
-# support, which Mattrax does not use; its platform codecs are ~20 MB. The
-# `@types/*` packages are type-only peer dependencies that Node never loads.
-# Remove them, then clean up the symlinks pnpm leaves pointing at them.
-RUN rm -rf \
-      /out/selfhost/node_modules/.pnpm/sharp@* \
-      /out/selfhost/node_modules/.pnpm/@img+* \
-      /out/selfhost/node_modules/.pnpm/@types+node@* \
+    && rm -rf /out/selfhost/node_modules/.pnpm/@types+node@* \
       /out/selfhost/node_modules/.pnpm/undici-types@* \
     && find /out/selfhost/node_modules -xtype l -delete
 
-# The published workerd binaries carry full debug symbols (~53 MB per
-# platform). `strip` leaves a runnable binary and removes information the
-# runtime never reads. The glob covers both linux-arm64 and linux-64 builds.
-RUN find /out/selfhost/node_modules/.pnpm \
-      -path '*/@cloudflare/workerd-linux-*/bin/workerd' -type f \
-      -exec strip {} +
-
-# Node's release binaries also ship with debug symbols (~20 MB). This is the
-# binary copied to the runtime stage, and the build is complete by now.
+# Node's release binaries ship with debug symbols (~20 MB). This is the binary
+# copied to the runtime stage, and the build is complete by now.
 RUN strip /usr/local/bin/node
 
 # The runtime has no shell to create users or directories at boot, so prepare
@@ -103,7 +85,8 @@ COPY --from=build /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 
 COPY --from=build --chown=1000:1000 /out/selfhost/ ./
-COPY --from=build --chown=1000:1000 /out/workers/ ./workers/
+COPY --from=build --chown=1000:1000 /out/api/ ./api/
+COPY --from=build --chown=1000:1000 /out/web/ ./web/
 COPY --from=build --chown=1000:1000 /out/migrations/ ./migrations/
 
 # The `/data` volume and the home directory the `node` user expects. An empty

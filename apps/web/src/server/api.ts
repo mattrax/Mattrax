@@ -1,19 +1,11 @@
-import { env } from "cloudflare:workers";
+import { getBindings } from "./bindings";
 
 /**
- * Forward an API request to the API Worker.
+ * Forward an API request to the API.
  *
- * Production uses the `API` service binding. A Preview of this Worker cannot
- * use a service binding to another Worker's Preview — Cloudflare resolves it
- * to that Worker's production deployment — so the preview deploy passes the
- * preview API's generated URL as `API_URL` and requests go there over HTTP
- * instead. The path, query, headers, cookies and body are preserved.
+ * The `Bindings` service owns the difference between the deployments: a
+ * Cloudflare service binding (or `API_URL` for a preview) and a loopback call to
+ * the API's Node process under `apps/selfhost`. Path, query, headers, cookies
+ * and body are preserved by whichever client answers.
  */
-export const fetchApi = (request: Request): Promise<Response> => {
-  if (!env.API_URL) return env.API.fetch(request);
-
-  const source = new URL(request.url);
-  const target = new URL(source.pathname + source.search, env.API_URL);
-
-  return fetch(new Request(target, request));
-};
+export const fetchApi = (request: Request): Promise<Response> => getBindings().API.fetch(request);

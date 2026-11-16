@@ -14,6 +14,19 @@ import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/p
 const routesDir = path.resolve("src/routes");
 const extensions = ["js", "jsx", "ts", "tsx"];
 
+/**
+ * Self-host target: build and run the dashboard as plain Solid SSR on Node
+ * instead of a Worker on workerd. `apps/selfhost` and the Dockerfile load the
+ * `dist/server` bundle directly, so this mode leaves the Cloudflare plugin out
+ * and builds the server entry (`src/server/index.ts`) that Cloudflare normally
+ * owns. Bindings (secrets, the API client) come from `src/server/bindings.ts`,
+ * which resolves them per runtime, so no `cloudflare:workers` import needs
+ * aliasing.
+ */
+const nodeTarget = process.env.MATTRAX_TARGET?.toLowerCase() === "node";
+
+const serverDirectory = fileURLToPath(new URL("./src/server/", import.meta.url));
+
 const docsSourceDirectory = fileURLToPath(new URL("../../docs/", import.meta.url));
 const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta.url));
 
@@ -84,7 +97,7 @@ const https = httpsEnabled
     }
   : undefined;
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   server: {
     port: 9050,
     https,
@@ -93,13 +106,46 @@ export default defineConfig({
   // Rolldown's build report feeds `@rolldown/perf-kit` and the module-graph
   // commands. It is opt-in: the client sourcemaps land in the served asset
   // directory, so a normal production build must not emit them.
-  build:
-    process.env.MATTRAX_PERF_REPORT === "1"
+  build: {
+    ...(process.env.MATTRAX_PERF_REPORT === "1"
       ? {
           sourcemap: true,
           rolldownOptions: { devtools: { mode: "report" as const } },
         }
-      : {},
+      : {}),
+    // The self-host build owns its layout because `apps/selfhost` stages
+    // `dist/client` and `dist/server` side by side.
+    ...(nodeTarget ? { outDir: "dist/client" } : {}),
+  },
+  ...(nodeTarget
+    ? {
+        // `vite build` builds the client and then the SSR bundle.
+        builder: {},
+        // The Node SSR build must be self-contained: `apps/selfhost` stages
+        // only `dist/`, with no `node_modules`, so every dependency and
+        // workspace package is bundled. `environments.ssr.resolve.noExternal`
+        // is not honoured by this Vite version for the SSR build.
+        ssr: { target: "node" as const, noExternal: true },
+        environments: {
+          ssr: {
+            consumer: "server" as const,
+            build: {
+              outDir: "dist/server",
+              ssr: true,
+              copyPublicDir: false,
+              rollupOptions: {
+                input: {
+                  // The same entry the Worker uses; `node.js` is its HTTP host.
+                  server: path.join(serverDirectory, "index.ts"),
+                  node: path.join(serverDirectory, "node.ts"),
+                },
+                output: { entryFileNames: "[name].js" },
+              },
+            },
+          },
+        },
+      }
+    : {}),
   resolve: {
     tsconfigPaths: true,
   },
@@ -129,7 +175,11 @@ export default defineConfig({
     solid({
       ssr: true,
       start: {
-        externalServer: true,
+        // The Cloudflare plugin builds the server environment; the Node target
+        // builds the same entry itself (see `environments.ssr` above). During
+        // `vp dev` on Node there is no host to build for, so the plugin's own
+        // middlewares serve the app — and run server functions.
+        externalServer: !nodeTarget || command === "build",
         app: "./src/app.tsx",
         document: "./src/Document.tsx",
         middleware: "./src/server/middleware.ts",
@@ -137,7 +187,7 @@ export default defineConfig({
       // The Cloudflare plugin owns the `ssr` environment, including in dev, so
       // its Worker runtime (with `cloudflare:workers` bindings) executes server
       // functions instead of the plugin's Node middleware.
-      serverFunctions: { devMiddleware: false },
+      serverFunctions: nodeTarget ? {} : { devMiddleware: false },
     }),
     // File-based routes. The client never needs the HTTP method handlers; the
     // server environment answers `GET`/`POST`/… for `/api/*`, `/mdm/*` and
@@ -156,16 +206,22 @@ export default defineConfig({
       codeSplitting: true,
     }),
     // Map the Worker to Solid's `ssr` environment so the server render and the
-    // API proxies run in workerd, with service bindings available.
-    cloudflare({
-      viteEnvironment: { name: "ssr" },
-      auxiliaryWorkers: [{ config: apiWorker }],
-      // Apply `public/_redirects` and the non-hashed `public/_headers` rules in
-      // dev so legacy redirects and the docs/icon policy can be exercised
-      // without a production deploy. Hashed build assets (and therefore the
-      // immutable /assets/* rules) only exist after `vp build`.
-      experimental: { headersAndRedirectsDevModeSupport: true },
-    }),
+    // API proxies run in workerd, with service bindings available. The Node
+    // target has no workerd: its SSR bundle is built by the config above.
+    ...(nodeTarget
+      ? []
+      : [
+          cloudflare({
+            viteEnvironment: { name: "ssr" },
+            auxiliaryWorkers: [{ config: apiWorker }],
+            // Apply `public/_redirects` and the non-hashed `public/_headers`
+            // rules in dev so legacy redirects and the docs/icon policy can be
+            // exercised without a production deploy. Hashed build assets (and
+            // therefore the immutable /assets/* rules) only exist after
+            // `vp build`.
+            experimental: { headersAndRedirectsDevModeSupport: true },
+          }),
+        ]),
     tailwindcss(),
     docsRoutesModule(),
     {
@@ -202,4 +258,4 @@ export default defineConfig({
       }),
     },
   ],
-});
+}));

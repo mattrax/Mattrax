@@ -409,6 +409,9 @@ const EnterprisePublicEmailErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  // A deployment with no mail transport, or a broken one, fails here rather
+  // than surfacing as an undeclared handler error (HTTP 500).
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
 ] as const;
 
 const EnterprisePublicNotFoundErrors = [

@@ -1,6 +1,6 @@
-import { env } from "cloudflare:workers";
+import { fetchApi } from "~/server/api";
 
-const handleScimRequest = (event: { request: Request }) => env.API.fetch(event.request);
+const handleScimRequest = (event: { request: Request }) => fetchApi(event.request);
 
 export const GET = handleScimRequest;
 export const POST = handleScimRequest;

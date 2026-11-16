@@ -1,37 +1,33 @@
 # Self-hosting
 
-Mattrax ships as one container. It runs the same two Workers as the hosted
-deployment — the dashboard (`mattrax`) and the API/MDM Worker (`mattrax-api`) —
-inside [workerd](https://github.com/cloudflare/workerd), the runtime Cloudflare
-uses in production. Miniflare supplies the platform services the container has
-no managed equivalent for: R2 object storage (backed by the `/data` volume),
-Hyperdrive (a local MySQL connection) and static asset routing. The container
-provides the cron clock that Cloudflare normally provides.
+Mattrax ships as one Node container. It runs the same two entry points as the
+hosted deployment — the dashboard (Solid SSR) and the API/MDM runtime — in one
+process. `/api`, `/mdm` and `/scim` go to the API; every other request goes to
+the dashboard, which serves the built client assets and renders pages.
 
-Nothing is bundled or transpiled at boot. The image contains the prebuilt
-Worker bundles, and database migrations run automatically before the first
-request is served.
+The Node entry uses Effect for the shared application runtime: the same routes,
+auth, MDM handlers and scheduled jobs as the Cloudflare Worker. Platform
+bindings become Node adapters: MySQL over `mysql2` (no Hyperdrive), object
+storage on the `/data` volume (no R2), and SMTP for email (no Cloudflare Email
+binding). The process owns the cron clock that Cloudflare normally provides.
 
-workerd is started through Miniflare rather than as a `workerd compile` binary.
-A self-contained binary embeds the config and modules, but it cannot provide the
-platform services this application relies on (R2 bindings, Hyperdrive, static
-asset routing, service bindings). It is also no faster in practice: a compiled
-API-only binary reached the first response in ~0.55s, while Miniflare serving
-both Workers and the database readiness check stays under 0.3s.
+Nothing is bundled or transpiled at boot. The image contains the prebuilt API
+and dashboard bundles, and database migrations run automatically before the
+first request is served.
 
 ## Container image
 
 The runtime stage is based on [Distroless](https://github.com/GoogleContainerTools/distroless)
 (Debian 12). It contains the Node runtime, glibc/libstdc++, CA certificates,
-timezone data, the prebuilt Workers and the host process. It deliberately has
+timezone data, the prebuilt API/dashboard bundles and the host process. It deliberately has
 no shell, `npm` or package manager, so `docker exec <container> sh` will fail.
 Use `docker logs` for diagnostics, or run a Node one-liner with
 `docker exec <container> /usr/local/bin/node -e '...'`.
 
 The process runs as the unprivileged `node` user (UID/GID 1000), and `/data` is
-owned by that ID. The native `node` and `workerd` binaries are stripped of debug
-symbols at build time; JavaScript stack traces are unaffected, but native crash
-traces will not contain symbol names.
+owned by that ID. The native `node` binary is stripped of debug symbols at build time;
+JavaScript stack traces are unaffected, but native crash traces will not contain
+symbol names.
 
 The image also contains the built documentation, served at `/docs/` on the same
 origin, and `/sitemap.xml`/`/robots.txt` advertise that origin rather than a
@@ -107,9 +103,7 @@ The container serves plain HTTP because TLS is the proxy's job. Set
 | `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.          |
 | `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                         |
 | `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                      |
-| `R2_BUCKET`                     | no        | Local bucket name. Defaults to `mattrax`.                                   |
 | `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                        |
-| `LOG_LEVEL`                     | no        | Miniflare log level: `debug`, `info`, `warn`, `error`, `none`.              |
 | `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                      |
 | `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                |
 
@@ -163,11 +157,15 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 - **Upgrades.** Rebuild the image and restart. Migrations are applied on start;
   the migration runner records the same `__drizzle_migrations` rows as
   `drizzle-kit`, so switching between the container and `pnpm db:migrate` is safe.
+  Upgrading from a pre-Node image re-homes object storage: the old workerd/Miniflare
+  local bucket is not readable by the Node runtime. Export or restore tenant files
+  and backups through the product before switching, or copy them into
+  `/data/storage` using the same keys.
 - **Backups.** Back up MySQL and the `mattrax-data` volume. The volume holds
   tenant file uploads, configuration profiles, app packages and backups created
   by the scheduled job.
 - **Health.** `GET /api/health` is a liveness check. `GET /api/ready` checks the database,
-  writes/reads/deletes a probe object in the local bucket, and verifies the mailer is
+  writes/reads/deletes a probe object on the `/data` volume, and verifies the mailer is
   configured. It returns 503 when the database, the `/data` volume or a configured mailer
   is unusable. With no mail transport (or `MATTRAX_EMAIL_DISABLED=1`) `checks.mailer` is
   `skipped` and the overall status is `degraded` (HTTP 200) rather than unhealthy.
@@ -175,8 +173,9 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
   volume. Owners can pin, unpin, delete and restore them from Settings → General; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
   [Operations](/admin/operations#restoring-in-place).
-- **Scheduled work.** The API Worker's cron triggers run inside the container:
-  daily maintenance and tenant backups, plus the hourly Entra directory sweep.
+- **Scheduled work.** The Node scheduler runs the same cron expressions as the
+  hosted Worker: daily maintenance and tenant backups, plus the hourly
+  outbox/Entra/certificate sweep.
 - **Scaling.** Run one container per database. Object storage is the local
   filesystem volume, not a shared service.
 
