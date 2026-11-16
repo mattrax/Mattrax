@@ -200,12 +200,10 @@ export const splitWindowsCatalog = (catalogue: unknown): SplitWindowsCatalogue =
     const key = collectionFileKey(collection.id);
     files.set(`${key}.json`, `${JSON.stringify(collection)}\n`);
 
-    const properties = usableProperties(collection).map(
-      (property): [string, string] => [
-        property.address ?? property.key,
-        searchableText(property),
-      ],
-    );
+    const properties = usableProperties(collection).map((property): [string, string] => [
+      property.address ?? property.key,
+      searchableText(property),
+    ]);
 
     search.collections[collection.id] = properties;
     propertyCount += properties.length;

@@ -143,12 +143,7 @@ const resolveChildren = (
   return undefined;
 };
 
-const toProperty = (
-  key: string,
-  schema: AndroidSchema,
-  path: string,
-  ctx: Context,
-): Property => {
+const toProperty = (key: string, schema: AndroidSchema, path: string, ctx: Context): Property => {
   const resolved = schema.$ref ? ctx.schemas[schema.$ref] : schema;
   const combined: AndroidSchema = { ...resolved, ...schema, $ref: undefined };
   const type = mapType(combined);

@@ -157,7 +157,10 @@ export const decodeEntities = (text: string): string =>
     .replaceAll("&amp;", "&");
 
 /** Normalise vendor prose: strip tags, decode entities, collapse space. */
-export const cleanText = (input: string | number | boolean | null | undefined, max = 4000): string => {
+export const cleanText = (
+  input: string | number | boolean | null | undefined,
+  max = 4000,
+): string => {
   if (!input) return "";
 
   let text = decodeEntities(String(input));

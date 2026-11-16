@@ -152,10 +152,8 @@ const toProperty = (setting: WindowsSetting): Property | undefined => {
   };
 };
 
-const categoryName = (
-  categoryById: Map<string, WindowsCategory>,
-  id: string | undefined,
-): string => (id && categoryById.get(id)?.displayName) || "Uncategorised";
+const categoryName = (categoryById: Map<string, WindowsCategory>, id: string | undefined): string =>
+  (id && categoryById.get(id)?.displayName) || "Uncategorised";
 
 const rootName = (categoryById: Map<string, WindowsCategory>, id: string | undefined): string => {
   const category = id ? categoryById.get(id) : undefined;
