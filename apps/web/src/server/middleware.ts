@@ -5,6 +5,7 @@ import { Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
+import { isCacheablePublicPage } from "~/lib/public-routes";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { setPostHogConfig } from "~/lib/posthog-config-store";
 import {
@@ -13,7 +14,7 @@ import {
   ssrClearCookie,
   ssrRevisionClearCookie,
 } from "./preload";
-import { isBootstrapPath } from "./security";
+import { isBootstrapPath, normalisePath } from "./security";
 import { verifySsrRevision, verifySsrToken } from "./ssr-token";
 
 const api = createAPIHandler(routes);
@@ -144,12 +145,23 @@ const middleware: StartMiddleware = async (event, next) => {
 
   if (!bindings.AUTH_SECRET) reportMissingAuthSecret();
 
-  const outcome = await preloadSession(event.request, {
-    secret: bindings.AUTH_SECRET,
-    verifyToken: verifySsrToken,
-    verifyRevision: verifySsrRevision,
-    fetchBootstrap,
-  });
+  // Landing and legal pages have a signed-out, cacheable shell. Skipping the
+  // preload makes them zero service-binding calls and keeps personal data out
+  // of the CDN copy; the client loads the session after hydration.
+  const requestPath = normalisePath(new URL(event.request.url).pathname);
+
+  const publicPage =
+    (event.request.method === "GET" || event.request.method === "HEAD") &&
+    isCacheablePublicPage(requestPath);
+
+  const outcome = publicPage
+    ? {}
+    : await preloadSession(event.request, {
+        secret: bindings.AUTH_SECRET,
+        verifyToken: verifySsrToken,
+        verifyRevision: verifySsrRevision,
+        fetchBootstrap,
+      });
 
   if (outcome.ssrTokenRejected) reportSsrTokenRejected();
 

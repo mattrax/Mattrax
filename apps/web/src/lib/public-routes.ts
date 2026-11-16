@@ -8,6 +8,23 @@
 
 export const DOCS_PATH_PREFIX = "/docs/";
 
+/**
+ * Public, signed-out HTML surfaces whose shell contains no per-user state.
+ *
+ * These pages render without a session preload, so their HTML is safe to keep
+ * in the shared CDN cache. The client loads the session after hydration when
+ * the visitor is signed in. Dashboard, auth and tenant routes must never be
+ * added here.
+ */
+export const CACHEABLE_PUBLIC_PATHS = ["/", "/privacy", "/terms"] as const;
+
+/** True when a pathname may be served from a shared CDN cache. */
+export function isCacheablePublicPage(pathname: string): boolean {
+  const normalised = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+
+  return CACHEABLE_PUBLIC_PATHS.some((path) => path === normalised);
+}
+
 export type SitemapChangefreq = "daily" | "weekly" | "monthly" | "yearly";
 
 export type SitemapEntry = {

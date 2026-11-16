@@ -5,6 +5,8 @@
  * without a Worker runtime. `index.ts` applies them at the edge.
  */
 
+import { isCacheablePublicPage } from "../lib/public-routes";
+
 /**
  * Paths owned by another layer. The public Worker proxies these to the API
  * Worker (`/api`), the MDM/SCIM protocol handlers, the MCP endpoint and
@@ -107,11 +109,7 @@ export function guardPath(pathname: string): PathDecision {
 
   if (BLOCKED_EXACT_PATHS.has(lower)) return "not-found";
 
-  if (
-    BLOCKED_PATH_PREFIXES.some(
-      (prefix) => lower === prefix || lower.startsWith(`${prefix}/`),
-    )
-  )
+  if (BLOCKED_PATH_PREFIXES.some((prefix) => lower === prefix || lower.startsWith(`${prefix}/`)))
     return "not-found";
 
   return "allow";
@@ -203,6 +201,19 @@ export const PERMISSIONS_POLICY =
 
 export const HSTS_POLICY = "max-age=31536000; includeSubDomains";
 
+/**
+ * Redirect a `www.` host to the canonical apex. Cloudflare's `_redirects`
+ * cannot match a hostname, so the Worker owns this before any page render.
+ */
+export function canonicalHostUrl(url: URL): string | undefined {
+  if (!url.hostname.startsWith("www.")) return undefined;
+
+  const target = new URL(url.toString());
+  target.hostname = url.hostname.slice(4);
+
+  return target.toString();
+}
+
 /** Join `Vary` values, keeping the first spelling of each field name. */
 export function mergeVary(existing: string | null, additions: string): string {
   const values = new Map<string, string>();
@@ -225,6 +236,10 @@ export interface SecurityHeaderContext {
   url: string;
   /** The response's content type, used to scope HTML-only headers. */
   contentType: string;
+  /** Response status; only a successful public page may enter the CDN cache. */
+  status?: number;
+  /** A response that sets cookies is personal even on a public path. */
+  hasSetCookie?: boolean;
 }
 
 /** The header set produced for one response; HTML-only entries are optional. */
@@ -235,6 +250,9 @@ export interface SecurityHeaderSet {
   "cross-origin-opener-policy": string;
   "cross-origin-resource-policy"?: string;
   "permissions-policy": string;
+  "x-permitted-cross-domain-policies": string;
+  "x-dns-prefetch-control": string;
+  "origin-agent-cluster": string;
   "strict-transport-security"?: string;
   "content-security-policy"?: string;
   "content-security-policy-report-only"?: string;
@@ -258,6 +276,9 @@ export function securityHeaders(context: SecurityHeaderContext): SecurityHeaderS
     "referrer-policy": "strict-origin-when-cross-origin",
     "cross-origin-opener-policy": "same-origin",
     "permissions-policy": PERMISSIONS_POLICY,
+    "x-permitted-cross-domain-policies": "none",
+    "x-dns-prefetch-control": "off",
+    "origin-agent-cluster": "?1",
   };
 
   if (new URL(context.url).protocol === "https:") {
@@ -271,9 +292,23 @@ export function securityHeaders(context: SecurityHeaderContext): SecurityHeaderS
     // intact. API/JSON responses keep their own policy so a caller can still
     // read them cross-origin where the owning layer allows it.
     headers["cross-origin-resource-policy"] = "same-origin";
-    headers["cache-control"] = "private, no-store";
-    headers["cdn-cache-control"] = "no-store";
-    headers.vary = "Cookie";
+
+    const publicPage = isCacheablePublicPage(new URL(context.url).pathname);
+
+    if (publicPage && (context.status ?? 200) === 200 && !context.hasSetCookie) {
+      // The shell for these pages is signed out and contains no cookies or
+      // personal state. Browsers revalidate, while the edge keeps a short
+      // copy and serves stale HTML while it refreshes in the background.
+      headers["cache-control"] = "public, max-age=0, s-maxage=300, stale-while-revalidate=86400";
+      headers["cdn-cache-control"] = "public, max-age=300, stale-while-revalidate=86400";
+      headers.vary = "Accept-Encoding";
+    } else {
+      // Authenticated shells contain the signed-in snapshot and must never
+      // enter a shared cache.
+      headers["cache-control"] = "private, no-store";
+      headers["cdn-cache-control"] = "no-store";
+      headers.vary = "Cookie";
+    }
   }
 
   return headers;
@@ -286,6 +321,8 @@ export function withSecurityHeaders(request: Request, response: Response): Respo
   const built = securityHeaders({
     url: request.url,
     contentType: headers.get("content-type") ?? "",
+    status: response.status,
+    hasSetCookie: headers.has("set-cookie"),
   });
 
   const vary = built.vary;

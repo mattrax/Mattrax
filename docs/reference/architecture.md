@@ -32,6 +32,22 @@ Browser ──► Mattrax web Worker (public)
 The API Worker has no public route. Only the web Worker is exposed, which gives one origin
 for cookies, CSP and WebAuthn.
 
+- The web Worker runs globally (`placement.mode = off`) so assets and HTML render at the
+  visitor's nearest edge. The API Worker is pinned to `aws:us-east-1`, close to the hosted
+  MySQL origin.
+- SSR normally makes **zero** service-binding calls: the API-signed five-minute
+  `__Host-mattrax_ssr` token carries the user and per-tenant permissions, and the edge
+  verifies it with `AUTH_SECRET`. A cold or stale token makes exactly **one**
+  `GET /api/v1/bootstrap` call, which returns the session, `/me` shell, token and revision
+  together. Avoid adding another SSR round trip around bootstrap.
+- Public, signed-out shells (`/`, `/privacy`, `/terms`) are rendered without a session
+  preload and cached per colo for five minutes (`stale-while-revalidate` for a day). The
+  client loads the session after hydration. Authenticated HTML stays `private, no-store`
+  because it embeds the signed-in snapshot.
+- The docs are static assets with a one-hour edge cache; hashed assets are immutable.
+  `_headers` supplies the same hardening for asset responses that the Worker applies to
+  HTML, and `_redirects` canonicalises legacy paths and `.html` spellings.
+
 ### Self-hosted runtime
 
 The container uses the same application code with Node entry points instead of Workers:

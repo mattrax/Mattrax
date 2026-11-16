@@ -5,8 +5,15 @@ import { handleRequest } from "virtual:solid-ssr-handler";
 import routes from "virtual:file-routes";
 import docsRoutes from "virtual:docs-routes";
 import { useWorkerBindings } from "./bindings";
-import { compilePagePatterns, guardPath, isKnownPagePath, withSecurityHeaders } from "./security";
+import {
+  canonicalHostUrl,
+  compilePagePatterns,
+  guardPath,
+  isKnownPagePath,
+  withSecurityHeaders,
+} from "./security";
 import { createSeoHandler } from "./seo";
+import { isCacheablePublicPage } from "~/lib/public-routes";
 
 const seoResponse = createSeoHandler(docsRoutes);
 
@@ -54,10 +61,14 @@ const asNotFound = (response: Response): Response =>
  * know which runtime it is on.
  */
 export default {
-  async fetch(request: Request, env?: Env): Promise<Response> {
+  async fetch(request: Request, env?: Env, ctx?: ExecutionContext): Promise<Response> {
     if (env) useWorkerBindings(env);
 
     const url = new URL(request.url);
+
+    const canonical = canonicalHostUrl(url);
+
+    if (canonical) return withSecurityHeaders(request, Response.redirect(canonical, 308));
 
     if (guardPath(url.pathname) === "not-found") return withSecurityHeaders(request, notFound());
 
@@ -66,6 +77,20 @@ export default {
     const seo = seoResponse(request);
 
     if (seo) return withSecurityHeaders(request, seo);
+
+    // Public shells are identical for every visitor, so each colo keeps a
+    // short copy. This is a per-colo edge cache, not a shared origin cache:
+    // authenticated dashboard HTML never reaches this branch.
+    const edgeCache =
+      typeof caches !== "undefined" && isCacheablePublicPage(url.pathname)
+        ? await caches.open("mattrax-public").catch(() => undefined)
+        : undefined;
+
+    if (edgeCache) {
+      const cached = await edgeCache.match(request);
+
+      if (cached) return withSecurityHeaders(request, cached);
+    }
 
     const response = await handleRequest(request);
 
@@ -77,6 +102,16 @@ export default {
         ? asNotFound(response)
         : response;
 
-    return withSecurityHeaders(request, finalResponse);
+    const hardened = withSecurityHeaders(request, finalResponse);
+
+    if (
+      edgeCache &&
+      finalResponse.status === 200 &&
+      !hardened.headers.has("set-cookie") &&
+      (request.method === "GET" || request.method === "HEAD")
+    )
+      ctx?.waitUntil(edgeCache.put(request, hardened.clone()).catch(() => undefined));
+
+    return hardened;
   },
 } satisfies ExportedHandler<Env>;

@@ -24,6 +24,9 @@ test.describe("worker security and caching", () => {
     expect(headers["cross-origin-opener-policy"]).toBe("same-origin");
     expect(headers["cross-origin-resource-policy"]).toBe("same-origin");
     expect(headers["permissions-policy"]).toContain("publickey-credentials-get=(self)");
+    expect(headers["x-permitted-cross-domain-policies"]).toBe("none");
+    expect(headers["x-dns-prefetch-control"]).toBe("off");
+    expect(headers["origin-agent-cluster"]).toBe("?1");
 
     const policy = headers["content-security-policy"];
 
@@ -39,6 +42,24 @@ test.describe("worker security and caching", () => {
     expect(headers["cache-control"]).toBe("private, no-store");
     expect(headers["cdn-cache-control"]).toBe("no-store");
     expect(headers.vary.toLowerCase()).toContain("cookie");
+  });
+
+  test("the signed-out landing shell is cached at the edge without a session", async ({
+    request,
+  }) => {
+    for (const pathname of ["/", "/privacy", "/terms"]) {
+      const response = await request.get(pathname, { headers: { accept: "text/html" } });
+
+      expect(response.status(), pathname).toBe(200);
+      expect(response.headers()["cache-control"], pathname).toBe(
+        "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+      );
+      expect(response.headers()["cdn-cache-control"], pathname).toBe(
+        "public, max-age=300, stale-while-revalidate=86400",
+      );
+      expect((response.headers().vary ?? "").toLowerCase(), pathname).toContain("accept-encoding");
+      expect(await response.text(), pathname).not.toContain("__MATTRAX_SESSION__");
+    }
   });
 
   test("API responses keep their own caching and gain no CSP", async ({ request }) => {
@@ -114,6 +135,9 @@ test.describe("worker security and caching", () => {
 
     expect(docs.status()).toBe(200);
     expect(docs.headers()["cache-control"]).toBe("public, max-age=0, must-revalidate");
+    expect(docs.headers()["cdn-cache-control"]).toBe(
+      "public, max-age=3600, stale-while-revalidate=86400",
+    );
     expect(docs.headers()["content-security-policy"]).toContain("'unsafe-inline'");
 
     const icon = await request.get("/favicon.ico");

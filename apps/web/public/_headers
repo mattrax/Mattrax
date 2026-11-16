@@ -6,6 +6,19 @@
 # a narrower rule that changes `Cache-Control` detaches the broader value with
 # `! Cache-Control` instead of joining two conflicting directives.
 
+# Every asset response gets the same browser hardening as Worker HTML. Rules
+# are additive, so narrower blocks below only add cache/CSP policy.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), publickey-credentials-get=(self)
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Permitted-Cross-Domain-Policies: none
+  X-DNS-Prefetch-Control: off
+  Origin-Agent-Cluster: ?1
+
 # Vite emits content-hashed JS/CSS under /assets/. A hash change is a new URL,
 # so these can be cached forever.
 /assets/*.js
@@ -27,18 +40,14 @@
   Cache-Control: public, max-age=31536000, immutable
   X-Content-Type-Options: nosniff
 
-# Documentation. The HTML shell revalidates on every visit so a deploy is
-# picked up immediately, and carries the docs' own CSP: Rspress ships inline
-# bootstrap scripts and styles, so both need 'unsafe-inline'. The docs are a
-# static reading surface; framing, plugins and form submissions stay locked
-# down.
+# Documentation. Browsers revalidate so a deploy is picked up immediately, but
+# the edge keeps a short copy and serves stale HTML while it refreshes. The
+# docs carry their own CSP: Rspress ships inline bootstrap scripts and styles,
+# so both need 'unsafe-inline'. Framing, plugins and forms stay locked down by
+# the global rule.
 /docs/*
   Cache-Control: public, max-age=0, must-revalidate
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-  Referrer-Policy: strict-origin-when-cross-origin
-  Cross-Origin-Opener-Policy: same-origin
-  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  CDN-Cache-Control: public, max-age=3600, stale-while-revalidate=86400
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; media-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'
 
 # Rspress emits content-hashed bundles under /docs/static/. This rule follows
