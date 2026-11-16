@@ -2177,6 +2177,45 @@ export const ApplicationSource = Schema.Literals(["manifest", "store", "upload"]
 
 export type ApplicationSource = typeof ApplicationSource.Type;
 
+export const ApplicationInstallerRow = Schema.Struct({
+  id: Schema.String,
+  platform: ApplicationPlatform,
+  source: ApplicationSource,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.Number),
+  sha256: Schema.optional(NullableString),
+  /** Minimum device OS version this installer supports. */
+  minOsVersion: Schema.optional(NullableString),
+  /** Capability the device must report, e.g. `vpp` or `msi`. */
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.Number,
+  createdAt: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String),
+});
+
+export type ApplicationInstallerRow = typeof ApplicationInstallerRow.Type;
+
+export const ApplicationInstallerInput = Schema.Struct({
+  /** Present when updating an existing installer. */
+  id: Schema.optional(Schema.String),
+  platform: ApplicationPlatform,
+  source: Schema.optional(ApplicationSource),
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  minOsVersion: Schema.optional(NullableString),
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.optional(Schema.Number),
+});
+
+export type ApplicationInstallerInput = typeof ApplicationInstallerInput.Type;
+
 export const ApplicationRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -2191,6 +2230,7 @@ export const ApplicationRow = Schema.Struct({
   size: Schema.optional(Schema.Number),
   sha256: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  installers: Schema.Array(ApplicationInstallerRow),
   groupsCount: Schema.optional(Schema.Number),
   devicesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
@@ -2296,6 +2336,25 @@ export const TenantExportPolicy = Schema.Struct({
 
 export type TenantExportPolicy = typeof TenantExportPolicy.Type;
 
+export const TenantExportInstaller = Schema.Struct({
+  platform: ApplicationPlatform,
+  source: ApplicationSource,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.NullOr(Schema.Number)),
+  sha256: Schema.optional(NullableString),
+  r2Key: Schema.optional(NullableString),
+  minOsVersion: Schema.optional(NullableString),
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.optional(Schema.Number),
+});
+
+export type TenantExportInstaller = typeof TenantExportInstaller.Type;
+
 export const TenantExportApplication = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
@@ -2312,6 +2371,8 @@ export const TenantExportApplication = Schema.Struct({
   /** Hint only. Object bytes are never part of a bundle. */
   r2Key: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Multi-installer catalogues; older bundles omit this and use the flat fields. */
+  installers: Schema.optional(Schema.Array(TenantExportInstaller)),
   groupKeys: Schema.Array(Schema.String),
 });
 
@@ -2523,13 +2584,15 @@ export type TenantImportResponse = typeof TenantImportResponse.Type;
 
 export const CreateApplicationRequest = Schema.Struct({
   name: Schema.String,
-  platform: ApplicationPlatform,
+  /** Legacy single-installer fields; omit when `installers` is supplied. */
+  platform: Schema.optional(ApplicationPlatform),
   bundleId: Schema.optional(NullableString),
   version: Schema.optional(NullableString),
   source: Schema.optional(ApplicationSource),
   manifestUrl: Schema.optional(NullableString),
   storeId: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
 });
 
 export const PatchApplicationRequest = Schema.Struct({
@@ -2540,6 +2603,8 @@ export const PatchApplicationRequest = Schema.Struct({
   manifestUrl: Schema.optional(NullableString),
   storeId: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Replace the installer set. Omit to keep it unchanged. */
+  installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
 });
 
 export const PatchApplicationAssignmentsRequest = Schema.Struct({
@@ -5345,6 +5410,38 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       payload: UploadPolicyApplicationRequest,
       success: PolicyApplicationObject,
     }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "uploadApplicationInstaller",
+      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/upload",
+      {
+        error: EnterpriseApplicationUploadErrors,
+        params: Schema.Struct({
+          tenantId: Schema.String,
+          id: Schema.String,
+          installerId: Schema.String,
+        }),
+        payload: UploadPolicyApplicationRequest,
+        success: PolicyApplicationObject,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "downloadApplicationInstaller",
+      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/download/:sha256",
+      {
+        error: EnterpriseApplicationDownloadErrors,
+        params: Schema.Struct({
+          tenantId: Schema.String,
+          id: Schema.String,
+          installerId: Schema.String,
+          sha256: Schema.String,
+        }),
+        success: DownloadPolicyApplicationResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get(

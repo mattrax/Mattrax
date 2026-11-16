@@ -21,6 +21,7 @@ import {
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
 import { shouldApplyReportedName } from "@mattrax/enterprise-domain";
+import { selectInstaller } from "./applicationInstallers.ts";
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
@@ -1240,25 +1241,59 @@ const assignedAndroidApplications = (
 
     if (ids.length === 0) return [];
 
+    const [device] = yield* db
+      .select({
+        proto: schema.device.proto,
+        osVersion: schema.device.osVersion,
+        capabilities: schema.device.capabilities,
+      })
+      .from(schema.device)
+      .where(eq(schema.device.id, input.deviceId))
+      .limit(1);
+
     const applications = yield* db
       .select({
         id: schema.application.id,
         bundleId: schema.application.bundleId,
+        platform: schema.application.platform,
       })
       .from(schema.application)
       .where(
         and(
           eq(schema.application.organizationId, input.organizationId),
-          eq(schema.application.platform, "android"),
           inArray(schema.application.id, ids),
         ),
       );
 
-    return applications.flatMap((application) =>
-      application.bundleId
-        ? [{ applicationId: application.id, packageName: application.bundleId }]
-        : [],
-    );
+    const installers = yield* db
+      .select()
+      .from(schema.applicationInstaller)
+      .where(
+        and(
+          eq(schema.applicationInstaller.organizationId, input.organizationId),
+          eq(schema.applicationInstaller.platform, "android"),
+          inArray(schema.applicationInstaller.applicationId, ids),
+        ),
+      );
+
+    const capabilities = Array.isArray(device?.capabilities)
+      ? device.capabilities.filter((value): value is string => typeof value === "string")
+      : undefined;
+
+    return applications.flatMap((application) => {
+      const installer = selectInstaller(
+        installers.filter((item) => item.applicationId === application.id),
+        { proto: device?.proto ?? "android", osVersion: device?.osVersion, capabilities },
+      );
+
+      // A legacy row without installer rows is only an Android app when its
+      // own platform says so; otherwise it belongs to another platform.
+      if (!installer && application.platform !== "android") return [];
+
+      const packageName = installer?.bundleId ?? application.bundleId;
+
+      return packageName ? [{ applicationId: application.id, packageName }] : [];
+    });
   });
 
 const syncAndroidPolicyForDevice = (input: {

@@ -92,6 +92,22 @@ type ParsedBundle = {
     sha256: string | null;
     r2Key: string | null;
     notes: string | null;
+    installers?: ReadonlyArray<{
+      platform: "apple" | "win" | "android";
+      source: "manifest" | "store" | "upload";
+      bundleId: string | null;
+      version: string | null;
+      manifestUrl: string | null;
+      storeId: string | null;
+      fileName: string | null;
+      contentType: string | null;
+      size: number | null;
+      sha256: string | null;
+      r2Key: string | null;
+      minOsVersion: string | null;
+      requiredCapability: string | null;
+      priority: number;
+    }>;
     groupKeys: ReadonlyArray<string>;
   }>;
   deviceAssignments: ReadonlyArray<{
@@ -434,6 +450,22 @@ export const parseTenantRestoreBundle = (
         sha256: text(application.sha256, 255),
         r2Key: application.r2Key ?? null,
         notes: text(application.notes, 10_000),
+        installers: application.installers?.map((installer) => ({
+          platform: installer.platform,
+          source: installer.source,
+          bundleId: text(installer.bundleId, 255),
+          version: text(installer.version, 255),
+          manifestUrl: installer.manifestUrl ?? null,
+          storeId: text(installer.storeId, 255),
+          fileName: text(installer.fileName, 255),
+          contentType: text(installer.contentType, 255),
+          size: installer.size ?? null,
+          sha256: text(installer.sha256, 255),
+          r2Key: installer.r2Key ?? null,
+          minOsVersion: text(installer.minOsVersion, 255),
+          requiredCapability: text(installer.requiredCapability, 255),
+          priority: installer.priority ?? 0,
+        })),
         groupKeys: application.groupKeys ?? [],
       })),
       preRegistrations: preRegistrations.map((row) => ({
@@ -718,7 +750,54 @@ const applyBundle = (
             updatedAt: timestamp,
           });
 
-          if (application.source === "upload" && !application.r2Key) applicationsWithoutFiles++;
+          const installerInputs = application.installers?.length
+            ? application.installers
+            : [
+                {
+                  platform: application.platform,
+                  source: application.source,
+                  bundleId: application.bundleId,
+                  version: application.version,
+                  manifestUrl: application.manifestUrl,
+                  storeId: application.storeId,
+                  fileName: application.fileName,
+                  contentType: application.contentType,
+                  size: application.size,
+                  sha256: application.sha256,
+                  r2Key: application.r2Key,
+                  minOsVersion: null,
+                  requiredCapability: null,
+                  priority: 0,
+                },
+              ];
+
+          for (const installer of installerInputs)
+            yield* tx.insert(schema.applicationInstaller).values({
+              id: newId(),
+              organizationId: organization.id,
+              applicationId,
+              platform: installer.platform,
+              source: installer.source,
+              bundleId: installer.bundleId ?? null,
+              version: installer.version ?? null,
+              manifestUrl: installer.manifestUrl ?? null,
+              storeId: installer.storeId ?? null,
+              fileName: installer.fileName ?? null,
+              contentType: installer.contentType ?? null,
+              size: installer.size ?? null,
+              sha256: installer.sha256 ?? null,
+              r2Key: installer.r2Key ?? null,
+              minOsVersion: installer.minOsVersion ?? null,
+              requiredCapability: installer.requiredCapability ?? null,
+              priority: installer.priority ?? 0,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+
+          if (
+            installerInputs.some((installer) => installer.source === "upload" && !installer.r2Key)
+          )
+            applicationsWithoutFiles++;
         }
 
         const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
@@ -741,11 +820,13 @@ const applyBundle = (
         // device has since been deleted is skipped and reported rather than
         // failing the whole restore.
         let skippedDeviceAssignments = 0;
+
         const devicePolicyValues: Array<{
           deviceId: string;
           policyId: string;
           mode: "include" | "exclude";
         }> = [];
+
         const applicationDeviceValues: Array<{ deviceId: string; applicationId: string }> = [];
 
         for (const assignment of bundle.deviceAssignments) {

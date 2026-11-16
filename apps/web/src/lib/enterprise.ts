@@ -550,6 +550,19 @@ const enterpriseQueryOptions = <
     enabled: !isServer && (options.enabled ?? true),
   });
 
+export type ApplicationInstallerPayload = {
+  id?: string;
+  platform: "apple" | "win" | "android";
+  source?: "manifest" | "store" | "upload";
+  bundleId?: string | null;
+  version?: string | null;
+  manifestUrl?: string | null;
+  storeId?: string | null;
+  minOsVersion?: string | null;
+  requiredCapability?: string | null;
+  priority?: number;
+};
+
 export const enterprise = {
   me: () => accountEndpoint((api) => api.me({})),
   getEnrollment: (id: RouteParam, code?: string) =>
@@ -1333,13 +1346,14 @@ export const enterprise = {
     tenantId: RouteParam,
     payload: {
       name: string;
-      platform: "apple" | "win" | "android";
+      platform?: "apple" | "win" | "android";
       bundleId?: string | null;
       version?: string | null;
       source?: "manifest" | "store" | "upload";
       manifestUrl?: string | null;
       storeId?: string | null;
       notes?: string | null;
+      installers?: ApplicationInstallerPayload[];
     },
   ) =>
     endpoint((api) =>
@@ -1359,6 +1373,7 @@ export const enterprise = {
       manifestUrl?: string | null;
       storeId?: string | null;
       notes?: string | null;
+      installers?: ApplicationInstallerPayload[];
     },
   ) =>
     endpoint((api) =>
@@ -1403,6 +1418,38 @@ export const enterprise = {
       api.uploadApplication({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload,
+      }),
+    ),
+  uploadApplicationInstaller: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    installerId: string,
+    payload: { fileName: string; contentType?: string; content: string },
+  ) =>
+    endpoint((api) =>
+      api.uploadApplicationInstaller({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          installerId,
+        },
+        payload,
+      }),
+    ),
+  downloadApplicationInstaller: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    installerId: string,
+    sha256: string,
+  ) =>
+    endpoint((api) =>
+      api.downloadApplicationInstaller({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          installerId,
+          sha256: required(sha256, "sha256"),
+        },
       }),
     ),
   downloadApplication: (tenantId: RouteParam, id: RouteParam, sha256: string) =>

@@ -32,6 +32,35 @@ import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
+const selectClass =
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+
+type InstallerDraft = {
+  id?: string;
+  platform: "apple" | "win" | "android";
+  source: "manifest" | "store" | "upload";
+  bundleId: string;
+  version: string;
+  manifestUrl: string;
+  storeId: string;
+  minOsVersion: string;
+  requiredCapability: string;
+  priority: string;
+};
+
+const installerDraft = (value: ApplicationNode["installers"][number]): InstallerDraft => ({
+  id: value.id,
+  platform: value.platform,
+  source: value.source,
+  bundleId: value.bundleId ?? "",
+  version: value.version ?? "",
+  manifestUrl: value.manifestUrl ?? "",
+  storeId: value.storeId ?? "",
+  minOsVersion: value.minOsVersion ?? "",
+  requiredCapability: value.requiredCapability ?? "",
+  priority: String(value.priority),
+});
+
 const sourceLabel = (source: ApplicationNode["source"]) =>
   Match.value(source).pipe(
     Match.when("manifest", () => "Manifest URL"),
@@ -120,8 +149,7 @@ export default function ApplicationDetailPage() {
   const [name, setName] = createSignal("");
   const [bundleId, setBundleId] = createSignal("");
   const [version, setVersion] = createSignal("");
-  const [manifestUrl, setManifestUrl] = createSignal("");
-  const [storeId, setStoreId] = createSignal("");
+  const [installers, setInstallers] = createSignal<InstallerDraft[]>([]);
   const [notes, setNotes] = createSignal("");
   const [groupIds, setGroupIds] = createSignal<Set<string>>(new Set());
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
@@ -136,8 +164,7 @@ export default function ApplicationDetailPage() {
       setName(value.name);
       setBundleId(value.bundleId ?? "");
       setVersion(value.version ?? "");
-      setManifestUrl(value.manifestUrl ?? "");
-      setStoreId(value.storeId ?? "");
+      setInstallers(value.installers.map(installerDraft));
       setNotes(value.notes ?? "");
       setGroupIds(new Set(value.groups.map((group) => group.id)));
       setDeviceIds(new Set(value.devices.map((device) => device.id)));
@@ -155,11 +182,19 @@ export default function ApplicationDetailPage() {
     mutationFn: async () => {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
         name: name(),
-        bundleId: bundleId() || null,
-        version: version() || null,
-        manifestUrl: manifestUrl() || null,
-        storeId: storeId() || null,
         notes: notes() || null,
+        installers: installers().map((installer) => ({
+          id: installer.id,
+          platform: installer.platform,
+          source: installer.source,
+          bundleId: installer.bundleId || null,
+          version: installer.version || null,
+          manifestUrl: installer.manifestUrl || null,
+          storeId: installer.storeId || null,
+          minOsVersion: installer.minOsVersion || null,
+          requiredCapability: installer.requiredCapability || null,
+          priority: Number(installer.priority) || 0,
+        })),
       });
       const oldGroups = row()?.groups.map((group) => group.id) ?? [];
       const oldDevices = row()?.devices.map((device) => device.id) ?? [];
@@ -229,6 +264,27 @@ export default function ApplicationDetailPage() {
     },
   }));
 
+  const uploadInstaller = useMutation(() => ({
+    mutationFn: async (installerId: string) => {
+      const file = await selectFile("*/*");
+
+      return enterprise.uploadApplicationInstaller(
+        params.tenantId,
+        params.applicationId,
+        installerId,
+        {
+          fileName: file.name,
+          contentType: file.type || undefined,
+          content: arrayBufferToBase64(await file.arrayBuffer()),
+        },
+      );
+    },
+    onSuccess: async (result) => {
+      setMessage(`Uploaded ${result.fileName} (${result.size} bytes).`);
+      await invalidate();
+    },
+  }));
+
   const [confirmDelete, setConfirmDelete] = createSignal(false);
 
   const remove = useMutation(() => ({
@@ -248,29 +304,21 @@ export default function ApplicationDetailPage() {
   };
 
   const platform = () => row()?.platform;
-  const canInstall = createMemo(() => platform() !== undefined);
+  const canInstall = createMemo(() => installers().length > 0);
   const assignedCount = () => groupIds().size + deviceIds().size;
 
   /** Why the install button is disabled, or undefined when it can be pressed. */
   const installDisabledReason = () => {
-    if (!canInstall()) return undefined;
+    if (!canInstall()) return "Add at least one installer before installing.";
 
     if (assignedCount() === 0) return "Assign this application to a device or group first.";
 
-    if (platform() === "win" && !row()?.manifestUrl)
-      return "Add an MSI installer URL before installing on Windows devices.";
-
-    if (platform() === "win" && !row()?.bundleId)
-      return "Add the MSI ProductCode before installing on Windows devices.";
-
-    if (platform() === "android" && !row()?.bundleId)
-      return "Add the Managed Google Play package name before installing on Android devices.";
-
-    if (platform() === "apple" && row()?.source === "upload" && !row()?.sha256)
-      return "Upload a .pkg before installing on Apple devices.";
-
     return undefined;
   };
+
+  const storeId = () =>
+    installers().find((installer) => installer.platform === "apple" && installer.storeId)
+      ?.storeId ?? "";
 
   const vppAsset = createMemo(() =>
     (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
@@ -429,35 +477,258 @@ export default function ApplicationDetailPage() {
                       onInput={(e) => setName(e.currentTarget.value)}
                     />
                   </Field>
-                  <div class="grid gap-4 sm:grid-cols-2">
-                    <Field label={identityFieldLabel(application().platform)}>
-                      <Input
-                        disabled={!writable()}
-                        value={bundleId()}
-                        onInput={(e) => setBundleId(e.currentTarget.value)}
-                      />
-                    </Field>
-                    <Field label="Version">
-                      <Input
-                        disabled={!writable()}
-                        value={version()}
-                        onInput={(e) => setVersion(e.currentTarget.value)}
-                      />
-                    </Field>
-                    <Field label={application().platform === "win" ? "MSI URL" : "Manifest URL"}>
-                      <Input
-                        disabled={!writable()}
-                        value={manifestUrl()}
-                        onInput={(e) => setManifestUrl(e.currentTarget.value)}
-                      />
-                    </Field>
-                    <Field label="App Store ID">
-                      <Input
-                        disabled={!writable()}
-                        value={storeId()}
-                        onInput={(e) => setStoreId(e.currentTarget.value)}
-                      />
-                    </Field>
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                        Installers
+                      </p>
+                      <Show when={writable()}>
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            setInstallers((current) => [
+                              ...current,
+                              {
+                                platform: "apple",
+                                source: "manifest",
+                                bundleId: bundleId(),
+                                version: version(),
+                                manifestUrl: "",
+                                storeId: "",
+                                minOsVersion: "",
+                                requiredCapability: "",
+                                priority: "0",
+                              },
+                            ])
+                          }
+                        >
+                          Add installer
+                        </Button>
+                      </Show>
+                    </div>
+                    <Show
+                      when={installers().length > 0}
+                      fallback={
+                        <p class="text-[12px] text-muted-foreground">
+                          This application has no installers.
+                        </p>
+                      }
+                    >
+                      <For each={installers()}>
+                        {(installer, index) => (
+                          <div class="space-y-3 rounded-lg border border-border bg-surface p-3">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                                Installer {index() + 1}
+                              </span>
+                              <Show when={writable()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setInstallers((current) =>
+                                      current.filter((_, item) => item !== index()),
+                                    )
+                                  }
+                                >
+                                  Remove
+                                </Button>
+                              </Show>
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                              <Field label="Platform">
+                                <select
+                                  class={selectClass}
+                                  disabled={!writable()}
+                                  value={installer.platform}
+                                  onChange={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? {
+                                              ...item,
+                                              // SAFETY: the <select> only offers the three
+                                              // InstallerDraft platform values.
+                                              platform: event.currentTarget
+                                                .value as InstallerDraft["platform"],
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="apple">Apple</option>
+                                  <option value="win">Windows</option>
+                                  <option value="android">Android</option>
+                                </select>
+                              </Field>
+                              <Field label="Source">
+                                <select
+                                  class={selectClass}
+                                  disabled={!writable()}
+                                  value={installer.source}
+                                  onChange={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? {
+                                              ...item,
+                                              // SAFETY: the <select> only offers the three
+                                              // InstallerDraft source values.
+                                              source: event.currentTarget
+                                                .value as InstallerDraft["source"],
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="manifest">Manifest / native</option>
+                                  <option value="store">Store</option>
+                                  <option value="upload">Uploaded file</option>
+                                </select>
+                              </Field>
+                              <Field label={identityFieldLabel(installer.platform)}>
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.bundleId}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, bundleId: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Version">
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.version}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, version: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Manifest / installer URL">
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.manifestUrl}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, manifestUrl: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Store ID">
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.storeId}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, storeId: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Minimum OS" hint="Optional, e.g. 14.2">
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.minOsVersion}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, minOsVersion: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Required capability" hint="Optional, e.g. vpp">
+                                <Input
+                                  disabled={!writable()}
+                                  value={installer.requiredCapability}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? {
+                                              ...item,
+                                              requiredCapability: event.currentTarget.value,
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                              <Field label="Priority">
+                                <Input
+                                  type="number"
+                                  disabled={!writable()}
+                                  value={installer.priority}
+                                  onInput={(event) =>
+                                    setInstallers((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index()
+                                          ? { ...item, priority: event.currentTarget.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </Field>
+                            </div>
+                            <Show when={installer.source === "upload"}>
+                              <div class="flex flex-wrap items-center gap-2">
+                                <Show when={writable()}>
+                                  <Button
+                                    variant="outline"
+                                    disabled={!installer.id || uploadInstaller.isPending}
+                                    onClick={() =>
+                                      installer.id && uploadInstaller.mutate(installer.id)
+                                    }
+                                  >
+                                    {uploadInstaller.isPending
+                                      ? "Uploading…"
+                                      : installer.id
+                                        ? "Upload installer file"
+                                        : "Save before uploading"}
+                                  </Button>
+                                </Show>
+                                <span class="text-[11px] text-muted-foreground">
+                                  {application().installers.find((item) => item.id === installer.id)
+                                    ?.sha256
+                                    ? `sha256 ${application()
+                                        .installers.find((item) => item.id === installer.id)!
+                                        .sha256!.slice(0, 16)}…`
+                                    : "No file uploaded"}
+                                </span>
+                              </div>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
                   </div>
                   <Field label="Notes">
                     <textarea
@@ -492,7 +763,15 @@ export default function ApplicationDetailPage() {
                       </Button>
                     </div>
                   </Show>
-                  <ErrorText error={save.error ?? upload.error ?? remove.error ?? install.error} />
+                  <ErrorText
+                    error={
+                      save.error ??
+                      upload.error ??
+                      uploadInstaller.error ??
+                      remove.error ??
+                      install.error
+                    }
+                  />
                   <Show when={message()}>
                     {(text) => (
                       <p

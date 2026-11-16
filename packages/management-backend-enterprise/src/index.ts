@@ -3971,12 +3971,23 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (catalogueApplicationId) {
               if (!token) return null;
 
-              const [application] = yield* db
+              // The identifier is an installer id for catalogues created after
+              // multi-installer support, and an application id for older links.
+              const [installer] = yield* db
                 .select()
-                .from(s.application)
-                .where(eq(s.application.id, catalogueApplicationId))
+                .from(s.applicationInstaller)
+                .where(eq(s.applicationInstaller.id, catalogueApplicationId))
                 .limit(1)
                 .pipe(Effect.mapError(internal));
+
+              const [application] = installer
+                ? [installer]
+                : yield* db
+                    .select()
+                    .from(s.application)
+                    .where(eq(s.application.id, catalogueApplicationId))
+                    .limit(1)
+                    .pipe(Effect.mapError(internal));
 
               if (!application?.r2Key || !application.sha256) return null;
 

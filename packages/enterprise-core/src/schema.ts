@@ -2748,6 +2748,53 @@ export const application = mysqlTable(
   (table) => [index("application_organization_id_idx").on(table.organizationId)],
 );
 
+/**
+ * One installable artefact for a catalogue application.
+ *
+ * An application can offer several installers across versions and delivery
+ * channels (native package, manifest, App Store/Play Store). The MDM layer
+ * selects one per device from its platform, OS version and reported
+ * capabilities. The legacy columns on `application` mirror the first installer
+ * for older readers and are kept in sync by the API.
+ */
+export const applicationInstaller = mysqlTable(
+  "application_installer",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    source: varchar("source", { length: 16, enum: ["manifest", "store", "upload"] })
+      .notNull()
+      .default("manifest"),
+    bundleId: shortText("bundle_id"),
+    version: shortText("version"),
+    manifestUrl: text("manifest_url"),
+    storeId: shortText("store_id"),
+    fileName: shortText("file_name"),
+    contentType: shortText("content_type"),
+    size: int("size"),
+    sha256: shortText("sha256"),
+    r2Key: text("r2_key"),
+    /** Minimum device OS version, inclusive. */
+    minOsVersion: shortText("min_os_version"),
+    /** Capability the device must report (for example `vpp`). */
+    requiredCapability: shortText("required_capability"),
+    /** Higher values win when several installers match. */
+    priority: int("priority").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("application_installer_organization_idx").on(table.organizationId),
+    index("application_installer_application_idx").on(table.applicationId),
+  ],
+);
+
 export const applicationGroup = mysqlTable(
   "application_group",
   {

@@ -115,6 +115,22 @@ export const buildTenantExport = (
     const applicationIds = applications.map((application) => application.id);
     const applicationIdSet = new Set(applicationIds);
 
+    const installers = applicationIds.length
+      ? yield* db
+          .select()
+          .from(schema.applicationInstaller)
+          .where(inArray(schema.applicationInstaller.applicationId, applicationIds))
+      : [];
+
+    const installersByApplication = new Map<string, typeof installers>();
+
+    for (const installer of installers) {
+      const current = installersByApplication.get(installer.applicationId) ?? [];
+
+      current.push(installer);
+      installersByApplication.set(installer.applicationId, current);
+    }
+
     const groupDevices = groupIds.length
       ? yield* db
           .select()
@@ -314,6 +330,22 @@ export const buildTenantExport = (
       sha256: application.sha256,
       r2Key: application.r2Key,
       notes: application.notes,
+      installers: (installersByApplication.get(application.id) ?? []).map((installer) => ({
+        platform: installer.platform,
+        source: installer.source,
+        bundleId: installer.bundleId,
+        version: installer.version,
+        manifestUrl: installer.manifestUrl,
+        storeId: installer.storeId,
+        fileName: installer.fileName,
+        contentType: installer.contentType,
+        size: installer.size,
+        sha256: installer.sha256,
+        r2Key: installer.r2Key,
+        minOsVersion: installer.minOsVersion,
+        requiredCapability: installer.requiredCapability,
+        priority: installer.priority,
+      })),
       groupKeys: applicationGroupKeys.get(application.id) ?? [],
     }));
 

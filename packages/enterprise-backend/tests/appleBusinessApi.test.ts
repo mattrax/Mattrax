@@ -287,6 +287,67 @@ describe("Apple Business Manager API flow", () => {
     expect(plist).toContain("com.apple.security.scep");
   });
 
+  it("creates an application with several installers and replaces them on patch", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const created = await runEffect(
+      service.createApplication(request(headers), organizationId, {
+        name: "Multi installer",
+        installers: [
+          {
+            platform: "apple",
+            source: "manifest",
+            bundleId: "com.example.multi",
+            version: "2.0",
+            manifestUrl: "https://example.com/2.plist",
+            minOsVersion: "14.0",
+          },
+          {
+            platform: "apple",
+            source: "store",
+            bundleId: "com.example.multi",
+            version: "3.0",
+            storeId: "123456",
+            priority: 10,
+          },
+        ],
+      }),
+    );
+
+    const first = await runEffect(
+      service.getApplication(request(headers), organizationId, created.id),
+    );
+
+    expect(first.installers).toHaveLength(2);
+    expect(first.installers.map((installer) => installer.source)).toEqual(["store", "manifest"]);
+
+    await runEffect(
+      service.patchApplication(request(headers), organizationId, created.id, {
+        installers: [
+          {
+            id: first.installers[1]!.id,
+            platform: "apple",
+            source: "manifest",
+            bundleId: "com.example.multi",
+            version: "2.1",
+            manifestUrl: "https://example.com/2.1.plist",
+          },
+        ],
+      }),
+    );
+
+    const second = await runEffect(
+      service.getApplication(request(headers), organizationId, created.id),
+    );
+
+    expect(second.installers).toHaveLength(1);
+    expect(second.installers[0]).toMatchObject({
+      version: "2.1",
+      manifestUrl: "https://example.com/2.1.plist",
+    });
+    expect(db.store.application_installer).toHaveLength(1);
+  });
+
   it("scopes ABM reads and writes to the tenant", async () => {
     const { service, headers } = await makeContext();
     await expect(
@@ -393,6 +454,97 @@ describe("Apple Business Manager API flow", () => {
     expect(payload.Manifest.items[0].assets[0].sha256).toBe("a".repeat(64));
     expect(payload.Manifest.items[0].assets[0].url).toContain(
       "/mdm/apple/assets/app.app-upload?token=",
+    );
+  });
+
+  it("selects the installer that matches the device OS version", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+    const installers = [
+      {
+        id: "installer-14",
+        organizationId,
+        applicationId: "app-versioned",
+        platform: "apple",
+        source: "manifest",
+        bundleId: "com.example.app",
+        version: "2.0",
+        manifestUrl: "https://example.com/14.plist",
+        storeId: null,
+        fileName: null,
+        contentType: null,
+        size: null,
+        sha256: null,
+        r2Key: null,
+        minOsVersion: "14.0",
+        requiredCapability: null,
+        priority: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "installer-15",
+        organizationId,
+        applicationId: "app-versioned",
+        platform: "apple",
+        source: "manifest",
+        bundleId: "com.example.app",
+        version: "3.0",
+        manifestUrl: "https://example.com/15.plist",
+        storeId: null,
+        fileName: null,
+        contentType: null,
+        size: null,
+        sha256: null,
+        r2Key: null,
+        minOsVersion: "15.0",
+        requiredCapability: null,
+        priority: 10,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    db.store.application.push({
+      id: "app-versioned",
+      organizationId,
+      name: "Versioned",
+      platform: "apple",
+      source: "manifest",
+      bundleId: "com.example.app",
+      version: "2.0",
+      manifestUrl: "https://example.com/14.plist",
+      storeId: null,
+      fileName: null,
+      contentType: null,
+      size: null,
+      sha256: null,
+      r2Key: null,
+      notes: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({
+      deviceId: "device-1",
+      applicationId: "app-versioned",
+    });
+    db.store.application_installer.push(...installers);
+
+    const first = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-versioned"),
+    );
+
+    expect(first).toMatchObject({ queued: 1, skipped: 0 });
+    expect(db.store.device_command[0]!.payload.ManifestURL).toBe("https://example.com/14.plist");
+
+    db.store.device[0]!.osVersion = "15.4";
+    const second = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-versioned"),
+    );
+
+    expect(second).toMatchObject({ queued: 1, skipped: 0 });
+    expect(db.store.device_command.at(-1)!.payload.ManifestURL).toBe(
+      "https://example.com/15.plist",
     );
   });
 
